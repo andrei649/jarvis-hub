@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import copy
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -54,6 +56,50 @@ def test_excluded_and_partial_never_count_as_done(sample):
     assert result["all_percent"] == 25.0
     assert result["accepted_percent"] == 33.3
     assert result["inherited_equivalent"] == 1 and result["reviewed_equivalent"] == 0
+
+
+def test_accounting_axes_keep_recorded_verdict_freshness_and_acceptance_distinct(sample):
+    item = add_review(sample, "equivalent")
+    (sample[2] / "agents/core/example.py").write_text("# changed source\n", encoding="utf-8")
+    rows = hs.assess(*sample)
+    assert rows[1]["status"] == "needs_review"
+    assert rows[1]["recorded_status"] == "equivalent"
+    assert rows[1]["freshness"] == "changed" and rows[1]["impact"] == "pending"
+    assert rows[1]["acceptance"] == {"runtime": "unrecorded", "platform": "unrecorded",
+                                     "provider": "unrecorded"}
+    assert rows[1]["evidence"] == item["evidence"]
+    result = hs.metrics(rows)
+    assert result["counts"]["equivalent"] == 1
+    assert result["recorded_counts"]["equivalent"] == 2
+    assert result["freshness_counts"]["changed"] == 1
+    assert result["impact_counts"]["pending"] == 1
+    assert result["acceptance_counts"]["runtime"] == {"unrecorded": 4}
+    assert "Verdict pe cod înregistrat" in hs.reports(rows, sample[1])["HERMES_STATUS.md"]
+
+
+def test_list_filters_separate_recorded_freshness_impact_and_acceptance(sample, monkeypatch, capsys):
+    add_review(sample, "equivalent")
+    (sample[2] / "agents/core/example.py").write_text("# changed source\n", encoding="utf-8")
+    rows = hs.assess(*sample)
+    monkeypatch.setattr(hs, "load", lambda: sample[:2])
+    monkeypatch.setattr(hs, "assess", lambda _ledger, _data: rows)
+    assert hs.main(["list", "--recorded-status", "equivalent", "--freshness", "changed",
+                    "--impact", "pending", "--acceptance", "runtime",
+                    "--acceptance-state", "unrecorded"]) == 0
+    output = capsys.readouterr().out
+    assert "H002" in output and "H001" not in output and "1 of 1 rows" in output
+    assert hs.main(["list", "--acceptance", "runtime"]) == 2
+    assert "used together" in capsys.readouterr().err
+
+
+def test_impact_map_is_reachable_as_a_real_direct_script():
+    result = subprocess.run([sys.executable, str(hs.REPO / "scripts/hermes_status.py"),
+                             "impact-map", "--base", "HEAD", "--limit", "2", "--json"],
+                            cwd=hs.REPO, capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["base"]["sha"] and payload["credit_changed"] is False
+    assert len(payload["affected"]) <= 2 and len(payload["unknown_paths"]) <= 2
 
 
 def test_equivalent_requires_a_review_and_surviving_source_and_tests(sample):
@@ -391,7 +437,9 @@ def test_show_recorded_preserves_stale_historical_review_without_credit(sample, 
 
     assert shown["assessment"]["status"] == "needs_review"
     assert shown["assessment"]["basis"] == "stale_evidence"
-    assert shown["assessment"]["remaining"] == (
+    assert shown["assessment"]["remaining"] == remaining
+    assert shown["assessment"]["recorded_remaining"] == remaining
+    assert shown["assessment"]["verification_note"] == (
         "Dovada s-a schimbat sau lipsește; reevaluează înainte de a număra rândul ca terminat."
     )
     assert shown["recorded_review"] == item

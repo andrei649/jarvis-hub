@@ -2,7 +2,7 @@
 curator.py — nightly skill curator (H20.5 live wave).
 
 Two passes, both governed and reversible, adapted from hermes-agent
-`agent/curator.py` (Nous Research, MIT — see LICENSES/THIRD_PARTY.md):
+`agent/curator.py` (Nous Research, MIT — see LICENSES/hermes-agent-MIT.txt):
 
   1. **Lifecycle** — agent-created, unpinned skills transition
      active → stale (idle > ``learning.curator_stale_days``, default 30)

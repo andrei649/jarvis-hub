@@ -1,8 +1,8 @@
 # Sprint curent: echivalarea celor 697 de capabilități Hermes
 
-**148 / 697 = 21.2% echivalente complet în evaluarea documentată.**
+**49 / 697 = 7.0% echivalente complet în evaluarea documentată.**
 
-Din acestea, **148** au fost reevaluate pe cod în această livrare; **0** păstrează verdictul auditului din 7 septembrie.
+Din acestea, **49** au fost reevaluate pe cod în această livrare; **0** păstrează verdictul auditului din 7 septembrie.
 
 **Acesta este un status inițial conservator, nu o reauditare completă a celor 697.** Verdictele moștenite și cele actualizate sunt vizibile pentru fiecare rând. Procentul de 88% discutat anterior privea altă listă și nu se aplică aici.
 
@@ -10,15 +10,24 @@ Din acestea, **148** au fost reevaluate pe cod în această livrare; **0** păst
 
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
-| Echivalent | 148 | 21.2% |
-| Parțial | 436 | 62.6% |
-| Lipsă | 113 | 16.2% |
+| Echivalent | 49 | 7.0% |
+| Parțial | 248 | 35.6% |
+| Lipsă | 105 | 15.1% |
 | Exclus intenționat | 0 | 0.0% |
-| De reverificat | 0 | 0.0% |
+| De reverificat | 295 | 42.3% |
 
-**Ținta acceptată în produs:** 697 rânduri; progres 148/697 = **21.2%**. Excluderi active: 0. Readmise explicit din vechiul audit: 107; readmiterea nu acordă credit de implementare.
+## Axe separate de contabilizare
 
-**Acoperirea reevaluării curente:** 642/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
+**Verdict pe cod înregistrat** (review sau audit moștenit): partial 432, equivalent 152, missing 113. Acesta nu este creditul conservator de mai sus.
+**Prospețimea dovezii:** changed 317, current 325, unrecorded 55.
+**Impactul schimbării:** pending 295, none 380, accepted 22. Un hash schimbat cere analiză; nu dovedește singur regresia funcțională.
+**Acceptare runtime/platform/provider:** runtime: unrecorded 694, verified 3; platform: unrecorded 694, required_pending 3; provider: unrecorded 694, required_pending 3. «unrecorded» nu înseamnă că toate rândurile cer servicii externe.
+**Prospețimea acceptării:** runtime: unrecorded 694, stale 2, current 1; platform: unrecorded 694, current 2, stale 1; provider: unrecorded 694, current 2, stale 1.
+**Scope-uri declarate încă în așteptare:** runtime 0, platform 5, provider 3.
+
+**Ținta acceptată în produs:** 697 rânduri; progres 49/697 = **7.0%**. Excluderi active: 0. Readmise explicit din vechiul audit: 107; readmiterea nu acordă credit de implementare.
+
+**Acoperirea reevaluării curente:** 347/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
 
 **Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. Acest procent măsoară codul documentat, nu efortul rămas, calitatea UX sau probele pe servicii reale.
 
@@ -26,32 +35,32 @@ Din acestea, **148** au fost reevaluate pe cod în această livrare; **0** păst
 
 | Domeniu | Total | Echiv. | Parțial | Lipsă | Exclus | Reverificare |
 |---|---:|---:|---:|---:|---:|---:|
-| cli | 56 | 14 | 34 | 8 | 0 | 0 |
-| gateway | 33 | 3 | 24 | 6 | 0 | 0 |
-| platforms | 39 | 3 | 26 | 10 | 0 | 0 |
-| web | 40 | 13 | 21 | 6 | 0 | 0 |
-| desktop | 54 | 5 | 39 | 10 | 0 | 0 |
-| tui | 25 | 2 | 18 | 5 | 0 | 0 |
-| config | 18 | 8 | 8 | 2 | 0 | 0 |
-| env | 28 | 5 | 21 | 2 | 0 | 0 |
-| tools — the agent-callable surface | 32 | 9 | 21 | 2 | 0 | 0 |
-| skills | 33 | 13 | 16 | 4 | 0 | 0 |
-| providers | 27 | 6 | 16 | 5 | 0 | 0 |
-| agent-core | 36 | 10 | 19 | 7 | 0 | 0 |
-| memory | 27 | 8 | 18 | 1 | 0 | 0 |
-| automation | 32 | 6 | 24 | 2 | 0 | 0 |
-| security | 34 | 7 | 24 | 3 | 0 | 0 |
-| media | 27 | 7 | 18 | 2 | 0 | 0 |
-| acp-mcp-dev | 33 | 3 | 13 | 17 | 0 | 0 |
-| docs-features | 48 | 4 | 35 | 9 | 0 | 0 |
-| rest-api | 33 | 3 | 25 | 5 | 0 | 0 |
-| delta | 42 | 19 | 16 | 7 | 0 | 0 |
+| cli | 56 | 1 | 14 | 7 | 0 | 34 |
+| gateway | 33 | 1 | 11 | 5 | 0 | 16 |
+| platforms | 39 | 2 | 22 | 8 | 0 | 7 |
+| web | 40 | 8 | 12 | 6 | 0 | 14 |
+| desktop | 54 | 3 | 26 | 10 | 0 | 15 |
+| tui | 25 | 0 | 12 | 5 | 0 | 8 |
+| config | 18 | 1 | 2 | 2 | 0 | 13 |
+| env | 28 | 1 | 12 | 2 | 0 | 13 |
+| tools — the agent-callable surface | 32 | 4 | 9 | 2 | 0 | 17 |
+| skills | 33 | 6 | 8 | 3 | 0 | 16 |
+| providers | 27 | 4 | 8 | 5 | 0 | 10 |
+| agent-core | 36 | 3 | 8 | 7 | 0 | 18 |
+| memory | 27 | 1 | 5 | 0 | 0 | 21 |
+| automation | 32 | 0 | 15 | 2 | 0 | 15 |
+| security | 34 | 3 | 9 | 2 | 0 | 20 |
+| media | 27 | 4 | 13 | 2 | 0 | 8 |
+| acp-mcp-dev | 33 | 1 | 13 | 17 | 0 | 2 |
+| docs-features | 48 | 0 | 22 | 8 | 0 | 18 |
+| rest-api | 33 | 1 | 17 | 5 | 0 | 10 |
+| delta | 42 | 5 | 10 | 7 | 0 | 20 |
 
 ## Actualizare
 
-Evaluare: `2026-11-03T18:46:43Z`. Cod inspectat: `f64e18f5008b377d44c220b19b8555898f56e861`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
+Evaluare: `2026-11-04T07:28:24Z`. Cod inspectat: `446cc7cb626d5b2a2093b15c377733cb313bb6b3`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
 
-Sursa editabilă este [assessment.json](docs/hermes/assessment.json). Actualizează numai rândurile inspectate, cu motiv, lipsuri și hash-uri ale codului/testelor. Dacă dovezile se schimbă sau dispar, rândul trece automat la «De reverificat» și pierde creditul de finalizare. Data reauditării moștenite nu este rescrisă.
+Sursa editabilă este [assessment.json](docs/hermes/assessment.json). Actualizează numai rândurile inspectate, cu motiv, lipsuri și hash-uri ale codului/testelor. Dacă dovezile se schimbă sau dispar, rândul trece la «De reverificat» până la analiza de impact. O acceptare explicită a impactului, legată de revizie și verificări, poate păstra verdictul; simpla schimbare de hash nu dovedește regresia. Data reauditării moștenite nu este rescrisă.
 
 ```text
 python scripts/hermes_status.py summary

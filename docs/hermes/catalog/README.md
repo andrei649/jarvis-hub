@@ -18,7 +18,7 @@ redistributed here. Upstream tier does not imply installation in Nerva.
 ## Owner workflow
 
 In **HUD → Skills Import**, select an exact pinned name below. Remote import needs
-admin access and `DEV_MODE=1`, then crosses `skill.install`. An allowed import
+current admin, `skill.install` and governed network authorization. An allowed import
 stages a quarantined `PENDING_REVIEW` copy. The owner inspects pending detail and
 approves its exact fingerprint separately; a kernel GRANT alone does not make
 that copy executable. These pages document source identity, not activation.

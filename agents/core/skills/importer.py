@@ -35,6 +35,8 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Optional
 
+from .remote_pin import RemoteImportAuthorization, RemoteImportRefused, RemoteSkillPin
+
 logger = logging.getLogger("jarvis.skills.importer")
 
 # A skill slug becomes a directory name under `skills_dir`, so it is restricted to
@@ -62,6 +64,8 @@ OPENCLAW_SKILLS_PATH = "main/skills"
 
 GITHUB_RAW = "https://raw.githubusercontent.com"
 GITHUB_API = "https://api.github.com"
+_MAX_REMOTE_FILE_BYTES = 8 * 1024 * 1024
+_MAX_REMOTE_SKILL_BYTES = 32 * 1024 * 1024
 
 
 def _publish_stage_no_replace(stage: Path, target: Path) -> None:
@@ -290,21 +294,100 @@ def _load_hermes_pin() -> _HermesPin:
 
 
 class SkillImporter:
-    def __init__(self, skills_dir: str | None = None):
+    def __init__(self, skills_dir: str | None = None, *, resolver=None, transport_factory=None):
         if skills_dir is None:
             from .loader import _writable_skills_dir
 
             skills_dir = str(_writable_skills_dir())
         self.skills_dir = Path(skills_dir)
         self.skills_dir.mkdir(parents=True, exist_ok=True)
+        self._remote_resolver = resolver
+        self._remote_transport_factory = transport_factory
         # H350 — why the last _save_skill refused its document (empty when it did not).
         self.last_refusal: list = []
+
+    def _remote_client(self, authorization: RemoteImportAuthorization):
+        from agents.core.http_client import RequiredEgressHTTPClient
+
+        return RequiredEgressHTTPClient(
+            plugin_name="skill-import", authorize_egress=authorization.egress_gate,
+            resolver=self._remote_resolver, transport_factory=self._remote_transport_factory,
+        )
+
+    @staticmethod
+    def _require_authorization(authorization: RemoteImportAuthorization | None) -> RemoteImportAuthorization:
+        if not isinstance(authorization, RemoteImportAuthorization):
+            raise RemoteImportRefused("authorization_unavailable")
+        return authorization
+
+    @staticmethod
+    def _install_payload(source: str, slug: str, remote_pin: RemoteSkillPin,
+                         *, release_tag: str | None = None, tree: str | None = None) -> dict:
+        payload = {
+            "kind": "skill.install", "action": "import", "name": slug,
+            "source": source, "pinned": True, "requested_by": "owner",
+            "risk_tier": 3, "reversible": True, "approval_mode": "owner",
+            "quarantined": True, "source_repository": remote_pin.repo,
+            "source_commit": remote_pin.commit, "commit": remote_pin.commit,
+            "source_path": remote_pin.entry_path,
+            "content_sha256": remote_pin.content_sha256,
+            "files": [{"path": path, "content_sha256": digest}
+                      for path, digest in remote_pin.references],
+        }
+        if release_tag is not None:
+            payload["release_tag"] = release_tag
+        if tree is not None:
+            payload["tree"] = tree
+        return payload
+
+    @staticmethod
+    def _check_install(authorization: RemoteImportAuthorization, payload: dict) -> str:
+        try:
+            verdict = authorization.install_gate(dict(payload))
+        except Exception as exc:
+            raise RemoteImportRefused("authorization_unavailable") from exc
+        if type(verdict) is not str:
+            raise RemoteImportRefused("authorization_unavailable")
+        if verdict.lower() == "deny":
+            raise RemoteImportRefused("install_denied")
+        if verdict.lower() not in {"grant", "queue"}:
+            raise RemoteImportRefused("authorization_unavailable")
+        return verdict.lower()
+
+    @staticmethod
+    async def _fetch_exact_bytes(client, url: str, digest: str, *, budget: list[int]) -> bytes:
+        try:
+            async with client.stream("GET", url, follow_redirects=False) as response:
+                if response.status_code in {301, 302, 303, 307, 308}:
+                    raise RemoteImportRefused("source_identity_mismatch")
+                if response.status_code != 200:
+                    raise RemoteImportRefused("fetch_failed")
+                body = bytearray()
+                async for chunk in response.aiter_bytes():
+                    if len(body) + len(chunk) > _MAX_REMOTE_FILE_BYTES or len(chunk) > budget[0]:
+                        raise RemoteImportRefused("fetch_failed")
+                    body.extend(chunk)
+                    budget[0] -= len(chunk)
+        except RemoteImportRefused:
+            raise
+        except Exception as exc:
+            from agents.core.http_client import PluginEgressError
+
+            if isinstance(exc, PluginEgressError):
+                raise RemoteImportRefused("egress_denied") from exc
+            raise RemoteImportRefused("fetch_failed") from exc
+        raw = bytes(body)
+        if not hmac.compare_digest(hashlib.sha256(raw).hexdigest(), digest):
+            raise RemoteImportRefused("digest_mismatch")
+        return raw
 
     async def import_from_hermes(
         self, skill_name: str, *, pin: _HermesPin | None = None,
         entry: _HermesPinEntry | None = None,
+        authorization: RemoteImportAuthorization | None = None,
     ) -> bool:
         self.last_refusal = []
+        authorization = self._require_authorization(authorization)
         skill_slug = _safe_slug(skill_name)
         if skill_slug is None:
             logger.warning("Rejected Hermes skill import: unsafe name %r", skill_name)
@@ -317,17 +400,15 @@ class SkillImporter:
         if entry is None or entry.slug != skill_slug or entry not in pin.skills:
             logger.warning("Skill '%s' is not in the Hermes pin allowlist", skill_slug)
             return False
-
-        try:
-            import httpx
-        except ImportError:
-            raise SkillImportError("httpx required for skill import")
-
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
+        remote_pin = RemoteSkillPin(pin.repository, pin.commit, entry.path,
+                                    entry.content_sha256, entry.files)
+        payload = self._install_payload("hermes", skill_slug, remote_pin,
+                                        release_tag=pin.release_tag, tree=pin.tree)
+        self._check_install(authorization, payload)
+        async with self._remote_client(authorization) as client:
             verified = await self._fetch_verified_hermes_skill(client, pin, entry)
-        if verified is None:
-            return False
         raw, text, references = verified
+        self._check_install(authorization, payload)
         return await self._save_skill(
             skill_name,
             "hermes",
@@ -401,55 +482,47 @@ class SkillImporter:
             if stage.exists():
                 shutil.rmtree(stage)
 
-    async def import_from_openclaw(self, skill_name: str) -> bool:
+    async def import_from_openclaw(
+        self, skill_name: str, *, pin: RemoteSkillPin | None = None,
+        authorization: RemoteImportAuthorization | None = None,
+    ) -> bool:
         return await self._import_from_github(
-            OPENCLAW_REPO, OPENCLAW_SKILLS_PATH, skill_name, source="openclaw"
+            OPENCLAW_REPO, skill_name, pin=pin, authorization=authorization,
+            source="openclaw",
         )
 
     async def import_from_github(
-        self, repo: str, skill_name: str, path: str = "main/skills"
+        self, repo: str, skill_name: str, path: str = "main/skills", *,
+        pin: RemoteSkillPin | None = None,
+        authorization: RemoteImportAuthorization | None = None,
     ) -> bool:
-        return await self._import_from_github(repo, path, skill_name, source=repo.split("/")[-1])
+        # ``path`` is retained for old Python callers, but cannot select a
+        # mutable branch. The explicit pin is the only source path authority.
+        return await self._import_from_github(
+            repo, skill_name, pin=pin, authorization=authorization,
+            source=repo.rsplit("/", 1)[-1],
+        )
 
     @staticmethod
     async def _fetch_verified_hermes_skill(client, pin: _HermesPin, entry: _HermesPinEntry):
         paths = ((entry.path, entry.content_sha256), *entry.files)
         contents = {}
+        budget = [_MAX_REMOTE_SKILL_BYTES]
+        for path, expected_digest in paths:
+            url = f"{GITHUB_RAW}/{pin.repository}/{pin.commit}/{path}"
+            contents[path] = await SkillImporter._fetch_exact_bytes(
+                client, url, expected_digest, budget=budget)
+        raw = contents[entry.path]
         try:
-            for path, expected_digest in paths:
-                url = f"{GITHUB_RAW}/{pin.repository}/{pin.commit}/{path}"
-                response = await client.get(url)
-                if response.status_code != 200:
-                    logger.warning("Hermes pinned file unavailable for '%s': %s", entry.slug,
-                                   response.status_code)
-                    return None
-                if str(getattr(response, "url", "")) != url:
-                    logger.warning("Hermes response URL mismatch for '%s'", entry.slug)
-                    return None
-                raw_file = response.content
-                if not isinstance(raw_file, bytes):
-                    logger.warning("Hermes response body is not raw bytes for '%s'", entry.slug)
-                    return None
-                if not hmac.compare_digest(hashlib.sha256(raw_file).hexdigest(), expected_digest):
-                    logger.warning("Hermes content digest mismatch for '%s': %s", entry.slug, path)
-                    return None
-                contents[path] = raw_file
-            raw = contents[entry.path]
             text = raw.decode("utf-8")
-            if SkillImporter._extract_frontmatter(text, strict=True).get("name") != entry.slug:
-                logger.warning("Hermes content identity mismatch for '%s'", entry.slug)
-                return None
-            from .validate import validate_skill_md
+        except UnicodeDecodeError as exc:
+            raise RemoteImportRefused("invalid_skill") from exc
+        if SkillImporter._extract_frontmatter(text, strict=True).get("name") != entry.slug:
+            raise RemoteImportRefused("source_identity_mismatch")
+        from .validate import validate_skill_md
 
-            if validate_skill_md(raw):
-                logger.warning("Hermes pinned SKILL.md fails local validation for '%s'", entry.slug)
-                return None
-        except UnicodeDecodeError:
-            logger.warning("Hermes pinned content is not UTF-8 for '%s'", entry.slug)
-            return None
-        except Exception as exc:
-            logger.debug("Failed to fetch pinned Hermes skill '%s': %s", entry.slug, exc)
-            return None
+        if validate_skill_md(raw):
+            raise RemoteImportRefused("invalid_skill")
         return raw, text, {path.removeprefix(entry.path.removesuffix("SKILL.md")): contents[path]
                            for path, _ in entry.files}
 
@@ -468,103 +541,60 @@ class SkillImporter:
         }
 
     async def _import_from_github(
-        self, repo: str, base_path: str, skill_name: str, source: str
+        self, repo: str, skill_name: str, *, pin: RemoteSkillPin | None,
+        authorization: RemoteImportAuthorization | None, source: str,
     ) -> bool:
         self.last_refusal = []
-        try:
-            import httpx
-        except ImportError:
-            raise SkillImportError("httpx required for skill import")
-
-        # Validate before any network call: this slug is interpolated into the raw
-        # GitHub URL path, so an unchecked name could climb it or graft on a query.
+        if pin is None:
+            raise RemoteImportRefused("missing_pin")
+        if not isinstance(pin, RemoteSkillPin) or pin.repo != repo:
+            raise RemoteImportRefused("invalid_pin")
+        authorization = self._require_authorization(authorization)
         skill_slug = _safe_slug(skill_name)
-        if skill_slug is None:
-            logger.warning("Rejected skill import: unsafe name %r", skill_name)
-            return False
-        branch, subdir = self._split_base_path(base_path)
-
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-            # 1. SKILL.md in a flat layout: <subdir>/<slug>/SKILL.md
-            skill_md = await self._fetch_skill_md_flat(client, repo, branch, subdir, skill_slug)
-
-            # 2. SKILL.md nested under a category: <subdir>/<category>/<slug>/SKILL.md.
-            #    The real Hermes repo nests skills one level below the category,
-            #    so locate the file via the recursive git-tree listing.
-            if skill_md is None:
-                found = await self._locate_skill_in_tree(client, repo, branch, subdir, skill_slug)
-                if found:
-                    skill_md = await self._fetch_raw(client, repo, branch, found)
-
-            if skill_md is not None:
-                return await self._save_skill(skill_name, source, skill_md_text=skill_md,
-                                              reference_files={})
-
-            # 3. Legacy fallback: manifest.json / manifest.yaml
-            manifest = await self._fetch_manifest(client, repo, branch, subdir, skill_slug)
-            if manifest:
-                return await self._save_skill(skill_name, source, manifest=manifest,
-                                              reference_files={})
-
-        logger.warning(f"Skill '{skill_name}' not found in {source}")
-        return False
-
-    @staticmethod
-    def _split_base_path(base_path: str) -> tuple[str, str]:
-        """Split e.g. ``main/skills`` into (branch="main", subdir="skills")."""
-        parts = base_path.strip("/").split("/", 1)
-        branch = parts[0] if parts and parts[0] else "main"
-        subdir = parts[1] if len(parts) > 1 else ""
-        return branch, subdir
-
-    async def _fetch_raw(self, client, repo: str, branch: str, path: str) -> Optional[str]:
-        url = f"{GITHUB_RAW}/{repo}/{branch}/{path.lstrip('/')}"
-        try:
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                return resp.text
-        except Exception as e:  # network / transient — try the next candidate
-            logger.debug(f"Failed to fetch {url}: {e}")
-        return None
-
-    async def _fetch_skill_md_flat(self, client, repo, branch, subdir, slug) -> Optional[str]:
-        rel = f"{subdir}/{slug}/SKILL.md" if subdir else f"{slug}/SKILL.md"
-        return await self._fetch_raw(client, repo, branch, rel)
-
-    async def _locate_skill_in_tree(self, client, repo, branch, subdir, slug) -> Optional[str]:
-        """Find ``…/<slug>/SKILL.md`` anywhere under ``subdir`` via the git tree."""
-        url = f"{GITHUB_API}/repos/{repo}/git/trees/{branch}?recursive=1"
-        try:
-            resp = await client.get(url)
-            if resp.status_code != 200:
-                return None
-            tree = resp.json().get("tree", [])
-        except Exception as e:
-            logger.debug(f"Failed to list tree for {repo}@{branch}: {e}")
-            return None
-
-        suffix = f"/{slug}/SKILL.md"
-        prefix = f"{subdir}/" if subdir else ""
-        matches = [
-            item["path"]
-            for item in tree
-            if item.get("type") == "blob"
-            and item.get("path", "").endswith(suffix)
-            and item.get("path", "").startswith(prefix)
-        ]
-        # Prefer the shallowest match when a slug appears more than once.
-        matches.sort(key=lambda p: p.count("/"))
-        return matches[0] if matches else None
-
-    async def _fetch_manifest(self, client, repo, branch, subdir, slug) -> Optional[dict]:
-        base = f"{subdir}/{slug}" if subdir else slug
-        for fname in ("manifest.json", "manifest.yaml", "manifest.yml"):
-            text = await self._fetch_raw(client, repo, branch, f"{base}/{fname}")
-            if text:
-                data = self._parse_manifest(text, fname)
-                if data:
-                    return data
-        return None
+        if skill_slug is None or pin.entry_path.rsplit("/", 2)[-2] != skill_slug:
+            raise RemoteImportRefused("source_identity_mismatch")
+        payload = self._install_payload(source, skill_slug, pin)
+        self._check_install(authorization, payload)
+        budget = [_MAX_REMOTE_SKILL_BYTES]
+        async with self._remote_client(authorization) as client:
+            url = f"{GITHUB_RAW}/{pin.repo}/{pin.commit}/{pin.entry_path}"
+            raw = await self._fetch_exact_bytes(client, url, pin.content_sha256,
+                                                budget=budget)
+            references = {}
+            for path, digest in pin.references:
+                ref_url = f"{GITHUB_RAW}/{pin.repo}/{pin.commit}/{path}"
+                content = await self._fetch_exact_bytes(client, ref_url, digest,
+                                                        budget=budget)
+                references[path.removeprefix(pin.entry_path.rsplit("/", 1)[0] + "/")] = content
+        if pin.entry_path.endswith("/SKILL.md"):
+            try:
+                skill_md = raw.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise RemoteImportRefused("invalid_skill") from exc
+            if self._extract_frontmatter(skill_md, strict=True).get("name") != skill_slug:
+                raise RemoteImportRefused("source_identity_mismatch")
+            manifest = None
+        else:
+            try:
+                manifest = self._parse_manifest(raw.decode("utf-8"),
+                                                pin.entry_path.rsplit("/", 1)[-1])
+            except UnicodeDecodeError as exc:
+                raise RemoteImportRefused("invalid_skill") from exc
+            if type(manifest) is not dict or manifest.get("name", skill_slug) != skill_slug:
+                raise RemoteImportRefused("source_identity_mismatch")
+            try:
+                skill_md = self._synthesize_skill_md(skill_slug, manifest, source)
+            except (TypeError, ValueError) as exc:
+                raise RemoteImportRefused("invalid_skill") from exc
+        self._check_install(authorization, payload)
+        return await self._save_skill(
+            skill_slug, source, skill_md_text=skill_md, manifest=manifest,
+            provenance={"source_repository": pin.repo, "source_commit": pin.commit,
+                        "source_path": pin.entry_path,
+                        "content_sha256": pin.content_sha256,
+                        "source_files": payload["files"], "quarantined": True},
+            reference_files=references,
+        )
 
     def _parse_manifest(self, content: str, filename: str) -> Optional[dict]:
         if filename.endswith(".json"):
@@ -723,7 +753,8 @@ class SkillImporter:
         data, _body = split_frontmatter(text, lenient=not strict)
         return data if isinstance(data, dict) else {}
 
-    async def _sync_from_hermes(self, category: Optional[str]) -> list[str]:
+    async def _sync_from_hermes(self, category: Optional[str],
+                                authorization: RemoteImportAuthorization) -> list[str]:
         pin = _load_hermes_pin()
         if category is not None:
             if not _safe_hermes_category(category):
@@ -741,21 +772,25 @@ class SkillImporter:
                (self.skills_dir / entry.slug).is_symlink() for entry in selected):
             return []
 
-        try:
-            import httpx
-        except ImportError:
-            raise SkillImportError("httpx required for skill import")
-
+        payloads = [self._install_payload(
+            "hermes", entry.slug,
+            RemoteSkillPin(pin.repository, pin.commit, entry.path,
+                           entry.content_sha256, entry.files),
+            release_tag=pin.release_tag, tree=pin.tree,
+        ) for entry in selected]
+        for payload in payloads:
+            self._check_install(authorization, payload)
         verified = []
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
+        async with self._remote_client(authorization) as client:
             for entry in selected:
                 content = await self._fetch_verified_hermes_skill(client, pin, entry)
-                if content is None:
-                    return []
                 verified.append((entry, *content))
 
+        for payload in payloads:
+            self._check_install(authorization, payload)
         imported = []
-        for entry, raw, text, references in verified:
+        for (entry, raw, text, references), payload in zip(verified, payloads, strict=True):
+            self._check_install(authorization, payload)
             if await self._save_skill(
                 entry.slug,
                 "hermes",
@@ -767,57 +802,33 @@ class SkillImporter:
                 imported.append(entry.slug)
         return imported
 
-    async def sync_source(self, source: str, category: Optional[str] = None) -> list[str]:
+    async def sync_source(
+        self, source: str, category: Optional[str] = None, *,
+        pins: tuple[RemoteSkillPin, ...] | None = None,
+        authorization: RemoteImportAuthorization | None = None,
+    ) -> list[str]:
+        authorization = self._require_authorization(authorization)
         if source == "hermes":
-            return await self._sync_from_hermes(category)
-
-        try:
-            import httpx
-        except ImportError:
-            raise SkillImportError("httpx required for skill import")
-
+            return await self._sync_from_hermes(category, authorization)
+        if pins is None:
+            raise RemoteImportRefused("missing_pin")
+        if type(pins) is not tuple or not pins or len(pins) > 64:
+            raise RemoteImportRefused("invalid_pin")
         repo = OPENCLAW_REPO if source == "openclaw" else source
-        skills_path = OPENCLAW_SKILLS_PATH if source == "openclaw" else "main/skills"
-
-        if "/" not in repo:
-            repo = f"github/{repo}"
-
-        branch, subdir = self._split_base_path(skills_path)
-
-        # Walk the recursive tree and import every <…>/<skill>/SKILL.md found
-        # under subdir (optionally scoped to a category). This handles the
-        # category-nested Hermes layout, which a shallow contents listing misses.
-        url = f"{GITHUB_API}/repos/{repo}/git/trees/{branch}?recursive=1"
-        scope = (
-            f"{subdir}/{category}/" if (subdir and category) else (f"{subdir}/" if subdir else "")
-        )
-
+        if any(not isinstance(pin, RemoteSkillPin) or pin.repo != repo for pin in pins):
+            raise RemoteImportRefused("invalid_pin")
+        if category is not None and not _safe_hermes_category(category):
+            raise RemoteImportRefused("invalid_pin")
         imported: list[str] = []
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-            try:
-                resp = await client.get(url)
-                if resp.status_code != 200:
-                    logger.warning(f"Failed to list skills from {source}: {resp.status_code}")
-                    return imported
-                tree = resp.json().get("tree", [])
-            except Exception as e:
-                logger.warning(f"Failed to sync {source}: {e}")
-                return imported
-
-            seen: set[str] = set()
-            for item in tree:
-                path = item.get("path", "")
-                if item.get("type") != "blob" or not path.endswith("/SKILL.md"):
-                    continue
-                if scope and not path.startswith(scope):
-                    continue
-                name = path[: -len("/SKILL.md")].rsplit("/", 1)[-1]
-                if name in seen:
-                    continue
-                seen.add(name)
-                if await self._import_from_github(repo, skills_path, name, source):
-                    imported.append(name)
-
+        for pin in pins:
+            if category is not None and f"/{category}/" not in pin.entry_path:
+                continue
+            name = pin.entry_path.rsplit("/", 2)[-2]
+            if await self._import_from_github(
+                repo, name, pin=pin, authorization=authorization,
+                source="openclaw" if source == "openclaw" else repo.rsplit("/", 1)[-1],
+            ):
+                imported.append(name)
         return imported
 
     async def import_local_skill(

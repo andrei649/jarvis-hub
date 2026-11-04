@@ -1,87 +1,6 @@
-/* SKILLS IMPORT — the on-disk skill-import surface that shipped with no caller:
-   GET /skills/imported (agents/core/routers/skills.py:157) and
-   POST /skills/import (skills.py:133).
-
-   BOUNDARY. This is NOT the SKILLS MARKETPLACE panel (gap.tsx:1626) or MARKETPLACE ADMIN
-   in another coat. Those read /api/skills/marketplace{,/history,/pending} — a sqlite
-   registry (marketplace.py:393-418) keyed name/version/review_status/signature.
-   /skills/imported is a different store entirely: the `manifest.json` sidecars the
-   IMPORTER writes under skills/<slug>/ (importer.py:445-461). Its provenance keys —
-   source_repository, source_release_tag, source_commit, source_tree, source_path,
-   content_sha256 — exist nowhere else in the HUD.
-
-   What the two handlers actually do, and what this panel is therefore forbidden to imply:
-
-   1. GET /skills/imported is user-guarded; useApi(path) supplies the existing
-      user token and prompts on 401. POST /skills/import retains its separate admin
-      authority. The read can also return 503 {"error":"not initialized"} (skills_imported).
-      apiGet throws BEFORE reading the body (client.ts:106-110), so the backend's literal
-      "not initialized" never reaches this panel — only the message "GET /skills/imported
-      -> 503". The status is therefore read off that message and the panel says
-      "unavailable · HTTP 503", never quoting a body it did not fetch.
-
-   2. 200 {"imported": []} is the NORMAL state on a stock install: skills/ here holds 12
-      skill directories and ZERO manifest.json files, because a sidecar is written only by
-      an import. The empty state and the 503 are rendered as visibly different things —
-      a 503 drawn as "0 imported" would be a lie about a component that is down.
-
-   3. list_imported() SWALLOWS json.JSONDecodeError / IOError per file (importer.py:611-612),
-      so a corrupt sidecar is invisible in the payload. This panel therefore never claims
-      the list is a complete inventory of skills/.
-
-   4. Rows are the RAW parsed sidecar dicts — not a typed model. A legacy manifest.json on
-      disk can carry arbitrary keys and may be missing name/version entirely. Every key is
-      read defensively and the per-row `raw` toggle is the honest fallback for anything the
-      typed line does not cover.
-
-   5. POST /skills/import is admin-guarded and DEV_MODE-gated and answers 403
-      {"error":"skill import disabled — set DEV_MODE=1 to enable"}. Nothing else in the API
-      discloses DEV_MODE — /sandbox/status exposes docker, /status and
-      /api/health/components carry no such flag — so the panel would have to either ship a
-      button that always 403s or guess. It does neither: the handler's own ordering gives a
-      side-effect-free probe. POST {"skill": ""} passes the orch check, passes (or hits) the
-      DEV_MODE check, and returns 400 "skill name required" BEFORE any importer call
-      (skills.py:140-144). 400 => the gate was passed; 403 => it was not. No file is written
-      and no network call is made on either path. The probe is a REAL POST, so it lands in
-      the global action-failure sink (client.ts:84-88) and the ActionFailureBanner — which
-      is why it is operator-initiated (a CHECK button) and never fires on mount, and why the
-      panel says so in plain words.
-
-   6. THE 403 IS AMBIGUOUS BY STATUS AND MUST BE CLASSIFIED BY BODY KEY. _admin_guard
-      (web.py) answers 401 {"detail":"admin token required"} and 403
-      {"detail":"admin disabled from network — set JARVIS_ADMIN_TOKEN to enable remote
-      access"} — HTTPException bodies keyed `detail`. The route's own refusals are keyed
-      `error`. A guard 403 means DEV_MODE was NEVER EVALUATED, so reading it as "DEV_MODE=0"
-      would invent a fact. body.error => a server-formatted refusal; body.detail => a raised
-      HTTPException, which on this route is the guard. `error` is NOT proof the DEV_MODE check
-      ran: the handler's own 503 (skills.py:135-136) and the per-IP throttle's 429
-      (web.py:560-563) are both keyed `error` and both answer BEFORE it. Only the 400 and the
-      403 texts carry the flag, so every other answer leaves availability unknown and is
-      explained by the shape that actually arrived — never by one fixed origin.
-
-   7. The 404 {"ok":false,"error":"Skill '<name>' not found in <source>"} is ONE string for
-      several very different realities: not in the Hermes pin allowlist, a slug rejected by
-      _safe_slug, a GitHub 404, a sha256 digest mismatch, a frontmatter identity mismatch
-      (importer.py:200-272). It is printed verbatim and never paraphrased into a cause.
-
-   8. A 200 echoes {"ok":true,"source":<as sent>,"skill":<as sent>} — the RAW input, not the
-      slug that was written (_safe_slug lower-cases and maps spaces to '-'). So the success
-      line prints only what the backend echoed and then RELOADS the list; it never presents
-      the echo as the on-disk directory name.
-
-   9. Hermes is allowlist-pinned to 190 slugs in agents/core/skills/hermes_pin_v2.json.
-      GET /skills/hermes/catalog exposes the local pin (no network fetch), including
-      tier and reference count, so the operator can choose an exact slug.
-
-  10. There is NO route that sets DEV_MODE, so this panel offers no enable/disable control
-      for it. It states the condition and the server-side remedy the backend itself named,
-      and stops.
-
-  11. Import performs OUTBOUND calls to raw.githubusercontent.com and api.github.com
-      (importer.py:217, 302, 552) — stated once, plainly, in a privacy-conscious HUD.
-
-   The remote-import read is unguarded; its write is ADMIN tier. The separate
-   product optional catalog/install is admin tier and installs pending review. */
+/* Remote skill import uses an admin request and immutable, verified source pins.
+   A permitted request stages a quarantined copy; activation needs owner review.
+   Imported sidecars and the marketplace registry remain separate stores. */
 import React, { useState } from 'react';
 import { useApi, arr, mono, asLive, Card, State, Row, Tag, Btn, actA, inpS, Json } from '../panel-kit';
 
@@ -91,9 +10,7 @@ const HERMES_CATALOG_PATH = '/skills/hermes/catalog';
 const OPTIONAL_CATALOG_PATH = '/api/skills/optional/catalog';
 const OPTIONAL_INSTALL_PATH = '/api/skills/optional/install';
 
-/* _safe_slug, mirrored (importer.py:57-65). A LOCAL HINT ONLY: it never blocks the POST
-   and never pre-empts the backend, which reports a bad slug as the same 404 as a missing
-   skill. */
+/* A local naming hint; the server validates the complete import request. */
 const SLUG_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const slugOf = (s: string) => String(s || '').trim().toLowerCase().replace(/ /g, '-');
 
@@ -114,7 +31,7 @@ const refusal = (err: any): { status: number; kind: 'route' | 'guard' | 'none'; 
   const kind: 'route' | 'guard' | 'none' = isObj
     ? (b.error != null ? 'route' : b.detail != null ? 'guard' : 'none')
     : 'none';
-  const raw = kind === 'route' ? b.error : kind === 'guard' ? b.detail : undefined;
+  const raw = isObj ? b.reason ?? b.error ?? b.detail : undefined;
   const text = raw == null
     ? String((err && err.message) || 'request failed')
     : (typeof raw === 'string' ? raw : JSON.stringify(raw));
@@ -138,7 +55,7 @@ const Amber = ({ children }) => (
 );
 
 export function SkillsImportPanel() {
-  /* Unguarded read (skills.py:157 has no Depends). Not admin. */
+  /* Imported-manifest reads use the existing user token. */
   const { d, e, loading, reload } = useApi(IMPORTED_PATH);
   const loaded = !!d && !e;
   const rows: any[] = loaded ? arr(d, 'imported') : [];
@@ -170,83 +87,56 @@ export function SkillsImportPanel() {
     });
   };
 
-  /* Availability of the WRITE half — only ever set from the backend's own answer. */
-  const [avail, setAvail] = useState('unknown');   // unknown | checking | enabled | disabled | blocked
-  const [availMsg, setAvailMsg] = useState('');
-  /* The SHAPE of the refusal that produced a `blocked`, kept so the explanation below can
-     be derived from what actually came back instead of naming one fixed origin. A 503
-     keyed `error` is the route's own orchestrator check (skills.py:135-136, which returns
-     BEFORE the DEV_MODE check) and a `detail` body is a raised HTTPException — those are
-     different causes and must not share a sentence. */
-  const [availFrom, setAvailFrom] = useState<{ status: number; kind: 'route' | 'guard' | 'none' } | null>(null);
-
   const [skill, setSkill] = useState('');
   const [source, setSource] = useState('hermes');  // hermes | openclaw | github
   const [repo, setRepo] = useState('');
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(null);          // {ok:boolean, text:string}
 
-  /* The DEV_MODE probe. No `then`: skill "" can never reach a 200 (skills.py:143-144),
-     so a success branch here would be dead code that only ever lies. */
-  const check = () => {
-    if (avail === 'checking') return;
-    setAvail('checking'); setAvailMsg(''); setAvailFrom(null); setNote(null);
-    actA(IMPORT_PATH, { skill: '' }, undefined, (err) => {
-      const r = refusal(err);
-      if (r.status === 400 && r.kind === 'route') {
-        setAvail('enabled');
-        setAvailMsg(`HTTP 400 · ${r.text} — argument validation was reached, so the DEV_MODE gate was passed`);
-        setAvailFrom({ status: r.status, kind: r.kind });
-      } else if (r.status === 403 && r.kind === 'route') {
-        setAvail('disabled');
-        setAvailMsg(`HTTP 403 · ${r.text}`);
-        setAvailFrom({ status: r.status, kind: r.kind });
-      } else {
-        /* Everything else: a 401/403 keyed `detail` (a raised HTTPException), the route's
-           own 503, a throttle or any other server answer keyed `error`, or a body this
-           panel cannot key at all (the generic 500 handler answers with `message`,
-           web.py:509-514). These are DIFFERENT causes — the text is printed verbatim and
-           the shape is carried so the note below can say which one arrived. */
-        setAvail('blocked');
-        setAvailMsg(`HTTP ${r.status || '?'} · ${r.text}`);
-        setAvailFrom({ status: r.status, kind: r.kind });
-      }
-    });
-  };
-
-  const sourceValue = source === 'github' ? repo : source;
-  const canSubmit = avail === 'enabled' && !busy
-    && !!String(skill).trim() && (source !== 'github' || !!String(repo).trim());
+  const [commit, setCommit] = useState('');
+  const [entryPath, setEntryPath] = useState('');
+  const [digest, setDigest] = useState('');
+  const [referenceText, setReferenceText] = useState('');
+  const referenceLines = referenceText.split('\n').map((line) => line.trim()).filter(Boolean);
+  const references = referenceLines.map((line) => {
+    const [path, content_sha256, ...extra] = line.split(/\s+/);
+    return { path, content_sha256, extra };
+  });
+  const pathOK = (path: string) => path.length <= 512 && /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(path)
+    && path.split('/').every((part) => part !== '.' && part !== '..' && !!part);
+  const generic = source !== 'hermes';
+  const sourceValue = source === 'github' ? repo.trim() : source;
+  const pinnedRepo = source === 'openclaw' ? 'openclaw/skills' : repo.trim();
+  const pinValid = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(pinnedRepo)
+    && /^[a-f0-9]{40}$/.test(commit.trim()) && /^[a-f0-9]{64}$/.test(digest.trim())
+    && pathOK(entryPath.trim()) && /\/(SKILL\.md|manifest\.json|manifest\.ya?ml)$/.test(entryPath.trim())
+    && references.length <= 64 && new Set(references.map((r) => r.path)).size === references.length
+    && references.every((r) => r.extra.length === 0 && pathOK(r.path)
+      && r.path.startsWith(`${entryPath.trim().slice(0, entryPath.trim().lastIndexOf('/'))}/references/`)
+      && /^[a-f0-9]{64}$/.test(r.content_sha256 || ''));
+  const canSubmit = !busy && !!String(skill).trim() && (!generic || pinValid);
 
   const submit = () => {
     if (!canSubmit) return;
     setBusy(true); setNote(null);
-    actA(IMPORT_PATH, { skill, source: sourceValue },
+    const pin = generic ? { repo: pinnedRepo, commit: commit.trim(), entry_path: entryPath.trim(),
+      content_sha256: digest.trim(), references: references.map(({ path, content_sha256 }) => ({ path, content_sha256 })) } : undefined;
+    actA(IMPORT_PATH, { skill, source: sourceValue, ...(pin ? { pin } : {}) },
       (r: any) => {
         setBusy(false);
-        setNote({ ok: true, text: `imported · skill=${r && r.skill != null ? r.skill : '—'} · source=${r && r.source != null ? r.source : '—'}` });
+        if (r?.quarantined !== true || r?.status !== 'installed_review_required') {
+          setNote({ ok: false, text: 'unexpected import response — reload the inventory before retrying' });
+        } else {
+          setNote({ ok: true, text: `staged · skill=${r.skill ?? '—'} · source=${r.source ?? '—'} · kernel ${r.kernel ?? 'unknown'} · pending owner review` });
+        }
         reload();
       },
       (err) => {
         const x = refusal(err);
         setBusy(false);
         setNote({ ok: false, text: `refused · HTTP ${x.status || '?'} · ${x.text}` });
-        /* Availability is re-derived only from answers that actually carry it. */
-        if (x.status === 403 && x.kind === 'route') {
-          setAvail('disabled'); setAvailMsg(`HTTP 403 · ${x.text}`);
-          setAvailFrom({ status: x.status, kind: x.kind });
-        } else if (x.kind === 'guard' || x.status === 503) {
-          setAvail('blocked'); setAvailMsg(`HTTP ${x.status || '?'} · ${x.text}`);
-          setAvailFrom({ status: x.status, kind: x.kind });
-        }
       });
   };
-
-  const availTag = avail === 'enabled' ? null
-    : avail === 'unknown' ? 'DEV_MODE unknown — press CHECK'
-    : avail === 'checking' ? 'checking…'
-    : avail === 'disabled' ? 'DEV_MODE=0 — import disabled by the server'
-    : 'import unavailable — see the server’s answer below';
 
   const badSlug = !!String(skill).trim() && !SLUG_RE.test(slugOf(skill));
   const badRepo = source === 'github' && !!String(repo).trim() && String(repo).indexOf('/') < 0;
@@ -304,46 +194,10 @@ export function SkillsImportPanel() {
         parse is silently skipped server-side, so this list is <b>not</b> a complete inventory of skills/.
       </Note>
 
-      {/* ── 2 · DEV_MODE AVAILABILITY ─────────────────────────────────── */}
-      <H>IMPORT · POST {IMPORT_PATH}</H>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button className="tool-btn" onClick={check} disabled={avail === 'checking'}>
-          {avail === 'checking' ? 'checking…' : 'check availability'}
-        </button>
-        {availTag
-          ? <Tag c="var(--amber)">{availTag}</Tag>
-          : <Tag c="var(--green)">import available</Tag>}
-      </div>
-      <Note>
-        import requires <b>DEV_MODE=1</b> on the server and no route reports that flag, so availability is
-        probed: the check is a <b>real POST</b> with an empty skill name, which the backend refuses at argument
-        validation <i>before</i> importing anything. Nothing is written and nothing is fetched — but the refusal
-        is real and is recorded in the action-failure banner.
-      </Note>
-      {availMsg ? (avail === 'enabled' ? <Good>{availMsg}</Good> : <Fail>{availMsg}</Fail>) : null}
-      {/* WHY it is blocked is read off the refusal that arrived — never asserted. The three
-          shapes below are three different backend causes and are kept apart; the only claim
-          common to all of them is about this panel's own knowledge. */}
-      {avail === 'blocked' && (
-        <Note>
-          {availFrom && availFrom.kind === 'guard' && (availFrom.status === 401 || availFrom.status === 403)
-            ? <>that answer is keyed <code>detail</code>, the shape of a raised HTTPException: on this route the
-                admin-tier guard is what raises one, and it runs before the handler — so the DEV_MODE check was
-                never evaluated. </>
-            : availFrom && availFrom.kind === 'route' && availFrom.status === 503
-              ? <>that answer is keyed <code>error</code> at HTTP 503, which matches the handler’s own
-                  not-initialized refusal — it is returned before the DEV_MODE check, so the flag was not
-                  evaluated. </>
-              : availFrom && availFrom.kind === 'route'
-                ? <>that answer is keyed <code>error</code>, so it is a server-formatted refusal — but not one of
-                    the two this probe can read (the 400 that means the gate was passed, the 403 that means it is
-                    shut). What produced it is not identified here. </>
-                : <>that answer carried neither an <code>error</code> nor a <code>detail</code> key, so there is
-                    nothing in it to attribute — only the status and the client’s own message above. </>}
-          Either way it carries no DEV_MODE evidence, so availability stays unknown here and import stays
-          disabled.
-        </Note>
-      )}
+      <H>IMPORT FOR OWNER REVIEW</H>
+      <Note>Import requires admin access and current installation and network authorization. Each remote
+        file is fetched at an immutable commit and checked against its SHA256 digest. A permitted import
+        stays quarantined until the owner approves it for use.</Note>
 
       {/* ── 3 · IMPORT ────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
@@ -377,32 +231,37 @@ export function SkillsImportPanel() {
           {busy ? 'importing…' : 'import'}
         </button>
       </div>
-      {avail !== 'enabled' && (
-        <Note>
-          the import button stays disabled until the check above returns the backend’s own 400 — this panel does not
-          ship a control it cannot show is reachable, and <b>no route can set DEV_MODE</b>, so there is nothing to
-          toggle here.
-        </Note>
+      {generic && (
+        <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+          <input aria-label="source commit" placeholder="40-character commit SHA" value={commit}
+            onChange={(ev) => setCommit(ev.target.value)} style={inpS} />
+          <input aria-label="source entry path" placeholder="skills/skill-name/SKILL.md" value={entryPath}
+            onChange={(ev) => setEntryPath(ev.target.value)} style={inpS} />
+          <input aria-label="source sha256" placeholder="64-character entry SHA256" value={digest}
+            onChange={(ev) => setDigest(ev.target.value)} style={inpS} />
+          <textarea aria-label="reference pins" placeholder="Optional references: one repository path and SHA256 per line"
+            value={referenceText} onChange={(ev) => setReferenceText(ev.target.value)} style={inpS} />
+          <Note>Supply a reviewed immutable commit, entry path and SHA256. If the skill needs reference
+            files, list each full repository path under its references/ directory with its SHA256.
+            Branches and release tags cannot serve as commit pins.</Note>
+        </div>
       )}
       {badSlug && (
         <Note>
           local hint: “{slugOf(skill)}” is not a valid skill slug (lower-cased, spaces→“-”, matched against
-          [a-z0-9][a-z0-9._-]&#123;0,63&#125;). The backend rejects it with the <i>same</i> 404 it uses for a missing
-          skill, so the answer will not say which. The POST is still allowed.
+          [a-z0-9][a-z0-9._-]&#123;0,63&#125;). The server validates the name before importing.
         </Note>
       )}
       {badRepo && (
         <Note>
-          local hint: owner/repo required — a bare name is fetched as
-          raw.githubusercontent.com/{String(repo)}/main/skills/… and always 404s.
+          local hint: owner/repo required for an immutable source pin.
         </Note>
       )}
       {source === 'hermes' && (
         <Note>
           hermes imports are restricted to a pinned, sha256-verified allowlist (NousResearch/hermes-agent @
-          v2026.8.31; bundled and optional tiers, with reference-file digests). Choose a slug below, then check
-          import availability. The remote import route requires admin access and DEV_MODE; the kernel may refuse
-          the request, and an allowed import remains pending owner review before use.
+          v2026.8.31; bundled and optional tiers, with reference-file digests). Choose a slug below. The import requires current admin and kernel authorization and remains pending
+          owner review before use.
         </Note>
       )}
 
@@ -450,18 +309,10 @@ export function SkillsImportPanel() {
           the only evidence of the on-disk name.
         </Note>
       )}
-      {note && !(note as any).ok && (note as any).text.indexOf('HTTP 404') >= 0 && (
-        <Note>
-          that one 404 string covers a name outside the pin allowlist, an unsafe slug, a GitHub 404, a sha256
-          digest mismatch and a frontmatter identity mismatch. Which one fired is logged server-side and not sent,
-          so it is not guessed here.
-        </Note>
-      )}
-
       <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 10, lineHeight: 1.5, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
         GET {IMPORTED_PATH} is <b>user tier</b> and reads skills/&lt;slug&gt;/manifest.json sidecars ·
-        POST {IMPORT_PATH} is <b>admin tier</b> (X-Admin-Token) and DEV_MODE-gated; it crosses skill.install and lands pending review · optional install is <b>admin tier</b> · a real remote import makes
-        outbound requests to raw.githubusercontent.com and api.github.com. Marketplace registry rows, review status
+        POST {IMPORT_PATH} is <b>admin tier</b> (X-Admin-Token); it crosses skill.install and lands pending review · optional install is <b>admin tier</b> · a real remote import makes
+        outbound requests to raw.githubusercontent.com. Marketplace registry rows, review status
         and rollback are a different store and live in the SKILLS MARKETPLACE panels.
       </div>
     </Card>

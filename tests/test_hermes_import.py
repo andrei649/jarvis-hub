@@ -13,6 +13,7 @@ import copy
 import hashlib
 import json
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -21,6 +22,11 @@ import pytest
 import agents.core.skills.importer as importer_mod
 from agents.core.skills.importer import SkillImporter, SkillImportError
 from agents.core.skills.loader import SkillLoader, _split_frontmatter
+from agents.core.skills.remote_pin import (
+    RemoteImportAuthorization,
+    RemoteImportRefused,
+    RemoteSkillPin,
+)
 
 HERMES_SKILL_MD = """---
 name: github-issues
@@ -134,6 +140,9 @@ class _FakeResponse:
     def json(self):
         return self._json
 
+    async def aiter_bytes(self):
+        yield self.content
+
 
 class _FakeClient:
     """Mimics the slice of httpx.AsyncClient the importer uses."""
@@ -161,14 +170,25 @@ class _FakeClient:
             response.url = url
         return response
 
+    @asynccontextmanager
+    async def stream(self, method, url, **kwargs):
+        assert method == "GET"
+        assert kwargs.get("follow_redirects") is False
+        yield await self.get(url)
+
+
+def _authorization(install_gate=None, egress_gate=None):
+    return RemoteImportAuthorization(
+        install_gate=install_gate or (lambda _payload: "grant"),
+        egress_gate=egress_gate or (lambda *_: None),
+    )
+
 
 @pytest.fixture
 def httpx_harness(monkeypatch):
-    import httpx
-
     _FakeClient.responses = {}
     _FakeClient.requests = []
-    monkeypatch.setattr(httpx, "AsyncClient", _FakeClient)
+    monkeypatch.setattr(SkillImporter, "_remote_client", lambda self, _authorization: _FakeClient())
     return _FakeClient
 
 
@@ -242,6 +262,9 @@ def test_repository_hermes_pin_is_exact_release_inventory():
                              "plan", "session-librarian", "blogwatcher"})
     assert next(e for e in pin.skills if e.slug == "grill-me").tier == "optional"
     assert len(next(e for e in pin.skills if e.slug == "github").files) == 10
+    assert len([RemoteSkillPin(pin.repository, pin.commit, entry.path,
+                               entry.content_sha256, entry.files)
+                for entry in pin.skills]) == 190
     assert hashlib.sha256(importer_mod.HERMES_PIN_PATH.read_bytes()).hexdigest() == PIN_FILE_SHA256
 
 
@@ -287,7 +310,7 @@ def test_frozen_package_carries_optional_catalog_and_v2_pin():
 async def test_import_from_hermes_uses_exact_pin_and_records_provenance(tmp_path, pinned_hermes):
     skills_dir = tmp_path / "installed"
     importer = SkillImporter(skills_dir=str(skills_dir))
-    ok = await importer.import_from_hermes("github-issues")
+    ok = await importer.import_from_hermes("github-issues", authorization=_authorization())
     assert ok is True
 
     expected_url = _raw_url(_pin_entry())
@@ -315,7 +338,7 @@ async def test_import_from_hermes_uses_exact_pin_and_records_provenance(tmp_path
 async def test_imported_skill_is_loader_discoverable(tmp_path, pinned_hermes, monkeypatch):
     skills_dir = tmp_path / "installed"
     importer = SkillImporter(skills_dir=str(skills_dir))
-    assert await importer.import_from_hermes("github-issues") is True
+    assert await importer.import_from_hermes("github-issues", authorization=_authorization()) is True
 
     import agents.core.skills.loader as loader_mod
 
@@ -337,7 +360,7 @@ async def test_list_imported_reports_imported_only(tmp_path, pinned_hermes):
     local.mkdir()
     (local / "SKILL.md").write_text("# Brief\n", encoding="utf-8")
 
-    await importer.import_from_hermes("github-issues")
+    await importer.import_from_hermes("github-issues", authorization=_authorization())
     names = [d["name"] for d in importer.list_imported()]
     assert "github-issues" in names
     assert "Brief" not in names and "brief" not in names
@@ -351,7 +374,7 @@ async def test_unpinned_hermes_skill_returns_false_without_network_or_mutation(
     importer = SkillImporter(skills_dir=str(skills_dir))
     before = _tree_snapshot(skills_dir)
 
-    assert await importer.import_from_hermes("does-not-exist") is False
+    assert await importer.import_from_hermes("does-not-exist", authorization=_authorization()) is False
     assert pinned_hermes.requests == []
     assert _tree_snapshot(skills_dir) == before
 
@@ -483,7 +506,7 @@ async def test_malformed_hermes_pin_fails_before_network_or_mutation(
     _configure_pin(monkeypatch, tmp_path, record)
 
     with pytest.raises(SkillImportError):
-        await importer.import_from_hermes("github-issues")
+        await importer.import_from_hermes("github-issues", authorization=_authorization())
 
     assert httpx_harness.requests == []
     assert _tree_snapshot(skills_dir) == before
@@ -497,7 +520,7 @@ async def test_malformed_hermes_pin_fails_before_network_or_mutation(
         "content-slug",
         "unavailable",
         "network-error",
-        "response-path",
+        "redirect",
     ],
 )
 @pytest.mark.asyncio
@@ -524,11 +547,9 @@ async def test_hermes_integrity_failure_preserves_existing_target(
         response = _FakeResponse(404, url=expected_url)
     elif failure == "network-error":
         response = OSError("offline")
-    elif failure == "response-path":
+    elif failure == "redirect":
         response = _FakeResponse(
-            200,
-            content=content,
-            url=expected_url.replace("github-issues", "other-skill"),
+            302, url=expected_url,
         )
     else:
         response = _FakeResponse(200, content=content, url=expected_url)
@@ -542,7 +563,16 @@ async def test_hermes_integrity_failure_preserves_existing_target(
     (target / "manifest.json").write_bytes(b'{"old": true}')
     before = _tree_snapshot(skills_dir)
 
-    assert await importer.import_from_hermes("github-issues") is False
+    with pytest.raises(RemoteImportRefused) as caught:
+        await importer.import_from_hermes("github-issues", authorization=_authorization())
+    assert caught.value.code == {
+        "tampered-bytes": "digest_mismatch",
+        "invalid-utf8": "invalid_skill",
+        "content-slug": "source_identity_mismatch",
+        "unavailable": "fetch_failed",
+        "network-error": "fetch_failed",
+        "redirect": "source_identity_mismatch",
+    }[failure]
     assert httpx_harness.requests == [expected_url]
     assert _tree_snapshot(skills_dir) == before
 
@@ -596,7 +626,7 @@ async def test_hermes_bulk_sync_iterates_allowlist_without_github_tree(
     skills_dir = tmp_path / "installed"
     importer = SkillImporter(skills_dir=str(skills_dir))
 
-    imported = await importer.sync_source("hermes")
+    imported = await importer.sync_source("hermes", authorization=_authorization())
 
     assert imported == ["github-issues", "pdf"]
     assert httpx_harness.requests == [_raw_url(entry) for entry in entries]
@@ -615,7 +645,8 @@ async def test_hermes_category_sync_filters_pinned_paths_without_tree_listing(
     skills_dir = tmp_path / "installed"
     importer = SkillImporter(skills_dir=str(skills_dir))
 
-    imported = await importer.sync_source("hermes", category="productivity")
+    imported = await importer.sync_source("hermes", category="productivity",
+                                          authorization=_authorization())
 
     assert imported == ["pdf"]
     assert httpx_harness.requests == [_raw_url(entries[1])]
@@ -633,7 +664,8 @@ async def test_hermes_sync_rejects_unsafe_category_without_network_or_mutation(
     importer = SkillImporter(skills_dir=str(skills_dir))
     before = _tree_snapshot(skills_dir)
 
-    assert await importer.sync_source("hermes", category=category) == []
+    assert await importer.sync_source("hermes", category=category,
+                                      authorization=_authorization()) == []
     assert httpx_harness.requests == []
     assert _tree_snapshot(skills_dir) == before
 
@@ -657,7 +689,9 @@ async def test_hermes_bulk_verifies_every_selected_skill_before_any_write(
     importer = SkillImporter(skills_dir=str(skills_dir))
     before = _tree_snapshot(skills_dir)
 
-    assert await importer.sync_source("hermes") == []
+    with pytest.raises(RemoteImportRefused) as caught:
+        await importer.sync_source("hermes", authorization=_authorization())
+    assert caught.value.code == "digest_mismatch"
     assert httpx_harness.requests == [first_url, second_url]
     assert _tree_snapshot(skills_dir) == before
 
@@ -674,7 +708,7 @@ async def test_hermes_bulk_validates_complete_pin_before_any_fetch_or_write(
     before = _tree_snapshot(skills_dir)
 
     with pytest.raises(SkillImportError):
-        await importer.sync_source("hermes")
+        await importer.sync_source("hermes", authorization=_authorization())
 
     assert httpx_harness.requests == []
     assert _tree_snapshot(skills_dir) == before
@@ -709,7 +743,8 @@ async def test_hermes_v2_import_writes_verified_reference_and_tier(
         url = f"https://raw.githubusercontent.com/{PIN_REPOSITORY}/{PIN_COMMIT}/{path}"
         httpx_harness.responses[url] = _FakeResponse(200, content=content, url=url)
     skills_dir = tmp_path / "installed"
-    assert await SkillImporter(str(skills_dir)).import_from_hermes("github") is True
+    assert await SkillImporter(str(skills_dir)).import_from_hermes(
+        "github", authorization=_authorization()) is True
     assert (skills_dir / "github/references/auth.md").read_bytes() == GITHUB_REFERENCE
     manifest = json.loads((skills_dir / "github/manifest.json").read_text())
     assert manifest["source_tier"] == "bundled"
@@ -730,7 +765,9 @@ async def test_hermes_reference_digest_failure_has_no_partial_write(
     skills_dir = tmp_path / "installed"
     importer = SkillImporter(str(skills_dir))
     before = _tree_snapshot(skills_dir)
-    assert await importer.import_from_hermes("github") is False
+    with pytest.raises(RemoteImportRefused) as caught:
+        await importer.import_from_hermes("github", authorization=_authorization())
+    assert caught.value.code == "digest_mismatch"
     assert _tree_snapshot(skills_dir) == before
 
 
@@ -750,7 +787,7 @@ async def test_hermes_v2_unsafe_reference_fails_before_network(
     importer = SkillImporter(str(skills_dir))
     before = _tree_snapshot(skills_dir)
     with pytest.raises(SkillImportError):
-        await importer.import_from_hermes("github")
+        await importer.import_from_hermes("github", authorization=_authorization())
     assert httpx_harness.requests == []
     assert _tree_snapshot(skills_dir) == before
 
@@ -768,7 +805,8 @@ async def test_hermes_v2_optional_root_is_accepted(tmp_path, monkeypatch, httpx_
                           (entry["files"][0]["path"], GITHUB_REFERENCE)]:
         url = f"https://raw.githubusercontent.com/{PIN_REPOSITORY}/{PIN_COMMIT}/{path}"
         httpx_harness.responses[url] = _FakeResponse(200, content=content, url=url)
-    assert await SkillImporter(str(tmp_path / "installed")).import_from_hermes("github")
+    assert await SkillImporter(str(tmp_path / "installed")).import_from_hermes(
+        "github", authorization=_authorization())
 
 
 @pytest.mark.asyncio
@@ -783,7 +821,8 @@ async def test_hermes_category_sync_includes_optional_root(tmp_path, monkeypatch
         url = f"https://raw.githubusercontent.com/{PIN_REPOSITORY}/{PIN_COMMIT}/{path}"
         httpx_harness.responses[url] = _FakeResponse(200, content=content, url=url)
     importer = SkillImporter(str(tmp_path / "installed"))
-    assert await importer.sync_source("hermes", category="software-development") == ["github"]
+    assert await importer.sync_source("hermes", category="software-development",
+                                      authorization=_authorization()) == ["github"]
 
 
 @pytest.mark.asyncio
@@ -801,14 +840,14 @@ async def test_hermes_import_refuses_existing_owner_copy_and_link(tmp_path, monk
     owner.mkdir()
     (owner / "SKILL.md").write_bytes(b"owner copy")
     before = _tree_snapshot(skills_dir)
-    assert await importer.import_from_hermes("github") is False
+    assert await importer.import_from_hermes("github", authorization=_authorization()) is False
     assert _tree_snapshot(skills_dir) == before
     __import__("shutil").rmtree(owner)
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "sentinel").write_bytes(b"safe")
     owner.symlink_to(outside, target_is_directory=True)
-    assert await importer.import_from_hermes("github") is False
+    assert await importer.import_from_hermes("github", authorization=_authorization()) is False
     assert (outside / "sentinel").read_bytes() == b"safe"
 
 
@@ -884,7 +923,7 @@ async def test_verified_hermes_publish_cannot_replace_racing_empty_owner_dir(
         return native_publish(stage, target)
 
     monkeypatch.setattr(importer_module, "_publish_stage_no_replace", racing_publish)
-    assert await importer.import_from_hermes("github") is False
+    assert await importer.import_from_hermes("github", authorization=_authorization()) is False
     target = installed / "github"
     assert target.stat().st_ino == winner["inode"]
     assert target.stat().st_mode & 0o777 == 0o700
@@ -977,41 +1016,37 @@ async def test_optional_pending_review_survives_restart_and_approves_exact_bytes
 
 
 @pytest.mark.asyncio
-async def test_openclaw_nested_import_keeps_existing_mutable_tree_behavior(tmp_path, httpx_harness):
-    tree_url = "https://api.github.com/repos/openclaw/skills/git/trees/main?recursive=1"
+async def test_openclaw_nested_import_uses_exact_commit_without_tree_listing(tmp_path, httpx_harness):
     nested_path = "skills/github/github-issues/SKILL.md"
-    raw_url = f"https://raw.githubusercontent.com/openclaw/skills/main/{nested_path}"
-    httpx_harness.responses[tree_url] = _FakeResponse(
-        200,
-        json_data={
-            "tree": [
-                {"type": "tree", "path": "skills/github"},
-                {"type": "blob", "path": nested_path},
-            ]
-        },
-        url=tree_url,
-    )
+    raw_url = f"https://raw.githubusercontent.com/openclaw/skills/{PIN_COMMIT}/{nested_path}"
     httpx_harness.responses[raw_url] = _FakeResponse(200, content=HERMES_SKILL_BYTES, url=raw_url)
     skills_dir = tmp_path / "installed"
     importer = SkillImporter(skills_dir=str(skills_dir))
+    pin = RemoteSkillPin("openclaw/skills", PIN_COMMIT, nested_path,
+                         hashlib.sha256(HERMES_SKILL_BYTES).hexdigest())
 
-    assert await importer.import_from_openclaw("github-issues") is True
-    assert tree_url in httpx_harness.requests
-    assert raw_url in httpx_harness.requests
+    assert await importer.import_from_openclaw(
+        "github-issues", pin=pin, authorization=_authorization()) is True
+    assert httpx_harness.requests == [raw_url]
     sidecar = json.loads(
         (skills_dir / "github-issues" / "manifest.json").read_text(encoding="utf-8")
     )
     assert sidecar["source"] == "openclaw"
-    assert "source_commit" not in sidecar
+    assert sidecar["source_commit"] == PIN_COMMIT
+    assert (skills_dir / "github-issues/PENDING_REVIEW").is_file()
 
 
 @pytest.mark.asyncio
-async def test_generic_github_flat_import_keeps_existing_behavior(tmp_path, httpx_harness):
-    raw_url = "https://raw.githubusercontent.com/example/tools/main/skills/pdf/SKILL.md"
+async def test_generic_github_flat_import_keeps_exact_pinned_artifact(tmp_path, httpx_harness):
+    raw_url = f"https://raw.githubusercontent.com/example/tools/{PIN_COMMIT}/skills/pdf/SKILL.md"
     httpx_harness.responses[raw_url] = _FakeResponse(200, content=PDF_SKILL_BYTES, url=raw_url)
     skills_dir = tmp_path / "installed"
     importer = SkillImporter(skills_dir=str(skills_dir))
 
-    assert await importer.import_from_github("example/tools", "pdf") is True
+    pin = RemoteSkillPin("example/tools", PIN_COMMIT, "skills/pdf/SKILL.md",
+                         hashlib.sha256(PDF_SKILL_BYTES).hexdigest())
+    assert await importer.import_from_github(
+        "example/tools", "pdf", pin=pin, authorization=_authorization()) is True
     assert httpx_harness.requests == [raw_url]
     assert (skills_dir / "pdf" / "SKILL.md").read_text(encoding="utf-8") == PDF_SKILL_MD
+    assert (skills_dir / "pdf/PENDING_REVIEW").is_file()

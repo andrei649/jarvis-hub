@@ -1,0 +1,132 @@
+{
+  "checkpoint": "owner-paused-2026-11-04",
+  "recorded_at": "2026-11-04T09:27:12.845355+00:00",
+  "publication": "existing draft PR 1341; no ready, merge, deploy or schedule activation",
+  "source_base": "446cc7cb626d5b2a2093b15c377733cb313bb6b3",
+  "source_state": "local changes above base; publication commit identified by Git and PR metadata",
+  "counts": {
+    "frozen_inventory": 697,
+    "recorded": {
+      "partial": 432,
+      "equivalent": 152,
+      "missing": 113
+    },
+    "conservative": {
+      "equivalent": 49,
+      "partial": 248,
+      "missing": 105,
+      "excluded": 0,
+      "needs_review": 295
+    },
+    "impact": {
+      "pending": 295,
+      "none": 380,
+      "accepted": 22
+    }
+  },
+  "new_capabilities_completed_before_H027": [
+    "H655",
+    "H022",
+    "H334",
+    "H492"
+  ],
+  "H027": "implemented and focused reviewed; no ledger promotion; impact review and current full backend gate unfinished",
+  "current_checks": {
+    "H027_related_integration": {
+      "local_artifact": "h027-combined-settled-junit.xml",
+      "sha256": "5c11ccbce8eb34c8b513a902dc9be3b99e816867d55d0ac437c368a5f6cfe0d1",
+      "tests": 407,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "accounting_current": {
+      "local_artifact": "pause-accounting-junit.xml",
+      "sha256": "c9b8ab069194abaeb6e20b4790355cd62365ef5d190a9868e0f5ebc7ffc3b6f8",
+      "tests": 246,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "dependency_retention": {
+      "local_artifact": "h027-dependency-retention-focused-junit.xml",
+      "sha256": "3baa2a58353d17dbf00b05b09b559d496e4cf147c478f4393a7a566e6c65ef49",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "API_auth_typegen": {
+      "local_artifact": "h027-api-parity-junit.xml",
+      "sha256": "41863f6463ea9923cf403adab6a989a28677d1406f9569144b173d48e6de4c02",
+      "tests": 52,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "HUD_parity": {
+      "local_artifact": "h027-ui-parity-corrected-junit.xml",
+      "sha256": "73b8c2a6ee312aa269e2043ad59ca536cd38bf69b2bf1daaa6e26083f85d5ce4",
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "static_checks": {
+    "ruff": {
+      "command": ".venv/bin/python -m ruff check agents scripts tests",
+      "exit_code": 0,
+      "local_log": "pause-ruff-final.log",
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    "bandit": {
+      "command": "isolated security Python -m bandit -r agents scripts -q -b .bandit-baseline.json",
+      "exit_code": 0,
+      "local_log": "pause-bandit.log",
+      "sha256": "59b87302005d54e371d2e83fb9b822ee6883e63331cea8512abcb4d909671acf"
+    }
+  },
+  "earlier_complete_backend": {
+    "started_at": "2026-11-04T07:28:50.589179+00:00",
+    "finished_at": "2026-11-04T07:41:59.992659+00:00",
+    "head_sha": "446cc7cb626d5b2a2093b15c377733cb313bb6b3",
+    "worktree_uncommitted": true,
+    "source_fingerprint": "e149af8fb883f519638267ad2df39e6fa350f4be1e11bf24b4b9c8d67d315a1f",
+    "assessment_sha256": "fa1786248ea5011df302d0ace98d2caf31ac41771c518137772c2b4351639fc9",
+    "expected_collected": 31713,
+    "status": "passed",
+    "exit_code": 0,
+    "source_unchanged": true,
+    "assessment_unchanged": true,
+    "count_matches": true
+  },
+  "earlier_backend_results": [
+    {
+      "tests": "31713",
+      "failures": "0",
+      "errors": "0",
+      "skipped": "119",
+      "time": "782.310"
+    }
+  ],
+  "earlier_backend_scope": "H492 snapshot only; predates H027 and later accounting fixes",
+  "collected_inventory": {
+    "backend": 31825,
+    "frontend": 2805,
+    "mobile": 363
+  },
+  "other_completed_scoped_checks": [
+    "H027 actual 12-check preflight",
+    "H027 tsc and production build",
+    "H492 complete frontend 2805 passed; frontend runtime sources unchanged by H027"
+  ],
+  "unexecuted": [
+    "complete H027 current-source backend",
+    "final H027 evidence patch application and reconciliation",
+    "new publication commit CI",
+    "post-merge/current-main acceptance",
+    "live-provider and native-device acceptance"
+  ],
+  "preservation": "Full logs, source snapshots, v2 exact backup and pending review drafts remain local under .git/codex-local/workflow-20261104; do not commit caches or private data."
+}

@@ -1,5 +1,18 @@
 # Hermes ledger: adversarial audit of the `equivalent` rows (ultracode)
 
+> **Inactive 2026-11-04: historical bucket prompt, do not execute.** The active
+> local Hermes campaign follows [the canonical workflow](../../hermes/autonomous-development-objective.md)
+> and [cumulative handoff](../../hermes/CAMPAIGN_HANDOFF.md), verified against the
+> current checkout/SHA. Integrate the current batch first; finish the frozen 697
+> contracts using current bounded queries and concrete impact evidence. No stage,
+> commit, push, merge, deploy, PR update, paid activation or schedule reactivation.
+> The 2026-09-28 branch, bucket, protected-path and stale-citation instructions
+> below are dated receipts, not current authority. Preserve owner-only controls.
+
+<details>
+<summary>2026-09-28 bucket procedure — inactive archive</summary>
+
+
 You are working in `andrei649/jarvis-hub` on branch `claude/cto-session-recovery-qinvkg` (draft PR #1207).
 
 **Goal.** Every row that the ledger calls `equivalent` must be proven equivalent at HEAD. If you cannot prove it, downgrade it honestly. A lower headline is an acceptable result. An `equivalent` you cannot prove is not acceptable. In this bucket the headline can only stay the same or go down.
@@ -246,3 +259,5 @@ Other sessions push to this branch in parallel: the missing, partial and needs_r
   - owner decisions needed, citing the `OWNER_TASKS` references;
   - known gaps left open;
   - the new headline (`equivalent/697`) compared with the starting one, and why it moved.
+
+</details>

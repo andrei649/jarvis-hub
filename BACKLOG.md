@@ -2726,6 +2726,56 @@
   Headline remains 148/697 with `needs_review` 0. Complete React/legacy/mobile suites pass
   2,803/246/363 cases; the final checkpoint collects 31,515 backend cases, with its fresh complete
   run tracked separately from the earlier batch-4 result. SEC-B6 post-merge acceptance stays open.
+  **Workflow campaign (2026-11-04, local/uncommitted):** the canonical execution workflow now
+  separates recorded implementation, impact/freshness and required external acceptance. The
+  explicit v3 migration preserves every frozen ID and exactly the previous 148 credited IDs;
+  it grants no new credit. H655 now completes its four-clause contributor contract with the
+  subsystem/source/doc map, current setup/security/platform guidance and loadable local review
+  checklists, supported by the real bounded development preflight. Its previous partial review
+  and source receipts remain in history. Recorded headline 148 → 149/697; this local delivery
+  is not on main and does not claim current full-suite, live-provider or native acceptance.
+  H022's complete governed dependency-audit contract is the next frozen implementation batch.
+  **H022 delivery (2026-11-04, local/uncommitted):** bare and explicit security audit now
+  enumerate installed interpreter distributions, managed declared-extension pins and exact
+  pinned MCP packages, and query OSV through an admin hub route with a per-request kernel
+  grant, shared SSRF/TLS transport and durable egress. Missing metadata, skipped surfaces,
+  mutable references and offline results stay explicit; known findings remain visible on
+  incomplete runs. Root's actual CLI/client/API/kernel integration reopens the egress store
+  after findings and an owner halt. The full frozen source contract is equivalent; external
+  undeclared files do not become a plugin installation/discovery claim. Recorded headline
+  149 → 150/697. The current complete backend passes 31,486 cases with 119 existing skips
+  (31,605 collected, zero failures/errors); frontend/type/build and generated/status/security
+  checks pass. Live OSV/no-proxy host and native/production acceptance remain separate pending
+  checks; inherited impact unknowns retain their pending state.
+
+  **H334 delivery (2026-11-04, local/uncommitted):** the admin Skills Import UI/API now
+  requires an immutable generic source pin or the server-owned Hermes pin, current
+  `skill.install` decisions before fetch and staging, and mandatory shared SSRF/TLS/egress
+  admission. Exact entry/reference bytes are verified and remain quarantined for separate
+  fingerprint-bound owner approval even on grant/queue. Actual API/importer/kernel tests
+  prove halt/origin refusal, safe-mode and persisted load-set exclusion; the governed local
+  migration CLI remains intact. Recorded totals are 151 equivalent, 433 partial and 113
+  missing; sixteen old impact unknowns remain. Only H334 adds functional credit in this
+  batch. Focused integration, full UI, type/build, preflight and security checks pass;
+  the complete frozen backend passes 31,537 cases with 119 existing skips (31,656 collected,
+  zero failures/errors), with source/input/count verification. Live upstream and native
+  platform acceptance remain separate. HEQ-1 remains open for all 697 frozen contracts;
+  H349 stays partial: bounded full-contract preparation also found view-as-use and a real
+  sync opt-in consumer owed with H345. H492 is the next independent candidate under review;
+  current integration still finishes first.
+
+  **H492 delivery (2026-11-04, local/uncommitted):** owner
+  `security.website_blocklist` settings now govern shared HTTP, browser navigation and
+  subresources, and real web search/extraction. Domain/glob/shared-file rules have bounded
+  profile caches and named unavailable refusal; owner edits invalidate a warm client.
+  Cross-origin redirect headers are filtered after auth/cookie processing, and explicit
+  CGNAT/RFC2544 plus translated IPv4 guards close the recorded address gaps. The complete
+  frozen functional contract is implemented; only H492 adds recorded credit (152
+  equivalent, 432 partial, 113 missing). Combined regressions pass 364/364, full UI passes
+  2,805/2,805, type/build/security and twelve-check local preflight pass. The frozen H492
+  backend passes 31,594 cases with 119 existing skips (31,713 collected, zero failures or
+  errors), with exact source/input/count checks. Live/native acceptance and sixteen older
+  unknown impacts remain unresolved. HEQ-1 stays open; H027's full curator contract proceeds.
 
 ## Darwin feature absorption — 2026-09-09
 

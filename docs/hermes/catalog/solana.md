@@ -18,8 +18,8 @@ None in this pin.
 ## Owner path in Nerva
 
 Open **HUD → Skills Import**, choose the exact name `solana` from the pinned
-catalog, and request import. Remote import requires admin access and `DEV_MODE=1`;
-the `skill.install` kernel decision can refuse it. An allowed import writes a
+catalog, and request import. Remote import requires current admin, `skill.install`
+and governed network authorization. An allowed import writes a
 `PENDING_REVIEW` copy. The owner must inspect its pending detail and approve the
 matching source fingerprint separately before executable activation. The upstream
 tier above describes the source repository, not Nerva's default skill bundle.

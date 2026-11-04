@@ -9,6 +9,20 @@ H696 adds bundled/optional catalog tiers and explicit installation of optional
 repository skills into quarantine. Native aggregate usage and native skill
 installation controls remain gaps; integration acceptance is still pending.
 
+H334 local import update (2026-11-04): Skills Import uses current admin and
+kernel admission, with immutable commit, entry and reference digest fields for
+generic sources. The built-in Hermes selection uses its server-owned pin.
+Grant and queue responses identify a quarantined copy awaiting separate owner
+review. No native install control or live upstream acceptance is implied.
+
+H027 local candidate (2026-11-04): `nerva curator` and the admin `/api/curator`
+domain expose lifecycle inspection, exact reviewed owner requests and recovery.
+The existing action approval inbox decides curator cards; the CLI prepares their
+targets and reports pending until approval actually applies them. There is no
+dedicated curator browser panel or native control. Dry-run requests do not queue
+or mutate. Full H027 integration is still pending; no new capability credit is
+claimed from wiring alone.
+
 SEC-B6 local client/security source (2026-11-03): twelve content-bearing GETs
 now require user access: `/api/oracle/status`, `/agents`, the three
 `/api/eval/datasets` list/runs/compare reads, `/learning/stats`,
@@ -442,6 +456,14 @@ see `mobile/docs/h1825-briefing-wall.md` and `mobile/docs/h1825-briefing-sources
   ([`OWNER_TASKS.md`](../OWNER_TASKS.md) §GitHub settings).
 
 ## 10. Parity re‑audit — 2026‑06‑10 (backend moved ahead again)
+
+H022 host dependency audit (local, 2026-11-04): `nerva security [audit]` inventories
+the invoking host, then uses admin `POST /api/security/dependencies/audit` for
+kernel-mediated OSV lookup. This CLI contract intentionally has no HUD/native
+inventory panel: those clients run in different environments. Offline, skipped
+and incomplete coverage are reported separately from a completed audit. The
+endpoint is classified as machine-facing in the parity gate; no live OSV or native
+acceptance follows from the repository's synthetic transport tests.
 
 The 2026‑06‑09 backend waves (PR #178/#180) shipped new surfaces **with no HUD controls**, on top of
 the still‑open depth items above. Snapshot: backend ≈299 routes; HUD v2 actively calls ~50, partially

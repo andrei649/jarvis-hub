@@ -20,6 +20,17 @@ references; `github` consolidated, `grill-me` optional). The four
 Anthropic-terms productivity subtrees and historical `blogwatcher` are excluded.
 These counts are a local index measurement, not an inference throughput result.
 
+**H334 local implementation, 2026-11-04:** Remote imports no longer require a
+development flag. The admin request crosses `skill.install` before fetching and
+again before staging; each network request uses mandatory kernel authorization
+and the shared DNS/IP-pinned transport. Hermes uses its server-owned pin. Generic
+GitHub and OpenClaw imports require an explicit immutable commit, entry path and
+SHA256, plus digests for any reference files. The HUD collects these fields.
+Every allowed import remains `PENDING_REVIEW`; a grant or queue cannot activate
+it. The separate local migration CLI retains its source-hash check and kernel
+admission. Offline regression results do not establish live upstream or native
+platform acceptance; see the cumulative campaign handoff for the current gate.
+
 The [generated pinned source catalog](hermes/catalog/README.md) has one page
 for each of the 190 eligible upstream skills, including moved and newly added
 names. Each page records the upstream tier, exact release/commit/tree, SKILL.md

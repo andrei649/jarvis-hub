@@ -1,5 +1,18 @@
 # Hermes ledger: re-assess every `needs_review` row (records only)
 
+> **Inactive 2026-11-04: historical bucket prompt, do not execute.** The active
+> local Hermes campaign follows [the canonical workflow](../../hermes/autonomous-development-objective.md)
+> and [cumulative handoff](../../hermes/CAMPAIGN_HANDOFF.md), verified against the
+> current checkout/SHA. Integrate the current batch first; finish the frozen 697
+> contracts using current bounded queries and concrete impact evidence. No stage,
+> commit, push, merge, deploy, PR update, paid activation or schedule reactivation.
+> The 2026-09-28 branch, bucket, protected-path and stale-citation instructions
+> below are dated receipts, not current authority. Preserve owner-only controls.
+
+<details>
+<summary>2026-09-28 bucket procedure — inactive archive</summary>
+
+
 You coordinate a records-only pass over the Hermes capability ledger in `andrei649/jarvis-hub`. You work on branch `claude/cto-session-recovery-qinvkg`, which has draft PR #1207. Up to three other sessions may run at the same time on this branch, handling the `missing`, `partial` and `equivalent` rows. So assume the branch moves under you.
 
 **Goal.** Every row whose live status is `needs_review` ends up with a current, truthful assessment, or is recorded as blocked with a reason. The bucket has two parts:
@@ -274,3 +287,5 @@ Rank the plan as A (batched per file) → B → C → D (S/M before L/XL) → E.
 - **Documented known gaps.**
 - **The new headline:** `python3.12 scripts/hermes_status.py summary`, before → after.
 - **Links:** the commit SHAs you pushed and the #1207 comment.
+
+</details>

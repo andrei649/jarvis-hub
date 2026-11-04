@@ -1,6 +1,11 @@
 # CLAUDE.md
 
 Instrucțiunile pentru asistenți sunt în **`AGENTS.md`** (sursă unică, partajată cu opencode și Gemini).
+Pentru campania Hermes locală curentă, citește fluxul canonic din
+**`docs/hermes/autonomous-development-objective.md`** și checkpointul cumulativ din
+**`docs/hermes/CAMPAIGN_HANDOFF.md`**; verifică SHA-ul și starea checkout-ului.
+Integrează lotul curent înainte de alt contract din cele 697. Nu face stage,
+commit, push, merge, deploy, actualizări de PR sau reactivări de programări.
 Arhitectura e în **`NERVA.md`**; harta de navigare pentru AI (entry points, lifecycle, index de module,
 rețete) e în **`docs/ARCHITECTURE.md`** — începe acolo ca să găsești rapid unde trăiește codul.
 
@@ -19,10 +24,10 @@ când **scrii** în el, și atunci sari la secțiunea pe care ți-o dă `section
 (1,4 MB JSON) are aceeași regulă: `scripts/ledger.py stats | clusters | list | show`.
 (Include secțiunea **Competitive-Gap Roadmap** — cele ~48 teme din planul de produs, cu status DONE/PARTIAL/
 SEED/MISSING; analiza de cod e în `docs/research/2026-06-21-roadmap-vs-codebase-audit.md`.)
-**Întotdeauna când mergi (sau tocmai s-a mergeuit) un PR → reîmprospătează `BACKLOG.md`** în aceeași
-mișcare: bifează `✅` itemii livrați + actualizează contorul de teste. De preferat în *același* PR
-(înainte de merge); dacă PR-ul e deja mergeuit, fă un commit/PR de catch-up imediat. (Regula completă:
-`AGENTS.md` → „BACKLOG sync — în același commit cu merge-ul".)
+**La o publicare autorizată ulterior**, sincronizează BACKLOG și dovezile în
+unitatea de livrare. Campania locală curentă nu autorizează merge sau un PR de
+catch-up; verifică și rândurile din tabele prin unealta de interogare, nu doar
+numărul de checkboxuri.
 Când se discută "viziune"/"north star"/"moonshot"/"strategie"/"suntem pe drumul bun?" → citește `MOONSHOT.md`
 (north star: viziune, principii non-negociabile, phase gates, ritmul de lucru și harta documentelor).
 Când se discută **"Nerva"/brand/sub-branduri (Cortex/Atlas/Synapse/Vision/Ultron)/"AI OS"/piloni de
@@ -33,7 +38,8 @@ S1–S8 vs Hermes; orizonturile ORIZONT 27–33 în `BACKLOG.md`). MOONSHOT.md r
 scurt. **Nerva = brandul de produs (rename-ul în cod/suprafețe de produs executat 2026-07-19); jarvis-hub = codename-ul repo-ului/engine-ului până la redenumirea repo-ului GitHub (owner).**
 Când se discută **roadmap 1.x → 2.0 / "ce urmează după 1.0" / milestone-uri / "developerul continuă singur"** →
 citește `docs/NERVA_2_ROADMAP.md` (secvența de release-uri 1.1.0 … 2.0.0 cu exit gates, livrarea 1.1.0, lane-ul owner-ului,
-bara Hermes S1–S8) și rulează `docs/prompts/BACKLOG_DRIVER.md` pentru un developer autonom (ordinea de pick, gates, stop conditions).
+bara Hermes S1–S8). `docs/prompts/BACKLOG_DRIVER.md` este o procedură istorică,
+nu ordinea activă de alegere pentru campania Hermes.
 Taskurile care țin **doar de owner** (hardware, GitHub settings, decizii) → `docs/OWNER_TASKS.md`.
 Când se discută **metrici/KPI/măsurarea north-star** (accepted actions, interrupt/reject rate, %-local, p95) → `docs/METRICS.md`
 (definiții + endpoint `GET /api/metrics/north-star`). Retrospectiva anuală (status, învățăminte, gap-uri) → `docs/REVIEW_YEAR_ONE.md`.

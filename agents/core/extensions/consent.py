@@ -157,6 +157,19 @@ class ExtensionConsentStore:
         grants = self._read()
         if len(grants) >= MAX_EXTENSIONS and manifest.id not in grants:
             raise ValueError("extension_capacity")
+        # Both the CLI and HTTP owner paths arrive here. Persist the exact Python
+        # pins as an auditable declared candidate before consent becomes durable;
+        # this metadata grants no authority and does not claim package installation.
+        from .manifest_catalog import ExtensionManifestCatalog
+
+        catalog = ExtensionManifestCatalog(self._path.with_name("manifest_catalog.json"),
+                                           consent_path=self._path)
+        try:
+            catalog.record(manifest)
+        except ValueError:
+            raise
+        except Exception:
+            raise ValueError("manifest_catalog_unavailable") from None
         digest = declared_digest(manifest)
         row = {"declared_digest": digest, "version": manifest.version,
                "declarations": sorted(_surface(manifest))}

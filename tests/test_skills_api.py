@@ -1,7 +1,7 @@
 """HTTP integration tests for skills endpoints.
 
 Covers:
-  POST /skills/import              — DEV_MODE gate, source routing, 404 not-found
+  POST /skills/import              — admin, immutable pin, source routing, 404 not-found
   GET  /skills/imported            — list imported skills
   GET  /api/skills/marketplace     — list marketplace catalogue (admin)
   POST /api/skills/marketplace/publish  — publish a skill (admin)
@@ -28,11 +28,48 @@ _TOKEN = "skills-test-token"
 _HDR = {"X-Admin-Token": _TOKEN}
 
 
+async def _admitted_remote_import(*args, **kwargs):
+    from agents.core.skills.remote_pin import RemoteImportRefused
+
+    auth = kwargs["authorization"]
+    if "entry" in kwargs:
+        pin, entry = kwargs["pin"], kwargs["entry"]
+        repo, commit, path, digest, files, source = (
+            pin.repository, pin.commit, entry.path, entry.content_sha256, entry.files, "hermes"
+        )
+    else:
+        pin = kwargs["pin"]
+        repo, commit, path, digest, files = (
+            pin.repo, pin.commit, pin.entry_path, pin.content_sha256, pin.references
+        )
+        source = "openclaw" if len(args) == 1 else repo.rsplit("/", 1)[-1]
+    payload = {"kind": "skill.install", "action": "import", "name": args[-1],
+               "source": source, "pinned": True, "requested_by": "owner", "risk_tier": 3,
+               "approval_mode": "owner", "quarantined": True, "source_repository": repo,
+               "source_commit": commit, "commit": commit, "source_path": path,
+               "content_sha256": digest,
+               "files": [{"path": file_path, "content_sha256": file_digest} for file_path, file_digest in files]}
+    for index in range(2):
+        verdict = auth.install_gate(payload)
+        if verdict not in {"grant", "queue"}:
+            raise RemoteImportRefused("install_denied" if verdict == "deny" else "authorization_unavailable")
+        if index == 0 and auth.egress_gate("skill_import", "GET", "https://raw.githubusercontent.com/pinned",
+                                           "raw.githubusercontent.com") is not None:
+            raise RemoteImportRefused("egress_denied")
+    return True
+
+
+def _grant_remote_kernel(monkeypatch):
+    from agents.core.kernel import Decision, Verdict, binding
+
+    monkeypatch.setattr(binding, "make_action_kernel", lambda orch: lambda action: Decision(Verdict.GRANT))
+
+
 def _mock_orch() -> MagicMock:
     m = MagicMock()
-    m.skill_importer.import_from_hermes = AsyncMock(return_value=True)
-    m.skill_importer.import_from_openclaw = AsyncMock(return_value=True)
-    m.skill_importer.import_from_github = AsyncMock(return_value=True)
+    m.skill_importer.import_from_hermes = AsyncMock(side_effect=_admitted_remote_import)
+    m.skill_importer.import_from_openclaw = AsyncMock(side_effect=_admitted_remote_import)
+    m.skill_importer.import_from_github = AsyncMock(side_effect=_admitted_remote_import)
     m.skill_importer.list_imported = MagicMock(return_value=["calendar", "spotify"])
     m.skills.discover = MagicMock()
     m.marketplace.list_skills = MagicMock(return_value=[
@@ -54,14 +91,17 @@ def test_skills_import_no_orch_returns_503(monkeypatch):
     assert resp.status_code == 503
 
 
-def test_skills_import_blocked_without_dev_mode(monkeypatch):
+def test_skills_import_without_kernel_refuses_even_with_admin_and_dev_off(monkeypatch):
     monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
     monkeypatch.setattr(web, "orch", _mock_orch())
     monkeypatch.setattr(web, "DEV_MODE", False)
+    from agents.core.kernel import binding
+
+    monkeypatch.setattr(binding, "make_action_kernel", lambda orch: None)
     client = TestClient(web.app)
-    resp = client.post("/skills/import", json={"skill": "test"}, headers=_HDR)
-    assert resp.status_code == 403
-    assert "DEV_MODE" in resp.json()["error"]
+    resp = client.post("/skills/import", json={"skill": "github"}, headers=_HDR)
+    assert resp.status_code == 503
+    assert resp.json()["reason"] == "authorization_unavailable"
 
 
 def test_skills_import_missing_skill_name_returns_400(monkeypatch):
@@ -78,6 +118,7 @@ def test_skills_import_hermes_success(monkeypatch):
     monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
     monkeypatch.setattr(web, "orch", _mock_orch())
     monkeypatch.setattr(web, "DEV_MODE", True)
+    _grant_remote_kernel(monkeypatch)
     client = TestClient(web.app)
     resp = client.post("/skills/import", json={"skill": "github", "source": "hermes"}, headers=_HDR)
     assert resp.status_code == 200
@@ -103,8 +144,12 @@ def test_skills_import_openclaw_source(monkeypatch):
     monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
     monkeypatch.setattr(web, "orch", _mock_orch())
     monkeypatch.setattr(web, "DEV_MODE", True)
+    _grant_remote_kernel(monkeypatch)
     client = TestClient(web.app)
-    resp = client.post("/skills/import", json={"skill": "calc", "source": "openclaw"}, headers=_HDR)
+    resp = client.post("/skills/import", json={"skill": "calc", "source": "openclaw",
+                                               "pin": {"repo": "openclaw/skills", "commit": "a" * 40,
+                                                       "entry_path": "skills/calc/SKILL.md",
+                                                       "content_sha256": "b" * 64}}, headers=_HDR)
     assert resp.status_code == 200
     assert resp.json()["source"] == "openclaw"
 
@@ -113,8 +158,12 @@ def test_skills_import_github_source(monkeypatch):
     monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
     monkeypatch.setattr(web, "orch", _mock_orch())
     monkeypatch.setattr(web, "DEV_MODE", True)
+    _grant_remote_kernel(monkeypatch)
     client = TestClient(web.app)
-    resp = client.post("/skills/import", json={"skill": "notes", "source": "github.com/user/repo"}, headers=_HDR)
+    resp = client.post("/skills/import", json={"skill": "notes", "source": "user/repo",
+                                               "pin": {"repo": "user/repo", "commit": "a" * 40,
+                                                       "entry_path": "skills/notes/SKILL.md",
+                                                       "content_sha256": "b" * 64}}, headers=_HDR)
     assert resp.status_code == 200
 
 
@@ -141,34 +190,36 @@ def test_remote_skill_import_requires_admin_even_with_user_access(monkeypatch):
     mock.skill_importer.import_from_hermes.assert_not_awaited()
 
 
-def test_remote_hermes_kernel_denial_prevents_fetch_and_install(monkeypatch):
+def test_remote_hermes_kernel_denial_prevents_discovery(monkeypatch):
     mock = _mock_orch()
     monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
     monkeypatch.setattr(web, "orch", mock)
     monkeypatch.setattr(web, "DEV_MODE", True)
-    monkeypatch.setattr(skills_router, "_remote_import_gate", lambda payload: "deny")
+    from agents.core.kernel import Decision, Verdict, binding
+
+    monkeypatch.setattr(binding, "make_action_kernel", lambda orch: lambda action: Decision(Verdict.DENY))
     response = TestClient(web.app).post(
         "/skills/import", json={"skill": "github", "source": "hermes"}, headers=_HDR
     )
     assert response.status_code == 403
-    assert response.json()["reason"] == "kernel_denied"
-    mock.skill_importer.import_from_hermes.assert_not_awaited()
+    assert response.json()["reason"] == "install_denied"
+    mock.skills.discover.assert_not_called()
 
 
-def test_remote_hermes_gate_binds_pin_and_files(monkeypatch):
+def test_remote_hermes_passes_server_pin_and_authorization_to_importer(monkeypatch):
     mock = _mock_orch()
     monkeypatch.setattr(web, "ADMIN_TOKEN", _TOKEN)
     monkeypatch.setattr(web, "orch", mock)
     monkeypatch.setattr(web, "DEV_MODE", True)
-    seen = []
-    monkeypatch.setattr(skills_router, "_remote_import_gate", lambda payload: seen.append(payload) or "grant")
+    _grant_remote_kernel(monkeypatch)
     response = TestClient(web.app).post(
         "/skills/import", json={"skill": "github", "source": "hermes"}, headers=_HDR
     )
     assert response.status_code == 200
-    assert seen[0]["pinned"] is True
-    assert seen[0]["commit"] == "29112bef099274229cadff79cdff7bf7b99c4b77"
-    assert len(seen[0]["files"]) == 10
+    kwargs = mock.skill_importer.import_from_hermes.await_args.kwargs
+    assert kwargs["pin"].commit == "29112bef099274229cadff79cdff7bf7b99c4b77"
+    assert len(kwargs["entry"].files) == 10
+    assert kwargs["authorization"] is not None
 
 
 def _optional_route_fixture(monkeypatch, tmp_path, verdict="queue"):
