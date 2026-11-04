@@ -485,7 +485,11 @@ def unusable_blocked_entries() -> tuple[str, ...]:
 
 
 def blocked_host(url_or_host: object) -> bool:
-    """True when *url_or_host* is an operator-disallowed site or a subdomain of one."""
+    """True when an owner rule blocks this host; unreadable policy also narrows."""
+    from ..security.website_policy import website_refusal
+
+    if website_refusal(str(url_or_host or "")) is not None:
+        return True
     domains = blocked_domains()
     if not domains:
         return False

@@ -1,51 +1,31 @@
-"""dep_audit.py — H022: audit installed dependencies for known vulnerabilities.
+"""H022 dependency inventory and OSV audit for installed, declared, and MCP pins.
 
-The SBOM (``scripts/gen_sbom.py``) has been generated for months and checked against
-nothing — no code under ``agents/`` or ``scripts/`` consulted a vulnerability database
-(the only ``osv|vulnerab`` matches were prose in ``agents/ultron/SOUL.md``). CI runs
-``pip-audit`` over the *lockfile*, which is the right gate for a release and the wrong
-question for an owner: they want to know whether the interpreter that is actually
-running Nerva, on this box, carries something with a public advisory. This module
-answers that, from three surfaces it names explicitly:
+Adapted parser and audit patterns from hermes_cli/security_audit.py and
+hermes_cli/subcommands/security.py at 59b2aeef6c7a (Copyright 2025
+NousResearch); see the adjacent dep_audit.LICENSE.
 
-* ``installed`` — every distribution ``importlib.metadata`` can see in this interpreter;
-* ``extension`` — the exact Python pins an extension descriptor declares
-  (``requires.python`` in ``agents/core/extensions/manifest.py``), for descriptors the
-  caller names — the acquired-package catalog needs the running hub and is not read here;
-* ``mcp`` — on Nerva, owner-configured stdio commands (Streamable HTTP only behind an
-  owner flag; ``agents/core/mcp/client.py``). Nerva installs no server packages and this
-  module does not resolve a command line to a package version, so the surface is listed
-  as *not audited*, with that reason, never omitted.
+The CLI enumerates this interpreter's distributions, owner-declared extension
+manifests, and exact pinned npx/uvx package refs in saved MCP commands. Catalog
+entries are declarations, never proof that an extension is installed or active.
+Unpinned or unsupported MCP commands are named as unaudited. Missing legacy
+catalog metadata is reported as unavailable coverage, never silently clean.
 
-Two decisions are load-bearing and each has a test:
-
-* **An advisory whose severity OSV does not state is ``unknown`` and fails every
-  ``fail_on`` threshold.** A CVSS vector is not turned into a level here — computing a
-  score this module cannot vouch for would let an unrated advisory pass a bar it never
-  cleared. The same holds for an advisory whose detail could not be fetched.
-* **A database that could not be reached is ``unavailable``, never ``clean``.** The
-  report says nothing is claimed, and the CLI maps it to its own exit code so a script
-  cannot mistake "we could not look" for either answer.
-
-Egress goes through :class:`agents.core.http_client.PluginHTTPClient` — pinned
-resolution, the owner's TLS anchors, a circuit breaker — and only package name+version
-pairs are sent. From the CLI process that is the whole of the governance: the kernel's
-egress hook is installed by the orchestrator, not here, and the in-process egress ledger
-dies with the process. The client is injected, so every test here runs offline.
-
-Text that arrives from the database (ids, aliases, summaries, fix versions) is stripped
-of control characters before it reaches a terminal, so an advisory body cannot forge a
-finding row or repaint the screen. ``--json`` escapes on its own.
+Unknown advisory severity fails every threshold. The admin hub runs OSV lookups
+through the shared PluginHTTPClient with live plugin.egress kernel authorization
+and durable egress accounting. Only package name/version pairs leave the machine.
+Database text is sanitized for terminal output; tests inject offline clients.
 """
 
 from __future__ import annotations
 
 import asyncio
 import re
+import shlex
+import sqlite3
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from importlib import metadata as _metadata
-from pathlib import PurePath
+from pathlib import Path, PurePath
 from typing import Any, Protocol
 from urllib.parse import quote, urlsplit
 
@@ -59,10 +39,8 @@ SEVERITIES: tuple[str, ...] = ("critical", "high", "moderate", "low", "unknown")
 _RANK = {level: index for index, level in enumerate(SEVERITIES)}
 _LEVELS = {"critical": "critical", "high": "high", "moderate": "moderate",
            "medium": "moderate", "low": "low"}
-MCP_REASON = ("MCP servers on Nerva are owner-configured stdio commands (Streamable HTTP only "
-              "behind an owner flag); Nerva installs no server packages and this audit does not "
-              "resolve a command line to a package version, so the surface is not audited.")
-MCP_HEADER = "MCP: not audited (owner-configured commands)"
+MCP_REASON = "no exact pinned npx/uvx package refs selected; other commands are listed as unaudited"
+_NPM_EXACT = re.compile(r"^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
 #: Longest advisory summary a terminal line carries; ``--json`` keeps the whole text.
 SUMMARY_WIDTH = 160
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
@@ -92,13 +70,15 @@ class OSVUnavailable(RuntimeError):
 
 @dataclass(frozen=True)
 class Component:
-    surface: str          # installed | extension
-    name: str             # canonical PyPI name
+    surface: str          # installed | extension | mcp
+    name: str             # canonical PyPI name or exact npm package
     version: str
     origin: str           # importlib.metadata, or the extension id that declared the pin
+    ecosystem: str = "PyPI"
 
     def to_dict(self) -> dict[str, str]:
-        return {"surface": self.surface, "name": self.name, "version": self.version, "origin": self.origin}
+        return {"surface": self.surface, "name": self.name, "version": self.version,
+                "origin": self.origin, "ecosystem": self.ecosystem}
 
 
 def _dist_location(dist: Any) -> str:
@@ -125,9 +105,12 @@ def enumerate_installed(
             version = getattr(dist, "version", None)
         except Exception as exc:  # corrupt or undecodable metadata: skip it, say so
             errors.append({"surface": "installed", "location": _dist_location(dist),
-                           "reason": f"metadata_unreadable: {type(exc).__name__}"})
+                           "reason": f"metadata_unreadable: {type(exc).__name__}",
+                           "coverage_unavailable": True})
             continue
         if not isinstance(raw_name, str) or not raw_name.strip() or not isinstance(version, str) or not version:
+            errors.append({"surface": "installed", "location": _dist_location(dist),
+                           "reason": "metadata_incomplete", "coverage_unavailable": True})
             continue
         name = canonicalize_name(raw_name)
         seen.setdefault((name, version), Component("installed", name, version, "importlib.metadata"))
@@ -148,10 +131,12 @@ def enumerate_extensions(paths: Sequence[Any]) -> tuple[list[Component], list[di
         try:
             manifest = load_manifest(path)
         except ManifestError as exc:
-            errors.append({"index": index, "reason": str(exc)})
+            errors.append({"surface": "extension", "index": index, "reason": str(exc),
+                           "coverage_unavailable": True})
             continue
         except Exception:
-            errors.append({"index": index, "reason": "manifest_unreadable"})
+            errors.append({"surface": "extension", "index": index, "reason": "manifest_unreadable",
+                           "coverage_unavailable": True})
             continue
         for name, version in manifest.python_requires:
             components.append(Component("extension", canonicalize_name(name), version, manifest.id))
@@ -159,34 +144,169 @@ def enumerate_extensions(paths: Sequence[Any]) -> tuple[list[Component], list[di
     return components, errors
 
 
+def enumerate_catalog() -> tuple[list[Component], list[dict[str, Any]]]:
+    """Read the registered extension pin catalog without loading candidate code."""
+    try:
+        from agents.core.extensions.manifest_catalog import ExtensionManifestCatalog
+
+        rows, errors = ExtensionManifestCatalog().snapshot()
+        components = [
+            Component("extension", canonicalize_name(name), version, row["id"])
+            for row in rows for name, version in row["python_requires"]
+        ]
+        components.sort(key=lambda c: (c.name, c.version, c.origin))
+        return components, errors
+    except Exception:
+        return [], [{"surface": "extension", "reason": "catalog_unavailable",
+                     "coverage_unavailable": True}]
+
+
 def mcp_surface() -> dict[str, Any]:
     return {"count": 0, "audited": False, "reason": MCP_REASON}
+
+
+_NPX_REF = re.compile(r"^(@[A-Za-z0-9._-]+/[A-Za-z0-9._-]+|[A-Za-z0-9._-]+)@([A-Za-z0-9._+-]+)$")
+_UVX_REF = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([A-Za-z0-9._+!-]+)$")
+
+
+def _mcp_package_refs(argv: list[str], launcher: str) -> list[str]:
+    """Recognize package-valued launcher flags and the ordinary first positional ref.
+
+    This is deliberately a narrow argv parser, not command execution or shell
+    expansion. When a command declares explicit packages, its trailing program
+    name is not another package; repeated declarations remain separate refs.
+    """
+    valued = {"-p", "--package"} if launcher == "npx" else {"--from", "--with"}
+    refs: list[str] = []
+    positional = ""
+    has_from = False
+    i = 1
+    while i < len(argv):
+        argument = argv[i]
+        if argument == "--":
+            if i + 1 < len(argv) and not positional:
+                positional = argv[i + 1]
+            break
+        if argument in valued:
+            has_from = has_from or argument == "--from"
+            i += 1
+            refs.append(argv[i] if i < len(argv) else "")
+        elif any(argument.startswith(flag + "=") for flag in valued):
+            has_from = has_from or argument.startswith("--from=")
+            refs.append(argument.split("=", 1)[1])
+        elif launcher == "npx" and argument.startswith("-p") and len(argument) > 2:
+            refs.append(argument[2:])
+        elif not argument.startswith("-") and not positional:
+            positional = argument
+            # Later options belong to the launched program, not npx/uvx.
+            break
+        i += 1
+    if launcher == "uvx" and not has_from and positional:
+        refs.insert(0, positional)
+    elif launcher == "npx" and not refs and positional:
+        refs.append(positional)
+    return refs or [""]
+
+
+def _saved_mcp_rows(db_path: Path | None = None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Read the owner's persisted MCP setting without initializing or changing settings."""
+    from agents.core.paths import data_path
+
+    path = db_path or data_path("settings.db")
+    if not path.exists():
+        return [], []
+    if path.is_symlink() or not path.is_file():
+        return [], [{"surface": "mcp", "reason": "configuration_unavailable", "coverage_unavailable": True}]
+    try:
+        conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+        try:
+            row = conn.execute(
+                "SELECT value FROM settings WHERE category='mcp' AND key='servers'"
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            return [], []
+        import json
+
+        configs = json.loads(row[0])
+        if not isinstance(configs, list) or len(configs) > 256:
+            raise ValueError("invalid server list")
+        return configs, []
+    except (OSError, sqlite3.Error, ValueError, TypeError):
+        return [], [{"surface": "mcp", "reason": "configuration_unavailable", "coverage_unavailable": True}]
+
+
+def enumerate_mcp(
+    configs: Sequence[Any] | None = None, *, db_path: Path | None = None,
+) -> tuple[list[Component], list[dict[str, Any]]]:
+    """Discover exact npx/uvx package refs from saved stdio commands; execute none."""
+    if configs is None:
+        configs, errors = _saved_mcp_rows(db_path)
+    else:
+        errors = []
+    components: list[Component] = []
+    for index, row in enumerate(configs):
+        if not isinstance(row, dict):
+            errors.append({"surface": "mcp", "index": index, "reason": "invalid_server", "coverage_unavailable": True})
+            continue
+        name = _safe_token(row.get("name"), fallback=f"server-{index}")
+        if row.get("transport", "stdio") != "stdio":
+            errors.append({"surface": "mcp", "server": name, "reason": "non_stdio_not_audited",
+                           "coverage_unavailable": True})
+            continue
+        command = row.get("command")
+        try:
+            argv = shlex.split(command) if isinstance(command, str) else []
+        except ValueError:
+            argv = []
+        launcher = PurePath(argv[0].replace("\\", "/")).name.lower() if argv else ""
+        if launcher.endswith((".cmd", ".exe")):
+            launcher = launcher[:-4]
+        if launcher not in {"npx", "uvx"}:
+            errors.append({"surface": "mcp", "server": name, "reason": "unsupported_launcher_not_audited",
+                           "coverage_unavailable": True})
+            continue
+        for ref in _mcp_package_refs(argv, launcher):
+            match = (_NPX_REF if launcher == "npx" else _UVX_REF).fullmatch(ref)
+            version = match.group(2) if match else ""
+            exact = bool(_NPM_EXACT.fullmatch(version)) if launcher == "npx" else _version(version) is not None
+            if match is None or not exact:
+                errors.append({"surface": "mcp", "server": name, "reason": "unpinned_package_not_audited",
+                               "coverage_unavailable": True})
+                continue
+            package = match.group(1) if launcher == "npx" else canonicalize_name(match.group(1))
+            components.append(Component("mcp", package, match.group(2), name,
+                                        "npm" if launcher == "npx" else "PyPI"))
+    components.sort(key=lambda c: (c.ecosystem, c.name, c.version, c.origin))
+    return components, errors
 
 
 # ── advisories ─────────────────────────────────────────────────────────────────
 
 
-def _package_matches(affected: Any, package: str) -> bool:
+def _package_matches(affected: Any, package: str, ecosystem: str = "PyPI") -> bool:
     if not isinstance(affected, dict):
         return False
     info = affected.get("package") or {}
-    name, ecosystem = info.get("name"), info.get("ecosystem")
-    if not isinstance(name, str) or ecosystem not in (None, "PyPI"):
+    name, recorded_ecosystem = info.get("name"), info.get("ecosystem")
+    if not isinstance(name, str) or recorded_ecosystem not in (None, ecosystem):
         return False
-    return canonicalize_name(name) == canonicalize_name(package)
+    return (canonicalize_name(name) == canonicalize_name(package)
+            if ecosystem == "PyPI" else name.lower() == package.lower())
 
 
 def _level(value: Any) -> str | None:
     return _LEVELS.get(value.strip().lower()) if isinstance(value, str) else None
 
 
-def normalize_severity(vuln: dict[str, Any], package: str) -> tuple[str, str]:
+def normalize_severity(vuln: dict[str, Any], package: str, ecosystem: str = "PyPI") -> tuple[str, str]:
     """``(level, source)`` — a stated level or ``unknown``; a CVSS vector alone is not a level."""
     level = _level((vuln.get("database_specific") or {}).get("severity"))
     if level:
         return level, "database_specific"
     for affected in vuln.get("affected") or []:
-        if _package_matches(affected, package):
+        if _package_matches(affected, package, ecosystem):
             level = _level((affected.get("database_specific") or {}).get("severity"))
             if level:
                 return level, "affected"
@@ -200,7 +320,8 @@ def _version(text: Any) -> Version | None:
         return None
 
 
-def fixed_in(vuln: dict[str, Any], package: str, version: str | None = None) -> str | None:
+def fixed_in(vuln: dict[str, Any], package: str, version: str | None = None,
+             ecosystem: str = "PyPI") -> str | None:
     """The fix that applies to *version* of *package*, or None when no fix is listed.
 
     OSV lists one ``[introduced, fixed)`` pair per maintained branch. The pair whose
@@ -211,7 +332,7 @@ def fixed_in(vuln: dict[str, Any], package: str, version: str | None = None) -> 
     """
     pairs: list[tuple[str | None, str]] = []
     for affected in vuln.get("affected") or []:
-        if not _package_matches(affected, package):
+        if not _package_matches(affected, package, ecosystem):
             continue
         for range_ in affected.get("ranges") or []:
             if not isinstance(range_, dict) or range_.get("type") not in ("ECOSYSTEM", "SEMVER"):
@@ -254,11 +375,13 @@ class Finding:
     severity_source: str
     fixed_in: str | None
     summary: str
+    ecosystem: str = "PyPI"
 
     def to_dict(self) -> dict[str, Any]:
         return {"surface": self.surface, "name": self.name, "version": self.version, "origin": self.origin,
                 "id": self.id, "aliases": list(self.aliases), "severity": self.severity,
-                "severity_source": self.severity_source, "fixed_in": self.fixed_in, "summary": self.summary}
+                "severity_source": self.severity_source, "fixed_in": self.fixed_in,
+                "summary": self.summary, "ecosystem": self.ecosystem}
 
 
 def _sort_key(finding: Finding) -> tuple:
@@ -269,12 +392,14 @@ def _raw_finding(component: Component, vuln_id: str, vuln: dict[str, Any] | None
     if vuln is None:
         return Finding(component.surface, component.name, component.version, component.origin,
                        vuln_id, (), "unknown", "detail_unavailable", None,
-                       "advisory detail could not be fetched; treated as unrated")
-    level, source = normalize_severity(vuln, component.name)
+                       "advisory detail could not be fetched; treated as unrated", component.ecosystem)
+    level, source = normalize_severity(vuln, component.name, component.ecosystem)
     aliases = tuple(a for a in (vuln.get("aliases") or []) if isinstance(a, str) and a != vuln_id)
     summary = vuln.get("summary") if isinstance(vuln.get("summary"), str) else ""
     return Finding(component.surface, component.name, component.version, component.origin,
-                   vuln_id, aliases, level, source, fixed_in(vuln, component.name, component.version), summary)
+                   vuln_id, aliases, level, source,
+                   fixed_in(vuln, component.name, component.version, component.ecosystem),
+                   summary, component.ecosystem)
 
 
 #: Which id speaks for a merged group when severities tie. GHSA entries carry the stated
@@ -327,7 +452,7 @@ def _merge_aliased(findings: list[Finding]) -> list[Finding]:
         fixed = next((f.fixed_in for f in members if f.fixed_in), None)
         summary = next((f.summary for f in members if f.summary), "")
         merged.append(Finding(head.surface, head.name, head.version, head.origin, head.id, tuple(names),
-                              head.severity, head.severity_source, fixed, summary))
+                              head.severity, head.severity_source, fixed, summary, head.ecosystem))
     return merged
 
 
@@ -345,20 +470,25 @@ class Report:
     unavailable: str | None = None
     status: str = "clean"        # clean | findings | unavailable | offline
     database: str = DEFAULT_OSV_URL
+    skipped: dict[str, bool] = field(default_factory=dict)
 
     def failing(self) -> list[Finding]:
         return [f for f in self.findings if _fails(self.fail_on, f.severity)]
 
     def surfaces(self) -> dict[str, dict[str, Any]]:
+        mcp_count = sum(c.surface == "mcp" for c in self.components)
         return {
             "installed": {"count": sum(c.surface == "installed" for c in self.components)},
             "extension": {"count": sum(c.surface == "extension" for c in self.components)},
-            "mcp": mcp_surface(),
+            "mcp": {"count": mcp_count, "audited": bool(mcp_count),
+                    "reason": "only exact pinned npx/uvx package refs are audited"}
+                   if mcp_count else mcp_surface(),
         }
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "status": self.status, "fail_on": self.fail_on, "database": self.database,
+            "skipped": dict(self.skipped),
             "queried": self.queried, "unavailable": self.unavailable,
             "surfaces": self.surfaces(),
             "components": [c.to_dict() for c in self.components],
@@ -382,6 +512,7 @@ def audit(
     batch_size: int = BATCH_LIMIT,
     errors: Iterable[dict[str, Any]] | None = None,
     database: str = DEFAULT_OSV_URL,
+    skipped: dict[str, bool] | None = None,
 ) -> Report:
     """Ask the database about every distinct name+version pair and rank what comes back.
 
@@ -392,9 +523,10 @@ def audit(
     if fail_on not in _RANK or fail_on == "unknown":
         raise ValueError(f"fail_on must be one of {SEVERITIES[:-1]}, not {fail_on!r}")
     report = Report(fail_on=fail_on, components=list(components),
-                    errors=list(errors or []), database=database)
-    keys = sorted({(c.name, c.version) for c in report.components})
-    queries = [{"package": {"name": name, "ecosystem": "PyPI"}, "version": version} for name, version in keys]
+                    errors=list(errors or []), database=database, skipped=dict(skipped or {}))
+    keys = sorted({(c.ecosystem, c.name, c.version) for c in report.components})
+    queries = [{"package": {"name": name, "ecosystem": ecosystem}, "version": version}
+               for ecosystem, name, version in keys]
     report.queried = len(queries)
 
     ids_per_key: list[list[str]] = []
@@ -420,7 +552,7 @@ def audit(
     for component in report.components:
         raw = [
             _raw_finding(component, vuln_id, details.get(vuln_id))
-            for vuln_id in hits.get((component.name, component.version), [])
+            for vuln_id in hits.get((component.ecosystem, component.name, component.version), [])
         ]
         for finding in _merge_aliased(raw):
             names = {finding.id.lower(), *(a.lower() for a in finding.aliases)}
@@ -428,15 +560,19 @@ def audit(
 
     report.findings.sort(key=_sort_key)
     report.ignored.sort(key=_sort_key)
-    report.status = "findings" if report.failing() else "clean"
+    report.status = ("unavailable" if any(error.get("coverage_unavailable") for error in report.errors)
+                     else "findings" if report.failing() else "clean")
+    if report.status == "unavailable":
+        report.unavailable = "dependency inventory incomplete"
     return report
 
 
 def offline_report(components: Iterable[Component],
-                   errors: Iterable[dict[str, Any]] | None = None) -> Report:
+                   errors: Iterable[dict[str, Any]] | None = None,
+                   skipped: dict[str, bool] | None = None) -> Report:
     """Enumeration only. No database, no claim."""
     return Report(fail_on="low", components=list(components), errors=list(errors or []),
-                  queried=0, status="offline")
+                  queried=0, status="offline", skipped=dict(skipped or {}))
 
 
 # ── rendering ──────────────────────────────────────────────────────────────────
@@ -457,6 +593,8 @@ def _error_line(error: dict[str, Any]) -> str:
     reason = _clean(error.get("reason", "unreadable"), 120)
     if error.get("surface") == "installed":
         return f"installed distribution {_safe_token(error.get('location'))}: {reason} — skipped, not audited"
+    if error.get("surface") == "mcp":
+        return f"MCP {_safe_token(error.get('server'), 'configuration')}: {reason}"
     return f"descriptor {_clean(error.get('index', '?'))}: {reason}"
 
 
@@ -466,16 +604,21 @@ def render(report: Report) -> str:
     database = _clean(report.database, 200)
     lines = [
         f"nerva security audit — {surfaces['installed']['count']} installed · "
-        f"{surfaces['extension']['count']} extension pin(s) · {MCP_HEADER}",
+        f"{surfaces['extension']['count']} declared extension pin(s) · {surfaces['mcp']['count']} MCP pin(s)",
     ]
+    selected_skips = [name for name, enabled in report.skipped.items() if enabled]
+    if selected_skips:
+        lines.append("skipped: " + ", ".join(selected_skips))
     lines.extend(_error_line(error) for error in report.errors)
     if report.status == "offline":
         lines.append(f"no vulnerability database consulted (--offline): nothing is claimed about these {total} components.")
         return "\n".join(lines)
-    if report.status == "unavailable":
+    if report.status == "unavailable" and report.unavailable != "dependency inventory incomplete":
         lines.append(f"could not consult {database}: {_clean(report.unavailable, 240)}. "
                      f"Nothing is claimed about these {total} components.")
         return "\n".join(lines)
+    if report.status == "unavailable":
+        lines.append("dependency inventory incomplete: coverage incomplete; known findings from selected pins follow")
     lines.append(f"consulted {database} ({report.queried} name+version pairs) · fail-on: {report.fail_on}")
     for finding in report.findings:
         lines.append(_finding_line(finding))
@@ -514,9 +657,13 @@ def _run(coro):
 class OSVHttpClient:
     """OSV.dev over the governed plugin client: pinned resolution, owner TLS anchors, breaker."""
 
-    def __init__(self, base_url: str = DEFAULT_OSV_URL, *, plugin_name: str = "dep_audit"):
+    def __init__(self, base_url: str = DEFAULT_OSV_URL, *, plugin_name: str = "dep_audit",
+                 authorize_egress=None, resolver=None, transport_factory=None):
         self.base_url = _https_only(base_url).rstrip("/")
         self.plugin_name = plugin_name
+        self.authorize_egress = authorize_egress
+        self.resolver = resolver
+        self.transport_factory = transport_factory
 
     #: Follow-up pages per batch before the answer is declared incomplete rather than trusted.
     MAX_PAGES = 20
@@ -560,9 +707,17 @@ class OSVHttpClient:
         return body
 
     async def _request(self, method: str, path: str, **kwargs) -> Any:
-        from agents.core.http_client import PluginHTTPClient
+        from agents.core.http_client import PluginHTTPClient, RequiredEgressHTTPClient
 
-        client = PluginHTTPClient(plugin_name=self.plugin_name)
+        authorize = self.authorize_egress
+        if authorize is None:
+            client = PluginHTTPClient(plugin_name=self.plugin_name,
+                                      resolver=self.resolver, transport_factory=self.transport_factory)
+        else:
+            client = RequiredEgressHTTPClient(
+                plugin_name=self.plugin_name, authorize_egress=authorize,
+                resolver=self.resolver, transport_factory=self.transport_factory,
+            )
         try:
             response = await client.request(method, f"{self.base_url}{path}", **kwargs)
             if response.status_code != 200:
@@ -576,6 +731,6 @@ class OSVHttpClient:
             await client.close()
 
 
-def default_client(base_url: str = DEFAULT_OSV_URL) -> OSVClient:
+def default_client(base_url: str = DEFAULT_OSV_URL, *, authorize_egress=None) -> OSVClient:
     """The client the CLI uses; tests replace this attribute."""
-    return OSVHttpClient(base_url)
+    return OSVHttpClient(base_url, authorize_egress=authorize_egress)

@@ -11,10 +11,16 @@ import { appUrl } from '../base-path';
 import { apiGet, apiPost, apiPut } from './client';
 
 // ── response shapes (the fields the HUD consumes) ─────────────────────────────
-// GET /api/security/kill-switch → {global: bool, halted: {agent: reason}}. `halted` is a
-// MAP, not a bool — typing it as boolean is what let the HUD read {} as truthy and show a
-// false "ENGAGED" alarm (2026-07-24 QA finding).
-export interface KillSwitchState { global?: boolean; halted?: Record<string, string>; engaged?: boolean; scope?: string; reason?: string }
+// The public read is an aggregate. Never retain persisted scope or reason text here.
+export interface KillSwitchState { global: boolean; any_halted: boolean; halted_count: number }
+export function isKillSwitchState(raw: unknown): raw is KillSwitchState {
+  if (!raw || typeof raw !== 'object') return false;
+  const state = raw as Record<string, unknown>;
+  return typeof state.global === 'boolean' && typeof state.any_halted === 'boolean' &&
+    typeof state.halted_count === 'number' && Number.isSafeInteger(state.halted_count) &&
+    state.halted_count >= 0 && state.any_halted === (state.halted_count > 0) &&
+    (!state.global || state.any_halted);
+}
 export interface AuditVerifyResult { valid: boolean; first_invalid_id: number | null; entries: number }
 
 export interface NorthStarMetrics {
@@ -43,10 +49,12 @@ export type AutonomyModeValue = 'auto' | 'ask' | 'off';
 export interface AutonomyModeState { mode: AutonomyModeValue }
 
 /* ── Trust · kill-switch (modes.tsx) ─────────────────────────────
-   GET  /api/security/kill-switch        → { halted | engaged, ... }
+   GET  /api/security/kill-switch        → { global, any_halted, halted_count }
    POST /api/security/kill-switch {engage,scope,reason}  (admin) */
 export async function getKillSwitch(): Promise<KillSwitchState> {
-  return apiGet<KillSwitchState>('/api/security/kill-switch');
+  const raw = await apiGet<unknown>('/api/security/kill-switch');
+  if (!isKillSwitchState(raw)) throw new Error('Invalid kill-switch status');
+  return { global: raw.global, any_halted: raw.any_halted, halted_count: raw.halted_count };
 }
 export async function setKillSwitch(engage: boolean): Promise<unknown> {
   return apiPost('/api/security/kill-switch', { engage, scope: 'global', reason: 'hud' }, { admin: true });

@@ -131,22 +131,24 @@ def test_windows_native_ocr_fails_closed_without_job_containment(monkeypatch):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX owned OCR deadline probe")
-@pytest.mark.parametrize(("deadline_expr", "expected_code"), [
-    ("time.monotonic()+1", "timeout"), ("float('nan')", "invalid_file"),
-    ("float('inf')", "invalid_file"), ("'bad'", "invalid_file"),
+@pytest.mark.parametrize(("deadline_json", "expected_code"), [
+    ("1e100", "timeout"), ("NaN", "invalid_file"),
+    ("Infinity", "invalid_file"), ('"bad"', "invalid_file"),
 ])
 async def test_posix_parent_page_bound_rejects_delayed_or_nonfinite_child_frame(
-        monkeypatch, deadline_expr, expected_code):
+        monkeypatch, deadline_json, expected_code):
     from agents.core.workspace import extract_process
 
     monkeypatch.setattr(extract, "OCR_PAGE_TIMEOUT_SECONDS", 0.03)
+    # A fixed shell builtin avoids an extra interpreter startup inside this
+    # 0.3 s probe. The owned subprocess and its session/group cleanup remain
+    # real, including the blocked page worker.
     script = (
-        "import json,time; "
-        "print(json.dumps({'event':'page_start','page':1,'page_count':1,"
-        f"'deadline':{deadline_expr}}}),flush=True); "
-        "time.sleep(1)"
+        "printf '%s\\n' "
+        f"'{{\"event\":\"page_start\",\"page\":1,\"page_count\":1,\"deadline\":{deadline_json}}}'; "
+        "exec /bin/sleep 1"
     )
-    _owned_script(monkeypatch, script)
+    monkeypatch.setattr(extract_process, "_owned_command", lambda: ["/bin/sh", "-c", script])
 
     async def idle_watch(sid, stop, fault, signaled):
         await stop.wait()

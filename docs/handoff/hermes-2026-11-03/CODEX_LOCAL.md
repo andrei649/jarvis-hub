@@ -1,5 +1,11 @@
 # Codex, working locally — setup and first task (2026-11-03)
 
+> Historical batch-3 handoff. Current local work follows the
+> [canonical Hermes execution workflow](../../hermes/autonomous-development-objective.md)
+> and [cumulative handoff](../../hermes/CAMPAIGN_HANDOFF.md). The dated branch,
+> counters and publication steps below are not current execution authority.
+> The 2026-11-04 campaign permits no staging, commit, push, merge or deployment.
+
 Read this first, then `HANDOFF.md` in this folder (the state of Hermes batch 3 and what is left).
 Repo rules for every assistant are in `AGENTS.md`; the code map is `docs/ARCHITECTURE.md`.
 

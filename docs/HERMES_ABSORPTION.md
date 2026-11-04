@@ -1,5 +1,44 @@
 # Hermes → Nerva — planul de absorbție
 
+**H696 catalog, 2026-11-03:** Nerva keeps five first-party skills active by default
+(`brief`, `pm`, `security_monitor`, `system_monitor`, `weather`) and ships seven in
+`optional-skills/` for explicit owner installation. The isolated grouped prompt
+index measured 1,791 characters/12 rows before and 813 characters/5 rows after
+the split (54.6% fewer characters); the Jarvis row stayed 155 characters/1 row.
+The admin optional-install route records the exact source fingerprint, crosses
+`skill.install`, and installs only a `PENDING_REVIEW` copy. The read-only
+`GET /skills/hermes/catalog` exposes the pinned upstream names, tiers and
+reference counts locally; the HUD can select an exact slug. The remote
+`POST /skills/import` now requires admin access and a `skill.install` kernel
+decision before any fetch, and an allowed import also lands in pending review.
+`GET /api/skills/pending/{name}` returns the stable fingerprint of the files
+shown to the owner; single and bulk approval require that fingerprint and refuse
+stale bytes before signing or activation. The Hermes source
+catalog is separately pinned at `v2026.8.31` in
+`agents/core/skills/hermes_pin_v2.json` (190 skills, 461 digest-verified
+references; `github` consolidated, `grill-me` optional). The four
+Anthropic-terms productivity subtrees and historical `blogwatcher` are excluded.
+These counts are a local index measurement, not an inference throughput result.
+
+**H334 local implementation, 2026-11-04:** Remote imports no longer require a
+development flag. The admin request crosses `skill.install` before fetching and
+again before staging; each network request uses mandatory kernel authorization
+and the shared DNS/IP-pinned transport. Hermes uses its server-owned pin. Generic
+GitHub and OpenClaw imports require an explicit immutable commit, entry path and
+SHA256, plus digests for any reference files. The HUD collects these fields.
+Every allowed import remains `PENDING_REVIEW`; a grant or queue cannot activate
+it. The separate local migration CLI retains its source-hash check and kernel
+admission. Offline regression results do not establish live upstream or native
+platform acceptance; see the cumulative campaign handoff for the current gate.
+
+The [generated pinned source catalog](hermes/catalog/README.md) has one page
+for each of the 190 eligible upstream skills, including moved and newly added
+names. Each page records the upstream tier, exact release/commit/tree, SKILL.md
+digest and pinned reference paths/digests. It documents source identity and the
+owner's import/review path; a page is not evidence of installation or executable
+activation. Regenerate locally with `python scripts/gen_hermes_catalog_docs.py`
+and verify drift with `python scripts/gen_hermes_catalog_docs.py --check`.
+
 **Sprint curent, directivă 2026-09-09 → [Statusul tuturor celor 697 de capabilități](../HERMES_STATUS.md).**
 [Reguli, livrări reunite și următorii pași](HERMES_SPRINT.md). Cifrele de inventar
 de mai jos sunt auditul din 7 septembrie; progresul curent se citește în pagina de status.

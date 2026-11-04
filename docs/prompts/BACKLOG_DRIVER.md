@@ -1,5 +1,20 @@
 # NERVA — AUTONOMOUS BACKLOG DRIVER
 
+> **Inactive historical prompt (2026-11-04). Do not paste or execute the recipe
+> below.** The active local Hermes campaign uses
+> [`autonomous-development-objective.md`](../hermes/autonomous-development-objective.md)
+> and its cumulative [`CAMPAIGN_HANDOFF.md`](../hermes/CAMPAIGN_HANDOFF.md).
+> Verify the current checkout/SHA, finish integration first, then select from
+> the frozen 697 contracts using bounded query tools. Interrupt only for a
+> concrete security, correctness or build blocker. No stage, commit, push,
+> merge, deploy, PR update, paid activation or external schedule change.
+> The historical PR/pick/budget instructions below are preserved solely to
+> explain dated decisions; they cannot override the current owner mandate.
+
+<details>
+<summary>Historical autonomous backlog driver — inactive</summary>
+
+
 > Paste this whole file as the opening message of a fresh assistant session (Claude, opencode,
 > Gemini — any capable model) to have the developer continue through the backlog without
 > supervision. It is the operational twin of [`MAX.md`](../../MAX.md): Max defines *how* a run
@@ -99,3 +114,5 @@ Stop and report (in this order) when: the session budget is nearly spent; a slic
 decision that no packet can substitute; `main` is red for a reason outside your diff and no fix
 exists yet (comment once, then stop); or the current milestone has no AI-executable row left.
 End with one line: `■ driver: <what shipped> — next: <slice-id>`.
+
+</details>

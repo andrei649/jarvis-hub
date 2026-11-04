@@ -18,6 +18,7 @@ function mockFetch(payload) {
 
 describe('KernelMetricsPanel — the Action-Kernel decision meter is live', () => {
   it('GETs /api/metrics/kernel and shows verdict tallies + a recent denial', async () => {
+    localStorage.setItem('hud.user_token', 'owner-user');
     const fn = mockFetch({
       total: 3, by_verdict: { grant: 1, queue: 1, deny: 1 }, deny_rate: 0.3333,
       by_kind: {}, recent_denials: [{ kind: 'payment', reason: "kill-switch engaged for scope 'global'" }],
@@ -25,6 +26,8 @@ describe('KernelMetricsPanel — the Action-Kernel decision meter is live', () =
     render(<KernelMetricsPanel />);
     await waitFor(() => expect(screen.getByText('1 grant')).toBeTruthy());
     expect(fn.mock.calls.some((c) => String(c[0]).includes('/api/metrics/kernel'))).toBe(true);
+    const read = fn.mock.calls.find((c) => String(c[0]).includes('/api/metrics/kernel'));
+    expect(read[1].headers['X-User-Token']).toBe('owner-user');
     expect(screen.getByText('1 deny')).toBeTruthy();
     expect(screen.getByText('payment')).toBeTruthy();
   });

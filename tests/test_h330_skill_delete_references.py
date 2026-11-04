@@ -411,14 +411,17 @@ def test_promoting_a_generated_skill_crosses_the_kernel(hub, monkeypatch, tmp_pa
     assert name and (hub.root / name / "PENDING_REVIEW").exists()
     switch.engage(reason="test")
     client = TestClient(web.app)
-    refused = client.post(f"/api/skills/{name}/approve", headers=ADMIN)
+    reviewed = hub.loader.pending_skill_fingerprint(name)
+    refused = client.post(f"/api/skills/{name}/approve", headers=ADMIN,
+                          json={"expected_fingerprint": reviewed})
     assert refused.status_code == 403 and refused.json()["reason"] == "kernel_denied", refused.json()
     assert (hub.root / name / "PENDING_REVIEW").exists() and not (hub.root / name / "SKILL.sig").exists()
     # A halted kernel also stops a new generated skill before its folder exists.
     assert hub.loader.generate_skill("pepper", "summarize the evening news", ["read"], "news") is None
     assert not any(p.name.startswith("summarize") for p in hub.root.iterdir())
     switch.disengage()
-    approved = client.post(f"/api/skills/{name}/approve", headers=ADMIN)
+    approved = client.post(f"/api/skills/{name}/approve", headers=ADMIN,
+                           json={"expected_fingerprint": reviewed})
     assert approved.status_code == 200 and approved.json()["approved"] is True, approved.json()
     assert not (hub.root / name / "PENDING_REVIEW").exists()
 

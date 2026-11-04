@@ -4,12 +4,11 @@ Covers the skills surface: `/skills` listing, `/skills/import` + `/skills/import
 the `/sandbox/*` execution endpoints, and the `/api/skills/marketplace/*`
 agent-marketplace endpoints (H5.8 / H12.12).
 
-`skills_import` and `sandbox_execute` gate on web.py's `DEV_MODE` flag. They read
-it via `app_state.dev_mode()` (CLN-3 unblock B), which resolves `web.DEV_MODE` at
-request time through `sys.modules` — so the skills test suite's
-`monkeypatch.setattr(web, "DEV_MODE", ...)` is still observed and no test changes.
+`sandbox_execute` gates on web.py's `DEV_MODE` flag. Remote skill import is
+admin-gated and binds its own live kernel and governed egress for each request.
 """
 
+import hashlib
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
@@ -18,17 +17,117 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from agents.core.routers._deps import user_guard, admin_guard
-from agents.core.routers._component import component_unavailable
+from agents.core.routers._component import component_unavailable, require_component
 
-from agents.core.web_helpers import error_json, logger
+from agents.core.web_helpers import error_json, logger, nocache_json
 from agents.core import app_state
 from agents.core.app_state import get_orch
 from agents.core.skills.marketplace import BrokerOnlyInstall
+from agents.core.skills.bundles import MAX_MEMBER_PATH_CHARS
 from agents.core.skills.signing import SkillSourceSnapshotError
 from agents.core.skills.validate import SkillDocumentInvalid
+from agents.core.paths import app_root
+from agents.core.skills.importer import SkillImportError, SkillImporter, _load_hermes_pin, _safe_slug
+from agents.core.skills.loader import _writable_skills_dir
+from agents.core.skills.signing import source_snapshot
 
 
 router = APIRouter(tags=["skills"])
+
+
+# H696 — these product-owned skills are shipped as an inactive catalog. A
+# source name from a request can select one of these exact entries only.
+OPTIONAL_SKILL_NAMES = frozenset({
+    "calendar", "content", "email_triage", "family_store", "health",
+    "spotify", "web_research",
+})
+
+
+def _optional_skills_root():
+    return app_root() / "optional-skills"
+
+
+def _optional_install_gate(payload: dict) -> str:
+    from agents.core.acquisition.promotion import hub_skill_kernel_gate
+
+    return hub_skill_kernel_gate("skill.install", title="Install an optional skill")(payload)
+
+
+class OptionalSkillInstallBody(BaseModel):
+    name: str = Field(..., min_length=1, max_length=64)
+
+
+@router.get("/api/skills/optional/catalog", dependencies=[Depends(admin_guard)])
+async def optional_skills_catalog():
+    if not get_orch():
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    root = _optional_skills_root()
+    installed = _writable_skills_dir()
+    return {"skills": [
+        {"name": name, "tier": "optional", "installed": (installed / name).exists(),
+         "available": (root / name / "SKILL.md").is_file()}
+        for name in sorted(OPTIONAL_SKILL_NAMES)
+    ]}
+
+
+@router.get("/skills/hermes/catalog", dependencies=[Depends(user_guard)])
+async def pinned_hermes_catalog():
+    """Read-only local pin inventory; listing it never fetches upstream bytes."""
+    try:
+        pin = _load_hermes_pin()
+    except SkillImportError:
+        return JSONResponse({"error": "Hermes pin unavailable"}, status_code=503)
+    return {"repository": pin.repository, "release_tag": pin.release_tag,
+            "commit": pin.commit, "tree": pin.tree,
+            "skills": [{"slug": entry.slug, "tier": entry.tier,
+                        "reference_count": len(entry.files)} for entry in pin.skills]}
+
+
+@router.post("/api/skills/optional/install", dependencies=[Depends(admin_guard)])
+async def optional_skills_install(body: OptionalSkillInstallBody):
+    """Owner-selected install; kernel can refuse the write, but cannot approve execution."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    name = body.name
+    if name not in OPTIONAL_SKILL_NAMES:
+        return JSONResponse({"status": "refused", "reason": "unknown_optional_skill"}, status_code=404)
+    root = _optional_skills_root()
+    source = root / name
+    try:
+        if root.is_symlink():
+            raise SkillSourceSnapshotError("linked optional root")
+        snapshot = source_snapshot(source)
+        raw = snapshot.read_bytes("SKILL.md")
+        if raw is None:
+            raise SkillSourceSnapshotError("missing SKILL.md")
+        from agents.core.skills.validate import validate_skill_md
+        if validate_skill_md(raw):
+            raise SkillSourceSnapshotError("invalid SKILL.md")
+    except (OSError, SkillSourceSnapshotError):
+        return JSONResponse({"status": "refused", "reason": "optional_source_refused"}, status_code=422)
+    destination = _writable_skills_dir()
+    if (destination / name).exists() or (destination / name).is_symlink():
+        return JSONResponse({"status": "refused", "reason": "already_installed"}, status_code=409)
+    payload = {"kind": "skill.install", "action": "install", "operation": "optional",
+               "name": name, "source_fingerprint": snapshot.fingerprint,
+               "content_sha256": hashlib.sha256(raw).hexdigest(),
+               "requested_by": "owner", "risk_tier": 3, "reversible": True,
+               "approval_mode": "owner"}
+    try:
+        verdict = str(_optional_install_gate(payload)).lower()
+    except Exception:
+        logger.warning("Optional skill kernel gate failed closed", exc_info=True)
+        return JSONResponse({"status": "refused", "reason": "kernel_error"}, status_code=503)
+    if verdict not in ("grant", "queue"):
+        return JSONResponse({"status": "refused", "reason": "kernel_denied" if verdict == "deny" else "kernel_error"},
+                            status_code=403 if verdict == "deny" else 503)
+    importer = SkillImporter(str(destination))
+    if not await importer.import_repo_optional(source, name, snapshot.fingerprint):
+        return JSONResponse({"status": "refused", "reason": "source_changed_or_target_exists"}, status_code=409)
+    orch.skills.discover()
+    return {"status": "installed_review_required", "name": name, "tier": "optional",
+            "kernel": verdict, "quarantined": True}
 
 
 def _invalid_skill_md(exc: SkillDocumentInvalid, message: str) -> JSONResponse:
@@ -285,7 +384,7 @@ async def show_skill_bundle(name: str = PathParam(..., min_length=1, max_length=
 
 class SkillBundleBody(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
-    skills: list[Annotated[str, Field(max_length=128)]] = Field(..., min_length=1, max_length=64)
+    skills: list[Annotated[str, Field(max_length=MAX_MEMBER_PATH_CHARS)]] = Field(..., min_length=1, max_length=64)
     description: str = Field("", max_length=200)
     # Hermes' `instruction`: guidance put before the skills when the bundle is loaded into a
     # turn. Left out (null), a replaced bundle keeps its own; "" drops it.
@@ -365,7 +464,7 @@ async def reload_skill_bundles():
     return {"ok": True, **report}
 
 
-@router.get("/sandbox/status")
+@router.get("/sandbox/status", dependencies=[Depends(user_guard)])
 async def sandbox_status():
     orch = get_orch()
     if not orch:
@@ -374,7 +473,7 @@ async def sandbox_status():
     # exactly which tools a script may reach. Honest and additive: `available`
     # false + an empty list means `tools: true` will be refused, not downgraded.
     server = getattr(orch, "tool_rpc", None)
-    return {
+    return nocache_json({
         "available": orch.sandbox._has_docker,
         "docker_image": orch.sandbox.docker_image,
         "timeout": orch.sandbox.timeout,
@@ -382,10 +481,10 @@ async def sandbox_status():
         **orch.sandbox.security_status(),
         "tool_rpc": {
             "available": server is not None,
-            # Open route: the static schemas, never the live H296 answers.
+            # Keep static H296 schemas; connected descriptions still need the user guard.
             "tools": server.tools(live=False) if server is not None else [],
         },
-    }
+    })
 
 
 # ── K3: the owner's window onto their own session kernels ────────────────────
@@ -629,27 +728,149 @@ async def sandbox_execute(body: SandboxExecuteBody, request: Request):
     }
 
 
-@router.post("/skills/import", dependencies=[Depends(user_guard)])
+@router.post("/skills/import", dependencies=[Depends(admin_guard)])
 async def skills_import(req: Request):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    if not app_state.dev_mode():
-        return JSONResponse({"error": "skill import disabled — set DEV_MODE=1 to enable"}, status_code=403)
-    body = await req.json()
+    from agents.core.action_origin import current_action_origin
+    from agents.core.kernel import Action, Verdict
+    from agents.core.kernel.binding import make_action_kernel
+    from agents.core.skills.importer import OPENCLAW_REPO
+    from agents.core.skills.remote_pin import (
+        RemoteImportAuthorization, RemoteImportRefused, RemoteSkillPin,
+    )
+
+    try:
+        body = await req.json()
+    except Exception:
+        return JSONResponse({"error": "invalid import request"}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"error": "invalid import request"}, status_code=400)
     source = body.get("source", "hermes")
     skill_name = body.get("skill", "")
+    # A route-level refusal must never echo a prior import's validator findings.
+    orch.skill_importer.last_refusal = []
     if not skill_name:
         return JSONResponse({"error": "skill name required"}, status_code=400)
+    if not isinstance(source, str) or not isinstance(skill_name, str):
+        return JSONResponse({"error": "invalid import request"}, status_code=400)
+    slug = _safe_slug(skill_name)
+    if slug is None:
+        return JSONResponse({"ok": False, "error": f"Skill '{skill_name}' not found in {source}"}, status_code=404)
+    pin = None
+    entry = None
+    remote_pin = None
     if source == "hermes":
-        ok = await orch.skill_importer.import_from_hermes(skill_name)
-    elif source == "openclaw":
-        ok = await orch.skill_importer.import_from_openclaw(skill_name)
+        if "pin" in body:
+            return JSONResponse({"error": "builtin Hermes pin is server-owned", "reason": "invalid_pin"},
+                                status_code=422)
+        try:
+            pin = _load_hermes_pin()
+        except SkillImportError:
+            return JSONResponse({"error": "Hermes pin unavailable"}, status_code=503)
+        entry = next((item for item in pin.skills if item.slug == slug), None)
+        if entry is None:
+            return JSONResponse({"ok": False, "error": f"Skill '{skill_name}' not found in hermes"}, status_code=404)
     else:
-        ok = await orch.skill_importer.import_from_github(source, skill_name)
+        if "pin" not in body:
+            return JSONResponse({"error": "immutable source pin required", "reason": "missing_pin"}, status_code=422)
+        try:
+            remote_pin = RemoteSkillPin.from_dict(body["pin"])
+        except RemoteImportRefused as exc:
+            return JSONResponse({"error": "invalid remote source pin", "reason": exc.code}, status_code=422)
+        expected_repo = OPENCLAW_REPO if source == "openclaw" else source
+        if remote_pin.repo != expected_repo:
+            return JSONResponse({"error": "source and pin disagree", "reason": "invalid_pin"}, status_code=422)
+    expected_pin = (RemoteSkillPin(pin.repository, pin.commit, entry.path,
+                                   entry.content_sha256, entry.files)
+                    if pin is not None and entry is not None else remote_pin)
+    expected_files = [{"path": path, "content_sha256": digest} for path, digest in expected_pin.references]
+    expected_source = source if source in {"hermes", "openclaw"} else source.rsplit("/", 1)[-1]
+    expected_install = {
+        "kind": "skill.install", "action": "import", "name": slug, "source": expected_source,
+        "source_repository": expected_pin.repo, "source_commit": expected_pin.commit,
+        "commit": expected_pin.commit, "source_path": expected_pin.entry_path,
+        "content_sha256": expected_pin.content_sha256, "files": expected_files,
+        "pinned": True, "requested_by": "owner", "approval_mode": "owner",
+        "quarantined": True, "risk_tier": 3,
+    }
+
+    gate_verdicts: list[str] = []
+    egress_grants = 0
+
+    def install_gate(payload: dict) -> str:
+        if not isinstance(payload, dict) or any(
+            payload.get(field) != value for field, value in expected_install.items()
+        ) or payload.get("pinned") is not True or payload.get("quarantined") is not True:
+            return "error"
+        try:
+            kernel = make_action_kernel(orch)
+            if kernel is None:
+                return "error"
+            decision = kernel(Action(kind="skill.install", agent="operator", title="Import a remote skill",
+                                     payload={**payload, "risk_tier": 3, "requested_by": "owner",
+                                              "approval_mode": "owner", "quarantined": True},
+                                     origin=current_action_origin()))
+            verdict = decision.verdict.value
+            gate_verdicts.append(verdict)
+            return verdict
+        except Exception:
+            logger.warning("Remote skill install kernel gate failed closed", exc_info=True)
+            return "error"
+
+    def egress_gate(plugin: str, method: str, url: str, host: str) -> str | None:
+        nonlocal egress_grants
+        try:
+            kernel = make_action_kernel(orch)
+            if kernel is None:
+                return "governance_unavailable"
+            decision = kernel(Action(kind="plugin.egress", agent=plugin,
+                                     title=f"remote skill import {method} {host}",
+                                     payload={"plugin": plugin, "method": method, "host": host,
+                                              "url": url, "risk_tier": 2},
+                                     origin=current_action_origin()))
+            if decision.verdict is Verdict.GRANT:
+                egress_grants += 1
+                return None
+            return decision.reason or "not_granted"
+        except Exception:
+            logger.warning("Remote skill egress kernel gate failed closed", exc_info=True)
+            return "governance_unavailable"
+
+    auth = RemoteImportAuthorization(install_gate=install_gate, egress_gate=egress_gate)
+    try:
+        if source == "hermes":
+            ok = await orch.skill_importer.import_from_hermes(skill_name, pin=pin, entry=entry,
+                                                               authorization=auth)
+        elif source == "openclaw":
+            ok = await orch.skill_importer.import_from_openclaw(skill_name, pin=remote_pin,
+                                                                 authorization=auth)
+        else:
+            ok = await orch.skill_importer.import_from_github(source, skill_name, pin=remote_pin,
+                                                               authorization=auth)
+    except RemoteImportRefused as exc:
+        code = exc.code
+        refusal = getattr(orch.skill_importer, "last_refusal", None)
+        if code == "invalid_skill" and isinstance(refusal, list) and refusal:
+            return JSONResponse({"ok": False, "error": f"Skill '{skill_name}' in {source} has a SKILL.md that is "
+                                                        "not valid, and was not imported",
+                                 "reason": "invalid_skill_md", "problems": [p.as_dict() for p in refusal]},
+                                status_code=422)
+        status = (403 if code in {"install_denied", "egress_denied"}
+                  else 503 if code == "authorization_unavailable" or code == "staging_failed"
+                  else 409 if code == "already_exists"
+                  else 502 if code == "fetch_failed"
+                  else 422)
+        return JSONResponse({"ok": False, "error": "remote skill import refused", "reason": code}, status_code=status)
     if ok:
+        if len(gate_verdicts) < 2 or egress_grants < 1:
+            return JSONResponse({"ok": False, "error": "remote import authority was not crossed",
+                                 "reason": "authorization_unavailable"}, status_code=503)
         orch.skills.discover()
-        return {"ok": True, "source": source, "skill": skill_name}
+        return {"ok": True, "source": source, "skill": skill_name,
+                "kernel": gate_verdicts[-1],
+                "quarantined": True, "status": "installed_review_required"}
     refusal = getattr(orch.skill_importer, "last_refusal", None)
     if isinstance(refusal, list) and refusal:
         # H350 — found, but its SKILL.md is not valid: say why, never "not found".
@@ -660,12 +881,12 @@ async def skills_import(req: Request):
     return JSONResponse({"ok": False, "error": f"Skill '{skill_name}' not found in {source}"}, status_code=404)
 
 
-@router.get("/skills/imported")
+@router.get("/skills/imported", dependencies=[Depends(user_guard)])
 async def skills_imported():
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    return {"imported": orch.skill_importer.list_imported()}
+    return nocache_json({"imported": orch.skill_importer.list_imported()})
 
 
 # ── Agent Marketplace Endpoints (H5.8) ───────────────────────────
@@ -925,8 +1146,12 @@ async def list_pending_skills():
     return JSONResponse({"pending": pending, "count": len(pending)})
 
 
+class ReviewedSkillBody(BaseModel):
+    expected_fingerprint: str = Field(..., pattern=r"^sha256:[0-9a-f]{64}$")
+
+
 @router.post("/api/skills/{name}/approve", dependencies=[Depends(admin_guard)])
-async def approve_generated_skill(name: str):
+async def approve_generated_skill(name: str, body: ReviewedSkillBody):
     """CDX-8: owner-approve a quarantined auto-generated skill — sign + activate it. Only an
     admin can promote LLM-authored code from pending to executable, and the promotion
     crosses the ``skill.generation`` action kernel gate (H330): a halt answers 403
@@ -934,7 +1159,7 @@ async def approve_generated_skill(name: str):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    if orch.skills.approve_generated_skill(name):
+    if orch.skills.approve_generated_skill(name, body.expected_fingerprint):
         from agents.core import safe_mode
 
         if safe_mode.enabled():
@@ -944,8 +1169,10 @@ async def approve_generated_skill(name: str):
         return {"approved": True, "skill": name}
     refused = str(getattr(orch.skills, "last_approval_refusal", "") or "")
     if refused:
-        return JSONResponse({"error": f"the action kernel refused to approve '{name}'", "reason": refused,
-                             "skill": name}, status_code=403 if refused == "kernel_denied" else 503)
+        status = (403 if refused == "kernel_denied" else 409 if refused == "reviewed_source_changed"
+                  else 422 if refused == "review_fingerprint_required" else 503)
+        return JSONResponse({"error": f"skill '{name}' was not approved", "reason": refused,
+                             "skill": name}, status_code=status)
     return JSONResponse({"error": f"no pending skill '{name}'"}, status_code=404)
 
 
@@ -1004,6 +1231,7 @@ class BulkReviewBody(BaseModel):
 
     approved: bool
     skills: list[str] = Field(default_factory=list, max_length=BULK_REVIEW_MAX)
+    skill_fingerprints: dict[str, str] = Field(default_factory=dict)
     proposals: list[str] = Field(default_factory=list, max_length=BULK_REVIEW_MAX)
     batches: list[str] = Field(default_factory=list, max_length=BULK_REVIEW_MAX)
     reason: str | None = Field(default=None, max_length=500)
@@ -1040,7 +1268,7 @@ def _bulk_review(orch, body: BulkReviewBody) -> dict:
             continue
         try:
             if body.approved:
-                ok = bool(loader.approve_generated_skill(name))
+                ok = bool(loader.approve_generated_skill(name, body.skill_fingerprints.get(name)))
                 done = {"approved": True}
             else:
                 dest = loader.discard_generated_skill(name, _discard_archive())
@@ -1152,6 +1380,18 @@ async def bulk_review(body: BulkReviewBody):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
+    if body.approved and body.skills:
+        orch, loader, unavailable = require_component("skills", "skills are not available")
+        if unavailable is not None:
+            return unavailable
+        for name in dict.fromkeys(body.skills):
+            expected = body.skill_fingerprints.get(name)
+            if not isinstance(expected, str) or not expected.startswith("sha256:"):
+                return JSONResponse({"error": "reviewed fingerprint required for every skill",
+                                     "reason": "review_fingerprint_required", "skill": name}, status_code=422)
+            if loader.pending_skill_fingerprint(name) != expected:
+                return JSONResponse({"error": "a skill changed since review; nothing was approved",
+                                     "reason": "reviewed_source_changed", "skill": name}, status_code=409)
     out = await asyncio.to_thread(_bulk_review, orch, body)
     return JSONResponse(out, headers={"Cache-Control": "no-store"})
 

@@ -1,5 +1,14 @@
 # Lean queue — the pick list for `LEAN_DRIVER.md`
 
+> **Historical ranked queue, inactive 2026-11-04.** Its checked rows and dated
+> receipts remain evidence, but no unchecked row, model column or “next” text is
+> an active instruction to start work. Use the
+> [canonical local workflow](../hermes/autonomous-development-objective.md) and
+> [cumulative handoff](../hermes/CAMPAIGN_HANDOFF.md), verify checkout/SHA, and
+> query current Hermes/BACKLOG records. Integrate the current batch first. The
+> old remote-lock, optional-slice and publishing rules below are inactive; do
+> not stage, commit, push, merge, deploy or reactivate a schedule from this list.
+
 > Ranked 2026-10-26 from `scripts/backlog.py open` (44 open rows), the Hermes handoff of
 > 2026-10-25 and the S1–S8 bar of `NERVA_VISION.md` §8. One row = one fresh session = one PR.
 > **Lock:** a remote branch `lean/<slug>` means the row is taken. **needs:** `ai` = a session may

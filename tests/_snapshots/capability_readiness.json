@@ -112,15 +112,8 @@
   "plugin:writeback_google_calendar": "wired",
   "plugin:writeback_notion": "wired",
   "skill:Brief": "wired",
-  "skill:Calendar": "wired",
-  "skill:Content": "wired",
-  "skill:Email Triage": "wired",
-  "skill:Family Store": "wired",
-  "skill:Health": "wired",
   "skill:PM": "wired",
   "skill:Security Monitor": "wired",
-  "skill:Spotify": "wired",
   "skill:System Monitor": "wired",
-  "skill:Weather Intel": "seam",
-  "skill:Web Research": "wired"
+  "skill:Weather Intel": "seam"
 }

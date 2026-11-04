@@ -12,6 +12,12 @@ export type TurnOutcome = {
   tps?: number;
   compressions?: number;
   total_tokens?: number;
+  usage_detail?: {
+    input_tokens: number | null; output_tokens: number | null;
+    estimated_cost_usd: number | null;
+    usage_basis: 'provider_complete' | 'measured_zero' | 'unknown';
+    cost_basis: 'price_table' | 'local_zero' | 'measured_zero' | 'unknown';
+  };
   title?: string;
   battery?: true;
   completion?: { kind: string; explanation: string; severity: 'info' | 'warning'; unanswered_tool_results: number };
@@ -131,6 +137,18 @@ export function turnOutcome(value: unknown): TurnOutcome | null {
   if (finitePositive(value.tps)) result.tps = value.tps;
   if (count(value.compressions)) result.compressions = value.compressions;
   if (count(value.total_tokens)) result.total_tokens = value.total_tokens;
+  if (object(value.usage_detail)) {
+    const usage = value.usage_detail;
+    const countsOkay = (usage.input_tokens === null && usage.output_tokens === null
+      && usage.usage_basis === 'unknown')
+      || (count(usage.input_tokens) && count(usage.output_tokens)
+        && ['provider_complete', 'measured_zero'].includes(String(usage.usage_basis)));
+    const costOkay = (usage.estimated_cost_usd === null && usage.cost_basis === 'unknown')
+      || (finitePositive(usage.estimated_cost_usd) && usage.estimated_cost_usd <= 1_000_000_000
+        && ['price_table', 'local_zero', 'measured_zero'].includes(String(usage.cost_basis))
+        && (usage.cost_basis === 'price_table' || usage.estimated_cost_usd === 0));
+    if (countsOkay && costOkay) result.usage_detail = usage as TurnOutcome['usage_detail'];
+  }
   if (typeof value.title === 'string' && value.title.trim() && value.title.length <= 200)
     result.title = value.title;
   if (value.battery === true) result.battery = true;
@@ -194,7 +212,17 @@ export function StatusStrip({ outcome, power }: { outcome?: TurnOutcome | null; 
       Prompt context: {outcome.context_detail.prompt_tokens} / {outcome.context_detail.window_tokens}
     </output>}
     {outcome.context_pct !== undefined && <output aria-label="Prompt context percent" style={{ display: 'block' }}>
-      Context: {outcome.context_pct.toFixed(1)}%
+      Context: {outcome.context_pct.toFixed(1)}%{' '}
+      <progress aria-label="Context usage meter" value={outcome.context_pct} max={100}
+        style={{ width: 90, height: 6, verticalAlign: 'middle' }} />
+    </output>}
+    {outcome.usage_detail && <output aria-label="Turn usage" style={{ display: 'block' }}>
+      Turn usage: {outcome.usage_detail.input_tokens === null ? 'tokens unknown'
+        : `${outcome.usage_detail.input_tokens.toLocaleString('en-US')} input / ${outcome.usage_detail.output_tokens!.toLocaleString('en-US')} output`}
+      {' · '}{outcome.usage_detail.estimated_cost_usd === null ? 'cost unknown'
+        : outcome.usage_detail.cost_basis === 'price_table'
+          ? `$${outcome.usage_detail.estimated_cost_usd.toFixed(6)} estimated (price table)`
+          : outcome.usage_detail.cost_basis === 'local_zero' ? '$0 local route' : '$0 no model calls'}
     </output>}
     {outcome.cache_hit !== undefined && <output aria-label="Prompt cache hit"
       data-band={outcome.cache_hit >= 70 ? 'high' : outcome.cache_hit >= 40 ? 'medium' : 'low'}

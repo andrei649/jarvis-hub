@@ -1,7 +1,7 @@
 """Tests for the loader-pattern Spotify skill (H2.5, Claude).
 
 Distinct from opencode's tests/test_spotify.py (HTTP-router pattern) — this
-covers skills/spotify/main.py which the real SkillLoader discovers.
+covers optional-skills/spotify/main.py which the real SkillLoader discovers.
 """
 
 import importlib.util
@@ -16,7 +16,7 @@ sys.path.insert(0, str(repo_root / "agents"))
 
 
 def _load():
-    path = repo_root / "skills" / "spotify" / "main.py"
+    path = repo_root / "optional-skills" / "spotify" / "main.py"
     spec = importlib.util.spec_from_file_location("spotify_skill_test", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -93,7 +93,7 @@ async def test_no_token_graceful(monkeypatch):
 def test_manifest_parses_via_loader():
     from agents.core.skills.loader import SkillLoader
     sl = SkillLoader()
-    manifest = sl._parse_manifest(repo_root / "skills" / "spotify" / "SKILL.md")
+    manifest = sl._parse_manifest(repo_root / "optional-skills" / "spotify" / "SKILL.md")
     assert manifest["name"] == "Spotify"
     assert "jerome" in manifest["agents"]
     cmds = {c["command"] for c in manifest["commands"]}

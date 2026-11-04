@@ -30,11 +30,25 @@ beforeEach(() => {
 
 describe('kill-switch wiring', () => {
   it('GET reads /api/security/kill-switch', async () => {
-    const fn = mockFetch({ halted: false });
-    await getKillSwitch();
+    const fn = mockFetch({ global: false, any_halted: true, halted_count: 1, halted: { private_agent: 'private reason' } });
+    expect(await getKillSwitch()).toEqual({ global: false, any_halted: true, halted_count: 1 });
     const [path, init] = lastCall(fn);
     expect(path).toBe('/api/security/kill-switch');
     expect(init.method).toBe('GET');
+  });
+
+  it('rejects an incomplete public state instead of interpreting it as armed', async () => {
+    mockFetch({ global: false, halted: {} });
+    await expect(getKillSwitch()).rejects.toThrow(/kill-switch/i);
+  });
+
+  it.each([
+    { global: false, any_halted: false, halted_count: 1 },
+    { global: false, any_halted: true, halted_count: 0 },
+    { global: true, any_halted: false, halted_count: 0 },
+  ])('rejects contradictory public halt state %j', async (state) => {
+    mockFetch(state);
+    await expect(getKillSwitch()).rejects.toThrow(/kill-switch/i);
   });
 
   it('POST engages with {engage:true, scope:"global"} to /api/security/kill-switch', async () => {

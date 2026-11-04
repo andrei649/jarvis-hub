@@ -99,7 +99,7 @@ async def learning_promote(body: PromoteRequest):
     })
 
 
-@router.get("/learning/stats")
+@router.get("/learning/stats", dependencies=[Depends(user_guard)])
 async def learning_stats():
     """Live learning stats for SystemsPanel."""
     orch = get_orch()

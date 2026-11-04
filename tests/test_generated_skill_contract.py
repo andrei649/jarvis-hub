@@ -59,7 +59,7 @@ def _approved(loader, tmp_path, cmd="tidy_inbox"):
     """Generate + owner-approve a skill; return (skill, skill_dir)."""
     name = _gen(loader, cmd=cmd)
     assert name is not None
-    assert loader.approve_generated_skill(name) is True
+    assert loader.approve_generated_skill(name, loader.pending_skill_fingerprint(name)) is True
     skill_dir = tmp_path / name
     skill = _registered(loader, skill_dir)
     assert skill is not None and skill.module is not None
@@ -105,7 +105,7 @@ def test_get_commands_names_resolve_on_the_module(loader, tmp_path):
 
 def test_approved_skill_loads_without_a_failure_warning(loader, tmp_path, caplog):
     name = _gen(loader)
-    assert loader.approve_generated_skill(name) is True
+    assert loader.approve_generated_skill(name, loader.pending_skill_fingerprint(name)) is True
     caplog.clear()
     with caplog.at_level("WARNING"):
         loader.skills.clear()

@@ -104,7 +104,6 @@ PUBLIC_READS = {
     "GET /api/health/components",
     "GET /api/status",
     "GET /status",
-    "GET /api/local-docs",
     # Catalogs shipped in code (templates, specs, synthetic fixtures).
     "GET /api/agent-templates",
     "GET /api/design-manifest",          # HUD design tokens parsed from the shipped stylesheet
@@ -121,28 +120,18 @@ PUBLIC_READS = {
     "GET /api/memory/eval/corpus",       # owned synthetic corpus, not user memory
     "GET /api/voice/capabilities",
     "GET /api/voice/wyoming",
-    "GET /skills/imported",
-    "GET /sandbox/status",
     "GET /plugins",                      # config presence booleans, never key values
-    "GET /agents",                       # roster + aggregate stats + skill names
     # Aggregate observability (counts/rates/percentiles — no message content).
     "GET /api/analytics/cost",
     "GET /api/analytics/locality",
     "GET /api/analytics/model-tiers",
-    "GET /api/metrics/capabilities",
-    "GET /api/metrics/kernel",
     "GET /api/metrics/north-star",
     "GET /api/quality",                  # rolling average + alert flag; scores are guarded
     "GET /api/review/stats",
-    "GET /learning/stats",
     "GET /bench",
     "GET /bench/stats",
     "GET /memory/stats",
     "GET /heartbeat/status",
-    "GET /api/arena/leaderboard",        # scores only; match bodies are guarded
-    "GET /api/eval/datasets",
-    "GET /api/eval/datasets/{name}/runs",
-    "GET /api/eval/datasets/{name}/compare",
     "GET /api/autonomy/escalation/targets",
     # Deliberate transparency: the trust surface is readable by design (H18.18
     # reads it from mobile without tokens; writes stay admin-guarded).
@@ -157,7 +146,6 @@ PUBLIC_READS = {
     "GET /api/oauth/status",
     "GET /api/oauth/auth-url",
     "GET /api/oauth/callback",   # provider redirect; verify_state() gates the exchange, page shows only the service name
-    "GET /api/oracle/status",
     # WorldView liveness booleans; the overview (recon/alerts) is guarded.
     # Nerva Workspace (spec §7). The SPA shell serves the built markup with no user data
     # (404 while NERVA_WORKSPACE is off); the session probe tells an anonymous caller
@@ -172,7 +160,7 @@ PUBLIC_READS = {
 # credential, so they are listed in IN_HANDLER_GUARDED below and folded in there.)
 
 # Personal-data reads still open — SEC-B6 debt. Shrink-only.
-PENDING_READ_GUARD = set()  # SEC-B6 COMPLETE — every personal-content read now carries user_guard.
+PENDING_READ_GUARD = set()  # Known content reads are guarded; substance evidence is reviewed separately.
 
 
 # ── H511: credentials checked in the handler body ────────────────────────────

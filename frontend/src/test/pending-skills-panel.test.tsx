@@ -41,10 +41,13 @@ describe('PendingSkillsPanel — the CDX-8 approval gate is reachable', () => {
   });
 
   it('approves the skill the button belongs to, not the first one', async () => {
-    const fn = mockFetch(PENDING);
+    const fn = routeFetch();
     render(<PendingSkillsPanel />);
     await waitFor(() => expect(screen.getByText('tidy-notes')).toBeTruthy());
 
+    expect(screen.getAllByTitle(/approve/)[1].disabled).toBe(true);
+    fireEvent.click(screen.getAllByTitle(/^review/)[1]);
+    await waitFor(() => expect(screen.getAllByTitle(/approve/)[1].disabled).toBe(false));
     // second row's ✓ — pins that the name is per-row, which a shared handler would break
     fireEvent.click(screen.getAllByTitle(/approve/)[1]);
 
@@ -69,6 +72,7 @@ describe('PendingSkillsPanel — the CDX-8 approval gate is reachable', () => {
 const DETAIL = {
   name: 'tidy-notes', folder: 'tidy_notes', quarantined: true, more_files: 0,
   review_note: 'agent=pepper\ntask=tidy the notes\n',
+  fingerprint: `sha256:${'a'.repeat(64)}`,
   warnings: [{ path: 'main.py', rule: 'subprocess-shell', line: 3, message: 'x' }],
   files: [
     { path: 'SKILL.md', size: 40, text: '# Tidy Notes\nsteps', truncated: false },
@@ -134,6 +138,10 @@ describe('PendingSkillsPanel — H331 review, discard and bulk decisions', () =>
     render(<PendingSkillsPanel />);
     await waitFor(() => expect(screen.getByText('plan')).toBeTruthy());
     await waitFor(() => expect(screen.getByText('notes, alpha')).toBeTruthy());
+    fireEvent.click(screen.getAllByTitle(/^review/)[0]);
+    await waitFor(() => expect(screen.getByTestId('pending-detail-summarize-inbox')).toBeTruthy());
+    fireEvent.click(screen.getAllByTitle(/^review/)[1]);
+    await waitFor(() => expect(screen.getByTestId('pending-detail-tidy-notes')).toBeTruthy());
     fireEvent.click(screen.getByLabelText('select summarize-inbox'));
     fireEvent.click(screen.getByLabelText('select tidy-notes'));
     fireEvent.click(screen.getByLabelText('select change to plan'));
@@ -145,7 +153,9 @@ describe('PendingSkillsPanel — H331 review, discard and bulk decisions', () =>
 
     await waitFor(() => expect(posts(fn, '/api/skills/review/bulk').length).toBe(1));
     const body = JSON.parse(posts(fn, '/api/skills/review/bulk')[0][1].body);
-    expect(body).toEqual({ approved: true, skills: ['summarize-inbox', 'tidy-notes'], proposals: ['p1'], batches: ['b1'] });
+    expect(body).toEqual({ approved: true, skills: ['summarize-inbox', 'tidy-notes'],
+      skill_fingerprints: { 'summarize-inbox': DETAIL.fingerprint, 'tidy-notes': DETAIL.fingerprint },
+      proposals: ['p1'], batches: ['b1'] });
     await waitFor(() => expect(screen.getByText('approved 3')).toBeTruthy());
   });
 
@@ -163,6 +173,7 @@ describe('PendingSkillsPanel — H331 review, discard and bulk decisions', () =>
     const body = JSON.parse(posts(fn, '/api/skills/review/bulk')[0][1].body);
     expect(body.approved).toBe(false);
     expect(body.skills).toEqual(['tidy-notes']);
+    expect(body.skill_fingerprints).toEqual({});
     expect(body.proposals).toEqual(['p1']);
     await waitFor(() => expect(screen.getByText(/1 not decided: p1 \(not_pending:approved\)/)).toBeTruthy());
   });

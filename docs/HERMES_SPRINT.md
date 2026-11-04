@@ -1,5 +1,15 @@
 # Sprint: echivalarea funcțiilor Hermes
 
+> **Current workflow (2026-11-04):**
+> [`autonomous-development-objective.md`](hermes/autonomous-development-objective.md)
+> governs the local 697-contract campaign. Start with the cumulative
+> [`CAMPAIGN_HANDOFF.md`](hermes/CAMPAIGN_HANDOFF.md), confirm its checkout/SHA,
+> integrate the current batch, and query current records before selecting another
+> contract. Interrupt only for a concrete blocking security, correctness or build
+> defect. The dated milestones below are evidence at their stated SHAs, not an
+> active pick order or current acceptance claim. No stage, commit, push, merge,
+> deploy, PR update, paid activation or schedule reactivation in this campaign.
+
 
 > Frozen H011/H277 milestone, 2026-10-04, source `b9d4d22d`: complete backend
 > 23,086 passed, 34 ordinary skips, one existing xfail, zero failures/errors;

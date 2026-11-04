@@ -125,7 +125,7 @@ def test_generated_skill_approval_obeys_live_generation_contract(tmp_path, monke
     contract = _DenyContract()
     monkeypatch.setattr(loader_mod, "SKILL_GENERATION_CONTRACT", contract, raising=False)
 
-    assert loader.approve_generated_skill(name) is False
+    assert loader.approve_generated_skill(name, loader.pending_skill_fingerprint(name)) is False
     assert (tmp_path / name / "PENDING_REVIEW").exists()
     assert contract.calls[0][0]["action"] == "approve"
 

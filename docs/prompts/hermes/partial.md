@@ -1,5 +1,18 @@
 # Hermes parity: close the PARTIAL rows (ultracode)
 
+> **Inactive 2026-11-04: historical bucket prompt, do not execute.** The active
+> local Hermes campaign follows [the canonical workflow](../../hermes/autonomous-development-objective.md)
+> and [cumulative handoff](../../hermes/CAMPAIGN_HANDOFF.md), verified against the
+> current checkout/SHA. Integrate the current batch first; finish the frozen 697
+> contracts using current bounded queries and concrete impact evidence. No stage,
+> commit, push, merge, deploy, PR update, paid activation or schedule reactivation.
+> The 2026-09-28 branch, bucket, protected-path and stale-citation instructions
+> below are dated receipts, not current authority. Preserve owner-only controls.
+
+<details>
+<summary>2026-09-28 bucket procedure — inactive archive</summary>
+
+
 You are working in `andrei649/jarvis-hub` on branch `claude/cto-session-recovery-qinvkg` (draft PR #1207). Your job is to move rows whose **live** status is `partial` to `equivalent`. A row becomes equivalent only when every open item is built and verified. When you cannot get a row that far, rewrite its `remaining` so it is shorter and exact.
 
 You cannot see any earlier conversation. Every number in this prompt dates from 2026-09-28 and is only for orientation. Compute everything from the live repo.
@@ -272,3 +285,5 @@ Post one PR comment, "How verified", saying what you ran. Do not rewrite the sha
 - Known gaps.
 - Mutation results (killed and survived).
 - Exact gate and CI results, with counts. List anything not run as not run.
+
+</details>
