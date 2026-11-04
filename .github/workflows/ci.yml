@@ -22,7 +22,10 @@ name: CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    # `labeled` is how a PR opts into the post-merge matrix (label `ci-full`)
+    # without a push to main. workflow_dispatch needs actions:write, which the
+    # cloud-agent integration does not have.
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
   push:
     branches: [main]
   # Manual runs use the push matrix (including Windows) so a branch can prove
@@ -46,6 +49,8 @@ permissions:
 
 jobs:
   test:
+    # A label other than ci-full must not rerun the suite. synchronize/push still run.
+    if: github.event.action != 'labeled' || github.event.label.name == 'ci-full'
     # Observed on main, 2026-11: ubuntu finishes in ~25 min; a Windows run that
     # actually exits (2026-10-29) took ~112 min. 60 and 180 leave headroom over
     # those completions and still die long before GitHub's 6-hour default, which
@@ -55,11 +60,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # PRs: ubuntu only (fast feedback). Post-merge pushes to main, and a
-        # manual workflow_dispatch, add the Windows lane — Jarvis runs on
-        # Windows, so the coverage stays, it just no longer sits on the PR
-        # critical path.
-        os: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && fromJSON('["ubuntu-latest", "windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
+        # PRs: ubuntu only (fast feedback). Post-merge pushes to main, a manual
+        # workflow_dispatch, or a PR labeled `ci-full` add the Windows lane —
+        # Jarvis runs on Windows, so the coverage stays, it just no longer sits
+        # on the PR critical path.
+        os: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'ci-full')) && fromJSON('["ubuntu-latest", "windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
@@ -104,7 +109,7 @@ jobs:
     # real containment test instead of letting it skip). The job itself is
     # about a minute; 20 covers a cold image pull.
     timeout-minutes: 20
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'ci-full')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -137,7 +142,7 @@ jobs:
     # deterministic replay path without WorldMonitor, Docker, API keys, or
     # network access. Observed under a minute; 15 is the bound.
     timeout-minutes: 15
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'ci-full')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -157,7 +162,7 @@ jobs:
     # shipped static artifacts inside JSDOM; see tests/frontend/README.md.
     # Observed ~1 min; 20 covers npm ci plus coverage.
     timeout-minutes: 20
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'ci-full')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -177,6 +182,7 @@ jobs:
     # with `test`; it would have caught both stale-bundle reds of 2026-08-31.
     # Observed ~4 min; 20 covers a cold npm ci.
     timeout-minutes: 20
+    if: github.event.action != 'labeled' || github.event.label.name == 'ci-full'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -222,7 +228,7 @@ jobs:
     # readable git diff on drift. Observed ~1 min when the server comes up;
     # 20 covers the toolchain install plus the 90s readiness wait.
     timeout-minutes: 20
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'ci-full')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
