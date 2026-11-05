@@ -20017,7 +20017,7 @@
         },
         {
           "path": "tests/test_workspace_extraction_process.py",
-          "sha256": "2a2643e2b53568e160058776227c6cce62fb929c5bd91d82123eb04213ddf7d2"
+          "sha256": "9f15e0424e5dc5ccd357bad194d87c631a2434978ebc05a83141595f3221932b"
         },
         {
           "path": "tests/support/workspace_ocr_page.py",
@@ -25210,7 +25210,7 @@
         },
         {
           "path": "agents/core/voice/local_providers.py",
-          "sha256": "47f1318a5d922bc50281766246c3a0bf2edf2ae9ad0ab4eff991bfc8b36a37df"
+          "sha256": "1b74203b4ddc83d4b0db65c267800d0510f2b494b4dd0f033af00e6ab677fb59"
         },
         {
           "path": "agents/core/voice/command_settings.py",
@@ -25752,7 +25752,7 @@
       "id": "H524",
       "row_sha256": "ed5df1d760c2002f8f52ed6b8692d82e423e56bdec4c2e465410c9943c7d0b49",
       "status": "partial",
-      "summary": "Fresh assessment 2026-10-13 (ff8641a7): TTSEngine (agents/core/voice/tts.py:138) dispatches across edge-tts (default voice en-GB-RyanNeural, a network call, agents/core/voice/tts.py:147), Kokoro, local Piper (agents/core/voice/tts.py:345 via agents/core/voice/local_providers.py:882), XTTS (agents/core/voice/tts.py:360), ElevenLabs (agents/core/voice/tts.py:383) and Fish Audio (agents/core/voice/tts.py:422). Config-driven shell-command TTS/STT providers exist (agents/core/voice/provider_registry.py:9, registry at :46) and command output is bounded (agents/core/voice/local_providers.py:80). A model-callable `speak` tool exists (agents/core/voice/speak_tool.py:292) but plays a clip on a room speaker through the Media Director rather than returning an audio file for the platform to deliver. Tests: tests/test_tts.py, tests/test_h613_piper_command_voice.py, tests/test_speak_tool.py. Re-read 2026-11-04: speak_piper moved from line 768 to line 882 because the Windows ACL helpers were inserted above it. The output cap is still MAX_AUDIO_OUT_BYTES at agents/core/voice/local_providers.py:80. The missing vendor TTS backends and a channel-delivered text_to_speech remain. The row stays partial.",
+      "summary": "Fresh assessment 2026-10-13 (ff8641a7): TTSEngine (agents/core/voice/tts.py:138) dispatches across edge-tts (default voice en-GB-RyanNeural, a network call, agents/core/voice/tts.py:147), Kokoro, local Piper (agents/core/voice/tts.py:345 via agents/core/voice/local_providers.py:805), XTTS (agents/core/voice/tts.py:360), ElevenLabs (agents/core/voice/tts.py:383) and Fish Audio (agents/core/voice/tts.py:422). Config-driven shell-command TTS/STT providers exist (agents/core/voice/provider_registry.py:9, registry at :46) and command output is bounded (agents/core/voice/local_providers.py:80). A model-callable `speak` tool exists (agents/core/voice/speak_tool.py:292) but plays a clip on a room speaker through the Media Director rather than returning an audio file for the platform to deliver. Tests: tests/test_tts.py, tests/test_h613_piper_command_voice.py, tests/test_speak_tool.py. Re-read 2026-11-05: speak_piper is at agents/core/voice/local_providers.py:805. The Everyone-write check that sat above it now lives in agents/core/platform_files.py and decides each write bit on its own (explicit deny, then explicit allow, then inherited deny, then inherited allow). The output cap is still MAX_AUDIO_OUT_BYTES at agents/core/voice/local_providers.py:80. The missing vendor TTS backends and a channel-delivered text_to_speech remain. The row stays partial.",
       "remaining": "- OpenAI / OpenAI-compatible TTS backend (plus Gemini, MiniMax, Mistral, xAI, DeepInfra, NeuTTS, KittenTTS)\n- A model-callable text_to_speech that returns an audio file a channel delivers natively (speak only targets room speakers and needs JARVIS_MEDIA_DIRECTOR)\n- A local default voice; edge-tts (network) is still the default\n- A third-party Python provider ABC (registry is in-tree only), response size limits on the cloud HTTP backends, and a setup wizard/picker for TTS",
       "evidence": [
         {
@@ -25761,7 +25761,7 @@
         },
         {
           "path": "agents/core/voice/local_providers.py",
-          "sha256": "47f1318a5d922bc50281766246c3a0bf2edf2ae9ad0ab4eff991bfc8b36a37df"
+          "sha256": "1b74203b4ddc83d4b0db65c267800d0510f2b494b4dd0f033af00e6ab677fb59"
         },
         {
           "path": "agents/core/voice/provider_registry.py",
@@ -26176,7 +26176,7 @@
         },
         {
           "path": "tests/test_workspace_extraction_process.py",
-          "sha256": "2a2643e2b53568e160058776227c6cce62fb929c5bd91d82123eb04213ddf7d2"
+          "sha256": "9f15e0424e5dc5ccd357bad194d87c631a2434978ebc05a83141595f3221932b"
         },
         {
           "path": "tests/support/workspace_ocr_page.py",
@@ -29353,7 +29353,7 @@
       "evidence": [
         {
           "path": "agents/core/voice/local_providers.py",
-          "sha256": "47f1318a5d922bc50281766246c3a0bf2edf2ae9ad0ab4eff991bfc8b36a37df"
+          "sha256": "1b74203b4ddc83d4b0db65c267800d0510f2b494b4dd0f033af00e6ab677fb59"
         },
         {
           "path": "agents/core/voice/command_settings.py",

@@ -257,7 +257,13 @@ async def test_reap_reports_a_survivor_without_waiting_out_the_job(monkeypatch):
         return Killer()
 
     monkeypatch.setattr(extract_process.asyncio, "create_subprocess_exec", fake_exec)
+    # 4242 is not this process. On POSIX _reap asks _kill_session_groups to
+    # SIGKILL every group in that session, which would reap unrelated runners.
+    killed: list[int] = []
+    monkeypatch.setattr(extract_process, "_kill_session_groups", lambda sid: killed.append(sid))
     started = time.monotonic()
     with pytest.raises(OSError, match="descendant kept a pipe open"):
         await extract_process._reap(Survivor())
     assert time.monotonic() - started < 12
+    if sys.platform != "win32":
+        assert killed == [4242]

@@ -451,94 +451,17 @@ def claim_output(path: Path, workdir: Path, temp_dir: Path, kind: str) -> tuple[
 
 # ── programs ─────────────────────────────────────────────────────────────────────────
 
-# FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_DELETE_CHILD | DELETE | WRITE_DAC
-# | WRITE_OWNER | GENERIC_WRITE | GENERIC_ALL. An Everyone ACE with any of these
-# can replace the program or a directory entry.
-_WIN_WRITE_MASK = 0x2 | 0x4 | 0x40 | 0x10000 | 0x40000 | 0x80000 | 0x40000000 | 0x10000000
-
-
 def _windows_everyone_write(path: Path) -> bool:
     """Whether Everyone (S-1-1-0) can write *path*.
 
     CPython reports ``S_IWOTH`` for every non-readonly Windows file, so ``st_mode``
-    cannot answer this. A DACL that cannot be read is treated as writable (fail
-    closed). A NULL DACL grants everyone full control.
+    cannot answer this. Write bits are judged one at a time: a DENY for DELETE
+    does not cancel an ALLOW of ``FILE_WRITE_DATA``. A DACL that cannot be read,
+    and a NULL DACL, are treated as writable.
     """
-    import ctypes
-    from ctypes import wintypes
+    from agents.core.platform_files import everyone_rights
 
-    adv = ctypes.WinDLL("advapi32", use_last_error=True)
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    adv.GetNamedSecurityInfoW.argtypes = (
-        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
-        ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_void_p),
-        ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_void_p),
-        ctypes.POINTER(ctypes.c_void_p))
-    adv.GetNamedSecurityInfoW.restype = wintypes.DWORD
-    adv.GetAclInformation.argtypes = (
-        ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD)
-    adv.GetAclInformation.restype = wintypes.BOOL
-    adv.GetAce.argtypes = (ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p))
-    adv.GetAce.restype = wintypes.BOOL
-    adv.ConvertStringSidToSidW.argtypes = (wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_void_p))
-    adv.ConvertStringSidToSidW.restype = wintypes.BOOL
-    adv.EqualSid.argtypes = (ctypes.c_void_p, ctypes.c_void_p)
-    adv.EqualSid.restype = wintypes.BOOL
-    kernel.LocalFree.argtypes = (ctypes.c_void_p,)
-    kernel.LocalFree.restype = ctypes.c_void_p
-
-    class AclSize(ctypes.Structure):
-        _fields_ = [("AceCount", wintypes.DWORD), ("AclBytesInUse", wintypes.DWORD),
-                    ("AclBytesFree", wintypes.DWORD)]
-
-    class AceHead(ctypes.Structure):
-        _fields_ = [("AceType", ctypes.c_ubyte), ("AceFlags", ctypes.c_ubyte),
-                    ("AceSize", wintypes.WORD)]
-
-    owner = ctypes.c_void_p()
-    group = ctypes.c_void_p()
-    dacl = ctypes.c_void_p()
-    sacl = ctypes.c_void_p()
-    descriptor = ctypes.c_void_p()
-    everyone = ctypes.c_void_p()
-    try:
-        code = adv.GetNamedSecurityInfoW(
-            os.fspath(path), 1, 0x4, ctypes.byref(owner), ctypes.byref(group),
-            ctypes.byref(dacl), ctypes.byref(sacl), ctypes.byref(descriptor))
-        if code != 0 or not descriptor.value:
-            return True
-        if not dacl.value:
-            return True  # NULL DACL: everyone has full access
-        if not adv.ConvertStringSidToSidW("S-1-1-0", ctypes.byref(everyone)):
-            return True
-        info = AclSize()
-        if not adv.GetAclInformation(dacl, ctypes.byref(info), ctypes.sizeof(info), 2):
-            return True
-        allowed = denied = False
-        for index in range(info.AceCount):
-            ace = ctypes.c_void_p()
-            if not adv.GetAce(dacl, index, ctypes.byref(ace)) or not ace.value:
-                return True
-            head = ctypes.cast(ace, ctypes.POINTER(AceHead)).contents
-            if head.AceType not in (0, 1) or head.AceSize < 16:
-                continue
-            mask = ctypes.cast(ace.value + 4, ctypes.POINTER(wintypes.DWORD)).contents.value
-            if not mask & _WIN_WRITE_MASK:
-                continue
-            if not adv.EqualSid(everyone, ace.value + 8):
-                continue
-            if head.AceType == 1:
-                denied = True
-            else:
-                allowed = True
-        return allowed and not denied
-    except (OSError, ctypes.ArgumentError, ValueError):
-        return True
-    finally:
-        if everyone.value:
-            kernel.LocalFree(everyone)
-        if descriptor.value:
-            kernel.LocalFree(descriptor)
+    return "write" in everyone_rights(path)
 
 
 def _posix_permission_bits() -> bool:
