@@ -364,7 +364,9 @@ async def test_a_regex_search_of_a_spill_stays_tainted(tmp_path):
 # ── H303: glob file-finding mode ─────────────────────────────────────────────
 
 def _names(result):
-    return [os.path.relpath(f["path"], result["path"]) for f in result["files"]]
+    root = Path(result["path"])
+    return [Path(item["path"]).resolve().relative_to(root.resolve()).as_posix()
+            for item in result["files"]]
 
 
 async def test_a_glob_without_a_pattern_finds_files(tools, workspace):

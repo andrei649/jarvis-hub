@@ -21,6 +21,7 @@ import asyncio
 import json
 import os
 import stat
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -103,6 +104,17 @@ def _py() -> str:
         if candidate and os.path.isabs(candidate) and lp.trusted_program(candidate)[0] is not None:
             return candidate
     pytest.skip("no Python interpreter here passes the command providers' ownership checks")
+
+
+def _make_everyone_writable(path: Path) -> None:
+    """POSIX ``chmod`` is not an ACL. On Windows, grant Everyone write so the
+    refusal tests exercise the DACL check rather than ``st_mode``."""
+    if os.name != "nt":
+        return
+    subprocess.check_call(
+        ["icacls", os.fspath(path), "/grant", "*S-1-1-0:(W)"],
+        stdout=subprocess.DEVNULL,
+    )
 
 
 def _fake(path: Path, tmp: Path, *, no_stdin: bool = False) -> Path:
@@ -637,6 +649,7 @@ async def test_command_not_run_when_unarmed_safe_mode_changed_removed_or_world_w
     assert lp.command_ready("tts").reason == lp.SAFE_MODE and not await spoke()
     monkeypatch.delenv("JARVIS_SAFE_MODE")
     exe.chmod(0o757)
+    _make_everyone_writable(exe)
     assert lp.command_ready("tts").reason == lp.INVALID and not await spoke()
     exe.chmod(0o755)
     assert await spoke()
@@ -1214,12 +1227,14 @@ def test_f0_a_world_writable_script_or_script_dir_is_refused(env):
     assert lp.validate_command([_py(), str(ok), "{output}"], "tts")[0] == []
     loose = _script(env, "print(1)", name="loose.py")
     loose.chmod(0o666)
+    _make_everyone_writable(loose)
     problems = lp.validate_command([_py(), str(loose), "{output}"], "tts")[0]
     assert any(p.startswith("argv[1]") and "writable" in p for p in problems), problems
     shared = env.tmp / "shared"
     shared.mkdir()
     in_shared = _script(env, "print(1)", parent=shared)
     shared.chmod(0o777)
+    _make_everyone_writable(shared)
     problems = lp.validate_command([_py(), str(in_shared), "{output}"], "tts")[0]
     assert any(p.startswith("argv[1]") and "writable" in p for p in problems), problems
     shared.chmod(0o755)
@@ -1820,6 +1835,7 @@ def test_a_program_in_a_sticky_world_writable_directory_is_refused(env):
     shared = env.tmp / "sticky"
     exe = _fake(shared / "say-wav", env.tmp)
     shared.chmod(0o1777)
+    _make_everyone_writable(shared)
     try:
         problems = lp.validate_command(_tts_argv(exe), "tts")[0]
         assert any("writable by every user" in p for p in problems), problems
@@ -1933,3 +1949,32 @@ def test_an_ancestor_that_cannot_be_read_counts_as_loose(env, monkeypatch):
 
     monkeypatch.setattr(lp.os, "stat", fake_stat)
     assert lp._loose_ancestor(exe) == blocked
+
+
+def test_windows_mode_bits_do_not_mark_a_private_directory_loose(tmp_path, monkeypatch):
+    """``st_mode`` on Windows sets group/other write on ordinary directories.
+    That must not refuse a program the way a non-sticky ``0o777`` directory does
+    on POSIX. Everyone-write is an ACL question, injected here."""
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    shared.chmod(0o777)
+    program = shared / "say"
+    program.write_text("x", encoding="utf-8")
+    program.chmod(0o755)
+    monkeypatch.setattr(lp, "_posix_permission_bits", lambda: False)
+    monkeypatch.setattr(lp, "_windows_everyone_write", lambda path: False)
+    assert lp._loose_ancestor(program) is None
+    resolved, why = lp.trusted_program(program)
+    assert why is None and resolved == program.resolve()
+
+
+def test_windows_everyone_write_still_refuses_the_directory(tmp_path, monkeypatch):
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    program = shared / "say"
+    program.write_text("x", encoding="utf-8")
+    program.chmod(0o755)
+    monkeypatch.setattr(lp, "_posix_permission_bits", lambda: False)
+    monkeypatch.setattr(lp, "_windows_everyone_write", lambda path: Path(path) == shared)
+    assert lp._loose_ancestor(program) == shared
+    assert lp.trusted_program(program)[1] == "the program or its directory is writable by every user"
