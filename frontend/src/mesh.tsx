@@ -213,18 +213,24 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
   useEffect(() => { S.current.focus = activeId; }, [activeId]);
   useEffect(() => {
     S.current.tasks = taskList;
-    // Bolt Optimization: Group task fan by owner on state ref when taskList updates
-    // to eliminate Map allocations, string operations, and array scans inside the 60 FPS animation loop.
+    // Bolt Optimization: Group task fan by owner and precompute uniqueTaskOwners on state ref when taskList updates
+    // to eliminate Map and Set allocations, string operations, and array scans inside the 60 FPS animation loop.
     const byOwner = new Map<string, any[]>();
+    const uniqueOwners: string[] = [];
     for (let i = 0; i < taskList.length; i++) {
       const tk = taskList[i];
       const owner = taskOwner(tk);
-      const list = byOwner.get(owner) || [];
+      let list = byOwner.get(owner);
+      if (!list) {
+        list = [];
+        byOwner.set(owner, list);
+        uniqueOwners.push(owner);
+      }
       list.push(tk);
-      byOwner.set(owner, list);
     }
     S.current.tasksByOwner = byOwner;
     S.current.tasksByOwnerList = Array.from(byOwner.entries());
+    S.current.uniqueTaskOwners = uniqueOwners;
   }, [taskList]);
 
   function draw() {
@@ -293,15 +299,13 @@ export function NeuralMesh({ agents = [], tasks = [], activeId, onSelect, motion
       }
     }
     if (!calm && !st.demo && st.tick % 30 === 0 && st.tasks.length) {
-      // Bolt Optimization: Avoid st.tasks.map(taskOwner) array allocation and .forEach callback closure
-      const tasks = st.tasks;
-      const numTasks = tasks.length;
-      const firedOwners = new Set<string>();
-      for (let i = 0; i < numTasks; i++) {
-        const owner = taskOwner(tasks[i]);
-        if (!firedOwners.has(owner)) {
-          firedOwners.add(owner);
-          fire(owner);
+      // Bolt Optimization: Iterate over precomputed uniqueTaskOwners instead of allocating a
+      // new Set<string>() and repeatedly resolving taskOwner() on every 30th frame (~120 Set allocations/min).
+      const owners = st.uniqueTaskOwners;
+      if (owners) {
+        const numOwners = owners.length;
+        for (let i = 0; i < numOwners; i++) {
+          fire(owners[i]);
         }
       }
     }

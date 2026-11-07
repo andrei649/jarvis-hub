@@ -71,3 +71,7 @@
 ## 2026-04-17 - Redundant Canvas Text Alignment Property Assignments in NeuralBurst
 **Learning:** Setting constant canvas properties like `ctx.textAlign = 'left'` inside per-cluster drawing loops in Canvas 2D components (`NeuralBurst` in `frontend/src/burst.tsx`) triggers redundant native canvas state setter operations on every 60 FPS frame (~240-360 setter calls/sec).
 **Action:** Set constant canvas text alignment properties once outside the cluster render loop before drawing region plate labels.
+
+## 2026-04-18 - Periodic Set Allocations and String Processing in NeuralMesh Task Fan Loop
+**Learning:** In Canvas 2D `requestAnimationFrame` loops (`NeuralMesh` in `frontend/src/mesh.tsx`), periodic pulse triggers (e.g. `tick % 30 === 0`) that instantiate `new Set<string>()` and iterate tasks calling `taskOwner(task)` allocate objects (~120 Sets/min) and waste CPU re-extracting owner IDs inside the frame callback.
+**Action:** Pre-compute distinct task owners (`st.uniqueTaskOwners`) on the state ref during state update `useEffect([taskList])` and iterate directly over that array inside the frame rendering tick.
