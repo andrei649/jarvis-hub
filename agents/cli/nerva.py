@@ -298,6 +298,12 @@ def build_parser() -> argparse.ArgumentParser:
     consent.add_argument("--revision", required=True, help="the exact 64-character offer revision from approvals list")
     consent.add_argument("--reason", help="optional human decision reason (at most 280 characters)")
     consent.add_argument("--json", action="store_true")
+    # H484 — the approval dial. No `choices=`: Hermes' words (manual, smart) are read too,
+    # and an unknown word is refused before the hub is asked.
+    approvals_mode = approvals_verbs.add_parser(
+        "mode", help="show or set how much runs without asking: auto|ask|off (owner)")
+    approvals_mode.add_argument("value", nargs="?", metavar="auto|ask|off")
+    approvals_mode.add_argument("--json", action="store_true")
 
     checkpoints = verbs.add_parser("checkpoints", help="owner checkpoint inventory and maintenance")
     checkpoint_verbs = checkpoints.add_subparsers(dest="action", metavar="action")
@@ -2267,7 +2273,64 @@ def _valid_consent_offer(offer: Any) -> bool:
     )
 
 
+_APPROVAL_MODES = ("auto", "ask", "off")
+
+
+def _approval_mode_note(shown: Any) -> str:
+    """H484 — the effective-mode line of one approval card, or "" when the hub sent none
+    (an older hub) or something that is not a mode."""
+    if not isinstance(shown, Mapping):
+        return ""
+    effective, overall = shown.get("effective"), shown.get("global")
+    if effective not in _APPROVAL_MODES:
+        return ""
+    if shown.get("source") == "agent" and overall in _APPROVAL_MODES:
+        return f"mode {effective} (agent override; global {overall})"
+    return f"mode {effective} (global)"
+
+
+def _cmd_approvals_mode(ns: argparse.Namespace, ctx: Context) -> int:
+    """``nerva approvals mode [auto|ask|off]`` — the dial the HUD and ``/approvals`` set.
+    Every position only adds asking; ``off`` is the strictest, never a bypass."""
+    from agents.core.autonomy.mode import parse_requested
+
+    if ns.value is None:
+        reply = ctx.client().get("/autonomy/policy")
+        if ns.json:
+            ctx.dump(reply)
+            return EXIT_OK
+        overall = reply.get("global") if isinstance(reply, Mapping) else None
+        if overall not in _APPROVAL_MODES:
+            ctx.err.write("the hub did not report an approval mode\n")
+            return EXIT_FAILED
+        ctx.say(f"approval mode: {overall}")
+        agents = reply.get("agents")
+        for agent, mode in sorted(agents.items()) if isinstance(agents, Mapping) else ():
+            if mode in _APPROVAL_MODES:
+                ctx.say(f"  {agent}: {mode}")
+        return EXIT_OK
+    wanted = parse_requested(ns.value)
+    if wanted is None:
+        ctx.err.write("mode must be auto|ask|off (manual and smart are read as ask and auto)\n")
+        return EXIT_USAGE
+    reply = ctx.client().post("/autonomy/mode", {"mode": wanted})
+    effective = reply.get("mode") if isinstance(reply, Mapping) else None
+    if effective != wanted or reply.get("ok") is not True:
+        ctx.err.write(f"approval mode {wanted} did not become effective"
+                      + (f"; the hub reports {effective}\n" if effective in _APPROVAL_MODES else "\n"))
+        return EXIT_FAILED
+    if ns.json:
+        ctx.dump(reply)
+        return EXIT_OK
+    ctx.say(f"approval mode: {effective}")
+    if reply.get("audited") is False:
+        ctx.err.write("the change is in effect, but the hub could not record it in the audit log\n")
+    return EXIT_OK
+
+
 def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
+    if ns.action == "mode":
+        return _cmd_approvals_mode(ns, ctx)
     if ns.action == "list":
         reply = ctx.client().get("/autonomy/approvals")
         if ns.json:
@@ -2283,6 +2346,9 @@ def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
                 f"#{task.get('id', '?')}  tier {task.get('risk_tier', '?')}  {flag:12s}  "
                 f"{task.get('kind', '?')}  — {task.get('title', '')}"
             )
+            note = _approval_mode_note(task.get("approval_mode"))
+            if note:
+                ctx.say(f"  {note}")
             offer = task.get("consent_offer")
             task_id = task.get("id")
             if _valid_consent_offer(offer) and type(task_id) is int and task_id > 0:

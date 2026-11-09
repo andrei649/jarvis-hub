@@ -589,7 +589,11 @@ class AutonomyCoordinator:
             try:
                 # Sync the live autonomy knobs (/admin) onto the policy each tick:
                 # mode (AUTO/ASK/OFF) + the money caps + the interrupt budget.
-                amode = str(self._orch.get_setting("autonomy.mode", "auto") or "auto").lower()
+                from agents.core.autonomy.mode import read_mode as _read_mode
+
+                # H484: an unknown stored value reads as ask and a boolean False as off —
+                # never silently AUTO.
+                amode = _read_mode(self._orch.get_setting("autonomy.mode", "auto"))
                 if self._orch.autonomy:
                     pol = self._orch.autonomy.policy
                     if pol.mode != amode:

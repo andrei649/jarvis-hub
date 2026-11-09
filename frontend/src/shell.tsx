@@ -272,6 +272,7 @@ function ContextColumn({ decisions, onDecision, weather, calendar, heartbeat, de
             <div className="dcard" key={d._id}>
               <div className="dh"><span className="who">{d.who}</span><span className={'kind '+d.kind}>{d.kindLabel}</span></div>
               <div className="db"><Bubble text={d.body} /></div>
+              {d.mode && <div className="dm" title={d.mode.why}>{d.mode.label}</div>}
               <div className="da">{d.actions.map((a,j)=><button key={j} className={a.primary?'primary':''} onClick={()=>onDecision(d._id)}>{a.l}</button>)}</div>
             </div>
           ))}

@@ -280,12 +280,21 @@ function renderFeedList(){
 }
 
 /* ── approvals (admin feed, degrades to the user-tier preview) ─────────── */
+/* H484 — the approval mode that applies to the card's agent right now. Only the three
+   exact mode strings are shown; anything else renders nothing. */
+function modeTag(m){
+  if(!m||["auto","ask","off"].indexOf(m.effective)<0)return "";
+  const own=m.source==="agent";
+  return '<span class="tag" title="approval mode'+(own?" (this agent's override)":"")+'">MODE '
+    +m.effective.toUpperCase()+(own?" · AGENT":"")+'</span>';
+}
 function taskRow(t,buttons){
   const rev=t.reversible;
   const tier=esc(t.tier_name||("T"+t.risk_tier));
   return '<div class="row" style="flex-wrap:wrap;">'
     +'<span class="tag '+(rev===false?"bad":(rev===true?"":"warn"))+'">'+(rev===true?"REVERSIBLE":(rev===false?"IRREVERSIBLE":tier))+'</span>'
     +'<span style="color:#bfe6d2;">'+esc(t.agent||"?")+'</span>'
+    +modeTag(t.approval_mode)
     +'<span class="mut" style="flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+esc(t.kind||"")+'">'+esc(t.title||t.kind||("task "+t.id))+'</span>'
     +(buttons?('<span style="display:flex;gap:6px;">'
       +'<button class="btn" onclick="decide('+Number(t.id)+',\'accept\')">ACCEPT</button>'

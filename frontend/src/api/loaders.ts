@@ -50,6 +50,28 @@ export interface JarvisData {
    `POST /autonomy/tasks/{id}/decision`, which lives in the Decision Inbox; a cockpit card
    offering "Approve" that merely dismissed would be the worst possible lie on this
    surface, since the operator would believe they had decided something. */
+const APPROVAL_MODES = ['auto', 'ask', 'off'];
+const MODE_MEANS: Record<string, string> = {
+  auto: 'this waits because of its risk tier',
+  ask: 'anything with a side effect waits for you',
+  off: 'nothing runs without you',
+};
+
+/* H484 — the approval mode that applies to a waiting task's agent, as the backend sent it
+   (`approval_mode: {effective, source, global}`): a short label for the card and the
+   sentence that says why the owner is being asked. Fail-closed: only the three exact mode
+   strings are shown; anything else is null and the card says nothing about the mode. */
+export function approvalModeNote(shown: any): { label: string; why: string } | null {
+  if (!shown || typeof shown !== 'object' || !APPROVAL_MODES.includes(shown.effective)) return null;
+  const mode: string = shown.effective;
+  if (shown.source === 'agent') {
+    const overall = APPROVAL_MODES.includes(shown.global) ? ` (the global mode is ${shown.global})` : '';
+    return { label: `mode ${mode} · agent override`,
+      why: `Approval mode for this agent is ${mode}${overall}: ${MODE_MEANS[mode]}.` };
+  }
+  return { label: `mode ${mode}`, why: `Approval mode is ${mode}: ${MODE_MEANS[mode]}.` };
+}
+
 export function decisionCard(task: any): any {
   const kind = String(task.kind || 'task');
   const who = String(task.agent || kind).toUpperCase().slice(0, 18);
@@ -60,6 +82,7 @@ export function decisionCard(task: any): any {
     kind: reversible ? 'signal' : 'alert',
     kindLabel: reversible ? 'Needs approval · reversible' : 'Needs approval · irreversible',
     body: String(task.title || kind),
+    mode: approvalModeNote(task.approval_mode),   // H484: why the owner is being asked
     actions: [{ l: 'Dismiss' }],
     live: true,
   };

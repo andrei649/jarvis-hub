@@ -17,6 +17,7 @@ the task list and approval endpoint. Leaf imports (`put_category`, `TaskQueueErr
 digest builders, …) stay inline at call time as in the originals.
 """
 
+import asyncio
 from collections.abc import Mapping
 from dataclasses import asdict
 from datetime import datetime, UTC
@@ -215,6 +216,23 @@ def _task_judge_status(orch) -> dict:
     return {"judge": status} if status.get("configured") else {}
 
 
+#: The statuses in which a task is an approval card (it waits on the owner).
+_WAITING_STATUSES = frozenset({"proposed", "blocked", "deferred"})
+
+
+def _mode_projection(orch, task) -> dict:
+    """H484 — the approval mode that applies to a waiting task's agent right now, and
+    whether it is the agent's own override or the global dial: why the owner is being
+    asked. Only a card that still waits carries it — the mode in force today says nothing
+    about a task decided earlier."""
+    from agents.core.autonomy import mode as approval_mode
+
+    status = getattr(task, "status", None)
+    if str(getattr(status, "value", status)) not in _WAITING_STATUSES:
+        return {}
+    return {"approval_mode": approval_mode.describe(orch, getattr(task, "agent", None))}
+
+
 def _consent_projection(queue, task) -> dict:
     """Expose reviewed choices without private producer or owner evidence."""
     from agents.core.autonomy.terminal_consent_categories import terminal_consent_descriptions
@@ -248,7 +266,8 @@ async def autonomy_list(status: str = None, origin: str = None, limit: int = Que
         groups = [group for group in orch.autonomy_queue.pending_groups()
                   if set(group['member_ids']) <= visible]
     return nocache_json({"tasks": [{**_approval_projection(t, _task_judge(orch)),
-                                   **_consent_projection(orch.autonomy_queue, t)} for t in tasks], "total": len(tasks),
+                                   **_consent_projection(orch.autonomy_queue, t),
+                                   **_mode_projection(orch, t)} for t in tasks], "total": len(tasks),
                          **_task_judge_status(orch), **({'groups': groups} if groups else {})})
 
 
@@ -486,8 +505,9 @@ async def autonomy_get_mode():
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    mode = getattr(getattr(orch.autonomy, "policy", None), "mode", None) or orch.get_setting("autonomy.mode", "auto")
-    return nocache_json({"mode": str(mode).lower()})
+    from agents.core.autonomy.mode import global_mode
+
+    return nocache_json({"mode": global_mode(orch)})
 
 
 class AutonomyModeBody(BaseModel):
@@ -496,20 +516,25 @@ class AutonomyModeBody(BaseModel):
 
 @router.post("/autonomy/mode", dependencies=[Depends(admin_guard)])
 async def autonomy_set_mode(body: AutonomyModeBody):
-    """Set the global autonomy mode. Persists the setting and applies it live:
+    """Set the global autonomy mode. Persists the setting, applies it live and records
+    the change in the audit log (H484 — the same path ``/approvals`` in chat takes):
     auto = balanced; ask = side-effects wait for approval; off = nothing auto-runs
     and the proactive loop is paused."""
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    mode = str(body.mode or "").lower()
-    if mode not in ("auto", "ask", "off"):
+    from agents.core.autonomy import mode as approval_mode
+
+    mode = str(body.mode or "").strip().lower()
+    if mode not in approval_mode.MODES:
         return JSONResponse({"error": "mode must be auto|ask|off"}, status_code=422)
-    from core.settings_db import put_category
-    put_category("autonomy", {"mode": mode})  # persist (read back by the autonomy loop)
-    if getattr(orch.autonomy, "policy", None) is not None:
-        orch.autonomy.policy.mode = mode      # apply immediately
-    return nocache_json({"mode": mode, "ok": True})
+    try:
+        result = await asyncio.to_thread(
+            approval_mode.set_global_mode, orch, mode, actor="admin", surface="api")
+    except approval_mode.ModeNotSaved:
+        return JSONResponse({"error": "mode_not_saved"}, status_code=503)
+    return nocache_json({"mode": result["mode"], "ok": True, "was": result["was"],
+                         "audited": result["audited"]})
 
 
 @router.get("/autonomy/policy", dependencies=[Depends(admin_guard)])
@@ -617,13 +642,18 @@ async def autonomy_approvals():
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
+    from agents.core.autonomy import mode as approval_mode
+
     pending = orch.autonomy_queue.pending_decisions()
+    # H484: every card says which mode applies to its agent right now (_mode_projection).
     annotated = [{**_approval_projection(t, _task_judge(orch)),
-                  **_consent_projection(orch.autonomy_queue, t)} for t in pending]
+                  **_consent_projection(orch.autonomy_queue, t),
+                  **_mode_projection(orch, t)} for t in pending]
     reversible = [t for t in annotated if t["reversible"]]
     irreversible = [t for t in annotated if not t["reversible"]]
     return nocache_json({
         "pending": annotated,
+        "mode": approval_mode.global_mode(orch),
         **_task_judge_status(orch),
         "reversible": reversible,
         "irreversible": irreversible,

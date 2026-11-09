@@ -204,8 +204,14 @@ class AutonomyPolicy:
     def effective_mode(self, agent: str | None = None) -> str:
         """The mode that applies to *agent* — its per-agent override, else the global
         ``mode``. ``agent=None`` (or an agent with no override) ⇒ the global mode."""
+        from .mode import read_mode
+
+        # H484: a value the dial does not know is never run as AUTO — it reads as ASK
+        # (with a warning); a YAML 1.1 boolean False is OFF.
         override = self.agent_modes.get(agent) if agent else None
-        return str(override or self.mode).lower()
+        if override not in (None, ""):
+            return read_mode(override, where="autonomy.agent_modes")
+        return read_mode(self.mode)
 
     def decide(
         self,

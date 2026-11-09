@@ -345,6 +345,7 @@ input { font-family: inherit; }
 .dcard .kind.anticip { background:var(--accent-faint); color:var(--accent-light); } .dcard .kind.signal { background:rgba(167,139,250,.14); color:var(--violet); }
 .dcard .kind.nudge { background:rgba(65,245,155,.14); color:var(--green); } .dcard .kind.alert { background:rgba(255,90,82,.14); color:var(--red); }
 .dcard .db { font-size:12.5px; line-height:1.5; color:var(--ink); }
+.dcard .dm { margin-top:6px; font-family:var(--font-mono); font-size:9.5px; letter-spacing:.06em; color:var(--ink-2); }
 .dcard .da { display:flex; gap:7px; margin-top:10px; }
 .dcard .da button { font-size:11px; font-weight:600; padding:6px 12px; border-radius:var(--radius); border:1px solid var(--panel-line); background:transparent; color:var(--ink-2); transition:all .15s; }
 .dcard .da button.primary { background:var(--accent); border-color:var(--accent); color:var(--void); }

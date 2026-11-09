@@ -721,6 +721,54 @@ def _bundle(ctx: CommandContext) -> str:
             "send it as a message of its own. /bundles lists the bundles.")
 
 
+async def _approvals(ctx: CommandContext) -> str:
+    """H484 — Hermes' ``/approvals``: show or set the approval dial (``autonomy.mode``).
+
+    Bare shows the mode; ``auto``, ``ask`` or ``off`` sets it (Hermes' ``smart`` and
+    ``manual`` are read as ``auto`` and ``ask``). Every position only adds asking — there
+    is no word here that silences approvals, and ``off`` is the strictest position. The
+    write is the audited one the admin route makes (``autonomy.mode.set_global_mode``);
+    the owner is re-checked here, at the side-effect boundary, as well as by the tier."""
+    import asyncio
+
+    from .autonomy import mode as approval_mode
+
+    usage = f"Usage: /approvals [{approval_mode.USAGE}]"
+    current = approval_mode.global_mode(ctx.orch)
+    words = (ctx.args or "").split()
+    if not words:
+        lines = [f"Approval mode: {current} — {approval_mode.meaning(current)}."]
+        overrides = approval_mode.agent_modes(ctx.orch)
+        if overrides:
+            lines.append("Per-agent overrides: "
+                         + ", ".join(f"{agent}: {mode}" for agent, mode in sorted(overrides.items())) + ".")
+        lines.append("No position turns approvals off: the irreversible tier and the kernel's "
+                     f"owner-approval floor always ask. {usage}")
+        return "\n".join(lines)
+    if not ctx.principal.admin:
+        return "Only the owner can change the approval mode; nothing changed."
+    wanted = approval_mode.parse_requested(words[0]) if len(words) == 1 else None
+    if wanted is None:
+        return f"{usage}\nApproval mode remains {current}; nothing changed."
+    actor = f"{ctx.principal.channel}:{ctx.principal.sender or 'owner'}"
+    try:
+        result = await asyncio.to_thread(
+            approval_mode.set_global_mode, ctx.orch, wanted, actor=actor, surface="chat")
+    except Exception:  # noqa: BLE001 — a store that refused the write: say what still holds
+        logger.warning("/approvals: the mode could not be saved", exc_info=True)
+        return (f"Approval mode remains {approval_mode.global_mode(ctx.orch)}; "
+                "the requested value did not become effective.")
+    effective = approval_mode.global_mode(ctx.orch)
+    if effective != wanted:
+        return f"Approval mode remains {effective}; the requested value did not become effective."
+    lines = [f"Approval mode: {effective} (persistent setting) — {approval_mode.meaning(effective)}."]
+    if effective == "off":
+        lines.append("This is the strictest position: Nerva has no position that turns approvals off.")
+    if not result["audited"]:
+        lines.append("The change is in effect, but it could not be recorded in the audit log.")
+    return "\n".join(lines)
+
+
 def build_default_registry() -> CommandRegistry:
     from .checkpoint_commands import checkpoint_command
     from .goal_commands import goal_command, subgoal_command
@@ -730,6 +778,8 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("whoami", "your platform, scope, sender id, tier and the commands you can run",
                                    _whoami))
     registry.register(SlashCommand("status", "backend, agents, autonomy mode, e-stop", _status))
+    registry.register(SlashCommand("approvals", "show or set how much runs without asking (the approval mode)",
+                                   _approvals, tier=ADMIN, usage="[auto|ask|off]"))
     registry.register(SlashCommand("sessions", "the five most recent sessions", _sessions))
     registry.register(SlashCommand("new", "start a fresh conversation and save this one", _session_change, tier=ADMIN))
     registry.register(SlashCommand("reset", "same as /new", _session_change, tier=ADMIN))
