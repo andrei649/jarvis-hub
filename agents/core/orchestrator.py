@@ -4021,13 +4021,23 @@ class Orchestrator:
         if router is None:
             return None
 
-        async def _generate(*, system: str, prompt: str) -> str:
+        def _supports_json_schema() -> bool:
+            """H440 — whether the strict-local backend constrains an answer to a schema."""
+            try:
+                return getattr(router.local_backend, "supports_json_schema", False) is True
+            except Exception:           # no local backend: no upgrade at all
+                return False
+
+        async def _generate(*, system: str, prompt: str, json_schema: dict | None = None) -> str:
             from .llm.auxiliary_text import generate_local_auxiliary
-            from .session_titles import MAX_TOKENS, TEMPERATURE
+            from .session_titles import MAX_TOKENS, SCHEMA_MAX_TOKENS, TEMPERATURE
+            constrained = json_schema is not None and _supports_json_schema()
             return await generate_local_auxiliary(
                 router, "session_title", system=system, prompt=prompt,
-                max_tokens=MAX_TOKENS, temperature=TEMPERATURE)
+                max_tokens=SCHEMA_MAX_TOKENS if constrained else MAX_TOKENS, temperature=TEMPERATURE,
+                json_schema=json_schema if constrained else None)
 
+        _generate.supports_json_schema = _supports_json_schema
         return _generate
 
     def _query_rewriter(self):

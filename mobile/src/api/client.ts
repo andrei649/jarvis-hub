@@ -2486,7 +2486,16 @@ export type SessionInfo = {
   /** H413: the session's title (its first words, then the local model's name). */
   title?: string;
   title_source?: string;
+  /** H440: the session a resume of this row opens — the newest member of its lineage
+   * (the hub leaves continuations out of the list) — and how many continuations it has. */
+  resume_id?: string;
+  continuations?: number;
 };
+
+/** H440 — the session to resume for a listed row: its lineage's newest member. */
+export function resumeTarget(session: SessionInfo): string {
+  return typeof session.resume_id === 'string' && session.resume_id ? session.resume_id : session.id;
+}
 
 export type HistoryTurn = {
   role: string;

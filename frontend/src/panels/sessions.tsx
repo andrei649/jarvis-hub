@@ -5,9 +5,13 @@
    resume button posted and showed nothing; the owner had to open the chat and re-read
    the raw turns. Text only: a turn is rendered as text, never as markup.
    H262 — pin a chat, on both tabs: a pinned chat is never auto-archived and never deleted
-   by retention; the row says so with a badge (hover: when it was pinned). */
+   by retention; the row says so with a badge (hover: when it was pinned).
+   H440 — a conversation is one row: the hub leaves its continuations out of the list and
+   says which member a resume opens (`resume_id`, the newest) and how many there are; the
+   row shows the count and resume opens that member. Rename sets the owner's own title,
+   which the automatic titles never replace. */
 import React, { useState } from 'react';
-import { apiDelete, apiPost } from '../api/client';
+import { apiDelete, apiPatch, apiPost } from '../api/client';
 import { Card, Row, State, arr, asLive, mono, refusalReason, useApi } from '../panel-kit';
 
 export const RESUME_PATH = '/sessions/resume';
@@ -18,6 +22,13 @@ export const deletePath = (sid: string) => `/sessions/${encodeURIComponent(sid)}
 /** H262 — pin a conversation (kept out of archiving and retention), or take the pin off. */
 export const pinPath = (sid: string) => `/sessions/${encodeURIComponent(sid)}/pin`;
 export const unpinPath = (sid: string) => `/sessions/${encodeURIComponent(sid)}/unpin`;
+/** H440 — the owner's own title for a conversation. */
+export const titlePath = (sid: string) => `/sessions/${encodeURIComponent(sid)}/title`;
+/** H440 — the session a resume of this row opens: the newest member of its lineage. */
+export function resumeTarget(s: any): string {
+  const sid = s?.session_id || s?.id || (typeof s === 'string' ? s : '');
+  return typeof s?.resume_id === 'string' && s.resume_id ? s.resume_id : sid;
+}
 
 /** "[3 tool calls: a, b]" — the count of calls, then the distinct names. */
 export function toolLine(entry: any): string {
@@ -57,6 +68,7 @@ export function SessionsPanel() {
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
   const [confirming, setConfirming] = useState('');   // the session a delete waits to be confirmed for
+  const [renaming, setRenaming] = useState<{ sid: string; title: string } | null>(null);
   const resume = (sid: string) => {
     setBusy(sid); setError(''); setNote('');
     apiPost(RESUME_PATH, { session_id: sid })
@@ -85,7 +97,18 @@ export function SessionsPanel() {
   const pin = (sid: string) => act(sid, () => apiPost(pinPath(sid)),
     () => `pinned ${sid} · never archived or deleted by retention`, 'pinned');
   const unpin = (sid: string) => act(sid, () => apiPost(unpinPath(sid)), () => `unpinned ${sid}`, 'unpinned');
-  const flip = (next: boolean) => { setArchived(next); setConfirming(''); setNote(''); setError(''); setResumed(null); };
+  const rename = () => {
+    if (!renaming) return;
+    const { sid } = renaming;
+    const title = renaming.title.trim();
+    if (!title) return;
+    setBusy(sid); setError(''); setNote('');
+    apiPatch(titlePath(sid), { title })
+      .then((r: any) => { setRenaming(null); setNote(`renamed ${sid} · ${r?.title || title}`); reload(); })
+      .catch((err) => setError(`not renamed · ${refusalReason(err, 'refused')}`))   // the editor stays open
+      .finally(() => setBusy(''));
+  };
+  const flip = (next: boolean) => { setArchived(next); setConfirming(''); setNote(''); setError(''); setResumed(null); setRenaming(null); };
   return <Card title={archived ? 'ARCHIVED CHATS' : 'SESSIONS'} live={asLive(d)} sub={list.length} onReload={reload}>
     <div role="tablist" aria-label="sessions view" style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
       <button role="tab" aria-selected={!archived} className="tool-btn" onClick={() => flip(false)}>chats</button>
@@ -95,6 +118,17 @@ export function SessionsPanel() {
     {list.slice(0, 12).map((s: any, i: number) => {
       const sid = s?.session_id || s?.id || (typeof s === 'string' ? s : '');
       const pinned = typeof s?.pinned_at === 'string' && s.pinned_at !== '';
+      const more = Number(s?.continuations) || 0;
+      if (renaming?.sid === sid) return <Row key={i}>
+        <input aria-label={`title for ${sid}`} value={renaming.title} maxLength={100} autoFocus
+          onChange={(ev) => setRenaming({ sid, title: ev.target.value })}
+          onKeyDown={(ev) => { if (ev.key === 'Enter') rename(); if (ev.key === 'Escape') setRenaming(null); }}
+          style={{ flex: 1, minWidth: 0, fontSize: 12, background: 'transparent', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 3, padding: '2px 5px' }} />
+        <button className="tool-btn" disabled={!!busy || !renaming.title.trim()} aria-label={`save title for ${sid}`} onClick={rename}>
+          {busy === sid ? 'saving…' : 'save'}
+        </button>
+        <button className="tool-btn" disabled={!!busy} aria-label="cancel rename" onClick={() => setRenaming(null)}>cancel</button>
+      </Row>;
       return <Row key={i}>
         {/* H413: the session's title (its first words, then the local model's name); the id stays visible. */}
         {s?.title
@@ -103,13 +137,18 @@ export function SessionsPanel() {
           : <span style={{ ...mono, color: 'var(--accent-light)' }}>{sid}</span>}
         {pinned && <span data-testid="pinned-badge" title={`pinned ${s.pinned_at}`}
           style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--amber)' }}>pinned</span>}
+        {more > 0 && <span data-testid="lineage-badge"
+          title={`${more} continuation${more === 1 ? '' : 's'} · resume opens the newest (${resumeTarget(s)})`}
+          style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--ink-2)' }}>+{more}</span>}
         <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>{s?.turns ?? s?.count ?? ''}</span>
+        {sid && <button className="tool-btn" disabled={!!busy} aria-label={`rename ${sid}`}
+          onClick={() => { setError(''); setNote(''); setRenaming({ sid, title: String(s?.title || '') }); }}>rename</button>}
         {sid && (pinned
           ? <button className="tool-btn" disabled={!!busy} aria-label={`unpin ${sid}`} onClick={() => unpin(sid)}>unpin</button>
           : <button className="tool-btn" disabled={!!busy} aria-label={`pin ${sid}`} onClick={() => pin(sid)}>pin</button>)}
         {sid && !archived && <>
-          <button className="tool-btn" disabled={!!busy} aria-label={`resume ${sid}`} onClick={() => resume(sid)}>
-            {busy === sid ? 'resuming…' : 'resume'}
+          <button className="tool-btn" disabled={!!busy} aria-label={`resume ${sid}`} onClick={() => resume(resumeTarget(s))}>
+            {busy === resumeTarget(s) ? 'resuming…' : 'resume'}
           </button>
           <button className="tool-btn" disabled={!!busy} aria-label={`archive ${sid}`} onClick={() => archive(sid)}>archive</button>
         </>}

@@ -46,7 +46,7 @@ def test_a_long_message_is_cut_at_a_word_boundary_with_an_ellipsis():
     title = st.instant_title(text)
     assert title.endswith("…") and len(title) <= st.MAX_TITLE_CHARS
     assert text.startswith(title[:-1])
-    assert title[:-1] == "Help me compare three laptops for video editing under two"
+    assert title[:-1] == "Help me compare three laptops for video editing"   # H440: 48, Hermes' cap
 
 
 def test_a_long_unbroken_word_is_cut_hard():
@@ -135,7 +135,7 @@ def test_a_usable_answer_is_cleaned_into_a_title(raw, want):
     "Here is a title",
     "Here's the title",
     "one two three four five six seven eight nine ten eleven",
-    "x" * (st.MAX_TITLE_CHARS + 1),
+    "x" * (st.MAX_MODEL_TITLE_CHARS + 1),
 ])
 def test_an_unusable_answer_gives_no_title(raw):
     assert st.clean_model_title(raw) == ""
@@ -162,7 +162,7 @@ def test_a_romanian_refusal_or_preamble_gives_no_title(raw):
 def test_ten_words_within_the_limit_are_a_title():
     ten = "a b c d e f g h i j"
     assert st.clean_model_title(ten) == ten
-    assert st.clean_model_title("y" * st.MAX_TITLE_CHARS) == "y" * st.MAX_TITLE_CHARS
+    assert st.clean_model_title("y" * st.MAX_MODEL_TITLE_CHARS) == "y" * st.MAX_MODEL_TITLE_CHARS
 
 
 class _Gen:
@@ -840,7 +840,7 @@ _COMMAND_ROWS = [
 async def test_the_sessions_command_shows_the_owner_each_title():
     from agents.core.commands import Principal, build_default_registry
 
-    orch = SimpleNamespace(checkpoints=SimpleNamespace(get_sessions=lambda limit=20: _COMMAND_ROWS))
+    orch = SimpleNamespace(checkpoints=SimpleNamespace(get_sessions=lambda limit=20, **_: _COMMAND_ROWS))
     out = await build_default_registry().dispatch("/sessions", orch=orch,
                                                   principal=Principal(channel="telegram", admin=True))
     assert out.reply.splitlines()[1:] == ["s-1  2026-09-26  Brasov trip", "s-2  2026-09-25"]
@@ -853,7 +853,7 @@ async def test_the_sessions_command_shows_no_title_to_anyone_else(principal, use
     paired guest sees the ids and times /sessions always showed, never the words."""
     from agents.core.commands import Principal, build_default_registry
 
-    orch = SimpleNamespace(checkpoints=SimpleNamespace(get_sessions=lambda limit=20: _COMMAND_ROWS))
+    orch = SimpleNamespace(checkpoints=SimpleNamespace(get_sessions=lambda limit=20, **_: _COMMAND_ROWS))
     out = await build_default_registry().dispatch("/sessions", orch=orch, principal=Principal(**principal))
     assert out.reply.splitlines()[1:] == ["s-1  2026-09-26", "s-2  2026-09-25"]
 

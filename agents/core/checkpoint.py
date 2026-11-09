@@ -342,6 +342,57 @@ class CheckpointManager:
             logger.warning(f"Failed to set session title: {e}")
             return False
 
+    def rename_session(self, session_id: str, title: str) -> bool | None:
+        """H440 — the owner's own title (``title_source: "human"``): it replaces whatever
+        title the session has, and neither automatic stage replaces it (their writes are
+        the compare-and-set above). False for a missing session (never created here) or an
+        empty title; ``None`` when the store is unavailable."""
+        if not self._conn:
+            return None
+        if not isinstance(title, str) or not title:
+            return False
+        try:
+            with self._lock:
+                row = self._conn.execute("SELECT metadata FROM sessions WHERE id=?", (session_id,)).fetchone()
+                if row is None:
+                    return False
+                try:
+                    meta = json.loads(row[0] or "{}")
+                except ValueError:
+                    meta = {}
+                if not isinstance(meta, dict):
+                    meta = {}
+                meta.update({"title": title, "title_source": "human"})
+                self._conn.execute("UPDATE sessions SET metadata=? WHERE id=?",
+                                   (json.dumps(meta, ensure_ascii=False), session_id))
+                self._conn.commit()
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to rename session: {e}")
+            return None
+
+    def lineage_tips(self, session_ids) -> dict[str, dict]:
+        """H440 — for each of ``session_ids`` that other sessions continue (a lineage's
+        root): ``{"resume_id": <its newest member>, "continuations": <how many>}``. A
+        session nobody continues is not in the answer."""
+        ids = [sid for sid in session_ids if isinstance(sid, str)]
+        if not self._conn or not ids:
+            return {}
+        marks = ",".join("?" * len(ids))
+        try:
+            with self._lock:
+                rows = self._conn.execute(
+                    f"SELECT root_id, session_id FROM session_continuations WHERE root_id IN ({marks})"  # nosec B608 - placeholders only
+                    " ORDER BY created_at, rowid", ids).fetchall()
+        except Exception as e:
+            logger.warning(f"Failed to read session lineage: {e}")
+            return {}
+        tips: dict[str, dict] = {}
+        for root, member in rows:          # oldest first: the last one seen is the newest
+            tip = tips.setdefault(root, {"resume_id": member, "continuations": 0})
+            tip["resume_id"], tip["continuations"] = member, tip["continuations"] + 1
+        return tips
+
     def session_row(self, session_id: str) -> dict | None:
         """H218 — one session's row, or None."""
         if not self._conn:
@@ -745,14 +796,23 @@ class CheckpointManager:
 
 
     def get_sessions(self, limit: int = 20, *, archived: bool | None = None,
-                     native_only: bool = False) -> list[dict]:
+                     native_only: bool = False, hide_continuations: bool = False) -> list[dict]:
         """The newest sessions; ``archived`` True lists only archived ones, False only
         the others, None (the default, for existing callers) all of them. ``native_only``
         drops rows with a foreign-lineage receipt before the limit, so a window of
-        newer imported/derived rows never empties a guest's list."""
+        newer imported/derived rows never empties a guest's list.
+
+        H440: ``hide_continuations`` is the picker's view — one row per conversation. A
+        continuation is left out (before the limit), and its lineage's root is listed
+        where the newest continuation is, not where the root began."""
         if not self._conn:
             return []
         clauses = []
+        order = "started_at"
+        if hide_continuations:
+            clauses.append("id NOT IN (SELECT session_id FROM session_continuations)")
+            order = ("COALESCE((SELECT MAX(created_at) FROM session_continuations"
+                     " WHERE root_id=sessions.id), started_at)")
         if archived is True:
             clauses.append(f"{self._ARCHIVED_SQL} IS NOT NULL")
         elif archived is False:
@@ -763,7 +823,7 @@ class CheckpointManager:
         try:
             with self._lock:
                 cursor = self._conn.execute(
-                    f"SELECT * FROM sessions{where} ORDER BY started_at DESC LIMIT ?", (limit,)  # nosec B608 - fixed SQL fragments
+                    f"SELECT * FROM sessions{where} ORDER BY {order} DESC LIMIT ?", (limit,)  # nosec B608 - fixed SQL fragments
                 )
                 columns = [d[0] for d in cursor.description]
                 rows = cursor.fetchall()

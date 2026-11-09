@@ -407,6 +407,7 @@
   "PATCH /api/workspace/conversations/{conversation_id}": "rename_conversation_api_workspace_conversations__conversation_id__patch",
   "PATCH /api/workspace/me": "update_me_api_workspace_me_patch",
   "PATCH /api/workspace/reports/{report_id}": "update_report_api_workspace_reports__report_id__patch",
+  "PATCH /sessions/{session_id}/title": "rename_session_sessions__session_id__title_patch",
   "POST /api/a2a/card": "a2a_set_card_api_a2a_card_post",
   "POST /api/a2a/inbox/{task_id}/decide": "a2a_decide_api_a2a_inbox__task_id__decide_post",
   "POST /api/a2a/peers": "a2a_add_peer_api_a2a_peers_post",

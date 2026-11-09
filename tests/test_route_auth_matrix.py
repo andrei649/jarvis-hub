@@ -292,6 +292,9 @@ IN_HANDLER_TIER_SITES = {
     "agents/core/routers/sessions.py:get_sessions": (
         _H441 + "test_import_and_resolve_are_owner_only_and_guest_cannot_enumerate_title",
         _H441 + "test_guest_list_is_not_emptied_by_twenty_newer_foreign_sessions"),
+    # H440: resume by title resolves among native sessions only for anyone but the owner.
+    "agents/core/routers/sessions.py:resume_session": (
+        "tests/test_h440_title_lineage.py::test_a_guest_cannot_resume_an_imported_session_by_its_title",),
     "agents/core/routers/sessions.py:get_recent_plans": (
         _H441 + "test_recent_todo_omits_foreign_plans_and_native_stamps_remain_usable",),
     "agents/core/routers/canvas.py:canvas_post": (

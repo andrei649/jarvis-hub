@@ -58,7 +58,7 @@ def _orch():
         agents={"jarvis": object(), "friday": object()},
         get_setting=lambda key, default=None: {"autonomy.mode": "ask"}.get(key, default),
         session_id="s-1",
-        checkpoints=SimpleNamespace(get_sessions=lambda limit=5: [{"session_id": "s-1", "started_at": "2026-09-07"}]),
+        checkpoints=SimpleNamespace(get_sessions=lambda limit=5, **_: [{"session_id": "s-1", "started_at": "2026-09-07"}]),
     )
     return orch
 
@@ -176,7 +176,7 @@ def _bare_orchestrator():
     orch.channels = {"telegram": SimpleNamespace(allowed_users=[42])}
     orch.llm_router = SimpleNamespace(name="lm-studio")
     orch.agents = {}
-    orch.checkpoints = SimpleNamespace(get_sessions=lambda limit=5: [])
+    orch.checkpoints = SimpleNamespace(get_sessions=lambda limit=5, **_: [])
     seen = {}
 
     async def fake_handle_input(text, channel="voice", agent_override=None):
