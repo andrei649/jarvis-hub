@@ -688,6 +688,9 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         "agents/core/llm/selection_guards.py",
         # H277: video analysis refuses execution entirely in safe mode.
         "agents/core/llm/video_policy.py",
+        # H027: only the error codes "source_unsafe_mode" / "unsafe_backup_mode" (a file's
+        # permission bits) contain the substring; the curator never reads the safe-mode flag.
+        "agents/core/skills/curator_operations.py",
         "agents/core/memory_tool.py",
         # H422: GET /api/memory only reports that safe mode keeps the curated memory out.
         "agents/core/routers/memory_kg.py",

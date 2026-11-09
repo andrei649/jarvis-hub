@@ -90,8 +90,13 @@ def test_the_command_tree_is_discoverable_and_complete():
         "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "inspect", "logs", "estop", "jobs", "sessions", "chat", "send", "completion",
         "prompt-size", "desktop", "security", "todo", "skills", "company", "auth", "checkpoints", "kanban", "project", "secrets", "support",
         "uninstall", "backup", "pairing", "webhook", "provider", "goal", "memory", "agents",
-        "journey", "learning", "memory-graph",
+        "journey", "learning", "memory-graph", "curator",
     }
+    # H027: owner-governed skill curation. Reads (status, usage, ledger, lists) change nothing;
+    # every other verb previews or requests an owner-approved, recoverable change.
+    assert tree["curator"] == ["adopt", "archive", "backup", "ledger", "list-archived", "list-unmanaged",
+                               "pause", "pin", "prune", "purge", "restore", "resume", "rollback",
+                               "run", "status", "unpin", "usage"]
     # H202: Hermes's profile create/rename/delete beside the SOUL editor; retire deletes
     # nothing and restore brings an agent back.
     assert tree["agents"] == ["create", "list", "rename", "restore", "retire"]

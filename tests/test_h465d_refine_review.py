@@ -74,7 +74,8 @@ def test_the_learning_knobs_are_bounded(key, bad):
 def test_the_declared_defaults_are_the_ones_the_code_used():
     spec = {k: settings_db._SPEC[("learning", k)]["value"] for (c, k) in settings_db._SPEC if c == "learning"}
     assert spec == {"review_max_tokens": 512, "review_daily_budget": 20, "review_cadence": "every_turn",
-                    "review_every_n": 3, "review_idle_gap_s": 90, "review_max_facts": 3}
+                    "review_every_n": 3, "review_idle_gap_s": 90, "review_max_facts": 3,
+                    "curator_stale_days": 30, "curator_archive_days": 90, "curator_purge_days": 0}
 
 
 # ── m-3: the survivors ───────────────────────────────────────────────────────────────
