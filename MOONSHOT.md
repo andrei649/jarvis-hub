@@ -1,4 +1,4 @@
-# Jarvis Hub — Moonshot
+# Nerva — Moonshot
 
 > The north-star document. Everything else (roadmap, architecture, pricing) serves this.
 > Generated: 2026-06-02 · **Rewritten: 2026-07-11** (the AI-OS expansion — see
@@ -34,7 +34,7 @@ Observe → Understand → Decide → Act → Verify → Learn
 ```
 
 The 10-year bet: **the default interface to your digital life is a multi-agent system you own**,
-the way the OS — not the mainframe — became the default for personal computing. Jarvis Hub aims to
+the way the OS — not the mainframe — became the default for personal computing. Nerva aims to
 be that OS, starting as Andrei's "cabinet" and generalizing to anyone who refuses to rent their
 private life to a hyperscaler.
 

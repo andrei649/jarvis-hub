@@ -71,7 +71,7 @@ async def local_docs_index(body: LocalDocsIndexBody):
 
 # ── H23.20 first-run wizard + activation funnel ───────────────────────────────
 _WIZARD_STEPS = [
-    {"key": "intro", "title": "Welcome to Jarvis"},
+    {"key": "intro", "title": "Welcome to Nerva"},
     {"key": "model", "title": "Connect a model"},
     {"key": "test_chat", "title": "Say hello"},
     {"key": "autonomy", "title": "Set your autonomy budget"},

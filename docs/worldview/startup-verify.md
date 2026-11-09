@@ -20,7 +20,7 @@ correct port boundaries and opt-outs, and that the Signal Layer replay path actu
 | WorldView ports `:3000` / `:4000` | ✅ pass | API `:4000`, frontend `:3000` (start.sh L14–17; START.bat L109) |
 | Signal Layer port `:8787` | ✅ pass | `SIGNAL_LAYER_PORT` default `8787` in both |
 | WorldMonitor `:3100` optional only | ✅ pass | referenced as `WORLDMONITOR_BASE_URL`/`MCP_URL` for live mode; **never auto-started** |
-| Jarvis Hub port `:8080` | ✅ pass | hub served on `:8080` in both |
+| Nerva port `:8080` | ✅ pass | hub served on `:8080` in both |
 
 ## Signal Layer replay boot (runtime)
 

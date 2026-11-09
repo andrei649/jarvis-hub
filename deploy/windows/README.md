@@ -1,4 +1,4 @@
-# Running Jarvis Hub as a Windows service
+# Running Nerva as a Windows service
 
 Windows has no native "host this console app as a resilient service" primitive,
 so we use **NSSM** (the Non-Sucking Service Manager) — the standard approach. It

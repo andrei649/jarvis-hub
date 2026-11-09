@@ -1,4 +1,4 @@
-# Jarvis Hub — Alpha FAQ (întrebări reale de la testeri)
+# Nerva — Alpha FAQ (întrebări reale de la testeri)
 
 > Răspunsuri oneste la întrebările recurente din recrutarea alpha (culese din firul de FB,
 > 2026-07). Sursă unică pentru DM-uri, reply-uri publice și pentru copy-ul de recrutare

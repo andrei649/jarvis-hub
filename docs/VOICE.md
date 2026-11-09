@@ -1,4 +1,4 @@
-# Jarvis Hub — Voice Subsystem
+# Nerva — Voice Subsystem
 
 > How voice works end-to-end, what is real vs. scaffolded, and how to extend it.
 > Module index: [ARCHITECTURE.md](ARCHITECTURE.md) §3 · backlog: [../BACKLOG.md](../BACKLOG.md)

@@ -406,7 +406,7 @@ export function useVoice({ lang = 'ro', mode = 'hands-free', ttsSource = 'server
   const start = useCallback(async (opts?: any) => {
     if (!supported) { setError('Voice not supported in this browser'); setStat('error'); return; }
     if (activeRef.current) return;
-    if (micMutedRef.current) { setError('Mic is muted — unmute JARVIS to use voice'); setStat('error'); return; }
+    if (micMutedRef.current) { setError('Mic is muted — unmute Nerva to use voice'); setStat('error'); return; }
     if (caps && caps.stt === false) { setError('Local speech-to-text not installed on the server (pip install faster-whisper)'); setStat('error'); return; }
     setError(null); setMicHolder(null);
     const gen = ++startGenRef.current;

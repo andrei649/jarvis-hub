@@ -1,4 +1,4 @@
-# GTM Plan — Jarvis Hub (privacy-first launch)
+# GTM Plan — Nerva (privacy-first launch)
 
 > **Status:** draft v1 · **Date:** 2026-06-04 · **Owner:** Andrei
 > **Evidence base:** [`docs/research/2026-06-04-privacy-first-gtm.md`](research/2026-06-04-privacy-first-gtm.md) (5-angle cited research). This doc is the *action* layer — the report is the *why*.
@@ -47,7 +47,7 @@ The market proved the demand (OpenClaw ~377k★ in 6 months) and proved the gap 
 - [ ] Record a 60–90s demo: *"watch it do a real task — and watch me approve the one irreversible step."*
 
 **Launch day (early in the week; founder free for ~4h)**
-- [ ] **Show HN:** `Show HN: Jarvis Hub — a governed, local-first multi-agent assistant` → link the **GitHub repo**, not a marketing page. Work the comments live (agree-then-address, humble, lean OSS/privacy).
+- [ ] **Show HN:** `Show HN: Nerva — a governed, local-first multi-agent assistant` → link the **GitHub repo**, not a marketing page. Work the comments live (agree-then-address, humble, lean OSS/privacy).
 - [ ] **r/LocalLLaMA** post (value-first; what it does + why governed/local; GitHub link + `docker-compose` + hardware/stack). Answer every comment.
 - [ ] **r/selfhosted** (+ r/homelab) post, tailored (not a cross-post).
 - [ ] Watch GitHub star velocity; target ~200+/24h for the all-languages trending list.

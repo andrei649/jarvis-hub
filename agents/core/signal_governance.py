@@ -171,7 +171,7 @@ class SignalGovernanceBridge:
             "skipped": skipped,
             "failed": len(failures),
             "failures": failures,
-            "note": "Preview only. Route through Jarvis approval before action.",
+            "note": "Preview only. Route through Nerva approval before action.",
         }
 
     def submit_from_brief(self, brief: Optional[dict], *, context: Optional[dict] = None) -> dict[str, Any]:

@@ -1,4 +1,4 @@
-# Competitive Brief — Jarvis Hub vs. the personal-AI field
+# Competitive Brief — Nerva vs. the personal-AI field
 
 > The honest, sourced competitive picture for marketing + sales + positioning. Distilled from the
 > repo's own deep research ([`docs/research/2026-06-02-personal-ai-competitors.md`](../../docs/research/2026-06-02-personal-ai-competitors.md),
@@ -12,7 +12,7 @@
 
 ## 1. The one-sentence position
 
-**Jarvis Hub is the *governed* alternative to OpenClaw** — and the *local-first* alternative to
+**Nerva is the *governed* alternative to OpenClaw** — and the *local-first* alternative to
 Bee / Alexa+ / Gemini. It owns an intersection no shipping product holds:
 **local + multi-agent + persistent memory + governed autonomy + observability + family privacy.**
 
@@ -45,7 +45,7 @@ users' agent `SOUL.md`/`MEMORY.md` files. *This is our single most powerful cont
 - **How we win:** approval queue + tamper-evident audit log + encrypted secrets + signed/sandboxed
   skills + kill-switch + a family agent that never touches the internet. Enforced in code, proven by tests.
 - **Where they're ahead:** raw virality, breadth of chat-app bridges, mindshare.
-- **The line:** *"Jarvis Hub is OpenClaw with brakes, a seatbelt, and a flight recorder."*
+- **The line:** *"Nerva is OpenClaw with brakes, a seatbelt, and a flight recorder."*
 
 **Amazon Bee** — *the closest combined contender, but cloud.*
 A $50 wearable Amazon acquired (Jul 2025), becoming a "proactive second brain" that drafts email
@@ -91,7 +91,7 @@ references we interoperate with, e.g. Wyoming protocol).
 
 ## 4. The comparison table (buyer-facing — safe to publish)
 
-| | **Jarvis Hub** | OpenClaw | Amazon Bee | Khoj | Apple/Google/Alexa+ |
+| | **Nerva** | OpenClaw | Amazon Bee | Khoj | Apple/Google/Alexa+ |
 |---|:---:|:---:|:---:|:---:|:---:|
 | Runs on your hardware (local-first) | ✅ | ◐ | ❌ | ✅ | ❌ |
 | Proactive / acts for you | ✅ | ✅ | ✅ | ◐ | ✅ |

@@ -1,4 +1,4 @@
-# Jarvis Hub — User Guide
+# Nerva — User Guide
 
 > Get Jarvis running and learn the daily flow. Jarvis is a **local-first, self-hosted
 > personal AI cabinet**: it runs on your machine, binds to loopback, and keeps your data

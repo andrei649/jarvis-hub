@@ -13,7 +13,7 @@
 
 ## A. English — long form (LinkedIn / Mastodon / Facebook)
 
-> **Status update for everyone waiting on Jarvis Hub.**
+> **Status update for everyone waiting on Nerva.**
 >
 > The short version: the system is feature-complete (v0.11.0), and the road to 1.0 is now about
 > proof — real users, and the AI-OS capability program.
@@ -44,7 +44,7 @@
 
 ## B. English — short form (X / threads opener)
 
-> Quick update for everyone waiting on **Jarvis Hub** 👇
+> Quick update for everyone waiting on **Nerva** 👇
 >
 > Feature-complete at v0.11.0: 18 agents on *your* GPU, approval queue + tamper-evident audit log,
 > knowledge-graph memory that grows nightly, 7 channels + mobile. $0/month, cloud strictly opt-in.
@@ -57,7 +57,7 @@
 
 ## C. Română — formă lungă (Facebook / LinkedIn)
 
-> **Update pentru toți cei care așteaptă Jarvis Hub.**
+> **Update pentru toți cei care așteaptă Nerva.**
 >
 > Pe scurt: sistemul e feature-complete (v0.11.0), iar drumul până la 1.0 înseamnă acum dovada cu
 > utilizatori reali plus programul de capabilități „AI OS".
@@ -89,7 +89,7 @@
 
 ## D. Română — formă scurtă (X / story)
 
-> Update scurt pentru cei care așteaptă **Jarvis Hub** 👇
+> Update scurt pentru cei care așteaptă **Nerva** 👇
 >
 > Feature-complete la v0.11.0: 17 agenți pe GPU-ul *tău*, coadă de aprobări + jurnal de audit
 > criptografic, memorie care crește în fiecare noapte, 7 canale + mobil. 0 lei/lună, cloud doar

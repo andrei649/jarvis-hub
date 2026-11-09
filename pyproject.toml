@@ -1,4 +1,4 @@
-# Tooling config for Jarvis Hub.
+# Tooling config for Nerva (repo codename jarvis-hub).
 # This file is intentionally tooling-only — the project is run via
 # `requirements-beta.txt`, not as an installable package (see CONTRIBUTING.md).
 # It exists so that the "code health" process (lint, format, dead-code) behaves

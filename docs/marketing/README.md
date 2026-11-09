@@ -1,6 +1,6 @@
 # docs/marketing — launch & teaser assets
 
-Ready-to-use marketing material for the Jarvis Hub launch. All copy is grounded in verified repo
+Ready-to-use marketing material for the Nerva launch. All copy is grounded in verified repo
 facts (re-checked 2026-06-10); all visual direction inherits from [`../BRAND_BOOK.md`](../BRAND_BOOK.md).
 
 | File | What it's for | Hand it to |

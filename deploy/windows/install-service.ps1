@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Install/uninstall Jarvis Hub as a Windows service via NSSM. (H23.15)
+    Install/uninstall Nerva as a Windows service via NSSM. (H23.15)
 
 .DESCRIPTION
     Windows has no native "run this script as a resilient service" primitive, so
@@ -66,7 +66,7 @@ New-Item -ItemType Directory -Force -Path $DataRoot | Out-Null
 Write-Host "Installing service '$ServiceName' → $python $serve"
 & $nssm install $ServiceName $python $serve
 & $nssm set $ServiceName AppDirectory $InstallRoot
-& $nssm set $ServiceName Description "Jarvis Hub — personal AI cabinet (FastAPI)"
+& $nssm set $ServiceName Description "Nerva — personal AI operating system (FastAPI)"
 & $nssm set $ServiceName Start SERVICE_AUTO_START
 
 # Operability env (H23.11). Loopback default; off-loopback needs a token / the

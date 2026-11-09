@@ -45,7 +45,7 @@ echo   NERVA - STARTING
 echo ============================================================
 echo.
 
-REM --- Jarvis Signal Layer - opt-IN with JARVIS_SIGNAL_LAYER=1 ---
+REM --- Nerva Signal Layer - opt-IN with JARVIS_SIGNAL_LAYER=1 ---
 if /I "%JARVIS_SIGNAL_LAYER%"=="1" (
   call :start_signal_layer
 )
@@ -79,7 +79,7 @@ REM ============================================================
 :start_signal_layer
 echo.
 echo ------------------------------------------------------------
-echo   Jarvis Signal Layer - auto-start
+echo   Nerva Signal Layer - auto-start
 echo ------------------------------------------------------------
 where node >nul 2>&1 || (echo [SKIP] Node not found ^(Node 20+ required^) - skipping Signal Layer. & goto :eof)
 if not exist "services\signal-layer\src\index.mjs" (
@@ -91,5 +91,5 @@ if not defined SIGNAL_LAYER_HOST set "SIGNAL_LAYER_HOST=127.0.0.1"
 if not defined SIGNAL_LAYER_PORT set "SIGNAL_LAYER_PORT=8787"
 echo [INFO] Mode: %JARVIS_SIGNAL_LAYER_MODE%  Port: %SIGNAL_LAYER_PORT%
 echo [INFO] Starting Signal Layer in a separate window...
-start "Jarvis Signal Layer" /d "%~dp0services\signal-layer" cmd /k "node src\index.mjs"
+start "Nerva Signal Layer" /d "%~dp0services\signal-layer" cmd /k "node src\index.mjs"
 goto :eof

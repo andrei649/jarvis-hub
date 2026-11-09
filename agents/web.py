@@ -734,7 +734,7 @@ async def lifespan(application: FastAPI):
 from agents import __version__ as _APP_VERSION  # CDX-4: single-source the version
 from core.web_base_path import configured_root_path, render_ui_html, RootPathRoutingMiddleware
 
-app = FastAPI(root_path=configured_root_path(), title="Jarvis", version=_APP_VERSION, lifespan=lifespan)
+app = FastAPI(root_path=configured_root_path(), title="Nerva", version=_APP_VERSION, lifespan=lifespan)
 app.add_middleware(RootPathRoutingMiddleware)
 # H691: the scheme a listed proxy states — just outside the root-path adapter, so
 # every route sees it; nothing between here and the router reads the scheme.
@@ -2126,7 +2126,7 @@ ADMIN_HTML_TEMPLATE = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>JARVIS HUB · Admin</title>
+<title>NERVA · Admin</title>
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="stylesheet" href="/static/fonts.css">
 <link rel="stylesheet" href="/static/style.css">

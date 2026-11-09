@@ -166,7 +166,7 @@ function TopBar({ clock, lang, setLang, accent, agents, localPct, live, trust, l
     <div className="topbar">
       <div className="brand">
         <Reactor/>
-        <div className="brand-tx"><div className="l1">JARVIS</div><div className="l2">{t.sub}{ch.version && <span className="ver" data-chrome="version" title="Nerva hub version"> · v{ch.version}</span>}</div></div>
+        <div className="brand-tx"><div className="l1">NERVA</div><div className="l2">{t.sub}{ch.version && <span className="ver" data-chrome="version" title="Nerva hub version"> · v{ch.version}</span>}</div></div>
         <div className="badges" ref={strip} style={{marginLeft:18}}>
           <div className="badge" data-keep="3" title="agents enabled · actually running"><div className="k">AGENTS</div><div className="v">{enabled} en{running>0 ? ' · '+running+' ▶' : ''}</div></div>
           <div className="badge" data-keep="8" title={LLM.t}><div className="k">LLM</div><div className="v" style={{color:LLM.c}}>{LLM.v}</div></div>
@@ -565,7 +565,7 @@ export function CinemaMesh({ agents = [], tasks = [], llm, trust, sources, demo 
   return (
     <div className="cinema">
       <div className="cin-top">
-        <div className="cin-mark"><Reactor /><span className="cin-word">JARVIS</span></div>
+        <div className="cin-mark"><Reactor /><span className="cin-word">NERVA</span></div>
         <div className="cin-tag" key={tag}>{TAGS[tag % TAGS.length]}</div>
       </div>
       <div className="cin-stage">

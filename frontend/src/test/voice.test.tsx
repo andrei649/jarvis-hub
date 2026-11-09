@@ -156,7 +156,7 @@ describe('useVoice state machine', () => {
     expect(states.at(-1).supported).toBe(true);
   });
 
-  it('refuses to start when JARVIS mic trust is muted', async () => {
+  it('refuses to start when Nerva mic trust is muted', async () => {
     const media = installMediaMocks();
     render(<VoiceHarness opts={{ micMuted: true }} />);
 

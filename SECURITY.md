@@ -1,6 +1,6 @@
 # Security Policy
 
-Jarvis Hub is a **local-first, self-hosted** personal AI cabinet: it runs on your
+Nerva is a **local-first, self-hosted** personal AI cabinet: it runs on your
 own machine, binds to loopback by default, and treats cloud as opt-in per agent.
 Most of the threat surface is therefore local — but the project still ships real
 defenses (PII/secret scanning, SSRF-safe fetch, a containerized sandbox, an

@@ -1,4 +1,4 @@
-# Jarvis Hub — Upgrade Guide
+# Nerva — Upgrade Guide
 
 > How to move to a newer version safely, and what to watch per release. See
 > [`COMPATIBILITY.md`](COMPATIBILITY.md) for the SemVer contract + supported-version window

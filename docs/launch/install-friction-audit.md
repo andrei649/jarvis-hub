@@ -1,4 +1,4 @@
-# Install-friction audit — Jarvis Hub (2026-06-04)
+# Install-friction audit — Nerva (2026-06-04)
 
 > Why this exists: the GTM research found local AI's #1 adoption killer is **friction, not quality**
 > ("it just works" is the top messaging lever). This audits the cold-start install/run path and fixes

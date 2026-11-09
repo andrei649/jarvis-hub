@@ -148,7 +148,7 @@ describe('SignalGovernancePanel — a bridge that is off by default, said as a f
       status: 200,
       body: {
         available: true, reason: null, status: 'ok', queued: 2, task_ids: [7, 8], skipped: 1,
-        note: 'Preview only. Route through Jarvis approval before action.',
+        note: 'Preview only. Route through Nerva approval before action.',
       },
     });
     render(<SignalGovernancePanel />);
@@ -161,7 +161,7 @@ describe('SignalGovernancePanel — a bridge that is off by default, said as a f
     expect(alert).toContain('queued 2 · skipped 1');
     expect(screen.getByText('#7')).toBeTruthy();
     expect(screen.getByText('#8')).toBeTruthy();
-    expect(alert).toContain('Preview only. Route through Jarvis approval before action.');
+    expect(alert).toContain('Preview only. Route through Nerva approval before action.');
     // `skipped` still carries no server-side breakdown, so the split is described but
     // never guessed — and failures are explicitly NOT folded into it
     expect(alert).toContain('1 not queued');
@@ -219,7 +219,7 @@ describe('SignalGovernancePanel — a bridge that is off by default, said as a f
       body: {
         available: true, reason: null, status: 'ok', queued: 0, task_ids: [], skipped: 0,
         failed: 0, failures: [],
-        note: 'Preview only. Route through Jarvis approval before action.',
+        note: 'Preview only. Route through Nerva approval before action.',
       },
     });
     render(<SignalGovernancePanel />);
@@ -243,7 +243,7 @@ describe('SignalGovernancePanel — a bridge that is off by default, said as a f
           { label: 'Monitor watched airports again within 24h.', error: 'db is gone' },
           { label: 'Review cyber exposure before action.', error: 'db is gone' },
         ],
-        note: 'Preview only. Route through Jarvis approval before action.',
+        note: 'Preview only. Route through Nerva approval before action.',
       },
     });
     render(<SignalGovernancePanel />);
@@ -271,7 +271,7 @@ describe('SignalGovernancePanel — a bridge that is off by default, said as a f
       status: 200,
       body: {
         available: true, reason: null, status: 'ok', queued: 0, task_ids: [], skipped: 0,
-        note: 'Preview only. Route through Jarvis approval before action.',
+        note: 'Preview only. Route through Nerva approval before action.',
       },
     });
     render(<SignalGovernancePanel />);

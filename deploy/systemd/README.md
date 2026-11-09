@@ -1,4 +1,4 @@
-# Running Jarvis Hub as a Linux service (systemd)
+# Running Nerva as a Linux service (systemd)
 
 `jarvis-hub.service` runs the hub under systemd so it starts on boot, restarts on
 failure, and stops **gracefully** (SIGTERM → uvicorn drains in-flight requests

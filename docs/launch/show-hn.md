@@ -1,4 +1,4 @@
-# Show HN draft — Jarvis Hub
+# Show HN draft — Nerva
 
 > Launch copy for Hacker News. Per the GTM research (`docs/research/2026-06-04-privacy-first-gtm.md`):
 > plain title, **link the GitHub repo** (not a marketing page), founder works the comments live for
@@ -6,14 +6,14 @@
 > r/selfhosted the same day** to concentrate GitHub star velocity (Trending ranks on velocity).
 
 ## Title (plain — no hype, no exclamation, ≤80 chars)
-**Primary:** `Show HN: Jarvis Hub – a local-first, governed multi-agent personal AI`
+**Primary:** `Show HN: Nerva – a local-first, governed multi-agent personal AI`
 Alternates:
-- `Show HN: Jarvis Hub – an always-on personal AI agent that runs on your own GPU`
+- `Show HN: Nerva – an always-on personal AI agent that runs on your own GPU`
 - `Show HN: The governed alternative to ungoverned local AI agents`
 
 ## Body
 
-I built Jarvis Hub because I wanted an always-on personal AI that actually *does* things — triage email, watch my calendar, run nightly jobs — without sending my life to someone else's cloud, and without the "ungoverned agent" risk that's been all over the news this year.
+I built Nerva because I wanted an always-on personal AI that actually *does* things — triage email, watch my calendar, run nightly jobs — without sending my life to someone else's cloud, and without the "ungoverned agent" risk that's been all over the news this year.
 
 It's 16 specialized agents orchestrated by a planner, running **entirely on your own hardware** (LM Studio or Ollama on your GPU). No cloud by default, ~$0/month. The part I care most about: **every autonomous action passes through an approval queue and lands in a tamper-evident audit log**, with an observability view of what each agent did and why. There's a kill-switch, encrypted secrets, and a family-memory agent that never touches the internet.
 

@@ -46,10 +46,10 @@ add an `X-User-Token` header, so with `JARVIS_USER_TOKEN` set these two pages ca
 | PGE-002 | Mission Control feed serves | `curl -s http://127.0.0.1:8080/api/swarm/summary \| python -m json.tool \| head -30` | top-level keys exactly: `generated_at, initialized, halted, agents, activity, autonomy, presence, missions, workflows, subagents, a2a, dev_locks` | BLOCKER | ✅tests/test_swarm_summary.py:25 |
 | PGE-003 | Brain shell serves | `curl -s -o /dev/null -w "%{http_code}\n" .../brain` | `200` | MAJOR | ✅tests/test_brain_summary.py::test_route_registered |
 | PGE-004 | Brain feed serves | `curl -s ".../api/brain/summary?range=all" \| python -m json.tool \| head` | keys incl. `range, events, sessions, tokens_in, tokens_out, loc_added, cost_eur, by_agent, by_model, by_harness, recent, rtk` | MAJOR | ✅tests/test_brain_summary.py |
-| PGE-005 | Legacy HUD serves at /v1 | open `http://127.0.0.1:8080/v1` | page title **`JARVIS HUB`**; the v2 HUD at `/` has title **`NERVA · HUD`** — two *different* shells | MAJOR | ✅tests/test_endpoints.py::test_v1_serves_legacy_hud |
+| PGE-005 | Legacy HUD serves at /v1 | open `http://127.0.0.1:8080/v1` | page title **`NERVA`**; the v2 HUD at `/` has title **`NERVA · HUD`** — two *different* shells | MAJOR | ✅tests/test_endpoints.py::test_v1_serves_legacy_hud |
 | PGE-006 | Legacy shell is `templates/index.html`, not `web/index.html` | DevTools → Network → the `/v1` document; check the `<script>` list | exactly **16** `<script src>` tags — `auth.js` first, `app.js` last, of which **14** carry `?v=9.9.9` (the two React bundles carry no query); **no** inline HUD markup. (`agents/web/index.html` is a 402-line orphan served by no route — see Open gaps.) | MINOR | ❌ |
 | PGE-007 | Service worker serves | `curl -sI .../sw.js \| head -5` | `200`, `content-type: application/javascript` | MAJOR | ⚠️tests/test_hud_v2_parity.py:37 |
-| PGE-008 | Manifest serves (StaticFiles mount, **not** a route) | `curl -s .../static/manifest.json \| python -m json.tool` | `name: "Jarvis Hub"`, `start_url:"/"`, `display:"standalone"`, 3 SVG icons. Mount is declared at `agents/web.py:715`; it deliberately has **no** entry in `route_surface.json` | MINOR | ❌ |
+| PGE-008 | Manifest serves (StaticFiles mount, **not** a route) | `curl -s .../static/manifest.json \| python -m json.tool` | `name: "Nerva"`, `start_url:"/"`, `display:"standalone"`, 3 SVG icons. Mount is declared at `agents/web.py:715`; it deliberately has **no** entry in `route_surface.json` | MINOR | ❌ |
 | PGE-009 | Security headers on every standalone shell | `for p in / /v1 /mission-control /brain /admin; do curl -sI .../$p \| grep -iE "x-frame\|x-content\|referrer\|content-security"; done` | each: `X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, a CSP with `object-src 'none'` and `frame-ancestors 'self'` | MAJOR | ✅tests/test_hud_security_headers.py |
 | PGE-010 | Feed responses are uncacheable | `curl -sI .../api/swarm/summary \| grep -i cache` | `Cache-Control: no-cache, no-store, must-revalidate` (`web_helpers.nocache_json`) | MINOR | ❌ |
 | PGE-011 | favicon | `curl -sI .../favicon.ico \| grep -i content-type` | `image/svg+xml` (an `.ico` path serving SVG — intentional, `agents/web.py:726`) | COSMETIC | ❌ |
@@ -543,8 +543,8 @@ served from the root, so its **scope is `/`** and it governs the v2 HUD too.
 | PGE-150 | Network-only for dynamic paths | with the worker active, watch `/status`, `/ticker`, `/chat/stream`, `/api/swarm/summary` in Network | all served `(from network)`, never `(from ServiceWorker)` cache; a POST is never cached | MAJOR | ❌ |
 | PGE-151 | Offline navigation fallback | with the worker active on `/v1`, stop the server, reload | the cached `/` shell paints instead of Chrome's dino page. **Then immediately run PGE-099 step 4** — the shell is now live-looking with no backend at all | MAJOR | ❌ |
 | PGE-152 | Offline API failure shape | while offline, watch the console | excluded paths resolve to `Response.error()` — the page's own `.catch` handlers fire; there must be **no** uncaught "Failed to fetch" promise rejection from the worker | MINOR | ❌ |
-| PGE-153 | Installability 👁 | Chrome → Application → Manifest, and the address-bar install affordance | manifest parses with no errors; name `Jarvis Hub`, short name `Jarvis`, standalone, portrait, theme `#00aeef`, background `#030810`. Record any Chrome warning about the SVG-only icon set | MINOR | ❌ |
-| PGE-154 | Installed-app launch | install the PWA, launch it from the OS | opens `start_url` `/` (the **v2** HUD) in a standalone window; the title bar reads `Jarvis Hub` — note the brand drift vs the Nerva product name | COSMETIC | ❌ |
+| PGE-153 | Installability 👁 | Chrome → Application → Manifest, and the address-bar install affordance | manifest parses with no errors; name `Nerva`, short name `Nerva`, standalone, portrait, theme `#00aeef`, background `#030810`. Record any Chrome warning about the SVG-only icon set | MINOR | ❌ |
+| PGE-154 | Installed-app launch | install the PWA, launch it from the OS | opens `start_url` `/` (the **v2** HUD) in a standalone window; the title bar reads `Nerva` — note the brand drift vs the Nerva product name | COSMETIC | ❌ |
 | PGE-155 | ♿ Manifest vs viewport | in the installed window, resize to a narrow width | no horizontal page scroll; `viewport-fit=cover` + the `apple-mobile-web-app-*` metas are present in the legacy shell only | ♿ MINOR | ❌ |
 
 #### PGE-156 — A stale service worker serves a stale HUD after `UPDATE.bat`  ⏱
@@ -731,7 +731,7 @@ Everything here except PGE-213/214 is verifiable **without** a Rust toolchain.
 | PGE-207 | Shell config points at the local HUD | `python -m json.tool desktop/src-tauri/tauri.conf.json` | one window, 1280×820, resizable, `url: "http://127.0.0.1:8080/"`; `build.devUrl` the same | MINOR | ❌ |
 | PGE-208 | Shell CSP is loopback-only | read `app.security.csp` | `default-src 'self' http://127.0.0.1:8080`, `connect-src` adds `ws://` + `wss://` on the same host, `object-src 'none'`, `frame-ancestors 'self'`; **no** wildcard host. `img-src` does include `https:` — note it | MAJOR | ❌ |
 | PGE-209 | Version drift | `grep version desktop/src-tauri/tauri.conf.json desktop/src-tauri/Cargo.toml; grep __version__ agents/__init__.py` | conf and Cargo both read **0.9.2** while the app is **0.11.0** — a shipped installer would advertise a two-minor-old version. Record as **MINOR** (single-source-of-truth drift) | MINOR | ❌ |
-| PGE-210 | Brand drift | `grep productName desktop/src-tauri/tauri.conf.json` | `"Jarvis Hub"` — the product renamed to **Nerva** on 2026-07-19 (CLAUDE.md). Same in `static/manifest.json` (PGE-008). Record as **COSMETIC**, one finding covering both | COSMETIC | ❌ |
+| PGE-210 | Brand drift | `grep productName desktop/src-tauri/tauri.conf.json` | `"Nerva"` (renamed 2026-11-09; the identifier stays `com.jarvis.hub` so existing installs keep their data). Same name in `static/manifest.json` (PGE-008) | COSMETIC | ✅ |
 | PGE-211 | Build assets are missing | `ls desktop/dist desktop/src-tauri/icons` | **both absent**. `build.frontendDist` is `"../dist"` and `bundle.icon` is `["icons/icon.png"]`, and `desktop/README.md` lists the icon as a prerequisite — so `cargo tauri build` cannot succeed on a clean checkout. Record as **MINOR** (documented host-side prerequisite) but state it explicitly so nobody reports "the desktop app doesn't build" as a new bug | MINOR | ❌ |
 | PGE-212 | Tray promises vs code | read `desktop/src-tauri/src/main.rs` against `desktop/README.md` | README says "tray + wake-word listener hook in `setup()`"; `setup()` is an empty `Ok(())` and there is **no tray menu** — only `trayIcon` in the conf with `menuOnLeftClick: false`. So a built app has an icon whose clicks do nothing. Record as **MINOR** doc-vs-code gap | MINOR | ❌ |
 | PGE-213 | Dev run 🖥 | with the toolchain installed and the hub on :8080: `cd desktop && cargo tauri dev` | a native window renders the **v2 HUD**; chat works; the CSP does not block any HUD request (watch the webview console) | MAJOR | ❌ |
@@ -940,11 +940,11 @@ Observations only — **no code was changed.** Each is a pointer for the owner t
     the wrong service. **Test: PGE-204.**
 18. **The desktop shell cannot be built from a clean checkout, and its metadata has drifted.**
     `desktop/dist` and `desktop/src-tauri/icons/` do not exist, while `tauri.conf.json` requires
-    `frontendDist: "../dist"` and `bundle.icon: ["icons/icon.png"]`; `productName` is `"Jarvis Hub"`
-    (pre-Nerva) and both `tauri.conf.json` and `Cargo.toml` say version **0.9.2** against
+    `frontendDist: "../dist"` and `bundle.icon: ["icons/icon.png"]`; `productName` is `"Nerva"`
+    (renamed 2026-11-09) while both `tauri.conf.json` and `Cargo.toml` say version **0.9.2** against
     `agents/__init__.py` **0.11.0**. `desktop/README.md` promises "tray menu + wake-word listener" in
     `setup()`, which is an empty `Ok(())`. **Tests: PGE-209 … 212.**
-19. **`static/manifest.json` is still branded "Jarvis Hub"** with an SVG-only icon set — flag whether
+19. **`static/manifest.json` is branded "Nerva" (fixed 2026-11-09)** with an SVG-only icon set — flag whether
     Chrome warns about installability on the owner's version. **Tests: PGE-008, 153, 154.**
 20. **Two brain-feed fields are hard-coded constants that read as computed metrics:**
     `unattributed_token_pct: 0` and `unpriced_models: []` (`agents/core/routers/brain.py:167-168`), so

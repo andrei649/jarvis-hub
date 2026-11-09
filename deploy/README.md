@@ -1,6 +1,6 @@
 # Deployment & service templates
 
-Run Jarvis Hub as a managed service that starts on boot, restarts on failure, and
+Run Nerva as a managed service that starts on boot, restarts on failure, and
 stops **gracefully** (the H23.11 bounded shutdown drains in-flight requests before
 exit). Pick your platform:
 

@@ -1,4 +1,4 @@
-# Brand Review — Jarvis Hub (2026-06-11)
+# Brand Review — Nerva (2026-06-11)
 
 > A consistency audit of the brand across every surface a buyer or contributor sees, measured
 > against [`docs/BRAND_BOOK.md`](../../docs/BRAND_BOOK.md). Goal: find drift before launch, fix the
@@ -23,9 +23,9 @@ deliberate (license).
 
 | Element | Brand book says | Reality | Status |
 |---|---|---|---|
-| Product name | "Jarvis Hub" (two words, kebab repo) | Consistent across docs/repo | ✅ |
-| Founder-instance flavor | "Andrei's Cabinet" / "your AI cabinet" | README title "Jarvis Hub — your AI cabinet" | ✅ (de-personalized correctly) |
-| Wordmark | `JARVIS HUB`, cyan on void, mono sub-line | Matches the HUD top bar | ✅ |
+| Product name | "Nerva" (two words, kebab repo) | Consistent across docs/repo | ✅ |
+| Founder-instance flavor | "Andrei's Cabinet" / "your AI cabinet" | README title "Nerva — your AI cabinet" | ✅ (de-personalized correctly) |
+| Wordmark | `NERVA`, cyan on void, mono sub-line | Matches the HUD top bar | ✅ |
 | Primary tagline | "The AI that works while you sleep." | Used in README, MOONSHOT, all marketing | ✅ |
 | Agent count | 17 active | **Drifted: GO_LIVE_PLAN tagline said "15", GTM said "16"** | 🔧 **fixed this pass** |
 | "Jarvis" trademark risk | Flagged for Phase 2 | Noted in BRAND_BOOK §2 + OWNER_TASKS | ✅ tracked |
@@ -80,7 +80,7 @@ already-tracked** — no silent changes to messaging or license without sign-off
 
 ## 6. The 30-second brand summary (for a new teammate / agency)
 
-> **Jarvis Hub** is a local-first, governed personal AI operating system. The brand is *calm
+> **Nerva** is a local-first, governed personal AI operating system. The brand is *calm
 > competence — a premium dark cockpit you command, not a hype-y SaaS page.* Void-black + one signal-
 > cyan accent, Space Grotesk + JetBrains Mono, real product data as texture. Voice: butler, not
 > hype-man — numbers over adjectives, and **never claim what the repo can't back** (honesty is the

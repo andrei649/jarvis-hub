@@ -15,7 +15,7 @@ START.bat
 Starts:
 
 ```text
-Jarvis Hub:     http://127.0.0.1:8080
+Nerva:     http://127.0.0.1:8080
 Signal Layer:   http://127.0.0.1:8787/healthz
 WorldView:      http://localhost:3000, when enabled and installed
 ```
@@ -138,7 +138,7 @@ await sl.ask_world("What changed overnight that matters to me?")
 
 The existing `WorldViewPlugin` remains the bridge to the local WorldView 4D OSINT stack.
 
-## 9. Jarvis Hub UI integration
+## 9. Nerva UI integration
 
 For Vite HUD integration, prefer:
 

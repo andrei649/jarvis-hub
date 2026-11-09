@@ -1,4 +1,4 @@
-# Jarvis Hub — Project Valuation & Subscription Pricing
+# Nerva — Project Valuation & Subscription Pricing
 
 > Generated: 2026-06-02 (refreshed 2026-06-21) · Stage: **v0.10.0** (feature-complete, productionizing toward 1.0; pre-revenue) · Owner: Andrei
 > North star: [MOONSHOT.md](../MOONSHOT.md) · Companion to [GO_LIVE_PLAN.md](../GO_LIVE_PLAN.md) and [BACKLOG.md](../BACKLOG.md)

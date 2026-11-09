@@ -1,4 +1,4 @@
-# Jarvis Hub — Status Snapshot
+# Nerva — Status Snapshot
 
 **Current sprint → [Hermes: code-equivalence progress across all 697 capabilities](HERMES_STATUS.md).**
 This separate measure preserves partial and excluded rows; release and live-host proof remain distinct.

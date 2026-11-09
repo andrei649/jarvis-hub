@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Jarvis Hub HUD v2 — Vite + React + TS. Built output is committed to ../agents/web/v2 and served by FastAPI at /v2.",
+  "description": "Nerva HUD v2 — Vite + React + TS. Built output is committed to ../agents/web/v2 and served by FastAPI at /v2.",
   "scripts": {
     "dev": "vite",
     "dev:workspace": "vite -c vite.workspace.config.ts",

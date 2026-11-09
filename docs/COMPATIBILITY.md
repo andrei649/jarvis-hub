@@ -10,7 +10,7 @@
 
 ## Versioning scheme — Semantic Versioning
 
-Jarvis Hub follows [Semantic Versioning 2.0.0](https://semver.org): `MAJOR.MINOR.PATCH`.
+Nerva follows [Semantic Versioning 2.0.0](https://semver.org): `MAJOR.MINOR.PATCH`.
 
 - **MAJOR** — incompatible API/behavior changes.
 - **MINOR** — backward-compatible features.

@@ -1,4 +1,4 @@
-# Contributing to Jarvis Hub
+# Contributing to Nerva
 
 Thank you for your interest in contributing. This guide covers prerequisites, local setup, running the server and tests, and the branch/PR workflow.
 

@@ -1,4 +1,4 @@
-# Content Calendar & Copy Bank — Jarvis Hub launch
+# Content Calendar & Copy Bank — Nerva launch
 
 > Ready-to-schedule content for the launch window, sequenced to the campaign plan. Everything here
 > is paste-ready and on-brand (calm, specific, butler-not-hype). Copy a row, post it. Numbers are
@@ -43,7 +43,7 @@
 ## B. Launch-day posts
 
 **X / Mastodon — the reveal**
-> It's here: **Jarvis Hub** — a personal AI operating system you actually own.
+> It's here: **Nerva** — a personal AI operating system you actually own.
 >
 > · 18 specialist agents, on your own GPU
 > · proactive, governed (approval queue + tamper-evident audit log)
@@ -54,9 +54,9 @@
 > The AI that works while you sleep → github.com/andrei649/jarvis-hub
 
 **Show HN — title + first comment**
-> **Title:** Show HN: Jarvis Hub — a governed, local-first multi-agent AI assistant
+> **Title:** Show HN: Nerva — a governed, local-first multi-agent AI assistant
 >
-> **First comment:** I built Jarvis Hub because I wanted the always-on AI agent everyone chased in
+> **First comment:** I built Nerva because I wanted the always-on AI agent everyone chased in
 > 2026 — without the part where my private life lives on someone else's servers, and without the
 > ungoverned-autonomy security disasters.
 >
@@ -85,7 +85,7 @@
 > Repo + compose: [link]
 
 **r/selfhosted — tailored**
-> **Title:** Jarvis Hub — a self-hosted personal AI that's proactive AND governed (approval queue + tamper-evident audit log)
+> **Title:** Nerva — a self-hosted personal AI that's proactive AND governed (approval queue + tamper-evident audit log)
 >
 > Body: For the "I want an AI assistant but not on someone's cloud" crowd. Self-host the whole thing;
 > nothing leaves your machine by default. It's multi-agent + proactive (24/7 self-tasking queue) but

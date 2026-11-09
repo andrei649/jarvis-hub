@@ -1,4 +1,4 @@
-# Jarvis Hub — FAQ
+# Nerva — FAQ
 
 > Quick answers. See the [User Guide](USER_GUIDE.md), [UPGRADE](UPGRADE.md),
 > [PRIVACY](PRIVACY.md), and [SECURITY](../SECURITY.md) for depth.

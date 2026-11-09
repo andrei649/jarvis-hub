@@ -1,4 +1,4 @@
-# Threat Model — Jarvis Hub
+# Threat Model — Nerva
 
 > What Jarvis defends, against whom, and the concrete mechanism for each threat. This is
 > a living document grounded in the actual code (every mitigation links to the seam that
@@ -7,7 +7,7 @@
 
 ## 1. System & trust boundaries
 
-Jarvis Hub is **local-first and single-user**: it runs on the owner's machine, binds to
+Nerva is **local-first and single-user**: it runs on the owner's machine, binds to
 **loopback by default**, and treats the cloud as **opt-in per agent/plugin**. The trust
 boundaries, from most to least trusted:
 

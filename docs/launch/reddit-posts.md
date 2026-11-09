@@ -1,4 +1,4 @@
-# Reddit launch posts — Jarvis Hub
+# Reddit launch posts — Nerva
 
 > Per the GTM research: lead with value/story (not a pitch), include the GitHub link + a
 > `docker-compose`/stack details so it's replicable, keep self-promo ≤10% of account history
@@ -15,7 +15,7 @@
 
 I've been running everything through LM Studio/Ollama and kept hitting the same wall: the chat UIs are great, but the moment you want agents that *act* (not just answer), you're either gluing scripts together or reaching for an ungoverned agent runner that'll happily run wild.
 
-So I built Jarvis Hub: 16 specialized agents with a planner, persistent memory (vector ⊕ knowledge-graph fused recall), and — the part I think this sub will care about — **governed autonomy**. Reversible actions run on their own; irreversible/costly ones block on an approval queue. Every tool call is hash-chained into a tamper-evident audit log. There's a kill-switch and a model badge that reports the *actual* loaded model (it can even start LM Studio / load/unload models from chat, behind a kill-switch).
+So I built Nerva: 16 specialized agents with a planner, persistent memory (vector ⊕ knowledge-graph fused recall), and — the part I think this sub will care about — **governed autonomy**. Reversible actions run on their own; irreversible/costly ones block on an approval queue. Every tool call is hash-chained into a tamper-evident audit log. There's a kill-switch and a model badge that reports the *actual* loaded model (it can even start LM Studio / load/unload models from chat, behind a kill-switch).
 
 - Local-first, hybrid optional (local for the 80%, opt-in cloud for the hard 20%)
 - Auto-detects your loaded model; fast/deep routing with separate token budgets so reasoning models don't truncate mid-thought
@@ -30,7 +30,7 @@ Genuinely after feedback: for those of you running agents locally — how much a
 
 ## r/selfhosted
 
-**Title:** `Jarvis Hub – a self-hosted, local-first personal AI assistant (16 agents, approval queue + audit log, no cloud by default)`
+**Title:** `Nerva – a self-hosted, local-first personal AI assistant (16 agents, approval queue + audit log, no cloud by default)`
 
 **Body:**
 

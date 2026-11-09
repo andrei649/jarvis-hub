@@ -18,11 +18,11 @@ function mockFetch(payload) {
 describe('OnboardingPanel (H23.20) — first-run wizard state', () => {
   it('GETs the wizard, marks completed steps, and offers "done" on the rest', async () => {
     const fn = mockFetch({
-      steps: [{ key: 'intro', title: 'Welcome to Jarvis' }, { key: 'model', title: 'Connect a model' }],
+      steps: [{ key: 'intro', title: 'Welcome to Nerva' }, { key: 'model', title: 'Connect a model' }],
       completed: ['intro'], complete: false, model_ready: true, hint: null,
     });
     render(<OnboardingPanel />);
-    await waitFor(() => expect(screen.getByText(/Welcome to Jarvis/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Welcome to Nerva/)).toBeTruthy());
     expect(fn.mock.calls.some((c) => String(c[0]).includes('/api/onboarding/wizard'))).toBe(true);
     expect(screen.getByText('1/2')).toBeTruthy();              // progress (1 of 2 done)
     expect(screen.getByText(/Connect a model/)).toBeTruthy();

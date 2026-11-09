@@ -869,7 +869,7 @@ def purge_data(source_root: Optional[str] = None, *, backup_first: bool = True,
 # ── CLI ───────────────────────────────────────────────────────────
 def _main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="python -m agents.core.data_purge",
-                                 description="Jarvis 'forget me' — erase user content at rest")
+                                 description="Nerva 'forget me' — erase user content at rest")
     ap.add_argument("--confirm", action="store_true",
                     help="required: acknowledge that this irreversibly erases user content")
     ap.add_argument("--no-backup", action="store_true",

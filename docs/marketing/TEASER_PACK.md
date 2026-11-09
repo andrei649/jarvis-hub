@@ -1,4 +1,4 @@
-# Jarvis Hub — Teaser Pack
+# Nerva — Teaser Pack
 
 > Short-form, drop-in marketing copy for the launch teaser phase. Everything here is ready to paste
 > or hand to Claude Design / a video tool. Voice: calm, specific, butler-not-hype (`BRAND_BOOK.md` §6).
@@ -23,30 +23,30 @@
 **Teaser 1 — the premise**
 > Most AI assistants make you choose: useful, or private.
 > We refused.
-> Jarvis Hub runs 17 specialist agents entirely on your own hardware. Proactive. Governed. $0/month.
+> Nerva runs 17 specialist agents entirely on your own hardware. Proactive. Governed. $0/month.
 > Your life never leaves your machine. ↓
 
 **Teaser 2 — proactivity**
 > Your assistant shouldn't wait to be asked.
-> Jarvis Hub runs a self-tasking queue 24/7 — it finds its own work, does the safe things silently,
+> Nerva runs a self-tasking queue 24/7 — it finds its own work, does the safe things silently,
 > and asks you only for the ones that matter. Approve enough times, it stops asking.
 > Local. Yours. Coming soon.
 
 **Teaser 3 — the governance angle (the differentiator)**
 > The 2026 lesson: an autonomous agent with no brakes becomes the #1 infostealer target.
-> Jarvis Hub took the other road. Every action gated by a reversible/irreversible approval queue.
+> Nerva took the other road. Every action gated by a reversible/irreversible approval queue.
 > Every action in a tamper-evident audit log. The family agent never touches the internet — enforced
 > in code, proven by tests.
 
 **Teaser 4 — the compounding memory**
 > It gets better the longer you use it.
-> Every night, Jarvis Hub reads the day, extracts people + projects + facts into a knowledge graph,
+> Every night, Nerva reads the day, extracts people + projects + facts into a knowledge graph,
 > and fuses that into every answer tomorrow.
 > No configuration. Just a system that learns your life — on your machine.
 
 **Teaser 5 — the reveal / launch day**
 > It's here.
-> Jarvis Hub v1.0 — a personal AI operating system you actually own.
+> Nerva v1.0 — a personal AI operating system you actually own.
 > 17 agents · governed autonomy · living memory · $0/month · zero cloud by default.
 > Self-host in minutes → [link]
 
@@ -70,7 +70,7 @@
 | 0:32–0:40 | Trust mode: the audit chain ticks past, "chain verified · no tampering". | `Every action governed. Every action audited. Provably.` |
 | 0:40–0:48 | The locality meter fills to ~100% on-device; the cloud sliver stays tiny. | `Your life never leaves your machine.` |
 | 0:48–0:54 | Frigga's tile — strict-local badge glows. | `The family agent never touches the internet. Enforced in code.` |
-| 0:54–0:60 | Cut to wordmark on void-black. | `Jarvis Hub. The AI that works while you sleep. — $0/month. Self-hosted. Yours.` |
+| 0:54–0:60 | Cut to wordmark on void-black. | `Nerva. The AI that works while you sleep. — $0/month. Self-hosted. Yours.` |
 
 **15-second cut** (for vertical/Reels): use rows 0:00–0:08, 0:24–0:32, 0:54–0:60.
 
@@ -87,7 +87,7 @@
 > You've seen the always-on AI agents. You've also seen how they end up — your private data on
 > someone else's servers, autonomy with no brakes.
 >
-> **Jarvis Hub is the other path.** 17 specialist agents that run on *your* hardware, work
+> **Nerva is the other path.** 17 specialist agents that run on *your* hardware, work
 > proactively around the clock, and pass every meaningful action through an approval queue and a
 > tamper-evident audit log. The family agent never touches the internet.
 >

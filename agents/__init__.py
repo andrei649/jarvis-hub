@@ -1,4 +1,4 @@
-"""Jarvis Hub — agents package."""
+"""Nerva (engine codename jarvis-hub) — agents package."""
 
 # CDX-4/5: the single source of truth for the app version. web.py's FastAPI(version=…),
 # /status and /api/status all read this (was a stale "0.5.0-beta" hard-coded in web.py

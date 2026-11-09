@@ -1,4 +1,4 @@
-# Jarvis Hub — Architecture Reference
+# Nerva — Architecture Reference
 
 > WorldView was retired on 2026-10-27 and is no longer installed, started or exposed by Nerva. Any WorldView stack or bridge references below are historical; Signal Layer remains independent.
 

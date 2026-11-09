@@ -1,4 +1,4 @@
-# Jarvis Hub vs. the field — buyer-facing comparison
+# Nerva vs. the field — buyer-facing comparison
 
 > **Purpose:** a public, publishable comparison for the landing page, sales replies, and
 > "how are you different from X?" questions. Grounded in the repo's own research —
@@ -17,7 +17,7 @@
 
 ## The one-sentence position
 
-**Jarvis Hub is the *local-first, governed* alternative to the always-on personal AI** — the brain
+**Nerva is the *local-first, governed* alternative to the always-on personal AI** — the brain
 (privacy, governance, agentic depth, persistent memory) that the polished cloud front-ends skip.
 
 Honest, defensible superlative: *"No **shipping consumer** product combines governed autonomy +
@@ -33,7 +33,7 @@ distribution, SaaS-connector breadth, freemium funnel). We win the *brain* (priv
 multi-agent depth, local LLM/VLM). None of their advantages require us to rebuild our core — they are
 packaging and go-to-market, most of it already seeded and now partly built.
 
-| | **getjarvis.eu** | **Jarvis Hub** |
+| | **getjarvis.eu** | **Nerva** |
 |---|---|---|
 | Shape | Monetized consumer **cloud SaaS** + thin native overlay | **Self-hosted, local-first agentic OS** (single-user) |
 | Where your data lives | Uploaded to their EU cloud (GDPR, AES-256-GCM, no-train **claimed**) | On your device/LAN — never leaves (`LOCAL_ONLY_AGENTS`, on-device VLM) |
@@ -58,7 +58,7 @@ host wiring (OS overlay, screen-capture permission, OAuth setup), not new invent
 
 ## The wider field
 
-| | **Jarvis Hub** | OpenClaw | Amazon Bee | Khoj | Apple/Google/Alexa+ |
+| | **Nerva** | OpenClaw | Amazon Bee | Khoj | Apple/Google/Alexa+ |
 |---|:---:|:---:|:---:|:---:|:---:|
 | Runs on your hardware (local-first) | ✅ | ◐ | ❌ | ✅ | ❌ |
 | Proactive / acts for you | ✅ | ✅ | ✅ | ◐ | ✅ |
