@@ -431,3 +431,17 @@ def test_legacy_status_projects_committed_run_without_private_receipts(tmp_path)
     assert report["last_result"]["date"] == report["last_run"]
     assert set(report["last_result"]["lifecycle"]) == {"considered", "stale", "archived"}
     assert str(tmp_path) not in str(report)
+
+
+def test_quarantined_skill_does_not_block_the_lifecycle_pass(tmp_path):
+    loader, usage, _approvals, ops = setup(tmp_path)
+    ops.get_setting = lambda key, default=None: True if key == "cognition.review_enabled" else default
+    loader.add("waiting", tmp_path / "waiting")
+    usage.note_created("waiting", ORIGIN_AGENT)
+    (tmp_path / "waiting" / "PENDING_REVIEW").write_text("review", encoding="utf-8")
+    loader.add("agent", tmp_path / "agent")
+    usage.note_created("agent", ORIGIN_AGENT)
+    # A skill awaiting review is skipped by the pass, not a reason to refuse the whole pass...
+    assert ops.preview("run", {})["status"] != "refused"
+    # ...while naming it directly still refuses.
+    assert ops.preview("pin", {"name": "waiting"})["status"] == "refused"

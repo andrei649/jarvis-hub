@@ -143,7 +143,9 @@ def _shared_path(value: str) -> Path:
 
 def _file_rules(filename: str) -> list[str]:
     path = _shared_path(filename)
-    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0))
+    # O_NONBLOCK and O_CLOEXEC are Unix-only; without NONBLOCK a FIFO would hang the open,
+    # so on Windows (no FIFOs) the plain read-only open is the same safe choice.
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0))
     try:
         details = os.fstat(fd)
         if not stat.S_ISREG(details.st_mode):

@@ -220,6 +220,15 @@ class CuratorOperations:
             if parent.is_symlink() or parent.resolve() != _writable_skills_dir().resolve():
                 raise ValueError("source_protected")
 
+    def _quarantined(self, name: str) -> bool:
+        """True while a skill awaits owner review or is sandbox-only (marker files)."""
+        skill = getattr(self.loader, "skills", {}).get(name)
+        if skill is None:
+            return False
+        path = Path(skill.path)
+        return any((path / marker).exists() or (path / marker).is_symlink()
+                   for marker in ("PENDING_REVIEW", "ACQUIRED_SANDBOX_ONLY"))
+
     def _managed(self, name: str, state: dict) -> bool:
         rec = self._usage(name)
         if rec and rec.get("origin") == ORIGIN_AGENT:
@@ -574,6 +583,8 @@ class CuratorOperations:
                 rec = self._usage(name) or {}
                 if rec.get("origin") != ORIGIN_AGENT and name not in state["adopted"]:
                     continue
+                if self._quarantined(name):
+                    continue  # awaiting review: not part of a lifecycle pass; a direct target still refuses
                 _skill, digest, path = self._skill(name)
                 if name in state["adopted"] and state["adopted"][name] != digest:
                     raise ValueError("adopted_source_drifted")

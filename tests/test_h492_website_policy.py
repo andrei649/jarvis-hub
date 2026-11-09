@@ -266,3 +266,12 @@ async def test_toolrpc_search_drops_owner_blocked_result_and_extract_refuses_bef
     blocked = await _call(server, web_tools.TOOL_EXTRACT, {"url": "https://blocked.example/page"})
     assert blocked["result"]["reason"] == "site_blocked"
     assert plugin.fetch_calls == []
+
+
+def test_shared_file_reader_opens_without_unix_only_flags(monkeypatch, tmp_path):
+    # O_NONBLOCK / O_CLOEXEC do not exist on Windows; a readable list must still load there.
+    shared = tmp_path / "shared.txt"
+    shared.write_text("blocked.example\n", encoding="utf-8")
+    monkeypatch.delattr(website_policy.os, "O_NONBLOCK", raising=False)
+    monkeypatch.delattr(website_policy.os, "O_CLOEXEC", raising=False)
+    assert "blocked.example" in website_policy._file_rules(str(shared))
