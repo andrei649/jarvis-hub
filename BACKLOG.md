@@ -2724,6 +2724,17 @@
   create a continuation as Hermes' does. The Nerva rename and the SEC-B6 guards drifted 140 rows and
   the H440 merge 160; all were re-read by citation and restamped with no status moved (the four
   stale pet rows included). `needs_review` 0; headline unchanged at 146/697.
+  **Same day, review round:** an independent adversarial review of H440 found five major defects
+  (archiving a row stranded its newest continuation; the sweep archived an in-use conversation; a pin
+  on the row did not protect the newest member from retention; resume by name failed once the root was
+  renamed; the schema path still accepted a bare answer and a schema-refusing server lost the H413
+  upgrade) — all fixed with 53 tests built from the reviewer's reproductions; archive, pin, sweep,
+  retention and delete now treat a lineage as one unit. H484 (`/approvals`, `nerva approvals mode`,
+  the mode on approval cards) merged and reviewed the same way: the owner gate holds, but the review
+  found the stored mode is not applied at boot (the policy runs `auto` until the first tick, and
+  for as long as the e-stop is engaged — older than this row), `off` still runs policy-approved work
+  and loses to a per-agent `auto`, and a tightening can revert after a failed settings reload; fixes
+  in progress. Both rows stay `partial` until re-reviewed; 146/697.
 
 ## Darwin feature absorption — 2026-09-09
 

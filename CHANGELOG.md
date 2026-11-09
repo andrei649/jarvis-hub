@@ -9,6 +9,13 @@
   carry the Nerva name. An existing desktop install keeps its data, and uninstall finds the app
   under either name.
 
+**Chats that name themselves, and stay together (#1347)**
+- A new chat gets a short title from your first words, then a better one from the local model.
+  Rename it yourself in the Sessions panel and the model never changes it back.
+- When you continue a long chat, the continuation is called "Title #2", "#3" and so on. The list
+  shows one row per conversation and opens its newest part; archive, pin and delete act on the
+  whole conversation. `nerva chat -r "Title"` opens the newest part too.
+
 **Three status pages now need your user token (#1347)**
 - An independent security review found that the Oracle status, learning stats and local-docs
   status pages answered anyone on the network with personal details. They now ask for the same
