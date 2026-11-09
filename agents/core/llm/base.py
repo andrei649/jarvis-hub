@@ -376,6 +376,33 @@ async def _emit(on_token: Callable, text: str) -> None:
 
 # ── Abstract base ─────────────────────────────────────────────────────────────
 
+#: H440 — the HTTP answers that mean "this server does not take a JSON schema" when the
+#: request carried one: a malformed-request refusal, never a transient or server error.
+_SCHEMA_REFUSAL_STATUS = frozenset({400, 415, 422, 501})
+
+
+class JsonSchemaRejected(RuntimeError):
+    """H440 — the local server refused a request because of its JSON schema (an older
+    Ollama, an LM Studio engine without structured output). Nothing was generated. The
+    backend stops declaring ``supports_json_schema`` for the rest of the process; the
+    caller may ask again in free text."""
+
+    json_schema_unsupported = True
+
+
+def _schema_refused(backend, json_schema, exc: Exception) -> bool:
+    """Whether ``exc`` is the server refusing ``json_schema``; if so the backend instance
+    no longer declares schema support."""
+    if json_schema is None or not isinstance(exc, httpx.HTTPStatusError):
+        return False
+    if exc.response.status_code not in _SCHEMA_REFUSAL_STATUS:
+        return False
+    backend.supports_json_schema = False
+    logger.info("%s refused a JSON schema (HTTP %s); structured output is off for this process",
+                type(backend).__name__, exc.response.status_code)
+    return True
+
+
 class LLMBackend(ABC):
     supports_tools = False
     #: H297 — whether a tool message's ``images`` reach the model as images. Off by
@@ -683,6 +710,8 @@ class LMStudioBackend(LLMBackend):
         except ReasoningEffortRefused:
             raise
         except Exception as e:
+            if _schema_refused(self, json_schema, e):
+                raise JsonSchemaRejected("LM Studio refused the JSON schema") from e
             return local_backend_degraded_reply("LM Studio", f"LM Studio ({self.base_url})", e, model=model)
 
     async def generate_tool_turn(
@@ -1019,6 +1048,8 @@ class OllamaBackend(LLMBackend):
             report_text_usage(ollama_usage(data))
             return answer
         except Exception as e:
+            if _schema_refused(self, json_schema, e):
+                raise JsonSchemaRejected("Ollama refused the JSON schema") from e
             return local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e, model=model)
 
     async def generate_tool_turn(

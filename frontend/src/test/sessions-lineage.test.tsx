@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
-import { SessionsPanel, resumeTarget, titlePath } from '../panels/sessions';
+import { SessionsPanel, deletePath, resumeTarget, titlePath } from '../panels/sessions';
 
 let calls;
 let renameReply;
@@ -25,6 +25,15 @@ beforeEach(() => {
     calls.push({ url: u.replace(/^.*?(\/sessions)/, '$1'), method: init.method || 'GET', body });
     if (u.endsWith('/sessions/resume')) return reply(200, { ok: true, session: body.session_id, turns: [], recap: null });
     if (u.endsWith('/title')) return renameReply(body);
+    if ((init.method || '') === 'DELETE') {
+      return reply(200, { ok: true, session: 'root-9', backup: '/b/root-9.json', deleted: ['cont-8', 'root-9'], backups: ['/b/cont-8.json', '/b/root-9.json'] });
+    }
+    if (u.endsWith('/sessions?archived=true')) {
+      return reply(200, { sessions: [
+        { id: 'root-9', title: 'Old trip', archived_at: 'x', resume_id: 'cont-8', continuations: 1 },
+        { id: 'solo-9', title: 'Old note', archived_at: 'x', resume_id: 'solo-9', continuations: 0 },
+      ] });
+    }
     if (u.endsWith('/sessions')) {
       return reply(200, { sessions: [
         { id: 'root-1', title: 'Trip plan', title_source: 'model', resume_id: 'cont-3', continuations: 2 },
@@ -101,5 +110,40 @@ describe('SessionsPanel — H440 lineage and rename', () => {
     fireEvent.click(screen.getByRole('button', { name: 'save title for root-1' }));
     expect((await screen.findByRole('alert')).textContent).toContain('not renamed');
     expect(screen.getByRole('textbox', { name: 'title for root-1' })).toBeTruthy();
+  });
+
+  it('builds the delete path of a whole conversation only when asked', () => {
+    expect(deletePath('a b')).toBe('/sessions/a%20b?confirm=DELETE');
+    expect(deletePath('a b', true)).toBe('/sessions/a%20b?confirm=DELETE&lineage=true');
+  });
+
+  it('resumes the newest member from the archived view too', async () => {
+    render(<SessionsPanel />);
+    fireEvent.click(await screen.findByRole('tab', { name: 'archived' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'resume root-9' }));
+    await waitFor(() => expect(sent('POST')).toHaveLength(1));
+    expect(sent('POST')[0].body).toEqual({ session_id: 'cont-8' });
+  });
+
+  it('deletes a continued conversation whole, and says so before the second click', async () => {
+    render(<SessionsPanel />);
+    fireEvent.click(await screen.findByRole('tab', { name: 'archived' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'delete root-9 permanently' }));
+    expect(screen.getByRole('button', { name: 'confirm delete root-9' }).textContent).toContain('and its 1 continuation');
+    expect(screen.getByRole('note').textContent).toContain('every continuation');
+    fireEvent.click(screen.getByRole('button', { name: 'confirm delete root-9' }));
+    await waitFor(() => expect(sent('DELETE')).toHaveLength(1));
+    expect(sent('DELETE')[0].url).toBe('/sessions/root-9?confirm=DELETE&lineage=true');
+    expect((await screen.findByRole('status')).textContent).toContain('deleted root-9 and 1 continuation · 2 backups');
+  });
+
+  it('deletes a chat nobody continued as before', async () => {
+    render(<SessionsPanel />);
+    fireEvent.click(await screen.findByRole('tab', { name: 'archived' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'delete solo-9 permanently' }));
+    expect(screen.getByRole('button', { name: 'confirm delete solo-9' }).textContent).toBe('confirm: delete for good');
+    fireEvent.click(screen.getByRole('button', { name: 'confirm delete solo-9' }));
+    await waitFor(() => expect(sent('DELETE')).toHaveLength(1));
+    expect(sent('DELETE')[0].url).toBe('/sessions/solo-9?confirm=DELETE');
   });
 });

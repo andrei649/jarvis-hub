@@ -135,10 +135,11 @@ async def test_anything_but_the_exact_object_gives_no_title(reply):
     assert await st.model_title("Plan my Brasov trip", _SchemaGen(reply)) == ""
 
 
-async def test_a_schema_backend_that_answered_in_plain_text_is_still_filtered_as_free_text():
-    """An older local server ignores the schema and answers a bare line: H413's filter
-    reads it, so a usable name is kept and the message's answer is not."""
-    assert await st.model_title("Plan my Brasov trip", _SchemaGen("Brasov trip planning")) == "Brasov trip planning"
+async def test_a_schema_backend_that_answered_in_plain_text_names_nothing():
+    """Review round: a server that ignores the schema returns whatever the model said — a
+    name or the message's answer, indistinguishable — so the schema path takes the object
+    or nothing (tests/test_h440_lineage_review.py has the refused-schema fallback)."""
+    assert await st.model_title("Plan my Brasov trip", _SchemaGen("Brasov trip planning")) == ""
     assert await st.model_title("Plan my Brasov trip", _SchemaGen("Sure, here is your plan for Brasov")) == ""
 
 
@@ -472,15 +473,16 @@ def test_the_sessions_route_hides_continuations_and_says_what_a_resume_opens(cp,
     assert rows["root"]["title"] == "Trip plan"
 
 
-def test_the_archived_view_still_shows_an_archived_continuation(cp, monkeypatch):
-    """The archive is where a chat is brought back or deleted, not a picker: a continuation
-    the owner archived stays reachable there."""
+def test_the_archived_view_lists_an_archived_conversation_as_one_row(cp, monkeypatch):
+    """Review round: archiving any member archives the conversation; the archived view
+    lists its row once, with the member a resume opens."""
     _titled(cp, "root", "Trip plan")
     two = _continue(cp, "root")
     assert cp.set_archived(two, True)
     client = _client(monkeypatch, SimpleNamespace(checkpoints=cp))
-    assert [r["id"] for r in client.get("/sessions", params={"archived": "true"}).json()["sessions"]] == [two]
-    assert [r["id"] for r in client.get("/sessions").json()["sessions"]] == ["root"]
+    (row,) = client.get("/sessions", params={"archived": "true"}).json()["sessions"]
+    assert (row["id"], row["resume_id"], row["continuations"]) == ("root", two, 1)
+    assert client.get("/sessions").json()["sessions"] == []
 
 
 async def test_the_sessions_command_hides_continuations(cp):
@@ -490,7 +492,9 @@ async def test_the_sessions_command_hides_continuations(cp):
     two = _continue(cp, "root")
     out = await build_default_registry().dispatch("/sessions", orch=SimpleNamespace(checkpoints=cp),
                                                   principal=Principal(channel="telegram", admin=True))
-    assert "root" in out.reply and "Trip plan" in out.reply and two not in out.reply
+    # one line for the conversation, under the id a resume opens (review round)
+    assert out.reply.splitlines()[1:] == [line for line in out.reply.splitlines() if two in line]
+    assert "Trip plan" in out.reply and len(out.reply.splitlines()) == 2
 
 
 # ── resume by title: the newest member of the lineage ────────────────────────────
@@ -517,7 +521,8 @@ def test_a_renamed_root_still_resolves_to_its_newest_member(cp):
 def test_two_unrelated_sessions_with_one_title_stay_ambiguous(cp):
     _titled(cp, "root", "Trip plan")
     _continue(cp, "root")
-    _titled(cp, "twin", "Trip plan")
+    # a twin from before automatic titles were numbered apart (review round, m1)
+    cp.create_session_record("twin", metadata={"title": "Trip plan", "title_source": "first_words"})
     with pytest.raises(session_selectors.SessionSelectionError) as caught:
         session_selectors.resolve(cp, "Trip plan")
     assert caught.value.status == 409 and len(caught.value.candidates) == 2
@@ -549,8 +554,8 @@ def test_the_resume_route_takes_a_title_and_opens_the_newest_member(cp, monkeypa
 
 
 def test_the_resume_route_refuses_an_ambiguous_title_and_changes_nothing(cp, monkeypatch):
-    _titled(cp, "a", "Trip plan")
-    _titled(cp, "b", "Trip plan")
+    for sid in ("a", "b"):          # two chats under the very same title (written before m1)
+        cp.create_session_record(sid, metadata={"title": "Trip plan", "title_source": "first_words"})
     orch = _resume_orch(cp)
     got = _client(monkeypatch, orch).post("/sessions/resume", json={"title": "Trip plan"})
     assert got.status_code == 409 and got.json()["error"] == "ambiguous_selector"

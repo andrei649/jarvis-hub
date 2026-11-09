@@ -311,15 +311,21 @@ def _status(ctx: CommandContext) -> str:
 
 def _sessions(ctx: CommandContext) -> str:
     checkpoints = getattr(ctx.orch, "checkpoints", None)
-    # H440: one row per conversation — a continuation is reached through its lineage.
-    rows = checkpoints.get_sessions(limit=5, hide_continuations=True) if checkpoints is not None else []
+    # H440: one row per conversation — a continuation is reached through its lineage —
+    # and the id printed is the one a resume opens (the lineage's newest member). Archived
+    # chats are not in this list, as they are not in the HUD's.
+    rows = (checkpoints.get_sessions(limit=5, archived=False, hide_continuations=True)
+            if checkpoints is not None else [])
     if not rows:
         return "No sessions recorded."
     from agents.core.session_titles import title_fields
 
+    tips = getattr(checkpoints, "lineage_tips", None)
+    tips = tips([row.get("session_id") or row.get("id") for row in rows]) if callable(tips) else {}
     lines = []
     for row in rows:
         sid = row.get("session_id") or row.get("id") or "?"
+        sid = (tips.get(sid) or {}).get("resume_id") or sid
         started = row.get("started_at") or ""
         # H413: a title is the opening words of the owner's conversation, so only the
         # owner sees it; a widget visitor or a paired guest gets the id and time.

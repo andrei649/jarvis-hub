@@ -140,18 +140,28 @@ def clean_model_title(raw: object) -> str:
     return title
 
 
+class TitleRefused(ValueError):
+    """H440 — a rename the store refuses: ``title_reserved`` (a selector word, another
+    session's id) or ``title_taken`` (the name of another conversation)."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
 def schema_title(raw: object) -> str:
     """H440 — the title out of a schema-constrained answer. Exactly ``{"title": "<name>"}``
-    is read (and its value filtered like any model title); any other JSON, or text that
-    only looks like it (a fence, a cut-off object, prose around one), is no title. A bare
-    line — a server that ignored the schema — falls back to the free-text filter."""
-    if not isinstance(raw, str) or not raw.strip():
+    is read (and its value filtered like any model title). Anything else is no title:
+    other JSON, a fence, a cut-off object, prose around one — and a bare line too, which
+    is what a server that ignored the schema returns when the model answered the message
+    instead of naming it. (A server that *refuses* the schema is another matter: see
+    :func:`model_title`.)"""
+    if not isinstance(raw, str):
         return ""
-    text = raw.strip()
     try:
-        parsed = json.loads(text)
+        parsed = json.loads(raw.strip(" \t\r\n"))
     except ValueError:
-        return "" if any(mark in text for mark in "{}[]`") else clean_model_title(text)
+        return ""
     if not isinstance(parsed, dict) or set(parsed) != {"title"}:
         return ""
     return clean_model_title(parsed["title"])
@@ -232,7 +242,13 @@ async def model_title(text: str, generate: Callable[..., Awaitable[str]]) -> str
     """Ask ``generate(system=, prompt=)`` to name a conversation that opens with ``text``;
     ``""`` on any failure or unusable answer. H440: a ``generate`` whose
     ``supports_json_schema()`` is true is called with ``json_schema=TITLE_SCHEMA`` and its
-    answer read by :func:`schema_title`; one call either way."""
+    answer read by :func:`schema_title`.
+
+    One generation per session either way. When the server *refuses* the schema (the
+    backend raises an error marked ``json_schema_unsupported`` and stops declaring
+    support, so this happens once per backend and process), no title was generated, and
+    the same session gets H413's free-text call instead of losing its upgrade. Any other
+    failure — a timeout, no backend — is not retried."""
     message = _clean_line(text)[:MAX_INPUT_CHARS]
     if not message:
         return ""
@@ -243,15 +259,23 @@ async def model_title(text: str, generate: Callable[..., Awaitable[str]]) -> str
             raw = await generate(system=SCHEMA_SYSTEM_PROMPT, prompt=prompt, json_schema=TITLE_SCHEMA)
         else:
             raw = await generate(system=SYSTEM_PROMPT, prompt=prompt)
-    except Exception:
-        logger.info("session title: the local model gave no title", exc_info=False)
-        return ""
+    except Exception as exc:
+        if not (schema and getattr(exc, "json_schema_unsupported", False) is True):
+            logger.info("session title: the local model gave no title", exc_info=False)
+            return ""
+        logger.info("session title: the local server refused the JSON schema; asking in free text")
+        try:
+            return clean_model_title(await generate(system=SYSTEM_PROMPT, prompt=prompt))
+        except Exception:
+            logger.info("session title: the local model gave no title", exc_info=False)
+            return ""
     return schema_title(raw) if schema else clean_model_title(raw)
 
 
 __all__ = [
     "FIRST_WORDS", "HUMAN", "LINEAGE", "MAX_HUMAN_TITLE_CHARS", "MAX_MODEL_TITLE_CHARS", "MAX_TITLE_CHARS",
     "MODEL", "SCHEMA_MAX_TOKENS", "SCHEMA_SYSTEM_PROMPT", "SETTING", "SYSTEM_PROMPT", "TITLE_SCHEMA",
+    "TitleRefused",
     "bind_own_words", "clean_model_title", "human_title", "instant_title", "lineage_base", "model_title",
     "next_lineage_title", "own_words", "reset_own_words", "schema_title", "title_fields",
 ]

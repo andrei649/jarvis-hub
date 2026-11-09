@@ -106,10 +106,10 @@ async def get_sessions(req: Request, archived: bool = False):
     admin = web._web_principal(req).admin
     # The lineage predicate runs before the limit, so newer foreign rows cannot push
     # a guest's native history out of the window; the row probe below stays authoritative.
-    # H440: the list is a picker — a continuation is not a row of its own there. The
-    # archived view is not a picker (bring back, delete), so it shows every archived row.
+    # H440: one row per conversation in both views — a continuation is not a row of its
+    # own; archive, unarchive, pin and (with ``lineage=true``) delete act on every member.
     sessions = orch.checkpoints.get_sessions(limit=20, archived=archived, native_only=not admin,
-                                             hide_continuations=not archived)
+                                             hide_continuations=True)
     if not admin:
         import asyncio
         sessions = [row for row in sessions if not (await asyncio.to_thread(
@@ -118,7 +118,7 @@ async def get_sessions(req: Request, archived: bool = False):
 
     ids = [row.get("session_id") or row.get("id") for row in sessions]
     tips = getattr(orch.checkpoints, "lineage_tips", None)
-    tips = tips(ids) if callable(tips) and not archived else {}
+    tips = tips(ids) if callable(tips) else {}
     return {"sessions": [{**row, **title_fields(row.get("metadata")), **_stamp_fields(row),
                           **_lineage_fields(sid, tips)} for sid, row in zip(ids, sessions, strict=True)]}
 
@@ -172,7 +172,9 @@ async def _set_stamp(session_id: str, field: str, on: bool, req: Request):
     if (field, on) == ("archived", True):
         from agents.core.session_archive import forget_skill_loads
 
-        forget_skill_loads(session_id)          # H326: an archived chat carries no skill loads
+        members = getattr(orch.checkpoints, "lineage_members", None)
+        for member in (members(session_id) if callable(members) else None) or [session_id]:
+            forget_skill_loads(member)          # H326: an archived chat carries no skill loads
     return JSONResponse({"ok": True, "session": session_id, field: on}, headers=_NO_STORE)
 
 
@@ -214,8 +216,13 @@ class RenameSessionRequest(BaseModel):
 @router.patch("/sessions/{session_id}/title", dependencies=[Depends(user_guard)])
 async def rename_session(session_id: str, body: RenameSessionRequest, req: Request):
     """H440 — the owner names a conversation. A human title is never replaced by the
-    first-words title or the local model's upgrade."""
-    from agents.core.session_titles import HUMAN, human_title
+    first-words title or the local model's upgrade.
+
+    Reach: as the pin and the archive routes, any user-token holder may rename any native
+    session (an imported one is the owner's alone). A reserved name (``latest``, an ``@``
+    selector, a session id) answers 400 ``title_reserved``; a name another conversation
+    already goes by answers 409 ``title_taken``."""
+    from agents.core.session_titles import HUMAN, TitleRefused, human_title
 
     if not is_valid_session_id(session_id):
         return JSONResponse({"error": "invalid session_id"}, status_code=400)
@@ -234,7 +241,13 @@ async def rename_session(session_id: str, body: RenameSessionRequest, req: Reque
             raise
         return JSONResponse({"error": "the session store is unavailable", "reason": "store_unavailable"},
                             status_code=503)
-    done = orch.checkpoints.rename_session(session_id, title)
+    try:
+        done = orch.checkpoints.rename_session(session_id, title)
+    except TitleRefused as exc:
+        taken = exc.reason == "title_taken"
+        return JSONResponse({"error": ("another conversation already goes by that name" if taken
+                                       else "that name is reserved for selecting a session"),
+                             "reason": exc.reason}, status_code=409 if taken else 400)
     if done is None:
         return JSONResponse({"error": "the session store is unavailable", "reason": "store_unavailable"},
                             status_code=503)
@@ -249,8 +262,14 @@ _DELETE_STATUS = {"active_session": 409, "session_busy": 409, "has_continuations
 
 
 @router.delete("/sessions/{session_id}", dependencies=[Depends(admin_guard)])
-async def delete_session(session_id: str, confirm: str = ""):
+async def delete_session(session_id: str, confirm: str = "", lineage: bool = False):
     """H218 — delete one conversation for good, backup first. Needs ``?confirm=DELETE``.
+
+    H440 review: a chat that others continue still answers 409 ``has_continuations`` — its
+    continuations are never deleted in silence. ``&lineage=true`` says the whole
+    conversation: every member is deleted, newest first, each with its own lease and
+    backup (``deleted``, ``backups`` in the answer); none when a chat is on any of them,
+    and a run that stops part way says which are gone.
 
     Holds the session's turn lease, as ``create_continuation`` does: a turn on it
     finishes first (it would write the transcript back, or add a turn the backup never
@@ -267,9 +286,11 @@ async def delete_session(session_id: str, confirm: str = ""):
         return JSONResponse({"error": "not initialized"}, status_code=503)
     try:
         # H262: the steps the lifecycle sweep's delete shares (session_archive.delete_leased).
-        result = await session_archive.delete_leased(orch, session_id)
+        result = await (session_archive.delete_lineage(orch, session_id) if lineage
+                        else session_archive.delete_leased(orch, session_id))
     except session_archive.SessionDeleteError as exc:
-        return JSONResponse({"error": exc.reason.replace("_", " "), "reason": exc.reason},
+        gone = {"deleted": exc.deleted, "backups": getattr(exc, "backups", [])} if getattr(exc, "deleted", None) else {}
+        return JSONResponse({"error": exc.reason.replace("_", " "), "reason": exc.reason, **gone},
                             status_code=_DELETE_STATUS.get(exc.reason, 500))
     return JSONResponse(result, headers=_NO_STORE)
 

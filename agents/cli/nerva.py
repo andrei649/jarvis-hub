@@ -4657,10 +4657,13 @@ def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.say("no sessions recorded")
         return EXIT_OK
     for row in sessions:
-        sid = row.get("session_id") or row.get("id") or "?"
+        # H440: the id a resume opens — the newest member of a continued chat.
+        sid = row.get("resume_id") or row.get("session_id") or row.get("id") or "?"
         started = row.get("started_at") or ""
         title = row.get("title") or ""   # H413
-        ctx.say(f"{sid}  {started}  {title}".rstrip())
+        more = row.get("continuations") or 0
+        note = f"  (+{more} continued)" if isinstance(more, int) and more > 0 else ""
+        ctx.say(f"{sid}  {started}  {title}".rstrip() + note)
     return EXIT_OK
 
 

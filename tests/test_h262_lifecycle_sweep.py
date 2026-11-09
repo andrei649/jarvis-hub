@@ -387,6 +387,9 @@ async def test_an_expired_parent_and_child_both_go_child_first(env):
 
 
 async def test_a_parent_whose_child_lives_is_skipped_not_failed(env):
+    """H440 review: a continued chat expires as one conversation, so a parent whose child
+    was active since the horizon is not a candidate at all (it used to be tried and
+    skipped as ``has_continuations``)."""
     settings = _settings()
     _approve(env.cp, settings)
     _chat(env, "parent", 130)
@@ -394,8 +397,8 @@ async def test_a_parent_whose_child_lives_is_skipped_not_failed(env):
     _age(env.cp, child, 5, archived=False)
     report = await _sweep(_orch(env, settings))
     conv = report["retention"]["conversations"]
-    assert conv["deleted"] == [] and conv["skipped"] == {"parent": "has_continuations"}
-    assert env.cp.session_row("parent") is not None
+    assert conv["deleted"] == [] and conv["skipped"] == {}
+    assert env.cp.session_row("parent") is not None and env.cp.session_row(child) is not None
 
 
 async def test_a_parent_checked_before_its_child_is_retried_after_it(env):

@@ -179,6 +179,19 @@ def _lineage_title(conn, source, root):
     return next_lineage_title(base, titles.values()) if base else ""
 
 
+def _lineage_stamps(conn, source):
+    """H440 review — a pin and an archive stamp are the conversation's, so its new member
+    is born with the ones its source carries."""
+    row = conn.execute("SELECT metadata FROM sessions WHERE id=?", (source,)).fetchone()
+    try:
+        meta = json.loads((row[0] if row else None) or "{}")
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(meta, dict):
+        return {}
+    return {key: meta[key] for key in ("pinned_at", "archived_at") if isinstance(meta.get(key), str)}
+
+
 class ContinuationStore:
     def __init__(self, checkpoints):
         self.cp = checkpoints
@@ -308,6 +321,7 @@ class ContinuationStore:
                 title = _lineage_title(conn, source, root)
                 if title:   # H440: "base #2", "base #3"… — never replaced by the model's upgrade
                     metadata.update({"title": title, "title_source": "lineage"})
+                metadata.update(_lineage_stamps(conn, source))
                 conn.execute(
                     "INSERT INTO sessions(id, started_at, turn_count, instance_id, metadata) VALUES(?,?,?,?,?)",
                     (sid, now, len(turns), instance, json.dumps(metadata, separators=(",", ":"))),

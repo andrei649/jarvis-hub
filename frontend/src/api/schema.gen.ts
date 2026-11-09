@@ -5164,7 +5164,8 @@ export interface paths {
         put?: never;
         /**
          * Autonomy Set Mode
-         * @description Set the global autonomy mode. Persists the setting and applies it live:
+         * @description Set the global autonomy mode. Persists the setting, applies it live and records
+         *     the change in the audit log (H484 — the same path ``/approvals`` in chat takes):
          *     auto = balanced; ask = side-effects wait for approval; off = nothing auto-runs
          *     and the proactive loop is paused.
          */
@@ -11113,6 +11114,11 @@ export interface paths {
          * Rename Session
          * @description H440 — the owner names a conversation. A human title is never replaced by the
          *     first-words title or the local model's upgrade.
+         *
+         *     Reach: as the pin and the archive routes, any user-token holder may rename any native
+         *     session (an imported one is the owner's alone). A reserved name (``latest``, an ``@``
+         *     selector, a session id) answers 400 ``title_reserved``; a name another conversation
+         *     already goes by answers 409 ``title_taken``.
          */
         patch: operations["rename_session_sessions__session_id__title_patch"];
         trace?: never;
@@ -11130,6 +11136,12 @@ export interface paths {
         /**
          * Delete Session
          * @description H218 — delete one conversation for good, backup first. Needs ``?confirm=DELETE``.
+         *
+         *     H440 review: a chat that others continue still answers 409 ``has_continuations`` — its
+         *     continuations are never deleted in silence. ``&lineage=true`` says the whole
+         *     conversation: every member is deleted, newest first, each with its own lease and
+         *     backup (``deleted``, ``backups`` in the answer); none when a chat is on any of them,
+         *     and a run that stops part way says which are gone.
          *
          *     Holds the session's turn lease, as ``create_continuation`` does: a turn on it
          *     finishes first (it would write the transcript back, or add a turn the backup never
@@ -33678,6 +33690,7 @@ export interface operations {
         parameters: {
             query?: {
                 confirm?: string;
+                lineage?: boolean;
             };
             header?: never;
             path: {

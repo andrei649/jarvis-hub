@@ -79,15 +79,20 @@ def auto_archive_days(value: Any) -> int:
 def run_auto_archive(checkpoints: Any, days: int, *, active: str | Iterable[str] | None = None,
                      now: datetime | None = None) -> list[str]:
     """Archive every unarchived, unpinned session idle for more than ``days`` — never one
-    in ``active`` (one id, or every session a chat is on)."""
+    in ``active`` (one id, or every session a chat is on).
+
+    H440 review: a continued chat is archived as one conversation (``stale_sessions``
+    measures the lineage, ``set_archived`` stamps every member), and never while a chat is
+    on any of its members."""
     if days <= 0 or checkpoints is None:
         return []
     live = {active} if isinstance(active, str) else set(active or ())
     moment = now or _now()
     before = (moment - timedelta(days=days)).isoformat()
     done: list[str] = []
+    members = getattr(checkpoints, "lineage_members", None)
     for sid in checkpoints.stale_sessions(before):
-        if sid in live:
+        if sid in live or (callable(members) and live.intersection(members(sid))):
             continue
         if checkpoints.set_archived(sid, True, at=moment.isoformat()):
             done.append(sid)
@@ -429,6 +434,34 @@ async def delete_leased(orch: Any, session_id: str, *, live: Iterable[str] | Non
     return result
 
 
+async def delete_lineage(orch: Any, session_id: str) -> dict:
+    """H440 review — the permanent delete of a whole conversation: ``session_id`` and every
+    session of its lineage, newest first (a chat is deleted before the one it continues),
+    each through :func:`delete_leased` — its own turn lease, its own backup first.
+
+    Nothing is deleted when a chat is on any member (``active_session``). A member that
+    cannot be deleted stops the run; the error carries ``deleted`` and ``backups`` for the
+    members already gone (each has its backup). The answer is the root's own delete result
+    plus ``deleted`` (ids, in order) and ``backups``."""
+    members = getattr(orch.checkpoints, "lineage_members", None)
+    ids = (await asyncio.to_thread(members, session_id) if callable(members) else []) or [session_id]
+    active = getattr(orch, "session_id", None)
+    if set(ids) & (live_session_ids(orch) | {active}):
+        raise SessionDeleteError("active_session")
+    deleted: list[str] = []
+    backups: list[Any] = []
+    result: dict = {}
+    for sid in reversed(ids):
+        try:
+            result = await delete_leased(orch, sid)
+        except SessionDeleteError as exc:
+            exc.deleted, exc.backups = deleted, backups
+            raise
+        deleted.append(sid)
+        backups.append(result.get("backup"))
+    return {**result, "session": session_id, "deleted": deleted, "backups": backups}
+
+
 async def delete_expired(orch: Any, session_id: str, before: str, *, archived_before: str | None = None) -> dict:
     """H262 — retention's delete of one archived, unpinned session idle since before
     ``before`` and archived at or before ``archived_before`` (default: the grace before
@@ -448,5 +481,6 @@ async def delete_expired(orch: Any, session_id: str, before: str, *, archived_be
 __all__ = [
     "BACKUP_KEEP_DEFAULT", "BACKUP_SUFFIX", "CONFIRM", "MAX_AUTO_DAYS", "SETTING_AUTO_DAYS",
     "SessionDeleteError", "auto_archive_days", "collect", "default_backup_dir", "delete_expired", "delete_leased",
+    "delete_lineage",
     "delete_session", "live_session_ids", "prune_backups", "read_backup", "run_auto_archive",
 ]
