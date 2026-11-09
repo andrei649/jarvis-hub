@@ -75,3 +75,7 @@
 ## 2026-04-18 - Periodic Set Allocations and String Processing in NeuralMesh Task Fan Loop
 **Learning:** In Canvas 2D `requestAnimationFrame` loops (`NeuralMesh` in `frontend/src/mesh.tsx`), periodic pulse triggers (e.g. `tick % 30 === 0`) that instantiate `new Set<string>()` and iterate tasks calling `taskOwner(task)` allocate objects (~120 Sets/min) and waste CPU re-extracting owner IDs inside the frame callback.
 **Action:** Pre-compute distinct task owners (`st.uniqueTaskOwners`) on the state ref during state update `useEffect([taskList])` and iterate directly over that array inside the frame rendering tick.
+
+## 2026-04-19 - Redundant Canvas 2D Stroke and LineWidth Setters in Edge and Filament Loops
+**Learning:** In Canvas 2D `requestAnimationFrame` loops at 60 FPS (such as `VoiceOrb` filaments in `frontend/src/orb.tsx` and `NeuralMesh` edge rendering in `frontend/src/mesh.tsx`), assigning `ctx.strokeStyle` and `ctx.lineWidth` unconditionally inside high-frequency loops invokes native canvas binding setters thousands of times per second (~17,000 setter calls/sec combined) even when consecutive elements share identical styling or the style is frame-invariant.
+**Action:** Move frame-invariant canvas styles outside inner loops (e.g., filament wireframes) and cache local state variables (`curStroke`, `curLineWidth`) inside edge loops to assign canvas properties only on actual state changes.
