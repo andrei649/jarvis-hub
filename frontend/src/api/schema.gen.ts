@@ -11096,6 +11096,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/{session_id}/title": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Rename Session
+         * @description H440 — the owner names a conversation. A human title is never replaced by the
+         *     first-words title or the local model's upgrade.
+         */
+        patch: operations["rename_session_sessions__session_id__title_patch"];
+        trace?: never;
+    };
     "/sessions/{session_id}": {
         parameters: {
             query?: never;
@@ -15599,6 +15620,11 @@ export interface components {
             name: string;
             /** Expected Revision */
             expected_revision: number;
+        };
+        /** RenameSessionRequest */
+        RenameSessionRequest: {
+            /** Title */
+            title: string;
         };
         /** RequestPaymentBody */
         RequestPaymentBody: {
@@ -33592,6 +33618,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_session_sessions__session_id__title_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameSessionRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

@@ -16,6 +16,12 @@ counts its idle time again, so the next sweep does not archive it straight back.
 
 H652 adds ``GET /sessions/{id}/trajectories`` (admin): the session's saved full turns,
 exported as ShareGPT or OpenAI chat rows for training (``agents/core/trajectory.py``).
+
+H440 adds the owner's rename (`PATCH /sessions/{id}/title`, user-guarded and owner-fenced
+like the pin: a human title is never replaced by the automatic ones), hides continuations
+from `GET /sessions` (each row says which lineage member a resume opens: `resume_id`, and
+how many `continuations` it has), and lets `POST /sessions/resume` take a `title`, which
+opens the newest member of that lineage.
 """
 
 from uuid import UUID
@@ -100,14 +106,28 @@ async def get_sessions(req: Request, archived: bool = False):
     admin = web._web_principal(req).admin
     # The lineage predicate runs before the limit, so newer foreign rows cannot push
     # a guest's native history out of the window; the row probe below stays authoritative.
-    sessions = orch.checkpoints.get_sessions(limit=20, archived=archived, native_only=not admin)
+    # H440: the list is a picker — a continuation is not a row of its own there. The
+    # archived view is not a picker (bring back, delete), so it shows every archived row.
+    sessions = orch.checkpoints.get_sessions(limit=20, archived=archived, native_only=not admin,
+                                             hide_continuations=not archived)
     if not admin:
         import asyncio
         sessions = [row for row in sessions if not (await asyncio.to_thread(
             status, orch.checkpoints, row.get("session_id") or row.get("id"))).tainted]
     from ..session_titles import title_fields  # H413: each session's title and its source
 
-    return {"sessions": [{**row, **title_fields(row.get("metadata")), **_stamp_fields(row)} for row in sessions]}
+    ids = [row.get("session_id") or row.get("id") for row in sessions]
+    tips = getattr(orch.checkpoints, "lineage_tips", None)
+    tips = tips(ids) if callable(tips) and not archived else {}
+    return {"sessions": [{**row, **title_fields(row.get("metadata")), **_stamp_fields(row),
+                          **_lineage_fields(sid, tips)} for sid, row in zip(ids, sessions, strict=True)]}
+
+
+def _lineage_fields(sid, tips: dict) -> dict:
+    """H440 — what a resume of this row opens: the newest continuation of the lineage it
+    roots, else the session itself."""
+    tip = tips.get(sid) or {}
+    return {"resume_id": tip.get("resume_id") or sid, "continuations": int(tip.get("continuations") or 0)}
 
 
 def _stamp_fields(row: dict) -> dict:
@@ -184,6 +204,44 @@ async def pin_session(session_id: str, req: Request):
 async def unpin_session(session_id: str, req: Request):
     """H262 — take the pin off; the chat is archived and retained like any other again."""
     return await _set_stamp(session_id, "pinned", False, req)
+
+
+class RenameSessionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str
+
+
+@router.patch("/sessions/{session_id}/title", dependencies=[Depends(user_guard)])
+async def rename_session(session_id: str, body: RenameSessionRequest, req: Request):
+    """H440 — the owner names a conversation. A human title is never replaced by the
+    first-words title or the local model's upgrade."""
+    from agents.core.session_titles import HUMAN, human_title
+
+    if not is_valid_session_id(session_id):
+        return JSONResponse({"error": "invalid session_id"}, status_code=400)
+    title = human_title(body.title)
+    if not title:
+        return JSONResponse({"error": "a title is one line of 1 to 100 characters", "reason": "invalid_title"},
+                            status_code=400)
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    from agents.core.foreign_history import http_owner_guard
+    try:
+        await http_owner_guard(orch.checkpoints, session_id, req)
+    except HTTPException as exc:
+        if exc.status_code != 503:
+            raise
+        return JSONResponse({"error": "the session store is unavailable", "reason": "store_unavailable"},
+                            status_code=503)
+    done = orch.checkpoints.rename_session(session_id, title)
+    if done is None:
+        return JSONResponse({"error": "the session store is unavailable", "reason": "store_unavailable"},
+                            status_code=503)
+    if not done:
+        return JSONResponse({"error": f"session '{session_id}' not found"}, status_code=404)
+    return JSONResponse({"ok": True, "session": session_id, "title": title, "title_source": HUMAN},
+                        headers=_NO_STORE)
 
 
 _DELETE_STATUS = {"active_session": 409, "session_busy": 409, "has_continuations": 409, "not_found": 404,
@@ -296,8 +354,26 @@ async def resume_session(req: Request):
     except Exception:
         body = {}
     sid = body.get("session_id") if isinstance(body, dict) else None
+    title = body.get("title") if isinstance(body, dict) else None
+    if not sid and title is not None:
+        # H440 — resume by name: the newest member of the lineage that title names. A
+        # caller who is not the owner resolves among native sessions only, as their list does.
+        import asyncio
+
+        from agents import web
+        from agents.core.session_selectors import SessionSelectionError, resolve_title
+
+        orch = get_orch()
+        if not orch:
+            return JSONResponse({"error": "not initialized"}, status_code=503)
+        try:
+            sid = await asyncio.to_thread(resolve_title, orch.checkpoints, title,
+                                          native_only=not web._web_principal(req).admin)
+        except SessionSelectionError as exc:
+            return JSONResponse({"error": exc.reason, **({"candidates": exc.candidates} if exc.candidates else {})},
+                                status_code=exc.status)
     if not sid:
-        return JSONResponse({"error": "session_id required"}, status_code=400)
+        return JSONResponse({"error": "session_id or title required"}, status_code=400)
     # AUD-5: reject anything that isn't an inert identifier before it can reach a
     # filesystem path (memory/persistence.py builds MEMORY_DIR / f"{sid}.json").
     if not is_valid_session_id(sid):

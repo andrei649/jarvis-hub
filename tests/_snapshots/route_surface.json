@@ -407,6 +407,7 @@
   "PATCH /api/workspace/conversations/{conversation_id}",
   "PATCH /api/workspace/me",
   "PATCH /api/workspace/reports/{report_id}",
+  "PATCH /sessions/{session_id}/title",
   "POST /api/a2a/card",
   "POST /api/a2a/inbox/{task_id}/decide",
   "POST /api/a2a/peers",

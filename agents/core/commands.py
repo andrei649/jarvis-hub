@@ -311,7 +311,8 @@ def _status(ctx: CommandContext) -> str:
 
 def _sessions(ctx: CommandContext) -> str:
     checkpoints = getattr(ctx.orch, "checkpoints", None)
-    rows = checkpoints.get_sessions(limit=5) if checkpoints is not None else []
+    # H440: one row per conversation — a continuation is reached through its lineage.
+    rows = checkpoints.get_sessions(limit=5, hide_continuations=True) if checkpoints is not None else []
     if not rows:
         return "No sessions recorded."
     from agents.core.session_titles import title_fields

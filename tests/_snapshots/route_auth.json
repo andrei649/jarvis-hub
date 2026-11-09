@@ -411,6 +411,7 @@
   "PATCH /api/workspace/conversations/{conversation_id}": "ws_user",
   "PATCH /api/workspace/me": "ws_user",
   "PATCH /api/workspace/reports/{report_id}": "ws_user",
+  "PATCH /sessions/{session_id}/title": "user",
   "POST /api/a2a/card": "admin",
   "POST /api/a2a/inbox/{task_id}/decide": "admin",
   "POST /api/a2a/peers": "admin",

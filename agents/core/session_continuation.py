@@ -161,6 +161,24 @@ def seed_json(turns):
     return value
 
 
+def _lineage_title(conn, source, root):
+    """H440 — the continuation's name: the source's title (else the lineage root's) with
+    the next free ``#N``. Numbers are counted over every session's title, so two chats
+    never share one name. ``""`` when neither has a title."""
+    from .session_titles import next_lineage_title
+
+    titles = {}
+    for sid, raw in conn.execute("SELECT id, metadata FROM sessions"):
+        try:
+            meta = json.loads(raw or "{}")
+        except (TypeError, ValueError):
+            continue
+        if isinstance(meta, dict) and isinstance(meta.get("title"), str) and meta["title"].strip():
+            titles[sid] = meta["title"]
+    base = titles.get(source) or titles.get(root)
+    return next_lineage_title(base, titles.values()) if base else ""
+
+
 class ContinuationStore:
     def __init__(self, checkpoints):
         self.cp = checkpoints
@@ -287,6 +305,9 @@ class ContinuationStore:
                 now = datetime.now(UTC).isoformat()
                 metadata = ({MARKER: {"kind": "derived", "source": source_origin.source,
                                      "instance_id": instance}} if source_origin.tainted else {})
+                title = _lineage_title(conn, source, root)
+                if title:   # H440: "base #2", "base #3"… — never replaced by the model's upgrade
+                    metadata.update({"title": title, "title_source": "lineage"})
                 conn.execute(
                     "INSERT INTO sessions(id, started_at, turn_count, instance_id, metadata) VALUES(?,?,?,?,?)",
                     (sid, now, len(turns), instance, json.dumps(metadata, separators=(",", ":"))),

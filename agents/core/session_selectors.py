@@ -16,13 +16,15 @@ class SessionSelectionError(RuntimeError):
         self.candidates = candidates or []
 
 
-def _rows(checkpoints) -> list[dict]:
+def _rows(checkpoints, *, native_only: bool = False) -> list[dict]:
     conn = getattr(checkpoints, "_conn", None)
     if conn is None:
         raise SessionSelectionError("store_unavailable", 503)
     try:
         with checkpoints._lock:
-            cursor = conn.execute("SELECT id,started_at,ended_at,metadata FROM sessions")
+            cursor = conn.execute(
+                "SELECT id,started_at,ended_at,metadata FROM sessions"
+                + (" WHERE id NOT IN (SELECT session_id FROM session_imports)" if native_only else ""))
             values = cursor.fetchall()
     except Exception as exc:
         raise SessionSelectionError("store_unavailable", 503) from exc
@@ -49,6 +51,48 @@ def _rows(checkpoints) -> list[dict]:
     return rows
 
 
+def _newest_members(checkpoints, ids: set[str]) -> dict[str, str]:
+    """H440 — for each lineage root in ``ids``, its newest continuation."""
+    tips = getattr(checkpoints, "lineage_tips", None)
+    found = tips(sorted(ids)) if callable(tips) else {}
+    return {root: tip["resume_id"] for root, tip in found.items()}
+
+
+def _by_title(checkpoints, rows: list[dict], selector: str) -> list[dict]:
+    """Rows titled ``selector`` (case and spacing folded). H440: a lineage's root stands
+    for its newest member — resuming a conversation by name opens where it now is — while
+    a member's own ``base #N`` title is that member."""
+    normalized = " ".join(selector.split()).casefold()
+    matches = [row for row in rows if " ".join(row["title"].split()).casefold() == normalized]
+    if not matches:
+        return []
+    newest = _newest_members(checkpoints, {row["id"] for row in matches})
+    by_id = {row["id"]: row for row in rows}
+    picked = {}
+    for row in matches:
+        member = by_id.get(newest.get(row["id"], row["id"]), row)
+        picked[member["id"]] = member
+    return list(picked.values())
+
+
+def _one(matches: list[dict]) -> str:
+    if not matches:
+        raise SessionSelectionError("session_not_found", 404)
+    if len(matches) > 1:
+        candidates = [{"id": row["id"], "title": row["title"][:80]} for row in
+                      sorted(matches, key=lambda row: (row["activity"], row["id"]), reverse=True)[:8]]
+        raise SessionSelectionError("ambiguous_selector", 409, candidates)
+    return matches[0]["id"]
+
+
+def resolve_title(checkpoints, title: str, *, native_only: bool = False) -> str:
+    """H440 — the one session a title names: the newest member of its lineage.
+    ``native_only`` leaves imported and derived sessions out, as a guest's list does."""
+    if not isinstance(title, str) or not 0 < len(title) <= 128 or not title.strip():
+        raise SessionSelectionError("invalid_selector", 400)
+    return _one(_by_title(checkpoints, _rows(checkpoints, native_only=native_only), title))
+
+
 def resolve(checkpoints, selector: str, *, latest_mode: bool = False) -> str:
     """Return one ID; failure never loads history or changes an active session."""
     if not isinstance(selector, str) or not 0 < len(selector) <= 128 or not selector.strip():
@@ -67,12 +111,5 @@ def resolve(checkpoints, selector: str, *, latest_mode: bool = False) -> str:
         raise SessionSelectionError("foreign_selector_requires_import", 422)
     matches = [row for row in rows if row["id"].startswith(selector)]
     if not matches:
-        normalized = " ".join(selector.split()).casefold()
-        matches = [row for row in rows if " ".join(row["title"].split()).casefold() == normalized]
-    if not matches:
-        raise SessionSelectionError("session_not_found", 404)
-    if len(matches) > 1:
-        candidates = [{"id": row["id"], "title": row["title"][:80]} for row in
-                      sorted(matches, key=lambda row: (row["activity"], row["id"]), reverse=True)[:8]]
-        raise SessionSelectionError("ambiguous_selector", 409, candidates)
-    return matches[0]["id"]
+        matches = _by_title(checkpoints, rows, selector)
+    return _one(matches)

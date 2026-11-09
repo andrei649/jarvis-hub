@@ -386,6 +386,10 @@ class LLMBackend(ABC):
     #: never a transient 429/5xx/timeout) with ``PROVIDER_REJECTED_FINISH`` so the loop
     #: can detach the images and resend once.
     supports_tool_result_images = False
+    #: H440 — whether ``generate(json_schema=…)`` constrains the answer to that JSON
+    #: schema. Only the local backends declare it (LM Studio ``response_format``, Ollama
+    #: ``format``); a caller passes ``json_schema`` only to a backend that does.
+    supports_json_schema = False
 
     @abstractmethod
     async def generate(
@@ -645,9 +649,12 @@ class LMStudioBackend(LLMBackend):
                 raise
         raise RuntimeError("local completion retry limit exceeded")
 
+    supports_json_schema = True
+
     async def generate(
         self, model: str, prompt: str, system: str = "",
-        max_tokens: int = 1024, temperature: float = 0.7
+        max_tokens: int = 1024, temperature: float = 0.7,
+        json_schema: dict | None = None,
     ) -> str:
         _require_no_job_reasoning()
         payload = {
@@ -656,6 +663,10 @@ class LMStudioBackend(LLMBackend):
             "temperature": temperature,
             "stream": False,
         }
+        if json_schema is not None:     # H440: the answer is this JSON object, nothing else
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "response", "strict": True, "schema": json_schema}}
         # Auto (max_tokens <= 0): omit the cap so LM Studio answers up to the
         # loaded model's full context — the single dial sized in LM Studio.
         if not is_auto_max_tokens(max_tokens):
@@ -961,9 +972,12 @@ class OllamaBackend(LLMBackend):
         except Exception:
             return False
 
+    supports_json_schema = True
+
     async def generate(
         self, model: str, prompt: str, system: str = "",
-        max_tokens: int = 1024, temperature: float = 0.7
+        max_tokens: int = 1024, temperature: float = 0.7,
+        json_schema: dict | None = None,
     ) -> str:
         _require_no_job_reasoning()
         payload = {
@@ -979,6 +993,8 @@ class OllamaBackend(LLMBackend):
                 "temperature": temperature,
             },
         }
+        if json_schema is not None:     # H440: Ollama's structured output
+            payload["format"] = json_schema
         try:
             resp = await self.client.post("/api/generate", json=payload)
             resp.raise_for_status()

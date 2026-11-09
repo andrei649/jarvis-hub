@@ -167,7 +167,8 @@ def prepare_local_auxiliary(router, task: str):
 
     async def generate(*, system: str, prompt: str, max_tokens: int,
                        temperature: float, summary_idle: float | None = None,
-                       on_token: Callable[[str], Awaitable[None] | None] | None = None) -> str:
+                       on_token: Callable[[str], Awaitable[None] | None] | None = None,
+                       json_schema: dict | None = None) -> str:
         if exclude_job_pins and current_selection() is not None:
             raise SelectionError("job model pins exclude auxiliary calls")
         if task in {"session_title", "query_rewrite", "soul_description"} and "qwen3" in model.lower():
@@ -194,6 +195,9 @@ def prepare_local_auxiliary(router, task: str):
                       "max_tokens": max_tokens, "temperature": temperature}
             if on_token is not None:
                 kwargs["on_token"] = on_token
+            # H440: a schema goes only to a backend that declares it constrains the answer.
+            elif json_schema is not None and getattr(backend, "supports_json_schema", False) is True:
+                kwargs["json_schema"] = json_schema
             call = backend.generate_stream if on_token is not None else backend.generate
             if isinstance(backend, LMStudioBackend):
                 with auxiliary_temperature_recovery_scope(backend, model, role=task):
@@ -206,11 +210,12 @@ def prepare_local_auxiliary(router, task: str):
 async def generate_local_auxiliary(
     router, task: str, *, system: str, prompt: str, max_tokens: int,
     temperature: float, summary_idle: float | None = None,
+    json_schema: dict | None = None,
 ) -> str:
     """Generate once on the selected local backend with H513's whole-call guard."""
     generate = prepare_local_auxiliary(router, task)
     return await generate(system=system, prompt=prompt, max_tokens=max_tokens,
-                          temperature=temperature, summary_idle=summary_idle)
+                          temperature=temperature, summary_idle=summary_idle, json_schema=json_schema)
 
 
 # ── H414: the open-ended stateless call ───────────────────────────────────────────
