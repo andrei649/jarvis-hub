@@ -203,6 +203,9 @@ export function VoiceOrb({ status = 'off', level = 0, motion = 'lively', density
 
     if (v.linked) {
       ctx.lineWidth = 0.6;
+      // Bolt Optimization: Move constant strokeStyle assignment outside the filament loop
+      // to eliminate ~12,000 redundant Canvas 2D property setter calls/sec during 60 FPS animation.
+      ctx.strokeStyle = v.color;
       const links = st.links;
       const numLinks = links.length;
       for (let k = 0; k < numLinks; k++) {
@@ -212,7 +215,6 @@ export function VoiceOrb({ status = 'off', level = 0, motion = 'lively', density
         const alpha = Math.min(pa.d, pb.d) * 0.22 * e;
         if (alpha <= 0.01) continue;
         ctx.globalAlpha = alpha;
-        ctx.strokeStyle = v.color;
         ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke();
       }
     }
