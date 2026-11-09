@@ -1,8 +1,8 @@
 # Sprint curent: echivalarea celor 697 de capabilități Hermes
 
-**49 / 697 = 7.0% echivalente complet în evaluarea documentată.**
+**47 / 697 = 6.7% echivalente complet în evaluarea documentată.**
 
-Din acestea, **49** au fost reevaluate pe cod în această livrare; **0** păstrează verdictul auditului din 7 septembrie.
+Din acestea, **47** au fost reevaluate pe cod în această livrare; **0** păstrează verdictul auditului din 7 septembrie.
 
 **Acesta este un status inițial conservator, nu o reauditare completă a celor 697.** Verdictele moștenite și cele actualizate sunt vizibile pentru fiecare rând. Procentul de 88% discutat anterior privea altă listă și nu se aplică aici.
 
@@ -10,24 +10,24 @@ Din acestea, **49** au fost reevaluate pe cod în această livrare; **0** păstr
 
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
-| Echivalent | 49 | 7.0% |
-| Parțial | 248 | 35.6% |
-| Lipsă | 105 | 15.1% |
+| Echivalent | 47 | 6.7% |
+| Parțial | 240 | 34.4% |
+| Lipsă | 102 | 14.6% |
 | Exclus intenționat | 0 | 0.0% |
-| De reverificat | 295 | 42.3% |
+| De reverificat | 308 | 44.2% |
 
 ## Axe separate de contabilizare
 
 **Verdict pe cod înregistrat** (review sau audit moștenit): partial 432, equivalent 152, missing 113. Acesta nu este creditul conservator de mai sus.
-**Prospețimea dovezii:** changed 317, current 325, unrecorded 55.
-**Impactul schimbării:** pending 295, none 380, accepted 22. Un hash schimbat cere analiză; nu dovedește singur regresia funcțională.
+**Prospețimea dovezii:** changed 328, current 314, unrecorded 55.
+**Impactul schimbării:** pending 308, none 369, accepted 20. Un hash schimbat cere analiză; nu dovedește singur regresia funcțională.
 **Acceptare runtime/platform/provider:** runtime: unrecorded 694, verified 3; platform: unrecorded 694, required_pending 3; provider: unrecorded 694, required_pending 3. «unrecorded» nu înseamnă că toate rândurile cer servicii externe.
-**Prospețimea acceptării:** runtime: unrecorded 694, stale 2, current 1; platform: unrecorded 694, current 2, stale 1; provider: unrecorded 694, current 2, stale 1.
+**Prospețimea acceptării:** runtime: unrecorded 694, stale 3; platform: unrecorded 694, current 2, stale 1; provider: unrecorded 694, current 2, stale 1.
 **Scope-uri declarate încă în așteptare:** runtime 0, platform 5, provider 3.
 
-**Ținta acceptată în produs:** 697 rânduri; progres 49/697 = **7.0%**. Excluderi active: 0. Readmise explicit din vechiul audit: 107; readmiterea nu acordă credit de implementare.
+**Ținta acceptată în produs:** 697 rânduri; progres 47/697 = **6.7%**. Excluderi active: 0. Readmise explicit din vechiul audit: 107; readmiterea nu acordă credit de implementare.
 
-**Acoperirea reevaluării curente:** 347/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
+**Acoperirea reevaluării curente:** 334/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
 
 **Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. Acest procent măsoară codul documentat, nu efortul rămas, calitatea UX sau probele pe servicii reale.
 
@@ -39,26 +39,26 @@ Din acestea, **49** au fost reevaluate pe cod în această livrare; **0** păstr
 | gateway | 33 | 1 | 11 | 5 | 0 | 16 |
 | platforms | 39 | 2 | 22 | 8 | 0 | 7 |
 | web | 40 | 8 | 12 | 6 | 0 | 14 |
-| desktop | 54 | 3 | 26 | 10 | 0 | 15 |
-| tui | 25 | 0 | 12 | 5 | 0 | 8 |
+| desktop | 54 | 3 | 26 | 9 | 0 | 16 |
+| tui | 25 | 0 | 11 | 4 | 0 | 10 |
 | config | 18 | 1 | 2 | 2 | 0 | 13 |
-| env | 28 | 1 | 12 | 2 | 0 | 13 |
-| tools — the agent-callable surface | 32 | 4 | 9 | 2 | 0 | 17 |
+| env | 28 | 1 | 11 | 2 | 0 | 14 |
+| tools — the agent-callable surface | 32 | 4 | 8 | 2 | 0 | 18 |
 | skills | 33 | 6 | 8 | 3 | 0 | 16 |
-| providers | 27 | 4 | 8 | 5 | 0 | 10 |
-| agent-core | 36 | 3 | 8 | 7 | 0 | 18 |
-| memory | 27 | 1 | 5 | 0 | 0 | 21 |
+| providers | 27 | 3 | 8 | 5 | 0 | 11 |
+| agent-core | 36 | 2 | 8 | 7 | 0 | 19 |
+| memory | 27 | 1 | 4 | 0 | 0 | 22 |
 | automation | 32 | 0 | 15 | 2 | 0 | 15 |
 | security | 34 | 3 | 9 | 2 | 0 | 20 |
-| media | 27 | 4 | 13 | 2 | 0 | 8 |
+| media | 27 | 4 | 11 | 2 | 0 | 10 |
 | acp-mcp-dev | 33 | 1 | 13 | 17 | 0 | 2 |
-| docs-features | 48 | 0 | 22 | 8 | 0 | 18 |
+| docs-features | 48 | 0 | 21 | 7 | 0 | 20 |
 | rest-api | 33 | 1 | 17 | 5 | 0 | 10 |
-| delta | 42 | 5 | 10 | 7 | 0 | 20 |
+| delta | 42 | 5 | 9 | 7 | 0 | 21 |
 
 ## Actualizare
 
-Evaluare: `2026-11-04T07:28:24Z`. Cod inspectat: `446cc7cb626d5b2a2093b15c377733cb313bb6b3`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
+Evaluare: `2026-11-09T22:23:05Z`. Cod inspectat: `9e5d1a58e2c418bcb77be40cd2250f620fa13c52`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
 
 Sursa editabilă este [assessment.json](docs/hermes/assessment.json). Actualizează numai rândurile inspectate, cu motiv, lipsuri și hash-uri ale codului/testelor. Dacă dovezile se schimbă sau dispar, rândul trece la «De reverificat» până la analiza de impact. O acceptare explicită a impactului, legată de revizie și verificări, poate păstra verdictul; simpla schimbare de hash nu dovedește regresia. Data reauditării moștenite nu este rescrisă.
 
