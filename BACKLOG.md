@@ -2715,6 +2715,15 @@
   collateral reviews (390 already recorded on the branch); existing verdicts were preserved and
   stale claims/citations corrected. The five new reviews cite the current code and tests without
   claiming a live hub or real-model acceptance. `needs_review` 0; headline 141 → 146/697.
+  **Batch 4, first row (2026-11-09, #1347):** H440 built — the title upgrade asks for a strict
+  `{"title": string}` object (LM Studio `response_format`, Ollama `format`; free text kept as the
+  fallback), `PATCH /sessions/{id}/title` and a HUD editor set a human title the model never replaces,
+  continuations are named `base #2`, `base #3` and hidden from `GET /sessions`, `/sessions`, the HUD
+  panel and the mobile modal, and a title resumes the newest member of its lineage. It stays
+  `partial`: no independent review yet, no run against a real local model, and compaction does not
+  create a continuation as Hermes' does. The Nerva rename and the SEC-B6 guards drifted 140 rows and
+  the H440 merge 160; all were re-read by citation and restamped with no status moved (the four
+  stale pet rows included). `needs_review` 0; headline unchanged at 146/697.
 
 ## Darwin feature absorption — 2026-09-09
 
