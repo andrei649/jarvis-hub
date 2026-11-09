@@ -518,6 +518,14 @@ class TaskQueue:
                 PRIMARY KEY (task_id, snapshot_sha256)
             )
         """)
+        # H484: the approval mode in force when a task was held for the owner — what its
+        # card reports. Display metadata only: no decision, permit or digest reads it.
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS task_ask_context (
+                task_id INTEGER PRIMARY KEY,
+                context TEXT NOT NULL
+            )
+        """)
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS task_smart_approvals (
                 task_id INTEGER PRIMARY KEY,
@@ -1218,6 +1226,33 @@ class TaskQueue:
 
     def _scope_allowed(self, scope: str) -> bool:
         return self._mediation_scope == "*" or scope == self._mediation_scope
+
+    def record_ask_context(self, task_id: int, context: dict) -> bool:
+        """H484 — remember the approval mode a task was held under (``mode``, ``source``,
+        ``global``, ``by_mode``). Best effort: a card without it says so; never raises."""
+        try:
+            clean = {"mode": str(context["mode"]), "source": str(context["source"]),
+                     "global": str(context["global"]), "by_mode": context["by_mode"] is True}
+            with self._lock:
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO task_ask_context (task_id, context) VALUES (?, ?)",
+                    (int(task_id), json.dumps(clean, sort_keys=True)))
+                self._conn.commit()
+            return True
+        except Exception:
+            logger.warning("ask context for task %s was not recorded", task_id, exc_info=True)
+            return False
+
+    def ask_context(self, task_id: int) -> dict | None:
+        """The context :meth:`record_ask_context` stored for *task_id*, or None."""
+        try:
+            with self._lock:
+                row = self._conn.execute(
+                    "SELECT context FROM task_ask_context WHERE task_id=?", (int(task_id),)).fetchone()
+            value = json.loads(row[0]) if row is not None else None
+            return value if isinstance(value, dict) else None
+        except Exception:
+            return None
 
     def record_mediation_refusal(self, kind: str) -> bool:
         """Persist one real refused-classified event without creating a task."""

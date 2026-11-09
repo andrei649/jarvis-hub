@@ -570,6 +570,10 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="loadset", key="mcp_only",         value="", label="Load only these saved MCP servers (comma list; empty = all; applies at the next start)", kind="text"),
     # autonomy — Proactive Cortex (ORIZONT 6)
     dict(category="autonomy", key="mode",            value="auto", label="Autonomy mode (AUTO/ASK/OFF)", kind="select", opts=["auto","ask","off"]),
+    # H484: the per-agent overrides of the mode above. Undeclared before, so the store
+    # silently dropped every write and an override lasted one coordinator tick. A global
+    # "off" is a floor no override loosens; an unknown value reads as "ask".
+    dict(category="autonomy", key="agent_modes",     value={},     label="Per-agent autonomy mode overrides — JSON {\"agent\": \"auto|ask|off\"}; none applies while the mode is off", kind="json"),
     dict(category="autonomy", key="allow_agent_scheduling", value=False, label="Permit scheduled models to see the cronjob tool (loop prevention only)", kind="toggle"),
     dict(category="autonomy", key="earned_autonomy_enabled", value=False, label="Earn autonomy from proven outcomes", kind="toggle"),
     dict(category="autonomy", key="owner_chat_id",   value="",     label="Owner Telegram chat ID", kind="text"),

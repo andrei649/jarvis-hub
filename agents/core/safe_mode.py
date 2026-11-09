@@ -135,8 +135,13 @@ FORCED_SETTINGS: dict[str, object] = {
 #: Loosening settings with no shipped row: in safe mode they are absent, so the code's
 #: own default applies.
 UNSEEDED_SETTINGS: tuple[str, ...] = (
-    "autonomy.agent_modes", "learning.auto_promote", "security.sandbox_max_tool_calls",
+    "learning.auto_promote", "security.sandbox_max_tool_calls",
 )
+#: Loosening settings that do have a shipped row but no stricter-of rule: in safe mode
+#: they are served as absent too. H484 declared ``autonomy.agent_modes`` (it was unseeded,
+#: so the store dropped every write); a per-agent override can ask less than the global
+#: mode, so safe mode runs every agent at the global mode.
+ABSENT_SETTINGS: tuple[str, ...] = ("autonomy.agent_modes",)
 #: The refusal a write that would need a skipped layer answers with.
 REASON = "safe_mode"
 
@@ -219,7 +224,7 @@ def override_settings(flat: dict) -> dict:
         if key in out and out[key] != value:
             moved = True
         out[key] = value
-    for key in UNSEEDED_SETTINGS:
+    for key in (*UNSEEDED_SETTINGS, *ABSENT_SETTINGS):
         moved = out.pop(key, None) is not None or moved
     if moved:
         note("settings_overrides")
@@ -232,8 +237,10 @@ def get_value(category: str, key: str, default=None):
     orchestrator's sandbox and autonomy caps are read this way)."""
     from .settings_db import get_value as stored
 
-    value = stored(category, key, default)
     full = f"{category}.{key}"
+    if full in ABSENT_SETTINGS and enabled():
+        return default
+    value = stored(category, key, default)
     if enabled() and full in FORCED_SETTINGS:
         safe = stricter(full, value, shipped_default(full))
         if safe != value:

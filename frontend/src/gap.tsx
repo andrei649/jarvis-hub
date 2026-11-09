@@ -3581,11 +3581,11 @@ export function DecisionInboxPanel() {
             <span style={{ ...mono, color: 'var(--ink-2)' }}>{t.title || t.kind || ('task ' + t.id)}</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               {typeof t.risk_tier === 'number' && <Tag c={tierColor(t.risk_tier)}>tier {t.risk_tier}</Tag>}
-              {approvalModeNote(t.approval_mode) &&
-                <span title={approvalModeNote(t.approval_mode).why}
+              {approvalModeNote(t.approval_mode, t.asked_under) &&
+                <span title={approvalModeNote(t.approval_mode, t.asked_under).why}
                   aria-label={`Approval mode for ${t.title || t.kind || ('task ' + t.id)}`}
                   style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--ink-2)' }}>
-                  {approvalModeNote(t.approval_mode).label}</span>}
+                  {approvalModeNote(t.approval_mode, t.asked_under).label}</span>}
               {!isImageProposal(t) && <button className="tool-btn" title="dry-run preview" onClick={() => loadPreview(t.id)}>preview</button>}
               <button className="tool-btn" title="accept" onClick={() => decide(t.id, 'accept')}>{groupLeaders.has(t.id) ? 'approve once' : '✓'}</button>
               {!isImageProposal(t) && t.kind !== VOICE_COMMAND_KIND && <button className="tool-btn" title="edit" onClick={() => startEdit(t)}>edit</button>}

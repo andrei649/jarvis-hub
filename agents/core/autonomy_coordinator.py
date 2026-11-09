@@ -563,6 +563,16 @@ class AutonomyCoordinator:
         except Exception:
             logger.warning("Runtime run-log cycle recording failed", exc_info=True)
 
+    def _sync_approval_mode(self) -> str:
+        """H484 — the stored mode and overrides onto the live policy; a failure changes nothing."""
+        try:
+            from agents.core.autonomy.mode import sync_policy
+
+            return sync_policy(self._orch)
+        except Exception:
+            logger.warning("approval mode sync failed; the live policy is unchanged", exc_info=True)
+            return "unknown"
+
     async def loop(self):
         """Periodically run approved autonomy tasks (the self-tasking worker).
 
@@ -571,8 +581,8 @@ class AutonomyCoordinator:
         """
         while True:
             await asyncio.sleep(autonomy_tick_seconds(self._orch))
-            # Global emergency stop: skip the whole self-tasking tick while the
-            # ESTOP sentinel exists (pause-new-work; in-flight work is not killed).
+            # H484: synced before the e-stop check — the stored mode governs while paused too.
+            amode = self._sync_approval_mode()
             from agents.core import estop
             if estop.check_paused("autonomy", logger):
                 # Expiry is queue metadata only under e-stop. Ledger resume and
@@ -584,23 +594,13 @@ class AutonomyCoordinator:
                     except Exception:
                         logger.warning("Approval expiry metadata sweep failed under e-stop", exc_info=True)
                 continue
-            amode = "unknown"
             max_tier = None
             try:
-                # Sync the live autonomy knobs (/admin) onto the policy each tick:
-                # mode (AUTO/ASK/OFF) + the money caps + the interrupt budget.
-                from agents.core.autonomy.mode import read_mode as _read_mode
-
-                # H484: an unknown stored value reads as ask and a boolean False as off —
-                # never silently AUTO.
-                amode = _read_mode(self._orch.get_setting("autonomy.mode", "auto"))
+                # Sync the live autonomy knobs (/admin) onto the policy each tick: the
+                # money caps + the interrupt budget (the mode and the per-agent overrides
+                # were synced above, by _sync_approval_mode).
                 if self._orch.autonomy:
                     pol = self._orch.autonomy.policy
-                    if pol.mode != amode:
-                        pol.mode = amode
-                    # Per-agent mode overrides (HUD v3) — resynced live like the global mode.
-                    _am = self._orch.get_setting("autonomy.agent_modes", {})
-                    pol.agent_modes = dict(_am) if isinstance(_am, dict) else {}
                     pol.cap_per_action = float(
                         self._orch.get_setting("autonomy.cap_per_action", 50.0) or 50.0
                     )

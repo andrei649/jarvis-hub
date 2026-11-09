@@ -897,9 +897,18 @@ class Orchestrator:
         self.signal_governance = SignalGovernanceBridge.from_env(
             self.autonomy_queue, audit=self.action_audit.log
         )
+        # H484: the policy is built with the stored approval mode and per-agent overrides,
+        # so the owner's dial governs the very first decision after a restart — not only
+        # once the coordinator's first tick has copied it over.
+        from .autonomy.mode import stored_values as _stored_approval_mode
+
+        _mode, _agent_modes = _stored_approval_mode(
+            lambda key, default: _gv(*key.split(".", 1), default))
         self.autonomy = AutonomyWorker(
             self.autonomy_queue,
             policy=AutonomyPolicy(
+                mode=_mode,
+                agent_modes=_agent_modes,
                 cap_per_action=float(_gv("autonomy", "cap_per_action", 50.0)),
                 daily_ceiling=float(_gv("autonomy", "daily_ceiling", 200.0)),
                 earned_autonomy_enabled=bool(

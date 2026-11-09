@@ -2276,17 +2276,33 @@ def _valid_consent_offer(offer: Any) -> bool:
 _APPROVAL_MODES = ("auto", "ask", "off")
 
 
-def _approval_mode_note(shown: Any) -> str:
-    """H484 — the effective-mode line of one approval card, or "" when the hub sent none
+def _approval_mode_note(shown: Any, asked: Any = None) -> str:
+    """H484 — the mode line of one approval card: the mode it was asked under when the hub
+    recorded one, else the mode in force now (said as such); "" when the hub sent neither
     (an older hub) or something that is not a mode."""
+    if isinstance(asked, Mapping) and asked.get("mode") in _APPROVAL_MODES:
+        mode, overall = asked["mode"], asked.get("global")
+        where = (f"agent override; global {overall}"
+                 if asked.get("source") == "agent" and overall in _APPROVAL_MODES else "global")
+        why = "the mode is why it waits" if asked.get("by_mode") is True else "the mode is not why it waits"
+        return f"asked under mode {mode} ({where}; {why})"
     if not isinstance(shown, Mapping):
         return ""
     effective, overall = shown.get("effective"), shown.get("global")
     if effective not in _APPROVAL_MODES:
         return ""
     if shown.get("source") == "agent" and overall in _APPROVAL_MODES:
-        return f"mode {effective} (agent override; global {overall})"
-    return f"mode {effective} (global)"
+        return f"mode now {effective} (agent override; global {overall})"
+    return f"mode now {effective} (global)"
+
+
+def _say_looser_overrides(ctx: Context, reply: Any) -> None:
+    """H484 — name the agents whose own override lets them ask less than the global mode."""
+    looser = reply.get("looser") if isinstance(reply, Mapping) else None
+    names = [f"{agent}: {mode}" for agent, mode in sorted(looser.items())
+             if mode in _APPROVAL_MODES] if isinstance(looser, Mapping) else []
+    if names:
+        ctx.say("a per-agent override asks less than the global mode for: " + ", ".join(names))
 
 
 def _cmd_approvals_mode(ns: argparse.Namespace, ctx: Context) -> int:
@@ -2307,7 +2323,9 @@ def _cmd_approvals_mode(ns: argparse.Namespace, ctx: Context) -> int:
         agents = reply.get("agents")
         for agent, mode in sorted(agents.items()) if isinstance(agents, Mapping) else ():
             if mode in _APPROVAL_MODES:
-                ctx.say(f"  {agent}: {mode}")
+                ctx.say(f"  {agent}: {mode}" + ("  (ignored while the global mode is off)"
+                                                if overall == "off" else ""))
+        _say_looser_overrides(ctx, reply)
         return EXIT_OK
     wanted = parse_requested(ns.value)
     if wanted is None:
@@ -2323,6 +2341,7 @@ def _cmd_approvals_mode(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.dump(reply)
         return EXIT_OK
     ctx.say(f"approval mode: {effective}")
+    _say_looser_overrides(ctx, reply)
     if reply.get("audited") is False:
         ctx.err.write("the change is in effect, but the hub could not record it in the audit log\n")
     return EXIT_OK
@@ -2346,7 +2365,7 @@ def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
                 f"#{task.get('id', '?')}  tier {task.get('risk_tier', '?')}  {flag:12s}  "
                 f"{task.get('kind', '?')}  — {task.get('title', '')}"
             )
-            note = _approval_mode_note(task.get("approval_mode"))
+            note = _approval_mode_note(task.get("approval_mode"), task.get("asked_under"))
             if note:
                 ctx.say(f"  {note}")
             offer = task.get("consent_offer")
@@ -2838,7 +2857,10 @@ def explain_action(
     preview = preview_task({**task, "risk_tier": tier if tier is not None else classified})
     mediation = classify(kind)
     estop_state = estop.get_state()
-    mode = str(_settings().get_value("autonomy", "mode", "auto") or "auto")
+    from agents.core.autonomy.mode import read_mode
+
+    # H484: the stored value as the policy reads it (unknown → ask, boolean False → off).
+    mode = read_mode(_settings().get_value("autonomy", "mode", "auto"))
     # The policy's modes: "auto" — per-tier outcomes; "ask" — anything with a side effect
     # waits (pure reads still act); "off" — everything waits.
     if mode == "off":

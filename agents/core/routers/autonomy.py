@@ -221,16 +221,25 @@ _WAITING_STATUSES = frozenset({"proposed", "blocked", "deferred"})
 
 
 def _mode_projection(orch, task) -> dict:
-    """H484 — the approval mode that applies to a waiting task's agent right now, and
-    whether it is the agent's own override or the global dial: why the owner is being
-    asked. Only a card that still waits carries it — the mode in force today says nothing
-    about a task decided earlier."""
+    """H484 — the approval mode that applies to a waiting task's agent right now
+    (``approval_mode``) and the one it was held under (``asked_under``, when recorded).
+    Only a card that still waits carries them."""
     from agents.core.autonomy import mode as approval_mode
 
     status = getattr(task, "status", None)
     if str(getattr(status, "value", status)) not in _WAITING_STATUSES:
         return {}
-    return {"approval_mode": approval_mode.describe(orch, getattr(task, "agent", None))}
+    shown = {"approval_mode": approval_mode.describe(orch, getattr(task, "agent", None))}
+    # The mode in force when the task was held, and whether the mode itself is why it
+    # asks — recorded by the worker at that moment. Absent for a task held another way.
+    lookup = getattr(getattr(orch, "autonomy_queue", None), "ask_context", None)
+    asked = lookup(task.id) if callable(lookup) else None
+    if (isinstance(asked, dict) and asked.get("mode") in approval_mode.MODES
+            and asked.get("global") in approval_mode.MODES):
+        shown["asked_under"] = {"mode": asked["mode"],
+                                "source": "agent" if asked.get("source") == "agent" else "global",
+                                "global": asked["global"], "by_mode": asked.get("by_mode") is True}
+    return shown
 
 
 def _consent_projection(queue, task) -> dict:
@@ -532,24 +541,35 @@ async def autonomy_set_mode(body: AutonomyModeBody):
         result = await asyncio.to_thread(
             approval_mode.set_global_mode, orch, mode, actor="admin", surface="api")
     except approval_mode.ModeNotSaved:
-        return JSONResponse({"error": "mode_not_saved"}, status_code=503)
+        return JSONResponse({"error": "mode_not_saved", "mode": approval_mode.global_mode(orch)},
+                            status_code=503)
+    if not result["effective"]:
+        # Saved, but the settings the coordinator reads still hold the old value: the
+        # live policy keeps the stricter mode until they agree. Not a success.
+        return JSONResponse({"error": "mode_not_effective", "requested": result["mode"],
+                             "live": result["live"], "was": result["was"],
+                             "audited": result["audited"]}, status_code=503)
     return nocache_json({"mode": result["mode"], "ok": True, "was": result["was"],
-                         "audited": result["audited"]})
+                         "audited": result["audited"], "effective": True,
+                         "looser": approval_mode.looser_overrides(orch)})
 
 
 @router.get("/autonomy/policy", dependencies=[Depends(admin_guard)])
 async def autonomy_get_policy():
-    """Per-agent autonomy modes (HUD v3) — the global default + any per-agent overrides.
+    """Per-agent autonomy modes (HUD v3) — the global default + any per-agent overrides,
+    as the policy reads them (H484: an unknown value is ``ask``, never shown raw).
 
-    An agent absent from ``agents`` runs at the global mode; one present runs at its
-    own AUTO/ASK/OFF."""
+    An agent absent from ``agents`` runs at the global mode; one present runs at its own
+    AUTO/ASK/OFF — except under a global OFF, which no override loosens. ``looser`` names
+    the agents whose override lets them ask less than the global mode."""
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    pol = getattr(orch.autonomy, "policy", None)
-    global_mode = str(getattr(pol, "mode", None) or orch.get_setting("autonomy.mode", "auto")).lower()
-    agents = dict(getattr(pol, "agent_modes", None) or orch.get_setting("autonomy.agent_modes", {}) or {})
-    return nocache_json({"global": global_mode, "agents": agents})
+    from agents.core.autonomy import mode as approval_mode
+
+    return nocache_json({"global": approval_mode.global_mode(orch),
+                         "agents": approval_mode.agent_modes(orch),
+                         "looser": approval_mode.looser_overrides(orch)})
 
 
 class AutonomyPolicyBody(BaseModel):
@@ -560,28 +580,26 @@ class AutonomyPolicyBody(BaseModel):
 @router.post("/autonomy/policy", dependencies=[Depends(admin_guard)])
 async def autonomy_set_policy(body: AutonomyPolicyBody):
     """Set (or clear) one agent's autonomy mode. ``mode=default`` removes the override
-    so the agent falls back to the global mode. Persists + applies live."""
+    so the agent falls back to the global mode. Persists, applies live and records the
+    change in the audit log (H484 — ``autonomy.mode.set_agent_mode``)."""
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    agent = body.agent.strip()
-    mode = str(body.mode or "").lower()
-    if mode not in ("auto", "ask", "off", "default"):
-        return JSONResponse({"error": "mode must be auto|ask|off|default"}, status_code=422)
+    from agents.core.autonomy import mode as approval_mode
 
-    # Start from the persisted map, apply the change, persist + apply live.
-    agents = dict(orch.get_setting("autonomy.agent_modes", {}) or {})
-    if mode == "default":
-        agents.pop(agent, None)
-    else:
-        agents[agent] = mode
-    from core.settings_db import put_category
-    put_category("autonomy", {"agent_modes": agents})   # persist (resynced by the loop)
-    pol = getattr(orch.autonomy, "policy", None)
-    if pol is not None:
-        pol.agent_modes = dict(agents)                  # apply immediately
-    return nocache_json({"ok": True, "agent": agent,
-                         "mode": (mode if mode != "default" else None), "agents": agents})
+    agent = body.agent.strip()
+    mode = str(body.mode or "").strip().lower()
+    if not agent or mode not in (*approval_mode.MODES, "default"):
+        return JSONResponse({"error": "mode must be auto|ask|off|default"}, status_code=422)
+    try:
+        result = await asyncio.to_thread(
+            approval_mode.set_agent_mode, orch, agent, mode, actor="admin", surface="api")
+    except approval_mode.ModeNotSaved:
+        return JSONResponse({"error": "mode_not_saved"}, status_code=503)
+    return nocache_json({"ok": True, "agent": agent, "mode": result["mode"],
+                         "agents": result["agents"], "audited": result["audited"],
+                         "effective": result["effective"],
+                         "looser": approval_mode.looser_overrides(orch)})
 
 
 @router.get("/autonomy/interrupts", dependencies=[Depends(admin_guard)])

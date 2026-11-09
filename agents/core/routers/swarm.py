@@ -31,6 +31,14 @@ from agents.core.routers._deps import user_guard
 from agents.core.web_base_path import render_ui_html
 from agents.core.web_helpers import nocache_json
 
+
+def autonomy_mode(orch) -> str:
+    """H484 — the approval mode the policy runs (an unknown stored value shows as
+    ``ask``, a boolean False as ``off``), never the raw setting."""
+    from agents.core.autonomy.mode import global_mode
+
+    return global_mode(orch)
+
 router = APIRouter(tags=["swarm"])
 
 # agents/core/routers/swarm.py → parents[2] == agents/ → web/mission_control.html
@@ -251,13 +259,7 @@ def build_swarm_summary(orch) -> dict:
     }
     if orch is not None:
         autonomy["stats"] = _safe(lambda: orch.autonomy_queue.stats(), {}) or {}
-        autonomy["mode"] = _safe(
-            lambda: str(
-                getattr(getattr(orch.autonomy, "policy", None), "mode", None)
-                or orch.get_setting("autonomy.mode", "auto")
-            ).lower(),
-            None,
-        )
+        autonomy["mode"] = _safe(lambda: autonomy_mode(orch), None)
         autonomy["budget"] = _safe(
             lambda: {
                 "remaining": orch.autonomy.budget.remaining(),

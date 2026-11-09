@@ -68,6 +68,7 @@ def test_every_forced_and_unseeded_key_is_a_real_setting():
     keys = {f"{r['category']}.{r['key']}" for r in settings_db.DEFAULTS}
     assert set(safe_mode.FORCED_SETTINGS) <= keys
     assert not set(safe_mode.UNSEEDED_SETTINGS) & keys
+    assert set(safe_mode.ABSENT_SETTINGS) <= keys          # H484: seeded, absent in safe mode
     for key in safe_mode.FORCED_SETTINGS:
         default = safe_mode.shipped_default(key)
         # The shipped default is its own stricter value: safe mode never moves it.
@@ -303,7 +304,7 @@ def test_no_forced_setting_is_read_past_safe_mode():
     assert raw >= _REVIEWED_RAW_READS                                     # no stale entry
 
 
-@pytest.mark.parametrize("key", safe_mode.UNSEEDED_SETTINGS)
+@pytest.mark.parametrize("key", (*safe_mode.UNSEEDED_SETTINGS, *safe_mode.ABSENT_SETTINGS))
 def test_an_unseeded_key_alone_counts_as_moved(monkeypatch, key):
     _on(monkeypatch)
     assert key not in safe_mode.override_settings({key: "x"})

@@ -290,13 +290,12 @@ def _status(ctx: CommandContext) -> str:
     backend = getattr(getattr(orch, "llm_router", None), "name", None) or "none"
     agents = getattr(orch, "agents", None) or {}
     state = estop.get_state()
-    mode = None
-    get_setting = getattr(orch, "get_setting", None)
-    if callable(get_setting):
-        mode = get_setting("autonomy.mode", None)
+    from .autonomy.mode import global_mode
+
+    mode = global_mode(orch)     # H484: what the policy runs, never the raw setting
     lines = [
         f"Nerva {__version__} — backend {backend}, {len(agents)} agents loaded",
-        f"autonomy mode: {mode or 'auto'}",
+        f"autonomy mode: {mode}",
         (
             f"e-stop: ENGAGED since {state.get('engaged_at') or '?'} — {state.get('reason') or 'no reason given'}"
             if state is not None
@@ -727,6 +726,19 @@ def _bundle(ctx: CommandContext) -> str:
             "send it as a message of its own. /bundles lists the bundles.")
 
 
+def _looser_note(approval_mode, orch, *, still: bool) -> str:
+    """The agents whose own override lets them ask less than the global mode, or ""."""
+    looser = approval_mode.looser_overrides(orch)
+    if not looser:
+        return ""
+    names = ", ".join(f"{agent}: {mode}" for agent, mode in sorted(looser.items()))
+    verb = "still asks less" if still else "asks less than the global mode"
+    if still:
+        return (f"A per-agent override {verb} than this for: {names}. "
+                "Change one with the HUD's per-agent mode control.")
+    return f"A per-agent override {verb} for: {names}."
+
+
 async def _approvals(ctx: CommandContext) -> str:
     """H484 — Hermes' ``/approvals``: show or set the approval dial (``autonomy.mode``).
 
@@ -734,7 +746,8 @@ async def _approvals(ctx: CommandContext) -> str:
     ``manual`` are read as ``auto`` and ``ask``). Every position only adds asking — there
     is no word here that silences approvals, and ``off`` is the strictest position. The
     write is the audited one the admin route makes (``autonomy.mode.set_global_mode``);
-    the owner is re-checked here, at the side-effect boundary, as well as by the tier."""
+    the owner is re-checked here, at the side-effect boundary, as well as by the tier.
+    A reply states only what holds: the mode the live policy runs after the write."""
     import asyncio
 
     from .autonomy import mode as approval_mode
@@ -746,10 +759,14 @@ async def _approvals(ctx: CommandContext) -> str:
         lines = [f"Approval mode: {current} — {approval_mode.meaning(current)}."]
         overrides = approval_mode.agent_modes(ctx.orch)
         if overrides:
-            lines.append("Per-agent overrides: "
-                         + ", ".join(f"{agent}: {mode}" for agent, mode in sorted(overrides.items())) + ".")
-        lines.append("No position turns approvals off: the irreversible tier and the kernel's "
-                     f"owner-approval floor always ask. {usage}")
+            listed = ", ".join(f"{agent}: {mode}" for agent, mode in sorted(overrides.items()))
+            lines.append(f"Per-agent overrides: {listed}."
+                         + (" None applies while the global mode is off." if current == "off" else ""))
+        looser = _looser_note(approval_mode, ctx.orch, still=False)
+        if looser:
+            lines.append(looser)
+        lines.append("No position turns approvals off: the kernel's owner-approval floor asks "
+                     f"in every mode. {usage}")
         return "\n".join(lines)
     if not ctx.principal.admin:
         return "Only the owner can change the approval mode; nothing changed."
@@ -764,12 +781,22 @@ async def _approvals(ctx: CommandContext) -> str:
         logger.warning("/approvals: the mode could not be saved", exc_info=True)
         return (f"Approval mode remains {approval_mode.global_mode(ctx.orch)}; "
                 "the requested value did not become effective.")
-    effective = approval_mode.global_mode(ctx.orch)
-    if effective != wanted:
-        return f"Approval mode remains {effective}; the requested value did not become effective."
-    lines = [f"Approval mode: {effective} (persistent setting) — {approval_mode.meaning(effective)}."]
-    if effective == "off":
-        lines.append("This is the strictest position: Nerva has no position that turns approvals off.")
+    live = approval_mode.global_mode(ctx.orch)
+    if not result["effective"] and live != wanted:
+        return (f"Approval mode remains {live}; the requested value did not become effective: it "
+                "was saved, but the running settings still read the old value. It applies once "
+                "they reload (at the latest on a restart).")
+    lines = [f"Approval mode: {live} (persistent setting) — {approval_mode.meaning(live)}."]
+    if not result["effective"]:
+        lines.append("It is in force now. The running settings still read the old value; the stricter "
+                     "mode holds until they reload.")
+    if live == "off":
+        lines.append("This is the strictest position, and no per-agent override loosens it: Nerva has "
+                     "no position that turns approvals off. Work the policy had already approved "
+                     "returns to your inbox instead of running; what you approved yourself still runs.")
+    looser = _looser_note(approval_mode, ctx.orch, still=True)
+    if looser:
+        lines.append(looser)
     if not result["audited"]:
         lines.append("The change is in effect, but it could not be recorded in the audit log.")
     return "\n".join(lines)

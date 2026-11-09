@@ -55,6 +55,9 @@ class Outcome(str):
 ACT = "act"        # execute autonomously, log it
 NOTIFY = "notify"  # execute but inform the user (non-urgent)
 ASK = "ask"        # block and request human approval
+#: The prefix of a Decision.reason when the approval mode itself (not the risk tier, the
+#: money caps or a floor) is why the action asks — what an approval card reports (H484).
+MODE_REASON = "autonomy mode="
 
 EARNED_MIN_SAMPLES = 20
 EARNED_MIN_CONFIDENCE = 0.80
@@ -204,14 +207,13 @@ class AutonomyPolicy:
     def effective_mode(self, agent: str | None = None) -> str:
         """The mode that applies to *agent* — its per-agent override, else the global
         ``mode``. ``agent=None`` (or an agent with no override) ⇒ the global mode."""
-        from .mode import read_mode
+        from .mode import resolve
 
         # H484: a value the dial does not know is never run as AUTO — it reads as ASK
-        # (with a warning); a YAML 1.1 boolean False is OFF.
-        override = self.agent_modes.get(agent) if agent else None
-        if override not in (None, ""):
-            return read_mode(override, where="autonomy.agent_modes")
-        return read_mode(self.mode)
+        # (with a warning); a YAML 1.1 boolean False is OFF. A global OFF is a floor no
+        # per-agent override loosens; a blank override is no override.
+        overrides = self.agent_modes if isinstance(self.agent_modes, dict) else {}
+        return resolve(self.mode, overrides.get(agent) if agent else None)[0]
 
     def decide(
         self,
@@ -228,9 +230,9 @@ class AutonomyPolicy:
         # auto-acts). AUTO falls through to the balanced per-tier logic below.
         mode = self.effective_mode(action.get("agent"))
         if mode == "off":
-            return Decision(ASK, tier, "autonomy mode=off → ask", urgent=False)
+            return Decision(ASK, tier, f"{MODE_REASON}off → ask", urgent=False)
         if mode == "ask" and tier != RiskTier.READ_ONLY:
-            return Decision(ASK, tier, "autonomy mode=ask → ask", urgent=False)
+            return Decision(ASK, tier, f"{MODE_REASON}ask → ask", urgent=False)
         if invalid_floor:
             return Decision(ASK, tier, "invalid trusted tier floor → ask", urgent=False)
         # Money special-case: auto-act if within per-action cap AND daily budget.

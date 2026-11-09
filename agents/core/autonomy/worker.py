@@ -1199,6 +1199,55 @@ class AutonomyWorker:
         must_ask = invalid_tier or (trusted_tier is not None and decided_tier < trusted_tier)
         return decision, effective_tier, must_ask
 
+    def _record_ask_context(self, task: Task, decision=None, *, recalled: bool = False) -> None:
+        """H484 — remember, for the approval card, the mode this task was held under and
+        whether the mode itself (not its risk tier or a floor) is why it asks."""
+        try:
+            from .mode import resolve
+            from .policy import MODE_REASON
+
+            effective = getattr(self.policy, "effective_mode", None)
+            record = getattr(self.queue, "record_ask_context", None)
+            if not callable(effective) or not callable(record):
+                return
+            overrides = getattr(self.policy, "agent_modes", None)
+            overall, _source = resolve(getattr(self.policy, "mode", None), None)
+            mode, source = resolve(
+                overall, overrides.get(task.agent) if isinstance(overrides, dict) else None)
+            by_mode = recalled or (
+                decision is not None and decision.outcome == ASK
+                and str(getattr(decision, "reason", "")).startswith(MODE_REASON))
+            record(task.id, {"mode": mode, "source": source, "global": overall, "by_mode": by_mode})
+        except Exception:
+            logger.warning("ask context unavailable for task %s", getattr(task, "id", "?"), exc_info=True)
+
+    def _recalled_by_off(self, task: Task) -> bool:
+        """H484 — True when *task* must not run now: it was approved by the policy alone
+        (never by a human) and the approval mode that applies to its agent is ``off``.
+        The task returns to the decision inbox; if the store will not take that
+        transition it stays approved and simply does not run while the mode is off."""
+        if task.decided_by != "policy":
+            return False
+        effective = getattr(self.policy, "effective_mode", None)
+        try:
+            if not callable(effective) or effective(task.agent) != "off":
+                return False
+        except Exception:
+            return False
+        try:
+            blocked = self.queue.transition(
+                task.id, TaskStatus.BLOCKED, decided_by="policy", decision="needs-approval",
+                expected_status=TaskStatus.APPROVED,
+            )
+        except TaskQueueError:
+            logger.warning("approval mode off: task %s is held, not run", task.id, exc_info=True)
+            return True
+        self._record_ask_context(blocked, recalled=True)
+        self._audit("autonomy.recalled_by_off", blocked, "approval mode off — returned to the owner")
+        if blocked.attention_mode == "interrupt":
+            self._schedule_push(blocked)
+        return True
+
     def _strictest_level(self, requested: str, decided: str) -> str:
         rank = self._LEVEL_RANK
         return requested if rank.get(requested, 2) >= rank.get(decided, 2) else decided
@@ -1318,6 +1367,7 @@ class AutonomyWorker:
             decision="needs-approval",
             expected_status=TaskStatus.PROPOSED,
         )
+        self._record_ask_context(task, decision)
         # Metadata cannot turn a successfully persisted ask into enqueue_failed.
         try:
             from .approval_grouping import current_model_producer
@@ -1526,6 +1576,7 @@ class AutonomyWorker:
             decided_by="policy",
             decision="needs-approval",
         )
+        self._record_ask_context(task, decision)
         if grouping_context is not None and type(self.policy) is AutonomyPolicy:
             policy = {key: getattr(self.policy, key) for key in (
                 'mode', 'agent_modes', 'cap_per_action', 'daily_ceiling',
@@ -1850,6 +1901,11 @@ class AutonomyWorker:
             # backup.restore is the hub's: it can restart itself) stays APPROVED,
             # unclaimed, for that process's worker.
             if irreversible.held_here(task):
+                held += 1
+                continue
+            # H484: in OFF nothing the policy approved on its own runs — the task goes
+            # back to waiting for the owner. What a human approved still runs.
+            if self._recalled_by_off(task):
                 held += 1
                 continue
             if self.queue.consent_task_marker(task.id):

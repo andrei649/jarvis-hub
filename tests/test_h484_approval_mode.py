@@ -43,8 +43,12 @@ class _Audit:
         self.events.append(event)
 
 
+_stores: list[dict] = []     # the settings each double reads; the `writes` fixture fills them
+
+
 def _orch(mode="auto", agent_modes=None, audit=None, pending=()):
     store = {"autonomy.mode": mode, "autonomy.agent_modes": dict(agent_modes or {})}
+    _stores.append(store)
     policy = AutonomyPolicy(mode=mode, agent_modes=dict(agent_modes or {}))
     orch = SimpleNamespace(
         commands=build_default_registry(),
@@ -67,9 +71,12 @@ def _orch(mode="auto", agent_modes=None, audit=None, pending=()):
 def writes(monkeypatch):
     """The settings store double: records every category write."""
     seen = []
+    _stores.clear()
 
     def put_category(category, values):
         seen.append((category, dict(values)))
+        for store in _stores:            # what a reload then reads back
+            store.update({f"{category}.{key}": value for key, value in values.items()})
         return len(values), []
 
     monkeypatch.setattr(mode_module, "_put_category", put_category)
@@ -85,7 +92,9 @@ def writes(monkeypatch):
     # YAML 1.1 reads a bare `off` as False: it is the dial's off, never the loosest position.
     (False, "off", True),
     # Anything else is not a position: fall back to asking, and say so.
-    (True, "ask", False), ("yolo", "ask", False), ("smart", "ask", False), (3, "ask", False),
+    (True, "ask", False), ("yolo", "ask", False), (3, "ask", False), ("   ", "ask", False),
+    # Hermes' words mean the same stored as typed.
+    ("smart", "auto", True), ("manual", "ask", True),
     ({"mode": "auto"}, "ask", False),
 ])
 def test_a_stored_mode_is_normalized_and_an_unknown_one_falls_back_to_asking(stored, expected, known):
@@ -95,6 +104,7 @@ def test_a_stored_mode_is_normalized_and_an_unknown_one_falls_back_to_asking(sto
 def test_the_policy_never_runs_an_unknown_mode_as_auto(caplog):
     action = {"kind": "note.write", "risk_tier": int(RiskTier.REVERSIBLE), "agent": "friday"}
     assert AutonomyPolicy(mode="auto").decide(action).outcome == ACT
+    mode_module._warned.clear()
     with caplog.at_level(logging.WARNING):
         decision = AutonomyPolicy(mode="yolo").decide(action)
     assert decision.outcome == ASK
@@ -106,12 +116,32 @@ def test_the_policy_never_runs_an_unknown_mode_as_auto(caplog):
         {"kind": "x", "risk_tier": int(RiskTier.READ_ONLY)}).outcome == ASK
 
 
+_ASKS = {ACT: 0, "notify": 1, ASK: 2}
+
+
 def test_no_position_of_the_dial_asks_less_than_auto():
-    """The hard floor: no word the dial accepts lets the irreversible tier run unasked."""
-    floor = {"kind": "x", "risk_tier": int(RiskTier.IRREVERSIBLE_OR_MONEY)}
+    """Every word the dial accepts (and every unknown one) asks at least as much as
+    ``auto`` for every kind of action — and ``auto`` itself is pinned for what it is: a
+    payment inside the owner's per-action and daily caps runs without asking; over the
+    cap, or any other irreversible action, asks."""
+    inside = {"kind": "payment.send", "amount": 49, "agent": "friday"}
+    over = {"kind": "payment.send", "amount": 51, "agent": "friday"}
+    irreversible = {"kind": "x", "risk_tier": int(RiskTier.IRREVERSIBLE_OR_MONEY)}
+    actions = [inside, over, irreversible,
+               *({"kind": "x", "risk_tier": int(tier)} for tier in RiskTier)]
+
+    def decide(mode, action):
+        return AutonomyPolicy(mode=mode, cap_per_action=50, daily_ceiling=200).decide(action)
+
     assert set(mode_module.MODES) == {"auto", "ask", "off"}
+    assert decide("auto", inside).outcome == ACT           # the truth about `auto`
+    assert decide("auto", inside).tier == RiskTier.IRREVERSIBLE_OR_MONEY
+    assert decide("auto", over).outcome == ASK and decide("auto", irreversible).outcome == ASK
+    for mode in ("ask", "off", "manual", "yolo", "none", False, True, 3, "   "):
+        assert decide(mode, inside).outcome == ASK, mode
     for mode in (*mode_module.MODES, "smart", "manual", "yolo", "none", False, True):
-        assert AutonomyPolicy(mode=mode).decide(floor).outcome == ASK
+        for action in actions:
+            assert _ASKS[decide(mode, action).outcome] >= _ASKS[decide("auto", action).outcome], (mode, action)
 
 
 # ── the one write path ───────────────────────────────────────────────────────
@@ -120,7 +150,8 @@ def test_no_position_of_the_dial_asks_less_than_auto():
 def test_set_global_mode_persists_applies_live_reloads_and_audits(writes):
     orch = _orch("auto")
     result = mode_module.set_global_mode(orch, "ask", actor="owner", surface="chat")
-    assert result == {"mode": "ask", "was": "auto", "changed": True, "audited": True}
+    assert result == {"mode": "ask", "was": "auto", "changed": True, "audited": True,
+                      "effective": True, "live": "ask"}
     assert writes == [("autonomy", {"mode": "ask"})]
     assert orch.autonomy.policy.mode == "ask"
     assert orch.reloads == 1          # the coordinator's next tick reads the new value
@@ -151,7 +182,9 @@ def test_a_skipped_settings_write_changes_nothing(monkeypatch):
     orch = _orch("ask")
     with pytest.raises(mode_module.ModeNotSaved):
         mode_module.set_global_mode(orch, "auto", actor="owner", surface="chat")
-    assert orch.autonomy.policy.mode == "ask" and orch.audit.events == []
+    assert orch.autonomy.policy.mode == "ask"
+    # The failed attempt is on the record.
+    assert [event.action_taken for event in orch.audit.events] == ["settings_update_failed"]
 
 
 def test_describe_names_the_effective_mode_and_where_it_comes_from():
@@ -208,7 +241,7 @@ async def test_off_is_the_strictest_position_and_the_reply_says_so(writes):
     orch = _orch("auto")
     outcome = await _say(orch, "/approvals off")
     assert orch.autonomy.policy.mode == "off"
-    assert "nothing runs without your approval" in outcome.reply
+    assert "every action waits for your approval" in outcome.reply
     assert "no position that turns approvals off" in outcome.reply
 
 
@@ -294,7 +327,8 @@ async def test_the_mode_route_writes_through_the_audited_path(monkeypatch, write
     async with _app(orch, monkeypatch) as client:
         response = await client.post("/autonomy/mode", json={"mode": "ASK"})
         assert response.status_code == 200
-        assert response.json() == {"mode": "ask", "ok": True, "was": "auto", "audited": True}
+        assert response.json() == {"mode": "ask", "ok": True, "was": "auto", "audited": True,
+                                   "effective": True, "looser": {}}
         assert (await client.get("/autonomy/mode")).json() == {"mode": "ask"}
         refused = await client.post("/autonomy/mode", json={"mode": "yolo"})
         assert refused.status_code == 422
@@ -371,4 +405,14 @@ def test_the_cli_list_shows_the_mode_on_each_card():
         "pending": [{"id": 4, "risk_tier": 1, "reversible": True, "kind": "note.write", "title": "t",
                      "approval_mode": {"effective": "ask", "source": "agent", "global": "auto"}}]}})
     assert code == EXIT_OK
-    assert "mode ask (agent override; global auto)" in out
+    assert "mode now ask (agent override; global auto)" in out
+
+
+def test_the_cli_list_prefers_the_mode_a_card_was_asked_under():
+    code, out, _err, _calls = _run(["approvals", "list"], {("GET", "/autonomy/approvals"): {
+        "mode": "auto",
+        "pending": [{"id": 4, "risk_tier": 1, "reversible": True, "kind": "note.write", "title": "t",
+                     "approval_mode": {"effective": "auto", "source": "global", "global": "auto"},
+                     "asked_under": {"mode": "ask", "source": "global", "global": "ask", "by_mode": True}}]}})
+    assert code == EXIT_OK
+    assert "asked under mode ask (global; the mode is why it waits)" in out
