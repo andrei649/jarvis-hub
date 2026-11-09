@@ -104,7 +104,6 @@ PUBLIC_READS = {
     "GET /api/health/components",
     "GET /api/status",
     "GET /status",
-    "GET /api/local-docs",
     # Catalogs shipped in code (templates, specs, synthetic fixtures).
     "GET /api/agent-templates",
     "GET /api/design-manifest",          # HUD design tokens parsed from the shipped stylesheet
@@ -134,7 +133,6 @@ PUBLIC_READS = {
     "GET /api/metrics/north-star",
     "GET /api/quality",                  # rolling average + alert flag; scores are guarded
     "GET /api/review/stats",
-    "GET /learning/stats",
     "GET /bench",
     "GET /bench/stats",
     "GET /memory/stats",
@@ -157,8 +155,6 @@ PUBLIC_READS = {
     "GET /api/oauth/status",
     "GET /api/oauth/auth-url",
     "GET /api/oauth/callback",   # provider redirect; verify_state() gates the exchange, page shows only the service name
-    "GET /api/oracle/status",
-    # WorldView liveness booleans; the overview (recon/alerts) is guarded.
     # Nerva Workspace (spec §7). The SPA shell serves the built markup with no user data
     # (404 while NERVA_WORKSPACE is off); the session probe tells an anonymous caller
     # only the setup/SSO booleans — the user, org and CSRF token come back solely for a

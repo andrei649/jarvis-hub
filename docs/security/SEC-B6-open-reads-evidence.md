@@ -20,8 +20,7 @@
 | `GET /plugins` | per-plugin `configured` **booleans** + labels | presence flags only — never a key value or secret (verified: `honesty.py` `_NEEDS` gating, ADV-069) |
 | `GET /api/security/governance`, `/kill-switch`, `/loop-breaker`, `/api/trust/status`, `/security`, `/security/status` | governance posture, kill-switch state, loop-breaker state, mic/strict-local trust signal | **deliberate transparency** — H18.18 reads these from mobile without a token by design; every *write* on these surfaces stays admin-guarded. An open read of a safety *state* is the product being inspectable (MOONSHOT §5.3) |
 | `GET /api/security/capabilities/check` | boolean admissibility of a *proposed* capability action | evaluates a hypothetical; returns no stored user data |
-| `GET /api/oauth/status`, `/api/oauth/auth-url`, `/api/oracle/status` | connect-flow presence booleans + public provider auth URLs | pre-auth by nature (you call them *before* you have a token); no token value returned. **Contrast:** `/api/oracle/conflicts` returns actual conflict content → guarded (`user`) |
-| `GET /api/worldview/status` | liveness booleans (connected, api_url) | **Contrast:** `/api/worldview/overview` returns recon/alert content → guarded (`user`) |
+| `GET /api/oauth/status`, `/api/oauth/auth-url` | connect-flow presence booleans + public provider auth URLs | pre-auth by nature (you call them *before* you have a token); no token value returned. **Contrast:** `/api/oracle/conflicts` returns actual conflict content → guarded (`user`) |
 
 ## Group justifications
 
@@ -34,15 +33,15 @@
   `/api/widget/{token}/config`) — public protocol metadata, or a capability token in the path *is* the
   authenticator.
 - **Liveness / ops meters** (`/healthz`, `/readyz`, `/metrics`, `/api/resilience`,
-  `/api/health/components`, `/api/status`, `/status`, `/api/local-docs`) — process/health aggregates
+  `/api/health/components`, `/api/status`, `/status`) — process/health aggregates
   and degradation flags; no user content.
 - **Catalogs shipped in code** (`/api/agent-templates`, `/api/memory/tool-spec`,
-  `/api/memory/eval/corpus`, `/api/voice/capabilities`, `/api/voice/wyoming`, `/skills`,
+  `/api/memory/eval/corpus`, `/api/voice/capabilities`, `/api/voice/wyoming`,
   `/skills/imported`, `/sandbox/status`) — static/derived catalogs. `/api/memory/eval/corpus` is the
   **owned synthetic** eval corpus (`DEFAULT_CORPUS`), never live user memory.
 - **Aggregate observability** (`/api/analytics/{cost,locality,model-tiers}`,
   `/api/metrics/{capabilities,kernel,north-star}`, `/api/quality`, `/api/review/stats`,
-  `/learning/stats`, `/bench`, `/bench/stats`, `/memory/stats`, `/heartbeat/status`,
+  `/bench`, `/bench/stats`, `/memory/stats`, `/heartbeat/status`,
   `/api/arena/leaderboard`, `/api/eval/datasets`, `/api/eval/datasets/{name}/runs`,
   `/api/eval/datasets/{name}/compare`, `/api/autonomy/escalation/targets`) — counts, rates,
   percentiles, scores, channel *names*. No message/turn/memory content. **Contrasts that were
@@ -59,6 +58,33 @@ Each returns a specific user's content, so each now requires `X-User-Token`:
 (user-defined pipelines) · `/learning` (per-agent prompt optimizations) · `/api/arena/match/{id}`
 (match record) · `/api/oracle/conflicts` (conflict content) · `/api/reflection/status` (daily
 reflection result) · `/api/worldview/overview` (recon/alerts).
+
+## Independent post-merge review — 2026-11-09 (HOLD, then fixed)
+
+The owner-amended #894 directive (2026-09-01) asks for an independent read-only review of every
+allowlist row against handler source. That review ran on `fcc3bef` over all 71 open GETs: the
+gate is sound and green, 12 of the 13 routes above are still guarded (the thirteenth,
+`/api/worldview/overview`, left with WorldView in #1305), and **three rows were wrong** — the
+verdict was HOLD:
+
+- `GET /api/oracle/status` returned the open conflicts (the same rows the guarded
+  `/api/oracle/conflicts` serves), the last ten sessions and the owner's PR feed.
+- `GET /learning/stats` returned `prompt_optimizations[].after`, the learned prompt text that is
+  the reason `/learning` is guarded; it lists recorded error strings, which can be whole replies.
+- `GET /api/local-docs` returned the owner's folder path and up to 50 skipped file names.
+
+All three now carry `user_guard` (same commit as this section), are gone from
+`INTENTIONALLY_OPEN_READS`, and read `user` in `tests/_snapshots/route_auth.json`. Rows this file
+listed for routes that no longer exist or are no longer open (`/api/worldview/status`,
+`/skills`) were dropped. Open since #896 and judged OK by the same review, though not listed
+above: `/api/design-manifest`, the two web manifests and two service workers, the
+`/api/oauth/callback` redirect, the three `/workspace` shell routes and `/api/workspace/session`.
+`GET /agents` also returns each agent's `last_error` text and SOUL description (roster
+metadata, judged OK). A fresh independent PASS on the fixed tree is what closes SEC-B6.
+
+Noted by the review, not fixed here: a reply that starts with `[` is recorded as a failed
+interaction with its whole text as the error (`orchestrator.py`, `is_degraded_reply`); the
+OAuth state map filled by the open `/api/oauth/auth-url` is never pruned.
 
 ## Known follow-up (not shipped here)
 
