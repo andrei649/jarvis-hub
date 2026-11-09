@@ -161,7 +161,7 @@ _DEFAULT_TAINT_SOURCE = "websearch"
 # Page refusals a reader may report; anything else reads as url_refused.
 _PAGE_REASONS = frozenset({
     "url_refused", "fetch_failed", "http_error", "parser_missing", "parser_busy", "too_large",
-    "site_blocked",
+    "site_blocked", "website_policy_unavailable",
 })
 _BUSY_REASON = "parser_busy"
 
@@ -668,6 +668,11 @@ def register_web_tools(
     # ── web_search ──────────────────────────────────────────────────────────
 
     async def _search(args: dict) -> dict:
+        from agents.core.security.website_policy import website_refusal
+
+        policy_reason = website_refusal()
+        if policy_reason:
+            return {"available": False, "ok": False, "reason": policy_reason}
         plugin = _plugin()
         if plugin is None or not callable(getattr(plugin, "search", None)):
             return _unavailable()
@@ -715,6 +720,8 @@ def register_web_tools(
             elif outcome.reason == _POLICY_BLOCKED_REASON:
                 return {"available": True, "ok": False, "reason": _POLICY_BLOCKED_REASON,
                         "provider": outcome.provider or provider}
+            elif outcome.reason == "website_policy_unavailable":
+                return {"available": False, "ok": False, "reason": outcome.reason}
             elif outcome.reason and outcome.reason != _PROVIDER_FAILED:
                 # The selection changed between the two reads (an env edit mid-call).
                 out = _unavailable(missing=outcome.missing or None)
@@ -744,9 +751,13 @@ def register_web_tools(
             if not isinstance(row, dict):
                 continue
             url = _text(row.get("url"), MAX_URL_CHARS)
-            if url and blocked_host(url):
-                blocked += 1
-                continue
+            if url:
+                policy_reason = website_refusal(url)
+                if policy_reason == "website_policy_unavailable":
+                    return {"available": False, "ok": False, "reason": policy_reason}
+                if policy_reason == "website_blocked" or blocked_host(url):
+                    blocked += 1
+                    continue
             rows.append({
                 "title": _text(row.get("title"), TITLE_CHARS),
                 "url": url,
@@ -785,13 +796,18 @@ def register_web_tools(
                        entries: dict, followable: dict,
                        deadline: float | None = None) -> _Page | dict:
         """One URL → a page (fresh or cached) or a refusal row. Fences come first."""
+        from agents.core.security.website_policy import website_refusal
+
         if _carries_secret(secret_broker, url):
             logger.warning("web_extract refused: url carries a stored secret")
             return {"ok": False, "reason": _SECRET_IN_URL_REASON, "url": ""}
         if _turn_is_tainted() and url not in followable:
             logger.info("web_extract refused: tainted turn, url not from search")
             return {"ok": False, "reason": _TAINTED_TURN_REASON, "url": url}
-        if blocked_host(url):
+        policy_reason = website_refusal(url)
+        if policy_reason == "website_policy_unavailable":
+            return {"ok": False, "reason": policy_reason, "url": url}
+        if policy_reason == "website_blocked" or blocked_host(url):
             logger.info("web_extract refused: operator-blocked site")
             return {"ok": False, "reason": _SITE_BLOCKED_REASON, "url": url}
         hit = entries.get(url)

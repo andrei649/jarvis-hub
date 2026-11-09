@@ -11,9 +11,12 @@
 > **How to use this doc.** `MOONSHOT.md` says why we exist and what never moves; `NERVA_VISION.md`
 > says what the machine must be able to do; `BACKLOG.md` remains the priority truth per row. This
 > file is the *sequence*: which rows close in which release, what "done" means for each release,
-> and the protocol that keeps an unattended developer on that sequence
-> (`docs/prompts/BACKLOG_DRIVER.md`). When this file and BACKLOG disagree on a row's status,
-> BACKLOG wins and this file is stale — fix it in the same PR.
+> and the historical protocol that kept an unattended developer on that sequence
+> (`docs/prompts/BACKLOG_DRIVER.md`, now inactive). Current local Hermes execution
+> follows `docs/hermes/autonomous-development-objective.md` and the cumulative
+> `docs/hermes/CAMPAIGN_HANDOFF.md` on the verified checkout/SHA. When this file and
+> BACKLOG disagree on a row's status, query the current row; update dated planning
+> claims only in an authorized delivery unit.
 
 ---
 
@@ -72,8 +75,11 @@ milestone on their own; they block the *proof* the next milestone needs.
 | 2.0.0-rc | **Hardening and proof** — AUD-13 turn-pipeline de-dup, AUD-15 HUD v1 retirement + strict TypeScript, E11.1 drills emitting receipts, 72h soak PASS on the owner runner, `release_gate.py` receipt-driven, A1 ⭐B0 demo recorded | `scripts/release_gate.py` passes from receipts, not ticks; soak PASS; zero false DENYs over the dogfood weeks | ⬜ |
 | **2.0.0** | **Program acceptance** | the owner marks E1–E12 accepted or explicitly deferred in `docs/nerva2/NERVA_PROGRAM_MANIFEST_V1.json` with owner-live receipts; B7 enforce with verified evidence; manifest live-sync true | ⬜ |
 
-Order inside a milestone follows `docs/prompts/BACKLOG_DRIVER.md` §1: red `main` first, then the
-milestone's rows (PARTIAL before MISSING), then 1.0.1 defects, then DRA/SEC residuals, then debt.
+The former within-milestone order followed `docs/prompts/BACKLOG_DRIVER.md` §1
+(red `main`, milestone PARTIAL then MISSING, 1.0.1 defects, DRA/SEC, debt).
+That is historical planning, not the current Hermes pick order. The active
+campaign integrates its current batch first and interrupts only for a concrete
+blocking security, correctness or build defect.
 
 ## 4. The 1.1.0 delivery (PR #1039 + follow-up waves) — by theme
 
@@ -229,7 +235,10 @@ Capability growth that makes Nerva noisier or less local is failure, not progres
 
 ## 10. Anti-drift protocol
 
-- The unattended developer runs `docs/prompts/BACKLOG_DRIVER.md`; a human run says "Max".
+- Historical unattended runs used `docs/prompts/BACKLOG_DRIVER.md`; current
+  Hermes execution uses `docs/hermes/autonomous-development-objective.md` and
+  `docs/hermes/CAMPAIGN_HANDOFF.md` locally, with no automatic publication or
+  schedule reactivation.
 - Builder ≠ reviewer ≠ integrator for R2/R3 work; program acceptance is the owner's.
 - A milestone closes on its exit gate, recorded here and in `docs/HISTORY.md`, never on ticks.
 - Re-recount before trusting any row (`docs/BACKLOG_ZERO_LEDGER.md` recount rule).

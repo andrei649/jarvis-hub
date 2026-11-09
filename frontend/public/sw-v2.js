@@ -61,7 +61,7 @@ self.addEventListener('fetch', (event) => {
       caches.open(CACHE).then((c) => c.match(req)).then((hit) => hit || fetch(req).then((res) => {
         if (res && res.ok) {
           const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+          event.waitUntil(caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {}));
         }
         return res;
       })),
@@ -81,7 +81,7 @@ self.addEventListener('fetch', (event) => {
       fetch(req).then((res) => {
         if (res && res.ok && refreshesShell) {
           const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(SHELL, copy)).catch(() => {});
+          event.waitUntil(caches.open(CACHE).then((c) => c.put(SHELL, copy)).catch(() => {}));
         }
         return res;
       }).catch(() => caches.open(CACHE).then((c) => c.match(SHELL)).then((hit) => hit || Response.error())),

@@ -12,8 +12,8 @@ sys.path.insert(0, str(repo_root / "agents"))
 
 
 def _load_skill_module(tmp_db):
-    """Import skills/family_store/main.py fresh, pointed at a temp DB."""
-    path = repo_root / "skills" / "family_store" / "main.py"
+    """Import optional-skills/family_store/main.py fresh, pointed at a temp DB."""
+    path = repo_root / "optional-skills" / "family_store" / "main.py"
     spec = importlib.util.spec_from_file_location("family_store_test", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -60,7 +60,7 @@ def test_manifest_parses_via_loader():
     """The SKILL.md must be discoverable by the real SkillLoader parser."""
     from agents.core.skills.loader import SkillLoader
     sl = SkillLoader()
-    md = repo_root / "skills" / "family_store" / "SKILL.md"
+    md = repo_root / "optional-skills" / "family_store" / "SKILL.md"
     manifest = sl._parse_manifest(md)
     assert manifest["name"] == "Family Store"
     assert "frigga" in manifest["agents"]

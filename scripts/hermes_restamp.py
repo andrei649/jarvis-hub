@@ -9,7 +9,12 @@ screen. This helper reuses those rules to answer the three questions a restamp n
   cite ID                     Where each `path:line` citation of the review sits now:
                               unchanged, moved, edited, deleted or ambiguous, never guessed,
                               plus the diff hunks that touch the cited lines.
-  stamp --patch FILE          The only write: put re-read reviews into docs/hermes/assessment.json.
+  stamp --patch FILE          Put re-read reviews into docs/hermes/assessment.json.
+  migrate --backup FILE       Versioned v2->v3 schema migration with exact rollback backup.
+  impact ID... | --all-stale  Read-only change classification proposals; never grant credit.
+  accept-impact ID ...        Record manual contract checks for moved/unrelated impact.
+  accept-impact-batch --patch  Atomically record an explicit JSON list of checked decisions.
+  record-acceptance ID ...    Record scoped runtime/platform/provider verification separately.
 
 A patch is a JSON list of {id, status, summary, remaining, evidence: [paths]}. Hashes are
 always recomputed from the working tree, and the result must pass hermes_status with every
@@ -51,6 +56,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import difflib
+import hashlib
 import io
 import json
 import os
@@ -73,6 +79,7 @@ if str(REPO_ROOT) not in sys.path:
 from scripts import hermes_status as hs  # noqa: E402
 
 PATCH_FIELDS = ("id", "status", "summary", "remaining", "evidence")
+IMPACT_FIELDS = ("id", "classification", "reason", "checks", "dependencies")
 ROW = re.compile(r"H\d{3}")
 HUNK = re.compile(r"@@ -(\d+)(?:,(\d+))? \+\d+(?:,\d+)? @@")
 CUTOFF = 0.6      # below this difflib ratio the cited text is gone, not edited
@@ -182,6 +189,7 @@ class History:
         self.root = root
         self.base_sha = base_sha
         self._blobs: dict[str, dict[str, dict]] = {}
+        self._pins: dict[tuple[str, str], Pin] = {}
         self._shallow: bool | None = None
 
     def git(self, *args: str, **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
@@ -294,6 +302,12 @@ class History:
 
     def locate(self, entry: dict) -> Pin:
         """Where the exact bytes a review hashed for one evidence path can still be found."""
+        key = (entry["path"], entry["sha256"])
+        if key not in self._pins:
+            self._pins[key] = self._locate(entry)
+        return self._pins[key]
+
+    def _locate(self, entry: dict) -> Pin:
         pin = Pin(entry["path"], entry["sha256"])
         file = self.root / pin.path
         try:
@@ -695,16 +709,14 @@ def _place(citation: str, name: str, path: str, first: int, last: int, view: dic
     return entry
 
 
-def cite(root: Path, ident: str) -> dict:
-    ledger, data = hs.load(root)
-    caps = ledger["capabilities"]
+def _cite_loaded(ident: str, caps: list[dict], reviews: dict[str, dict],
+                 history: History) -> dict:
     ident = _row_id(ident, caps)
-    item = next((r for r in data["reviews"] if isinstance(r, dict) and r.get("id") == ident), None)
+    item = reviews.get(ident)
     if item is None:
         raise UnknownRow(f"{ident} has no review: nothing is pinned, so nothing can be cited")
     evidence = {entry["path"]: entry for entry in item["evidence"]}
     pinned = list(evidence)
-    history = History(root, data.get("base_sha", ""))
     files: dict[str, dict] = {}
     citations: list[dict] = []
     ignored: list[str] = []
@@ -725,6 +737,223 @@ def cite(root: Path, ident: str) -> dict:
         del view["_pinned"], view["_current"], view["_numbers"]
     return {"id": ident, "name": caps[int(ident[1:]) - 1].get("name", ""), "recorded": item["status"],
             "citations": citations, "ignored": ignored, "files": files}
+
+
+def cite(root: Path, ident: str) -> dict:
+    ledger, data = hs.load(root)
+    reviews = {item["id"]: item for item in data["reviews"]
+               if isinstance(item, dict) and "id" in item}
+    return _cite_loaded(ident, ledger["capabilities"], reviews,
+                        History(root, data.get("base_sha", "")))
+
+
+def _impact_report(report: dict, pins: list[dict], status: str | None) -> dict:
+    classes = {item["class"] for item in report["citations"]}
+    if any(pin["state"] in {"absent", "non-utf8"} and not pin["moved_to"] for pin in pins):
+        proposal = "missing"
+    elif not report["citations"] or classes & {"ambiguous", "invalid", "unrecoverable", "shallow", "incomplete"}:
+        proposal = "unknown"
+    elif classes & {"edited", "deleted", "non-utf8"}:
+        proposal = "relevant"
+    elif classes <= {"unchanged", "moved"}:
+        proposal = "moved" if "moved" in classes else "unrelated"
+    else:
+        proposal = "unknown"
+    return {"id": report["id"], "proposal": proposal, "credit_restored": False,
+            "recorded_status": report["recorded"], "current_status": status,
+            "pins": pins, "citations": report["citations"], "ignored": report["ignored"]}
+
+
+def _impacts_loaded(root: Path, ids: list[str] | None, ledger: dict, data: dict,
+                    history: History, *, all_stale: bool = False) -> list[dict]:
+    """One proposal pass over already validated records and a shared history."""
+    caps = ledger["capabilities"]
+    try:
+        live, error = {row["id"]: row for row in hs.assess(ledger, data, root)}, ""
+    except (ValueError, TypeError, KeyError, OSError) as exc:
+        live, error = {}, str(exc)
+    if all_stale:
+        if error:
+            raise ValueError(f"hermes_status cannot assess the records ({error}); name the rows instead")
+        ids = [ident for ident, row in live.items() if row["basis"] == "stale_evidence"]
+    wanted = list(dict.fromkeys(_row_id(ident, caps) for ident in ids or []))
+    reviews = {item["id"]: item for item in data["reviews"]
+               if isinstance(item, dict) and "id" in item}
+    for ident in wanted:
+        if ident not in reviews:
+            raise UnknownRow(f"{ident} has no review: nothing is pinned, so nothing can be cited")
+    result = []
+    for ident in wanted:
+        report = _cite_loaded(ident, caps, reviews, history)
+        pins = [history.locate(entry).public() for entry in reviews[ident]["evidence"]]
+        result.append(_impact_report(report, pins, live.get(ident, {}).get("status")))
+    return result
+
+
+def _active_dependency_paths(data: dict, review: dict) -> list[str]:
+    """Keep the current review's explicit receipt footprint available to writers."""
+    paths = {entry["path"] for entry in review["evidence"]}
+    for receipt_kind, fingerprint in (("impact_receipts", "previous_review_sha256"),
+                                      ("local_receipts", "review_sha256")):
+        receipt = next((entry for entry in reversed(data.get(receipt_kind, []))
+                        if entry["id"] == review["id"]), None)
+        if receipt is not None and receipt[fingerprint] == hs.digest(review):
+            paths.update(receipt["paths"])
+    return sorted(paths)
+
+
+def impacts(root: Path, ids: list[str] | None = None, *, all_stale: bool = False,
+            include_context: bool = False) -> list[dict]:
+    """Propose impact for a batch with one assessment and shared pin history."""
+    ledger, data = hs.load(root)
+    reports = _impacts_loaded(root, ids, ledger, data,
+                              History(root, data.get("base_sha", "")), all_stale=all_stale)
+    if include_context:
+        reviews = {item["id"]: item for item in data["reviews"]
+                   if isinstance(item, dict) and "id" in item}
+        for report in reports:
+            review = reviews[report["id"]]
+            report["context"] = {
+                "original": ledger["capabilities"][int(report["id"][1:]) - 1],
+                "recorded_remaining": review["remaining"],
+                "recorded_review_sha256": hs.digest(review),
+                "dependency_paths": _active_dependency_paths(data, review),
+            }
+    return reports
+
+
+def impact(root: Path, ident: str) -> dict:
+    """Single-row compatibility wrapper; never restores completion credit."""
+    return impacts(root, [ident])[0]
+
+
+def _validate_new_manifest_paths(root: Path, paths: list[str]) -> None:
+    """Newly declared dependencies must be inspectable, safe files at write time."""
+    generated = {hs.ASSESSMENT, "HERMES_STATUS.md", "docs/HERMES_CAPABILITIES.md"}
+    try:
+        hs.manifest_fingerprint(root, paths)
+    except (ValueError, TypeError, UnicodeError) as exc:
+        raise Refused(f"invalid reviewed source path: {exc}") from exc
+    for name in paths:
+        if name in generated:
+            raise Refused(f"generated assessment/report cannot be a new dependency or source: {name}")
+        path = root / name
+        cursor = root
+        for part in name.split("/"):
+            cursor /= part
+            if cursor.is_symlink():
+                raise Refused(f"reviewed source {name} uses a symlink")
+        if not path.is_file() or not path.resolve().is_relative_to(root.resolve()):
+            raise Refused(f"reviewed source {name} is missing or not a regular repository file")
+        ignored = name in git(root, "ls-files", "--others", "--ignored", "--exclude-standard",
+                              "-z", "--", name).stdout.decode("utf-8", "replace").split("\0")
+        if ignored:
+            raise Refused(f"reviewed source {name} is gitignored/private")
+        try:
+            hs.file_digest(path)
+        except UnicodeError as exc:
+            raise Refused(f"reviewed source {name} is not UTF-8 text") from exc
+
+
+def _impact_patch_items(patch: Any, caps: list[dict]) -> list[dict]:
+    if not isinstance(patch, list) or not patch:
+        raise Refused("impact patch must be a nonempty JSON list of explicit decisions")
+    if len(patch) > len(caps):
+        raise Refused("impact patch exceeds inventory capacity")
+    result, seen = [], set()
+    for item in patch:
+        if not isinstance(item, dict) or set(item) != set(IMPACT_FIELDS):
+            raise Refused(f"each impact entry needs exactly {', '.join(IMPACT_FIELDS)}")
+        if not isinstance(item["id"], str):
+            raise Refused("impact entry needs a row ID")
+        ident = _row_id(item["id"], caps)
+        if ident in seen:
+            raise Refused(f"duplicate impact decision for {ident}")
+        seen.add(ident)
+        if (not isinstance(item["reason"], str) or not item["reason"].strip()
+                or not isinstance(item["checks"], list) or not item["checks"]
+                or not all(isinstance(check, str) and check.strip() for check in item["checks"])):
+            raise Refused("impact receipt needs explicit reason and nonempty contract checks")
+        if (not isinstance(item["dependencies"], list)
+                or not all(isinstance(path, str) for path in item["dependencies"])):
+            raise Refused(f"{ident}: dependencies must be an explicit path list")
+        if len(item["dependencies"]) != len(set(item["dependencies"])):
+            raise Refused(f"{ident}: dependency paths must not repeat")
+        result.append({**item, "id": ident})
+    return result
+
+
+def record_impacts_batch(root: Path, patch: Any, *, dry_run: bool = False) -> dict:
+    """Atomically append explicit, individually checked impact decisions."""
+    target = root / hs.ASSESSMENT
+    raw = target.read_bytes()
+    ledger, data = hs.load(root)
+    if data.get("schema_version") != 3:
+        raise Refused("impact receipts require schema v3 migration")
+    if _serialize(data) != raw:
+        raise Refused("assessment does not round-trip; impact receipt refused")
+    items = _impact_patch_items(patch, ledger["capabilities"])
+    proposals = _impacts_loaded(root, [item["id"] for item in items], ledger, data,
+                                History(root, data.get("base_sha", "")))
+    by_id = {proposal["id"]: proposal for proposal in proposals}
+    reviews = {item["id"]: item for item in data["reviews"]}
+    for item in items:
+        ident, classification = item["id"], item["classification"]
+        proposal = by_id[ident]
+        if proposal["current_status"] != "needs_review":
+            raise Refused(f"{ident} is not pending evidence impact")
+        if classification not in {"moved", "unrelated"} or proposal["proposal"] != classification:
+            raise Refused(f"{ident}: {proposal['proposal']} is only a proposal; missing, relevant and unknown "
+                          "impact needs a new contract review/restamp")
+        if classification == "moved" and not item["dependencies"]:
+            raise Refused("moved impact needs an explicit new dependency path")
+        review = reviews[ident]
+        retained = set(_active_dependency_paths(data, review))
+        declared = {entry["path"] for entry in review["evidence"]} | set(item["dependencies"])
+        if omitted := retained - declared:
+            raise Refused(f"{ident}: previously reviewed dependencies must be explicitly retained: "
+                          f"{', '.join(sorted(omitted))}; removing one needs a new contract review")
+    _validate_new_manifest_paths(root, list(dict.fromkeys(
+        path for item in items for path in item["dependencies"])))
+    head, uncommitted = hs.worktree_provenance(root)
+    accepted_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    receipts = []
+    for item in items:
+        ident = item["id"]
+        previous = reviews[ident]
+        paths = list(dict.fromkeys([*(entry["path"] for entry in previous["evidence"]),
+                                    *item["dependencies"]]))
+        receipts.append({"id": ident, "previous_review_sha256": hs.digest(previous),
+                         "source_fingerprint": hs.manifest_fingerprint(root, paths),
+                         "paths": paths, "head_sha": head,
+                         "worktree_uncommitted": uncommitted,
+                         "classification": item["classification"],
+                         "reason": item["reason"], "checks": item["checks"],
+                         "accepted_at": accepted_at})
+    result = dict(data)
+    result["impact_receipts"] = [*data["impact_receipts"], *receipts]
+    rows = hs.assess(ledger, result, root)
+    assessed = {row["id"]: row for row in rows}
+    if any(assessed[receipt["id"]]["basis"] != "impact_accepted" for receipt in receipts):
+        raise Refused("impact receipt did not bind to the current revision")
+    for receipt in receipts:
+        if hs.manifest_fingerprint(root, receipt["paths"]) != receipt["source_fingerprint"]:
+            raise Refused(f"{receipt['id']}: reviewed source changed during impact acceptance")
+    if target.read_bytes() != raw:
+        raise Refused("assessment changed during impact review")
+    if not dry_run:
+        _write_atomic(target, _serialize(result))
+    return {"written": not dry_run, "receipts": receipts}
+
+
+def record_impact(root: Path, ident: str, *, classification: str, reason: str,
+                  checks: list[str], dependencies: list[str] | None = None,
+                  dry_run: bool = False) -> dict:
+    """Single-row compatibility wrapper for an explicit checked decision."""
+    result = record_impacts_batch(root, [{"id": ident, "classification": classification,
+                                          "reason": reason, "checks": checks,
+                                          "dependencies": dependencies or []}], dry_run=dry_run)
+    return {"written": result["written"], **result["receipts"][0]}
 
 
 # --- stamp: the only write -------------------------------------------------------------------
@@ -801,13 +1030,31 @@ def _symlink(root: Path, name: str, links: set[str]) -> str:
     return next((prefix for prefix in _prefixes(name) if prefix in links or (root / prefix).is_symlink()), "")
 
 
-def _uncommitted(root: Path, base: str, reviews: dict[str, dict]) -> list[str]:
+def _safe_new_local_source(name: str) -> bool:
+    """Permit explicit public source, test, and documentation evidence only."""
+    roots = ("agents/", "frontend/src/", "mobile/src/", "desktop/", "tests/", "scripts/",
+             "skills/", "optional-skills/")
+    parts = name.split("/")
+    public_document = name.startswith(("docs/", ".agents/checks/")) and Path(name).suffix == ".md"
+    return ((name.startswith(roots) or public_document)
+            and not any(part in {".git", ".venv", "node_modules", "__pycache__", "runtime", "cache",
+                                 "secrets", ".secrets", "private", "recovery"} for part in parts)
+            and not any(Path(part).stem in {"secret", "secrets", "credential", "credentials", "token",
+                                                "tokens", "recovery"} for part in parts)
+            and not any(part.startswith(".env") for part in parts)
+            and Path(name).suffix in {".py", ".ts", ".tsx", ".js", ".jsx", ".rs", ".swift", ".kt",
+                                      ".md", ".css", ".html"})
+
+
+def _uncommitted(root: Path, base: str, reviews: dict[str, dict], *,
+                 allow_new_local: bool = False) -> tuple[list[str], list[str]]:
     """Evidence whose pinned bytes the commit `base` does not hold at that path.
 
-    Evidence reached through a symlink, untracked or gitignored refuses outright: git holds
+    Evidence reached through a symlink or gitignored refuses outright: git holds
     a link's target path, not the text hermes_status hashes (and a checkout without
     symlinks writes the link as a text file, which the index still records as a link), and
-    no commit can hold an untracked file. What comes back (an uncommitted edit, a staged new
+    no commit can hold an untracked file. Schema v3 may explicitly bind safe untracked
+    public source/test/documentation paths when --allow-uncommitted is given. What comes back (an edit, a staged new
     file, a base_sha that predates the file) reads stale on every checkout but this one, so
     the caller refuses it unless told otherwise.
     """
@@ -831,17 +1078,24 @@ def _uncommitted(root: Path, base: str, reviews: dict[str, dict]) -> list[str]:
     tracked, ignored = listed("--cached"), listed("--others", "--ignored", "--exclude-standard")
     history = History(root)
     held: dict[str, str | None] = {}
+    untracked: list[str] = []
     for name in names:
         if name not in tracked:
-            raise Refused(f"{owner(name)}: evidence {name} is "
-                          f"{'gitignored' if name in ignored else 'untracked'}: "
-                          "no commit holds it, so every other checkout would read the row stale")
+            if name in ignored:
+                raise Refused(f"{owner(name)}: evidence {name} is gitignored: local pin refused")
+            if not allow_new_local or not _safe_new_local_source(name) or not (root / name).is_file():
+                raise Refused(f"{owner(name)}: evidence {name} is untracked: explicit safe public evidence "
+                              "path and schema v3 --allow-uncommitted are required")
+            untracked.append(name)
+            held[name] = None
+            continue
         blob = git(root, "rev-parse", "--verify", "--quiet", f"{base}:{name}",
                    ok=(0, 1, 128)).stdout.decode("utf-8", "replace").strip()
         data = history._cat([blob]).get(blob) if blob else None
         held[name] = blob_digest(data) if data is not None else None
-    return list(dict.fromkeys(entry["path"] for review in reviews.values() for entry in review["evidence"]
-                              if held[entry["path"]] != entry["sha256"]))
+    changed = list(dict.fromkeys(entry["path"] for review in reviews.values() for entry in review["evidence"]
+                                 if held[entry["path"]] != entry["sha256"]))
+    return changed, untracked
 
 
 def _write_atomic(target: Path, payload: bytes) -> None:
@@ -857,6 +1111,104 @@ def _write_atomic(target: Path, payload: bytes) -> None:
         with contextlib.suppress(FileNotFoundError):
             os.unlink(tmp)
         raise
+
+
+def _credited_ids(rows: list[dict]) -> list[str]:
+    return [row["id"] for row in rows if row["status"] == "equivalent"]
+
+
+def migrate(root: Path, *, backup: Path, dry_run: bool = False) -> dict:
+    """Explicit v2 -> v3 migration with exact byte backup and equal credited IDs."""
+    target = root / hs.ASSESSMENT
+    raw = target.read_bytes()
+    ledger, data = hs.load(root)
+    if data.get("schema_version") != 2:
+        raise Refused("migration requires schema v2")
+    if _serialize(data) != raw:
+        raise Refused("assessment does not round-trip; exact migration refused")
+    before_rows = hs.assess(ledger, data, root)
+    result = dict(data)
+    result.update(schema_version=3, review_history=[], impact_receipts=[], acceptance=[], local_receipts=[])
+    after_rows = hs.assess(ledger, result, root)
+    before_ids, after_ids = _credited_ids(before_rows), _credited_ids(after_rows)
+    if [row["id"] for row in before_rows] != [row["id"] for row in after_rows] or before_ids != after_ids:
+        raise Refused("migration changed inventory IDs or conservative completion credit")
+    payload = _serialize(result)
+    if backup.resolve() == target.resolve() or backup.exists():
+        raise Refused("backup path must be a new, distinct file")
+    if not dry_run:
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        with backup.open("xb") as handle:
+            handle.write(raw)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if target.read_bytes() != raw:
+            raise Refused("assessment changed during migration; exact backup retained")
+        _write_atomic(target, payload)
+    return {"written": not dry_run, "backup": str(backup), "original_sha256": hashlib.sha256(raw).hexdigest(),
+            "migrated_sha256": hashlib.sha256(payload).hexdigest(),
+            "before_ids": [row["id"] for row in before_rows], "after_ids": [row["id"] for row in after_rows],
+            "before_credited_ids": before_ids, "after_credited_ids": after_ids}
+
+
+def rollback_migration(root: Path, *, backup: Path, migrated_sha256: str) -> bool:
+    """Restore the exact v2 bytes only when the expected migrated file is intact."""
+    target = root / hs.ASSESSMENT
+    current, raw = target.read_bytes(), backup.read_bytes()
+    if hashlib.sha256(current).hexdigest() != migrated_sha256:
+        raise Refused("current assessment differs from migration output; rollback refused")
+    ledger = hs.load(root)[0]
+    old = json.loads(raw)
+    if old.get("schema_version") != 2 or _serialize(old) != raw:
+        raise Refused("backup is not an exact schema v2 assessment")
+    hs.assess(ledger, old, root)
+    if _credited_ids(hs.assess(ledger, json.loads(current), root)) != _credited_ids(hs.assess(ledger, old, root)):
+        raise Refused("rollback would change credited IDs")
+    _write_atomic(target, raw)
+    return True
+
+
+def record_acceptance(root: Path, ident: str, *, dimension: str, state: str,
+                      evidence: list[str], checks: list[str] | None = None, environment: str = "",
+                      artifact: Path | None = None, sources: list[str] | None = None,
+                      dry_run: bool = False) -> dict:
+    """Record an explicit runtime/platform/provider fact; never infer one from prose."""
+    target = root / hs.ASSESSMENT
+    raw = target.read_bytes()
+    ledger, data = hs.load(root)
+    if data.get("schema_version") != 3 or _serialize(data) != raw:
+        raise Refused("acceptance recording requires a canonical schema v3 assessment")
+    ident = _row_id(ident, ledger["capabilities"])
+    if dimension not in hs.DIMENSIONS or state not in {"required_pending", "verified", "blocked"}:
+        raise Refused("invalid acceptance dimension or state")
+    if not isinstance(evidence, list) or not evidence or not all(isinstance(note, str) and note.strip()
+                                                                  for note in evidence):
+        raise Refused("acceptance needs explicit evidence or pending reason")
+    checks = checks or []
+    sources = sources or []
+    if state == "verified" and (not environment.strip() or not checks or not sources
+                                or not all(isinstance(check, str) and check.strip() for check in checks)):
+        raise Refused("verified acceptance needs environment, source paths and named executed checks")
+    _validate_new_manifest_paths(root, sources)
+    if artifact is not None and (not artifact.is_file() or artifact.is_symlink()):
+        raise Refused("acceptance artifact must be a regular file")
+    artifact_receipt = ({"path": str(artifact), "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest()}
+                        if artifact is not None else None)
+    fingerprint = hs.manifest_fingerprint(root, sources)
+    head, uncommitted = hs.worktree_provenance(root)
+    entry = {"id": ident, "dimension": dimension, "state": state, "evidence": evidence,
+             "checks": checks, "environment": environment, "artifact": artifact_receipt,
+             "paths": sources,
+             "head_sha": head, "source_fingerprint": fingerprint, "worktree_uncommitted": uncommitted,
+             "checked_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    result = dict(data)
+    result["acceptance"] = [*data["acceptance"], entry]
+    hs.assess(ledger, result, root)
+    if target.read_bytes() != raw:
+        raise Refused("assessment changed during acceptance recording")
+    if not dry_run:
+        _write_atomic(target, _serialize(result))
+    return {"written": not dry_run, **entry}
 
 
 def stamp(root: Path, patch: Any, *, base_sha: str | None = None, assessed_at: str | None = None,
@@ -905,6 +1257,13 @@ def stamp(root: Path, patch: Any, *, base_sha: str | None = None, assessed_at: s
         git(root, "rev-parse", "--verify", "HEAD").stdout.decode().strip()
     result["assessed_at"] = assessed_at if assessed_at is not None else \
         datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if result.get("schema_version") == 3:
+        result["review_history"] = list(data["review_history"])
+        for prior in data["reviews"]:
+            replacement = reviews.get(prior["id"])
+            if replacement is not None and replacement != prior:
+                result["review_history"].append({"review": prior, "superseded_at": result["assessed_at"],
+                                                 "replacement_sha256": hs.digest(replacement)})
     try:
         rows = {row["id"]: row for row in hs.assess(ledger, result, root)}
     except (ValueError, TypeError, KeyError, OSError) as exc:
@@ -917,11 +1276,29 @@ def stamp(root: Path, patch: Any, *, base_sha: str | None = None, assessed_at: s
     untouched = [review for review in result["reviews"] if review["id"] not in reviews]
     if _serialize([untouched, result.get("scope_reopenings")]) != frozen:
         raise Refused("the stamp would rewrite reviews it was not given, or scope_reopenings")
-    uncommitted = _uncommitted(root, result["base_sha"], reviews)
+    uncommitted, untracked = _uncommitted(root, result["base_sha"], reviews,
+                                         allow_new_local=allow_uncommitted and result.get("schema_version") == 3)
     if uncommitted and not allow_uncommitted:
         raise Refused(f"base_sha {result['base_sha'][:12]} does not hold what these files hold now "
                       f"(uncommitted?): {', '.join(uncommitted)}; commit them first, or pass "
                       "--allow-uncommitted and commit them before anyone else reads the records")
+    new_local_receipts = []
+    if uncommitted and result.get("schema_version") == 3:
+        result["local_receipts"] = list(data["local_receipts"])
+        head, dirty = hs.worktree_provenance(root)
+        for ident, review in reviews.items():
+            paths = [entry["path"] for entry in review["evidence"]]
+            changed = [path for path in paths if path in uncommitted]
+            if changed:
+                receipt = {
+                    "id": ident, "review_sha256": hs.digest(review), "head_sha": head,
+                    "paths": paths, "untracked": [path for path in paths if path in untracked],
+                    "worktree_uncommitted": dirty, "source_fingerprint": hs.manifest_fingerprint(root, paths),
+                    "recorded_at": result["assessed_at"],
+                }
+                result["local_receipts"].append(receipt)
+                new_local_receipts.append(receipt)
+        hs.assess(ledger, result, root)
     payload = _serialize(result)
     diff = list(difflib.unified_diff(raw.decode("utf-8").split("\n"), payload.decode("utf-8").split("\n"),
                                      f"{hs.ASSESSMENT} (now)", f"{hs.ASSESSMENT} (stamped)", lineterm="", n=1))
@@ -929,7 +1306,7 @@ def stamp(root: Path, patch: Any, *, base_sha: str | None = None, assessed_at: s
         _write_atomic(target, payload)
     return {"stamped": list(reviews), "base_sha": result["base_sha"],
             "assessed_at": result["assessed_at"], "written": not dry_run, "diff": diff,
-            "uncommitted": uncommitted}
+            "uncommitted": uncommitted, "untracked": untracked, "local_receipts": new_local_receipts}
 
 
 # --- rendering and CLI -----------------------------------------------------------------------
@@ -1056,10 +1433,46 @@ def main(argv: list[str] | None = None) -> int:
     stamp_cmd.add_argument("--assessed-at", help="default: now, UTC, %%Y-%%m-%%dT%%H:%%M:%%SZ")
     stamp_cmd.add_argument("--dry-run", action="store_true", help="show the change, write nothing")
     stamp_cmd.add_argument("--allow-uncommitted", action="store_true",
-                           help="pin evidence that base_sha does not hold (each file is listed as UNCOMMITTED)")
+                           help="pin local evidence base_sha does not hold; v3 permits safe explicit untracked source/test")
+    migrate_cmd = subs.add_parser("migrate", parents=[common], help="schema v2 to v3 with exact backup")
+    migrate_cmd.add_argument("--backup", type=Path, required=True)
+    migrate_cmd.add_argument("--dry-run", action="store_true")
+    rollback_cmd = subs.add_parser("rollback-migration", parents=[common], help="restore exact backed-up v2 bytes")
+    rollback_cmd.add_argument("--backup", type=Path, required=True)
+    rollback_cmd.add_argument("--migrated-sha256", required=True)
+    impact_cmd = subs.add_parser("impact", parents=[common], help="read-only impact proposal")
+    impact_cmd.add_argument("ids", nargs="*", metavar="ID")
+    impact_cmd.add_argument("--all-stale", action="store_true", help="every row hermes_status demoted")
+    impact_cmd.add_argument("--json", action="store_true")
+    impact_cmd.add_argument("--context", action="store_true",
+                            help="include complete frozen rows and remaining clauses in JSON; reads once, no credit")
+    accept_cmd = subs.add_parser("accept-impact", parents=[common], help="record explicit checked impact")
+    accept_cmd.add_argument("id")
+    accept_cmd.add_argument("--classification", choices=("moved", "unrelated"), required=True)
+    accept_cmd.add_argument("--reason", required=True)
+    accept_cmd.add_argument("--check", action="append", default=[])
+    accept_cmd.add_argument("--dependency", action="append", default=[], help="explicit reviewed dependency path")
+    accept_cmd.add_argument("--dry-run", action="store_true")
+    accept_batch_cmd = subs.add_parser("accept-impact-batch", parents=[common],
+                                       help="atomically record explicit checked impact decisions")
+    accept_batch_cmd.add_argument("--patch", type=Path, required=True,
+                                  help="JSON list of id/classification/reason/checks/dependencies")
+    accept_batch_cmd.add_argument("--dry-run", action="store_true")
+    acceptance_cmd = subs.add_parser("record-acceptance", parents=[common], help="record runtime/platform/provider state")
+    acceptance_cmd.add_argument("id")
+    acceptance_cmd.add_argument("--dimension", choices=hs.DIMENSIONS, required=True)
+    acceptance_cmd.add_argument("--state", choices=("required_pending", "verified", "blocked"), required=True)
+    acceptance_cmd.add_argument("--note", action="append", default=[])
+    acceptance_cmd.add_argument("--check", action="append", default=[], help="named executed check")
+    acceptance_cmd.add_argument("--environment", default="", help="scope of runtime/platform/provider check")
+    acceptance_cmd.add_argument("--artifact", type=Path, help="optional local result artifact, hashed")
+    acceptance_cmd.add_argument("--source", action="append", default=[], help="explicit reviewed source/test path")
+    acceptance_cmd.add_argument("--dry-run", action="store_true")
     ns = parser.parse_args(argv)
     if ns.command == "drift" and bool(ns.ids) == ns.all_stale:
         parser.error("drift takes row ids or --all-stale, not both and not neither")
+    if ns.command == "impact" and bool(ns.ids) == ns.all_stale:
+        parser.error("impact takes row ids or --all-stale, not both and not neither")
     root = (ns.root or hs.REPO).resolve()
     try:
         if ns.command == "drift":
@@ -1068,6 +1481,35 @@ def main(argv: list[str] | None = None) -> int:
         elif ns.command == "cite":
             report = cite(root, ns.id)
             print(json.dumps(report, ensure_ascii=False, indent=2) if ns.json else render_cite(report))
+        elif ns.command == "impact":
+            reports = impacts(root, ns.ids, all_stale=ns.all_stale, include_context=ns.context)
+            report = reports[0] if len(ns.ids) == 1 and not ns.all_stale else reports
+            if ns.json:
+                print(json.dumps(report, ensure_ascii=False, indent=2))
+            else:
+                print("\n".join(
+                    f"{item['id']}: proposed {item['proposal']} (no credit restored); "
+                    "read citations and dependencies before accepting" for item in reports))
+        elif ns.command == "accept-impact":
+            result = record_impact(root, ns.id, classification=ns.classification, reason=ns.reason,
+                                   checks=ns.check, dependencies=ns.dependency, dry_run=ns.dry_run)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        elif ns.command == "accept-impact-batch":
+            patch = json.loads(ns.patch.read_text(encoding="utf-8"))
+            result = record_impacts_batch(root, patch, dry_run=ns.dry_run)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        elif ns.command == "record-acceptance":
+            result = record_acceptance(root, ns.id, dimension=ns.dimension, state=ns.state,
+                                       evidence=ns.note, checks=ns.check, environment=ns.environment,
+                                       artifact=ns.artifact, sources=ns.source, dry_run=ns.dry_run)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        elif ns.command == "migrate":
+            result = migrate(root, backup=ns.backup, dry_run=ns.dry_run)
+            print(json.dumps({key: value for key, value in result.items() if key not in {"before_ids", "after_ids"}},
+                             ensure_ascii=False, indent=2))
+        elif ns.command == "rollback-migration":
+            rollback_migration(root, backup=ns.backup, migrated_sha256=ns.migrated_sha256)
+            print(f"restored exact backup {ns.backup}")
         else:
             patch = json.loads(ns.patch.read_text(encoding="utf-8"))
             done = stamp(root, patch, base_sha=ns.base_sha, assessed_at=ns.assessed_at, dry_run=ns.dry_run,
@@ -1079,6 +1521,9 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"WARNING: base_sha {done['base_sha']} does not hold these pinned bytes; every other "
                       "checkout reads their rows stale until they are committed:")
                 print("\n".join(f"  UNCOMMITTED {name}" for name in done["uncommitted"]))
+                for receipt in done["local_receipts"]:
+                    print(f"  LOCAL RECEIPT {receipt['id']} HEAD {receipt['head_sha']} "
+                          f"manifest {receipt['source_fingerprint']} untracked={','.join(receipt['untracked']) or '-'}")
             if done["written"]:
                 print("next: python3.12 scripts/hermes_status.py write && python3.12 scripts/hermes_status.py check")
             else:

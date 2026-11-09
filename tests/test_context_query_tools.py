@@ -132,6 +132,227 @@ def test_a_missing_file_is_reported_not_raised(tmp_path: Path):
     assert ledger_tool.main(["--file", str(tmp_path / "nope.json"), "stats"]) == 2
 
 
+def table_fixture(tmp_path: Path) -> Path:
+    sample = tmp_path / "B.md"
+    sample.write_text(
+        "## Horizon work\n"
+        "| ID | Task | Status |\n"
+        "| --- | --- | --- |\n"
+        "| H18.1 ⬜ | Open route; prose says ✅ done later | queued |\n"
+        "| T-0.49 ✅ | Finished task | complete |\n"
+        "| A1 🔨 | Delivered gate | pending runtime proof |\n"
+        "| H18.2 🔴 | Blocked task | owner action |\n"
+        "| H18.3 | Fallback state | 🟢 done |\n"
+        "| P2 | No marker remains open | unknown |\n"
+        "\n## Project history\n"
+        "| ID | Task | Status |\n| --- | --- | --- |\n"
+        "| H99.1 ⬜ | Historical example | open |\n"
+        "\n## Metrics dashboard\n"
+        "| ID | Task | Status |\n| --- | --- | --- |\n"
+        "| T-99.1 ⬜ | Metric row | open |\n"
+        "\n## Evidence snapshot\n"
+        "| ID | Task | Status |\n| --- | --- | --- |\n"
+        "| A99 ⬜ | Evidence row | open |\n"
+        "\n## Unclassified work\n"
+        "| ID | Task | Status |\n| --- | --- | --- |\n"
+        "| task-alpha | Unclassified item | ⬜ |\n"
+        "\n```markdown\n"
+        "## Fenced work\n| ID | Task | Status |\n| --- | --- | --- |\n"
+        "| H88.1 ⬜ | Fenced example | open |\n```\n",
+        encoding="utf-8",
+    )
+    return sample
+
+
+def test_table_counts_classify_leading_markers_and_disclose_unclassified_tables(tmp_path: Path):
+    sample = table_fixture(tmp_path)
+    data = json.loads(run("backlog.py", "--file", str(sample), "tables", "counts", "--json"))
+    assert data["totals"] == {
+        "total": 6, "done": 2, "delivered": 1, "blocked": 1,
+        "open": 2, "open_or_blocked": 3,
+    }
+    assert data["sections"] == [{"section": "Horizon work", **data["totals"]}]
+    assert data["unclassified_tables"] == 1
+    assert data["diagnostics"][0]["section"] == "Unclassified work"
+    assert data["diagnostics"][0]["line"] > 0
+    assert "Unclassified item" not in str(data)
+    assert all(word not in str(data) for word in ("Historical example", "Metric row", "Evidence row", "Fenced example"))
+
+
+def test_table_list_is_bounded_filterable_and_preserves_prose_open(tmp_path: Path):
+    sample = table_fixture(tmp_path)
+    data = json.loads(run("backlog.py", "--file", str(sample), "tables", "list", "--open-only", "--limit", "2", "--json"))
+    assert data["total"] == 3
+    assert [row["id"] for row in data["rows"]] == ["H18.1", "H18.2"]
+    assert data["rows"][0]["status"] == "open"
+    assert data["rows"][0]["line"] == 4
+    assert data["rows"][0]["section"] == "Horizon work"
+    assert len(data["rows"][0]["summary"]) <= backlog_tool.SUMMARY_CHARS
+    filtered = json.loads(run("backlog.py", "--file", str(sample), "tables", "list", "--section", "history", "--json"))
+    assert filtered["total"] == 0
+
+
+def test_table_show_names_exact_ids_and_reports_unknown(tmp_path: Path):
+    sample = table_fixture(tmp_path)
+    shown = json.loads(run("backlog.py", "--file", str(sample), "tables", "show", "T-0.49", "A1", "--json"))
+    assert [row["id"] for row in shown["rows"]] == ["T-0.49", "A1"]
+    assert [row["status"] for row in shown["rows"]] == ["done", "delivered"]
+    assert all(row["section"] == "Horizon work" for row in shown["rows"])
+    assert "Open route" not in str(shown)
+    proc = subprocess.run(  # nosec B603
+        [sys.executable, str(REPO / "scripts" / "backlog.py"), "--file", str(sample), "tables", "show", "H18.9"],
+        capture_output=True, text=True, check=False, cwd=REPO,
+    )
+    assert proc.returncode == 1
+    assert "not found: H18.9" in proc.stderr
+
+
+def test_table_extension_leaves_checkbox_query_output_unchanged(tmp_path: Path):
+    sample = table_fixture(tmp_path)
+    with_checkboxes = tmp_path / "C.md"
+    with_checkboxes.write_text(sample.read_text(encoding="utf-8") + "\n## Checkboxes\n- [ ] **A-1** — open checkbox\n- [x] **A-2** — done checkbox\n", encoding="utf-8")
+    assert run("backlog.py", "--file", str(with_checkboxes), "counts").startswith("rows: 2  done: 1  open: 1")
+    assert "A-1" in run("backlog.py", "--file", str(with_checkboxes), "open")
+    assert "open checkbox" in run("backlog.py", "--file", str(with_checkboxes), "show", "A-1")
+
+
+def test_numbered_item_tables_count_work_ids_in_the_item_column(tmp_path: Path):
+    sample = tmp_path / "B.md"
+    sample.write_text(
+        "## Capability program\n"
+        "| # | Item | S | P |\n| --- | --- | --- | --- |\n"
+        "| 1 | **H27.1 ⬜ — Capability registry** | open | P0 |\n"
+        "| 2 | **H27.2 🔨 — Action API** | delivered | P0 |\n"
+        "| 3 | T-0.49 | ✅ done | P1 |\n"
+        "\n## Evidence snapshot\n"
+        "| # | Item | S | P |\n| --- | --- | --- | --- |\n"
+        "| 1 | H99.1 ⬜ — old evidence | open | P0 |\n",
+        encoding="utf-8",
+    )
+    data = json.loads(run("backlog.py", "--file", str(sample), "tables", "counts", "--json"))
+    assert data["totals"] == {"total": 3, "done": 1, "delivered": 1, "blocked": 0, "open": 1, "open_or_blocked": 1}
+    listed = json.loads(run("backlog.py", "--file", str(sample), "tables", "list", "--json"))
+    assert [row["id"] for row in listed["rows"]] == ["H27.1", "H27.2", "T-0.49"]
+    assert listed["rows"][0]["summary"] == "Capability registry"
+
+
+def test_table_parser_does_not_promote_cross_references_to_item_ids(tmp_path: Path):
+    sample = tmp_path / "B.md"
+    sample.write_text(
+        "## Mobile work\n| # | Item | S |\n| --- | --- | --- |\n"
+        "| 1 | App integration maps to H27.6 | ⬜ |\n"
+        "| 2 | H18.x umbrella remains open | ⬜ |\n"
+        "| 3 | H18.1 ⬜ — Native shell | open |\n",
+        encoding="utf-8",
+    )
+    data = json.loads(run("backlog.py", "--file", str(sample), "tables", "list", "--json"))
+    assert [row["id"] for row in data["rows"]] == ["H18.1"]
+    assert data["unclassified_tables"] == 1
+    assert data["diagnostics"][0]["unclassified_rows"] == 2
+
+
+def test_number_column_can_carry_the_work_id_and_leading_marker(tmp_path: Path):
+    sample = tmp_path / "B.md"
+    sample.write_text(
+        "## Observability work\n| # | Item | S |\n| --- | --- | --- |\n"
+        "| H10.16 ✅ | APM | done |\n"
+        "| H10.17 🔨 | Usage accounting | pending proof |\n"
+        "| H10.18 | Context meter | ⬜ open |\n",
+        encoding="utf-8",
+    )
+    data = json.loads(run("backlog.py", "--file", str(sample), "tables", "list", "--json"))
+    assert [(row["id"], row["status"], row["summary"]) for row in data["rows"]] == [
+        ("H10.16", "done", "APM"),
+        ("H10.17", "delivered", "Usage accounting"),
+        ("H10.18", "open", "Context meter"),
+    ]
+
+
+def test_project_lettered_horizon_and_gate_ids_are_work_items(tmp_path: Path):
+    sample = tmp_path / "B.md"
+    sample.write_text(
+        "## Program work\n| # | Item | S |\n| --- | --- | --- |\n"
+        "| O26-P0.1 ✅ | Golden loop | complete |\n"
+        "| H20.L1 🔨 | Iteration budget | pending proof |\n"
+        "| H21.A 🔴 | Secret handoff | owner blocked |\n"
+        "| H20.M3a ✅ | Execution primitive | complete |\n"
+        "| **Gate K** ✅ | Action-auth gate | complete |\n",
+        encoding="utf-8",
+    )
+    data = json.loads(run("backlog.py", "--file", str(sample), "tables", "list", "--json"))
+    assert [(row["id"], row["status"]) for row in data["rows"]] == [
+        ("O26-P0.1", "done"), ("H20.L1", "delivered"), ("H21.A", "blocked"),
+        ("H20.M3a", "done"), ("Gate K", "done"),
+    ]
+
+
+def test_table_queries_reject_unbounded_lists_and_ambiguous_ids(tmp_path: Path):
+    sample = tmp_path / "B.md"
+    sample.write_text(
+        "## Tasks\n| ID | Task |\n| --- | --- |\n"
+        "| H18.1 ⬜ | First |\n| H18.1 ✅ | Second |\n",
+        encoding="utf-8",
+    )
+    counts = json.loads(run("backlog.py", "--file", str(sample), "tables", "counts", "--json"))
+    assert counts["duplicate_ids"] == 1
+    assert counts["duplicate_examples"] == [{"id": "H18.1", "lines": [4, 5]}]
+    for args, message in [(("list", "--limit", "501"), "--limit must be between"),
+                          (("show", "H18.1"), "ambiguous id: H18.1")]:
+        proc = subprocess.run(  # nosec B603
+            [sys.executable, str(REPO / "scripts" / "backlog.py"), "--file", str(sample), "tables", *args],
+            capture_output=True, text=True, check=False, cwd=REPO,
+        )
+        assert proc.returncode == 2
+        assert message in proc.stderr
+
+
+def test_nested_history_and_metrics_are_excluded_but_active_metrics_work_is_visible(tmp_path: Path):
+    sample = tmp_path / "B.md"
+    sample.write_text(
+        "## Project history\n### Archived tasks\n"
+        "| ID | Task | Status |\n| --- | --- | --- |\n"
+        "| H99.1 ⬜ | Historical task | open |\n"
+        "## Metrics dashboard\n### Latest indicators\n"
+        "| ID | Task | Status |\n| --- | --- | --- |\n"
+        "| H99.2 ⬜ | Metric indicator | open |\n"
+        "## Active delivery\n"
+        "| ID | Task | Status |\n| --- | --- | --- |\n"
+        "| H18.1 ⬜ | Current work | open |\n"
+        "## Observability metrics integration\n"
+        "| ID | Task | Status |\n| --- | --- | --- |\n"
+        "| H18.2 ⬜ | Current metric instrumentation | open |\n",
+        encoding="utf-8",
+    )
+    data = json.loads(run("backlog.py", "--file", str(sample), "tables", "list", "--json"))
+    assert [row["id"] for row in data["rows"]] == ["H18.1", "H18.2"]
+    assert data["excluded_tables"] == 2
+    assert [(row["section"], row["excluded_by"]) for row in data["excluded_diagnostics"]] == [
+        ("Archived tasks", "Project history"), ("Latest indicators", "Metrics dashboard"),
+    ]
+    history = json.loads(run("backlog.py", "--file", str(sample), "tables", "counts", "--section", "history", "--json"))
+    assert history["totals"]["total"] == 0
+    assert history["excluded_tables"] == 1
+
+
+def test_unknown_ids_in_ranked_work_table_emit_a_bounded_diagnostic(tmp_path: Path):
+    sample = tmp_path / "B.md"
+    sample.write_text(
+        "## Active delivery\n"
+        "| Rank | Item | Status |\n| --- | --- | --- |\n"
+        "| 1 | alpha-login | ⬜ open |\n"
+        "| 2 | beta-session | 🔴 blocked |\n",
+        encoding="utf-8",
+    )
+    data = json.loads(run("backlog.py", "--file", str(sample), "tables", "counts", "--json"))
+    assert data["totals"]["total"] == 0
+    assert data["unclassified_tables"] == 1
+    assert data["diagnostics"] == [{
+        "section": "Active delivery", "line": 2, "header": "Rank | Item | Status",
+        "unclassified_rows": 2, "sample_key": "alpha-login", "sample_number": "1",
+        "mentioned_ids": [], "status_hints": {"done": 0, "delivered": 0, "blocked": 1, "open": 1},
+    }]
+
+
 # ── the ledger tool ──────────────────────────────────────────────────────────
 
 def test_ledger_stats_reports_the_numbers_the_file_records():

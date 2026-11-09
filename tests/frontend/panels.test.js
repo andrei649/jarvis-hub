@@ -41,6 +41,22 @@ describe('SystemsPanel', () => {
   let env;
   afterEach(() => env && env.cleanup());
 
+  it('Learning read carries the user token through the shipped same-origin auth wrapper', async () => {
+    const fetcher = systemsBackend();
+    env = loadHud({ files: ['auth', 'i18n', 'data', 'components', 'systems'], expose: ['SystemsPanel'], fetch: fetcher, lang: 'ro' });
+    env.window.localStorage.setItem('hud.user_token', 'user-token');
+    const { container } = env.render(env.React.createElement(env.hud.SystemsPanel, { agents: [], onRefresh: vi.fn() }));
+    await env.flush();
+    const read = fetcher.mock.calls.find((c) => c[0] === '/learning/stats');
+    expect(read).toBeTruthy();
+    expect(read[1].headers.get('X-User-Token')).toBe('user-token');
+    expect(read[1].headers.get('X-Admin-Token')).toBeNull();
+    expect(container.querySelector('.sys-tab-bar')).not.toBeNull();
+    await env.window.fetch('https://external.example/test');
+    const external = fetcher.mock.calls.find((c) => c[0] === 'https://external.example/test');
+    expect(external[1]?.headers?.get?.('X-User-Token')).toBeUndefined();
+  });
+
   it('mounts and sweeps every tab without crashing', async () => {
     const fetch = systemsBackend();
     env = loadHud({ files: ['i18n', 'data', 'components', 'systems'], expose: ['SystemsPanel'], fetch, lang: 'ro' });

@@ -176,6 +176,655 @@ def pins(report: dict) -> dict[str, dict]:
     return {pin["path"]: pin for pin in report["pins"]}
 
 
+def test_status_summary_ref_reads_committed_inventory_assessment_and_evidence(repo, monkeypatch, capsys):
+    monkeypatch.setattr(hs, "REPO", repo.root)
+    assert hs.main(["summary", "--json", "--ref", repo.c1]) == 0
+    old = json.loads(capsys.readouterr().out)
+    assert old["source"] == {"kind": "committed_ref", "ref": repo.c1, "sha": repo.c1}
+    assert old["reviewed"] == 3
+    assert old["counts"]["needs_review"] == 2  # reopened excluded scope, not evidence drift
+
+    assert hs.main(["summary", "--json", "--ref", repo.c3]) == 0
+    recent = json.loads(capsys.readouterr().out)
+    assert recent["source"]["sha"] == repo.c3
+    assert recent["reviewed"] == 1
+    assert recent["counts"]["needs_review"] == 4
+
+    put(repo.root, "agents/core/stable.py", ["def changed_only_in_worktree():", "    return False"])
+    assert hs.main(["summary", "--json", "--ref", repo.c1]) == 0
+    assert json.loads(capsys.readouterr().out) == old
+    assert hs.main(["summary", "--json"]) == 0
+    working = json.loads(capsys.readouterr().out)
+    assert working["total"] == len(CAPS)  # Never combine this root with the real checkout's records.
+    assert working["reviewed"] == 0
+    assert working["source"]["kind"] == "working_tree"
+    assert working["source"]["head_sha"] == repo.c3
+    assert working["source"]["worktree_uncommitted"] is True
+    assert working["source"]["assessment_sha256"] == hashlib.sha256(
+        (repo.root / hs.ASSESSMENT).read_bytes()).hexdigest()
+
+
+def test_status_summary_ref_rejects_unknown_ref_without_checkout(repo, monkeypatch, capsys):
+    monkeypatch.setattr(hs, "REPO", repo.root)
+    before = git(repo.root, "status", "--porcelain")
+    assert hs.main(["summary", "--ref", "no-such-ref"]) == 2
+    assert "unknown commit ref" in capsys.readouterr().err
+    assert git(repo.root, "status", "--porcelain") == before
+
+
+def test_v3_migration_is_versioned_backed_up_and_credit_neutral(repo):
+    target = repo.root / hs.ASSESSMENT
+    before = target.read_bytes()
+    old = hs.metrics(hs.assess(*hs.load(repo.root), repo.root))
+    backup = repo.tmp / "assessment.v2.exact.json"
+    preview = hr.migrate(repo.root, backup=backup, dry_run=True)
+    assert preview["before_credited_ids"] == preview["after_credited_ids"]
+    assert target.read_bytes() == before and not backup.exists()
+    written = hr.migrate(repo.root, backup=backup)
+    data = hs.load(repo.root)[1]
+    assert written["written"] and backup.read_bytes() == before
+    assert data["schema_version"] == 3
+    assert data["review_history"] == [] and data["impact_receipts"] == []
+    assert data["acceptance"] == [] and data["local_receipts"] == []
+    assert hs.metrics(hs.assess(*hs.load(repo.root), repo.root))["counts"] == old["counts"]
+    assert hr.rollback_migration(repo.root, backup=backup, migrated_sha256=written["migrated_sha256"])
+    assert target.read_bytes() == before
+
+
+def test_migration_rollback_refuses_post_migration_edits_and_preserves_backup(repo):
+    target = repo.root / hs.ASSESSMENT
+    backup = repo.tmp / "assessment.v2.exact.json"
+    result = hr.migrate(repo.root, backup=backup)
+    old = backup.read_bytes()
+    data = hs.load(repo.root)[1]
+    data["acceptance"].append({"unexpected": "edit"})
+    save(repo.root, data)
+    changed = target.read_bytes()
+    with pytest.raises(hr.Refused, match="differs"):
+        hr.rollback_migration(repo.root, backup=backup, migrated_sha256=result["migrated_sha256"])
+    assert target.read_bytes() == changed and backup.read_bytes() == old
+
+
+def test_v3_stamp_retains_exact_superseded_review(repo):
+    backup = repo.tmp / "assessment.v2.exact.json"
+    hr.migrate(repo.root, backup=backup)
+    before = next(r for r in hs.load(repo.root)[1]["reviews"] if r["id"] == "H002")
+    hr.stamp(repo.root, [reread_h002()], allow_uncommitted=True)
+    data = hs.load(repo.root)[1]
+    assert data["review_history"][0]["review"] == before
+    assert data["review_history"][0]["replacement_sha256"] == hs.digest(
+        next(r for r in data["reviews"] if r["id"] == "H002"))
+
+
+def test_impact_receipt_requires_explicit_checks_and_invalidates_on_later_edit(repo):
+    hr.migrate(repo.root, backup=repo.tmp / "assessment.v2.exact.json")
+    put(repo.root, EXAMPLE, [*V1, "UNRELATED = 1"])
+    before = hs.metrics(hs.assess(*hs.load(repo.root), repo.root))
+    assert before["counts"]["needs_review"] == 4
+    proposal = hr.impact(repo.root, "H002")
+    assert proposal["proposal"] == "unrelated"
+    with pytest.raises(hr.Refused, match="checks"):
+        hr.record_impact(repo.root, "H002", classification="unrelated", reason="Inspected dependency diff", checks=[])
+    receipt = hr.record_impact(repo.root, "H002", classification="unrelated",
+                               reason="Read the full registry contract and affected tests",
+                               checks=["Registry dispatch and affected tests rechecked against source"],
+                               dependencies=["agents/core/stable.py"])
+    assert receipt["written"] and receipt["worktree_uncommitted"]
+    data = hs.load(repo.root)[1]
+    rows = {row["id"]: row for row in hs.assess(repo.ledger, data, repo.root)}
+    assert rows["H002"]["status"] == "partial" and rows["H002"]["impact"] == "accepted"
+    assert rows["H002"]["freshness"] == "changed"
+    put(repo.root, "docs/unrelated-handoff.md", ["Unrelated documentation change"])
+    rows = {row["id"]: row for row in hs.assess(repo.ledger, hs.load(repo.root)[1], repo.root)}
+    assert rows["H002"]["status"] == "partial" and rows["H002"]["impact"] == "accepted"
+    put(repo.root, "agents/core/stable.py", ["def changed_dependency():", "    return False"])
+    rows = {row["id"]: row for row in hs.assess(repo.ledger, hs.load(repo.root)[1], repo.root)}
+    assert rows["H002"]["status"] == "needs_review"  # outside its cited lines can still matter
+    put(repo.root, EXAMPLE, [*V1, "UNRELATED = 1", "LATER = 1"])
+    rows = {row["id"]: row for row in hs.assess(repo.ledger, hs.load(repo.root)[1], repo.root)}
+    assert rows["H002"]["status"] == "needs_review" and rows["H002"]["impact"] == "pending"
+
+
+def _accepted_extra_dependency(repo):
+    hr.migrate(repo.root, backup=repo.tmp / "assessment.v2.exact.json")
+    put(repo.root, EXAMPLE, [*V1, "UNRELATED = 1"])
+    return hr.record_impact(repo.root, "H002", classification="unrelated",
+                            reason="Reviewed registry and explicit dependency",
+                            checks=["Inspected unchanged dispatch and dependency contract"],
+                            dependencies=["agents/core/stable.py"])
+
+
+def test_original_evidence_hash_cannot_hide_a_changed_explicit_dependency(repo):
+    _accepted_extra_dependency(repo)
+    put(repo.root, EXAMPLE, V1)
+    put(repo.root, "agents/core/stable.py", ["def changed_dependency():", "    return False"])
+    rows = {row["id"]: row for row in hs.assess(repo.ledger, hs.load(repo.root)[1], repo.root)}
+    assert rows["H002"]["recorded_status"] == "partial"
+    assert rows["H002"]["status"] == "needs_review"
+    assert rows["H002"]["impact"] == "pending"
+
+
+def test_grouped_context_preserves_the_active_dependency_footprint(repo):
+    receipt = _accepted_extra_dependency(repo)
+    report = hr.impacts(repo.root, ["H002"], include_context=True)[0]
+    assert report["context"]["dependency_paths"] == sorted(receipt["paths"])
+    assert "agents/core/stable.py" in report["context"]["dependency_paths"]
+    assert report["credit_restored"] is False
+
+
+@pytest.mark.parametrize("batch", [False, True])
+def test_later_impact_cannot_silently_drop_an_explicit_dependency(repo, batch):
+    _accepted_extra_dependency(repo)
+    put(repo.root, EXAMPLE, [*V1, "UNRELATED = 2"])
+    put(repo.root, "agents/core/stable.py", ["def changed_dependency():", "    return False"])
+    target = repo.root / hs.ASSESSMENT
+    before = target.read_bytes()
+    decision = {"id": "H002", "classification": "unrelated",
+                "reason": "Rechecked the current registry contract",
+                "checks": ["Inspected the registry diff"], "dependencies": []}
+
+    def accept():
+        if batch:
+            return hr.record_impacts_batch(repo.root, [decision])
+        return hr.record_impact(repo.root, decision["id"], **{
+            key: value for key, value in decision.items() if key != "id"})
+
+    with pytest.raises(hr.Refused, match="previously reviewed dependenc"):
+        accept()
+    assert target.read_bytes() == before
+    assert hs.assess(repo.ledger, hs.load(repo.root)[1], repo.root)[1]["status"] == "needs_review"
+
+    decision["dependencies"] = ["agents/core/stable.py"]
+    decision["checks"].append("Rechecked the explicitly retained dependency contract")
+    accept()
+    data = hs.load(repo.root)[1]
+    assert len(data["impact_receipts"]) == 2
+    assert all("agents/core/stable.py" in receipt["paths"] for receipt in data["impact_receipts"])
+    assert "agents/core/stable.py" in hr.impacts(
+        repo.root, ["H002"], include_context=True)[0]["context"]["dependency_paths"]
+    put(repo.root, "agents/core/stable.py", ["def changed_again():", "    return True"])
+    assert hs.assess(repo.ledger, hs.load(repo.root)[1], repo.root)[1]["status"] == "needs_review"
+
+
+def test_impact_missing_relevant_and_unknown_proposals_never_restore_credit(repo):
+    hr.migrate(repo.root, backup=repo.tmp / "assessment.v2.exact.json")
+    assert hr.impact(repo.root, "H004")["proposal"] == "missing"
+    data = hs.load(repo.root)[1]
+    next(item for item in data["reviews"] if item["id"] == "H002")["summary"] = "Registry beta agents/core/example.py:8 changed."
+    save(repo.root, data)
+    assert hr.impact(repo.root, "H002")["proposal"] == "relevant"
+    for ident in ("H004", "H002"):
+        with pytest.raises(hr.Refused, match="needs a new contract review"):
+            hr.record_impact(repo.root, ident, classification="unrelated", reason="Checked contract",
+                             checks=["All relevant paths inspected"])
+    next(item for item in data["reviews"] if item["id"] == "H002")["summary"] = "Contract still incomplete."
+    save(repo.root, data)
+    assert hr.impact(repo.root, "H002")["proposal"] == "unknown"
+    assert hs.assess(repo.ledger, data, repo.root)[1]["status"] == "needs_review"
+
+
+def test_batch_impact_matches_individual_citations_and_proposals_with_one_load(repo, monkeypatch):
+    expected = [hr.impact(repo.root, ident) for ident in ("H002", "H004")]
+    assert expected[1]["proposal"] == "missing"
+    calls = {"load": 0, "assess": 0}
+    original_load, original_assess = hs.load, hs.assess
+
+    def counted_load(*args, **kwargs):
+        calls["load"] += 1
+        return original_load(*args, **kwargs)
+
+    def counted_assess(*args, **kwargs):
+        calls["assess"] += 1
+        return original_assess(*args, **kwargs)
+
+    monkeypatch.setattr(hs, "load", counted_load)
+    monkeypatch.setattr(hs, "assess", counted_assess)
+    assert hr.impacts(repo.root, ["h002", "H004", "H002"]) == expected
+    assert calls == {"load": 1, "assess": 1}
+
+
+def test_impact_context_queries_frozen_rows_once_without_changing_credit_or_history(repo, monkeypatch, capsys):
+    target = repo.root / hs.ASSESSMENT
+    before = target.read_bytes()
+    expected = hr.impacts(repo.root, ["H002", "H005"])
+    historical_reviews = hs.load(repo.root)[1]["reviews"]
+    load, calls = hs.load, []
+
+    def counted(root):
+        calls.append(root)
+        return load(root)
+
+    monkeypatch.setattr(hs, "load", counted)
+    assert hr.main(["--root", str(repo.root), "impact", "H002", "H005", "--context", "--json"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert calls == [repo.root]
+    for report, plain in zip(result, expected, strict=True):
+        context = report.pop("context")
+        index = int(report["id"][1:]) - 1
+        assert context["original"] == repo.ledger["capabilities"][index]
+        historical = next(row for row in historical_reviews if row["id"] == report["id"])
+        assert context["recorded_remaining"] == historical["remaining"]
+        assert context["recorded_review_sha256"] == hs.digest(historical)
+        assert report == plain and report["credit_restored"] is False
+    assert target.read_bytes() == before
+
+
+def test_batch_impact_names_unknown_ids_and_unreviewed_rows(repo, capsys):
+    for ident, phrase in (("H999", "unknown row: H999"),
+                          ("H003", "H003 has no review")):
+        assert hr.main(["--root", str(repo.root), "impact", "H002", ident, "--json"]) == 1
+        captured = capsys.readouterr()
+        assert captured.out == "" and phrase in captured.err
+
+
+def test_impact_cli_batch_and_all_stale_shapes_are_read_only(repo, capsys):
+    assert hr.main(["--root", str(repo.root), "impact", "H002", "--json"]) == 0
+    assert isinstance(json.loads(capsys.readouterr().out), dict)
+    assert hr.main(["--root", str(repo.root), "impact", "H002", "H004", "--json"]) == 0
+    batch = json.loads(capsys.readouterr().out)
+    assert isinstance(batch, list) and [row["id"] for row in batch] == ["H002", "H004"]
+    assert batch[1]["proposal"] == "missing" and batch[1]["credit_restored"] is False
+    assert hr.main(["--root", str(repo.root), "impact", "--all-stale", "--json"]) == 0
+    stale = json.loads(capsys.readouterr().out)
+    assert [row["id"] for row in stale] == ["H002", "H004"]
+    assert hr.main(["--root", str(repo.root), "impact", "H002", "H004"]) == 0
+    assert "H002: proposed" in capsys.readouterr().out
+    script = Path(hr.__file__)
+    done = subprocess.run([sys.executable, str(script), "--root", str(repo.root),
+                           "impact", "H002", "H004", "--json"], capture_output=True,
+                          text=True, check=False)
+    assert done.returncode == 0 and [row["id"] for row in json.loads(done.stdout)] == ["H002", "H004"]
+    assert done.stderr == ""
+
+
+def test_impact_ids_and_all_stale_are_mutually_exclusive(repo, capsys):
+    for args in ([], ["H002", "--all-stale"]):
+        with pytest.raises(SystemExit, match="2"):
+            hr.main(["--root", str(repo.root), "impact", *args])
+        assert "impact takes row ids or --all-stale" in capsys.readouterr().err
+
+
+def _ready_impact_batch(repo, *, migrate=True):
+    if migrate:
+        hr.migrate(repo.root, backup=repo.tmp / "assessment.v2.exact.json")
+    put(repo.root, EXAMPLE, [*V1, "UNRELATED = 1"])
+    data = hs.load(repo.root)[1]
+    item = next(review for review in data["reviews"] if review["id"] == "H004")
+    item["evidence"] = [entry for entry in item["evidence"] if entry["path"] == "agents/core/old_name.py"]
+    item["summary"] = "The stub moved from old_name.py:2."
+    save(repo.root, data)
+    return [
+        {"id": "H002", "classification": "unrelated", "reason": "Read registry dispatch and tests",
+         "checks": ["Registry contract and affected tests inspected"],
+         "dependencies": ["agents/core/stable.py"]},
+        {"id": "H004", "classification": "moved", "reason": "Read moved stub and missing contract",
+         "checks": ["New stub still raises NotImplementedError"],
+         "dependencies": ["agents/core/new_name.py"]},
+    ]
+
+
+def test_atomic_batch_impact_matches_single_receipts_and_retains_history(repo, monkeypatch):
+    patch = _ready_impact_batch(repo)
+    put(repo.root, "agents/core/stable.py", [*FILES["agents/core/stable.py"], "UNRELATED = 1"])
+    old = hr.record_impact(repo.root, "H005", classification="unrelated", reason="Read stable source",
+                           checks=["Stable contract and tests inspected"])
+    singles = [hr.record_impact(repo.root, entry["id"], classification=entry["classification"],
+                                reason=entry["reason"], checks=entry["checks"],
+                                dependencies=entry["dependencies"], dry_run=True) for entry in patch]
+    calls = {"load": 0}
+    original_load = hs.load
+
+    def counted_load(*args, **kwargs):
+        calls["load"] += 1
+        return original_load(*args, **kwargs)
+
+    monkeypatch.setattr(hs, "load", counted_load)
+    preview = hr.record_impacts_batch(repo.root, patch, dry_run=True)
+    assert calls == {"load": 1}
+    assert preview["written"] is False
+    assert [{key: value for key, value in receipt.items() if key != "accepted_at"}
+            for receipt in preview["receipts"]] == [
+                {key: value for key, value in receipt.items() if key not in {"accepted_at", "written"}}
+                for receipt in singles]
+    assert len(original_load(repo.root)[1]["impact_receipts"]) == 1
+
+    result = hr.record_impacts_batch(repo.root, patch)
+    assert result["written"] is True
+    data = original_load(repo.root)[1]
+    assert data["impact_receipts"][0] == {key: value for key, value in old.items() if key != "written"}
+    assert [row["id"] for row in data["impact_receipts"]] == ["H005", "H002", "H004"]
+    rows = {row["id"]: row for row in hs.assess(repo.ledger, data, repo.root)}
+    assert rows["H002"]["basis"] == rows["H004"]["basis"] == "impact_accepted"
+
+
+@pytest.mark.parametrize("bad_patch", [
+    lambda rows: [rows[0], rows[0]],
+    lambda rows: [rows[0], {**rows[1], "id": "H999"}],
+    lambda rows: [rows[0], {**rows[1], "classification": "unrelated"}],
+    lambda rows: [rows[0], {**rows[1], "dependencies": []}],
+    lambda rows: [rows[0], {**rows[1], "dependencies": ["agents/core/new_name.py"] * 2}],
+    lambda rows: [rows[0], {**rows[1], "checks": []}],
+], ids=["duplicate", "unknown", "wrong-proposal", "moved-without-path", "repeated-path",
+        "missing-checks"])
+def test_batch_impact_refuses_entire_invalid_patch_without_writing(repo, bad_patch):
+    patch = _ready_impact_batch(repo)
+    target = repo.root / hs.ASSESSMENT
+    before = target.read_bytes()
+    with pytest.raises((hr.Refused, hr.UnknownRow)):
+        hr.record_impacts_batch(repo.root, bad_patch(patch))
+    assert target.read_bytes() == before
+
+
+@pytest.mark.parametrize("summary,proposal", [
+    ("Registry beta agents/core/example.py:8 changed.", "relevant"),
+    ("Contract remains incomplete.", "unknown"),
+])
+def test_batch_impact_refuses_relevant_and_unknown_proposals(repo, summary, proposal):
+    patch = _ready_impact_batch(repo)
+    data = hs.load(repo.root)[1]
+    next(review for review in data["reviews"] if review["id"] == "H002")["summary"] = summary
+    save(repo.root, data)
+    if proposal == "relevant":
+        put(repo.root, EXAMPLE, V3)
+    target = repo.root / hs.ASSESSMENT
+    before = target.read_bytes()
+    assert hr.impact(repo.root, "H002")["proposal"] == proposal
+    with pytest.raises(hr.Refused, match="needs a new contract review"):
+        hr.record_impacts_batch(repo.root, patch)
+    assert target.read_bytes() == before
+
+
+def test_batch_impact_refuses_missing_proposals_and_changed_source(repo, monkeypatch):
+    hr.migrate(repo.root, backup=repo.tmp / "assessment.v2.exact.json")
+    target = repo.root / hs.ASSESSMENT
+    before = target.read_bytes()
+    patch = [{"id": "H004", "classification": "unrelated", "reason": "Inspected source",
+              "checks": ["Contract checked"], "dependencies": []}]
+    with pytest.raises(hr.Refused, match="needs a new contract review"):
+        hr.record_impacts_batch(repo.root, patch)
+    assert target.read_bytes() == before
+
+    # The source changes after proposal/receipt construction but before publish.
+    patch = _ready_impact_batch(repo, migrate=False)
+    before = target.read_bytes()
+    original_assess = hs.assess
+    calls = 0
+
+    def mutate_after_final_assessment(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        result = original_assess(*args, **kwargs)
+        if calls == 2:
+            put(repo.root, EXAMPLE, [*V1, "UNRELATED = 1", "CHANGED_DURING_REVIEW = 1"])
+        return result
+
+    monkeypatch.setattr(hs, "assess", mutate_after_final_assessment)
+    with pytest.raises(hr.Refused, match="source.*changed|revision"):
+        hr.record_impacts_batch(repo.root, patch)
+    assert target.read_bytes() == before
+
+
+def test_batch_impact_refuses_concurrent_assessment_edit_and_cli_patch_is_reachable(repo, monkeypatch,
+                                                                                    capsys):
+    patch = _ready_impact_batch(repo)
+    source = repo.tmp / "explicit-impact.json"
+    source.write_text(json.dumps(patch), encoding="utf-8")
+    assert hr.main(["--root", str(repo.root), "accept-impact-batch", "--patch", str(source),
+                    "--dry-run"]) == 0
+    assert json.loads(capsys.readouterr().out)["written"] is False
+
+    target = repo.root / hs.ASSESSMENT
+    original_provenance = hs.worktree_provenance
+
+    def concurrent_edit(*args, **kwargs):
+        value = original_provenance(*args, **kwargs)
+        target.write_bytes(target.read_bytes() + b"\n")
+        return value
+
+    monkeypatch.setattr(hs, "worktree_provenance", concurrent_edit)
+    with pytest.raises(hr.Refused, match="assessment changed"):
+        hr.record_impacts_batch(repo.root, patch)
+    assert target.read_bytes().endswith(b"\n\n"), "external edit must not be overwritten"
+
+
+def test_moved_impact_uses_explicit_new_path_manifest(repo):
+    hr.migrate(repo.root, backup=repo.tmp / "assessment.backup")
+    data = hs.load(repo.root)[1]
+    item = next(review for review in data["reviews"] if review["id"] == "H004")
+    item["evidence"] = [entry for entry in item["evidence"] if entry["path"] == "agents/core/old_name.py"]
+    item["summary"] = "The stub moved from old_name.py:2."
+    save(repo.root, data)
+    assert hr.impact(repo.root, "H004")["proposal"] == "moved"
+    receipt = hr.record_impact(repo.root, "H004", classification="moved",
+                               reason="Inspected the moved stub and original missing contract",
+                               checks=["Read new_name.py and verified it still raises NotImplementedError"],
+                               dependencies=["agents/core/new_name.py"])
+    assert receipt["paths"] == ["agents/core/old_name.py", "agents/core/new_name.py"]
+    row = hs.assess(repo.ledger, hs.load(repo.root)[1], repo.root)[3]
+    assert row["status"] == "missing" and row["impact"] == "accepted"
+    assert "istorice" in row["citation_note"]
+    put(repo.root, "agents/core/new_name.py", ["def stub():", "    return 1"])
+    row = hs.assess(repo.ledger, hs.load(repo.root)[1], repo.root)[3]
+    assert row["status"] == "needs_review" and row["impact"] == "pending"
+
+
+def test_reviewed_manifest_accepts_only_tracked_root_environment_example(repo):
+    put(repo.root, ".env.example", ["PUBLIC_SETTING=example"])
+    with pytest.raises(ValueError, match="private/runtime"):
+        hs.manifest_fingerprint(repo.root, [".env.example"])
+    git(repo.root, "add", ".env.example")
+    git(repo.root, "commit", "-m", "Add public configuration template")
+    local = hs.manifest_fingerprint(repo.root, [".env.example"])
+    committed = hs.manifest_fingerprint(repo.root, [".env.example"],
+                                        tree=hs.GitTree(repo.root, "HEAD"))
+    assert local == committed
+    put(repo.root, ".env.example", ["PUBLIC_SETTING=changed"])
+    assert hs.manifest_fingerprint(repo.root, [".env.example"]) != committed
+
+
+@pytest.mark.parametrize("name", [".env", ".env.local", ".env.production",
+                                  ".env.example.local", "docs/.env.example"])
+def test_tracked_environment_files_remain_private_manifest_inputs(repo, name):
+    put(repo.root, name, ["PRIVATE_PLACEHOLDER=not-a-real-credential"])
+    git(repo.root, "add", "--", name)
+    git(repo.root, "commit", "-m", "Add isolated refusal fixture")
+    with pytest.raises(ValueError, match="private/runtime"):
+        hs.manifest_fingerprint(repo.root, [name])
+
+
+def test_new_manifest_paths_must_exist_and_cannot_self_reference_generated_reports(repo):
+    hr.migrate(repo.root, backup=repo.tmp / "assessment.backup")
+    put(repo.root, EXAMPLE, [*V1, "UNRELATED = 1"])
+    for path in ("agents/core/absent_dependency.py", hs.ASSESSMENT, "HERMES_STATUS.md"):
+        with pytest.raises(hr.Refused, match="missing|generated|regular"):
+            hr.record_impact(repo.root, "H002", classification="unrelated", reason="Reviewed source",
+                             checks=["Affected contract test inspected"], dependencies=[path])
+        with pytest.raises(hr.Refused, match="missing|generated|regular"):
+            hr.record_acceptance(repo.root, "H002", dimension="runtime", state="verified",
+                                 evidence=["tests/test_example.py::test_example"],
+                                 checks=["pytest tests/test_example.py"], environment="local synthetic",
+                                 sources=[path])
+    assert hs.load(repo.root)[1]["impact_receipts"] == []
+    assert hs.load(repo.root)[1]["acceptance"] == []
+    put(repo.root, ".gitignore", ["agents/core/ignored.py"])
+    put(repo.root, "agents/core/ignored.py", ["def ignored():", "    return 1"])
+    with pytest.raises(hr.Refused, match="gitignored"):
+        hr.record_impact(repo.root, "H002", classification="unrelated", reason="Reviewed source",
+                         checks=["Affected contract test inspected"],
+                         dependencies=["agents/core/ignored.py"])
+
+
+def test_deletion_after_valid_manifest_is_stale_not_assessment_error(repo):
+    hr.migrate(repo.root, backup=repo.tmp / "assessment.backup")
+    hr.record_acceptance(repo.root, "H002", dimension="runtime", state="verified",
+                         evidence=["tests/test_example.py::test_example"],
+                         checks=["pytest tests/test_example.py"], environment="local synthetic",
+                         sources=["agents/core/stable.py"])
+    (repo.root / "agents/core/stable.py").unlink()
+    rows = hs.assess(repo.ledger, hs.load(repo.root)[1], repo.root)
+    assert rows[1]["acceptance_freshness"]["runtime"] == "stale"
+
+
+def test_acceptance_aggregates_distinct_platform_scopes_without_hiding_pending(repo):
+    hr.migrate(repo.root, backup=repo.tmp / "assessment.backup")
+    hr.record_acceptance(repo.root, "H002", dimension="platform", state="required_pending",
+                         evidence=["Windows device validation outstanding"], environment="Windows")
+    hr.record_acceptance(repo.root, "H002", dimension="platform", state="verified",
+                         evidence=["tests/test_example.py::test_example"],
+                         checks=["pytest tests/test_example.py"], environment="macOS",
+                         sources=["agents/core/stable.py"])
+    rows = hs.assess(repo.ledger, hs.load(repo.root)[1], repo.root)
+    row = rows[1]
+    assert row["acceptance"]["platform"] == "required_pending"
+    assert {(scope["environment"], scope["state"]) for scope in row["acceptance_scopes"]["platform"]} == {
+        ("Windows", "required_pending"), ("macOS", "verified")}
+    assert hs.metrics(rows)["required_pending_scope_counts"]["platform"] == 1
+
+    hr.record_acceptance(repo.root, "H002", dimension="platform", state="verified",
+                         evidence=["tests/test_example.py::test_example"],
+                         checks=["pytest tests/test_example.py"], environment="Windows",
+                         sources=["agents/core/stable.py"])
+    rows = hs.assess(repo.ledger, hs.load(repo.root)[1], repo.root)
+    assert rows[1]["acceptance"]["platform"] == "verified"
+    assert hs.metrics(rows)["required_pending_scope_counts"]["platform"] == 0
+    assert len(hs.load(repo.root)[1]["acceptance"]) == 3  # all historical events retained
+
+
+def test_unknown_scope_pending_is_not_cleared_by_named_verification(repo):
+    hr.migrate(repo.root, backup=repo.tmp / "assessment.backup")
+    hr.record_acceptance(repo.root, "H002", dimension="provider", state="required_pending",
+                         evidence=["Provider scope still unidentified"])
+    hr.record_acceptance(repo.root, "H002", dimension="provider", state="verified",
+                         evidence=["tests/test_example.py::test_example"],
+                         checks=["pytest tests/test_example.py"], environment="Synthetic local provider",
+                         sources=["agents/core/stable.py"])
+    row = hs.assess(repo.ledger, hs.load(repo.root)[1], repo.root)[1]
+    assert row["acceptance"]["provider"] == "required_pending"
+    assert {scope["environment"] for scope in row["acceptance_scopes"]["provider"]} == {
+        "", "Synthetic local provider"}
+
+
+def test_migration_and_impact_cli_are_reachable_and_report_acceptance_axes(repo, capsys):
+    backup = repo.tmp / "assessment.backup"
+    assert hr.main(["--root", str(repo.root), "migrate", "--backup", str(backup), "--dry-run"]) == 0
+    assert not backup.exists()
+    assert hr.main(["--root", str(repo.root), "migrate", "--backup", str(backup)]) == 0
+    assert backup.exists()
+    capsys.readouterr()
+    put(repo.root, EXAMPLE, [*V1, "UNRELATED = 1"])
+    assert hr.main(["--root", str(repo.root), "impact", "H002", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["proposal"] == "unrelated"
+    assert hr.main(["--root", str(repo.root), "accept-impact", "H002", "--classification", "unrelated",
+                    "--reason", "Checked dependency paths", "--check", "Registry and tests inspected"]) == 0
+    data = hs.load(repo.root)[1]
+    rows = hs.assess(repo.ledger, data, repo.root)
+    result = hs.metrics(rows)
+    assert result["impact_counts"]["accepted"] == 1
+    assert result["acceptance_counts"]["runtime"] == {"unrecorded": len(CAPS)}
+    assert hr.main(["--root", str(repo.root), "record-acceptance", "H002", "--dimension", "runtime",
+                    "--state", "required_pending", "--note", "Live worker not available yet"]) == 0
+    rows = hs.assess(repo.ledger, hs.load(repo.root)[1], repo.root)
+    assert rows[1]["acceptance"]["runtime"] == "required_pending"
+    assert rows[1]["acceptance"]["provider"] == "unrecorded"
+
+
+def test_verified_acceptance_requires_scope_checks_and_binding_then_becomes_stale(repo):
+    hr.migrate(repo.root, backup=repo.tmp / "assessment.backup")
+    with pytest.raises(hr.Refused, match="environment|check"):
+        hr.record_acceptance(repo.root, "H002", dimension="runtime", state="verified",
+                             evidence=["tests/test_example.py::test_example"])
+    artifact = put(repo.tmp, "run.xml", b"<testsuite tests='1' failures='0'/>")
+    entry = hr.record_acceptance(repo.root, "H002", dimension="runtime", state="verified",
+                                 evidence=["tests/test_example.py::test_example"],
+                                 checks=[".venv/bin/python3.12 -m pytest tests/test_example.py"],
+                                 environment="macOS local synthetic worker; no live provider",
+                                 sources=[EXAMPLE, "tests/test_example.py"],
+                                 artifact=artifact)
+    data = hs.load(repo.root)[1]
+    assert entry["source_fingerprint"] == data["acceptance"][0]["source_fingerprint"]
+    assert entry["artifact"] == {"path": str(artifact), "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest()}
+    row = hs.assess(repo.ledger, data, repo.root)[1]
+    assert row["acceptance"]["runtime"] == "verified"
+    assert row["acceptance_freshness"]["runtime"] == "current"
+    artifact.write_bytes(b"<testsuite tests='1' failures='1'/>")
+    assert hs.assess(repo.ledger, data, repo.root)[1]["acceptance_freshness"]["runtime"] == "stale"
+    artifact.write_bytes(b"<testsuite tests='1' failures='0'/>")
+    put(repo.root, EXAMPLE, [*V3, "LATER = 1"])
+    row = hs.assess(repo.ledger, hs.load(repo.root)[1], repo.root)[1]
+    assert row["acceptance"]["runtime"] == "verified"
+    assert row["acceptance_freshness"]["runtime"] == "stale"
+    hr.record_acceptance(repo.root, "H002", dimension="runtime", state="required_pending",
+                         evidence=["Fresh live validation still required"])
+    data = hs.load(repo.root)[1]
+    assert len(data["acceptance"]) == 2 and data["acceptance"][0]["state"] == "verified"
+    assert hs.assess(repo.ledger, data, repo.root)[1]["acceptance"]["runtime"] == "required_pending"
+
+
+def test_v3_local_stamp_pins_explicit_untracked_source_with_durable_receipt(repo):
+    hr.migrate(repo.root, backup=repo.tmp / "assessment.backup")
+    name = "agents/core/new_module.py"
+    put(repo.root, name, ["def new_feature():", "    return 1"])
+    patch = [reread_h002(evidence=[EXAMPLE, "tests/test_example.py", name])]
+    before = (repo.root / hs.ASSESSMENT).read_bytes()
+    with pytest.raises(hr.Refused, match="untracked"):
+        hr.stamp(repo.root, patch)
+    assert (repo.root / hs.ASSESSMENT).read_bytes() == before
+    done = hr.stamp(repo.root, patch, allow_uncommitted=True)
+    assert name in done["uncommitted"]
+    data = hs.load(repo.root)[1]
+    recorded = next(item for item in data["reviews"] if item["id"] == "H002")
+    assert {"path": name, "sha256": hs.file_digest(repo.root / name)} in recorded["evidence"]
+    local = data["local_receipts"][-1]
+    assert local["id"] == "H002" and local["review_sha256"] == hs.digest(recorded)
+    assert local["untracked"] == [name] and local["head_sha"] == repo.c3
+    assert local["worktree_uncommitted"] is True
+    assert hs.assess(repo.ledger, data, repo.root)[1]["status"] == "partial"
+    put(repo.root, name, ["def new_feature():", "    return 2"])
+    reopened = hs.assess(repo.ledger, hs.load(repo.root)[1], repo.root)[1]
+    assert reopened["status"] == "needs_review" and reopened["local_receipts"][-1] == local
+
+
+def test_v3_local_stamp_refuses_ignored_and_private_untracked_even_when_allowed(repo):
+    hr.migrate(repo.root, backup=repo.tmp / "assessment.backup")
+    put(repo.root, ".gitignore", ["agents/core/ignored.py"])
+    for name in ("agents/core/ignored.py", "docs/private-token.txt"):
+        put(repo.root, name, ["private or ignored"])
+        before = (repo.root / hs.ASSESSMENT).read_bytes()
+        with pytest.raises(hr.Refused, match="gitignored|untracked"):
+            hr.stamp(repo.root, [reread_h002(evidence=[EXAMPLE, "tests/test_example.py", name])],
+                     allow_uncommitted=True)
+        assert (repo.root / hs.ASSESSMENT).read_bytes() == before
+
+
+@pytest.mark.parametrize("name", ["docs/CODEBASE_OWNERSHIP.md", ".agents/checks/functional-change.md"])
+def test_v3_local_stamp_binds_explicit_public_documentation_without_staging(repo, name):
+    hr.migrate(repo.root, backup=repo.tmp / "assessment.backup")
+    put(repo.root, name, ["# Public development guidance", "Review the affected contract."])
+    patch = [reread_h002(evidence=[EXAMPLE, "tests/test_example.py", name])]
+    before = (repo.root / hs.ASSESSMENT).read_bytes()
+    with pytest.raises(hr.Refused, match="untracked"):
+        hr.stamp(repo.root, patch)
+    assert (repo.root / hs.ASSESSMENT).read_bytes() == before
+    hr.stamp(repo.root, patch, allow_uncommitted=True)
+    receipt = hs.load(repo.root)[1]["local_receipts"][-1]
+    assert receipt["untracked"] == [name]
+    assert name in receipt["paths"]
+    assert git(repo.root, "diff", "--cached", "--name-only") == ""
+
+
+@pytest.mark.parametrize("name", [
+    "docs/private/recovery.md", "docs/secrets/notes.md", ".agents/private/notes.md",
+    ".agents/checks/.env.md", "docs/generated.json",
+])
+def test_v3_local_stamp_keeps_private_and_non_documentation_paths_closed(repo, name):
+    hr.migrate(repo.root, backup=repo.tmp / "assessment.backup")
+    put(repo.root, name, ["local material"])
+    before = (repo.root / hs.ASSESSMENT).read_bytes()
+    with pytest.raises(hr.Refused, match="untracked"):
+        hr.stamp(repo.root, [reread_h002(evidence=[EXAMPLE, name])], allow_uncommitted=True)
+    assert (repo.root / hs.ASSESSMENT).read_bytes() == before
+
+
 def cited(report: dict) -> dict[str, dict]:
     return {item["citation"]: item for item in report["citations"]}
 

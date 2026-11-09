@@ -261,7 +261,9 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
               value={posture ? `${posture.sandbox.backend || 'unknown'} · ${posture.sandbox.isolated ? 'isolated' : 'not isolated'}` : undefined}
             />
             <Row label="Guardrails" value={posture?.guardrails.mode} />
-            <Row label="Kill-switch" value={killSwitch?.global ? 'engaged' : killSwitch ? 'armed' : undefined} />
+            <Row label="Kill-switch" value={killSwitch?.global ? 'engaged · global' : killSwitch?.any_halted
+              ? `engaged · ${killSwitch.halted_count} scoped halt${killSwitch.halted_count === 1 ? '' : 's'}`
+              : killSwitch ? 'armed' : undefined} />
             <Row
               label="Loop breaker"
               value={loopBreaker?.tripped ? 'tripped' : loopBreaker ? 'clear' : undefined}

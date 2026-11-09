@@ -609,8 +609,13 @@ function App({ floating = false, shortcuts, onWorld }: {
   // P1 — load live data and poll every 30s. A generation guard prevents a
   // slower, older poll from replacing a newer evidence snapshot.
   useEffect(() => {
-    const runner = createLatestRefreshRunner({
-      loadData: () => loadJarvisData(demo),
+    let active = true;
+    let lifecycle = 0;
+    const makeRunner = () => createLatestRefreshRunner({
+      loadData: () => {
+        const id = lifecycle;
+        return loadJarvisData(demo, () => active && id === lifecycle);
+      },
       loadLocality: demo ? undefined : () => apiGet<any>('/api/analytics/locality'),
       commitData: (d) => {
         setAgents(d.agents); baseAgents.current = d.agents;
@@ -631,10 +636,31 @@ function App({ floating = false, shortcuts, onWorld }: {
       },
       commitLocality: (nextLocality) => setLocality(nextLocality),
     });
+    let runner = makeRunner();
+    const stop = () => { active = false; lifecycle++; runner.stop(); };
+    const invalidate = () => { lifecycle++; runner.stop(); runner = makeRunner(); };
+    const resume = (event: PageTransitionEvent) => {
+      if (event.persisted && !active) {
+        active = true;
+        lifecycle++;
+        runner = makeRunner();
+        void runner.refresh();
+      }
+    };
+    window.addEventListener('beforeunload', invalidate);
+    window.addEventListener('pagehide', stop);
+    window.addEventListener('pageshow', resume);
     void runner.refresh();
     refreshNow.current = () => { void runner.refresh(); };
     const iv = setInterval(() => { void runner.refresh(); }, 30000);
-    return () => { refreshNow.current = () => {}; runner.stop(); clearInterval(iv); };
+    return () => {
+      refreshNow.current = () => {};
+      stop();
+      window.removeEventListener('beforeunload', invalidate);
+      window.removeEventListener('pagehide', stop);
+      window.removeEventListener('pageshow', resume);
+      clearInterval(iv);
+    };
   }, [demo]);
   const dismissDecision = (id) => setDecisions((ds) => ds.filter((d) => d._id !== id));
 

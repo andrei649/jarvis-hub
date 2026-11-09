@@ -176,7 +176,7 @@ def _learn_skill(hub, task="tidy the meeting notes", approve=True):
     hub.loader.generate_skill("jarvis", task, ["open the notes", "tidy them"])
     name = next(n for n, s in hub.loader.skills.items() if task.split()[0] in n.lower())
     if approve:
-        assert hub.loader.approve_generated_skill(name)
+        assert hub.loader.approve_generated_skill(name, hub.loader.pending_skill_fingerprint(name))
     return name
 
 
@@ -714,7 +714,7 @@ def test_a_skill_the_agent_learns_is_a_journey_node(hub):
     # Quarantined until the owner approves it: not changed before (its text is reviewed whole).
     pending = hub.client.patch(_skill_path(f"skill:{name}"), json={"value": "x"}, headers=ADMIN)
     assert pending.status_code == 409 and pending.json()["reason"] == "skill_pending_review"
-    assert hub.loader.approve_generated_skill(name)
+    assert hub.loader.approve_generated_skill(name, hub.loader.pending_skill_fingerprint(name))
     assert _entries(hub, store="skill")["entries"][0]["pending_review"] is False
 
 
@@ -854,7 +854,7 @@ def test_a_quarantined_skill_body_is_never_served_by_the_journey(hub, monkeypatc
         assert entry["pending_review"] is True and entry["content"] is None
         assert "awaits the owner's review" in entry["content_withheld"]
         assert "## Steps" not in got.text and "open the notes" not in got.text
-    assert hub.loader.approve_generated_skill(name)
+    assert hub.loader.approve_generated_skill(name, hub.loader.pending_skill_fingerprint(name))
     approved = hub.client.get(path, headers=user).json()["entry"]
     assert approved["content"].startswith(f"# {name}") and "content_withheld" not in approved
 
@@ -1018,7 +1018,7 @@ def test_a_skill_the_owner_approves_today_is_learned_today(hub, monkeypatch):
     long_ago = datetime.now(UTC).timestamp() - 40 * 86_400
     name = _learn_skill_then(hub, monkeypatch, long_ago, approve=False)    # generated 40 days ago
     assert _learned(hub.client, days=1)[1]["counts"]["learnings"] == 0
-    assert hub.loader.approve_generated_skill(name)                        # the owner approves it today
+    assert hub.loader.approve_generated_skill(name, hub.loader.pending_skill_fingerprint(name))                        # the owner approves it today
     learned, body = _learned(hub.client, days=1)
     assert body["counts"]["learnings"] == 1 and [it["entry_id"] for it in learned] == [f"skill:{name}"]
 

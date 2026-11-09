@@ -348,7 +348,8 @@ export type SecurityPostureResponse = {
 
 export type SecurityKillSwitchResponse = {
   global: boolean;
-  halted: Record<string, unknown>;
+  any_halted: boolean;
+  halted_count: number;
 };
 
 export type SecurityLoopBreakerResponse = {
@@ -437,9 +438,17 @@ function normalizeSecurityPosture(raw: Record<string, unknown>): SecurityPosture
 }
 
 function normalizeSecurityKillSwitch(raw: Record<string, unknown>): SecurityKillSwitchResponse {
+  if (typeof raw.global !== 'boolean' || typeof raw.any_halted !== 'boolean' ||
+      typeof raw.halted_count !== 'number' || !Number.isSafeInteger(raw.halted_count) || raw.halted_count < 0) {
+    throw new ApiError('Invalid kill-switch status');
+  }
+  if (raw.any_halted !== (raw.halted_count > 0) || (raw.global && !raw.any_halted)) {
+    throw new ApiError('Invalid kill-switch status');
+  }
   return {
-    global: securityBool(raw.global),
-    halted: securityRecord(raw.halted),
+    global: raw.global,
+    any_halted: raw.any_halted,
+    halted_count: raw.halted_count,
   };
 }
 

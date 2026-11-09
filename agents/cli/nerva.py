@@ -299,6 +299,49 @@ def build_parser() -> argparse.ArgumentParser:
     consent.add_argument("--reason", help="optional human decision reason (at most 280 characters)")
     consent.add_argument("--json", action="store_true")
 
+    curator = verbs.add_parser("curator", help="review and request owner-governed skill curation")
+    curator_verbs = curator.add_subparsers(dest="action", required=True, metavar="action")
+    for action in ("status", "usage", "list-unmanaged", "list-archived", "ledger"):
+        read = curator_verbs.add_parser(action, help=f"read curator {action}")
+        read.add_argument("--json", action="store_true")
+        if action in {"usage", "list-unmanaged", "list-archived", "ledger"}:
+            read.add_argument("--limit", type=int, metavar="N")
+        if action == "usage":
+            read.add_argument("--origin", choices=("agent", "import", "bundled", "unknown"))
+            read.add_argument("--sort", choices=("activity", "recent", "name"))
+        if action == "ledger":
+            read.add_argument("--name", metavar="SKILL")
+    for action in ("run", "pause", "resume", "pin", "unpin", "adopt", "restore",
+                   "archive", "prune", "backup", "rollback", "purge"):
+        change = curator_verbs.add_parser(action, help=f"preview or request curator {action}")
+        change.add_argument("--json", action="store_true")
+        change.add_argument("--dry-run", action="store_true", help="preview only; create no approval card")
+        change.add_argument("--preview-fingerprint", metavar="SHA256",
+                            help="refuse if the current preview differs from an earlier review")
+        change.add_argument("--yes", action="store_true",
+                            help="acknowledge the request; owner approval and kernel checks still apply")
+        if action in {"pin", "unpin", "archive", "restore"}:
+            change.add_argument("name" if action != "restore" else "archive_id")
+        elif action == "adopt":
+            change.add_argument("name", nargs="?")
+            change.add_argument("--all-unmanaged", action="store_true")
+        elif action in {"prune", "purge"}:
+            change.add_argument("--days", type=int, metavar="DAYS")
+            if action == "purge":
+                change.add_argument("--archive-id", action="append", dest="archive_ids", metavar="ID")
+        elif action == "backup":
+            change.add_argument("--reason", metavar="TEXT")
+        elif action == "rollback":
+            select = change.add_mutually_exclusive_group()
+            select.add_argument("--ledger-id", metavar="ID")
+            select.add_argument("--backup-id", metavar="ID")
+            select.add_argument("--list", action="store_true", help="show available verified backups")
+        elif action == "run":
+            change.add_argument("--consolidate", action="store_true",
+                                help="apply already owner-approved skill proposals after the run")
+            change.add_argument("--background", action="store_true",
+                                help="return after queuing the owner review card")
+
     checkpoints = verbs.add_parser("checkpoints", help="owner checkpoint inventory and maintenance")
     checkpoint_verbs = checkpoints.add_subparsers(dest="action", metavar="action")
     for action in ("status", "list"):
@@ -855,17 +898,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     security = verbs.add_parser(
         "security", help="checks you can run on this box: known vulnerabilities in what is installed")
-    security_verbs = security.add_subparsers(dest="action", required=True, metavar="action")
+    security.set_defaults(action="audit")
+    security_verbs = security.add_subparsers(dest="action", metavar="action")
+    security.add_argument("--skip-venv", action="store_true", help="omit installed interpreter distributions")
+    security.add_argument("--skip-plugins", action="store_true", help="omit registered extension Python pins")
+    security.add_argument("--skip-mcp", action="store_true", help="omit saved pinned npx/uvx MCP packages")
     security_audit = security_verbs.add_parser(
         "audit",
-        help="known vulnerabilities in this interpreter's packages and in declared extension pins, "
+        help="known vulnerabilities in this interpreter, declared extension pins, and saved pinned MCP commands, "
              "from OSV.dev — exit 0 clean · 1 findings at/above --fail-on · 5 database not "
              "consulted (nothing is claimed)",
-        description="Checks what is installed in THIS interpreter, plus the exact Python pins of any "
-                    "--extension descriptor, against OSV.dev. It does NOT scan: MCP servers (owner-"
-                    "configured stdio commands are listed as not audited), extensions the hub has "
-                    "acquired but you did not name, system packages, or anything outside this "
-                    "interpreter. Only package name+version pairs leave the machine. Exit 0 clean · "
+        description="Checks this interpreter's installed distributions, owner-declared extension "
+                    "Python pins, and exact pinned npx/uvx refs in saved MCP commands against OSV.dev. "
+                    "Unpinned or unsupported commands are named as unaudited; declared pins are not "
+                    "proof of extension installation or activation. System packages are outside scope. "
+                    "Only package name+version pairs leave the machine after hub egress authorization. Exit 0 clean · "
                     "1 findings at/above --fail-on · 5 the database was not consulted or the audit "
                     "did not complete (nothing is claimed).")
     security_audit.add_argument(
@@ -886,6 +933,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--osv-url", default=_OSV_DEFAULT, metavar="URL",
         help="an https OSV-compatible endpoint (default: api.osv.dev)")
     security_audit.add_argument("--json", action="store_true")
+    security_audit.add_argument("--skip-venv", action="store_true", default=argparse.SUPPRESS,
+                                help="omit installed interpreter distributions")
+    security_audit.add_argument("--skip-plugins", action="store_true", default=argparse.SUPPRESS,
+                                help="omit registered extension Python pins")
+    security_audit.add_argument("--skip-mcp", action="store_true", default=argparse.SUPPRESS,
+                                help="omit saved pinned npx/uvx MCP packages")
 
     completion = verbs.add_parser("completion", help="print a shell completion script")
     completion.add_argument("shell", choices=("bash", "zsh", "fish"))
@@ -2352,6 +2405,129 @@ def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
     if (isinstance(task, Mapping) and task.get("kind") == "backup.restore"
             and ns.action in ("accept", "edit") and task.get("status") == "approved"):
         _follow_accepted_restore(ctx, ns.task_id)
+    return EXIT_OK
+
+
+_CURATOR_READS = frozenset({"status", "usage", "list-unmanaged", "list-archived", "ledger"})
+_CURATOR_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+
+
+def _curator_label(value: Any) -> str:
+    """One bounded CLI line, even if the hub returned an unexpected string."""
+    return "".join(char if char.isprintable() else "?" for char in str(value))[:160]
+
+
+def _curator_id(value: Any) -> bool:
+    return (type(value) is str and 1 <= len(value) <= 128
+            and value not in {".", ".."} and "/" not in value and "\\" not in value
+            and all(char.isprintable() for char in value))
+
+
+def cmd_curator(ns: argparse.Namespace, ctx: Context) -> int:
+    """One CLI for the 17 frozen operations; all writes create owner review cards."""
+    action = ns.action
+    if action in _CURATOR_READS or (action == "rollback" and ns.list):
+        view = "backups" if action == "rollback" else action
+        filters: dict[str, str] = {}
+        for key in ("origin", "sort", "name", "limit"):
+            value = getattr(ns, key, None)
+            if value is not None:
+                if key == "limit" and not 1 <= value <= 200:
+                    ctx.err.write("limit must be between 1 and 200\n")
+                    return EXIT_USAGE
+                if key == "name" and not _curator_id(value):
+                    ctx.err.write("skill name must be a bounded identifier\n")
+                    return EXIT_USAGE
+                filters[key] = str(value)
+        path = f"/api/curator/{view}"
+        if filters:
+            path += "?" + urlencode(filters)
+        reply = ctx.client().get(path)
+        if not isinstance(reply, Mapping):
+            ctx.err.write("curator read unavailable: malformed hub reply\n")
+            return EXIT_FAILED
+        ctx.dump(reply)
+        return EXIT_OK
+
+    args: dict[str, Any] = {}
+    if action in {"pin", "unpin", "archive"}:
+        if not _curator_id(ns.name):
+            ctx.err.write("skill name must be a bounded identifier\n")
+            return EXIT_USAGE
+        args["name"] = ns.name
+    elif action == "adopt":
+        if bool(ns.name) == bool(ns.all_unmanaged) or (ns.name and not _curator_id(ns.name)):
+            ctx.err.write("choose one bounded skill name or --all-unmanaged\n")
+            return EXIT_USAGE
+        args = {"name": ns.name} if ns.name else {"all_unmanaged": True}
+    elif action == "restore":
+        if not _curator_id(ns.archive_id):
+            ctx.err.write("archive ID must be a bounded identifier\n")
+            return EXIT_USAGE
+        args["archive_id"] = ns.archive_id
+    elif action in {"prune", "purge"}:
+        if ns.days is not None:
+            if not 1 <= ns.days <= 36_500:
+                ctx.err.write("days must be between 1 and 36500\n")
+                return EXIT_USAGE
+            args["days"] = ns.days
+        if action == "purge" and ns.archive_ids:
+            if (len(ns.archive_ids) > 128 or len(set(ns.archive_ids)) != len(ns.archive_ids)
+                    or not all(_curator_id(value) for value in ns.archive_ids)):
+                ctx.err.write("archive IDs must be unique bounded identifiers (at most 128)\n")
+                return EXIT_USAGE
+            args["archive_ids"] = ns.archive_ids
+    elif action == "backup":
+        if ns.reason is not None:
+            if len(ns.reason) > 280 or not all(char.isprintable() for char in ns.reason):
+                ctx.err.write("backup reason must be at most 280 printable characters\n")
+                return EXIT_USAGE
+            args["reason"] = ns.reason
+    elif action == "rollback":
+        value = ns.ledger_id or ns.backup_id
+        if value is not None and not _curator_id(value):
+            ctx.err.write("rollback ID must be a bounded identifier\n")
+            return EXIT_USAGE
+        if value is not None:
+            args["ledger_id" if ns.ledger_id else "backup_id"] = value
+    elif action == "run" and ns.consolidate:
+        args["consolidate"] = True
+
+    reviewed = getattr(ns, "preview_fingerprint", None)
+    if reviewed is not None and not _CURATOR_SHA256.fullmatch(reviewed):
+        ctx.err.write("preview fingerprint must be 64 lowercase hex characters\n")
+        return EXIT_USAGE
+    body = {"operation": action, "args": args}
+    preview = ctx.client().post("/api/curator/preview", body)
+    if not isinstance(preview, Mapping) or preview.get("ok") is not True or preview.get("status") != "preview":
+        reason = preview.get("reason", "unavailable") if isinstance(preview, Mapping) else "unavailable"
+        ctx.err.write(f"curator preview refused: {_curator_label(reason)}\n")
+        return EXIT_FAILED
+    fingerprint = preview.get("preview_fingerprint")
+    if type(fingerprint) is not str or not _CURATOR_SHA256.fullmatch(fingerprint):
+        ctx.err.write("curator preview unavailable: missing fingerprint\n")
+        return EXIT_FAILED
+    if reviewed is not None and reviewed != fingerprint:
+        ctx.err.write("curator preview changed; review the current targets before requesting\n")
+        return EXIT_FAILED
+    if ns.dry_run:
+        ctx.dump(preview)
+        return EXIT_OK
+    outcome = ctx.client().post("/api/curator/request", {**body, "preview_fingerprint": fingerprint})
+    if not isinstance(outcome, Mapping) or outcome.get("ok") is not True or outcome.get("status") != "pending":
+        reason = outcome.get("reason", "unavailable") if isinstance(outcome, Mapping) else "unavailable"
+        ctx.err.write(f"curator request refused: {_curator_label(reason)}\n")
+        return EXIT_FAILED
+    if ns.json:
+        ctx.dump(outcome)
+    else:
+        targets = preview.get("targets")
+        if isinstance(targets, list):
+            labels = [_curator_label(item.get("id", item.get("name", "?")) if isinstance(item, Mapping) else item)
+                      for item in targets[:20]]
+            ctx.say(f"{action}: reviewed {len(targets)} target(s)" + (f" — {', '.join(labels)}" if labels else ""))
+        card_id = outcome.get("card_id", outcome.get("request_id", "?"))
+        ctx.say(f"approval pending #{_curator_label(card_id)}; decide it in the owner inbox or `nerva approvals list`")
     return EXIT_OK
 
 
@@ -6021,53 +6197,72 @@ def cmd_uninstall(ns: argparse.Namespace, ctx: Context) -> int:
 
 
 def cmd_security(ns: argparse.Namespace, ctx: Context) -> int:
-    """H022 — what is installed here, checked against a vulnerability database.
-
-    Three surfaces, named in the output so a reader knows what was and was not
-    looked at: the distributions in *this* interpreter, the exact Python pins any
-    extension descriptor on the command line declares, and MCP — on Nerva a set of
-    owner-configured stdio commands this verb does not resolve to package versions,
-    so it is listed as *not audited* with that reason rather than silently omitted.
-
-    Two things this verb will not do. It will not compute a severity OSV does not
-    state (an unrated advisory fails every threshold), and it will not call a run
-    "clean" when the database could not be reached: that is EXIT_UNAVAILABLE, and
-    the report says nothing is claimed. The same exit covers the audit itself
-    failing before it has an answer — a traceback's exit 1 would read as "findings".
-    Only package name+version pairs leave the machine, and the verb says so before
-    the first request.
-    """
+    """Audit this install's three dependency surfaces via the governed admin hub."""
     from agents.core.security import dep_audit
 
+    skip = {"venv": bool(getattr(ns, "skip_venv", False)),
+            "plugins": bool(getattr(ns, "skip_plugins", False)),
+            "mcp": bool(getattr(ns, "skip_mcp", False))}
+    osv_url = getattr(ns, "osv_url", _OSV_DEFAULT)
+    fail_on = getattr(ns, "fail_on", "low")
     try:
-        client = None if ns.offline else dep_audit.default_client(ns.osv_url)
+        dep_audit._https_only(osv_url)
     except ValueError as exc:
         ctx.err.write(f"{exc}\n")
         return EXIT_USAGE
     try:
-        components, errors = dep_audit.enumerate_installed()
-        extension_components, extension_errors = dep_audit.enumerate_extensions(ns.extension)
-        components, errors = components + extension_components, errors + extension_errors
-        if client is None:
-            report = dep_audit.offline_report(components, errors=errors)
+        components, errors = [], []
+        if not skip["venv"]:
+            found, issues = dep_audit.enumerate_installed()
+            components.extend(found)
+            errors.extend(issues)
+        if not skip["plugins"]:
+            found, issues = dep_audit.enumerate_catalog()
+            components.extend(found)
+            errors.extend(issues)
+            found, issues = dep_audit.enumerate_extensions(getattr(ns, "extension", []))
+            components.extend(found)
+            errors.extend(issues)
+        if not skip["mcp"]:
+            found, issues = dep_audit.enumerate_mcp()
+            components.extend(found)
+            errors.extend(issues)
+        if len(components) > 4096 or len(errors) > 4096:
+            raise ValueError("dependency inventory exceeds audit bound")
+        if getattr(ns, "offline", False):
+            report = dep_audit.offline_report(components, errors=errors, skipped=skip)
+            if getattr(ns, "json", False):
+                ctx.dump(report.to_dict())
+            else:
+                ctx.out.write(dep_audit.render(report) + "\n")
+            return EXIT_UNAVAILABLE
+        pairs = len({(c.ecosystem, c.name, c.version) for c in components})
+        ctx.err.write(
+            f"requesting governed hub audit of {pairs} package name+version pairs; "
+            f"if admitted, only those pairs go to {dep_audit.host_of(osv_url)}\n"
+        )
+        response = ctx.client().post("/api/security/dependencies/audit", {
+            "components": [c.to_dict() for c in components], "errors": errors,
+            "fail_on": fail_on, "ignore_vuln": getattr(ns, "ignore_vuln", []),
+            "osv_url": osv_url, "skip": skip,
+        })
+        if not isinstance(response, dict) or not isinstance(response.get("report"), dict) \
+                or not isinstance(response.get("human"), str):
+            raise ValueError("invalid hub audit response")
+        status = response["report"].get("status")
+        if status not in {"clean", "findings", "unavailable"}:
+            raise ValueError("invalid hub audit status")
+        if getattr(ns, "json", False):
+            ctx.dump(response["report"])
         else:
-            pairs = len({(c.name, c.version) for c in components})
-            ctx.err.write(
-                f"sending {pairs} package name+version pairs to {dep_audit.host_of(ns.osv_url)}; "
-                "nothing else leaves this machine\n"
-            )
-            report = dep_audit.audit(
-                components, client, fail_on=ns.fail_on, ignore=ns.ignore_vuln,
-                errors=errors, database=ns.osv_url,
-            )
+            ctx.out.write(response["human"] + "\n")
+        return {"clean": EXIT_OK, "findings": EXIT_FAILED, "unavailable": EXIT_UNAVAILABLE}[status]
+    except HubError as exc:
+        ctx.err.write(f"governed security audit unavailable (HTTP {exc.status}): nothing is claimed\n")
+        return EXIT_UNAVAILABLE
     except Exception as exc:  # not an answer: neither "clean" nor "findings"
         ctx.err.write(f"security audit did not complete ({type(exc).__name__}): nothing is claimed\n")
         return EXIT_UNAVAILABLE
-    if ns.json:
-        ctx.dump(report.to_dict())
-    else:
-        ctx.out.write(dep_audit.render(report) + "\n")
-    return {"clean": EXIT_OK, "findings": EXIT_FAILED}.get(report.status, EXIT_UNAVAILABLE)
 
 
 def cmd_auth(ns: argparse.Namespace, ctx: Context) -> int:
@@ -6113,6 +6308,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "status": cmd_status,
     "config": cmd_config,
     "approvals": cmd_approvals,
+    "curator": cmd_curator,
     "checkpoints": cmd_checkpoints,
     "backup": cmd_backup,
     "kernel": cmd_kernel,

@@ -53,6 +53,8 @@ RULES = [
     ("/api/mcp/server", "NOT_IN_HUD"),
     ("/api/memory/tool-spec", "NOT_IN_HUD"),
     ("/api/memory/search-tool", "NOT_IN_HUD"),
+    ("/api/security/dependencies/audit", "NOT_IN_HUD"),  # H022 host CLI inventories its own install
+    ("/api/curator/", "NOT_IN_HUD"),  # H027 owner CLI; existing inbox decides its exact cards
     # T-0.29 PWA: fetched by the BROWSER (install prompt / SW registration), never
     # rendered as a panel — a HUD surface for them would be meaningless.
     ("/manifest.webmanifest", "NOT_IN_HUD"),
@@ -523,6 +525,19 @@ _CLIENT_GLOBS = (
 # inheriting a bare list. The audit's own count came down from 86 to 68 precisely because
 # entries like these had been miscounted as missing UI.
 MACHINE_FACING: dict[str, str] = {
+    "/api/curator/status": "H027: owner `nerva curator status`; dedicated curator browsing is CLI administration",
+    "/api/curator/usage": "H027: owner `nerva curator usage`; authenticated host CLI telemetry",
+    "/api/curator/list-unmanaged": "H027: owner `nerva curator list-unmanaged`; explicit adoption preview input",
+    "/api/curator/list-archived": "H027: owner `nerva curator list-archived`; recoverable archive identities",
+    "/api/curator/ledger": "H027: owner `nerva curator ledger`; bounded private mutation history",
+    "/api/curator/backups": "H027: owner `nerva curator rollback --list`; verified recovery snapshot choices",
+    "/api/curator/preview": "H027: host CLI prepares exact review targets; dry-run creates no owner card or effects",
+    "/api/curator/request": "H027: host CLI submits the exact preview; existing HUD/action CLI decides the bound card",
+    "/api/security/dependencies/audit": (
+        "H022: admin-guarded OSV lookup for `nerva security [audit]`; the host CLI "
+        "enumerates its interpreter, extension declarations and pinned MCP commands. "
+        "A mobile/browser inventory would describe a different install."
+    ),
     "/sessions/import": "Owner CLI imports a bounded transcript from its local host (agents/cli/nerva.py)",
     "/sessions/{session_id}/trajectories":
         "H652: training-data export read by `nerva sessions export ID --sharegpt` and by "

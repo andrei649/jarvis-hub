@@ -293,10 +293,6 @@ NOT_A_MODEL_PROVIDER: dict[str, tuple[str, frozenset[str]]] = {
         frozenset({"Neo4jGraph._check_connection", "Neo4jGraph._call_neo4j", "Neo4jGraph.clear"})),
     "agents/core/memory/qdrant_store.py": (
         "Qdrant vector database REST API", frozenset({"QdrantVectorStore.__init__"})),
-    "agents/core/skills/importer.py": (
-        "skill source fetch from GitHub/registries (no prompt)",
-        frozenset({"SkillImporter.import_from_hermes", "SkillImporter._import_from_github",
-                   "SkillImporter._sync_from_hermes", "SkillImporter.sync_source"})),
     "agents/core/voice/tts.py": (
         "speech synthesis of reply text, not a model prompt; its cloud vendors are a "
         "recorded, separate ledger gap (GET /api/admin/network/calls docstring)",

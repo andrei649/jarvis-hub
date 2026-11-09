@@ -1,5 +1,11 @@
 # Handoff — Hermes batch 3 (2026-11-03), for the next developer (Codex)
 
+> Historical batch-3 receipt. Resume current work from the
+> [canonical Hermes execution workflow](../../hermes/autonomous-development-objective.md)
+> and [cumulative handoff](../../hermes/CAMPAIGN_HANDOFF.md), checking the actual
+> branch and SHA. Later owner directions supersede this document's old counters,
+> next-task list and publication steps; the current campaign is local only.
+
 Owner instruction (2026-11-03): development moves to Codex; this file is the handover.
 Branch: **`claude/hermes-batch3`** (draft PR "Hermes batch 3"). `main` is at `68b351f6` (#1335).
 Ledger source of truth: `docs/hermes/assessment.json`. Query it, never load it raw:

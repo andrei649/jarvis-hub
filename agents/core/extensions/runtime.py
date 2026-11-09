@@ -46,6 +46,7 @@ from pathlib import Path
 from ..capability_manifests import RollbackContract
 from .consent import CHANGED, ExtensionConsentStore
 from .manifest import MAX_EXTENSIONS, ExtensionManifest, ManifestError, validate_registration
+from .manifest_catalog import ExtensionManifestCatalog
 
 RESULT_PREFIX = "NERVA_EXTENSION_RESULT:"
 # The in-sandbox refusal for a tool the extension does not declare. A rare code
@@ -163,7 +164,8 @@ class ExtensionRuntime:
 
     def __init__(self, *, packages, profile, runtime_root, runner=None,
                  consent: ExtensionConsentStore | None = None, rpc=None,
-                 enabled=lambda: False, max_input_bytes: int = MAX_INPUT_BYTES) -> None:
+                 enabled=lambda: False, max_input_bytes: int = MAX_INPUT_BYTES,
+                 catalog: ExtensionManifestCatalog | None = None) -> None:
         from ..acquisition.sandbox_profile import DockerSandboxRunner
 
         self.packages = packages
@@ -174,6 +176,11 @@ class ExtensionRuntime:
             max_output_bytes=profile.max_output_bytes,
         )
         self.consent = consent if consent is not None else ExtensionConsentStore()
+        consent_path = getattr(self.consent, "_path", None)
+        self.catalog = (catalog if catalog is not None else ExtensionManifestCatalog(
+            Path(consent_path).with_name("manifest_catalog.json") if consent_path else None,
+            consent_path=consent_path,
+        ))
         # Named `rpc`, not `tool_rpc`: that attribute name is reserved for the
         # orchestrator's own binding contract, which is enforced lexically across
         # `agents/` (tests/test_orchestrator_bindings.py). This is a plain injected
@@ -350,6 +357,13 @@ class ExtensionRuntime:
             validate_registration(manifest, envelope.get("registered"))
         except ManifestError:
             raise ExtensionRuntimeError("registration_mismatch") from None
+        # Registration has been proved, but no callable host surface exists yet.
+        # A failed metadata write must refuse before `_active` or RPC exposure,
+        # rather than reporting failure after an activation that callers retry.
+        try:
+            self.catalog.record(manifest)
+        except Exception:
+            raise ExtensionRuntimeError("manifest_catalog_unavailable") from None
         activation = Activation(manifest, record.package_hash, record.version)
         self._active[manifest.id] = activation
         self._expose(activation)

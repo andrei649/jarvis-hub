@@ -1,5 +1,19 @@
 # NERVA — LEAN DRIVER (one fresh session = one slice = one draft PR)
 
+> **Inactive historical prompt (2026-11-04). Do not launch this one-slice PR
+> workflow.** The active local Hermes campaign follows
+> [`autonomous-development-objective.md`](../hermes/autonomous-development-objective.md)
+> and [`CAMPAIGN_HANDOFF.md`](../hermes/CAMPAIGN_HANDOFF.md): current integration
+> first, then the frozen 697-contract priorities on the real checkout/SHA.
+> Interrupt only for a concrete blocking security, correctness or build defect.
+> There is no session tool-call/time budget or automatic PR ship in the active
+> mandate. No stage, commit, push, merge, deploy, PR update, paid activation or
+> schedule reactivation. The dated recipe below is archival context only.
+
+<details>
+<summary>Historical Lean driver — inactive</summary>
+
+
 > The budgeted twin of [`BACKLOG_DRIVER.md`](BACKLOG_DRIVER.md). That protocol runs "until the
 > budget is spent" and was built for long-lived sessions with agent fan-out; on a subscription
 > plan it exhausted the 5-hour window in under 90 minutes (2026-10-24, batch 4 of the Hermes
@@ -140,3 +154,5 @@ A cap in §0 is reached · the slice needs an owner decision (write the packet i
 `docs/OWNER_TASKS.md`, tick the row as `owner`, push that alone) · `main` is red for a reason
 outside your diff and no fix exists (one line in the reply, no PR comment) · the queue has no `ai`
 row left (reply `■ lean: queue empty`).
+
+</details>

@@ -70,7 +70,7 @@ const META: Record<string, { tier: string; role: string; name: string; model: st
 const glyphFor: (id: string) => string = V2.glyphFor as any;
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-export async function loadJarvisData(demo = false): Promise<JarvisData> {
+export async function loadJarvisData(demo = false, isCurrent: () => boolean = () => true): Promise<JarvisData> {
   // Default state is HONEST-EMPTY; only `demo` pre-fills the seeded corpus.
   const out: JarvisData = {
     demo,
@@ -109,6 +109,7 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
       };
     });
   } catch { /* fall through */ }
+  if (!isCurrent()) return out;
 
   // 2) live system + LLM readiness; /status is unguarded so it usually succeeds
   let statusAgents: { id: string; status: string }[] = [];
@@ -130,6 +131,7 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
     else if (d.lm_online !== undefined) out.llm = { state: d.lm_online ? 'no_model' : 'offline', model: null, residents };
     if (Array.isArray(d.agents)) statusAgents = d.agents;
   } catch { /* server unreachable */ }
+  if (!isCurrent()) return out;
 
   // 3) if /api/agents failed, build the roster from /status + static meta.
   // Registry-only agents (ids the seed corpus never knew) must still appear —
@@ -156,6 +158,7 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
     if (Array.isArray(d.calendar) && d.calendar.length) { out.calendar = d.calendar.map(normCal); out.sources.calendar = true; }
     if (Array.isArray(d.notifications) && d.notifications.length) { out.heartbeat = d.notifications.map(normHb); out.sources.heartbeat = true; }
   } catch { /* not connected */ }
+  if (!isCurrent()) return out;
 
   // 5) tasks (autonomy queue) — empty is a valid, honest state
   try {
@@ -165,6 +168,7 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
       out.sources.tasks = true;
     }
   } catch { /* keep [] */ }
+  if (!isCurrent()) return out;
 
   // 6) situation ticker — map backend {obj,pct,pri} → UI {text,bar,cls}
   try {
@@ -180,6 +184,7 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
       out.sources.ticker = true;
     }
   } catch { /* keep [] */ }
+  if (!isCurrent()) return out;
 
   /* 7) pending approvals — the live decision feed the wall's provenance said did not
      exist. `/autonomy/approvals` is ADMIN-guarded, so on a token-configured install with
@@ -196,6 +201,7 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
       out.sources.decisions = true;
     }
   } catch { /* keep [] and sources.decisions false — no evidence, not zero */ }
+  if (!isCurrent()) return out;
 
   // 8) trust signal — mic state + strict-local (visible governance, H12.10)
   try {
@@ -216,6 +222,7 @@ export async function loadJarvisData(demo = false): Promise<JarvisData> {
       };
     }
   } catch { /* keep default */ }
+  if (!isCurrent()) return out;
 
   // "live" = at least one tile is showing REAL (non-demo) content
   out.live = Object.values(out.sources).some(Boolean);

@@ -17,6 +17,7 @@ sys.path.insert(0, str(repo_root / "agents"))
 from agents.core.autonomy import AutonomyPolicy, AutonomyWorker, TaskQueue  # noqa: E402
 from agents.core.autonomy.policy import RiskTier  # noqa: E402
 from agents.core.autonomy.tech_scout import TechScout, TechScoutStore  # noqa: E402
+from agents.core.plugins.web_providers import PolicyBlock  # noqa: E402
 from agents.core.security import taint  # noqa: E402
 
 
@@ -125,6 +126,31 @@ async def test_scan_caps_new_findings_per_pass():
     assert result["proposed"] == 3
     assert result["capped"] == 7
     assert len(w.queue.list()) == 3
+
+
+async def test_unavailable_website_policy_keeps_last_scan_and_reports_refusal():
+    worker = _worker()
+    store = TechScoutStore(None)
+    store.mark_run(50.0)
+    calls = []
+
+    async def search(query, max_results=5):
+        calls.append(query)
+        if query == "second":
+            raise PolicyBlock("website_policy_unavailable")
+        return [RESULT_A]
+
+    scout = TechScout(worker, search, store=store, queries=["first", "second", "third"],
+                      clock=lambda: 100.0)
+    result = await scout.scan(enabled=True, force=True)
+
+    assert result["ok"] is False
+    assert result["reason"] == "website_policy_unavailable"
+    assert result["proposed"] == 1
+    assert calls == ["first", "second"]
+    assert store.last_run() == 50.0
+    assert store.seen_count() == 1
+    assert len(worker.queue.list()) == 1
 
 
 async def test_status_reports_configuration_and_history():

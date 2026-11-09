@@ -482,7 +482,7 @@
 
   /* ── Security & Governance (the governed-product story has a home now) ───── */
   function KillSwitchPanel() {
-    const _ = useApi('/api/security/kill-switch', true), s = _[0], reload = _[1];
+    const _ = useApi('/api/security/kill-switch/details', true, true), s = _[0], reload = _[1];
     const _r = useState(''), reason = _r[0], setReason = _r[1];
     function post(engage) {
       adminFetch('/api/security/kill-switch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ engage: engage, scope: 'global', reason: reason }) })

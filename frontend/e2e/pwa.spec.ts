@@ -54,6 +54,9 @@ async function loadControlled(page): Promise<void> {
     const reg = await navigator.serviceWorker.getRegistration('/');
     return !!(reg && reg.active && reg.active.state === 'activated');
   }, null, { timeout: 30_000 });
+  // Activation can precede clients.claim(). Wait for control before reloading,
+  // otherwise the reload's assets may leave before the worker intercepts them.
+  await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 30_000 });
   await page.reload({ waitUntil: 'load' });
   await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 30_000 });
   await expect(page.locator('#root')).not.toBeEmpty({ timeout: 20_000 });
@@ -96,12 +99,18 @@ test('the worker installs, activates, and controls the HUD', async ({ page }) =>
 });
 
 test('content-hashed assets are cached, and the shell is cached for offline', async ({ page }) => {
+  const assetResponses: string[] = [];
+  page.on('response', (response) => {
+    if (new URL(response.url()).pathname.startsWith('/v2/assets/')) {
+      assetResponses.push(`${response.status()} ${response.fromServiceWorker() ? 'worker' : 'network'} ${new URL(response.url()).pathname}`);
+    }
+  });
   await loadControlled(page);
   // The reload's subresources go through the worker; give the put()s a beat to land
   // (the fetch handler returns the response BEFORE the cache write resolves, by
   // design — the write must never delay the page).
   await expect.poll(async () => (await cachedUrls(page)).some((u) => new URL(u).pathname.startsWith('/v2/assets/')),
-    { timeout: 15_000, message: 'no /v2/assets/* entry appeared in Cache Storage' }).toBe(true);
+    { timeout: 15_000, message: `no /v2/assets/* entry appeared in Cache Storage; responses: ${assetResponses.join(', ')}` }).toBe(true);
 
   const urls = await cachedUrls(page);
   const paths = urls.map((u) => new URL(u).pathname);

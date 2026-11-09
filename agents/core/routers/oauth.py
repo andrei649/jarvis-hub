@@ -212,7 +212,7 @@ async def nous_logout(body: NousProfileBody):
 # OpenCode integration via the Oracle agent.
 
 
-@router.get("/api/oracle/status")
+@router.get("/api/oracle/status", dependencies=[Depends(user_guard)])
 async def oracle_status():
     orch = get_orch()
     bridge = getattr(orch, "oracle_bridge", None)

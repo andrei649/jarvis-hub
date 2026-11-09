@@ -33,6 +33,7 @@ import time
 from collections.abc import Awaitable, Callable
 
 from agents.core.persistence import JsonStore
+from agents.core.plugins.web_providers import PolicyBlock
 
 from .policy import RiskTier
 
@@ -143,6 +144,18 @@ class TechScout:
         for query in self.queries:
             try:
                 results = await self.search(query, max_results=self.max_results_per_query)
+            except PolicyBlock as exc:
+                if str(exc) == "website_policy_unavailable":
+                    # A failed owner policy is neither a completed scan nor an empty
+                    # provider answer. Keep the last successful cadence checkpoint;
+                    # findings already staged earlier in this pass remain recorded.
+                    return {
+                        "skipped": False, "ok": False, "reason": "website_policy_unavailable",
+                        "queries": len(self.queries), "results_seen": results_seen,
+                        "new_findings": new_findings, "proposed": proposed, "capped": capped,
+                    }
+                logger.warning("tech scout search refused for %r", query)
+                continue
             except Exception:
                 logger.warning("tech scout search failed for %r", query, exc_info=True)
                 continue

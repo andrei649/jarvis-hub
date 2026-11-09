@@ -14,9 +14,11 @@ ever read here.
 from __future__ import annotations
 
 import datetime
+import hashlib
 import json
 from pathlib import Path
 
+import httpx
 import pytest
 
 from agents.core.skills import frontmatter as fmx
@@ -437,14 +439,51 @@ def test_identity_decisions_use_the_strict_parse():
     assert SkillImporter._extract_frontmatter("---\nname: ok\n---\n", strict=True) == {"name": "ok"}
 
 
-def test_the_hermes_identity_gate_refuses_a_name_only_the_fallback_finds():
-    import inspect
+@pytest.mark.asyncio
+async def test_the_hermes_identity_gate_refuses_a_name_only_the_fallback_finds(tmp_path, monkeypatch):
+    from agents.core.skills import importer as importer_module
+    from agents.core.skills.remote_pin import RemoteImportAuthorization, RemoteImportRefused
 
-    from agents.core.skills import importer
+    source = "---\nname: imported\ndescription: bad: yaml: [x\n---\n# Imported\n"
+    assert SkillImporter._extract_frontmatter(source)["name"] == "imported"
+    assert SkillImporter._extract_frontmatter(source, strict=True) == {}
+    raw = source.encode("utf-8")
+    path = "skills/testing/imported/SKILL.md"
+    pin_path = tmp_path / "hermes-pin.json"
+    pin_path.write_text(json.dumps({
+        "schema_version": 2,
+        "repository": importer_module.HERMES_REPO,
+        "release_tag": importer_module.HERMES_PIN_RELEASE_TAG,
+        "commit": importer_module.HERMES_PIN_COMMIT,
+        "tree": importer_module.HERMES_PIN_TREE,
+        "skills": [{"slug": "imported", "path": path,
+                    "content_sha256": hashlib.sha256(raw).hexdigest(), "tier": "bundled"}],
+    }), encoding="utf-8")
+    monkeypatch.setattr(importer_module, "HERMES_PIN_PATH", pin_path)
 
-    source = inspect.getsource(importer)
-    gate = source[source.index("Hermes content identity mismatch") - 400:]
-    assert "_extract_frontmatter(text, strict=True)" in gate.split("Hermes content identity mismatch")[0]
+    requests = []
+
+    def transport_factory(_target):
+        def respond(request):
+            requests.append(request)
+            assert request.headers["host"] == "raw.githubusercontent.com"
+            assert request.url.path == f"/{importer_module.HERMES_REPO}/{importer_module.HERMES_PIN_COMMIT}/{path}"
+            return httpx.Response(200, content=raw)
+
+        return httpx.MockTransport(respond)
+
+    skills_dir = tmp_path / "installed"
+    skill_importer = SkillImporter(
+        str(skills_dir),
+        resolver=lambda _host, *, mode: (["93.184.216.34"], None),
+        transport_factory=transport_factory,
+    )
+    authorization = RemoteImportAuthorization(lambda _payload: "grant", lambda *_: None)
+    with pytest.raises(RemoteImportRefused) as caught:
+        await skill_importer.import_from_hermes("imported", authorization=authorization)
+    assert caught.value.code == "source_identity_mismatch"
+    assert len(requests) == 1
+    assert list(skills_dir.iterdir()) == []
 
 
 def test_env_names_dedupe_first_wins_across_sources(tmp_path):
