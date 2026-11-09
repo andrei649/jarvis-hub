@@ -35,8 +35,6 @@ def _configured_doc_folders() -> dict:
     return folders if isinstance(folders, dict) else {}
 
 
-# SEC-B6 review 2026-11-09: the last summary names the owner's folder path and skipped
-# file names — personal, so guarded.
 @router.get("/api/local-docs", dependencies=[Depends(user_guard)])
 async def local_docs_status():
     """Last indexing summary + the configured folder keys (H12.2)."""

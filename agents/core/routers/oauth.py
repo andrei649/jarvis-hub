@@ -212,8 +212,6 @@ async def nous_logout(body: NousProfileBody):
 # OpenCode integration via the Oracle agent.
 
 
-# SEC-B6 review 2026-11-09: the body carries open conflicts (the same rows the guarded
-# /api/oracle/conflicts serves), recent sessions and the PR feed — personal, so guarded.
 @router.get("/api/oracle/status", dependencies=[Depends(user_guard)])
 async def oracle_status():
     orch = get_orch()

@@ -99,8 +99,6 @@ async def learning_promote(body: PromoteRequest):
     })
 
 
-# SEC-B6 review 2026-11-09: prompt_optimizations carries the learned prompt text (the reason
-# /learning is guarded), which can quote agent replies — personal, so guarded.
 @router.get("/learning/stats", dependencies=[Depends(user_guard)])
 async def learning_stats():
     """Live learning stats for SystemsPanel."""
