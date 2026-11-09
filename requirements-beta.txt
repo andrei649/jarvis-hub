@@ -10,7 +10,7 @@
 pyyaml>=6.0.3
 apscheduler>=3.11.3
 httpx>=0.28.1
-websockets>=17.3,<18
+websockets>=17.4,<18
 pillow>=13.0.0,<14
 cryptography>=50.0.2
 defusedxml>=0.7.1  # hardened parsing of untrusted RSS/Atom feeds (news + digest)
@@ -32,7 +32,7 @@ pypdf>=6.21.4,<7
 # python-docx: Word (.docx) text extraction for file_read (H444); without it a .docx
 # read returns parser_missing.
 python-docx>=1.2.0,<2
-tzdata>=2026.5
+tzdata>=2026.6
 
 # === Memory (optional — improves with numpy) ===
 # numpy 2.5+ dropped Python 3.11; the marker keeps the install working on 3.11 boxes
@@ -72,8 +72,8 @@ beautifulsoup4>=4.15.0
 # News: uses BBC RSS feeds
 
 # === Development ===
-pytest>=9.1.1
-pytest-asyncio>=1.4.0
+pytest>=9.2.0
+pytest-asyncio>=1.4.1
 pytest-timeout>=2.4.0
 pytest-xdist>=3.8.0
 # AUD-10 (F37): fail fast on a stray real network call in a test instead of
