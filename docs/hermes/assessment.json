@@ -2,8 +2,8 @@
   "schema_version": 3,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "9e5d1a58e2c418bcb77be40cd2250f620fa13c52",
-  "assessed_at": "2026-11-09T22:23:05Z",
+  "base_sha": "067b9b2672037324de3499f91e5c3bcffacfe289",
+  "assessed_at": "2026-11-09T22:47:46Z",
   "reviews": [
     {
       "id": "H001",
@@ -14785,7 +14785,7 @@
         },
         {
           "path": "agents/core/security/website_policy.py",
-          "sha256": "bd52767348c5ab7a753c67942e142877875c150cd4c27c6687812874e13d50c6"
+          "sha256": "5067350fbdfaa69262191bd1960e41b000cd2cf0c503eee1b9312f0cabff89e7"
         },
         {
           "path": "tests/test_h492_entrypoints.py",
@@ -41646,6 +41646,107 @@
       },
       "superseded_at": "2026-11-09T22:23:05Z",
       "replacement_sha256": "eba639200a884388ffdcb536b0cbcf00ff2f332915ebe233afdc19937fd62d0f"
+    },
+    {
+      "review": {
+        "id": "H334",
+        "row_sha256": "d9036ea602dd662f519f3618e083509f8688454e6ce659340fbbcb8ad7d39905",
+        "status": "equivalent",
+        "summary": "Scoped H492 dependency review, local HEAD 446cc7cb plus uncommitted sources, 2026-11-04: the complete immutable, per-call authorized H334 remote import contract remains implemented. The admin route still binds explicit repository/commit/entry/reference digests or the unchanged server-owned 190-entry/461-reference Hermes pin (agents/core/routers/skills.py:732-881; agents/core/skills/remote_pin.py:39-97). Real skill.install authority is checked before fetch and staging; streamed digest/name/reference validation precedes atomic no-replace PENDING_REVIEW and separate exact owner approval (agents/core/skills/importer.py:358-382; agents/core/skills/importer.py:543-597; agents/core/skills/importer.py:616-718; agents/core/skills/loader.py:812-821). Its mandatory shared HTTP transport now honors the owner website policy before DNS, preserving required GRANT, manifest/IP pinning/TLS/audit and no redirect fallback (agents/core/http_client.py:407-460; agents/core/http_client.py:709-735). The existing HUD pinning and local migration paths are unchanged. The combined 364-case H492 gate passed actual import/API/kernel/owner-halt/digest/quarantine and shared HTTP regressions. The prior accepted 31537-pass/119-existing-skip full backend belongs to the H334 snapshot; the H492 full backend is pending. Live intended-host upstream, native platform and later merged/CI/release acceptance remain separate. Equivalent is retained without new functionality credit; earlier evidence and limitations remain in history.",
+        "remaining": "",
+        "evidence": [
+          {
+            "path": "agents/core/skills/importer.py",
+            "sha256": "f2805236502cf9f2ece997f4327e4d32a75c98186751d6bad6d6bb9e975f1912"
+          },
+          {
+            "path": "agents/core/routers/skills.py",
+            "sha256": "ef0ab255f6921305a1a7432e060e173ce24bfbdbafe62326df722f905529d633"
+          },
+          {
+            "path": "agents/core/skills/marketplace.py",
+            "sha256": "351d7041289207548dd47e0a8111c1f13b8b21fc07d7dc607262d68bce7bc1d3"
+          },
+          {
+            "path": "agents/core/kernel/registry.py",
+            "sha256": "7ec67fb9fcb0755e51e6df01990da09e927c8eef3a9e52130ecd4a402df48edf"
+          },
+          {
+            "path": "agents/core/http_client.py",
+            "sha256": "049a063b68d3458279e4266e5c50c7c365bff1842a03375bebd6c57fbe210289"
+          },
+          {
+            "path": "scripts/nerva_import.py",
+            "sha256": "baa7be53e841067d43cd912c9c2cafbfa1d4ad9e95807849958ce871757b8dac"
+          },
+          {
+            "path": "tests/test_hermes_import.py",
+            "sha256": "f6342e20fcfe0b2b873b6cacd07d0668342a9c1a1bd21ee43c4f0d9d8647ff6e"
+          },
+          {
+            "path": "tests/test_skills_api.py",
+            "sha256": "1f2525f6d4c475a581d8c2929a50cf68c3e722b64de0e92fe7b2dacd596a2f3b"
+          },
+          {
+            "path": "tests/test_nerva_import.py",
+            "sha256": "39bcc5cf043c33a3603c6aaeee0de1b3e14ec8c272ee4ad29d57e579ed38ff73"
+          },
+          {
+            "path": "agents/core/skills/loader.py",
+            "sha256": "7bd68cc9fc16baf3d4e438b2d2558e2641568cc22da150be2bf83da64dcda31e"
+          },
+          {
+            "path": "agents/core/skills/hermes_pin_v2.json",
+            "sha256": "4dc8036b0e3ca395b1ae009e67d601c933921671059dae7a325cd7716518929a"
+          },
+          {
+            "path": "docs/HERMES_ABSORPTION.md",
+            "sha256": "bfca8d9c0b448010b7f12bc664727aedcb9b8c5441421263bb19c08a501b5eb3"
+          },
+          {
+            "path": "tests/test_h331_pending_skill_review.py",
+            "sha256": "4db8f83e939e3a2e0dca4bfa4f906c830abe209b5b4377787e1cc059fb83805d"
+          },
+          {
+            "path": "frontend/src/panels/skills-import.tsx",
+            "sha256": "e003bc718d633c82fd1bc132bbcd9fb6bb67718f90cd726be0133e20c88b1015"
+          },
+          {
+            "path": "tests/test_h334_importer.py",
+            "sha256": "cb9d89947d04df74776ad196fd8b6e592dfb85c5245b6ad513d682e3633b4051"
+          },
+          {
+            "path": "tests/test_h334_import_route.py",
+            "sha256": "eddb7f6670cd68a8e3302ef97ce127055a8e4b8790903fa67039f96546b8aa9c"
+          },
+          {
+            "path": "agents/core/skills/remote_pin.py",
+            "sha256": "5de2fc8a3450562c82295dff579613d4596a6a0121dd9a4010946af471863610"
+          },
+          {
+            "path": "frontend/src/panels/skills-import.test.tsx",
+            "sha256": "7196ffa94ddd84f02132c7c688e2b13ac88787556b06dd7bcce03aca9c47d22b"
+          },
+          {
+            "path": "tests/test_required_egress_http.py",
+            "sha256": "361d0a8871aefe7d6cfeb8ab8eb191bc4ee09c203b24e77e979ee6d9fa85afda"
+          },
+          {
+            "path": "agents/core/security/website_policy.py",
+            "sha256": "bd52767348c5ab7a753c67942e142877875c150cd4c27c6687812874e13d50c6"
+          },
+          {
+            "path": "tests/test_h492_entrypoints.py",
+            "sha256": "5c0217c2d164062bfb308a4f0df8982d857b4cb9203c96ceb1e65e8380fa5c5b"
+          },
+          {
+            "path": "tests/test_h492_egress.py",
+            "sha256": "2b28bcbf3442c08f7c8164eb900ad74ea1c6c16b171eb8b0bd3fd05891b9c247"
+          }
+        ]
+      },
+      "superseded_at": "2026-11-09T22:47:46Z",
+      "replacement_sha256": "c2d4c01776c48a8d5f27166b0656e0105154af1ac6716a0c2f388fc52c061177"
     }
   ],
   "impact_receipts": [
