@@ -1,4 +1,4 @@
-# Jarvis Hub — Backlog Multi-Agent
+# Nerva — Backlog Multi-Agent
 
 > Owner: Andrei · Planificat: 2026-05-30 · Echipă: agenți Claude + opencode
 > HUD: http://127.0.0.1:8080/ · Admin: /admin
