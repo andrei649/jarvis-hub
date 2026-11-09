@@ -16,15 +16,19 @@ class SessionSelectionError(RuntimeError):
         self.candidates = candidates or []
 
 
+_ALL_ROWS_SQL = "SELECT id,started_at,ended_at,metadata FROM sessions"
+_NATIVE_ROWS_SQL = ("SELECT id,started_at,ended_at,metadata FROM sessions "
+                    "WHERE id NOT IN (SELECT session_id FROM session_imports)")
+
+
 def _rows(checkpoints, *, native_only: bool = False) -> list[dict]:
     conn = getattr(checkpoints, "_conn", None)
     if conn is None:
         raise SessionSelectionError("store_unavailable", 503)
     try:
         with checkpoints._lock:
-            cursor = conn.execute(
-                "SELECT id,started_at,ended_at,metadata FROM sessions"
-                + (" WHERE id NOT IN (SELECT session_id FROM session_imports)" if native_only else ""))
+            cursor = conn.execute(   # two fixed statements; nothing is interpolated
+                _NATIVE_ROWS_SQL if native_only else _ALL_ROWS_SQL)
             values = cursor.fetchall()
     except Exception as exc:
         raise SessionSelectionError("store_unavailable", 503) from exc
