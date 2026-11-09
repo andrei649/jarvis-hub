@@ -10,8 +10,6 @@
     "require_owner_approval": false
   },
   "protected_paths": [
-    "selfdev-policy.json",
-    "scripts/selfdev_policy.py",
     ".github/workflows/**",
     ".github/actions/**",
     ".github/CODEOWNERS",
