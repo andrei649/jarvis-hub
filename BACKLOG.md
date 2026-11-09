@@ -12,6 +12,27 @@
 > **Nerva product & capability vision (the 1.0 gate expanded 2026-07-11; visions merged 2026-07-12):** [NERVA_VISION.md](NERVA_VISION.md) — brand architecture (Cortex/Atlas/Synapse/Vision/Ultron), six pillars, capability registry, the Hermes superiority bar; horizons ORIZONT 27–33 (= Nerva Programs A–G) below · provenance: [docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md](docs/research/2026-07-11-ai-os-vision-and-hermes-strategy.md)
 
 
+## Nerva rebrand — product-surface residue (2026-11-09, #1347)
+
+- [x] ✅ **RB-1 — product surfaces say Nerva.** The 2026-07-19 rename left residue: the HUD top-bar
+  and cinema wordmark, the legacy HUD and admin titles, the PWA manifest (`name`/`short_name`), the
+  OpenAPI title, the onboarding intro, installer/uninstaller banners, the Tauri `productName`, the
+  trademark policy and ~50 live docs. All now say Nerva; the HUD bundle is rebuilt. The desktop
+  identifier stays `com.jarvis.hub` (existing installs keep their data) and `nerva uninstall --gui`
+  looks for both `Nerva` and the pre-rename `Jarvis Hub` bundle names (test added). Test-manual
+  PGE-210 / finding 19 closed. Kept on purpose: agent personas, dated/historical docs.
+- [ ] **RB-2 — `NERVA_*` environment prefix (owner decision).** The 2026-07-19 decision kept
+  `JARVIS_*`. An alias is not a rename-only change: `.env` loading is layered and attributed
+  (`env_provenance.py`), four names are process-only, and posture flags are read at import. A
+  half-alias that honoured `NERVA_HARDENED` from the process but ignored it in `.env` would fail
+  open. Needs the owner's go-ahead and its own PR (alias at load, conflict refused at boot,
+  `.env.example` and docs moved, `JARVIS_*` kept as a deprecated spelling).
+- [ ] **RB-3 — code identifiers and codename (owner).** `JarvisConfig`/`JarvisError`, the
+  `jarvis-hub` package/service names (`JarvisHub` Windows service, `jarvis-hub.service`) and the
+  GitHub repo name stay until the repo rename in `docs/OWNER_TASKS.md`; renaming service names
+  needs a migration for installed boxes.
+
+
 ## Nerva Workspace — pilot B2B (2026-10-17)
 
 > **Directiva owner-ului, 2026-10-17:** *„avansează, pregătește interfața B2B pentru un pilot … produsul să
@@ -6288,7 +6309,7 @@ owner's machine in 30 seconds, read-only.
   implementation (+2 tests in `test_h27_capability_verification.py`). `qa_audit_probes.py` reports all
   nine claims CLOSED.
 
-- [ ] 🟡 **SEC-B6 — gate hardening.** *Bytes landed on `main` via #896 (`d57d87f`, 2026-08-09) with
+- [x] ✅ **SEC-B6 — gate hardening.** *Bytes landed on `main` via #896 (`d57d87f`, 2026-08-09) with
   green CI, but GitHub records no independent review submission for it, so per the #894 integrator
   directive below this stays 🟡 until an evidence-backed acceptance is recorded.*
   `test_route_auth_matrix.py` gains a *read* half: `test_no_unclassified_open_read` forces every OPEN
@@ -6307,7 +6328,19 @@ owner's machine in 30 seconds, read-only.
   recorded, not on the decision alone. *Follow-up delivered:* the export/purge-drift gap is closed — #900
   (`2f81029`, Max «copper-nectar») added `tests/test_forget_export_purge_parity.py` asserting
   nothing an export names may sit on the forget KEEP list.
-  Remaining (recounted 2026-10-26): the independent post-merge PASS/HOLD review of #896 against `docs/security/SEC-B6-open-reads-evidence.md` is not recorded; tick only with that recorded verdict.
+  **Independent review recorded 2026-11-09 (#1347): HOLD, fixed, then PASS.** A read-only reviewer
+  (not the builder) checked all 71 open GETs against handler source on `fcc3bef` and held on three
+  rows that served personal data unauthenticated: `/api/oracle/status` (open conflicts, sessions, PR
+  feed), `/learning/stats` (learned prompt text that can quote replies) and `/api/local-docs` (the
+  owner's folder path and file names). All three now carry `user_guard` (`9d098a4`). A second
+  independent reviewer then proved the guards on the fixed tree with a remote unauthenticated probe
+  (403 with no token configured, 401 with one, spoofed `X-Forwarded-For` refused), found no side door
+  (`/api/swarm/summary`, `/api/admin/stats` and the other readers are guarded), confirmed 68 open GETs
+  = 68 allowlist rows, and returned **PASS**. Detail: `docs/security/SEC-B6-open-reads-evidence.md`.
+  Below the bar, left as follow-ups: the open `/memory/stats` returns the current session id (an
+  identifier, no content — but `status.py` says session ids never leave open routes); the open
+  `/agents` returns the last raw exception string per agent; a reply that starts with `[` is recorded
+  as a failed interaction with its whole text as the error; the OAuth state map is never pruned.
 
 **Parallel bug hunt, 2026-07-28 (8 finder lenses · 164 agents · 52 findings · 41 confirmed after
 3-lens adversarial verification · 11 refuted).** Every confirmed finding was re-derived from source

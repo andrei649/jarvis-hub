@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### What changed for you — 2026-11-09
+
+**The product says Nerva everywhere you look (#1347)**
+- The HUD top bar, page titles, the installable web app, installers and the desktop app now
+  carry the Nerva name. An existing desktop install keeps its data, and uninstall finds the app
+  under either name.
+
+**Three status pages now need your user token (#1347)**
+- An independent security review found that the Oracle status, learning stats and local-docs
+  status pages answered anyone on the network with personal details. They now ask for the same
+  user token as the rest of your data. On the machine itself, with no token set, nothing changes.
+
 ### What changed for you — 2026-11-01 to 2026-11-02
 
 A plain-language summary of the last two days. The technical detail for each item is in its PR.

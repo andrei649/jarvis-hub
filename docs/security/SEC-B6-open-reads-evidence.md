@@ -82,6 +82,18 @@ above: `/api/design-manifest`, the two web manifests and two service workers, th
 `GET /agents` also returns each agent's `last_error` text and SOUL description (roster
 metadata, judged OK). A fresh independent PASS on the fixed tree is what closes SEC-B6.
 
+**Second independent review — PASS (2026-11-09, on `9d098a4`/`3ad439f`).** A different read-only
+reviewer confirmed each of the three decorators holds the real `user_guard` object (by identity),
+and probed the real app outside pytest (the suite's conftest overrides the guard, so ordinary
+tests prove nothing about it): a remote caller with no credentials gets 403 when no user token is
+configured (a spoofed `X-Forwarded-For: 127.0.0.1` too) and 401 when one is; the correct
+`x-user-token` passes. No side door: the other readers of the bridge status
+(`/api/swarm/summary`), of the learning data (`/learning`, `/api/admin/stats`,
+`/api/cognition/learning`) and of the local-docs summary are guarded, and neither websocket
+route touches them. Live open GETs = allowlist = 68. Five further rows spot-checked OK.
+Below the bar: `/memory/stats` returns the current session id; `/agents` returns the last raw
+exception string per agent; `/status` returns the hostname.
+
 Noted by the review, not fixed here: a reply that starts with `[` is recorded as a failed
 interaction with its whole text as the error (`orchestrator.py`, `is_degraded_reply`); the
 OAuth state map filled by the open `/api/oauth/auth-url` is never pruned.
