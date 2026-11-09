@@ -28,6 +28,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .. import archive_safe
 from . import references, switches
 from .signing import source_snapshot
 from .usage import (
@@ -880,6 +881,7 @@ class CuratorOperations:
         backup_id = uuid.uuid4().hex[:16]
         target = self.backup_dir / f"{backup_id}.tar.gz"
         manifest: dict[str, str] = {}
+        modes: dict[str, int] = {}
         total = 0
         descriptor = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0), 0o600)
         with os.fdopen(descriptor, "wb") as raw, tarfile.open(fileobj=raw, mode="w:gz") as archive:
@@ -916,13 +918,14 @@ class CuratorOperations:
                     info.mode = mode
                     archive.addfile(info, io.BytesIO(data))
                     manifest[member] = hashlib.sha256(data).hexdigest()
+                    modes[member] = mode
                 if item.get("fingerprint") and source_snapshot(source).fingerprint != item["fingerprint"]:
                     raise ValueError("source_drifted")
                 if item.get("tree_revision") and _tree_revision(source) != item["tree_revision"]:
                     raise ValueError("source_drifted")
                 if item.get("identity") and _identity(source) != item["identity"]:
                     raise ValueError("source_drifted")
-            body = json.dumps({"label": label, "files": manifest}, sort_keys=True).encode()
+            body = json.dumps({"label": label, "files": manifest, "modes": modes}, sort_keys=True).encode()
             info = tarfile.TarInfo("manifest.json")
             info.size = len(body)
             archive.addfile(info, io.BytesIO(body))
@@ -930,29 +933,55 @@ class CuratorOperations:
         self._verify_backup(target, digest)
         return backup_id, digest
 
-    def _verify_backup(self, target: Path, digest: str) -> dict:
+    def _unpack_backup(self, target: Path, digest: str, stage: Path) -> tuple[dict, dict]:
+        """Verify the recovery tar and unpack it into the empty directory *stage*.
+
+        The tar is only ever read through ``archive_safe``: it refuses unsafe names, links
+        and special members, enforces the member and byte caps, and tar metadata never
+        chooses a destination. File modes travel in the digest-bound manifest, not in tar
+        headers, because ``archive_safe`` writes plain regular files.
+        """
         if target.is_symlink() or not target.is_file() or target.stat().st_size > _MAX_BYTES * 2:
             raise ValueError("backup_unavailable")
         if hashlib.sha256(target.read_bytes()).hexdigest() != digest:
             raise ValueError("backup_corrupt")
+        limits = archive_safe.ArchiveLimits(max_members=_MAX_FILES + 1, max_bytes=_MAX_BYTES + _MAX_JSON)
         try:
-            with tarfile.open(target, "r:gz") as archive:
-                members = archive.getmembers()
-                if len(members) > _MAX_FILES + 1 or sum(member.size for member in members) > _MAX_BYTES + _MAX_JSON or any(not member.isfile() or member.size > _MAX_BYTES or member.mode & ~0o777 or
-                   member.name.startswith("/") or ".." in Path(member.name).parts or member.issym() or member.islnk()
-                   for member in members):
-                    raise ValueError("backup_unsafe")
-                manifest = json.load(archive.extractfile("manifest.json"))
-                files = manifest["files"]
-                if set(files) != {m.name for m in members if m.name != "manifest.json"}:
-                    raise ValueError("backup_corrupt")
-                for member in members:
-                    if member.name == "manifest.json":
-                        continue
-                    if not member.name.startswith(("skills/", "archives/")) or len(Path(member.name).parts) < 3 or hashlib.sha256(archive.extractfile(member).read()).hexdigest() != files[member.name]:
-                        raise ValueError("backup_corrupt")
-        except (tarfile.TarError, UnicodeError, AttributeError, KeyError, TypeError) as exc:
+            written = archive_safe.extract_tar_path(target, stage, limits=limits, compression="gz")
+        except archive_safe.ArchiveRejected as exc:
+            raise ValueError("backup_corrupt" if "corrupt" in str(exc) else "backup_unsafe") from exc
+        names = {"/".join(parts) for parts in written}
+        manifest_path = stage / "manifest.json"
+        if "manifest.json" not in names or manifest_path.stat().st_size > _MAX_JSON:
+            raise ValueError("backup_corrupt")
+        try:
+            manifest = json.loads(manifest_path.read_bytes())
+            files = manifest["files"]
+            modes = manifest["modes"]
+        except (ValueError, KeyError, TypeError, UnicodeError) as exc:
             raise ValueError("backup_corrupt") from exc
+        if not isinstance(files, dict) or not isinstance(modes, dict):
+            raise ValueError("backup_corrupt")
+        if set(files) != names - {"manifest.json"} or set(modes) != set(files):
+            raise ValueError("backup_corrupt")
+        for name, expected in files.items():
+            parts = name.split("/")
+            if not name.startswith(("skills/", "archives/")) or len(parts) < 3:
+                raise ValueError("backup_corrupt")
+            path = stage.joinpath(*parts)
+            if path.stat().st_size > _MAX_BYTES:
+                raise ValueError("backup_unsafe")
+            if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+                raise ValueError("backup_corrupt")
+            mode = modes[name]
+            if not isinstance(mode, int) or isinstance(mode, bool) or mode < 0 or mode & ~0o777:
+                raise ValueError("backup_unsafe")
+        manifest_path.unlink()
+        return files, modes
+
+    def _verify_backup(self, target: Path, digest: str) -> dict:
+        with tempfile.TemporaryDirectory(prefix="curator-verify-", dir=self.state_dir) as stage:
+            files, _modes = self._unpack_backup(target, digest, Path(stage))
         return files
 
     def _apply(self, plan: dict, state: dict, *, card_id: str | None, actor: str) -> dict:
@@ -1269,23 +1298,18 @@ class CuratorOperations:
                                        "archives": dict(state["archives"]),
                                        "state_snapshot": {key: copy.deepcopy(state[key]) for key in ("paused", "adopted", "last_run", "last_report", "run_count")}}
         self._save(state)
-        # Extract manually into a private stage. Tar metadata never chooses a destination.
+        # Unpack into a private stage through archive_safe (re-verifying every hash).
+        # Tar metadata never chooses a destination.
         with tempfile.TemporaryDirectory(prefix="curator-rollback-", dir=self.state_dir) as stage_name:
             stage = Path(stage_name)
-            with tarfile.open(archive_path, "r:gz") as archive:
-                for member in archive.getmembers():
-                    if member.name == "manifest.json":
-                        continue
-                    parts = Path(member.name).parts
-                    if parts[0] == "skills" and parts[1] not in active:
-                        raise ValueError("backup_target_mismatch")
-                    if parts[0] == "archives" and parts[1] not in archived:
-                        raise ValueError("backup_target_mismatch")
-                    destination = stage.joinpath(*parts)
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    with destination.open("xb") as handle:
-                        handle.write(archive.extractfile(member).read())
-                    os.chmod(destination, member.mode & 0o777)
+            files, modes = self._unpack_backup(archive_path, record["digest"], stage)
+            for name in files:
+                parts = name.split("/")
+                if parts[0] == "skills" and parts[1] not in active:
+                    raise ValueError("backup_target_mismatch")
+                if parts[0] == "archives" and parts[1] not in archived:
+                    raise ValueError("backup_target_mismatch")
+                os.chmod(stage.joinpath(*parts), modes[name])
             placed: list[Path] = []
             restored_archive_ids: list[str] = []
             displaced: list[tuple[Path, Path, dict]] = []
