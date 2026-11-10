@@ -2759,7 +2759,13 @@
   backup set cut by the next prune, and schema-refusal false positives; all fixed (an earlier part
   used after a continue is listed again; backups are kept and pruned per conversation; a refusal is
   read from the schema field's name and forgotten after an hour; a title key column and linear sweep
-  lists; 65 more tests). That round is not yet re-reviewed. Both rows stay `partial`; 146/697.
+  lists; 65 more tests). **Fourth review of H440 (2026-11-10): no blocker, no major, safe to merge,
+  contract met on code evidence** — a base-commit store migrates additively and survives a downgrade,
+  old backups stay readable, the sweep selects the same sessions as before on 60 random lineage
+  forests, guest isolation holds outside pytest; its one finding worth fixing soon (retried deletes
+  piling copies into a kept backup set) is fixed. **H440 is `equivalent`** (no live LM Studio/Ollama
+  run is claimed, as for the other rows of the sprint); H484 stays `partial` (no room or managed
+  policy can force the mode). Headline 146 → **147/697**; `needs_review` 0.
 
 ## Darwin feature absorption — 2026-09-09
 
