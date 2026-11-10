@@ -282,8 +282,8 @@ def test_a_rename_into_another_conversations_part_numbers_is_refused(cp):
         assert caught.value.reason == "title_taken", name
     assert cp.rename_session("other", "Fix issue #12") is True          # nobody's part number
     assert cp.rename_session(two, "Trip plan #7") is True               # its own conversation's
-    with pytest.raises(st.TitleRefused):
-        cp.rename_session(two, "Trip plan")                             # another member's exact name
+    # third review (m4): the conversation's own first name is its listed row's to take
+    assert cp.rename_session(two, "Trip plan") is True
 
 
 # ── J3: branches ─────────────────────────────────────────────────────────────────

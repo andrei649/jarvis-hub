@@ -313,20 +313,27 @@ def _sessions(ctx: CommandContext) -> str:
     # H440: the sessions nobody continued yet — the newest part of a continued chat, not
     # the parts before it — so every id printed is one to resume. Archived chats are not
     # in this list, as they are not in the HUD's.
-    rows = (checkpoints.get_sessions(limit=5, archived=False, hide_continuations=True)
+    # Third review: as ``GET /sessions`` does, an imported or derived chat is the owner's
+    # alone (left out before the limit), and a continued session that was used again is
+    # listed — its later turns are in no continuation — and marked as an earlier part.
+    owner = bool(ctx.principal.admin)
+    rows = (checkpoints.get_sessions(limit=5, archived=False, native_only=not owner, hide_continuations=True)
             if checkpoints is not None else [])
     if not rows:
         return "No sessions recorded."
     from agents.core.session_titles import title_fields
 
+    continued = getattr(checkpoints, "continued_sessions", None)
+    continued = continued([row.get("session_id") or row.get("id") for row in rows]) if callable(continued) else set()
     lines = []
     for row in rows:
         sid = row.get("session_id") or row.get("id") or "?"
         started = row.get("started_at") or ""
         # H413: a title is the opening words of the owner's conversation, so only the
         # owner sees it; a widget visitor or a paired guest gets the id and time.
-        title = title_fields(row.get("metadata"))["title"] if ctx.principal.admin else ""
-        lines.append(f"{sid}  {started}  {title}".rstrip())
+        title = title_fields(row.get("metadata"))["title"] if owner else ""
+        note = "  (earlier part, still in use)" if sid in continued else ""
+        lines.append(f"{sid}  {started}  {title}".rstrip() + note)
     return "Recent sessions:\n" + "\n".join(lines)
 
 

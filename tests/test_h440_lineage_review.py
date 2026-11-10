@@ -580,7 +580,7 @@ def test_nerva_sessions_prints_the_id_a_resume_opens():
                   client_factory=lambda env: _Client())
     assert main(["sessions"], context=ctx) == EXIT_OK
     assert out.getvalue().splitlines() == [
-        "session_tip  2026-09-26T10:00:00  Trip plan  (+2 earlier)",
+        "session_tip  2026-09-26T10:00:00  Trip plan  (+2 other sessions in this conversation)",
         "solo  2026-09-26T11:00:00",
         "old-hub  2026-09-26T12:00:00  Legacy",
     ]
@@ -615,7 +615,8 @@ def test_a_rename_to_a_reserved_or_used_name_is_refused_with_the_reason(cp, monk
         assert rename("other", taken) == (409, "title_taken"), taken
     assert cp.session_title("other")["title"] == "Something else"
     assert rename("root", "Something else") == (409, "title_taken")
-    assert rename(two, "Trip plan") == (409, "title_taken")              # its own root's name
+    # third review (m4): a conversation's own name is its listed row's to take
+    assert rename(two, "Trip plan") == (200, None)
     # its own name again, a free name, and a numbered name nobody uses
     assert rename("other", "Something else") == (200, None)
     assert rename("other", "Fix issue #12") == (200, None)

@@ -18,10 +18,11 @@ H652 adds ``GET /sessions/{id}/trajectories`` (admin): the session's saved full 
 exported as ShareGPT or OpenAI chat rows for training (``agents/core/trajectory.py``).
 
 H440 adds the owner's rename (`PATCH /sessions/{id}/title`, user-guarded and owner-fenced
-like the pin: a human title is never replaced by the automatic ones), hides continuations
-from `GET /sessions` (each row says which lineage member a resume opens: `resume_id`, and
-how many `continuations` it has), and lets `POST /sessions/resume` take a `title`, which
-opens the newest member of that lineage.
+like the pin: a human title is never replaced by the automatic ones), hides the continued
+parts of a conversation from `GET /sessions` (each row says which session a resume opens:
+`resume_id`, how many other sessions its conversation has: `continuations`, and whether it
+is an `earlier_part` still in use), and lets `POST /sessions/resume` take a `title`, which
+opens that conversation where it was last used.
 """
 
 from uuid import UUID
@@ -108,8 +109,11 @@ async def get_sessions(req: Request, archived: bool = False):
     # a guest's native history out of the window; the row probe below stays authoritative.
     # H440: both views list every session nobody continued yet — the newest part of a
     # continued chat (each branch of one continued more than once) and every plain chat;
-    # the parts that were continued are not rows. Archive, unarchive, pin and (with
-    # ``lineage=true``) delete act on the whole conversation.
+    # the parts that were continued are not rows — except one that got turns after it was
+    # continued (third review: ``/sessions/continue`` does not move the chat that is open,
+    # so those turns are in no continuation): it is a row again, under its own title,
+    # marked ``earlier_part``. Archive, unarchive, pin and (with ``lineage=true``) delete
+    # act on the whole conversation.
     sessions = orch.checkpoints.get_sessions(limit=20, archived=archived, native_only=not admin,
                                              hide_continuations=True)
     if not admin:
@@ -121,17 +125,20 @@ async def get_sessions(req: Request, archived: bool = False):
     ids = [row.get("session_id") or row.get("id") for row in sessions]
     others = getattr(orch.checkpoints, "lineage_others", None)
     others = others(ids) if callable(others) else {}
+    continued = getattr(orch.checkpoints, "continued_sessions", None)
+    continued = continued(ids) if callable(continued) else set()
     return {"sessions": [{**row, **title_fields(row.get("metadata")), **_stamp_fields(row),
-                          **_lineage_fields(sid, others)} for sid, row in zip(ids, sessions, strict=True)]}
+                          **_lineage_fields(sid, others, continued)} for sid, row in zip(ids, sessions, strict=True)]}
 
 
-def _lineage_fields(sid, others: dict) -> dict:
-    """H440 — ``resume_id``: the session a resume of this row opens (the row itself: a row
-    is always a session nobody continued yet; the field stays for clients written when a
-    row was the first part). ``continuations``: how many other sessions its conversation
-    has — earlier parts and other branches — which is what a whole-conversation delete
-    removes besides this one."""
-    return {"resume_id": sid, "continuations": int(others.get(sid) or 0)}
+def _lineage_fields(sid, others: dict, continued=()) -> dict:
+    """H440 — ``resume_id``: the session a resume of this row opens (the row itself; the
+    field stays for clients written when a row was the first part). ``continuations``: how
+    many other sessions its conversation has — earlier and later parts, other branches —
+    which is what a whole-conversation delete removes besides this one. ``earlier_part``:
+    this session was continued and then used again, so it is listed beside the session
+    that continues it."""
+    return {"resume_id": sid, "continuations": int(others.get(sid) or 0), "earlier_part": sid in continued}
 
 
 def _stamp_fields(row: dict) -> dict:

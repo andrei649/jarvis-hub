@@ -9,10 +9,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
-import { SessionsPanel, deletePath, resumeTarget, titlePath } from '../panels/sessions';
+import { SessionsPanel, deletePath, partDeleted, resumeTarget, titlePath } from '../panels/sessions';
 
 let calls;
 let renameReply;
+let deleteReply;
+let chats;
 
 function reply(status, body) {
   return { ok: status < 400, status, json: async () => body, text: async () => JSON.stringify(body) };
@@ -22,27 +24,25 @@ beforeEach(() => {
   cleanup();
   calls = [];
   renameReply = (body) => reply(200, { ok: true, session: 'root-1', title: body.title, title_source: 'human' });
+  deleteReply = () => reply(200, { ok: true, session: 'root-9', backup: '/b/root-9.json', deleted: ['cont-8', 'root-9'], backups: ['/b/cont-8.json', '/b/root-9.json'] });
+  chats = [
+    { id: 'root-1', title: 'Trip plan', title_source: 'model', resume_id: 'cont-3', continuations: 2 },
+    { id: 'solo-1', title: 'Other', title_source: 'human', resume_id: 'solo-1', continuations: 0 },
+  ];
   global.fetch = vi.fn(async (url, init = {}) => {
     const u = String(url);
     const body = init.body ? JSON.parse(init.body) : undefined;
     calls.push({ url: u.replace(/^.*?(\/sessions)/, '$1'), method: init.method || 'GET', body });
     if (u.endsWith('/sessions/resume')) return reply(200, { ok: true, session: body.session_id, turns: [], recap: null });
     if (u.endsWith('/title')) return renameReply(body);
-    if ((init.method || '') === 'DELETE') {
-      return reply(200, { ok: true, session: 'root-9', backup: '/b/root-9.json', deleted: ['cont-8', 'root-9'], backups: ['/b/cont-8.json', '/b/root-9.json'] });
-    }
+    if ((init.method || '') === 'DELETE') return deleteReply();
     if (u.endsWith('/sessions?archived=true')) {
       return reply(200, { sessions: [
         { id: 'root-9', title: 'Old trip', archived_at: 'x', resume_id: 'cont-8', continuations: 1 },
         { id: 'solo-9', title: 'Old note', archived_at: 'x', resume_id: 'solo-9', continuations: 0 },
       ] });
     }
-    if (u.endsWith('/sessions')) {
-      return reply(200, { sessions: [
-        { id: 'root-1', title: 'Trip plan', title_source: 'model', resume_id: 'cont-3', continuations: 2 },
-        { id: 'solo-1', title: 'Other', title_source: 'human', resume_id: 'solo-1', continuations: 0 },
-      ] });
-    }
+    if (u.endsWith('/sessions')) return reply(200, { sessions: chats });
     return reply(404, {});
   });
 });
@@ -138,6 +138,54 @@ describe('SessionsPanel — H440 lineage and rename', () => {
     await waitFor(() => expect(sent('DELETE')).toHaveLength(1));
     expect(sent('DELETE')[0].url).toBe('/sessions/root-9?confirm=DELETE&lineage=true');
     expect((await screen.findByRole('status')).textContent).toContain('deleted the whole conversation · 2 sessions · 2 backups');
+  });
+
+  /* Third review (m5): the hub's refusal of a whole-conversation delete that stopped part
+     way carries what it deleted. The panel read "not deleted · backup failed" and kept
+     showing the rows that were gone. */
+  it('says what a delete that stopped part way did delete, and reloads the list', async () => {
+    deleteReply = () => reply(500, { error: 'backup failed', reason: 'backup_failed',
+      deleted: ['cont-8'], backups: ['/b/cont-8.json'], pruned: [] });
+    render(<SessionsPanel />);
+    fireEvent.click(await screen.findByRole('tab', { name: 'archived' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'delete root-9 permanently' }));
+    const lists = () => calls.filter((c) => c.method === 'GET' && c.url === '/sessions?archived=true').length;
+    const before = lists();
+    fireEvent.click(screen.getByRole('button', { name: 'confirm delete root-9' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe('stopped part way · backup failed · 1 session deleted (1 backup written) · the rest of the conversation is still here');
+    expect(alert.textContent).not.toContain('not deleted');
+    await waitFor(() => expect(lists()).toBe(before + 1));
+  });
+
+  it('still says "not deleted" when the hub deleted nothing', async () => {
+    deleteReply = () => reply(409, { error: 'active session', reason: 'active_session' });
+    render(<SessionsPanel />);
+    fireEvent.click(await screen.findByRole('tab', { name: 'archived' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'delete root-9 permanently' }));
+    fireEvent.click(screen.getByRole('button', { name: 'confirm delete root-9' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('not deleted · active session');
+    expect(partDeleted({ body: { error: 'x', deleted: [] } })).toBe('');
+    expect(partDeleted({ body: { error: 'session busy', deleted: ['a', 'b'], backups: ['/1', '/2'] } }))
+      .toBe('stopped part way · session busy · 2 sessions deleted (2 backups written) · the rest of the conversation is still here');
+  });
+
+  /* Third review (B1): a session that was continued and then used again is a row of its
+     own, under its own title; the hub marks it. */
+  it('marks an earlier part that is still in use, and resumes it by its own id', async () => {
+    chats = [
+      { id: 'root-1', title: 'Trip plan', resume_id: 'root-1', continuations: 1, earlier_part: true },
+      { id: 'cont-2', title: 'Trip plan #2', resume_id: 'cont-2', continuations: 1, earlier_part: false },
+    ];
+    render(<SessionsPanel />);
+    await screen.findByText('Trip plan');
+    const badges = screen.getAllByTestId('earlier-part-badge');
+    expect(badges).toHaveLength(1);
+    expect(badges[0].textContent).toBe('earlier part · in use');
+    expect(badges[0].getAttribute('title')).toContain('its later turns are only here');
+    fireEvent.click(screen.getByRole('button', { name: 'resume root-1' }));
+    await waitFor(() => expect(sent('POST')).toHaveLength(1));
+    expect(sent('POST')[0].body).toEqual({ session_id: 'root-1' });
   });
 
   it('deletes a chat nobody continued as before', async () => {

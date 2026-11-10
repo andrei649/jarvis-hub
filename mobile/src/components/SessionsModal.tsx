@@ -95,7 +95,7 @@ export function SessionsModal({
                     {[
                       item.agent_id,
                       item.turn_count != null ? `${item.turn_count} turns` : null,
-                      item.continuations ? `+${item.continuations} continued` : null,
+                      item.continuations ? `+${item.continuations} other in this conversation` : null,
                       formatDate(item.started_at),
                     ]
                       .filter(Boolean)

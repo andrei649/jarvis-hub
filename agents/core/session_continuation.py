@@ -173,22 +173,31 @@ def _lineage_title(conn, source, root):
     lineage``) continues its conversation's count; any other title is taken whole, its
     own trailing number included (``Fix issue #12`` → ``Fix issue #12 #2``). Numbers are
     counted over every session's title, so two chats never share one name. ``""`` when
-    neither has a title."""
-    from .session_titles import next_lineage_title
+    neither has a title. Third review: the titles that count are found through the title
+    index (``session_titles.title_rows``), not by reading every session; and the name is
+    never longer than a rename accepts."""
+    from .session_titles import (
+        _stored_title,
+        lineage_stem,
+        next_lineage_title,
+        sync_title_keys,
+        title_key,
+        title_rows,
+    )
 
-    titles = {}
-    for sid, raw in conn.execute("SELECT id, metadata FROM sessions"):
-        try:
-            meta = json.loads(raw or "{}")
-        except (TypeError, ValueError):
-            continue
-        if isinstance(meta, dict) and isinstance(meta.get("title"), str) and meta["title"].strip():
-            titles[sid] = (meta["title"], str(meta.get("title_source") or ""))
-    base, source_kind = titles.get(source) or titles.get(root) or ("", "")
-    if not base:
+    sync_title_keys(conn)
+    base, source_kind = "", ""
+    for sid in (source, root):
+        row = conn.execute("SELECT metadata FROM sessions WHERE id=?", (sid,)).fetchone()
+        base, source_kind = _stored_title(row[0] if row else None)
+        if base.strip():
+            break
+    if not base.strip():
         return ""
-    return next_lineage_title(base, [title for title, _kind in titles.values()],
-                              numbered=source_kind == "lineage")
+    numbered = source_kind == "lineage"
+    stem = title_key(lineage_stem(base, numbered=numbered))
+    return next_lineage_title(base, [title for _sid, title, _kind in title_rows(conn, stem, numbered=True)],
+                              numbered=numbered)
 
 
 def _lineage_stamps(conn, source):

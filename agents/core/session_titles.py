@@ -199,7 +199,35 @@ def lineage_base(title: object) -> str:
     return match.group("base") if match else line
 
 
-def next_lineage_title(title: object, taken, *, numbered: bool = True) -> str:
+def with_suffix(base: str, suffix: str, limit: int) -> str:
+    """``base + suffix`` in at most ``limit`` characters: when it would be longer the base
+    is cut (and marked with ``…``), never the suffix — a part number or a "(2)" is what
+    tells two names apart."""
+    if len(base) + len(suffix) <= limit:
+        return base + suffix
+    head = base[:max(1, limit - len(suffix) - 1)].rstrip(" ,;:-–…")
+    return f"{head}…{suffix}"
+
+
+#: Room kept for " #N" after a conversation's name: four digits of parts.
+_PART_SUFFIX_ROOM = len(" #9999")
+
+
+def lineage_stem(title: object, *, numbered: bool = True, limit: int = MAX_HUMAN_TITLE_CHARS) -> str:
+    """The name the parts of a conversation are numbered after: ``title``'s base
+    (:func:`lineage_base`) when ``title`` is itself a part name (``numbered``), else the
+    whole title — cut, when it is so long that a part number would take the name past
+    ``limit`` (what a rename accepts). The cut depends on the name alone, so every part of
+    one conversation is numbered after the same stem."""
+    line = " ".join(title.split()) if isinstance(title, str) else ""
+    base = lineage_base(line) if numbered else line
+    if base and len(base) + _PART_SUFFIX_ROOM > limit:
+        base = with_suffix(base, "", limit - _PART_SUFFIX_ROOM)
+    return base
+
+
+def next_lineage_title(title: object, taken, *, numbered: bool = True,
+                       limit: int = MAX_HUMAN_TITLE_CHARS) -> str:
     """H440 — the name of the next continuation of a session titled ``title``:
     ``base #N``, N one past the highest number any title in ``taken`` already uses for
     that base (the unnumbered base itself counts as 1). ``""`` when there is no base.
@@ -207,9 +235,9 @@ def next_lineage_title(title: object, taken, *, numbered: bool = True) -> str:
     ``numbered`` says whether ``title`` is itself a part name this function produced
     (``Trip plan #2`` → base ``Trip plan``). When it is not, a trailing number is the
     title's own (``Fix issue #12`` → ``Fix issue #12 #2``): ``#N`` only ever counts the
-    parts of one conversation."""
-    line = " ".join(title.split()) if isinstance(title, str) else ""
-    base = lineage_base(line) if numbered else line
+    parts of one conversation. A very long name is cut first (:func:`lineage_stem`), so no
+    part's name is longer than a rename accepts."""
+    base = lineage_stem(title, numbered=numbered, limit=limit)
     if not base:
         return ""
     folded, highest = _fold(base), 1
@@ -220,17 +248,102 @@ def next_lineage_title(title: object, taken, *, numbered: bool = True) -> str:
     return f"{base} #{highest + 1}"
 
 
-def distinct_title(title: str, taken) -> str:
+def distinct_title(title: str, taken, *, limit: int | None = None) -> str:
     """H440 review — ``title``, or ``title (2)``, ``title (3)``… when another chat already
     goes by it: how two chats opened with the same words are told apart. Deliberately not
-    the ``#N`` of :func:`next_lineage_title`, which numbers the parts of one conversation."""
+    the ``#N`` of :func:`next_lineage_title`, which numbers the parts of one conversation.
+    With ``limit`` the suffixed title is at most that long (:func:`with_suffix`)."""
     used = {_fold(other) for other in taken if isinstance(other, str)}
     if _fold(title) not in used:
         return title
     base, n = " ".join(title.split()), 2
-    while _fold(f"{base} ({n})") in used:
+    bound = limit if limit is not None else len(base) + 32
+    while _fold(with_suffix(base, f" ({n})", bound)) in used:
         n += 1
-    return f"{base} ({n})"
+    return with_suffix(base, f" ({n})", bound)
+
+
+# ── the title lookup key (third review) ──────────────────────────────────────────
+#
+# A title write compares the new title with the others' (a "(2)", a refused rename, the
+# next part number). Reading every session's metadata for that, inside the write
+# transaction, grew with the store. ``sessions.title_key`` is the folded title, indexed:
+# ``""`` for a session without one, NULL for a row whose key is not known — a new row, or
+# one whose title some other writer changed (the trigger below resets it). Every reader
+# calls :func:`sync_title_keys` first, which fills in the unknown ones.
+
+_ID_SHAPED_RE = re.compile(r"session_[0-9a-f]{32}")
+_TITLE_KEY_STALE_TRIGGER = """CREATE TRIGGER IF NOT EXISTS session_title_key_stale
+    AFTER UPDATE OF metadata ON sessions
+    WHEN COALESCE((CASE WHEN json_valid(NEW.metadata) THEN json_extract(NEW.metadata, '$.title') END), '')
+      IS NOT COALESCE((CASE WHEN json_valid(OLD.metadata) THEN json_extract(OLD.metadata, '$.title') END), '')
+    BEGIN UPDATE sessions SET title_key = NULL WHERE id = NEW.id; END"""
+
+
+def id_shaped(title: object) -> bool:
+    """Whether ``title`` reads as a session id the hub generates (``session_`` and 32 hex
+    digits): never a name, whether or not such a session exists."""
+    return isinstance(title, str) and _ID_SHAPED_RE.fullmatch(title.strip()) is not None
+
+
+def title_key(title: object) -> str:
+    """What two titles are compared by: case and spacing folded; ``""`` for no title."""
+    return _fold(title) if isinstance(title, str) and title.strip() else ""
+
+
+def _stored_title(raw: object) -> tuple[str, str]:
+    try:
+        meta = json.loads(raw or "{}")
+    except (TypeError, ValueError):
+        return "", ""
+    if not isinstance(meta, dict) or not isinstance(meta.get("title"), str):
+        return "", ""
+    return meta["title"], str(meta.get("title_source") or "")
+
+
+def initialize_title_index(conn) -> None:
+    """Add ``sessions.title_key`` and its index to a store that has none (the same
+    add-a-column migration ``session_continuation.initialize`` does), and fill it in."""
+    if "title_key" not in {row[1] for row in conn.execute("PRAGMA table_info(sessions)")}:
+        conn.execute("ALTER TABLE sessions ADD COLUMN title_key TEXT")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_title_key ON sessions(title_key)")
+    conn.execute(_TITLE_KEY_STALE_TRIGGER)
+    sync_title_keys(conn)
+
+
+def sync_title_keys(conn) -> int:
+    """Give every row whose key is unknown its key; how many there were. An index lookup
+    when there are none. A row whose metadata changed since it was read keeps NULL for the
+    next call."""
+    pending = conn.execute("SELECT id, metadata FROM sessions WHERE title_key IS NULL").fetchall()
+    for sid, raw in pending:
+        conn.execute("UPDATE sessions SET title_key=? WHERE id=? AND title_key IS NULL AND metadata IS ?",
+                     (title_key(_stored_title(raw)[0]), sid, raw))
+    return len(pending)
+
+
+def title_rows(conn, key: str, *, numbered: bool = False) -> list[tuple[str, str, str]]:
+    """``(id, title, title_source)`` of the sessions whose title folds to ``key`` — or,
+    ``numbered``, reads ``<key> #N``. Index lookups; :func:`sync_title_keys` first."""
+    if not key:
+        return []
+    if numbered:
+        # every key that starts with "<key> #": the range up to the next character after "#"
+        found = conn.execute("SELECT id, metadata FROM sessions WHERE title_key >= ? AND title_key < ?",
+                             (f"{key} #", f"{key} $")).fetchall()
+    else:
+        found = conn.execute("SELECT id, metadata FROM sessions WHERE title_key = ?", (key,)).fetchall()
+    out = []
+    for sid, raw in found:
+        title, source = _stored_title(raw)
+        if not title:
+            continue
+        if numbered:
+            match = _NUMBERED_RE.match(" ".join(title.split()))
+            if not match or _fold(match.group("base")) != key:
+                continue
+        out.append((sid, title, source))
+    return out
 
 
 def bind_own_words(message: str, words: str):
@@ -310,4 +423,5 @@ __all__ = [
     "bind_own_words", "clean_model_title", "distinct_title", "human_title", "instant_title", "lineage_base",
     "model_title", "next_lineage_title", "own_words", "reserved_title", "reset_own_words", "schema_title",
     "title_fields",
+    "id_shaped", "initialize_title_index", "lineage_stem", "sync_title_keys", "title_key", "title_rows", "with_suffix",
 ]

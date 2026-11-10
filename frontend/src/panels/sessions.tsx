@@ -13,7 +13,12 @@
    the automatic titles never replace. Archive, unarchive and pin act on the whole
    conversation (the hub stamps every member), in both views. Delete removes the row's
    session; for a continued chat the confirm button offers the whole conversation
-   (`lineage=true`) and says how many other sessions go with it. */
+   (`lineage=true`) and says how many other sessions go with it.
+   Third review: a session that was continued and then used again is a row too, under its
+   own title, with an "earlier part" badge (the hub marks it `earlier_part`): its later
+   turns are in no continuation. And a whole-conversation delete that stops part way says
+   what it did delete (the hub's refusal carries `deleted` and `backups`) and reloads the
+   list — it used to read "not deleted" over a list that still showed the deleted rows. */
 import React, { useState } from 'react';
 import { apiDelete, apiPatch, apiPost } from '../api/client';
 import { Card, Row, State, arr, asLive, mono, refusalReason, useApi } from '../panel-kit';
@@ -67,6 +72,17 @@ export function RecapView({ recap, session }: { recap: any; session: string }) {
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
+/** H440 third review — what a refused delete did before it stopped: the hub's refusal of a
+    whole-conversation delete carries the sessions already deleted and their backups.
+    '' when nothing was deleted. */
+export function partDeleted(err: any): string {
+  const gone = arr(err?.body, 'deleted').filter(Boolean);
+  if (!gone.length) return '';
+  const backups = arr(err?.body, 'backups').filter(Boolean).length;
+  return `stopped part way · ${refusalReason(err, 'refused')} · ${plural(gone.length, 'session')} deleted`
+    + ` (${plural(backups, 'backup')} written) · the rest of the conversation is still here`;
+}
+
 export function SessionsPanel() {
   const [archived, setArchived] = useState(false);
   const { d, e, loading, reload } = useApi(archived ? '/sessions?archived=true' : '/sessions');
@@ -91,11 +107,17 @@ export function SessionsPanel() {
       .catch((err) => { setResumed(null); setError(`not resumed · ${refusalReason(err, 'refused')}`); })
       .finally(() => setBusy(''));
   };
-  const act = (sid: string, run: () => Promise<any>, done: (r: any) => string, verb: string) => {
+  /* `partly`: what a refusal says when the action was done in part (then the list is stale). */
+  const act = (sid: string, run: () => Promise<any>, done: (r: any) => string, verb: string,
+    partly?: (err: any) => string) => {
     setBusy(sid); setError(''); setNote(''); setConfirming('');
     run()
       .then((r) => { setNote(done(r)); reload(); })
-      .catch((err) => setError(`not ${verb} · ${refusalReason(err, 'refused')}`))
+      .catch((err) => {
+        const part = partly ? partly(err) : '';
+        setError(part || `not ${verb} · ${refusalReason(err, 'refused')}`);
+        if (part) reload();
+      })
       .finally(() => setBusy(''));
   };
   const archive = (sid: string) => act(sid, () => apiPost(archivePath(sid)), () => `archived ${sid}`, 'archived');
@@ -103,7 +125,7 @@ export function SessionsPanel() {
   const remove = (sid: string, more = 0) => act(sid, () => apiDelete(deletePath(sid, more > 0), { admin: true }),
     (r) => (more > 0
       ? `deleted the whole conversation · ${plural(r?.deleted?.length ?? more + 1, 'session')} · ${plural(arr(r, 'backups').filter(Boolean).length, 'backup')}`
-      : `deleted ${sid}${r?.backup ? ` · backup at ${r.backup}` : ''}`), 'deleted');
+      : `deleted ${sid}${r?.backup ? ` · backup at ${r.backup}` : ''}`), 'deleted', partDeleted);
   const pin = (sid: string) => act(sid, () => apiPost(pinPath(sid)),
     () => `pinned ${sid} · never archived or deleted by retention`, 'pinned');
   const unpin = (sid: string) => act(sid, () => apiPost(unpinPath(sid)), () => `unpinned ${sid}`, 'unpinned');
@@ -151,6 +173,9 @@ export function SessionsPanel() {
         {more > 0 && <span data-testid="lineage-badge"
           title={`${plural(more, 'other session')} in this conversation (earlier parts, other branches)`}
           style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--ink-2)' }}>+{more}</span>}
+        {s?.earlier_part === true && <span data-testid="earlier-part-badge"
+          title="an earlier part of this conversation, used again after it was continued — its later turns are only here"
+          style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--ink-2)' }}>earlier part · in use</span>}
         <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>{s?.turns ?? s?.count ?? ''}</span>
         {sid && <button className="tool-btn" disabled={!!busy} aria-label={`rename ${sid}`}
           onClick={() => { setError(''); setNote(''); setRenaming({ sid, title: String(s?.title || '') }); }}>rename</button>}
