@@ -2549,6 +2549,40 @@
       "vendored_sha256": "e92e4459749cf6c9689b55ef691fad0f3aecbdbcdebdd15bf7b24c65e491aa05"
     },
     {
+      "path": "plugins/platforms/a2a/protocol.py",
+      "rules_applied": [
+        "os-env",
+        "threading-locks",
+        "a2a-shared",
+        "a2a-futures"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "68cf0ebd624a703fd3c575c481469860d8ee7a4a90091a26017b5ae294908574",
+      "vendored_sha256": "4906a4dcc8b9099b1531c3fe3eba1430ec6b0c1923c1cd8d2e507ab32cff57b7"
+    },
+    {
+      "path": "plugins/platforms/a2a/security.py",
+      "rules_applied": [
+        "os-env",
+        "a2a-urllib",
+        "a2a-shared"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "509f4118f03ce654cdd49868184a32e59fe89165b1842934daef6845cb359202",
+      "vendored_sha256": "15c33b410e472f330b2b258c8a799eadfcb7fc47588e1cbf7482539825aed81c"
+    },
+    {
+      "path": "plugins/platforms/a2a/tools.py",
+      "rules_applied": [
+        "a2a-urllib",
+        "a2a-shared",
+        "a2a-futures"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "fb3db1bc1391d28cee39fdf673b49881264670df0a401c491b6d59f53f56591c",
+      "vendored_sha256": "a5a0d5de0241f76c87e53af5a842075f9e1e69b044c0f8b2d1f30f8c118d37c2"
+    },
+    {
       "path": "plugins/web/__init__.py",
       "rules_applied": [],
       "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
@@ -3791,6 +3825,33 @@
       "pattern": "^(?P<i>[ \\t]*)import threading(?P<rest>[ \\t]*(?:#.*)?)$",
       "replacement": "\\g<i>from agents.vendor.hermes_compat import locks as threading\\g<rest>",
       "why": "locks only; vendored code starts no thread"
+    },
+    {
+      "id": "a2a-urllib",
+      "paths": [
+        "plugins/platforms/a2a/"
+      ],
+      "pattern": "^(?P<i>[ \\t]*)import urllib\\.(?:request|error|parse)(?P<rest>[ \\t]*(?:#.*)?)$",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat import urllib\\g<rest>",
+      "why": "the governed urllib: every urlopen goes through the compat httpx to the PluginHTTPClient bound for one A2A call, behind the owner's per-peer origin and credential guard"
+    },
+    {
+      "id": "a2a-shared",
+      "paths": [
+        "plugins/platforms/a2a/"
+      ],
+      "pattern": "^(?P<i>[ \\t]*)from (?:gateway\\.platforms\\._shared|hermes_constants|hermes_cli\\.config|agent\\.proxy_bypass|agent\\.secret_scope|agent\\.redact|pathlib) import ",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat.a2a_shared import ",
+      "why": "peers, credential handles, home directory and redaction come from the Nerva A2A scope"
+    },
+    {
+      "id": "a2a-futures",
+      "paths": [
+        "plugins/platforms/a2a/"
+      ],
+      "pattern": "^(?P<i>[ \\t]*)from concurrent\\.futures import ",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat.futures import ",
+      "why": "fan-out runs on a small shared Nerva pool that carries the call's egress binding"
     },
     {
       "id": "urllib-request",

@@ -47,6 +47,7 @@ import { AutonomyControlPanel } from './panels/autonomy-legacy';
 import { DesktopAllowlistPanel } from './panels/desktop-allowlist';
 import { LlmRoutingPanel } from './panels/llm-routing';
 import { CustomEndpointsPanel } from './panels/custom-endpoints';
+import { IntegrationsPanel } from './panels/integrations';
 import { WorkflowTracesPanel } from './panels/workflows-advanced';
 import { PresenceInboxPanel } from './panels/presence-inbox';
 import { ReviewQualityPanel } from './panels/review-quality';
@@ -5600,6 +5601,7 @@ const PANEL_COMPONENTS = {
   CommandCenterPanel,
   TodayReceiptPanel,
   ModelSetupPanel,
+  IntegrationsPanel,
   DocsPanel,
   WebhooksPanel,
   LogsPanel,

@@ -129,6 +129,8 @@ class EgressCall:
     deadline: float = float("inf")
     #: Set by the adapter when its caller left (cancelled or timed out).
     abandoned: threading.Event = field(default_factory=threading.Event)
+    #: Slice 4: one sub-call per fan-out task (``bind_child``), each with its own latch.
+    children: list = field(default_factory=list)
 
     def abandon(self) -> None:
         self.abandoned.set()
@@ -153,6 +155,25 @@ def bound_egress(client: Any, loop: asyncio.AbstractEventLoop, *,
 
 def current_call() -> EgressCall | None:
     return _CALL.get()
+
+
+@contextlib.contextmanager
+def bind_child() -> Iterator[EgressCall | None]:
+    """A fan-out task's own call: same client, loop, deadline and abandonment as the call
+    it belongs to, but its own refusal latch, so one peer's refusal does not refuse the
+    others. The parent keeps every child to report them. Nothing bound: nothing changes."""
+    parent = _CALL.get()
+    if parent is None:
+        yield None
+        return
+    child = EgressCall(client=parent.client, loop=parent.loop, loop_thread=parent.loop_thread,
+                       deadline=parent.deadline, abandoned=parent.abandoned)
+    parent.children.append(child)
+    token = _CALL.set(child)
+    try:
+        yield child
+    finally:
+        _CALL.reset(token)
 
 
 def _is_dns_failure(text: str) -> bool:

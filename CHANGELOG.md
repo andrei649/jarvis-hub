@@ -4,6 +4,40 @@
 
 ### What changed for you — 2026-11-09
 
+**Set up search services and cloud model providers from one HUD panel, no `.env` edit, no restart**
+- A new Console panel, Start → **Integrations**, lists everything that needs your setup: the four
+  search services (Tavily, plus Exa, Brave Search and Parallel from Hermes Agent), the cloud model
+  providers that take a key (Gemini, Anthropic, OpenRouter, DeepInfra, xAI, OpenAI, plus the
+  twenty-four from Hermes Agent), and the Hermes skills catalog. Each line says what it is, where
+  it comes from, whether it is set up, active or failing, its address, its country when Nerva
+  knows it, whether its data handling was checked and whether Nerva knows its price.
+- Type a key there and it works right away. Nerva keeps it encrypted in its own secret store,
+  never in the browser or in settings, and never shows it again: only "set" and its last four
+  characters (none for a short key). You can remove it the same way. A key you already have in
+  `.env` keeps working and wins; the panel shows it as "set in .env" and leaves it alone. If the
+  panel still holds an older copy of that key, you can remove the copy so it never comes back.
+- A key name that several providers read (Alibaba's `DASHSCOPE_API_KEY`, for example) asks you
+  once whether it is the same key for all of them. Another provider that reads it shows
+  "shared key": the panel does not test it there, and using that provider asks for its own
+  consent. Removing a key from one provider leaves the others' keys alone.
+- Gemini answers as soon as its key is set, so saving a Gemini key shows the consent card
+  first (Google's handling depends on your plan). Anthropic's terms say no training, so it
+  does not ask.
+- Exa, Brave Search and Parallel now answer only when you choose them ("Use", or
+  `NERVA_WEB_BACKEND` in `.env`). Before, a key alone was enough for automatic search to send
+  your queries there, or to fall back to them; now automatic search and fallback never use them.
+- "Test" tries that one service and tells you in plain words whether the key works. For a
+  model provider it checks only that provider, and only with a key given for it; for a search
+  service it runs one search through Nerva's network rules.
+- "Use" picks the provider or the search service. When a choice needs your say-so (its data
+  handling has not been checked, or Nerva has no price for it), one card shows who receives
+  your conversations or searches, the address, the data policy and the price, and one button,
+  "I understand, use it", records your consent in the audit log, as Settings does. The choice
+  takes effect without a restart.
+- Admins only: a user token cannot read the list or change anything, and a web page you
+  visit cannot make changes for you (a change must come from the HUD itself).
+- The Tavily key is now kept from skills and code-running tools, like the other provider keys.
+
 **The product says Nerva everywhere you look (#1347)**
 - The HUD top bar, page titles, the installable web app, installers and the desktop app now
   carry the Nerva name. An existing desktop install keeps its data, and uninstall finds the app
@@ -155,6 +189,21 @@
 - Installs and repairs are recorded in the intent log. Skills that come with scripts still
   cannot be installed from the catalog. The full list by category is in
   `docs/SKILLS_CATALOG.md`.
+
+**Nerva can now ask your other agents for help (A2A)**
+- Give one of your A2A peers an address (`PUT /api/a2a/peers/<id>/outbound` with its URL and,
+  if it needs one, a token) and Nerva gets five tools: look up the peer's card, send it a task,
+  send one task to every peer with a tag (for example "research"), list your peers and read back
+  an earlier conversation. These are Hermes Agent's own A2A tools, run inside Nerva.
+- Sending a task shares your text with another agent, so every send waits for your approval.
+  While the emergency stop is on, nothing is sent. Nerva only ever contacts peers you set up.
+- A peer on your home network has to be named by its IP address and marked as a home-network
+  peer; anything on the internet must use https. A peer's token is kept in the secret store
+  and only ever sent to that peer; a peer cannot redirect your message or its token elsewhere.
+- What a peer answers is treated as information, not instructions: it is labelled as coming
+  from another agent, and anything Nerva proposes after reading it waits for your approval.
+- Off unless `JARVIS_A2A_ENABLED=1`. Tested against a simulated peer only; no live peer yet.
+
 **The optional Hermes runtime moves to a newer Hermes, and future updates are one command**
 - If you installed the optional Hermes runtime (Admin → Hermes Runtime), Nerva now expects the
   Hermes version of 10 November instead of the one from October. Run
