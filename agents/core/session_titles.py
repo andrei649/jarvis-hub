@@ -149,22 +149,34 @@ class TitleRefused(ValueError):
         self.reason = reason
 
 
+def _no_repeats(pairs):
+    keys = [key for key, _value in pairs]
+    if len(set(keys)) != len(keys):
+        raise ValueError("repeated key")
+    return dict(pairs)
+
+
 def schema_title(raw: object) -> str:
     """H440 — the title out of a schema-constrained answer. Exactly ``{"title": "<name>"}``
     is read (and its value filtered like any model title). Anything else is no title:
-    other JSON, a fence, a cut-off object, prose around one — and a bare line too, which
-    is what a server that ignored the schema returns when the model answered the message
-    instead of naming it. (A server that *refuses* the schema is another matter: see
-    :func:`model_title`.)"""
+    other JSON, a repeated key, a fence, a cut-off object, prose around one — and a bare
+    line too, which is what a server that ignored the schema returns when the model
+    answered the message instead of naming it. (A server that *refuses* the schema is
+    another matter: see :func:`model_title`.)"""
     if not isinstance(raw, str):
         return ""
     try:
-        parsed = json.loads(raw.strip(" \t\r\n"))
+        parsed = json.loads(raw.strip(" \t\r\n"), object_pairs_hook=_no_repeats)
     except ValueError:
         return ""
     if not isinstance(parsed, dict) or set(parsed) != {"title"}:
         return ""
     return clean_model_title(parsed["title"])
+
+
+def reserved_title(title: str) -> bool:
+    """A word the session selectors keep for themselves: ``latest`` and ``@source`` names."""
+    return _fold(title) == "latest" or title.strip().startswith("@")
 
 
 def human_title(raw: object) -> str:
@@ -187,11 +199,17 @@ def lineage_base(title: object) -> str:
     return match.group("base") if match else line
 
 
-def next_lineage_title(title: object, taken) -> str:
+def next_lineage_title(title: object, taken, *, numbered: bool = True) -> str:
     """H440 — the name of the next continuation of a session titled ``title``:
     ``base #N``, N one past the highest number any title in ``taken`` already uses for
-    that base (the unnumbered base itself counts as 1). ``""`` when there is no base."""
-    base = lineage_base(title)
+    that base (the unnumbered base itself counts as 1). ``""`` when there is no base.
+
+    ``numbered`` says whether ``title`` is itself a part name this function produced
+    (``Trip plan #2`` → base ``Trip plan``). When it is not, a trailing number is the
+    title's own (``Fix issue #12`` → ``Fix issue #12 #2``): ``#N`` only ever counts the
+    parts of one conversation."""
+    line = " ".join(title.split()) if isinstance(title, str) else ""
+    base = lineage_base(line) if numbered else line
     if not base:
         return ""
     folded, highest = _fold(base), 1
@@ -200,6 +218,19 @@ def next_lineage_title(title: object, taken) -> str:
         if match and _fold(match.group("base")) == folded:
             highest = max(highest, int(match.group("n")))
     return f"{base} #{highest + 1}"
+
+
+def distinct_title(title: str, taken) -> str:
+    """H440 review — ``title``, or ``title (2)``, ``title (3)``… when another chat already
+    goes by it: how two chats opened with the same words are told apart. Deliberately not
+    the ``#N`` of :func:`next_lineage_title`, which numbers the parts of one conversation."""
+    used = {_fold(other) for other in taken if isinstance(other, str)}
+    if _fold(title) not in used:
+        return title
+    base, n = " ".join(title.split()), 2
+    while _fold(f"{base} ({n})") in used:
+        n += 1
+    return f"{base} ({n})"
 
 
 def bind_own_words(message: str, words: str):
@@ -276,6 +307,7 @@ __all__ = [
     "FIRST_WORDS", "HUMAN", "LINEAGE", "MAX_HUMAN_TITLE_CHARS", "MAX_MODEL_TITLE_CHARS", "MAX_TITLE_CHARS",
     "MODEL", "SCHEMA_MAX_TOKENS", "SCHEMA_SYSTEM_PROMPT", "SETTING", "SYSTEM_PROMPT", "TITLE_SCHEMA",
     "TitleRefused",
-    "bind_own_words", "clean_model_title", "human_title", "instant_title", "lineage_base", "model_title",
-    "next_lineage_title", "own_words", "reset_own_words", "schema_title", "title_fields",
+    "bind_own_words", "clean_model_title", "distinct_title", "human_title", "instant_title", "lineage_base",
+    "model_title", "next_lineage_title", "own_words", "reserved_title", "reset_own_words", "schema_title",
+    "title_fields",
 ]

@@ -52,6 +52,12 @@ def initialize(conn):
         root_id TEXT NOT NULL, root_instance_id TEXT NOT NULL, root_birth_at TEXT NOT NULL,
         seed_json TEXT NOT NULL, seed_sha256 TEXT NOT NULL, created_at TEXT NOT NULL
     )""")
+    # H440 review: the lists, the archiver and retention look a session's lineage up for
+    # every row; without these each lookup scanned the whole table.
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_session_continuations_root"
+                 " ON session_continuations(root_id, created_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_session_continuations_parent"
+                 " ON session_continuations(parent_id)")
     conn.execute("""CREATE TABLE IF NOT EXISTS session_history_rewinds (
         session_id TEXT PRIMARY KEY, instance_id TEXT NOT NULL,
         revision INTEGER NOT NULL, snapshot_sha256 TEXT NOT NULL
@@ -163,8 +169,11 @@ def seed_json(turns):
 
 def _lineage_title(conn, source, root):
     """H440 — the continuation's name: the source's title (else the lineage root's) with
-    the next free ``#N``. Numbers are counted over every session's title, so two chats
-    never share one name. ``""`` when neither has a title."""
+    the next free ``#N``. A source that is itself a numbered part (``title_source:
+    lineage``) continues its conversation's count; any other title is taken whole, its
+    own trailing number included (``Fix issue #12`` → ``Fix issue #12 #2``). Numbers are
+    counted over every session's title, so two chats never share one name. ``""`` when
+    neither has a title."""
     from .session_titles import next_lineage_title
 
     titles = {}
@@ -174,9 +183,12 @@ def _lineage_title(conn, source, root):
         except (TypeError, ValueError):
             continue
         if isinstance(meta, dict) and isinstance(meta.get("title"), str) and meta["title"].strip():
-            titles[sid] = meta["title"]
-    base = titles.get(source) or titles.get(root)
-    return next_lineage_title(base, titles.values()) if base else ""
+            titles[sid] = (meta["title"], str(meta.get("title_source") or ""))
+    base, source_kind = titles.get(source) or titles.get(root) or ("", "")
+    if not base:
+        return ""
+    return next_lineage_title(base, [title for title, _kind in titles.values()],
+                              numbered=source_kind == "lineage")
 
 
 def _lineage_stamps(conn, source):

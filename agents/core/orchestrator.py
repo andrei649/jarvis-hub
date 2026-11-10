@@ -4031,10 +4031,13 @@ class Orchestrator:
             return None
 
         def _supports_json_schema() -> bool:
-            """H440 — whether the strict-local backend constrains an answer to a schema."""
+            """H440 — whether the strict-local backend constrains an answer to a schema for
+            the title model configured right now (a refusal is remembered per model and
+            server address, so a model swap asks again)."""
             try:
-                return getattr(router.local_backend, "supports_json_schema", False) is True
-            except Exception:           # no local backend: no upgrade at all
+                from .llm.auxiliary_text import local_json_schema_supported
+                return local_json_schema_supported(router, "session_title")
+            except Exception:           # no local backend, a bad override: no schema
                 return False
 
         async def _generate(*, system: str, prompt: str, json_schema: dict | None = None) -> str:

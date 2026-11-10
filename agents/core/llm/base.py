@@ -376,30 +376,40 @@ async def _emit(on_token: Callable, text: str) -> None:
 
 # ── Abstract base ─────────────────────────────────────────────────────────────
 
-#: H440 — the HTTP answers that mean "this server does not take a JSON schema" when the
-#: request carried one: a malformed-request refusal, never a transient or server error.
+#: H440 — a server that does not take a JSON schema says so: a malformed-request status
+#: (never a transient or server error) whose body names the feature it rejects. The status
+#: alone is not enough — LM Studio answers 400 "No models loaded" at boot, and taking that
+#: for a refusal would switch strict titles off for good.
 _SCHEMA_REFUSAL_STATUS = frozenset({400, 415, 422, 501})
+_SCHEMA_REFUSAL_WORDS = ("response_format", "json_schema", "schema", "format")
+_SCHEMA_REFUSAL_BODY_CHARS = 4096
 
 
 class JsonSchemaRejected(RuntimeError):
     """H440 — the local server refused a request because of its JSON schema (an older
     Ollama, an LM Studio engine without structured output). Nothing was generated. The
-    backend stops declaring ``supports_json_schema`` for the rest of the process; the
-    caller may ask again in free text."""
+    backend remembers the refusal for that model on that server address
+    (``json_schema_refused``); the caller may ask again in free text."""
 
     json_schema_unsupported = True
 
 
-def _schema_refused(backend, json_schema, exc: Exception) -> bool:
-    """Whether ``exc`` is the server refusing ``json_schema``; if so the backend instance
-    no longer declares schema support."""
+def _schema_refused(backend, model, json_schema, exc: Exception) -> bool:
+    """Whether ``exc`` is the server refusing ``json_schema``; if so the backend remembers
+    it for ``model``. Any other failure of a schema call is an ordinary failure."""
     if json_schema is None or not isinstance(exc, httpx.HTTPStatusError):
         return False
     if exc.response.status_code not in _SCHEMA_REFUSAL_STATUS:
         return False
-    backend.supports_json_schema = False
-    logger.info("%s refused a JSON schema (HTTP %s); structured output is off for this process",
-                type(backend).__name__, exc.response.status_code)
+    try:
+        body = (exc.response.text or "")[:_SCHEMA_REFUSAL_BODY_CHARS].lower()
+    except Exception:
+        return False
+    if not any(word in body for word in _SCHEMA_REFUSAL_WORDS):
+        return False
+    backend._note_schema_refusal(model)
+    logger.info("%s refused a JSON schema for model %r (HTTP %s); asking it in free text from now on",
+                type(backend).__name__, model, exc.response.status_code)
     return True
 
 
@@ -417,6 +427,17 @@ class LLMBackend(ABC):
     #: schema. Only the local backends declare it (LM Studio ``response_format``, Ollama
     #: ``format``); a caller passes ``json_schema`` only to a backend that does.
     supports_json_schema = False
+    #: H440 review — the one (model, server address) this backend saw refuse a schema.
+    _schema_refusal: tuple[str, str] | None = None
+
+    def _note_schema_refusal(self, model: str) -> None:
+        self._schema_refusal = (str(model), str(getattr(self, "base_url", "")))
+
+    def json_schema_refused(self, model: str) -> bool:
+        """Whether this server refused a JSON schema for ``model``. Keyed by the model and
+        the server address, so the schema is tried again once either changes (another
+        model loaded, the backend pointed elsewhere)."""
+        return self._schema_refusal == (str(model), str(getattr(self, "base_url", "")))
 
     @abstractmethod
     async def generate(
@@ -710,7 +731,7 @@ class LMStudioBackend(LLMBackend):
         except ReasoningEffortRefused:
             raise
         except Exception as e:
-            if _schema_refused(self, json_schema, e):
+            if _schema_refused(self, model, json_schema, e):
                 raise JsonSchemaRejected("LM Studio refused the JSON schema") from e
             return local_backend_degraded_reply("LM Studio", f"LM Studio ({self.base_url})", e, model=model)
 
@@ -1048,7 +1069,7 @@ class OllamaBackend(LLMBackend):
             report_text_usage(ollama_usage(data))
             return answer
         except Exception as e:
-            if _schema_refused(self, json_schema, e):
+            if _schema_refused(self, model, json_schema, e):
                 raise JsonSchemaRejected("Ollama refused the JSON schema") from e
             return local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e, model=model)
 

@@ -4710,7 +4710,7 @@ def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
         started = row.get("started_at") or ""
         title = row.get("title") or ""   # H413
         more = row.get("continuations") or 0
-        note = f"  (+{more} continued)" if isinstance(more, int) and more > 0 else ""
+        note = f"  (+{more} earlier)" if isinstance(more, int) and more > 0 else ""
         ctx.say(f"{sid}  {started}  {title}".rstrip() + note)
     return EXIT_OK
 

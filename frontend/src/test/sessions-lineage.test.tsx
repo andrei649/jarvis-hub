@@ -1,8 +1,11 @@
 // @ts-nocheck
-/* H440 — a conversation is one row. The hub leaves continuations out of the list and each
-   row says which lineage member a resume opens (resume_id) and how many continuations it
-   has; the panel resumes that member. The owner can rename a chat: a human title is never
-   replaced by the automatic ones. fetch is mocked. */
+/* H440 — a row is a session nobody continued yet (the newest part of a continued chat, or a
+   plain chat). The hub leaves the earlier parts out and each row says how many other
+   sessions its conversation has (continuations) and what a resume opens (resume_id: the
+   row itself on a current hub; an older hub listed the first part and named the newest
+   here, and the panel still honours that). The owner can rename a chat: a human title is
+   never replaced by the automatic ones. Deleting a continued chat asks for the whole
+   conversation and says how many sessions that is. fetch is mocked. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
@@ -55,13 +58,13 @@ describe('SessionsPanel — H440 lineage and rename', () => {
     expect(titlePath('a b')).toBe('/sessions/a%20b/title');
   });
 
-  it('shows how many continuations a conversation has, only where it has some', async () => {
+  it('shows how many other sessions a conversation has, only where it has some', async () => {
     render(<SessionsPanel />);
     await screen.findByText('Trip plan');
     const badges = screen.getAllByTestId('lineage-badge');
     expect(badges).toHaveLength(1);
     expect(badges[0].textContent).toBe('+2');
-    expect(badges[0].getAttribute('title')).toContain('2 continuations');
+    expect(badges[0].getAttribute('title')).toContain('2 other sessions in this conversation');
   });
 
   it('resumes the newest member of the lineage, not the root', async () => {
@@ -129,12 +132,12 @@ describe('SessionsPanel — H440 lineage and rename', () => {
     render(<SessionsPanel />);
     fireEvent.click(await screen.findByRole('tab', { name: 'archived' }));
     fireEvent.click(await screen.findByRole('button', { name: 'delete root-9 permanently' }));
-    expect(screen.getByRole('button', { name: 'confirm delete root-9' }).textContent).toContain('and its 1 continuation');
-    expect(screen.getByRole('note').textContent).toContain('every continuation');
+    expect(screen.getByRole('button', { name: 'confirm delete root-9' }).textContent).toBe('confirm: delete the whole conversation (2 sessions)');
+    expect(screen.getByRole('note').textContent).toContain('all 2 sessions of it, earlier parts and other branches included');
     fireEvent.click(screen.getByRole('button', { name: 'confirm delete root-9' }));
     await waitFor(() => expect(sent('DELETE')).toHaveLength(1));
     expect(sent('DELETE')[0].url).toBe('/sessions/root-9?confirm=DELETE&lineage=true');
-    expect((await screen.findByRole('status')).textContent).toContain('deleted root-9 and 1 continuation · 2 backups');
+    expect((await screen.findByRole('status')).textContent).toContain('deleted the whole conversation · 2 sessions · 2 backups');
   });
 
   it('deletes a chat nobody continued as before', async () => {

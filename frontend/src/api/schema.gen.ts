@@ -5185,17 +5185,20 @@ export interface paths {
         };
         /**
          * Autonomy Get Policy
-         * @description Per-agent autonomy modes (HUD v3) — the global default + any per-agent overrides.
+         * @description Per-agent autonomy modes (HUD v3) — the global default + any per-agent overrides,
+         *     as the policy reads them (H484: an unknown value is ``ask``, never shown raw).
          *
-         *     An agent absent from ``agents`` runs at the global mode; one present runs at its
-         *     own AUTO/ASK/OFF.
+         *     An agent absent from ``agents`` runs at the global mode; one present runs at its own
+         *     AUTO/ASK/OFF — except under a global OFF, which no override loosens. ``looser`` names
+         *     the agents whose override lets them ask less than the global mode.
          */
         get: operations["autonomy_get_policy_autonomy_policy_get"];
         put?: never;
         /**
          * Autonomy Set Policy
          * @description Set (or clear) one agent's autonomy mode. ``mode=default`` removes the override
-         *     so the agent falls back to the global mode. Persists + applies live.
+         *     so the agent falls back to the global mode. Persists, applies live and records the
+         *     change in the audit log (H484 — ``autonomy.mode.set_agent_mode``).
          */
         post: operations["autonomy_set_policy_autonomy_policy_post"];
         delete?: never;
@@ -11139,9 +11142,11 @@ export interface paths {
          *
          *     H440 review: a chat that others continue still answers 409 ``has_continuations`` — its
          *     continuations are never deleted in silence. ``&lineage=true`` says the whole
-         *     conversation: every member is deleted, newest first, each with its own lease and
-         *     backup (``deleted``, ``backups`` in the answer); none when a chat is on any of them,
-         *     and a run that stops part way says which are gone.
+         *     conversation: every member — every branch — is deleted, newest first, each with its
+         *     own lease and backup (``deleted``, ``backups`` in the answer; older backups are pruned
+         *     once afterwards, never the ones just written); none when a chat is on any of them,
+         *     and a run that stops part way says which are gone. A row's ``continuations`` in
+         *     ``GET /sessions`` is how many sessions that removes besides the row itself.
          *
          *     Holds the session's turn lease, as ``create_continuation`` does: a turn on it
          *     finishes first (it would write the transcript back, or add a turn the backup never

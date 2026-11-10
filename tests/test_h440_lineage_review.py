@@ -11,6 +11,8 @@ pins the repairs:
 - M3  a pin protects every member (stamped on all; the sweep and retention also honour a
       pin found on any one member).
 - M4  a base name resolves to the newest member whoever in the lineage still carries it.
+      (Names, numbering and the list rows were reworked in the second review round:
+      tests/test_h440_review2.py.)
 - M5  a schema-constrained answer is the exact object or nothing; a backend that refuses
       the schema is remembered and the same session gets the H413 free-text call.
 - m1  a colliding automatic title is stored with the next number.
@@ -122,30 +124,31 @@ def test_archiving_the_row_archives_every_member_and_lists_one_archived_row(cp, 
     two = _continue(cp, "root")
     tip = _continue(cp, two)
     client = _client(monkeypatch, SimpleNamespace(checkpoints=cp))
-    assert client.post("/sessions/root/archive").status_code == 200      # what the HUD row posts
+    assert [r["id"] for r in _rows(client)] == [tip]                     # the row is the newest part
+    assert client.post(f"/sessions/{tip}/archive").status_code == 200    # what the HUD row posts
     assert _rows(client) == []
     (row,) = _rows(client, archived="true")
-    assert (row["id"], row["resume_id"], row["continuations"]) == ("root", tip, 2)
+    assert (row["id"], row["resume_id"], row["continuations"]) == (tip, tip, 2)
     stamps = {_meta(cp, sid).get("archived_at") for sid in ("root", two, tip)}
     assert len(stamps) == 1 and None not in stamps                        # one write, one stamp
 
 
-def test_archiving_through_a_member_archives_the_conversation_too(cp, monkeypatch):
+def test_archiving_through_an_earlier_part_archives_the_conversation_too(cp, monkeypatch):
     _titled(cp, "root", "Trip plan")
     tip = _continue(cp, "root")
     client = _client(monkeypatch, SimpleNamespace(checkpoints=cp))
-    assert client.post(f"/sessions/{tip}/archive").status_code == 200
-    assert _rows(client) == [] and [r["id"] for r in _rows(client, archived="true")] == ["root"]
+    assert client.post("/sessions/root/archive").status_code == 200
+    assert _rows(client) == [] and [r["id"] for r in _rows(client, archived="true")] == [tip]
 
 
 def test_unarchiving_the_row_brings_every_member_back_and_counts_idle_from_now(cp, monkeypatch):
     _titled(cp, "root", "Trip plan")
     tip = _continue(cp, "root")
     client = _client(monkeypatch, SimpleNamespace(checkpoints=cp))
-    client.post("/sessions/root/archive")
-    assert client.post("/sessions/root/unarchive").status_code == 200
+    client.post(f"/sessions/{tip}/archive")
+    assert client.post(f"/sessions/{tip}/unarchive").status_code == 200
     (row,) = _rows(client)
-    assert (row["id"], row["resume_id"]) == ("root", tip) and _rows(client, archived="true") == []
+    assert (row["id"], row["resume_id"]) == (tip, tip) and _rows(client, archived="true") == []
     for sid in ("root", tip):
         assert "archived_at" not in _meta(cp, sid) and _meta(cp, sid)["kept_at"]
 
@@ -164,7 +167,7 @@ def test_resuming_an_archived_conversation_brings_every_member_back(cp, monkeypa
     client = _client(monkeypatch, orch)
     client.post("/sessions/root/archive")
     assert client.post("/sessions/resume", json={"session_id": tip}).status_code == 200
-    assert [r["id"] for r in _rows(client)] == ["root"]
+    assert [r["id"] for r in _rows(client)] == [tip]
     assert "archived_at" not in _meta(cp, "root") and "archived_at" not in _meta(cp, tip)
 
 
@@ -368,32 +371,6 @@ def test_a_renamed_continuation_resolves_to_the_newest_member_of_its_lineage(cp)
     assert session_selectors.resolve_title(cp, "hello") == three
 
 
-def test_a_numbered_name_is_that_member(cp):
-    _titled(cp, "root", "hello")
-    two = _continue(cp, "root")
-    three = _continue(cp, two)
-    assert session_selectors.resolve_title(cp, "hello #2") == two
-    assert session_selectors.resolve_title(cp, "hello #3") == three
-    with pytest.raises(session_selectors.SessionSelectionError) as caught:
-        session_selectors.resolve_title(cp, "hello #9")
-    assert caught.value.status == 404
-
-
-def test_numbered_names_of_separate_chats_resolve_to_the_newest(cp):
-    """Two chats opened with the same words are "hello" and "hello #2" (m1): the base name
-    opens the newest, as Hermes' numbered variants do."""
-    _titled(cp, "a", "hello")
-    _titled(cp, "b", "hello")
-    _age(cp, 2, "a")
-    assert session_selectors.resolve_title(cp, "hello") == "b"
-    tip = _continue(cp, "a")                                       # "hello #3", newer than b
-    with cp._lock:
-        cp._conn.execute("UPDATE sessions SET started_at=? WHERE id=?",
-                         ((datetime.now(UTC) + timedelta(minutes=1)).isoformat(), tip))
-        cp._conn.commit()
-    assert session_selectors.resolve_title(cp, "hello") == tip
-
-
 def test_two_conversations_with_the_very_same_title_stay_ambiguous(cp):
     for sid in ("a", "b"):                                         # written before titles were deduped
         cp.create_session_record(sid, metadata={"title": "Trip plan", "title_source": "first_words"})
@@ -522,8 +499,8 @@ async def test_a_server_that_refuses_the_schema_is_remembered_and_the_session_is
     assert await Orchestrator._upgrade_session_title(cp, "s", "Plan my Brasov trip for August", orch._session_titler())
     assert cp.session_title("s") == {"title": "Brasov trip planning", "source": "model"}
     assert [key in body for body in sent] == [True, False]         # refused, then H413's call
-    assert backend.supports_json_schema is False                     # for this process
-    assert type(backend).supports_json_schema is True                # this backend only
+    assert backend.json_schema_refused(sent[0]["model"]) is True     # remembered for that model
+    assert backend.supports_json_schema is True                      # the backend still can, for another
 
     _titled(cp, "t", "Another question about")
     assert await Orchestrator._upgrade_session_title(cp, "t", "Another question about trips", orch._session_titler())
@@ -565,24 +542,6 @@ async def test_a_server_error_on_the_schema_call_is_not_taken_for_a_refusal(cp, 
 
 # ── m1: a colliding automatic title takes the next number ────────────────────────
 
-def test_two_chats_opened_with_the_same_words_get_distinct_titles(cp):
-    _titled(cp, "a", "hello")
-    _titled(cp, "b", "Hello ")
-    _titled(cp, "c", "hello")
-    assert [cp.session_title(s)["title"] for s in "abc"] == ["hello", "Hello #2", "hello #3"]
-    assert session_selectors.resolve_title(cp, "hello #2") == "b"
-
-
-def test_a_model_title_that_collides_takes_the_next_number_and_never_with_itself(cp):
-    _titled(cp, "a", "Trip planning", st.MODEL)
-    _titled(cp, "b", "Plan my trip")
-    assert cp.set_session_title("b", "Trip planning", st.MODEL, replace=(st.FIRST_WORDS,))
-    assert cp.session_title("b") == {"title": "Trip planning #2", "source": "model"}
-    _titled(cp, "c", "Brasov")                                     # the model keeps the first words
-    assert cp.set_session_title("c", "Brasov", st.MODEL, replace=(st.FIRST_WORDS,))
-    assert cp.session_title("c") == {"title": "Brasov", "source": "model"}
-
-
 # ── m2: the listings name the session a resume opens ─────────────────────────────
 
 async def test_the_sessions_command_prints_the_id_a_resume_opens_and_no_archived_chat(cp, user_tier_allowed):
@@ -621,7 +580,7 @@ def test_nerva_sessions_prints_the_id_a_resume_opens():
                   client_factory=lambda env: _Client())
     assert main(["sessions"], context=ctx) == EXIT_OK
     assert out.getvalue().splitlines() == [
-        "session_tip  2026-09-26T10:00:00  Trip plan  (+2 continued)",
+        "session_tip  2026-09-26T10:00:00  Trip plan  (+2 earlier)",
         "solo  2026-09-26T11:00:00",
         "old-hub  2026-09-26T12:00:00  Legacy",
     ]
@@ -683,30 +642,21 @@ def test_the_rename_route_says_who_may_rename():
 
 # ── m6: the chip shows the conversation's title ──────────────────────────────────
 
-def test_the_open_chats_title_is_its_conversations(cp):
-    _titled(cp, "root", "Trip plan")
-    tip = _continue(cp, "root")
-    assert cp.display_title(tip) == {"title": "Trip plan", "source": "first_words"}       # the row's name
-    assert cp.rename_session("root", "Summer in Brasov")
-    assert cp.display_title(tip) == {"title": "Summer in Brasov", "source": "human"}     # the row's name
-    assert cp.display_title("root")["title"] == "Summer in Brasov"
-    assert cp.session_title(tip)["title"] == "Trip plan #2"                              # still its own name
-    assert cp.rename_session(tip, "Packing list")                                         # the owner named this member
-    assert cp.display_title(tip) == {"title": "Packing list", "source": "human"}
-    cp.create_session_record("solo")
-    assert cp.display_title("solo") == {"title": "", "source": ""}
-    assert cp.display_title("nope") == {"title": "", "source": ""}
-
-
-def test_the_status_chip_reads_the_conversations_title(cp):
+def test_the_status_chip_shows_the_title_of_the_session_that_is_open(cp):
+    """A row is the newest part of a conversation — the session a chat is on — so the
+    rename on that row is the title the chip shows (second review round: no separate
+    "conversation title" to fall out of step)."""
     from agents import web
 
     _titled(cp, "root", "Trip plan")
     tip = _continue(cp, "root")
-    assert cp.rename_session("root", "Summer in Brasov")
     settings = {"display.status_bar_fields": ["title"], "memory.session_titles": True}
     orch = SimpleNamespace(checkpoints=cp, get_setting=lambda key, default=None: settings.get(key, default))
+    assert web._selected_turn_outcome(orch, {}, session_id=tip) == {"title": "Trip plan #2"}
+    assert cp.rename_session(tip, "Summer in Brasov")
     assert web._selected_turn_outcome(orch, {}, session_id=tip) == {"title": "Summer in Brasov"}
+    assert web._selected_turn_outcome(orch, {}, session_id="root") == {"title": "Trip plan"}
+
 
 
 # ── the resume route: odd titles are refusals, never errors ──────────────────────

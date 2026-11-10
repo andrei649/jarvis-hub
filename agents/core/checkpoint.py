@@ -31,32 +31,108 @@ class CheckpointManager:
     #: time from it, so an unarchived or resumed chat is idle again only from then.
     _ACTIVITY_SQL = ("MAX(COALESCE(ended_at, started_at), "
                      f"COALESCE({_KEPT_SQL}, COALESCE(ended_at, started_at)))")
-    #: H440 review — a continued chat is one conversation. For the ``sessions`` row under
-    #: test, "no member ``m`` of its lineage (the root it continues, or itself, and every
-    #: continuation of that root) is pinned or was active at or after ``?``": the archiver
-    #: leaves an idle root whose continuation is in use (M2), and a pin on any member
-    #: protects them all (M3). Written out as one literal — ``m``'s stamps are the
-    #: ``_PINNED_SQL`` / ``_ACTIVITY_SQL`` expressions above, qualified.
-    _LINEAGE_IDLE_SQL = (
-        "NOT EXISTS (SELECT 1 FROM sessions AS m WHERE"
-        " (m.id = COALESCE((SELECT c.root_id FROM session_continuations AS c WHERE c.session_id=sessions.id), sessions.id)"
-        " OR m.id IN (SELECT c2.session_id FROM session_continuations AS c2 WHERE c2.root_id ="
-        " COALESCE((SELECT c3.root_id FROM session_continuations AS c3 WHERE c3.session_id=sessions.id), sessions.id)))"
-        " AND ((CASE WHEN json_valid(m.metadata) THEN json_extract(m.metadata, '$.pinned_at') END) IS NOT NULL"
-        " OR MAX(COALESCE(m.ended_at, m.started_at), COALESCE("
-        "(CASE WHEN json_valid(m.metadata) THEN json_extract(m.metadata, '$.kept_at') END),"
-        " COALESCE(m.ended_at, m.started_at))) >= ?))")
-    #: … and for retention also no member that is back in the list (unarchived).
-    _LINEAGE_EXPIRED_SQL = (
-        "NOT EXISTS (SELECT 1 FROM sessions AS m WHERE"
-        " (m.id = COALESCE((SELECT c.root_id FROM session_continuations AS c WHERE c.session_id=sessions.id), sessions.id)"
-        " OR m.id IN (SELECT c2.session_id FROM session_continuations AS c2 WHERE c2.root_id ="
-        " COALESCE((SELECT c3.root_id FROM session_continuations AS c3 WHERE c3.session_id=sessions.id), sessions.id)))"
-        " AND ((CASE WHEN json_valid(m.metadata) THEN json_extract(m.metadata, '$.pinned_at') END) IS NOT NULL"
-        " OR (CASE WHEN json_valid(m.metadata) THEN json_extract(m.metadata, '$.archived_at') END) IS NULL"
-        " OR MAX(COALESCE(m.ended_at, m.started_at), COALESCE("
-        "(CASE WHEN json_valid(m.metadata) THEN json_extract(m.metadata, '$.kept_at') END),"
-        " COALESCE(m.ended_at, m.started_at))) >= ?))")
+    #: H440 review — a continued chat is one conversation, so the lifecycle statements
+    #: test the row's whole lineage (its root, found through ``session_continuations``, and
+    #: every session continued from that root — branches included):
+    #: - stale (the archiver): no member is pinned or was active at or after the cutoff, so
+    #:   an idle root whose continuation is in use stays, and a pin on any member protects all;
+    #: - expired (retention): also no member that is back in the list (unarchived). Children
+    #:   come before the sessions they continue, whatever their activity, so a batch always
+    #:   makes progress (a parent's delete is refused while a child exists).
+    #: Each is one fixed statement — nothing is interpolated — generated from the stamp
+    #: expressions above (``_ARCHIVED_SQL``, ``_PINNED_SQL``, ``_ACTIVITY_SQL``); the two
+    #: lineage probes are index-driven (``session_continuations`` by root_id and by
+    #: session_id, ``sessions`` by id), so the cost is per row, not per row squared.
+    _STALE_SQL = (
+        "SELECT id FROM sessions WHERE (CASE WHEN json_valid(metadata) THEN json_extract(metadata, "
+        "'$.archived_at') END) IS NULL AND (CASE WHEN json_valid(metadata) THEN json_extract(metadata, "
+        "'$.pinned_at') END) IS NULL AND MAX(COALESCE(ended_at, started_at), COALESCE((CASE WHEN "
+        "json_valid(metadata) THEN json_extract(metadata, '$.kept_at') END), COALESCE(ended_at, "
+        "started_at))) IS NOT NULL AND MAX(COALESCE(ended_at, started_at), COALESCE((CASE WHEN "
+        "json_valid(metadata) THEN json_extract(metadata, '$.kept_at') END), COALESCE(ended_at, "
+        "started_at))) < ? AND NOT EXISTS (SELECT 1 FROM sessions AS m WHERE m.id = COALESCE((SELECT "
+        "c.root_id FROM session_continuations AS c WHERE c.session_id = sessions.id), sessions.id) AND "
+        "((CASE WHEN json_valid(m.metadata) THEN json_extract(m.metadata, '$.pinned_at') END) IS NOT NULL "
+        "OR MAX(COALESCE(m.ended_at, m.started_at), COALESCE((CASE WHEN json_valid(m.metadata) THEN "
+        "json_extract(m.metadata, '$.kept_at') END), COALESCE(m.ended_at, m.started_at))) >= ?)) AND NOT "
+        "EXISTS (SELECT 1 FROM session_continuations AS c2 JOIN sessions AS m ON m.id = c2.session_id "
+        "WHERE c2.root_id = COALESCE((SELECT c.root_id FROM session_continuations AS c WHERE c.session_id "
+        "= sessions.id), sessions.id) AND ((CASE WHEN json_valid(m.metadata) THEN "
+        "json_extract(m.metadata, '$.pinned_at') END) IS NOT NULL OR MAX(COALESCE(m.ended_at, "
+        "m.started_at), COALESCE((CASE WHEN json_valid(m.metadata) THEN json_extract(m.metadata, "
+        "'$.kept_at') END), COALESCE(m.ended_at, m.started_at))) >= ?)) ORDER BY MAX(COALESCE(ended_at, "
+        "started_at), COALESCE((CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.kept_at') "
+        "END), COALESCE(ended_at, started_at))) LIMIT ?"
+    )
+    _EXPIRED_SQL = (
+        "SELECT id FROM sessions WHERE (CASE WHEN json_valid(metadata) THEN json_extract(metadata, "
+        "'$.archived_at') END) IS NOT NULL AND (CASE WHEN json_valid(metadata) THEN "
+        "json_extract(metadata, '$.pinned_at') END) IS NULL AND (CASE WHEN json_valid(metadata) THEN "
+        "json_extract(metadata, '$.archived_at') END) <= ? AND MAX(COALESCE(ended_at, started_at), "
+        "COALESCE((CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.kept_at') END), "
+        "COALESCE(ended_at, started_at))) IS NOT NULL AND MAX(COALESCE(ended_at, started_at), "
+        "COALESCE((CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.kept_at') END), "
+        "COALESCE(ended_at, started_at))) < ? AND NOT EXISTS (SELECT 1 FROM sessions AS m WHERE m.id = "
+        "COALESCE((SELECT c.root_id FROM session_continuations AS c WHERE c.session_id = sessions.id), "
+        "sessions.id) AND ((CASE WHEN json_valid(m.metadata) THEN json_extract(m.metadata, '$.pinned_at') "
+        "END) IS NOT NULL OR (CASE WHEN json_valid(m.metadata) THEN json_extract(m.metadata, "
+        "'$.archived_at') END) IS NULL OR MAX(COALESCE(m.ended_at, m.started_at), COALESCE((CASE WHEN "
+        "json_valid(m.metadata) THEN json_extract(m.metadata, '$.kept_at') END), COALESCE(m.ended_at, "
+        "m.started_at))) >= ?)) AND NOT EXISTS (SELECT 1 FROM session_continuations AS c2 JOIN sessions "
+        "AS m ON m.id = c2.session_id WHERE c2.root_id = COALESCE((SELECT c.root_id FROM "
+        "session_continuations AS c WHERE c.session_id = sessions.id), sessions.id) AND ((CASE WHEN "
+        "json_valid(m.metadata) THEN json_extract(m.metadata, '$.pinned_at') END) IS NOT NULL OR (CASE "
+        "WHEN json_valid(m.metadata) THEN json_extract(m.metadata, '$.archived_at') END) IS NULL OR "
+        "MAX(COALESCE(m.ended_at, m.started_at), COALESCE((CASE WHEN json_valid(m.metadata) THEN "
+        "json_extract(m.metadata, '$.kept_at') END), COALESCE(m.ended_at, m.started_at))) >= ?)) ORDER BY "
+        "COALESCE((SELECT c.created_at FROM session_continuations AS c WHERE c.session_id = sessions.id), "
+        "'') DESC, MAX(COALESCE(ended_at, started_at), COALESCE((CASE WHEN json_valid(metadata) THEN "
+        "json_extract(metadata, '$.kept_at') END), COALESCE(ended_at, started_at))) DESC LIMIT ?"
+    )
+    _IS_EXPIRED_SQL = (
+        "SELECT 1 FROM sessions WHERE id = ? AND (CASE WHEN json_valid(metadata) THEN "
+        "json_extract(metadata, '$.archived_at') END) IS NOT NULL AND (CASE WHEN json_valid(metadata) "
+        "THEN json_extract(metadata, '$.pinned_at') END) IS NULL AND (CASE WHEN json_valid(metadata) THEN "
+        "json_extract(metadata, '$.archived_at') END) <= ? AND MAX(COALESCE(ended_at, started_at), "
+        "COALESCE((CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.kept_at') END), "
+        "COALESCE(ended_at, started_at))) IS NOT NULL AND MAX(COALESCE(ended_at, started_at), "
+        "COALESCE((CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.kept_at') END), "
+        "COALESCE(ended_at, started_at))) < ? AND NOT EXISTS (SELECT 1 FROM sessions AS m WHERE m.id = "
+        "COALESCE((SELECT c.root_id FROM session_continuations AS c WHERE c.session_id = sessions.id), "
+        "sessions.id) AND ((CASE WHEN json_valid(m.metadata) THEN json_extract(m.metadata, '$.pinned_at') "
+        "END) IS NOT NULL OR (CASE WHEN json_valid(m.metadata) THEN json_extract(m.metadata, "
+        "'$.archived_at') END) IS NULL OR MAX(COALESCE(m.ended_at, m.started_at), COALESCE((CASE WHEN "
+        "json_valid(m.metadata) THEN json_extract(m.metadata, '$.kept_at') END), COALESCE(m.ended_at, "
+        "m.started_at))) >= ?)) AND NOT EXISTS (SELECT 1 FROM session_continuations AS c2 JOIN sessions "
+        "AS m ON m.id = c2.session_id WHERE c2.root_id = COALESCE((SELECT c.root_id FROM "
+        "session_continuations AS c WHERE c.session_id = sessions.id), sessions.id) AND ((CASE WHEN "
+        "json_valid(m.metadata) THEN json_extract(m.metadata, '$.pinned_at') END) IS NOT NULL OR (CASE "
+        "WHEN json_valid(m.metadata) THEN json_extract(m.metadata, '$.archived_at') END) IS NULL OR "
+        "MAX(COALESCE(m.ended_at, m.started_at), COALESCE((CASE WHEN json_valid(m.metadata) THEN "
+        "json_extract(m.metadata, '$.kept_at') END), COALESCE(m.ended_at, m.started_at))) >= ?))"
+    )
+    _DELETE_EXPIRED_SQL = (
+        "DELETE FROM sessions WHERE id = ? AND (CASE WHEN json_valid(metadata) THEN "
+        "json_extract(metadata, '$.archived_at') END) IS NOT NULL AND (CASE WHEN json_valid(metadata) "
+        "THEN json_extract(metadata, '$.pinned_at') END) IS NULL AND (CASE WHEN json_valid(metadata) THEN "
+        "json_extract(metadata, '$.archived_at') END) <= ? AND MAX(COALESCE(ended_at, started_at), "
+        "COALESCE((CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.kept_at') END), "
+        "COALESCE(ended_at, started_at))) IS NOT NULL AND MAX(COALESCE(ended_at, started_at), "
+        "COALESCE((CASE WHEN json_valid(metadata) THEN json_extract(metadata, '$.kept_at') END), "
+        "COALESCE(ended_at, started_at))) < ? AND NOT EXISTS (SELECT 1 FROM sessions AS m WHERE m.id = "
+        "COALESCE((SELECT c.root_id FROM session_continuations AS c WHERE c.session_id = sessions.id), "
+        "sessions.id) AND ((CASE WHEN json_valid(m.metadata) THEN json_extract(m.metadata, '$.pinned_at') "
+        "END) IS NOT NULL OR (CASE WHEN json_valid(m.metadata) THEN json_extract(m.metadata, "
+        "'$.archived_at') END) IS NULL OR MAX(COALESCE(m.ended_at, m.started_at), COALESCE((CASE WHEN "
+        "json_valid(m.metadata) THEN json_extract(m.metadata, '$.kept_at') END), COALESCE(m.ended_at, "
+        "m.started_at))) >= ?)) AND NOT EXISTS (SELECT 1 FROM session_continuations AS c2 JOIN sessions "
+        "AS m ON m.id = c2.session_id WHERE c2.root_id = COALESCE((SELECT c.root_id FROM "
+        "session_continuations AS c WHERE c.session_id = sessions.id), sessions.id) AND ((CASE WHEN "
+        "json_valid(m.metadata) THEN json_extract(m.metadata, '$.pinned_at') END) IS NOT NULL OR (CASE "
+        "WHEN json_valid(m.metadata) THEN json_extract(m.metadata, '$.archived_at') END) IS NULL OR "
+        "MAX(COALESCE(m.ended_at, m.started_at), COALESCE((CASE WHEN json_valid(m.metadata) THEN "
+        "json_extract(m.metadata, '$.kept_at') END), COALESCE(m.ended_at, m.started_at))) >= ?))"
+    )
     #: H262 review — how long another process waits for the database's write lock (a
     #: VACUUM holds it for its whole run) before a write fails.
     BUSY_TIMEOUT_S = 30
@@ -339,8 +415,17 @@ class CheckpointManager:
         between stays deleted."""
         if not self._conn or not isinstance(title, str) or not title:
             return False
+        from .session_titles import distinct_title
+
+        automatic = source in ("first_words", "model")
         try:
-            with self._lock:
+            # H440 review: read, compare and write in one immediate transaction, so two
+            # processes naming chats with the same words cannot both keep the bare name.
+            with self._lock, self._conn:
+                if not self._conn.in_transaction:
+                    self._conn.execute("BEGIN IMMEDIATE")
+                if automatic and self._reserved_title_locked(title):
+                    return False        # "latest", "@…", a session id: never a name to resume by
                 row = self._conn.execute("SELECT metadata FROM sessions WHERE id=?", (session_id,)).fetchone()
                 if row is None:
                     if replace:
@@ -359,36 +444,45 @@ class CheckpointManager:
                 titled = isinstance(meta.get("title"), str) and bool(meta["title"])
                 if titled and str(meta.get("title_source") or "") not in replace:
                     return False
-                if source in ("first_words", "model"):
-                    # H440 review (m1): two chats opened with the same words would share a
-                    # name and neither could be resumed by it; the later one is numbered.
-                    from .session_titles import next_lineage_title
-
-                    others = self._titles_locked(exclude=session_id)
-                    folded = " ".join(title.split()).casefold()
-                    if any(" ".join(other.split()).casefold() == folded for other in others.values()):
-                        title = next_lineage_title(title, others.values())
+                if automatic:
+                    # Two chats opened with the same words would share a name and neither
+                    # could be resumed by it: the later one is "<words> (2)". Never "#2" —
+                    # that is a conversation's part number (``next_lineage_title``).
+                    title = distinct_title(title, [other for other, _source in
+                                                   self._titles_locked(session_id).values()])
                 meta.update({"title": title, "title_source": source})
                 self._conn.execute("UPDATE sessions SET metadata=? WHERE id=?",
                                    (json.dumps(meta, ensure_ascii=False), session_id))
-                self._conn.commit()
             return True
         except Exception as e:
             logger.warning(f"Failed to set session title: {e}")
             return False
 
-    def _titles_locked(self, *, exclude: str | None = None) -> dict[str, str]:
-        """Every titled session's title by id (the caller holds the lock)."""
-        titles: dict[str, str] = {}
+    def _reserved_title_locked(self, title: str) -> bool:
+        """A name resume-by-name could never mean a chat by: the selector word ``latest``,
+        a foreign ``@`` selector, or some session's id. Lock held."""
+        from .session_titles import reserved_title
+
+        return (reserved_title(title) or self._conn.execute(
+            "SELECT 1 FROM sessions WHERE id=?", (title,)).fetchone() is not None)
+
+    def _titles_locked(self, session_id: str) -> dict[str, tuple[str, str]]:
+        """``{id: (title, title_source)}`` of every other titled session ``session_id``'s own
+        title is compared with (lock held). For a native session that leaves imported and
+        derived ones out: their titles are the owner's alone, and a "(2)" or a refused
+        rename must not tell anyone else they exist."""
+        foreign = {row[0] for row in self._conn.execute("SELECT session_id FROM session_imports").fetchall()}
+        native = session_id not in foreign
+        titles: dict[str, tuple[str, str]] = {}
         for sid, raw in self._conn.execute("SELECT id, metadata FROM sessions").fetchall():
-            if sid == exclude:
+            if sid == session_id or (native and sid in foreign):
                 continue
             try:
                 meta = json.loads(raw or "{}")
             except (TypeError, ValueError):
                 continue
             if isinstance(meta, dict) and isinstance(meta.get("title"), str) and meta["title"].strip():
-                titles[sid] = meta["title"]
+                titles[sid] = (meta["title"], str(meta.get("title_source") or ""))
         return titles
 
     def _lineage_locked(self, session_id: str) -> list[str]:
@@ -420,39 +514,42 @@ class CheckpointManager:
             logger.warning(f"Failed to read session lineage: {e}")
             return []
 
-    def display_title(self, session_id: str) -> dict:
-        """H440 review (m6) — the title a chat is shown under while it is open: the one the
-        owner gave this very session, else its conversation's (the lineage root's, which is
-        the row the pickers list and the one a rename there changes), else its own."""
-        own = self.session_title(session_id)
-        if own["source"] == "human":
-            return own
-        members = self.lineage_members(session_id)
-        if members and members[0] != session_id:
-            root = self.session_title(members[0])
-            if root["title"]:
-                return root
-        return own
+    def lineage_others(self, session_ids) -> dict[str, int]:
+        """H440 review — for each of ``session_ids`` that belongs to a continued
+        conversation: how many *other* sessions that conversation has (earlier parts and
+        other branches). A chat nobody continued and that continues nobody is not in the
+        answer."""
+        ids = [sid for sid in session_ids if isinstance(sid, str)]
+        if not self._conn or not ids:
+            return {}
+        try:
+            with self._lock:
+                sizes = {sid: len(self._lineage_locked(sid)) - 1 for sid in ids}
+        except Exception as e:
+            logger.warning(f"Failed to read session lineage: {e}")
+            return {}
+        return {sid: others for sid, others in sizes.items() if others > 0}
 
     def _title_refusal_locked(self, session_id: str, title: str) -> str:
-        """H440 review (m4) — why ``title`` cannot be this session's human title: ``""``,
-        ``title_reserved`` (the selector word ``latest``, a foreign ``@`` selector, some
-        session's id: resume-by-name could never mean this chat) or ``title_taken`` (another
-        conversation is known by that name or by its numbered variants; inside one
-        conversation, another member carries exactly it)."""
+        """H440 review — why ``title`` cannot be this session's human title: ``""``,
+        ``title_reserved`` (``_reserved_title_locked``) or ``title_taken``: another session
+        carries exactly it, or it reads as a part number of another conversation
+        (``<that conversation's name> #N``), which that conversation's own numbering could
+        produce. A number after a name nobody else goes by (``Fix issue #12``) is free."""
         from .session_titles import lineage_base
 
         def fold(text: str) -> str:
             return " ".join(text.split()).casefold()
 
-        if fold(title) == "latest" or title.startswith("@"):
-            return "title_reserved"
-        if self._conn.execute("SELECT 1 FROM sessions WHERE id=?", (title,)).fetchone() is not None:
+        if self._reserved_title_locked(title):
             return "title_reserved"
         own = set(self._lineage_locked(session_id))
         wanted, base = fold(title), fold(lineage_base(title))
-        for sid, other in self._titles_locked(exclude=session_id).items():
-            if (fold(other) == wanted) if sid in own else (fold(lineage_base(other)) == base):
+        for sid, (other, source) in self._titles_locked(session_id).items():
+            if fold(other) == wanted:
+                return "title_taken"
+            if sid not in own and base != wanted and base in (
+                    fold(other), fold(lineage_base(other)) if source == "lineage" else ""):
                 return "title_taken"
         return ""
 
@@ -472,7 +569,9 @@ class CheckpointManager:
         if not title:
             return False
         try:
-            with self._lock:
+            with self._lock, self._conn:
+                if not self._conn.in_transaction:
+                    self._conn.execute("BEGIN IMMEDIATE")      # compare and write as one (review, m2)
                 row = self._conn.execute("SELECT metadata FROM sessions WHERE id=?", (session_id,)).fetchone()
                 if row is None:
                     return False
@@ -488,35 +587,12 @@ class CheckpointManager:
                 meta.update({"title": title, "title_source": "human"})
                 self._conn.execute("UPDATE sessions SET metadata=? WHERE id=?",
                                    (json.dumps(meta, ensure_ascii=False), session_id))
-                self._conn.commit()
             return True
         except TitleRefused:
             raise
         except Exception as e:
             logger.warning(f"Failed to rename session: {e}")
             return None
-
-    def lineage_tips(self, session_ids) -> dict[str, dict]:
-        """H440 — for each of ``session_ids`` that other sessions continue (a lineage's
-        root): ``{"resume_id": <its newest member>, "continuations": <how many>}``. A
-        session nobody continues is not in the answer."""
-        ids = [sid for sid in session_ids if isinstance(sid, str)]
-        if not self._conn or not ids:
-            return {}
-        try:
-            with self._lock:
-                rows = self._conn.execute(
-                    "SELECT root_id, session_id FROM session_continuations"
-                    " WHERE root_id IN (SELECT value FROM json_each(?)) ORDER BY created_at, rowid",
-                    (json.dumps(ids),)).fetchall()
-        except Exception as e:
-            logger.warning(f"Failed to read session lineage: {e}")
-            return {}
-        tips: dict[str, dict] = {}
-        for root, member in rows:          # oldest first: the last one seen is the newest
-            tip = tips.setdefault(root, {"resume_id": member, "continuations": 0})
-            tip["resume_id"], tip["continuations"] = member, tip["continuations"] + 1
-        return tips
 
     def session_row(self, session_id: str) -> dict | None:
         """H218 — one session's row, or None."""
@@ -595,11 +671,7 @@ class CheckpointManager:
         if not self._conn:
             return []
         with self._lock:
-            rows = self._conn.execute(
-                f"SELECT id FROM sessions WHERE {self._ARCHIVED_SQL} IS NULL AND {self._PINNED_SQL} IS NULL"  # nosec B608 - fixed SQL fragments
-                f" AND {self._ACTIVITY_SQL} IS NOT NULL AND {self._ACTIVITY_SQL} < ?"
-                f" AND {self._LINEAGE_IDLE_SQL}"
-                f" ORDER BY {self._ACTIVITY_SQL} LIMIT ?", (before, before, limit)).fetchall()
+            rows = self._conn.execute(self._STALE_SQL, (before, before, before, limit)).fetchall()
         return [r[0] for r in rows]
 
     def active_session_count(self, since: str) -> int | None:
@@ -618,15 +690,12 @@ class CheckpointManager:
             logger.warning(f"Failed to count active sessions: {e}")
             return None
 
-    #: H262 — what retention may delete: archived, unpinned, archived at or before the
-    #: first ``?`` (H262 review: the grace — a chat stays in the Archived view at least
-    #: ``retention.DELETE_GRACE_DAYS``, so one archived in this sweep never qualifies) and
-    #: idle since before the second ``?``.
+    #: H262 — what retention may delete (``_EXPIRED_SQL`` and its two siblings above):
+    #: archived, unpinned, archived at or before the first ``?`` (H262 review: the grace — a
+    #: chat stays in the Archived view at least ``retention.DELETE_GRACE_DAYS``, so one
+    #: archived in this sweep never qualifies) and idle since before the second ``?``.
     #: H440 review: … and no member of its conversation is pinned, back in the list or
-    #: active since the third ``?`` (the same instant as the second).
-    _EXPIRED_WHERE = (f"{_ARCHIVED_SQL} IS NOT NULL AND {_PINNED_SQL} IS NULL AND {_ARCHIVED_SQL} <= ?"
-                      f" AND {_ACTIVITY_SQL} IS NOT NULL AND {_ACTIVITY_SQL} < ?"
-                      f" AND {_LINEAGE_EXPIRED_SQL}")
+    #: active since that same instant (the third and fourth ``?``).
 
     @staticmethod
     def _grace_cutoff(archived_before: str | None) -> str:
@@ -642,15 +711,14 @@ class CheckpointManager:
     def expired_sessions(self, before: str, *, archived_before: str | None = None, limit: int = 500) -> list[str]:
         """H262 — archived, unpinned sessions idle since before the ISO timestamp ``before``
         and archived at or before ``archived_before`` (default: the grace before now),
-        newest first: a continued chat is newer than the one it continues, so it comes
-        before its parent (whose delete it would otherwise refuse)."""
+        newest first. H440 review: a continued chat comes before the one it continues
+        (whose delete it would otherwise refuse) by when it was created, not by its
+        activity — a root used again after it was continued still comes last."""
         if not self._conn:
             return []
         with self._lock:
             rows = self._conn.execute(
-                f"SELECT id FROM sessions WHERE {self._EXPIRED_WHERE}"  # nosec B608 - fixed SQL fragments
-                f" ORDER BY {self._ACTIVITY_SQL} DESC LIMIT ?",
-                (self._grace_cutoff(archived_before), before, before, limit)).fetchall()
+                self._EXPIRED_SQL, (self._grace_cutoff(archived_before), before, before, before, limit)).fetchall()
         return [r[0] for r in rows]
 
     def is_expired(self, session_id: str, before: str, *, archived_before: str | None = None) -> bool:
@@ -662,8 +730,8 @@ class CheckpointManager:
             return False
         with self._lock:
             row = self._conn.execute(
-                f"SELECT 1 FROM sessions WHERE id=? AND {self._EXPIRED_WHERE}",  # nosec B608 - fixed SQL fragments
-                (session_id, self._grace_cutoff(archived_before), before, before)).fetchone()
+                self._IS_EXPIRED_SQL,
+                (session_id, self._grace_cutoff(archived_before), before, before, before)).fetchone()
         return row is not None
 
 
@@ -792,7 +860,7 @@ class CheckpointManager:
         database files — the same erasure ``data_purge._purge_db`` does for a forget.
 
         H262 review — ``expired`` (``(before, archived_before)``, retention's delete): the
-        session row goes first, and only while it is still expired (``_EXPIRED_WHERE``), in
+        session row goes first, and only while it is still expired (``_DELETE_EXPIRED_SQL``), in
         the same transaction as the rest. A pin, an unarchive or a resume that landed since
         any earlier check matches nothing: everything is rolled back and None returned."""
         counts = {table: 0 for table, _name, _key, _many in self._SESSION_TABLES}
@@ -806,8 +874,7 @@ class CheckpointManager:
                 if expired is not None:
                     before, archived_before = expired
                     counts["sessions"] = self._conn.execute(
-                        f"DELETE FROM sessions WHERE id=? AND {self._EXPIRED_WHERE}",  # nosec B608 - fixed SQL fragments
-                        (session_id, archived_before, before, before)).rowcount
+                        self._DELETE_EXPIRED_SQL, (session_id, archived_before, before, before, before)).rowcount
                     if counts["sessions"] != 1:
                         self._conn.rollback()
                         return None
@@ -934,24 +1001,11 @@ class CheckpointManager:
             logger.warning(f"Failed to update session: {e}")
 
 
-    def get_sessions(self, limit: int = 20, *, archived: bool | None = None,
-                     native_only: bool = False, hide_continuations: bool = False) -> list[dict]:
-        """The newest sessions; ``archived`` True lists only archived ones, False only
-        the others, None (the default, for existing callers) all of them. ``native_only``
-        drops rows with a foreign-lineage receipt before the limit, so a window of
-        newer imported/derived rows never empties a guest's list.
-
-        H440: ``hide_continuations`` is the picker's view — one row per conversation. A
-        continuation is left out (before the limit), and its lineage's root is listed
-        where the newest continuation is, not where the root began."""
-        if not self._conn:
-            return []
+    def _sessions_sql(self, *, archived: bool | None, native_only: bool, hide_continuations: bool) -> str:
+        """The list statement for one view: fixed clauses joined, one ``?`` (the limit)."""
         clauses = []
-        order = "started_at"
         if hide_continuations:
-            clauses.append("id NOT IN (SELECT session_id FROM session_continuations)")
-            order = ("COALESCE((SELECT MAX(created_at) FROM session_continuations"
-                     " WHERE root_id=sessions.id), started_at)")
+            clauses.append("NOT EXISTS (SELECT 1 FROM session_continuations AS c WHERE c.parent_id = sessions.id)")
         if archived is True:
             clauses.append(f"{self._ARCHIVED_SQL} IS NOT NULL")
         elif archived is False:
@@ -959,11 +1013,26 @@ class CheckpointManager:
         if native_only:
             clauses.append("id NOT IN (SELECT session_id FROM session_imports)")
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        return f"SELECT * FROM sessions{where} ORDER BY started_at DESC LIMIT ?"  # nosec B608 - fixed SQL fragments
+
+    def get_sessions(self, limit: int = 20, *, archived: bool | None = None,
+                     native_only: bool = False, hide_continuations: bool = False) -> list[dict]:
+        """The newest sessions; ``archived`` True lists only archived ones, False only
+        the others, None (the default, for existing callers) all of them. ``native_only``
+        drops rows with a foreign-lineage receipt before the limit, so a window of
+        newer imported/derived rows never empties a guest's list.
+
+        H440: ``hide_continuations`` is the pickers' view — one row per place a
+        conversation can be picked up. A session that was continued is left out (before
+        the limit); what is listed is every session nobody continued yet: the newest part
+        of a continued chat, each branch of one continued more than once, and every plain
+        chat. No session is unreachable: a hidden one always has a listed descendant."""
+        if not self._conn:
+            return []
         try:
             with self._lock:
-                cursor = self._conn.execute(
-                    f"SELECT * FROM sessions{where} ORDER BY {order} DESC LIMIT ?", (limit,)  # nosec B608 - fixed SQL fragments
-                )
+                cursor = self._conn.execute(self._sessions_sql(
+                    archived=archived, native_only=native_only, hide_continuations=hide_continuations), (limit,))
                 columns = [d[0] for d in cursor.description]
                 rows = cursor.fetchall()
             return [dict(zip(columns, row)) for row in rows]

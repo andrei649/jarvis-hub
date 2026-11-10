@@ -433,44 +433,46 @@ def test_a_replayed_continuation_request_keeps_one_title(cp):
 
 # ── continuations are hidden from the pickers ────────────────────────────────────
 
-def test_the_picker_list_hides_continuations_before_the_limit(cp):
+def test_the_picker_list_hides_the_continued_parts_before_the_limit(cp):
     _titled(cp, "root", "Trip plan", started="2026-09-01T00:00:00+00:00")
-    members = [_continue(cp, "root") for _ in range(3)]
+    two = _continue(cp, "root")
+    three = _continue(cp, two)
     _titled(cp, "solo", "Other", started="2026-09-02T00:00:00+00:00")
-    assert {r["id"] for r in cp.get_sessions()} == {"root", "solo", *members}      # existing callers see all
-    assert [r["id"] for r in cp.get_sessions(limit=2, hide_continuations=True)] == ["root", "solo"]
+    assert {r["id"] for r in cp.get_sessions()} == {"root", "solo", two, three}    # existing callers see all
+    assert [r["id"] for r in cp.get_sessions(limit=2, hide_continuations=True)] == [three, "solo"]
 
 
-def test_a_lineage_is_listed_where_its_newest_member_is(cp):
-    """A long-running lineage is not pushed out of the window by its root's age."""
+def test_a_conversation_is_listed_where_its_newest_part_is(cp):
+    """The row is the newest part, so a long-running conversation is not pushed out of
+    the window by its first part's age."""
     _titled(cp, "root", "Trip plan", started="2026-09-01T00:00:00+00:00")
     _titled(cp, "solo", "Other", started="2026-09-02T00:00:00+00:00")
     assert [r["id"] for r in cp.get_sessions(hide_continuations=True)] == ["solo", "root"]
-    _continue(cp, "root")
-    assert [r["id"] for r in cp.get_sessions(hide_continuations=True)] == ["root", "solo"]
-    assert [r["id"] for r in cp.get_sessions(limit=1, hide_continuations=True)] == ["root"]
+    two = _continue(cp, "root")
+    assert [r["id"] for r in cp.get_sessions(hide_continuations=True)] == [two, "solo"]
+    assert [r["id"] for r in cp.get_sessions(limit=1, hide_continuations=True)] == [two]
 
 
-def test_lineage_tips_name_the_newest_member_and_the_count(cp):
+def test_a_row_knows_how_many_other_sessions_its_conversation_has(cp):
     _titled(cp, "root", "Trip plan")
     cp.create_session_record("solo")
     two = _continue(cp, "root")
     three = _continue(cp, two)
-    assert cp.lineage_tips(["root", "solo", "nope"]) == {"root": {"resume_id": three, "continuations": 2}}
-    assert cp.lineage_tips([]) == {}
+    assert cp.lineage_others([three, "root", "solo", "nope"]) == {three: 2, "root": 2}
+    assert cp.lineage_others([]) == {}
 
 
-def test_the_sessions_route_hides_continuations_and_says_what_a_resume_opens(cp, monkeypatch):
+def test_the_sessions_route_hides_the_continued_parts_and_says_what_a_resume_opens(cp, monkeypatch):
     _titled(cp, "root", "Trip plan")
     two = _continue(cp, "root")
     three = _continue(cp, two)
     cp.create_session_record("solo")
     client = _client(monkeypatch, SimpleNamespace(checkpoints=cp))
     rows = {r["id"]: r for r in client.get("/sessions").json()["sessions"]}
-    assert set(rows) == {"root", "solo"}
-    assert (rows["root"]["resume_id"], rows["root"]["continuations"]) == (three, 2)
+    assert set(rows) == {three, "solo"}
+    assert (rows[three]["resume_id"], rows[three]["continuations"]) == (three, 2)
     assert (rows["solo"]["resume_id"], rows["solo"]["continuations"]) == ("solo", 0)
-    assert rows["root"]["title"] == "Trip plan"
+    assert rows[three]["title"] == "Trip plan #3"
 
 
 def test_the_archived_view_lists_an_archived_conversation_as_one_row(cp, monkeypatch):
@@ -481,7 +483,7 @@ def test_the_archived_view_lists_an_archived_conversation_as_one_row(cp, monkeyp
     assert cp.set_archived(two, True)
     client = _client(monkeypatch, SimpleNamespace(checkpoints=cp))
     (row,) = client.get("/sessions", params={"archived": "true"}).json()["sessions"]
-    assert (row["id"], row["resume_id"], row["continuations"]) == ("root", two, 1)
+    assert (row["id"], row["resume_id"], row["continuations"]) == (two, two, 1)
     assert client.get("/sessions").json()["sessions"] == []
 
 
@@ -505,7 +507,7 @@ def test_a_title_resolves_to_the_newest_member_of_its_lineage(cp):
     assert session_selectors.resolve(cp, "Trip plan") == two
     three = _continue(cp, two)
     assert session_selectors.resolve(cp, "trip  PLAN") == three
-    assert session_selectors.resolve(cp, "Trip plan #2") == two          # a member's own name is that member
+    assert session_selectors.resolve(cp, "Trip plan #2") == three        # any member's name: where it now is
     assert session_selectors.resolve(cp, "Trip plan #3") == three
     assert session_selectors.resolve(cp, "root") == "root"               # an id is still that session
     assert session_selectors.resolve(cp, two[:20]) == two

@@ -1404,9 +1404,7 @@ def _selected_turn_outcome(orchestrator, measured: dict | None, *, usage: dict |
                 result['total_tokens'] = usage['input_tokens'] + usage['output_tokens']
             if 'title' in fields and session_id and type(session_id) is str:
                 checkpoints = getattr(orchestrator, 'checkpoints', None)
-                # H440: the conversation's title (its row's), not a stale member title.
-                read_title = (getattr(checkpoints, 'display_title', None)
-                              or getattr(checkpoints, 'session_title', None))
+                read_title = getattr(checkpoints, 'session_title', None)
                 if callable(read_title) and orchestrator.get_setting('memory.session_titles', True) is True:
                     title = read_title(session_id).get('title')
                     if type(title) is str and title.strip():

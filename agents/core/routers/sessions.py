@@ -106,8 +106,10 @@ async def get_sessions(req: Request, archived: bool = False):
     admin = web._web_principal(req).admin
     # The lineage predicate runs before the limit, so newer foreign rows cannot push
     # a guest's native history out of the window; the row probe below stays authoritative.
-    # H440: one row per conversation in both views — a continuation is not a row of its
-    # own; archive, unarchive, pin and (with ``lineage=true``) delete act on every member.
+    # H440: both views list every session nobody continued yet — the newest part of a
+    # continued chat (each branch of one continued more than once) and every plain chat;
+    # the parts that were continued are not rows. Archive, unarchive, pin and (with
+    # ``lineage=true``) delete act on the whole conversation.
     sessions = orch.checkpoints.get_sessions(limit=20, archived=archived, native_only=not admin,
                                              hide_continuations=True)
     if not admin:
@@ -117,17 +119,19 @@ async def get_sessions(req: Request, archived: bool = False):
     from ..session_titles import title_fields  # H413: each session's title and its source
 
     ids = [row.get("session_id") or row.get("id") for row in sessions]
-    tips = getattr(orch.checkpoints, "lineage_tips", None)
-    tips = tips(ids) if callable(tips) else {}
+    others = getattr(orch.checkpoints, "lineage_others", None)
+    others = others(ids) if callable(others) else {}
     return {"sessions": [{**row, **title_fields(row.get("metadata")), **_stamp_fields(row),
-                          **_lineage_fields(sid, tips)} for sid, row in zip(ids, sessions, strict=True)]}
+                          **_lineage_fields(sid, others)} for sid, row in zip(ids, sessions, strict=True)]}
 
 
-def _lineage_fields(sid, tips: dict) -> dict:
-    """H440 — what a resume of this row opens: the newest continuation of the lineage it
-    roots, else the session itself."""
-    tip = tips.get(sid) or {}
-    return {"resume_id": tip.get("resume_id") or sid, "continuations": int(tip.get("continuations") or 0)}
+def _lineage_fields(sid, others: dict) -> dict:
+    """H440 — ``resume_id``: the session a resume of this row opens (the row itself: a row
+    is always a session nobody continued yet; the field stays for clients written when a
+    row was the first part). ``continuations``: how many other sessions its conversation
+    has — earlier parts and other branches — which is what a whole-conversation delete
+    removes besides this one."""
+    return {"resume_id": sid, "continuations": int(others.get(sid) or 0)}
 
 
 def _stamp_fields(row: dict) -> dict:
@@ -267,9 +271,11 @@ async def delete_session(session_id: str, confirm: str = "", lineage: bool = Fal
 
     H440 review: a chat that others continue still answers 409 ``has_continuations`` — its
     continuations are never deleted in silence. ``&lineage=true`` says the whole
-    conversation: every member is deleted, newest first, each with its own lease and
-    backup (``deleted``, ``backups`` in the answer); none when a chat is on any of them,
-    and a run that stops part way says which are gone.
+    conversation: every member — every branch — is deleted, newest first, each with its
+    own lease and backup (``deleted``, ``backups`` in the answer; older backups are pruned
+    once afterwards, never the ones just written); none when a chat is on any of them,
+    and a run that stops part way says which are gone. A row's ``continuations`` in
+    ``GET /sessions`` is how many sessions that removes besides the row itself.
 
     Holds the session's turn lease, as ``create_continuation`` does: a turn on it
     finishes first (it would write the transcript back, or add a turn the backup never
@@ -289,7 +295,8 @@ async def delete_session(session_id: str, confirm: str = "", lineage: bool = Fal
         result = await (session_archive.delete_lineage(orch, session_id) if lineage
                         else session_archive.delete_leased(orch, session_id))
     except session_archive.SessionDeleteError as exc:
-        gone = {"deleted": exc.deleted, "backups": getattr(exc, "backups", [])} if getattr(exc, "deleted", None) else {}
+        gone = ({"deleted": exc.deleted, "backups": getattr(exc, "backups", []), "pruned": getattr(exc, "pruned", [])}
+                if getattr(exc, "deleted", None) else {})
         return JSONResponse({"error": exc.reason.replace("_", " "), "reason": exc.reason, **gone},
                             status_code=_DELETE_STATUS.get(exc.reason, 500))
     return JSONResponse(result, headers=_NO_STORE)

@@ -436,30 +436,49 @@ async def delete_leased(orch: Any, session_id: str, *, live: Iterable[str] | Non
 
 async def delete_lineage(orch: Any, session_id: str) -> dict:
     """H440 review — the permanent delete of a whole conversation: ``session_id`` and every
-    session of its lineage, newest first (a chat is deleted before the one it continues),
-    each through :func:`delete_leased` — its own turn lease, its own backup first.
+    session of its lineage (every branch), newest first (a chat is deleted before the one
+    it continues), each through :func:`delete_leased` — its own turn lease, its own backup
+    first.
 
-    Nothing is deleted when a chat is on any member (``active_session``). A member that
-    cannot be deleted stops the run; the error carries ``deleted`` and ``backups`` for the
-    members already gone (each has its backup). The answer is the root's own delete result
-    plus ``deleted`` (ids, in order) and ``backups``."""
+    Nothing is deleted when a chat is on any member (``active_session``), and a member a
+    chat opens while the run is under way is not deleted either: the live sessions are
+    read again before each member. A member that cannot be deleted stops the run; the
+    error carries ``deleted``, ``backups`` and ``pruned`` for what was done.
+
+    Older backups are pruned once, after the run, keeping the usual few *on top of* the
+    ones this run wrote (as the lifecycle sweep does) — so every backup the answer lists is
+    on disk however long the conversation was. The answer is the root's own delete result
+    plus ``deleted`` (ids, in order), ``backups`` and the real ``pruned``."""
+    from agents.core.env_config import env_int
+
     members = getattr(orch.checkpoints, "lineage_members", None)
     ids = (await asyncio.to_thread(members, session_id) if callable(members) else []) or [session_id]
-    active = getattr(orch, "session_id", None)
-    if set(ids) & (live_session_ids(orch) | {active}):
+
+    def live() -> set:
+        return live_session_ids(orch) | {getattr(orch, "session_id", None)}
+
+    if set(ids) & live():
         raise SessionDeleteError("active_session")
     deleted: list[str] = []
     backups: list[Any] = []
     result: dict = {}
+    failure: SessionDeleteError | None = None
     for sid in reversed(ids):
         try:
-            result = await delete_leased(orch, sid)
+            result = await delete_leased(orch, sid, live=live(), prune=False)
         except SessionDeleteError as exc:
-            exc.deleted, exc.backups = deleted, backups
-            raise
+            failure = exc
+            break
         deleted.append(sid)
         backups.append(result.get("backup"))
-    return {**result, "session": session_id, "deleted": deleted, "backups": backups}
+    pruned: list[str] = []
+    if deleted:
+        keep = env_int("JARVIS_SESSION_BACKUP_KEEP", BACKUP_KEEP_DEFAULT, minimum=1)
+        pruned = await asyncio.to_thread(prune_backups, default_backup_dir(), keep + len(deleted))
+    if failure is not None:
+        failure.deleted, failure.backups, failure.pruned = deleted, backups, pruned
+        raise failure
+    return {**result, "session": session_id, "deleted": deleted, "backups": backups, "pruned": pruned}
 
 
 async def delete_expired(orch: Any, session_id: str, before: str, *, archived_before: str | None = None) -> dict:

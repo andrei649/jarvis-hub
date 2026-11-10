@@ -6,13 +6,14 @@
    the raw turns. Text only: a turn is rendered as text, never as markup.
    H262 — pin a chat, on both tabs: a pinned chat is never auto-archived and never deleted
    by retention; the row says so with a badge (hover: when it was pinned).
-   H440 — a conversation is one row: the hub leaves its continuations out of the list and
-   says which member a resume opens (`resume_id`, the newest) and how many there are; the
-   row shows the count and resume opens that member. Rename sets the owner's own title,
-   which the automatic titles never replace. Review round: archive, unarchive and pin act on
-   the whole conversation (the hub stamps every member); the archived view is one row per
-   conversation too, and deleting a continued one asks for it whole (`lineage=true`),
-   saying so on the confirm button. */
+   H440 — a row is a session nobody continued yet: the newest part of a continued chat
+   (each branch, if it was continued more than once) or a plain chat. The hub leaves the
+   earlier parts out and says how many other sessions the conversation has
+   (`continuations`); the row shows that count. Rename sets the owner's own title, which
+   the automatic titles never replace. Archive, unarchive and pin act on the whole
+   conversation (the hub stamps every member), in both views. Delete removes the row's
+   session; for a continued chat the confirm button offers the whole conversation
+   (`lineage=true`) and says how many other sessions go with it. */
 import React, { useState } from 'react';
 import { apiDelete, apiPatch, apiPost } from '../api/client';
 import { Card, Row, State, arr, asLive, mono, refusalReason, useApi } from '../panel-kit';
@@ -101,7 +102,7 @@ export function SessionsPanel() {
   const unarchive = (sid: string) => act(sid, () => apiPost(unarchivePath(sid)), () => `back in the list: ${sid}`, 'unarchived');
   const remove = (sid: string, more = 0) => act(sid, () => apiDelete(deletePath(sid, more > 0), { admin: true }),
     (r) => (more > 0
-      ? `deleted ${sid} and ${plural(Math.max((r?.deleted?.length ?? more + 1) - 1, 0), 'continuation')} · ${plural(arr(r, 'backups').filter(Boolean).length, 'backup')}`
+      ? `deleted the whole conversation · ${plural(r?.deleted?.length ?? more + 1, 'session')} · ${plural(arr(r, 'backups').filter(Boolean).length, 'backup')}`
       : `deleted ${sid}${r?.backup ? ` · backup at ${r.backup}` : ''}`), 'deleted');
   const pin = (sid: string) => act(sid, () => apiPost(pinPath(sid)),
     () => `pinned ${sid} · never archived or deleted by retention`, 'pinned');
@@ -148,7 +149,7 @@ export function SessionsPanel() {
         {pinned && <span data-testid="pinned-badge" title={`pinned ${s.pinned_at}`}
           style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--amber)' }}>pinned</span>}
         {more > 0 && <span data-testid="lineage-badge"
-          title={`${more} continuation${more === 1 ? '' : 's'} · resume opens the newest (${resumeTarget(s)})`}
+          title={`${plural(more, 'other session')} in this conversation (earlier parts, other branches)`}
           style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--ink-2)' }}>+{more}</span>}
         <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>{s?.turns ?? s?.count ?? ''}</span>
         {sid && <button className="tool-btn" disabled={!!busy} aria-label={`rename ${sid}`}
@@ -167,7 +168,7 @@ export function SessionsPanel() {
           <button className="tool-btn" disabled={!!busy} aria-label={`unarchive ${sid}`} onClick={() => unarchive(sid)}>unarchive</button>
           {confirming === sid
             ? <button className="tool-btn" disabled={!!busy} aria-label={`confirm delete ${sid}`} style={{ color: 'var(--red)' }}
-                onClick={() => remove(sid, more)}>{more > 0 ? `confirm: delete for good, and its ${plural(more, 'continuation')}` : 'confirm: delete for good'}</button>
+                onClick={() => remove(sid, more)}>{more > 0 ? `confirm: delete the whole conversation (${plural(more + 1, 'session')})` : 'confirm: delete for good'}</button>
             : <button className="tool-btn" disabled={!!busy} aria-label={`delete ${sid} permanently`}
                 onClick={() => setConfirming(sid)}>delete permanently</button>}
         </>}
@@ -175,7 +176,7 @@ export function SessionsPanel() {
     })}
     {archived && confirming && <div role="note" style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>
       A backup is written first; then the conversation, its checkpoints and its checklist are gone from the hub
-      {confirmingMore > 0 ? ' — every continuation of it too, each with its own backup.' : '.'}</div>}
+      {confirmingMore > 0 ? ` — all ${confirmingMore + 1} sessions of it, earlier parts and other branches included, each with its own backup.` : '.'}</div>}
     {error && <div role="alert" style={{ fontSize: 11, color: 'var(--red)', marginTop: 4 }}>{error}</div>}
     {note && <div role="status" style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>{note}</div>}
     {resumed && (resumed.recap

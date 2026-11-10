@@ -21,7 +21,7 @@ _NATIVE_ROWS_SQL = ("SELECT id,started_at,ended_at,metadata FROM sessions "
                     "WHERE id NOT IN (SELECT session_id FROM session_imports)")
 
 
-_LINEAGE_SQL = "SELECT session_id, root_id FROM session_continuations ORDER BY created_at, rowid"
+_LINEAGE_SQL = "SELECT session_id, parent_id FROM session_continuations ORDER BY created_at, rowid"
 
 
 def _rows(checkpoints, *, native_only: bool = False) -> list[dict]:
@@ -36,8 +36,10 @@ def _rows(checkpoints, *, native_only: bool = False) -> list[dict]:
             lineage = conn.execute(_LINEAGE_SQL).fetchall()
     except Exception as exc:
         raise SessionSelectionError("store_unavailable", 503) from exc
-    roots = dict(lineage)                       # member → the root of its lineage
-    tips = {root: member for member, root in lineage}     # root → its newest member (oldest first)
+    children: dict[str, list[str]] = {}         # a session → the sessions continued from it, oldest first
+    for member, parent in lineage:
+        children.setdefault(parent, []).append(member)
+    born = {member: index for index, (member, _parent) in enumerate(lineage)}
     rows = []
     for sid, started, ended, raw in values:
         try:
@@ -51,48 +53,75 @@ def _rows(checkpoints, *, native_only: bool = False) -> list[dict]:
             title = meta.get("title", "")
             if not isinstance(title, str):
                 raise ValueError
+            numbered = meta.get("title_source") == "lineage"
             archived = meta.get("archived_at")
             if archived is not None and not isinstance(archived, str):
                 raise ValueError
         except (TypeError, ValueError, OverflowError) as exc:
             raise SessionSelectionError("store_unavailable", 503) from exc
-        root = roots.get(sid, sid)
-        rows.append({"id": sid, "title": title, "archived": archived is not None,
-                     "activity": activity, "started": start, "root": root, "tip": tips.get(root, root)})
+        rows.append({"id": sid, "title": title, "archived": archived is not None, "numbered": numbered,
+                     "activity": activity, "started": start})
+    known = {row["id"] for row in rows}
+    for row in rows:
+        row["tip"] = _newest_leaf(row["id"], children, born, known)
     return rows
+
+
+def _newest_leaf(sid: str, children: dict[str, list[str]], born: dict[str, int], known: set[str]) -> str:
+    """The newest session that continues ``sid`` and that nobody continued yet (``sid``
+    itself when nobody continued it): where a conversation named through ``sid`` now is.
+    Only sessions the caller may see count."""
+    best, stack, seen = None, [sid], {sid}
+    while stack:
+        current = stack.pop()
+        kids = [kid for kid in children.get(current, ()) if kid in known and kid not in seen]
+        if not kids and current != sid and (best is None or born.get(current, -1) > born.get(best, -1)):
+            best = current
+        seen.update(kids)
+        stack.extend(kids)
+    return best or sid
 
 
 def _fold(text: str) -> str:
     return " ".join(text.split()).casefold()
 
 
-def _by_title(checkpoints, rows: list[dict], selector: str) -> list[dict]:
+def _by_title(checkpoints, rows: list[dict], selector: str, *, exact_only: bool = False) -> list[dict]:
     """The sessions a name stands for (case and spacing folded).
 
-    H440: a numbered name (``Trip plan #2``) that some session carries is that session. Any
-    other name is a conversation's: every session titled so, or titled ``<name> #N``, is
-    traced to the root of its lineage and stands for that lineage's newest member — so the
-    name still opens the conversation where it now is after the root was renamed, or after
-    a renamed member was continued. Several conversations under the very same title stay
-    ambiguous; a name whose other bearers are only numbered variants (separate chats opened
-    with the same words are ``hello`` and ``hello #2``) opens the newest of them, as
-    Hermes' numbered titles do."""
+    H440: a name opens the conversation where it now is — every session carrying exactly
+    that title stands for the newest session continued from it that nobody continued yet
+    (itself, when nobody continued it). That holds for any member's name, a numbered part's
+    too. Exact bearers win: a separate chat that only looks alike (``hello (2)``, another
+    conversation's ``hello #2``) is never picked for ``hello``. Two different sessions
+    reached this way are an ambiguity, and are reported as one.
+
+    Only when nobody carries the name any more — the conversation's first part was renamed —
+    do its numbered parts (``<name> #N``, written by the continuation store) stand for it;
+    within one conversation the newest of them is taken."""
     from .session_titles import lineage_base
+
+    by_id = {row["id"]: row for row in rows}
+
+    def tips(found: list[dict]) -> list[dict]:
+        picked = {row["tip"]: by_id.get(row["tip"], row) for row in found}
+        return list(picked.values())
 
     wanted = _fold(selector)
     exact = [row for row in rows if row["title"] and _fold(row["title"]) == wanted]
-    if exact and _fold(lineage_base(selector)) != wanted:
-        return exact
-    by_id = {row["id"]: row for row in rows}
-    picked: dict[str, dict] = {}
-    for row in rows:
-        if row["title"] and _fold(lineage_base(row["title"])) == wanted:
-            member = by_id.get(row["tip"]) or by_id.get(row["root"]) or row
-            picked[member["id"]] = member
-    members = list(picked.values())
-    if len(members) > 1 and len({row["root"] for row in exact}) <= 1:
-        return [max(members, key=lambda row: (row["activity"], row["started"], row["id"]))]
-    return members
+    if exact or exact_only:
+        return tips(exact)
+    parts = tips([row for row in rows if row["numbered"] and _fold(lineage_base(row["title"])) == wanted])
+    roots = {_root_of(checkpoints, row["id"]) for row in parts}
+    if len(parts) > 1 and len(roots) == 1:
+        return [max(parts, key=lambda row: (row["started"], row["activity"], row["id"]))]
+    return parts
+
+
+def _root_of(checkpoints, sid: str) -> str:
+    members = getattr(checkpoints, "lineage_members", None)
+    found = members(sid) if callable(members) else []
+    return found[0] if found else sid
 
 
 def _one(matches: list[dict]) -> str:
@@ -129,7 +158,11 @@ def resolve(checkpoints, selector: str, *, latest_mode: bool = False) -> str:
         return max(eligible, key=lambda row: (row["activity"], row["started"], row["id"]))["id"]
     if selector.startswith("@"):
         raise SessionSelectionError("foreign_selector_requires_import", 422)
-    matches = [row for row in rows if row["id"].startswith(selector)]
+    # An exact title is a name; only then is the selector read as the start of an id (a
+    # chat titled "notes" must stay reachable although some id starts with "notes").
+    matches = _by_title(checkpoints, rows, selector, exact_only=True)
+    if not matches:
+        matches = [row for row in rows if row["id"].startswith(selector)]
     if not matches:
         matches = _by_title(checkpoints, rows, selector)
     return _one(matches)

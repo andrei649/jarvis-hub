@@ -154,6 +154,21 @@ def resolve_auxiliary_model(
     return selected or (fallback if task == "session_title" else active_model or fallback)
 
 
+def json_schema_supported(backend, model: str) -> bool:
+    """H440 — whether ``backend`` constrains an answer to a JSON schema for ``model``: it
+    declares the capability and has not seen this model on this server refuse one."""
+    if getattr(backend, "supports_json_schema", False) is not True:
+        return False
+    refused = getattr(backend, "json_schema_refused", None)
+    return not (callable(refused) and refused(model) is True)
+
+
+def local_json_schema_supported(router, task: str) -> bool:
+    """The same question for the local backend and the model ``task`` would run on now."""
+    active_model = None if task == "session_title" else getattr(router, "active_model", None)
+    return json_schema_supported(router.local_backend, resolve_auxiliary_model(task, active_model))
+
+
 def prepare_local_auxiliary(router, task: str):
     """Bind one local route for an operation; guard every awaited attempt afresh."""
     if not isinstance(task, str) or task not in _TASKS:
@@ -196,7 +211,7 @@ def prepare_local_auxiliary(router, task: str):
             if on_token is not None:
                 kwargs["on_token"] = on_token
             # H440: a schema goes only to a backend that declares it constrains the answer.
-            elif json_schema is not None and getattr(backend, "supports_json_schema", False) is True:
+            elif json_schema is not None and json_schema_supported(backend, model):
                 kwargs["json_schema"] = json_schema
             call = backend.generate_stream if on_token is not None else backend.generate
             if isinstance(backend, LMStudioBackend):
