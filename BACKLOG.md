@@ -2738,8 +2738,17 @@
   policy-approved work; per-agent overrides declared, persisted and audited — they used to be dropped
   by the store within a tick; read-back on every write; 28 tests on a real store, worker and
   coordinator). Open owner calls: should `off` also stop smart-reviewer and standing-consent
-  approvals, and should a per-agent `auto` keep beating a global `ask`. Both rows stay `partial`
-  until re-reviewed; 146/697.
+  approvals, and should a per-agent `auto` keep beating a global `ask`.
+  **Second review round (2026-11-10):** both fix rounds were reviewed again and both failed.
+  H484: a sync racing `/approvals off` could undo it for a tick, an override write could delete
+  other agents' stricter overrides, safe mode dropped stricter overrides, and "what you approved
+  still runs" was false for kernel-receipt kinds under `ask`/`off` — fixed by making the settings
+  store the one truth read under a lock by every writer and the sync, validating and auditing
+  overrides, having `off` recall every machine-made approval, and showing such a task failed with
+  the reason (24 more tests on a real orchestrator, store, routers, worker and kernel). Open owner
+  call: should the kernel honour the owner's own approval under `ask`/`off`. H440's second round
+  (backups pruned during a lineage delete, `#N` meaning two things, unreachable branch leaves, the
+  schema latch) is with its builder. Both rows stay `partial`; 146/697.
 
 ## Darwin feature absorption — 2026-09-09
 

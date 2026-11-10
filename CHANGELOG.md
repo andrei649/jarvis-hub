@@ -21,11 +21,17 @@
   you can change it, and every change is in the audit log.
 - After a restart your stored mode applies from the first decision. Before, Nerva ran in auto
   until its first check a minute later, and for as long as the emergency stop was engaged.
-- `off` now overrides every per-agent setting, and work the policy had already approved comes
-  back to your inbox instead of running. Work you approved yourself still runs.
-- Per-agent modes are now saved (they used to be lost within a minute) and audited. Under `ask`
-  a per-agent `auto` still applies; the command names those agents.
-- If a mode change does not take effect, you are told so instead of seeing a success message.
+- `off` now overrides every per-agent setting, and anything a machine approved (the policy, the
+  smart reviewer, a standing consent) comes back to your inbox instead of running. Those tasks
+  keep waiting there after you leave `off`; `/approvals` says how many.
+- Approving a terminal command, a checkpoint operation, a browser step or a provider change
+  only takes effect while the mode is `auto`. Under `ask` or `off` such a task is now shown as
+  failed with that reason; before, it was shown as done although nothing had run.
+- Per-agent modes are now saved (they used to be lost within a minute), checked and audited.
+  Under `ask` a per-agent `auto` still applies; the command names those agents. Safe mode keeps
+  the per-agent settings that ask more and ignores the ones that ask less.
+- If a mode change does not take effect, the HUD and the CLI show the mode actually in force
+  and why, instead of a success message.
 - Approval cards show the mode a task was asked under. The wording no longer says the
   irreversible tier always asks: in auto, a payment inside your spending caps runs.
 
