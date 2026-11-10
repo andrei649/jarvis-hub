@@ -524,7 +524,7 @@ def test_skill_propose_answers_the_generated_skills_warnings():
         last_generation_problems: list = []
         last_generation_warnings: list = []
 
-        def generate_skill(self, actor, description, steps):
+        def generate_skill(self, actor, description, steps, **kw):
             self.last_generation_warnings = list(warned)
             return "made"
 

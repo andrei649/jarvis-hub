@@ -637,8 +637,10 @@ class BackgroundReviewer:
         if self._skills is None or not hasattr(self._skills, "generate_skill"):
             return False
         try:
+            # H349: the background review is the agent's own initiative (curated).
             name = self._skills.generate_skill(
-                label, update["task"], update["steps"] or ["(captured from review)"])
+                label, update["task"], update["steps"] or ["(captured from review)"],
+                write_origin="background_review")
             if name:
                 actions.append(f"Skill '{name}' proposed (quarantined, pending review)")
                 return True

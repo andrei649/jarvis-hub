@@ -640,7 +640,8 @@ def test_a_served_skill_view_counts_and_a_refused_one_does_not(installed, tmp_pa
                     {"name": "ref", "bogus": 1},                       # unknown field
                     {"name": ""}):                                     # bad name
         assert _call(server, TOOL_VIEW, refused)["ok"] is False, refused
-    assert store.get("ref") is None                                    # no refusal wrote a row
+    # H349: registering the skill made its row (origin only); no refusal counted anything on it.
+    assert (store.get("ref")["view_count"], store.get("ref")["last_viewed_at"]) == (0, None)
 
     assert _call(server, TOOL_VIEW, {"name": "ref"})["ok"] is True
     rec = store.get("ref")

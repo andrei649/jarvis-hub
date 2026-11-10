@@ -325,6 +325,9 @@ def test_a_reinstall_is_known_by_its_name_in_any_case(market, tmp_path):
     folder = tmp_path / "skills" / "invoice_digest"
     folder.mkdir(parents=True)
     (folder / "SKILL.md").write_bytes(f"# INVOICE DIGEST\n\n> {DESC}\n".encode())
+    # H349: a reinstall replaces a folder the marketplace installed (its marker says so);
+    # a same-named skill it did not install or publish is no longer swapped out.
+    (folder / "EXTERNAL_SOURCE").write_text("source=marketplace\n", encoding="utf-8")
     assert market.install_from_zip(_zip(GOOD_HEAD)) is True
     assert (folder / "SKILL.md").read_bytes() == GOOD_HEAD.encode()
 

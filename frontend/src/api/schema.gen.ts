@@ -3378,6 +3378,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pin Skill
+         * @description H349 — pin or unpin one installed skill (Hermes: ``hermes curator pin|unpin``).
+         *
+         *     A pinned skill is left alone by the curator's lifecycle pass (never marked stale or
+         *     archived), and a skill batch and the journey's forget refuse to delete it until it is
+         *     unpinned; it can still be patched. Uninstalling it or rejecting it from review is the
+         *     owner's own act and is not blocked. A skill that ships with Nerva is not pinned
+         *     (409 ``not_pinnable``): nothing ages it out or deletes it.
+         *
+         *     An admin route like the skill switch, applied at once like switching off (a pin only
+         *     narrows what automation may do), and written to the intent log when it changed
+         *     something. The one write is ``SkillUsageStore.pin``, which makes the same checks under
+         *     the sidecar's lock, so the answer is what the sidecar file now holds.
+         */
+        post: operations["pin_skill_api_skills_pin_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/skills/bundles": {
         parameters: {
             query?: never;
@@ -15918,6 +15949,13 @@ export interface components {
              */
             overwrite: boolean;
         };
+        /** SkillPinBody */
+        SkillPinBody: {
+            /** Skill */
+            skill: string;
+            /** Pinned */
+            pinned: boolean;
+        };
         /** SkillSwitchBody */
         SkillSwitchBody: {
             /** Skill */
@@ -21876,6 +21914,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SkillSwitchBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pin_skill_api_skills_pin_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillPinBody"];
             };
         };
         responses: {

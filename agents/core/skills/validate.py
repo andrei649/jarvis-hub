@@ -231,6 +231,15 @@ def dialect(document: str) -> str:
     return "frontmatter"
 
 
+def name_holder(skills_dir, name: str, *, except_dir=None):
+    """The folder of an installed skill that already holds ``name``, or None. Delegates to
+    THE holder check (``loader.name_holder``: every root the loader discovers, the live
+    registry, the loader's own parse); ``skills_dir`` is scanned as well."""
+    from .loader import name_holder as _holder
+
+    return _holder(name, except_dir=except_dir, extra_roots=[skills_dir])
+
+
 def declared_name(document: str | bytes) -> str | None:
     """The name *document* declares, read as :func:`validate_skill_md` checks it."""
     text, _ = _decode(document)
@@ -240,7 +249,7 @@ def declared_name(document: str | bytes) -> str | None:
         data, _body = _fm.split_frontmatter(text, lenient=False)
         name = data.get("name") if isinstance(data, dict) else None
     else:
-        name = next((ln.strip()[2:] for ln in text.split("\n") if ln.strip().startswith("# ")), None)
+        name = _fm.heading_name(text)        # the loader's own reading: the last '# ' line
     return name.strip() if isinstance(name, str) and name.strip() else None
 
 

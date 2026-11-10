@@ -146,7 +146,7 @@ class _FakeLoader:
             path = d
         self.skills[name] = S()
 
-    def generate_skill(self, agent_id, task, steps, command_name=None, output=None):
+    def generate_skill(self, agent_id, task, steps, command_name=None, output=None, write_origin="learning"):
         self.generated.append((agent_id, task, steps))
         return "generated_skill_xyz"
 
