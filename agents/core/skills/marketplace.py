@@ -12,6 +12,7 @@ import sqlite3
 import tempfile
 import threading
 import time
+import uuid
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,7 +31,14 @@ from agents.core.paths import data_path
 from agents.core.persistence.migrations import apply_migrations
 
 from . import signing
-from .loader import EXTERNAL_SOURCE_MARKER, OWNER_APPROVED_MARKER, SkillLoader
+from .loader import (
+    EXTERNAL_SOURCE_MARKER,
+    OWNER_APPROVED_MARKER,
+    SkillLoader,
+    install_id_of,
+    loader_name,
+    name_holder,
+)
 from .skill_history import SkillHistory
 from .validate import Problem, SkillDocumentInvalid, declared_name, require_valid
 
@@ -168,6 +176,9 @@ class SkillMarketplace:
         self._lock = threading.Lock()
         # H507 — what the last install's code looks like (warn-only; never blocks).
         self.last_install_warnings: list = []
+        # H349 — the folder the last install created (None when it replaced its own
+        # earlier install): a new skill, for the usage sidecar.
+        self.last_created: Optional[Path] = None
         # 0.58 wiring: when a version-history ledger is attached, publish/install/
         # uninstall are recorded so a rollback target can be derived. Opt-in;
         # None → behaviour is byte-identical to before.
@@ -831,6 +842,36 @@ class SkillMarketplace:
                 raise SkillDocumentInvalid([Problem(
                     "name", f"{skill_name!r} would replace the folder {target_dir.name!r}, which holds "
                             "another skill: uninstall that one first, or rename this one")])
+            # Fourth review: asked of every root the loader discovers and of what is loaded,
+            # with the package named by the loader's own parse of its SKILL.md.
+            registers_as = loader_name(target_dir, skill_md_bytes) or skill_name
+            # Fifth review: an update that keeps the name its folder already registers under
+            # takes nobody's name, so it is never refused over another holder.
+            keeps_name = target_dir.is_dir() and loader_name(target_dir) == registers_as
+            holder = None if keeps_name else name_holder(registers_as, except_dir=target_dir,
+                                                         extra_roots=[self.skills_dir])
+            if holder is not None and not (self.is_registered(skill_name) and self._is_ours(holder)):
+                # H349 (third review, B1): the package declares the name of a skill installed
+                # from another folder. The loader lets a later folder take a name, so it
+                # would take that skill's slot while the owner's folder stays. A name the
+                # owner published here, held by a folder of this marketplace's own root, is
+                # the registry's own: installing its package beside the folder it was
+                # published from is the documented flow. The package then has its own usage
+                # row (its install id), so the source's pin and counters are never shown on,
+                # or lost to, the package's bytes — whichever folder holds the name.
+                raise SkillDocumentInvalid([Problem(
+                    "name", f"a skill named {skill_name!r} is already installed from the folder "
+                            f"{holder.name!r}: remove or rename that one first, or rename this one")])
+            if ((target_dir.exists() or target_dir.is_symlink()) and not self._installed_here(target_dir)
+                    and not self.is_registered(skill_name)):
+                # H349 (review M2): a same-named skill the marketplace neither installed nor
+                # holds a published package of (the owner's own, an agent-made one, an
+                # import) is never swapped out for a package. A folder the owner published
+                # from is the registry's own skill: installing its package there is the
+                # documented restore.
+                raise SkillDocumentInvalid([Problem(
+                    "name", f"{skill_name!r} would replace the folder {target_dir.name!r}, which holds a skill "
+                            "the marketplace did not install or publish: remove or rename that one first")])
 
             # Signature gate: SKILL.sig lives at the package root (manifest dir). The
             # digest is over relative paths, so verifying the staged tree verifies
@@ -845,13 +886,20 @@ class SkillMarketplace:
             # Marketplace content remains external after extraction. A package cannot
             # self-grant the separate owner approval used for in-process execution.
             # Written in staging, so the tree never appears in place without them.
+            # H349 (third review, M1): a new install stamps an install id beside the
+            # source, so the usage sidecar knows the folder for new whenever the hub first
+            # sees it; a reinstall over its own folder keeps the id that folder has.
+            existed = target_dir.exists() or target_dir.is_symlink()
+            install_id = install_id_of(target_dir) if existed else uuid.uuid4().hex
+            marker = "source=marketplace\n" + (f"install={install_id}\n" if install_id else "")
             for provenance_dir in {package, staged_sig_dir}:
                 (provenance_dir / OWNER_APPROVED_MARKER).unlink(missing_ok=True)
-                (provenance_dir / EXTERNAL_SOURCE_MARKER).write_text(
-                    "source=marketplace\n", encoding="utf-8"
-                )
+                (provenance_dir / EXTERNAL_SOURCE_MARKER).write_text(marker, encoding="utf-8")
 
+            self.last_created = None
             self._place(package, target_dir, staging)
+            if not existed:
+                self.last_created = target_dir
         finally:
             shutil.rmtree(staging, ignore_errors=True)
 
@@ -871,6 +919,25 @@ class SkillMarketplace:
         # reason is a fixed label.
         logger.info("Installed a marketplace skill package (signature: %s)", reason)
         return True
+
+    def _is_ours(self, folder: Path) -> bool:
+        """Whether ``folder`` lies directly in this marketplace's own skills root (where
+        ``publish_skill`` reads the folder a package was published from)."""
+        try:
+            return Path(folder).resolve().parent == self.skills_dir.resolve()
+        except OSError:
+            return False
+
+    @staticmethod
+    def _installed_here(target_dir: Path) -> bool:
+        """Whether ``target_dir`` carries the marker a marketplace install writes."""
+        marker = target_dir / EXTERNAL_SOURCE_MARKER
+        try:
+            if target_dir.is_symlink() or marker.is_symlink() or not marker.is_file():
+                return False
+            return "source=marketplace" in marker.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            return False
 
     @staticmethod
     def _holds_skill(skill_md: Path, name: str) -> bool:

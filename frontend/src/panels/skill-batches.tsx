@@ -139,7 +139,8 @@ export function BatchReferences({ refs }: { refs: any[] }) {
 function BatchDiffs({ skills }: { skills: SkillChange[] }) {
   return <>{skills.map((s, i) => (
     <div key={`${s.name}-${i}`} data-testid="skill-batch-skill" style={{ marginTop: 4 }}>
-      <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)' }}>{s.name} · {s.change}</div>
+      <div style={{ ...mono, fontSize: 10.5, color: 'var(--ink-2)' }}>{s.name} · {s.change}
+        {(s as any).pinned === true && <span style={{ color: 'var(--amber)' }}> · pinned by you</span>}</div>
       {(s.files || []).map((f, j) => <BatchFileDiff key={`${f.file}-${j}`} f={f} />)}
     </div>
   ))}</>;

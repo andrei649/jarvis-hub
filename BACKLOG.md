@@ -2766,6 +2766,16 @@
   piling copies into a kept backup set) is fixed. **H440 is `equivalent`** (no live LM Studio/Ollama
   run is claimed, as for the other rows of the sprint); H484 stays `partial` (no room or managed
   policy can force the mode). Headline 146 → **147/697**; `needs_review` 0.
+  **Batch 5 (2026-11-10, #1347):** H349 — the skill usage sidecar: provenance per skill (bundled,
+  import and source, local, agent), a sticky agent marker with write origin (only background-review
+  and learning-loop skills are curated), an owner pin (route, CLI, HUD), rows that end only by an
+  explicit removal, and one name check over both skills roots for every install and creation path.
+  Built on its own branch and merged only after review: six adversarial reviews, a fix round after
+  each of the first five (rows keyed by path lost on a move; a sweep that deleted rows of unseen
+  skills; rows reset by a same-named install; the name check reading one root of two; bundled names
+  refused), the sixth clean. `equivalent`; the sync flag is H345's and the patch-generation fields
+  are outside the frozen sentence. The same reviews surfaced an open read on main, now guarded:
+  `GET /skills/imported` served local source paths without credentials. Headline 147 → **148/697**.
 
 ## Darwin feature absorption — 2026-09-09
 

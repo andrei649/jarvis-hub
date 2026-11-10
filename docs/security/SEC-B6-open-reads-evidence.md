@@ -37,7 +37,7 @@
   and degradation flags; no user content.
 - **Catalogs shipped in code** (`/api/agent-templates`, `/api/memory/tool-spec`,
   `/api/memory/eval/corpus`, `/api/voice/capabilities`, `/api/voice/wyoming`,
-  `/skills/imported`, `/sandbox/status`) — static/derived catalogs. `/api/memory/eval/corpus` is the
+  `/sandbox/status`) — static/derived catalogs. `/api/memory/eval/corpus` is the
   **owned synthetic** eval corpus (`DEFAULT_CORPUS`), never live user memory.
 - **Aggregate observability** (`/api/analytics/{cost,locality,model-tiers}`,
   `/api/metrics/{capabilities,kernel,north-star}`, `/api/quality`, `/api/review/stats`,
@@ -91,6 +91,12 @@ configured (a spoofed `X-Forwarded-For: 127.0.0.1` too) and 401 when one is; the
 (`/api/swarm/summary`), of the learning data (`/learning`, `/api/admin/stats`,
 `/api/cognition/learning`) and of the local-docs summary are guarded, and neither websocket
 route touches them. Live open GETs = allowlist = 68. Five further rows spot-checked OK.
+**Fourth open read found later (2026-11-10, during the H349 reviews) and guarded:**
+`GET /skills/imported` served each imported skill's `manifest.json` verbatim, which for a
+locally migrated skill holds the absolute `source_path` (the owner's home path) and a content
+hash. Both reviews above had judged it "imported skill manifests"; it now carries `user_guard`
+and is off the allowlist (67 open GETs).
+
 Below the bar: `/memory/stats` returns the current session id; `/agents` returns the last raw
 exception string per agent; `/status` returns the hostname.
 

@@ -44,6 +44,21 @@ _HERMES_LIST_KEYS = ("supersedes", "session_platforms", "requires_toolsets", "re
 _CONTAINERS = (dict, list, tuple, set)
 
 
+def heading_name(text: str) -> str | None:
+    """The name a heading-dialect SKILL.md gives its skill: its LAST ``# `` line.
+
+    The one reading of it, shared by the loader (which names the skill it registers) and
+    the validator (which names the document a write declares): they used to differ — the
+    validator took the first such line — so a check made with one could miss a skill
+    registered by the other (H349, fourth review)."""
+    name = None
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if stripped.startswith("# "):
+            name = stripped[2:].strip()
+    return name
+
+
 def split_frontmatter(content: str, *, lenient: bool = True) -> tuple[dict | None, str]:
     """``(frontmatter, body)``, or ``(None, content)`` when there is no fenced block.
 
