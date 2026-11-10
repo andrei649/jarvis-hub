@@ -275,3 +275,17 @@ def test_the_repo_file_prediction_holds_no_value_of_a_refused_pair(tmp_path):
     merged = env_provenance.after_repo_layer(repo, {})
     assert "JARVIS_RUNTIME_LOG" not in merged and "NERVA_RUNTIME_LOG" not in merged
     assert merged.get("JARVIS_PORT") == "8123"                 # the rest of the file still counts
+
+
+@pytest.mark.parametrize("doc", ["docs/PACKAGING.md", "docs/PHONE_ACCESS.md"])
+def test_the_packaged_recovery_removes_the_tokens_under_both_spellings(doc):
+    """A new install's `.env` spells the tokens `NERVA_…`. A recovery that removes only the
+    `JARVIS_…` lines leaves a token in place, and once `tokens.db` is gone a rotated-away
+    or revoked one works again (H273's review rounds h and i, now for both spellings)."""
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parents[1] / doc).read_text(encoding="utf-8")
+    recovery = text[text.index("ships"):]
+    for name in ("NERVA_ADMIN_TOKEN", "NERVA_USER_TOKEN", "NERVA_HOST"):
+        assert name in recovery, name
+    assert recovery.index("NERVA_USER_TOKEN") < recovery.index("tokens.db", recovery.index("NERVA_USER_TOKEN"))

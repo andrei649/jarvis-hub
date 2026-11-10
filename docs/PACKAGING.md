@@ -80,7 +80,12 @@ A packaged install ships only the app, not the Python that runs
 `scripts/token_recover.py`. If a `JARVIS_ADMIN_TOKEN` you still hold works, there is nothing
 to recover: use it. Otherwise, with the app stopped:
 
-1. **First** remove every `JARVIS_ADMIN_TOKEN` and `JARVIS_USER_TOKEN` from **both** places the
+Every setting has two spellings since 2026-11-10: `NERVA_ADMIN_TOKEN` is the same setting as
+`JARVIS_ADMIN_TOKEN`, and a `.env` made by a new install uses the `NERVA_` spelling. Wherever
+these steps name a `JARVIS_…` setting, look for **both** spellings.
+
+1. **First** remove every `JARVIS_ADMIN_TOKEN` and `JARVIS_USER_TOKEN` — and every
+   `NERVA_ADMIN_TOKEN` and `NERVA_USER_TOKEN` — from **both** places the
    app reads them: the data home's `.env` (`~/Documents/Nerva/.env` by default,
    `<JARVIS_USER_HOME>/.env` when the data folder is moved) and the environment the app
    starts from (a wrapper script, a shortcut, a service definition; PHONE_ACCESS puts the
@@ -88,7 +93,7 @@ to recover: use it. Otherwise, with the app stopped:
    were rotated away or revoked: without it a token left in either place, such as a lost
    phone's, works again (review-H273h m2, review-H273i m1).
 2. If the app is bound to the network (`JARVIS_HOST=0.0.0.0` for phones), unset `JARVIS_HOST`
-   for now: with no token left, the app refuses to start on a network bind, by design.
+   (and `NERVA_HOST`) for now: with no token left, the app refuses to start on a network bind, by design.
 3. Remove `security/tokens.db` under the data root: `~/Documents/Nerva/memory/security/tokens.db`
    by default, `<JARVIS_USER_HOME>/memory/security/tokens.db` when the data folder is moved,
    `$JARVIS_HOME/security/tokens.db` when `JARVIS_HOME` is set, and
