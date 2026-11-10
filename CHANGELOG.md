@@ -229,8 +229,10 @@
   `nerva config list` marks it, and `nerva config managed` lists what is pinned and from which
   file (never an environment value).
 - Changing a pinned value is refused and says which file pins it: the Settings save, the
-  approval-mode switch, `nerva config set`, `unset` and `edit`. Import, reset and undo skip the
-  pinned settings and list them. Each refusal is in the audit log.
+  approval-mode switch, `nerva config set`, `unset` and `edit`, and the Integrations panel (a pinned
+  key or search choice shows "managed by your administrator" and cannot be saved, removed or
+  replaced by a key stored earlier). Import, reset and undo skip the pinned settings and list them.
+  Each refusal is in the audit log.
 - A `.managed` file in that folder turns on managed mode: every change is refused and the
   message says how to change the configuration instead (for example a NixOS rebuild).
 - If a managed file is broken or unreadable, Nerva refuses every change and will not start,

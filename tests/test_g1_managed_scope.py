@@ -53,6 +53,8 @@ def managed(tmp_path, monkeypatch):
     yield directory
     env_config.pin_environment(saved)
     managed_scope.invalidate()
+    # a load in a test folds NERVA_MANAGED_DIR onto JARVIS_MANAGED_DIR, which monkeypatch never set
+    os.environ.pop("JARVIS_MANAGED_DIR", None)
 
 
 def _pin(directory: Path, text: str, name: str = "config.yaml") -> Path:

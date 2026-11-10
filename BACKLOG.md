@@ -2962,9 +2962,13 @@
   the environment writers' gate. Fail closed: an unreadable managed file refuses every write and stops the
   hub's load. HUD Settings shows pinned rows read-only; `nerva config managed` lists the pins. Ledger:
   H249, H267, H629 → equivalent (151/697); `tests/test_g1_managed_scope.py` (35) joins the config, env and
-  user-journeys suites. Follow-ups: the Integrations panel's key writer (other branch) must call
-  `managed_scope.check_env_write` before it merges; chat `/approvals` (commands.py) answers a pinned mode
-  with its generic "did not become effective" line; environment pins take effect at the next hub start.
+  user-journeys suites. After the merge with the Integrations panel: its key PUT/DELETE, `use` (search
+  backend and model provider) and search-choice reset answer 409 `managed` (audited), `integration_keys`
+  refuses pinned names itself, `apply_stored()` never fills a pinned name, and the panel shows a pinned key
+  or choice as "managed by your administrator", read-only (`tests/test_g1_managed_integrations.py`, 6; one
+  vitest). A2A outbound writes its own peer registry and the secret broker, not settings or env: not
+  gated. Follow-ups: chat `/approvals` (commands.py) answers a pinned mode with its generic "did not become
+  effective" line; environment pins take effect at the next hub start.
 
 ## Darwin feature absorption — 2026-09-09
 
