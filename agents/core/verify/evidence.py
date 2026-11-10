@@ -70,7 +70,8 @@ _SCHEMA = (
         output_tail TEXT NOT NULL,
         prev_hash TEXT NOT NULL,
         row_hash TEXT NOT NULL,
-        audit_hash TEXT NOT NULL DEFAULT ''
+        audit_hash TEXT NOT NULL DEFAULT '',
+        tree TEXT NOT NULL DEFAULT ''
     )""",
     "CREATE INDEX IF NOT EXISTS idx_events_root ON events(root, id DESC)",
     """CREATE TABLE IF NOT EXISTS state (
@@ -125,7 +126,45 @@ def _connect() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     for ddl in _SCHEMA:
         conn.execute(ddl)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(events)").fetchall()}
+    if "tree" not in cols:     # a ledger written before the fingerprint column
+        conn.execute("ALTER TABLE events ADD COLUMN tree TEXT NOT NULL DEFAULT ''")
     return conn
+
+
+# ── the project's file fingerprint ──────────────────────────────────────────
+
+#: Folders a build or a test run writes into, and the VCS's own: never part of the fingerprint.
+_TREE_SKIP = frozenset({".git", ".hg", ".svn", "node_modules", ".venv", "venv", "__pycache__", ".pytest_cache",
+                        ".mypy_cache", ".ruff_cache", ".tox", ".nox", "dist", "build", "target", ".next",
+                        ".turbo", ".cache", "coverage", "htmlcov", ".gradle", ".hermes"})
+MAX_TREE_ENTRIES = 20_000
+
+
+def tree_fingerprint(root: str) -> str:
+    """A hash of every source file's path, size and modification time under *root*, or ''
+    when the tree is too large to walk (then nothing counts as unchanged). An edit from
+    anywhere — a terminal command, the owner's editor, a ``git pull`` — changes it."""
+    import os
+
+    digest = hashlib.sha256()
+    seen = 0
+    for here, dirs, files in os.walk(root, followlinks=False):
+        dirs[:] = sorted(d for d in dirs if d not in _TREE_SKIP and not d.endswith(".egg-info"))
+        for name in sorted(files):
+            seen += 1
+            if seen > MAX_TREE_ENTRIES:
+                return ""
+            path = os.path.join(here, name)
+            try:
+                st = os.lstat(path)
+            except OSError:
+                continue
+            if name.endswith((".pyc", ".pyo")) or name in {".coverage", "junit.xml"}:
+                continue
+            rel = os.path.relpath(path, root)
+            digest.update(f"{rel}\0{st.st_size}\0{st.st_mtime_ns}\n".encode("utf-8", "surrogateescape"))
+    return digest.hexdigest()
 
 
 # ── task → session ──────────────────────────────────────────────────────────
@@ -225,8 +264,19 @@ def kind_for(canonical: str) -> str:
     return kind or ("check" if "check" in words and "test" not in words else "test")
 
 
+#: Arguments that make a verify command check nothing (print a version, list or collect
+#: tests, a dry run): such a run is never evidence.
+WEAK_ARGS = frozenset({"--version", "-V", "--help", "-h", "--collect-only", "--co", "--setup-plan", "--fixtures",
+                       "--markers", "--listTests", "--list", "--list-tests", "--showConfig", "--no-run",
+                       "--dry-run"})
+#: ``make``'s own no-op modes (``-n`` is a real option elsewhere: pytest-xdist's worker count).
+MAKE_WEAK_ARGS = frozenset({"-n", "--just-print", "--recon", "-q", "--question", "--dry-run", "-p",
+                            "--print-data-base"})
+
+
 def classify(command: str, canonical_commands: list[str]) -> tuple[str, str, str] | None:
-    """``(canonical, kind, scope)`` when *command* runs one of *canonical_commands*."""
+    """``(canonical, kind, scope)`` when *command* runs one of *canonical_commands* and
+    actually checks something (see :data:`WEAK_ARGS`)."""
     candidate = _normalize(_strip_prefix(_tokens(command)))
     if not candidate:
         return None
@@ -238,6 +288,11 @@ def classify(command: str, canonical_commands: list[str]) -> tuple[str, str, str
             spelled = _normalize(spelling)
             if candidate[: len(spelled)] == spelled:
                 trailing = candidate[len(spelled):]
+                weak = WEAK_ARGS | (MAKE_WEAK_ARGS if spelled[:1] == ["make"] else frozenset())
+                # make's no-op flags may stand before the target too (``make -n test``).
+                checked = candidate[1:] if spelled[:1] == ["make"] else trailing
+                if any(arg in weak or arg.split("=", 1)[0] in weak for arg in checked):
+                    return None
                 scope = "targeted" if any(map(_looks_like_target, trailing)) else "full"
                 return canonical, kind_for(canonical), scope
     return None
@@ -254,7 +309,7 @@ def is_code_path(raw: object) -> bool:
 # ── writing ─────────────────────────────────────────────────────────────────
 
 _FIELDS = ("created_at", "session_id", "task_id", "root", "cwd", "command", "canonical", "kind", "scope",
-           "status", "exit_code", "output_tail")
+           "status", "exit_code", "output_tail", "tree")
 
 
 def _row_hash(prev_hash: str, row: dict[str, Any]) -> str:
@@ -335,7 +390,7 @@ def record_terminal(task_id: object, args: dict, result: dict, *, audit=None, no
         "task_id": task_id if isinstance(task_id, int) and not isinstance(task_id, bool) else None,
         "root": facts.root, "cwd": str(cwd), "command": command[:1000], "canonical": canonical,
         "kind": kind, "scope": scope_name, "status": "passed" if exit_code == 0 else "failed",
-        "exit_code": exit_code, "output_tail": _tail(result),
+        "exit_code": exit_code, "output_tail": _tail(result), "tree": tree_fingerprint(facts.root),
     }
     return _insert(row, audit)
 
@@ -373,28 +428,36 @@ def mark_edited(task_id: object, path: object, *, now: float | None = None, scop
 
 # ── reading ─────────────────────────────────────────────────────────────────
 
-def _fresh_pass(conn, root: str, since: float | None) -> sqlite3.Row | None:
+def _fresh_pass(conn, root: str, since: float | None, tree: str) -> sqlite3.Row | None:
+    """The newest full passing check of *root* after *since* whose file fingerprint is the
+    project's fingerprint now (*tree*); an unknown fingerprint is never fresh."""
+    if not tree:
+        return None
     return conn.execute(
         "SELECT * FROM events WHERE root = ? AND status = 'passed' AND scope = 'full' AND created_at >= ? "
-        "ORDER BY id DESC LIMIT 1", (root, since or 0.0)).fetchone()
+        "AND tree = ? ORDER BY id DESC LIMIT 1", (root, since or 0.0, tree)).fetchone()
 
 
 def status(root: str, session: str | None = None) -> dict[str, Any]:
     """The project's verification state: ``passed`` (a full passing check newer than the
-    last edit), ``stale`` (evidence older than an edit), ``failed`` or ``unverified``."""
+    last edit, with the project's files unchanged since), ``stale`` (evidence older than an
+    edit, or files changed since), ``failed``, ``targeted`` or ``unverified``."""
+    tree = tree_fingerprint(root)
     with _lock, closing(_connect()) as conn:
         params: tuple = (root, session) if session is not None else (root,)
         where = "root = ? AND session_id = ?" if session is not None else "root = ?"
         edits = conn.execute(f"SELECT MAX(last_edit_at) AS at FROM state WHERE {where}", params).fetchone()  # nosec B608 - fixed clauses
         last_edit = edits["at"] if edits is not None else None
         latest = conn.execute("SELECT * FROM events WHERE root = ? ORDER BY id DESC LIMIT 1", (root,)).fetchone()
-        fresh = _fresh_pass(conn, root, last_edit)
+        fresh = _fresh_pass(conn, root, last_edit, tree)
     if fresh is not None:
         return {"status": "passed", "root": root, "last_edit_at": last_edit, "evidence": dict(fresh)}
     if latest is None:
         return {"status": "unverified", "root": root, "last_edit_at": last_edit, "evidence": None}
     evidence = dict(latest)
-    state = "stale" if last_edit is not None and last_edit > evidence["created_at"] else evidence["status"]
+    changed = not tree or evidence.get("tree") != tree
+    state = ("stale" if (last_edit is not None and last_edit > evidence["created_at"])
+             or (evidence["status"] == "passed" and changed) else evidence["status"])
     if state == "passed" and evidence["scope"] != "full":
         state = "targeted"
     return {"status": state, "root": root, "last_edit_at": last_edit, "evidence": evidence}
@@ -410,14 +473,19 @@ def for_task(task_id: object) -> dict[str, Any] | None:
 
 
 def passed_since_edit(root: str, command: str) -> bool:
-    """Whether *command* (exactly, or as the canonical command it ran) passed in *root* after
-    the project's last edit by any session (``/verify run`` resumes after an approval)."""
+    """Whether *command* passed in *root* as a **full** run (a targeted run never stands in
+    for the suite) after the project's last edit, with the project's files unchanged since
+    (the fingerprint taken when it passed). ``/verify run`` resumes after an approval."""
+    tree = tree_fingerprint(root)
+    if not tree:
+        return False
     with _lock, closing(_connect()) as conn:
         edits = conn.execute("SELECT MAX(last_edit_at) AS at FROM state WHERE root = ?", (root,)).fetchone()
         since = edits["at"] if edits is not None and edits["at"] is not None else 0.0
         row = conn.execute(
-            "SELECT id FROM events WHERE root = ? AND status = 'passed' AND (command = ? OR canonical = ?) "
-            "AND created_at >= ? LIMIT 1", (root, command, command, since)).fetchone()
+            "SELECT id FROM events WHERE root = ? AND status = 'passed' AND scope = 'full' "
+            "AND (command = ? OR canonical = ?) AND created_at >= ? AND tree = ? LIMIT 1",
+            (root, command, command, since, tree)).fetchone()
     return row is not None
 
 
@@ -429,6 +497,8 @@ def pending(session: str) -> list[dict[str, Any]]:
     with _lock, closing(_connect()) as conn:
         rows = conn.execute("SELECT * FROM state WHERE session_id = ? AND last_edit_at IS NOT NULL",
                             (session,)).fetchall()
+    trees = {row["root"]: tree_fingerprint(row["root"]) for row in rows}
+    with _lock, closing(_connect()) as conn:
         out = []
         for row in rows:
             try:
@@ -437,7 +507,7 @@ def pending(session: str) -> list[dict[str, Any]]:
                 paths = []
             if not paths or row["nudges"] >= MAX_NUDGES:
                 continue
-            if _fresh_pass(conn, row["root"], row["last_edit_at"]) is not None:
+            if _fresh_pass(conn, row["root"], row["last_edit_at"], trees[row["root"]]) is not None:
                 continue
             out.append({"root": row["root"], "changed_paths": paths, "nudges": row["nudges"],
                         "last_edit_at": row["last_edit_at"]})
@@ -462,27 +532,38 @@ def recent(root: str | None = None, limit: int = 10) -> list[dict[str, Any]]:
 
 
 def verify_chain(audit=None) -> dict[str, Any]:
-    """Re-check every row's hash and its link to the row before it, and, with the intent
-    log, that each anchored row's hash is the one the log recorded."""
+    """Re-check every row's hash and its link to the row before it. With the intent log:
+    every row must be anchored there with its hash (``unanchored`` names the first that is
+    not), and the newest anchor must be a row the ledger still holds, so cutting rows off
+    the end is seen (``truncated``)."""
     with _lock, closing(_connect()) as conn:
         rows = [dict(r) for r in conn.execute("SELECT * FROM events ORDER BY id").fetchall()]
     anchored: dict[str, str] = {}
+    newest_anchor: str | None = None
     if audit is not None:
         try:
-            for entry in audit.list(limit=100_000):
+            for entry in audit.list(limit=100_000):       # newest first
                 if entry.get("action") == "verify.evidence":
-                    anchored[str(entry.get("entry_hash"))] = str((entry.get("metadata") or {}).get("row_hash"))
+                    row_hash = str((entry.get("metadata") or {}).get("row_hash"))
+                    anchored[str(entry.get("entry_hash"))] = row_hash
+                    if newest_anchor is None:
+                        newest_anchor = row_hash
         except Exception:  # noqa: BLE001
-            anchored = {}
+            return {"ok": False, "bad_id": None, "reason": "audit_unreadable", "n": len(rows)}
     prev: str | None = None
     for row in rows:
         if prev is not None and row["prev_hash"] != prev:
             return {"ok": False, "bad_id": row["id"], "reason": "link", "n": len(rows)}
         if _row_hash(row["prev_hash"], row) != row["row_hash"]:
             return {"ok": False, "bad_id": row["id"], "reason": "hash", "n": len(rows)}
-        if audit is not None and row["audit_hash"] and anchored.get(row["audit_hash"]) != row["row_hash"]:
-            return {"ok": False, "bad_id": row["id"], "reason": "anchor", "n": len(rows)}
+        if audit is not None:
+            if not row["audit_hash"]:
+                return {"ok": False, "bad_id": row["id"], "reason": "unanchored", "n": len(rows)}
+            if anchored.get(row["audit_hash"]) != row["row_hash"]:
+                return {"ok": False, "bad_id": row["id"], "reason": "anchor", "n": len(rows)}
         prev = row["row_hash"]
+    if audit is not None and newest_anchor is not None and (not rows or rows[-1]["row_hash"] != newest_anchor):
+        return {"ok": False, "bad_id": None, "reason": "truncated", "n": len(rows)}
     return {"ok": True, "bad_id": None, "reason": "", "n": len(rows)}
 
 
@@ -494,5 +575,5 @@ def reset_for_tests() -> None:
 __all__ = [
     "MAX_NUDGES", "classify", "db_path", "is_code_path", "kind_for", "mark_edited", "note_nudged", "note_task",
     "pending", "recent", "record_terminal", "reset_for_tests", "set_db_path", "status", "task_session",
-    "verify_chain",
+    "tree_fingerprint", "verify_chain",
 ]

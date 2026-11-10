@@ -31,14 +31,16 @@
   queued while the emergency stop is on or the conversation is in plan mode. Nerva does not
   start the app itself.
 - Every finished test, lint or build run of a project, yours or the model's, is kept in an
-  evidence ledger that cannot be back-dated (`/verify ledger` checks it). An approved edit makes
-  earlier results stale.
+  evidence ledger that cannot be back-dated (`/verify ledger` checks it). Any change to the
+  project's files makes earlier results stale, and a run of one test file never counts as the
+  whole suite.
 - `/verify on-stop on` (off by default): when the model is about to say it is done after code
   in this conversation changed and nothing has passed since, it is asked once to run the
   project's check first, and told that a check still waiting for you has not passed.
 - When the model works on code in a project, it now gets a short coding brief and a snapshot of
-  the repository (branch, ahead/behind, changed files, last commits, the project's commands),
-  read without running any of the repository's hooks or filters. `/verify coding off` turns it off.
+  the repository (branch, ahead/behind, changed files, last commits, the project's commands).
+  Git is only run on a repository whose config cannot make it run a program; otherwise the
+  snapshot says so and leaves the git part out. `/verify coding off` turns it off.
 **Set up search services and cloud model providers from one HUD panel, no `.env` edit, no restart**
 - A new Console panel, Start → **Integrations**, lists everything that needs your setup: the four
   search services (Tavily, plus Exa, Brave Search and Parallel from Hermes Agent), the cloud model

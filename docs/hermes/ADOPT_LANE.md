@@ -632,11 +632,11 @@ its sibling). Everything that *runs* or *decides* is Nerva's, in `agents/core/ve
 
 | Upstream line | Rule (scoped to `agent/verify/`) | Becomes |
 |---|---|---|
-| `from pathlib import Path` | `verify-fs` | `hermes_compat.verify_fs.Path`: a path confined to the one project root Nerva bound for the call (`bound(root, writable=…, hidden=…)`); symlinks resolved and kept under the root; secret-looking paths (the file tools' rule) do not exist; reads capped at 256 KiB; `write_text`/`mkdir` only for the exact manifest `/verify save` names; nothing bound means an empty disk |
+| `from pathlib import Path` | `verify-fs` | `hermes_compat.verify_fs.Path`: no I/O of its own; every look goes to the file system Nerva bound for the call (`bound(fs)`, `verify/project.ConfinedFS`): one project root, walked component by component with `lstat` (any symlink, `..` or secret-looking component is absent), regular single-link files only (no hard link out of the root), reads `O_NOFOLLOW` and capped at 256 KiB, the only write the exact manifest `/verify save` names, opened `O_NOFOLLOW`; nothing bound means an empty, read-only disk |
 | `from agent.verify.… import` | `verify-siblings` | the vendored `agents.vendor.hermes.agent.verify.…` |
 
 `verify_fs` is path-scoped (`PATH_SCOPED_COMPAT`): only files under `agent/verify/` may
-import it. It imports no Nerva module and no `os`; the secret rule is passed in by the caller.
+import it. It imports no Nerva module, no `os` and no I/O library; all confinement is Nerva code.
 
 ### How a verification run is governed
 
@@ -652,6 +652,14 @@ import it. It imports no Nerva module and no `os`; the secret rule is passed in 
 - **Plan mode**: a verification run executes the project's code, so it is not a read: refused.
   The coding snapshot's fixed `git status`/`log`/`diff --shortstat` reads are reads and run in
   plan mode; they are not run under the e-stop.
+- **The snapshot's git reads**: run only when the repository's config (local and worktree
+  scopes, `git config --list --show-scope`, no `--includes`) holds allowlisted plain keys only
+  (`verify/workspace.ALLOWED_KEYS`); anything else (filters in any letter case, includes,
+  `extensions.*` but the object format, `gpg.*`, `core.sshCommand`, `core.fsmonitor`, aliases,
+  drivers) withholds the git part and names the key. Second layer: `-c` overrides for hooks,
+  fsmonitor, signatures and `gpg.*` programs, `core.sshCommand`, `protocol.allow=never`,
+  `GIT_NO_LAZY_FETCH=1`, no system/global config; one 6 s deadline per snapshot and a streamed
+  64 KB output cap.
 - **Evidence**: `autonomy_coordinator._rpc_terminal_run` passes each finished, redacted result to
   `evidence.record_terminal`; `ToolRPCServer.execute` passes each applied `file_write`/
   `file_delete` to `evidence.mark_edited`. The session is the one whose turn queued the call

@@ -54,17 +54,24 @@ def _project(ctx: Any, path: str | None):
     return root, detect_facts(root, git=git)
 
 
+def _shown(text: object, cap: int = 120) -> str:
+    """A project string (a committed manifest is the project's text) as one plain line."""
+    from .workspace import safe_text
+
+    return safe_text(text, cap) or "(withheld: not a plain one-line string)"
+
+
 def _recipe_lines(recipe, source: str) -> list[str]:
     if recipe is None:
         return ["Recipe: none detected"]
-    lines = [f"Recipe ({source}): {recipe.name} [{recipe.kind}]"]
+    lines = [f"Recipe ({source}): {_shown(recipe.name, 60)} [{_shown(recipe.kind, 30)}]"]
     for phase in ("bootstrap", "build", "test"):
         commands = getattr(recipe, phase) or []
         if commands:
-            lines.append(f"- {phase}: " + "; ".join(f"`{c}`" for c in commands))
+            lines.append(f"- {phase}: " + "; ".join(repr(_shown(c)) for c in commands))
     if recipe.start:
         port = f" (port {recipe.port})" if recipe.port else ""
-        lines.append(f"- start: `{recipe.start}`{port} — shown only; Nerva does not boot the app")
+        lines.append(f"- start: {_shown(recipe.start)!r}{port} — shown only; Nerva does not boot the app")
     return lines
 
 
@@ -126,7 +133,12 @@ async def verify_command(ctx: Any) -> str:
         if len(rest) != 1 or config.normalize(key, rest[0]) is None:
             return USAGE
         value = config.normalize(key, rest[0])
-        await asyncio.to_thread(config.save, key, value, by=_who(ctx), audit=audit)
+        from agents.core.managed_scope import ManagedRefused
+
+        try:
+            await asyncio.to_thread(config.save, key, value, by=_who(ctx), audit=audit)
+        except ManagedRefused as exc:
+            return f"Nothing changed: {exc}."
         label = "Verify-on-stop" if key == "verify_on_stop" else "Coding posture"
         return f"{label} is now {value}."
     if action == "ledger":

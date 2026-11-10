@@ -983,16 +983,17 @@ class AgentToolRuntime:
                         or is_backend_failure_reply(turn.content.lstrip())):
                     record_agent_observation(agent_id, 'failed')
                 else:
-                    record_model_completion(agent_id)
                     # G5 verify-on-stop (H405): edited code with no fresh passing check
                     # gets one nudge and one more round; the answer is held as fallback.
-                    if verify_held is None:
+                    # Not after a guardian stop (the model has no tools to verify with).
+                    if verify_held is None and not guardian_stopped:
                         nudge = await _verify_on_stop_nudge(frozenset(gated_tools))
                         if nudge:
                             verify_held = turn.content
                             messages.append({"role": "assistant", "content": turn.content})
                             messages.append({"role": "user", "content": nudge})
                             continue
+                    record_model_completion(agent_id)
                 return ToolLoopResult(turn.content, ToolLoopExitReason.MODEL_RESPONSE)
             if guardian_stopped:
                 from .approval_outcomes import DENIAL_BREAKER_NOTICE
@@ -1132,10 +1133,11 @@ class AgentToolRuntime:
                     for name in _ALWAYS_RESTATED:
                         restated[name] = f"script:{scripts_run}"
             if any(result.get("reason") == "approval_required" for result, _ in observations):
-                return ToolLoopResult(
-                    _approval_reply(result for result, _ in observations),
-                    ToolLoopExitReason.APPROVAL_REQUIRED,
-                )
+                reply = _approval_reply(result for result, _ in observations)
+                if verify_held is not None:
+                    # G5: the nudged round queued a check; the answer it held still stands.
+                    reply = f"{verify_held}\n\n{reply}"
+                return ToolLoopResult(reply, ToolLoopExitReason.APPROVAL_REQUIRED)
             from .approval_outcomes import _has_active_denial_breaker
             if any(result.get('reason') == 'guardian_denied' and _has_active_denial_breaker(result)
                    for result, _ in observations):

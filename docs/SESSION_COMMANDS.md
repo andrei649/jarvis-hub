@@ -162,25 +162,35 @@ call: it shows up as an approval card, follows your approval mode, the target po
 command denylist, and runs only on a terminal target you enabled. Nothing is queued while the
 emergency stop is engaged or while the conversation is in plan mode (a test run executes the
 project's code, so it is not a read). When a command waits for your approval the run stops;
-approve it, then `/verify run` again continues with the next phase (a check that already passed
-since the last edit is not asked again). Nerva shows the app's start command but does not boot
+approve it, then `/verify run` again continues with the next phase (a full run of the same
+check that passed with the project's files unchanged since is not asked again; a run of one test
+file never stands in for the suite). Nerva shows the app's start command but does not boot
 the app or poll it.
 
 **Evidence.** Every finished test, lint or build command of a project — yours or the model's —
 is recorded with its result in an evidence ledger (`<data>/verify/evidence.db`). Each row is
 hash-chained to the one before and anchored in the signed audit log, so a result cannot be
-back-dated; `/verify ledger` checks both. An approved edit to the project makes earlier evidence
-stale.
+back-dated; `/verify ledger` checks both, and also says when a row is not anchored or when rows
+were cut off the end. Any change to the project's files — an approved edit, a command, your own
+editor, a `git pull` — makes earlier evidence stale (each result carries a fingerprint of the
+files). A command that checks nothing (`--version`, `--collect-only`, `make -n`, `--listTests`)
+is not evidence.
 
 **Verify-on-stop.** With `/verify on-stop on`, when the model is about to finish a turn and this
 conversation's edits to code (not prose) have no fresh passing check, Nerva hands the turn back
-once with a note listing the project's commands. The model can only ask to run one, which
-again waits for you; a queued check is never reported as a passing one.
+once with a note listing the project's commands (shown as data, and only commands that are plain
+one-line strings). The model can only ask to run one, which again waits for you; a queued check
+is never reported as a passing one, and the answer it first gave is kept.
 
 **Coding posture.** When the model can edit or run code and the conversation's folder is a
 project, its instructions carry a short coding brief and a snapshot taken once per conversation:
 branch and upstream (ahead/behind), changed and untracked counts, the uncommitted diff size,
-the last three commits and the project's commands. The snapshot is read with fixed read-only
-git commands that run no repository hook or filter; commit messages that look like
-instructions are withheld. `/verify coding off` turns it off.
+the last three commits and the project's commands. Git is run only for a repository whose own
+config holds nothing but plain keys (remotes, branches, user name, line endings): a filter, an
+include, a `config.worktree`, a partial clone, a signature program, `core.sshCommand` or any
+other key means the snapshot says "Git: not read" and names the key, because such a config can
+make git run a program. Commit messages and recipe names that look like instructions are
+withheld. The project's AGENTS.md and similar files are presented to the model as untrusted
+notes, never as rules. `/verify coding off` turns it off. The two `/verify` switches are your
+configuration: in managed mode they cannot be changed here.
 

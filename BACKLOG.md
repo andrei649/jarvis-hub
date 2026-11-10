@@ -2947,11 +2947,20 @@
   anchored in the intent log; fed by the coordinator's terminal result hook and applied
   `file_write`/`file_delete`), verify-on-stop in the tool loop (off by default, one nudge a turn,
   two per edit generation, held answer as fallback), and the coding posture (brief, single-editor
-  edit-format line, a session-pinned fenced git snapshot read without repository hooks or filters).
+  edit-format line, a session-pinned fenced git snapshot). Adversarial review round (same day): the
+  first snapshot still let a repository run code (filter subsection case, `config.worktree`,
+  `log.showSignature` + `gpg.program`, partial-clone lazy fetch over `core.sshCommand`); git now
+  runs only when the repository's config holds allowlisted plain keys, with `-c` overrides and
+  `GIT_NO_LAZY_FETCH` as a second layer, one deadline and a streamed output cap. Also fixed:
+  manifest text sanitised and fenced in the snapshot and the nudge; an oversized coding block can
+  no longer drop all guidance; evidence needs a full run and an unchanged file fingerprint (no
+  targeted or weak runs, outside edits seen); every ledger row must be anchored and a cut tail is
+  seen; `/verify save` never follows a link or a hard link (`ConfinedFS`, `O_NOFOLLOW`); the
+  switches obey managed mode.
   Owner surface: `/verify [status|detect|save|run|ledger|on-stop|coding]`. Ledger: H023, H405, H406
   stay **partial** (no app boot/readiness poll; no `pre_verify` hook; no patch editor to steer
   toward, no focus-mode collapse). Guide: `docs/hermes/ADOPT_LANE.md` → slice 5; user docs:
-  `docs/SESSION_COMMANDS.md` → /verify. Tests: `tests/test_g5_project_verify.py` (35).
+  `docs/SESSION_COMMANDS.md` → /verify. Tests: `tests/test_g5_project_verify.py` (64 cases after the review round).
 
   **UX pass done (2026-11-10): the Integrations panel** (owner request: make the Hermes integration
   coherent before adopting more). Console → Start → Integrations lists the 4 search backends (Tavily +

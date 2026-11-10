@@ -6,8 +6,12 @@
   :mod:`.coding`. ``auto``: the turn's working folder is a project and the turn can edit
   or run code; ``on``: whenever the working folder is a project; ``off``: never.
 
-Changed only by the owner (``/verify on-stop``, ``/verify coding``), audited. An unreadable
-file reads as the defaults, so a damaged file can only switch the nudge off.
+Changed only by the owner (``/verify on-stop``, ``/verify coding``), audited. They are owner
+configuration: in managed mode (an administrator's ``.managed`` marker, or a managed
+configuration that cannot be read) a change is refused like every other configuration
+write (``managed_scope.check_writable``). They are not settings-store keys, so an
+administrator cannot pin them one by one. An unreadable file reads as the defaults, so a
+damaged file can only switch the nudge off.
 """
 from __future__ import annotations
 
@@ -56,6 +60,9 @@ def save(key: str, value: str, *, by: str = "owner", audit=None) -> dict[str, st
     """Set one switch (already normalized); returns the new settings."""
     if key not in DEFAULTS or normalize(key, value) != value:
         raise ValueError(f"{key}={value!r} is not a verify setting")
+    from agents.core import managed_scope
+
+    managed_scope.check_writable()      # raises ManagedRefused in managed mode
     with _lock:
         current = load()
         before = current.get(key)
