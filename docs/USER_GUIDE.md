@@ -71,6 +71,9 @@ server is down, Jarvis degrades gracefully with a clear message rather than hang
 
 - **Chat** in the HUD (or the CLI). Replies stream; conversation memory + real-embeddings
   recall give continuity across sessions.
+- **Session commands** in any chat: `/plan` (plan without changing anything), `/loop`
+  (repeat a prompt on a cadence), `/btw` (a side question), `/context` and `/compress`
+  (what fills the model's window). See [SESSION_COMMANDS.md](SESSION_COMMANDS.md).
 - **Voice** (optional): push-to-talk dictation + spoken replies.
 - **Autonomy:** Jarvis can work proactively (watchers → proposals → an **approval queue**
   for anything reversible/irreversible). Proactive pushes are capped (**≤4/day** interrupt

@@ -2629,6 +2629,19 @@ class Orchestrator:
             logger.warning("slash command dispatch failed closed", exc_info=True)
             return None
 
+    def _continue_command_turn(self, outcome) -> str:
+        """H668 — the prompt a ``continue`` outcome hands the model as this turn's message.
+        ``/plan`` also marks the turn, so its reply is saved as the plan file."""
+        rewrite = getattr(outcome, "continuation", None)
+        prompt = getattr(rewrite, "prompt", None)
+        if not isinstance(prompt, str) or not prompt:
+            raise RuntimeError("a continued command carries no prompt")
+        if outcome.name == "plan":
+            from .plan_commands import begin_plan_turn
+
+            begin_plan_turn(str(self.session_id or ""), getattr(rewrite, "path", ""))
+        return prompt
+
     async def _begin_bundle_load(self, text: str):
         """H026 — the owner's ``/<bundle> [instruction]`` or ``/bundle <name> [instruction]``.
 
@@ -3434,6 +3447,9 @@ class Orchestrator:
         outcome, bundle_loaded = await self._begin_bundle_load(text)
         if outcome is None and not bundle_loaded:
             outcome = await self._dispatch_command(text)
+        if outcome is not None and getattr(outcome, "status", None) == "continue":
+            # H668: a command that hands the model a prompt as an ordinary turn (/plan).
+            text, outcome, bundle_loaded = self._continue_command_turn(outcome), None, True
         if outcome is not None:
             await self.memory.add_turn(self.session_id, "assistant", outcome.reply, agent_id="commands")
             self.last_cognition = self._command_cognition(outcome)
@@ -3721,6 +3737,9 @@ class Orchestrator:
         outcome, bundle_loaded = await self._begin_bundle_load(text)
         if outcome is None and not bundle_loaded:
             outcome = await self._dispatch_command(text)
+        if outcome is not None and getattr(outcome, "status", None) == "continue":
+            # H668: a command that hands the model a prompt as an ordinary turn (/plan).
+            text, outcome, bundle_loaded = self._continue_command_turn(outcome), None, True
         if outcome is not None:
             record_turn_completion("command")
             await self.memory.add_turn(self.session_id, "assistant", outcome.reply, agent_id="commands")
@@ -5834,6 +5853,10 @@ class Orchestrator:
         state = _TURN_CHAT_OUTCOMES.get()
         if state is not None and not is_failed_turn_reply(responder_id, synthesized):
             state["persisted"] = True
+        if not is_failed_turn_reply(responder_id, synthesized):
+            from .plan_commands import finish_plan_turn
+
+            await finish_plan_turn(str(self.session_id or ""), synthesized)   # H668: no-op unless /plan
         await self._maybe_micro_compact(
             synthesized, responder_id=responder_id, append_receipt=append_receipt)
         await self._maybe_checkpoint()

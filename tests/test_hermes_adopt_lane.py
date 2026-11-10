@@ -525,7 +525,9 @@ def test_the_rewrite_is_idempotent():
               "from agent.reasoning_effort import clamp_effort\nfrom agent import reasoning_effort as re_\n"
               "    from agent.account_usage import AccountUsageSnapshot\n"
               "        from hermes_cli.version_info import hermes_user_agent\n"
-              "import threading\n        import urllib.request\n")
+              "import threading\n        import urllib.request\n"
+              "        from hermes_cli.config import load_config\n"
+              "        from hermes_cli.goals import judge_goal\n")
     once, applied = hv.rewrite(sample)
     assert len(applied) == len(hv.REWRITE_RULES)
     assert hv.rewrite(once) == (once, [])
@@ -622,10 +624,10 @@ def test_status_detects_a_local_edit_and_pull_refuses_to_overwrite_it(sandbox):
 def test_pull_refuses_a_file_the_compat_layer_does_not_cover(sandbox):
     upstream, vendor = sandbox
     (upstream / "plugins/web/bad.py").write_text(
-        "import requests\nfrom hermes_cli.config import load_config\n", encoding="utf-8")
+        "import requests\nfrom hermes_cli.setup import run_setup\n", encoding="utf-8")
     code, text = _run(["pull", "--upstream", str(upstream), "--commit", "a" * 40,
                        "plugins/web/bad.py"], vendor)
-    assert code == 2 and "requests" in text and "hermes_cli.config" in text
+    assert code == 2 and "requests" in text and "hermes_cli.setup" in text
     assert not (vendor / "plugins/web/bad.py").exists()
     code, text = _run(["pull", "--upstream", str(upstream), "--commit", "a" * 40,
                        "../outside.py"], vendor)

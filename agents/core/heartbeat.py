@@ -480,8 +480,28 @@ class HeartbeatScheduler:
                     )
                     logger.info(f"Scheduled heartbeat: {agent_id} @ {cron_expr} (jitter={jitter}s)")
 
+        # H460/H578 — the /loop watcher rides this scheduler: every SCAN_SECONDS it looks
+        # for a due loop and runs its tick as an ordinary governed turn (session_loops).
+        # One instance at a time: a long tick makes the next scan wait, never overlap.
+        # No orchestrator, no conversations to drive (and no job).
+        if orchestrator is not None:
+            from .session_loops import SCAN_SECONDS
+
+            self.scheduler.add_job(
+                self._scan_session_loops, "interval", seconds=SCAN_SECONDS, args=[orchestrator],
+                id="session-loops", replace_existing=True, max_instances=1, coalesce=True,
+            )
         self.scheduler.start()
         logger.info("Heartbeat scheduler started")
+
+    async def _scan_session_loops(self, orchestrator):
+        """One pass of the /loop watcher; it never raises into the scheduler."""
+        from .session_loops import scan
+
+        try:
+            await scan(orchestrator)
+        except Exception:  # noqa: BLE001
+            logger.warning("session loop scan failed", exc_info=True)
 
     async def _run_heartbeat(self, agent_id: str, orchestrator):
         """Execute a single agent's heartbeat."""

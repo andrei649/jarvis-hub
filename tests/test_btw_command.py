@@ -1,6 +1,6 @@
 """H414 — ``/btw <question>``: a side question ABOUT the conversation, beside it.
 
-Hermes answers ``/btw`` without adding synthetic turns. Nerva's version reads a bounded,
+Hermes answers ``/btw`` without adding synthetic turns. Nerva's version (H669: a fork) reads the whole,
 redacted snapshot of the session (the same snapshot ``/refine`` reviews: newest turns
 first, commands and their replies left out), asks the auxiliary rail once through
 ``run_oneshot`` — strict-local, job pins excluded, the auxiliary consent boundary — and
@@ -347,9 +347,11 @@ async def test_a_key_straddling_the_per_turn_cut_leaves_no_fragment_in_the_promp
     assert "A1b2C3d4" not in call["prompt"]
 
 
-async def test_the_total_budget_cut_keeps_whole_redacted_turns_only(rail):
-    from agents.core.llm.auxiliary_text import BTW_SNAPSHOT_CHARS
-
+async def test_the_fork_replays_whole_turns_up_to_the_models_window(rail):
+    """H669: the fork reads the whole conversation — every turn whole, no 2,000-character
+    cut and no 12,000-character snapshot — as far as the local model's window holds."""
+    budget = auxiliary_text.btw_fork_budget_chars(rail.router)
+    assert budget > auxiliary_text.BTW_SNAPSHOT_CHARS
     turns = []
     for index in range(40):
         turns.append({"role": "user", "content": f"turn {index} " + "w" * 1500 + f" {SECRET}"})
@@ -360,9 +362,23 @@ async def test_the_total_budget_cut_keeps_whole_redacted_turns_only(rail):
     prompt = call["prompt"]
     assert "A1b2C3d4" not in prompt and "sk-" not in prompt
     transcript = prompt.split("Conversation:\n", 1)[1].split("\n\nQuestion about", 1)[0]
-    assert len(transcript) <= BTW_SNAPSHOT_CHARS
-    assert "reply 39" in transcript and "turn 0 " not in transcript     # newest kept, oldest dropped
+    assert len(transcript) > auxiliary_text.BTW_SNAPSHOT_CHARS        # more than the old snapshot
+    assert "turn 0 " + "w" * 1500 in transcript and "reply 39" in transcript   # whole, oldest included
     assert all(line.startswith(("user: ", "assistant: ")) for line in transcript.splitlines())
+
+
+async def test_the_fork_keeps_the_newest_whole_turns_when_the_window_is_full(rail):
+    budget = auxiliary_text.btw_fork_budget_chars(rail.router)
+    turns = []
+    for index in range(budget // 1000 + 40):
+        turns.append({"role": "user", "content": f"turn {index} " + "w" * 1500})
+        turns.append({"role": "assistant", "content": f"reply {index}", "agent_id": "jarvis"})
+    orch = _orch(rail, turns)
+    await orch.commands.dispatch("/btw summarise", orch=orch, principal=OWNER)
+    transcript = rail.calls[0]["prompt"].split("Conversation:\n", 1)[1].split("\n\nQuestion about", 1)[0]
+    assert len(transcript) <= budget
+    last = budget // 1000 + 39
+    assert f"reply {last}" in transcript and "turn 0 " not in transcript     # newest kept, oldest dropped
 
 
 async def test_a_turn_cannot_forge_a_role_line_in_the_snapshot(rail):
@@ -648,7 +664,8 @@ async def test_btw_redacts_only_the_newest_window_of_a_long_history(rail, monkey
     turns.append({"role": "user", "content": "x" * 1990 + SECRET + " tail"})
     orch = _orch(rail, turns)
     await orch.commands.dispatch("/btw summarise", orch=orch, principal=OWNER)
-    assert 0 < len(seen) < 100                     # not 6000 scans of the whole history
+    assert 0 < len(seen) < 1_000                   # the window only, not 6000 scans of the whole history
     prompt = rail.calls[0]["prompt"]
     assert "A1b2C3d4" not in prompt and "sk-A1" not in prompt   # the kept window is redacted whole
     assert "question 2999" in prompt and "question 0 " not in prompt
+    assert len(prompt) <= auxiliary_text.btw_fork_budget_chars(rail.router) + 2_000

@@ -382,6 +382,21 @@ async def get_session_plan(session_id: str, req: Request):
     return JSONResponse(todo_tool.TODOS.read(session_id), headers=_NO_STORE)
 
 
+@router.get("/sessions/{session_id}/context", dependencies=[Depends(admin_guard)])
+async def get_session_context(session_id: str):
+    """H412 — the context meter: what fills the model's window for this conversation
+    (system, tools, skills, memory, history, attachments), against the window and the
+    compaction tiers of the policy the loop itself uses. Read-only; estimates."""
+    if not is_valid_session_id(session_id):
+        return JSONResponse({"error": "invalid session_id"}, status_code=400)
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    from agents.core.context_meter import breakdown
+
+    return JSONResponse(await breakdown(orch, session_id), headers=_NO_STORE)
+
+
 @router.post("/sessions/resume", dependencies=[Depends(user_guard)])
 async def resume_session(req: Request):
     try:

@@ -11435,6 +11435,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/{session_id}/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Context
+         * @description H412 — the context meter: what fills the model's window for this conversation
+         *     (system, tools, skills, memory, history, attachments), against the window and the
+         *     compaction tiers of the policy the loop itself uses. Read-only; estimates.
+         */
+        get: operations["get_session_context_sessions__session_id__context_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions/resume": {
         parameters: {
             query?: never;
@@ -34272,6 +34294,37 @@ export interface operations {
         };
     };
     get_session_plan_sessions__session_id__todo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_session_context_sessions__session_id__context_get: {
         parameters: {
             query?: never;
             header?: never;

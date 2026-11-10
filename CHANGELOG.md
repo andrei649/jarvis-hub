@@ -4,6 +4,22 @@
 
 ### What changed for you — 2026-11-09
 
+**Plan first, repeat on a cadence, see what fills the window**
+- `/plan <task>` puts the conversation in plan mode: only reads run, nothing is written, sent
+  or executed, and the model writes a step-by-step plan that Nerva saves as a markdown file.
+  Plan mode stays on, also after a restart, until you send `/plan off`. Only you can turn it
+  on or off.
+- `/loop 5m <prompt>` repeats a prompt in the same conversation; without an interval it paces
+  itself, waiting longer while nothing changes. It stops on `--times N`, on `--until <condition>`,
+  or when the model says the task is done; after 100 runs it pauses. Each run is checked like
+  any action, and the emergency stop, the kill switch, plan mode or approval mode `off` pause it.
+- `/btw` now reads the whole conversation (as much as the local model holds), not only the last
+  few messages, and what it uses is counted against the conversation.
+- `/context` shows what fills the model's window (system prompt, tools, skills, memory, history,
+  attachments) as a grid and a table; the HUD has the same meter (Console → Context Meter).
+  `/compress` tells you what compaction will do on the next turn. Details:
+  [docs/SESSION_COMMANDS.md](docs/SESSION_COMMANDS.md).
+
 **The product says Nerva everywhere you look (#1347)**
 - The HUD top bar, page titles, the installable web app, installers and the desktop app now
   carry the Nerva name. An existing desktop install keeps its data, and uninstall finds the app

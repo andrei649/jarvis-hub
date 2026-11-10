@@ -378,6 +378,7 @@
   "GET /security/status": "security_status_security_status_get",
   "GET /sessions": "get_sessions_sessions_get",
   "GET /sessions/todo": "get_recent_plans_sessions_todo_get",
+  "GET /sessions/{session_id}/context": "get_session_context_sessions__session_id__context_get",
   "GET /sessions/{session_id}/todo": "get_session_plan_sessions__session_id__todo_get",
   "GET /sessions/{session_id}/trajectories": "get_session_trajectories_sessions__session_id__trajectories_get",
   "GET /skills": "list_skills_skills_get",

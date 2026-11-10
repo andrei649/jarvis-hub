@@ -834,6 +834,20 @@ class ToolRPCServer:
                 allowed = False
             if allowed is not True:
                 return refused("tool_not_allowed")
+        # H668 — plan mode: while the owner keeps this conversation in plan mode only a
+        # tool that declared itself read_only runs; a gated tool is refused before its
+        # preflight, intake or approval card, with the Action Kernel on or off.
+        from .kernel.plan_mode import tool_denial as _plan_mode_tool_denial
+
+        effect = self.declared_effect(name)
+        try:
+            planned = _plan_mode_tool_denial(name, gated=bool(spec["gated"]),
+                                             risk=effect[0] if effect else None)
+        except Exception:  # noqa: BLE001 — fail closed
+            planned = "plan mode: state unavailable"
+        if planned is not None:
+            self._record("toolrpc.plan_mode_denied", f"{name}: {planned}", agent=effective_actor)
+            return refused("plan_mode", detail=planned)
         args, denial = self._run_preflight(spec, args, name)
         if denial is not None:
             from .turn_outcome import record_tool_refused

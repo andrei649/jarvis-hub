@@ -7436,14 +7436,16 @@
       "id": "H412",
       "row_sha256": "80df5566d97f22b576026bc87333e73d10e837b20a749816c55943bcd88ca38a",
       "status": "partial",
-      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): @-references landed (H579). `@file:path` and `@file:path#L10-40` in the owner's own /chat and /chat/stream messages are expanded under '--- Attached Context ---'. They are resolved like file_read through FileScope, refusing secret-looking paths and symlink escapes. They are bounded per reference and per message, and an unattachable reference becomes a warning (agents/core/context_refs.py:1-27, agents/core/context_refs.py:209). The attachment is bound to the turn and tainted (agents/core/context_refs.py:251, agents/web.py:1494-1512). A completion helper serves the composer (agents/core/context_refs.py:272). Tests: tests/test_h579_context_refs.py:50, tests/test_h579_context_refs.py:59, tests/test_h579_context_refs.py:87. Only the file reference type exists, with no diff or page references. The context meter is still absent. The slash registry has no /context and no /compress (agents/core/commands.py:972-1013). No surface shows how the next request is composed against the window, and the context-compress route stays refused and uncalled (frontend/src/panels/mission-canvas.tsx:60). So there is no 100-cell grid, no usage table, no per-skill or per-toolset expansion and no manual compress report that tells a no-op, an abort, a refusal and a fallback apart.",
-      "remaining": "- /context (and a HUD meter) showing the next request's composition by category against the model window, read from the compressor's own policy object, with grid and usage table and per-skill/toolset expansion\n- A manual /compress that reports exactly what it did (no-op/abort/refusal/fallback) and compaction status lines\n- @diff and page reference types",
+      "summary": "Re-assessed 2026-11-10 (G3): the context meter exists. agents/core/context_meter.py:111 splits the next request into system, tools, skills, memory, history and attachments (images and @file blocks) against the window and both tiers of the compaction loop's own policy object (Orchestrator._compaction_model / _compaction_policy), so the meter never re-derives thresholds; the categories add up to used, a 100-cell grid always has 100 cells (agents/core/context_meter.py:178), and per-tool and per-skill rows are the expansion (/context all, agents/core/context_meter.py:214). It is served as /context (owner, agents/core/commands.py:654, :1084), GET /sessions/{session_id}/context (admin, agents/core/routers/sessions.py:385) and a HUD Context Meter panel (frontend/src/panels/context-meter.tsx). /compress reports from the same policy which of no-op, drop images or summarise the next turn will do, and says the stored conversation was not changed (agents/core/context_meter.py:247). @file references remain as in H579 (agents/core/context_refs.py:209). Tests: tests/test_g2_session_commands.py:498, :515, :527; frontend/src/panels/context-meter.test.tsx. Still missing: @diff and page references, a manual compaction that acts and reports its outcome, and compaction status lines.",
+      "remaining": "- @diff and page reference types (only @file exists)\n- a manual /compress that compacts on demand and reports a no-op, an abort, a refusal or a fallback; Nerva's /compress reports what the next turn's compaction will do and changes nothing\n- compaction status lines in the chat while a compaction runs",
       "evidence": [
-        "agents/core/context_refs.py",
-        "agents/web.py",
+        "agents/core/context_meter.py",
         "agents/core/commands.py",
-        "frontend/src/panels/mission-canvas.tsx",
-        "tests/test_h579_context_refs.py"
+        "agents/core/routers/sessions.py",
+        "frontend/src/panels/context-meter.tsx",
+        "agents/core/context_refs.py",
+        "tests/test_h579_context_refs.py",
+        "tests/test_g2_session_commands.py"
       ]
     },
     {
@@ -8385,13 +8387,18 @@
     {
       "id": "H460",
       "row_sha256": "ebc6a026f5ee97f35264580349009c691ee39bf28161bf2fd1c75446fdf533a7",
-      "status": "missing",
-      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): There is still no recurring wakeup inside the conversation you are in. The slash registry has no /loop (agents/core/commands.py:972-1013). What exists is the out-of-session job scheduler. /jobs and /remind create interval or cron jobs with a repeat limit and first-run policy, and the policy cites Hermes /loop only for the timing of the first wakeup (agents/core/autonomy/jobs.py:594-628). Those jobs are not persisted per session and are not restored on resume. They have no self-paced digest backoff, no LOOP_COMPLETE / --until / --times / max_ticks stop order and no watcher that skips mid-turn or goal-owned ticks. Duplicate: H460 = H578 (docs/hermes/missing-rows-plan-2026-11-10.md:52).",
-      "remaining": "- /loop [interval] <prompt> [--times N] [--until cond] with status/pause/resume/stop, persisted per session and restored on resume\n- Self-paced mode with timestamp-stripped digest backoff\n- Stop order LOOP_COMPLETE → --until judge (fail-open) → --times → max_ticks (pause)\n- An idle watcher that never fires mid-turn, yields to a goal and leaves the tick due on skip\n- Tests",
+      "status": "equivalent",
+      "summary": "Built 2026-11-10 (G2, Adopt): Hermes's hermes_cli/loops.py is adopted as is behind two rewrite rules (hermes-cli-config, hermes-cli-goals) and a compat layer that imports no network, process or file library (agents/vendor/hermes_compat/goals.py, loops_config.py). /loop [interval] <prompt> [--times N] [--until <cond>] with status/pause/resume/stop (and /proactive) is an owner command (agents/core/commands.py:1079; agents/core/session_loops.py:74). State is per session in Nerva's store (agents/core/session_meta.py), so a restart or resuming the session restores it. Self-paced mode, the timestamp-stripped digest backoff and the stop order LOOP_COMPLETE -> --until judge (fail-open) -> --times -> max_ticks (pause) are the adopted code; the --until verdict comes from a strict-local, tool-less one-shot asked before complete_tick and handed in through judge_scope (agents/core/session_loops.py:199). The idle watcher rides the heartbeat scheduler every 15 s (agents/core/heartbeat.py:483) and skips, leaving the tick due, when the session has a running turn, when an active goal run owns the boundary, or when there is no route (agents/core/session_loops.py:267, :277-:286). Every tick crosses the kernel as session.loop_tick (kill switch, plan mode, approval mode off, the loop's wall-time and tick budget) and a denial pauses the loop (agents/core/session_loops.py:134); the e-stop pauses it. A tick runs as the owner on the channel it was set from and its reply is pushed to that chat (agents/core/session_loops.py:227). Nerva compacts inside the request and never rotates a session on compaction, so Hermes's migrate-on-rotation case does not arise. Tests: tests/test_g2_session_commands.py:270, :285, :304, :321, :339, :356, :386, :411, :561. Slack and Discord replies stay on their governed reply path and are not pushed by a loop.",
+      "remaining": "",
       "evidence": [
+        "agents/vendor/hermes/hermes_cli/loops.py",
+        "agents/vendor/hermes_compat/goals.py",
+        "agents/vendor/hermes_compat/loops_config.py",
+        "agents/core/session_loops.py",
+        "agents/core/session_meta.py",
+        "agents/core/heartbeat.py",
         "agents/core/commands.py",
-        "agents/core/autonomy/jobs.py",
-        "docs/hermes/missing-rows-plan-2026-11-10.md"
+        "tests/test_g2_session_commands.py"
       ]
     },
     {
@@ -10814,11 +10821,15 @@
     {
       "id": "H578",
       "row_sha256": "5a0f3c2241a2fecd7bdef9020b9f25fbdda8161a2d2e103106300b3e4f88d186",
-      "status": "missing",
-      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): There is no session-scoped /loop. The slash registry has no loop or proactive command; /btw is the nearest sibling (agents/core/commands.py:983). Nothing re-runs a prompt in a session on a fixed or self-paced cadence, detects an unchanged reply digest, honours a LOOP_COMPLETE marker or runs an --until judge. Interval runs in agents/core/autonomy wake company-mode work runs, a different unit. Duplicate of H460 (same feature, group G2).",
-      "remaining": "- /loop [interval] <prompt> with --times and --until (alias /proactive)\n- fixed cadence with a 30-second floor\n- self-paced backoff from 60 s to 900 s, doubling while the reply digest is unchanged and snapping back when it changes\n- five stop conditions including LOOP_COMPLETE and an LLM --until judge\n- deferral to an active /goal; pause rather than kill on interrupt\n- a hard tick cap",
+      "status": "equivalent",
+      "summary": "Built 2026-11-10 (G2; same feature as H460): /loop [interval] <prompt> with --times and --until, alias /proactive (agents/core/commands.py:1079-1083). The adopted hermes_cli/loops.py supplies the fixed cadence with its 30 s floor, the self-paced backoff 60 s -> 900 s doubling while the reply digest is unchanged and snapping back on a change, LOOP_COMPLETE, the --until judge (a local, tool-less one-shot here, agents/core/session_loops.py:199) and the max_ticks cap that pauses. Deferral to an active goal (agents/core/session_loops.py:122, :286). Pause rather than kill: the e-stop, the kill switch, plan mode and approval mode off each pause the loop with the reason, and /loop resume continues it (agents/core/session_loops.py:134, :277). Tests: tests/test_g2_session_commands.py:285 (backoff 60/120/240 then 60), :304 (LOOP_COMPLETE, --times), :321 (judge done, fail-open), :339 (e-stop pause, resume), :356 (stop, kill switch, tick budget, plan mode), :386 (kernel on), :411 (busy, goal).",
+      "remaining": "",
       "evidence": [
-        "agents/core/commands.py"
+        "agents/vendor/hermes/hermes_cli/loops.py",
+        "agents/core/session_loops.py",
+        "agents/core/commands.py",
+        "agents/vendor/hermes_compat/goals.py",
+        "tests/test_g2_session_commands.py"
       ]
     },
     {
@@ -12483,29 +12494,33 @@
     {
       "id": "H668",
       "row_sha256": "1d13e3417665f3d8153cc8dee0a0aede1ec9e1a829eeb86b105fdb81ee687377",
-      "status": "missing",
-      "summary": "Fresh assessment 2026-10-13 (ff8641a7): There is no /plan. The slash-command registry (agents/core/commands.py:972 through :1014) has no plan command, and no plan-mode prompt or saved-plan writer exists anywhere in agents/ or frontend/src. The closest pieces are not this capability: desktop_plan/operator_plan plan desktop/operator actions only (agents/core/routers/multimodal.py:295, :320), missions accept a caller-supplied plan (agents/core/routers/missions.py:49), and grounded_plan.py only validates citations. The baseline's partial overstated it. Re-read after the batch 3 Hermes rows (H164 H288 H331 H444 H557 H574 H592 H652) changed files this row pins Re-read after batch 4 (H006 H039 H221 H303 H354 H403 H414 H486) changed files this row pins Re-read 2026-11-02 after Hermes batch 1 (H019 service status and slot holders, H026 named skill bundles, H422 core memory budgets, usage headers and owner switch, H462 goal and subgoal entry points): every hunk of this row's changed evidence was read against the row, citations were re-resolved by content, and no claim changed.\n\nRe-read 2026-11-03 (Hermes batch 3, b8a60fcd): H058 adds /whoami to agents/core/commands.py:967-1014; no /plan command, plan-mode prompt or saved implementation-plan writer appears in the changed command source. Desktop/operator plan and caller-supplied mission plan remain different capabilities. Missing verdict and plan-mode gaps remain. Re-read 2026-11-09 after the H440 merge (PR #1347: schema-constrained titles, human rename, lineage numbering, continuations hidden from pickers, resume by title): every citation of this row into the changed files was re-resolved by content and no claim changed. Re-read 2026-11-09 after the H484 merge (PR #1347: /approvals, nerva approvals mode, the effective mode on approval cards, unknown stored modes read as ask): every citation of this row into the changed files was re-resolved by content and no claim changed. Re-read 2026-11-09 after the H440 review fixes (PR #1347: archive, pin, sweep and retention act on a whole lineage; exact-object schema titles with a free-text fallback for a refusing server; lineage-aware resolve; rename bounds): every citation of this row into the changed files was re-resolved by content and no claim changed. Re-read 2026-11-10 after the H484 review fixes (PR #1347: the stored approval mode applied at boot and under e-stop, off as a floor that recalls policy-approved work, audited and persisted per-agent overrides, read-back on every mode write): every citation of this row into the changed files was re-resolved by content and no claim changed. Re-read 2026-11-10 after the second H484 fix round (PR #1347: the settings store as the one truth for the approval mode, read under a lock by every writer and the coordinator sync; validated and audited overrides; off recalls every machine-made approval): every citation of this row into the changed files was re-resolved by content and no claim changed. Re-read 2026-11-10 after the second H440 fix round (PR #1347: one list row per unfinished session, backups kept through a whole-conversation delete, distinct automatic-title suffix, schema refusal read from the error body, lineage indexes): every citation of this row into the changed files was re-resolved by content and no claim changed. Re-read 2026-11-10 after the third H440 fix round (PR #1347: an earlier part used after a continue is listed again, backups pruned per conversation, schema refusals read from the field name with a one-hour memory, a title key column, linear sweep lists): every citation of this row into the changed files was re-resolved by content and no claim changed. Re-read 2026-11-10 after the H443 merge (PR #1347: a background memory review that inherits the turn's trust, memory write approval with /memory, a durable per-conversation reason for untrusted text, and recall taint only for conversations known to hold outside text): agents/core/commands.py gained /memory; the registry is now agents/core/commands.py:972 through :1014 (the bare :480 was already stale) and has no /plan. No plan-mode prompt or saved-plan writer was added. No claim changed; the status stays missing.",
-      "remaining": "- A /plan command on every chat surface that feeds a plan-mode prompt (no implementation, no file edits besides the plan, no mutating commands, clarifying question when underspecified) as an ordinary user turn\n- Save the plan as a timestamped markdown file and surface it to the owner\n- Optional: validate the produced plan's citations with grounded_plan.py",
+      "status": "equivalent",
+      "summary": "Built 2026-11-10 (G2, Adopt + Own): /plan is an owner command on every chat surface that reaches Orchestrator.handle_input (web /chat and /chat/stream, nerva chat, Telegram and the other channels; Nerva registers no native per-platform slash pickers, so by the 2026-11-10 decision 2 the job, not the picker, is judged) (agents/core/commands.py:1077). Hermes's agent/plan_prompt.py is adopted byte-identical (no rewrite rule; MANIFEST upstream_sha256 == vendored_sha256) and fed to the model as the turn's ordinary user message: the handler returns a TurnRewrite (agents/core/plan_commands.py:98, :88), dispatch turns it into a 'continue' outcome for an owner only (agents/core/commands.py:238), and both turn paths continue with it (agents/core/orchestrator.py:2632, :3452, :3742); history and the system prompt are untouched. Nerva appends one runtime note naming the target path, which the upstream prompt invites (agents/core/plan_commands.py:44). The plan is saved as <data>/plans/YYYY-MM-DD_HHMMSS-<slug>.md by the hub at the post-turn seam, only for the marked turn of its own session, inside the plans folder (agents/core/plan_commands.py:147, :153; agents/core/orchestrator.py:5857), and a turn notice names it. The plan-mode rules are enforced, not only asked for: while the session is in plan mode the Action Kernel denies every non-read kind before policy, queue or sealed receipts (agents/core/kernel/__init__.py:199; agents/core/kernel/plan_mode.py:247), judged from the kind alone so a payload risk_tier cannot relabel a write (agents/core/kernel/plan_mode.py:231), and the tool front door refuses every gated or non-read_only tool before preflight or intake with the kernel on or off (agents/core/tool_rpc.py:837; agents/core/kernel/plan_mode.py:259). Plan mode persists across restarts, an unreadable state fails closed, and only the owner enters or leaves it, audited (agents/core/kernel/plan_mode.py:69, :122, :139, :161). An underspecified request gets the upstream prompt's clarifying-question instruction. Tests: tests/test_g2_session_commands.py:68, :76, :83, :103, :112, :124 (kernel floor, restart, owner-only), :139 (tool door), :175, :191, :200 (command, non-owner, saved plan), :217 (byte-identical adoption), :539 (real orchestrator turn, plain and streamed). The old Hermes plan skill removal has no Nerva counterpart (Nerva never shipped one). No live model run is claimed.",
+      "remaining": "",
       "evidence": [
+        "agents/vendor/hermes/agent/plan_prompt.py",
+        "agents/core/plan_commands.py",
+        "agents/core/kernel/plan_mode.py",
+        "agents/core/kernel/__init__.py",
+        "agents/core/tool_rpc.py",
+        "agents/core/orchestrator.py",
         "agents/core/commands.py",
-        "agents/core/routers/multimodal.py",
-        "agents/core/routers/missions.py",
-        "agents/core/grounded_plan.py"
+        "tests/test_g2_session_commands.py"
       ]
     },
     {
       "id": "H669",
       "row_sha256": "4e7cde49d71cc540ad5ca3c47fb9c66720d37890f4b45594cadc541fddbe941c",
       "status": "partial",
-      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): /btw is native (H414) and covers the Hermes fallback path, but not the preferred cache-parity fork. _btw (agents/core/commands.py:508-581) builds a bounded, redacted snapshot of the session, at most 2,000 chars per turn (agents/core/learning/background_review.py:94) and 12,000 in total (agents/core/llm/auxiliary_text.py:63). It answers once through run_oneshot (agents/core/llm/auxiliary_text.py:278-323), which sends no tools, so no action can be produced, and records usage under the purpose \"btw\". The orchestrator answers /btw before the turn is appended, without the turn lease and without interrupting running work (agents/core/orchestrator.py:2231-2234, :2873-2884), so persistence is detached. It is registered as a slash command (agents/core/commands.py:983) and works over web chat and channels. Tests: tests/test_btw_command.py:86 (bounded redacted snapshot, no turn written), :265 and :277 (answered before append), :479 (no interrupt), :542 (web chat); tests/test_btw_channel_adapters.py:96 (Telegram answers while the lane is occupied).",
-      "remaining": "- the cache-parity fork: same runtime, byte-identical system prompt, tools and reasoning config, the parent's full untruncated message snapshot replayed so the prefix cache is warm\n- usage attributed to the parent session (today it goes to a per-purpose one-shot ledger)\n- a prompt.btw JSON-RPC method (Nerva has no such RPC surface)\n- localized /btw strings (17 gateway locales in Hermes)\n- the /bg vs /btw split of the old /background command",
+      "summary": "Re-assessed 2026-11-10 (G2): /btw is now a fork over the whole conversation. It replays every turn whole (no 2,000-character cut, no 12,000-character snapshot), newest first, up to the local one-shot model's window (btw_fork_budget_chars, agents/core/llm/auxiliary_text.py:331), redacted turn by turn first (agents/core/commands.py:517). It answers once through run_side_fork on the strict-local auxiliary rail, which offers no tools, so the fork cannot act (agents/core/llm/auxiliary_text.py:346); the orchestrator still answers it before the turn is appended, so persistence stays detached. Its provider-certified usage is now charged to the parent session in the cost ledger under purpose btw (unmeasured calls counted, never guessed) (agents/core/commands.py:606). Tests: tests/test_g2_session_commands.py:438 (no tools, usage on the parent session), tests/test_btw_command.py (whole turns up to the window, newest kept, redaction before bounding). Still not the Hermes cache-parity fork: the replay is a transcript on the local rail, not the parent request's byte-identical system prompt and tools, so there is no warm prefix cache; prompt.btw, locales and /bg remain absent.",
+      "remaining": "- byte-identical cache-parity fork (same system prompt, tools[] and reasoning config as the parent request, so the provider's prefix cache is warm); Nerva replays the conversation as a transcript on the local auxiliary rail instead\n- a prompt.btw JSON-RPC method (Nerva has no such RPC surface)\n- localized /btw strings\n- the /bg vs /btw split of the old /background command",
       "evidence": [
         "agents/core/commands.py",
-        "agents/core/learning/background_review.py",
         "agents/core/llm/auxiliary_text.py",
         "agents/core/orchestrator.py",
         "tests/test_btw_command.py",
-        "tests/test_btw_channel_adapters.py"
+        "tests/test_btw_channel_adapters.py",
+        "tests/test_g2_session_commands.py"
       ]
     },
     {

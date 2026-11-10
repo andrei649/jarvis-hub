@@ -248,6 +248,8 @@
     "/v2/console/learning/",
     "/v2/console/sessions",
     "/v2/console/sessions/",
+    "/v2/console/context-meter",
+    "/v2/console/context-meter/",
     "/v2/console/heartbeat",
     "/v2/console/heartbeat/",
     "/v2/console/transcript",

@@ -111,8 +111,11 @@ class CommandOutcome:
     """What dispatch decided, so callers can log and record it honestly."""
 
     name: str
-    status: str  # answered | queued | refused | unknown | failed
+    status: str  # answered | queued | refused | unknown | failed | continue
     reply: str
+    #: ``continue`` only (H668 ``/plan``): what the turn goes on to send the model as the
+    #: user's message — a ``plan_commands.TurnRewrite``. Every other outcome ends the turn.
+    continuation: Any = None
 
 
 def _oversized(name: str, text: str) -> CommandOutcome | None:
@@ -230,6 +233,12 @@ class CommandRegistry:
             result = command.handler(CommandContext(orch=orch, principal=principal, name=name, args=args))
             if inspect.isawaitable(result):
                 result = await result
+            from .plan_commands import TurnRewrite
+
+            if isinstance(result, TurnRewrite):
+                if not principal.admin:          # only an owner command may continue a turn
+                    return self._observed(CommandOutcome(name, "refused", "Nothing changed."))
+                return self._observed(CommandOutcome(name, "continue", result.reply, continuation=result))
             return self._observed(CommandOutcome(name, "answered", str(result)))
         except Exception:
             logger.warning("slash command /%s failed", name, exc_info=True)
@@ -506,18 +515,23 @@ _BTW_NO_MODEL = ("The side question could not be answered: it needs a local mode
 
 
 async def _btw(ctx: CommandContext) -> str:
-    """H414 — Hermes' ``/btw <question>``: a side question ABOUT this conversation,
-    answered beside it. The model sees a bounded, redacted snapshot of the session
-    (the one ``/refine`` reviews: newest turns first, commands and their replies left
-    out, secrets and personal data scrubbed line by line) and the question, once,
-    through ``run_oneshot`` on the auxiliary rail — strict-local, job pins excluded,
-    the auxiliary consent boundary. The orchestrator dispatches ``/btw`` before the
-    turn is appended, so neither the question nor the answer becomes a turn."""
+    """H414/H669 — Hermes' ``/btw <question>``: a side question ABOUT this conversation,
+    answered beside it by a **fork** that reads the whole conversation.
+
+    The fork replays every turn of the session (oldest first, each turn whole — no
+    per-turn cut), as much as the local model's window holds (``btw_fork_budget_chars``),
+    redacted turn by turn first (secrets and personal data scrubbed, as before), with
+    commands and their replies left out. It answers once through ``run_side_fork`` on the
+    strict-local auxiliary rail, which offers the model no tools, so the fork cannot act.
+    Its provider-certified usage is charged to the parent session in the cost ledger under
+    the purpose ``btw`` (``session_usage`` shows it beside the turns). The orchestrator
+    dispatches ``/btw`` before the turn is appended, so neither the question nor the
+    answer becomes a turn."""
     from agents.core.llm.auxiliary_text import (
         BTW_MAX_TOKENS,
         BTW_QUESTION_CHARS,
-        BTW_SNAPSHOT_CHARS,
-        run_oneshot,
+        btw_fork_budget_chars,
+        run_side_fork,
     )
 
     question = " ".join((ctx.args or "").split())[:BTW_QUESTION_CHARS]
@@ -539,17 +553,17 @@ async def _btw(ctx: CommandContext) -> str:
     if router is None:
         return _BTW_NO_MODEL
     from agents.core.day_report import default_redactor
-    from agents.core.learning.background_review import REFINE_TURN_CHARS, conversation_snapshot
+    from agents.core.learning.background_review import conversation_snapshot
     from agents.core.llm.data_handling import DataHandlingRefused
     from agents.core.llm.job_selection import SelectionError
 
+    budget = btw_fork_budget_chars(router)
     turns = await memory.get_history(session)
-    # Redact each turn's WHOLE content before anything is cut: cutting first can split a
-    # key so that no pattern matches and its prefix survives (the Redactor's own rule).
-    # The snapshot then bounds each turn and the total, over text that is already clean;
-    # the redactor also folds whitespace, so a turn cannot forge a role line.
-    # Only the newest window that can fill the snapshot is redacted (a long history is not
-    # scanned whole on the event loop); each turn kept in it is redacted in full first.
+    # Redact each turn's WHOLE content before anything is bounded: cutting first can split
+    # a key so that no pattern matches and its prefix survives (the Redactor's own rule).
+    # Only the newest window that can fill the budget is redacted (a long history is not
+    # scanned whole on the event loop); the redactor also folds whitespace, so a turn
+    # cannot forge a role line.
     redact = default_redactor()
     window, used = [], 0
     for turn in reversed(list(turns or [])):
@@ -561,16 +575,23 @@ async def _btw(ctx: CommandContext) -> str:
             continue
         clean = redact(content, limit=max(1, len(content)))
         window.append(dict(turn, content=clean))
-        used += min(len(clean), REFINE_TURN_CHARS) + 16
-        if used > BTW_SNAPSHOT_CHARS:
+        used += len(clean) + 16
+        if used > budget:
             break
-    transcript = conversation_snapshot(window[::-1], limit=BTW_SNAPSHOT_CHARS, per_turn=REFINE_TURN_CHARS)
+    transcript = conversation_snapshot(window[::-1], limit=budget, per_turn=budget)
     if not transcript:
         return "There is no conversation here to ask about yet."
-    prompt = f"Conversation:\n{transcript}\n\nQuestion about this conversation: {question}"
+    from agents.core.turn_usage import detached_turn_usage, turn_usage_scope
+
     try:
-        answer = await run_oneshot(router, prompt, system=_BTW_SYSTEM, purpose="btw",
-                                   max_tokens=BTW_MAX_TOKENS, temperature=0.2)
+        # The fork's own collector, detached from any turn receipt: its usage is the
+        # parent session's, charged below under ``btw``.
+        with detached_turn_usage(), turn_usage_scope() as collector:
+            try:
+                answer = await run_side_fork(router, transcript, question, system=_BTW_SYSTEM,
+                                             max_tokens=BTW_MAX_TOKENS, temperature=0.2)
+            finally:
+                _charge_btw(str(session), collector.snapshot())
     except SelectionError:
         return "A job model pin is in force for this turn, and side questions do not run under one."
     except DataHandlingRefused as exc:
@@ -580,6 +601,26 @@ async def _btw(ctx: CommandContext) -> str:
         return _BTW_NO_MODEL
     answer = str(answer or "").strip()
     return answer or "The local model gave no answer to that."
+
+
+def _charge_btw(session_id: str, usage: dict) -> None:
+    """H669 — the fork's usage goes to the parent session under the ``btw`` purpose.
+    Counts the provider did not certify are recorded as unmeasured calls, never guessed."""
+    calls = usage.get("api_calls") if isinstance(usage, dict) else None
+    if type(calls) is not int or calls < 1:
+        return
+    try:
+        from agents.core import cost_tracker
+
+        inputs, outputs = usage.get("input_tokens"), usage.get("output_tokens")
+        if inputs is None or outputs is None:
+            cost_tracker.record_unmeasured("btw", session_id=session_id, purpose="btw", calls=calls)
+            return
+        cost_tracker.record("btw", int(inputs), int(outputs),
+                            model=usage.get("model") or cost_tracker.UNPRICED_MODEL,
+                            route="local", session_id=session_id, purpose="btw")
+    except Exception:  # noqa: BLE001 — accounting never fails the answer
+        logger.debug("/btw usage not recorded", exc_info=True)
 
 
 async def _recap(ctx: CommandContext) -> str:
@@ -608,6 +649,24 @@ async def _recap(ctx: CommandContext) -> str:
     if parsed and parsed[0] == "recap" and turns[-1].get("role") == "user":
         turns = turns[:-1]
     return render_recap(turns, exchanges=exchanges)["text"]
+
+
+async def _context_meter(ctx: CommandContext):
+    """H412 — what fills the window (``/context``), and what compaction does (``/compress``).
+    Both read the compaction loop's own policy object (``context_meter``); neither changes
+    the conversation."""
+    from .context_meter import breakdown, compress_report, render
+
+    orch = ctx.orch
+    session = getattr(orch, "session_id", None)
+    if not session or getattr(orch, "memory", None) is None:
+        return "There is no conversation here to measure yet."
+    if not callable(getattr(orch, "_compaction_policy", None)):
+        return "The context meter is not available on this hub."
+    meter = await breakdown(orch, str(session))
+    if ctx.name == "compress":
+        return compress_report(meter)
+    return render(meter, expand=(ctx.args or "").strip().lower() in {"all", "full", "expand"})
 
 
 async def _kanban(ctx: CommandContext) -> str:
@@ -967,6 +1026,8 @@ async def _memory(ctx: CommandContext) -> str:
 def build_default_registry() -> CommandRegistry:
     from .checkpoint_commands import checkpoint_command
     from .goal_commands import goal_command, subgoal_command
+    from .plan_commands import plan_command
+    from .session_loops import loop_command
 
     registry = CommandRegistry()
     registry.register(SlashCommand("help", "the commands you can use here", _help))
@@ -1013,6 +1074,17 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("subgoal", "add an acceptance criterion to the running goal",
                                    subgoal_command, tier=ADMIN,
                                    usage="[run id] <criterion> | remove <N> | clear"))
+    registry.register(SlashCommand("plan", "plan mode: only reads run here, and the plan is saved as a file",
+                                   plan_command, tier=ADMIN, usage="[task] | status | off"))
+    registry.register(SlashCommand("loop", "repeat a prompt in this conversation on a cadence, or self-paced",
+                                   loop_command, tier=ADMIN,
+                                   usage="[interval] <prompt> [--times N] [--until <cond>] | status | pause | resume | stop"))
+    registry.register(SlashCommand("proactive", "same as /loop", loop_command, tier=ADMIN,
+                                   usage="[interval] <prompt> | status | pause | resume | stop"))
+    registry.register(SlashCommand("context", "what fills the model's window in this conversation",
+                                   _context_meter, tier=ADMIN, usage="[all]"))
+    registry.register(SlashCommand("compress", "what compaction does to this conversation now (it changes nothing)",
+                                   _context_meter, tier=ADMIN))
     return registry
 
 
