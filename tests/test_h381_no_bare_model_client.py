@@ -238,6 +238,10 @@ PROMPT_SCOPE_ALLOWLIST: dict[tuple[str, str], str] = {
 # exact enclosing qualnames that may do it). A new bare client anywhere else in a
 # classified module fails until it is classified here too.
 NOT_A_MODEL_PROVIDER: dict[str, tuple[str, frozenset[str]]] = {
+    "agents/cli/mcp_catalog.py": (
+        "the one-shot loopback listener of `nerva mcp login`: a stdlib HTTP server on 127.0.0.1 that "
+        "receives the sign-in redirect and serves one tiny page; it dials nothing and carries no prompt",
+        frozenset({"_serve_until"})),
     "agents/core/http_client.py": (
         "the plugin egress choke point itself; every request it sends is recorded in the "
         "same ledger under the plugin's row (cloud image providers dial through it)",

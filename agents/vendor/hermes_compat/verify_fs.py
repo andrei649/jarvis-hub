@@ -89,13 +89,13 @@ class Path:
         fs = _FS.get()
         if fs is None:
             raise FileNotFoundError(str(self._pure))
-        return fs.read_text(self._pure, encoding or "utf-8", errors or "strict")
+        return fs.read_text(self._pure, encoding=encoding or "utf-8", errors=errors or "strict")
 
     def write_text(self, data: str, encoding: str | None = "utf-8", errors: str | None = None) -> int:
         fs = _FS.get()
         if fs is None:
             raise PermissionError(f"{self._pure}: nothing may be written here")
-        return fs.write_text(self._pure, data, encoding or "utf-8", errors or "strict")
+        return fs.write_text(self._pure, data, encoding=encoding or "utf-8", errors=errors or "strict")
 
     def mkdir(self, mode: int = 0o777, parents: bool = False, exist_ok: bool = False) -> None:
         fs = _FS.get()
