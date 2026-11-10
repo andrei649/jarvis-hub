@@ -199,20 +199,48 @@ def _search_view():
     return SimpleNamespace(tavily_api_key=env_str("TAVILY_API_KEY"), searxng_url=env_str("SEARXNG_URL"))
 
 
-def _key_state(entry: Entry) -> dict:
-    """The first key name that is set (its status), else the first name, not set."""
-    for name in entry.keys:
-        state = integration_keys.status(name)
-        if state["set"]:
-            return {"name": name, **state}
-    return {"name": entry.keys[0] if entry.keys else "", **integration_keys.status(entry.keys[0])} \
-        if entry.keys else {"name": "", "set": False, "source": None, "hint": None}
+def readers(all_entries: list[Entry] | None = None) -> dict[str, list[str]]:
+    """Key name -> the ids of every entry that reads it."""
+    out: dict[str, list[str]] = {}
+    for e in (entries() if all_entries is None else all_entries):
+        for name in e.keys:
+            out.setdefault(name, []).append(e.id)
+    return out
+
+
+def _key_state(entry: Entry, by_name: dict[str, list[str]] | None = None) -> dict:
+    """The key in effect for *entry*: the first of its names that is set, else its own
+    primary name (``entry.keys[0]``), not set.
+
+    ``shared_with``: the other entries that read the same name. ``own``: whether the key
+    in effect was given for this entry — typed in the panel for it (or confirmed as the
+    same key), or set in ``.env`` under a name no other entry reads. A key typed for a
+    sibling is never this entry's: it shows as ``shared``, is not tested here and is not
+    used by this entry's choice without its own consent."""
+    if not entry.keys:
+        return {"name": "", "primary": "", "set": False, "source": None, "hint": None,
+                "shared_with": [], "own": False, "stored_copy": False}
+    by_name = readers() if by_name is None else by_name
+    name = next((n for n in entry.keys if integration_keys.status(n)["set"]), entry.keys[0])
+    state = integration_keys.status(name)
+    shared_with = [eid for eid in by_name.get(name, []) if eid != entry.id]
+    if not state["set"]:
+        own = False
+    elif state["source"] == "hub":
+        own = entry.id in integration_keys.owners(name)
+    else:
+        own = not shared_with
+    stored = state["source"] == "env" and integration_keys.stored_copy(name)
+    return {"name": name, "primary": entry.keys[0], **state, "shared_with": shared_with,
+            "own": own, "stored_copy": stored}
 
 
 def _status(entry: Entry, key: dict, selected: str, primary: str) -> str:
     last = LAST_TEST.get(entry.id)
     if not key["set"]:
         return "not_set_up"
+    if not key["own"]:
+        return "shared"
     if last is not None and not last.get("ok"):
         return "error"
     if entry.kind == KIND_SEARCH:
@@ -231,15 +259,20 @@ def _status(entry: Entry, key: dict, selected: str, primary: str) -> str:
     return "key_set"
 
 
-def as_dict(entry: Entry, *, selected: str, backend: str, primary: str) -> dict:
-    key = _key_state(entry)
+def as_dict(entry: Entry, *, selected: str, backend: str, primary: str,
+            by_name: dict[str, list[str]] | None = None) -> dict:
+    key = _key_state(entry, by_name)
     choice_env = integration_keys.env_owned(WEB_BACKEND) if entry.kind == KIND_SEARCH else False
+    primary_shared = [eid for eid in (by_name or readers()).get(key["primary"], []) if eid != entry.id]
     return {
         "id": entry.id, "kind": entry.kind, "name": entry.name, "display_name": entry.display_name,
         "origin": entry.origin, "status": _status(entry, key, selected, primary),
-        "key": {"names": list(entry.keys), "name": key["name"], "set": key["set"],
-                "source": key["source"], "hint": key["hint"],
-                "editable": not (key["set"] and key["source"] == "env")},
+        "key": {"names": list(entry.keys), "name": key["name"], "primary": key["primary"],
+                "set": key["set"], "source": key["source"], "hint": key["hint"],
+                "own": key["own"], "shared_with": key["shared_with"],
+                "primary_shared_with": primary_shared,
+                "stored_copy": key["stored_copy"],
+                "editable": not integration_keys.env_owned(key["primary"])},
         "facts": {"host": entry.host, "host_country": entry.host_country,
                   "data_policy": entry.data_policy, "data_policy_note": entry.data_policy_note,
                   "price_known": entry.price_known, "price_note": entry.price_note,
@@ -247,7 +280,7 @@ def as_dict(entry: Entry, *, selected: str, backend: str, primary: str) -> dict:
                                else "your conversations (the prompts and replies of the turns it answers)")},
         "selectable": entry.selectable,
         "selected": ((backend == entry.name) if entry.kind == KIND_SEARCH
-                     else (selected == entry.name if entry.selectable else key["set"])),
+                     else (selected == entry.name if entry.selectable else (key["set"] and key["own"]))),
         "choice_editable": not choice_env,
         "models": list(entry.models),
         "last_test": LAST_TEST.get(entry.id),
@@ -274,7 +307,10 @@ def skills_summary() -> dict:
 def listing() -> dict:
     selected = _selected_compatible()
     backend, primary = _search_primary()
-    rows = [as_dict(e, selected=selected, backend=backend, primary=primary) for e in entries()]
+    all_entries = entries()
+    by_name = readers(all_entries)
+    rows = [as_dict(e, selected=selected, backend=backend, primary=primary, by_name=by_name)
+            for e in all_entries]
     return {"integrations": rows, "skills": skills_summary(),
             "search": {"backend": backend, "answers": primary,
                        "choice_source": ("env" if integration_keys.env_owned(WEB_BACKEND)

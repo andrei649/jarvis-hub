@@ -42,10 +42,11 @@ logger = logging.getLogger("jarvis.integration_keys")
 PREFIX = "integration."
 KEY_PREFIX = PREFIX + "key."
 CHOICE_PREFIX = PREFIX + "choice."
+OWNER_PREFIX = PREFIX + "owner."
 #: The longest key the panel takes (a real key is far shorter).
 MAX_VALUE = 4096
 #: A value shorter than this shows no characters at all, only "set".
-HINT_MIN_LENGTH = 12
+HINT_MIN_LENGTH = 20
 
 _LOCK = threading.Lock()
 #: name -> sha256 of the value this module placed in os.environ (never the value).
@@ -117,8 +118,42 @@ def _check(name: str, allowed: frozenset[str] | None) -> None:
 
 # ── keys ─────────────────────────────────────────────────────────────────────────
 
-def set_key(name: str, value: str, *, allowed: frozenset[str] | None = None) -> dict:
-    """Store *value* for key *name* (encrypted) and put it in effect now."""
+#
+# Each stored key records which panel entries it was typed for (``integration.owner.<NAME>``,
+# a comma list of entry ids, not secret). A key name several providers read
+# (``DASHSCOPE_API_KEY`` …) is one value; the owners list says who vouched for it, so a
+# sibling never shows it as its own and removing it for one entry leaves the others' key.
+
+def _owners_name(name: str) -> str:
+    return OWNER_PREFIX + name
+
+
+def owners(name: str) -> list[str]:
+    """The panel entries the stored key *name* was set for (``[]`` when none / no store)."""
+    if not _store_path().exists():
+        return []
+    try:
+        raw = _store().get(_owners_name(name)) or ""
+    except Exception:  # noqa: BLE001
+        return []
+    return [part for part in raw.split(",") if part]
+
+
+def stored_copy(name: str) -> bool:
+    """True when the store holds a key for *name* (whoever is in effect)."""
+    if not _store_path().exists():
+        return False
+    try:
+        return (KEY_PREFIX + name) in _store()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def set_key(name: str, value: str, *, allowed: frozenset[str] | None = None, owner: str = "",
+            keep_owners: bool = False) -> dict:
+    """Store *value* for key *name* (encrypted) and put it in effect now. *owner* is the
+    panel entry it was typed for; *keep_owners* keeps the entries that already vouched for
+    the same key (the owner confirmed it is the same key), else they are replaced."""
     _check(name, allowed)
     value = str(value or "").strip()
     if not value or len(value) > MAX_VALUE or any(ch in value for ch in "\r\n\x00"):
@@ -126,19 +161,45 @@ def set_key(name: str, value: str, *, allowed: frozenset[str] | None = None) -> 
     with _LOCK:
         if env_owned(name):
             raise EnvManaged(name)
-        _store().set(KEY_PREFIX + name, value)
+        before = owners(name) if keep_owners else []
+        store = _store()
+        store.set(KEY_PREFIX + name, value)
+        if owner:
+            store.set(_owners_name(name), ",".join(dict.fromkeys([*before, owner])))
         _place(name, value)
     return status(name)
 
 
+def release_key(name: str, owner: str, *, allowed: frozenset[str] | None = None) -> dict:
+    """Take entry *owner*'s claim off key *name*. The stored key goes only when no other
+    entry vouched for it; it leaves the environment only if this module put it there (a
+    ``.env`` value stays). ``{"removed", "kept_for", "env"}``."""
+    _check(name, allowed)
+    with _LOCK:
+        others = [o for o in owners(name) if o != owner]
+        if others:
+            _store().set(_owners_name(name), ",".join(others))
+            return {"removed": False, "kept_for": others, "env": env_owned(name)}
+        if _store_path().exists():
+            store = _store()
+            store.delete(KEY_PREFIX + name)
+            store.delete(_owners_name(name))
+        env = env_owned(name)
+        if not env:
+            _unplace(name)
+        return {"removed": True, "kept_for": [], "env": env}
+
+
 def clear_key(name: str, *, allowed: frozenset[str] | None = None) -> dict:
-    """Remove the stored key *name* and take it out of effect now."""
+    """Remove the stored key *name* entirely and take it out of effect now."""
     _check(name, allowed)
     with _LOCK:
         if env_owned(name):
             raise EnvManaged(name)
         if _store_path().exists():
-            _store().delete(KEY_PREFIX + name)
+            store = _store()
+            store.delete(KEY_PREFIX + name)
+            store.delete(_owners_name(name))
         _unplace(name)
     return status(name)
 
@@ -178,6 +239,20 @@ def set_choice(name: str, value: str) -> None:
 
 # ── start ────────────────────────────────────────────────────────────────────────
 
+def _allowed_names() -> tuple[frozenset[str], dict[str, frozenset[str]]]:
+    """What a stored entry may put in the environment: only the key names the panel
+    manages, and only the search choice with one of the panel's backend names. Anything
+    else in the store (written by hand or by another tool) is never applied."""
+    from agents.core import integrations_catalog
+
+    try:
+        keys = integrations_catalog.managed_keys()
+    except Exception:  # noqa: BLE001 — the static search rows still apply
+        keys = frozenset(n for row in integrations_catalog.SEARCH_ROWS for n in row.keys)
+    backends = frozenset(row.name for row in integrations_catalog.SEARCH_ROWS)
+    return keys, {integrations_catalog.WEB_BACKEND: backends}
+
+
 def apply_stored() -> list[str]:
     """Put every stored key and choice in effect whose name the environment left unset.
 
@@ -192,18 +267,27 @@ def apply_stored() -> list[str]:
     except Exception as exc:  # noqa: BLE001 — a broken store must not stop the hub
         logger.warning("integration keys not applied (type=%s)", type(exc).__name__)
         return []
+    keys, choices = _allowed_names()
     applied = []
     with _LOCK:
         for stored in names:
-            if not stored.startswith((KEY_PREFIX, CHOICE_PREFIX)):
+            if stored.startswith(KEY_PREFIX):
+                name = stored[len(KEY_PREFIX):]
+                allowed_here = name in keys
+            elif stored.startswith(CHOICE_PREFIX):
+                name = stored[len(CHOICE_PREFIX):]
+                allowed_here = name in choices
+            else:
                 continue
-            name = stored.split(".", 2)[2]
-            if not name or env_owned(name) or placed_here(name):
+            if not name or not allowed_here or env_owned(name) or placed_here(name):
                 continue
             try:
                 value = store.get(stored)
             except Exception:  # noqa: BLE001
                 logger.warning("integration value %s could not be read; skipped", name)
+                continue
+            if stored.startswith(CHOICE_PREFIX) and value not in choices[name]:
+                logger.warning("the stored choice for %s is not a known value; skipped", name)
                 continue
             if value:
                 _place(name, value)

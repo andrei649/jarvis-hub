@@ -6771,7 +6771,12 @@ export interface paths {
         /** Integration Key Put */
         put: operations["integration_key_put_api_admin_integrations__entry_id__key_put"];
         post?: never;
-        /** Integration Key Delete */
+        /**
+         * Integration Key Delete
+         * @description Remove what THIS entry set: its claim on each stored key. A key another entry also
+         *     vouched for stays for that one; a ``.env`` key stays in effect (an older stored copy
+         *     of it is purged, so it cannot come back when the ``.env`` line goes).
+         */
         delete: operations["integration_key_delete_api_admin_integrations__entry_id__key_delete"];
         options?: never;
         head?: never;
@@ -15313,6 +15318,16 @@ export interface components {
              * Format: password
              */
             value: string;
+            /**
+             * Same Key
+             * @default false
+             */
+            same_key: boolean;
+            /**
+             * Acknowledge Training
+             * @default false
+             */
+            acknowledge_training: boolean;
         };
         /** LMLoad */
         LMLoad: {

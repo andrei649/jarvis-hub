@@ -155,8 +155,18 @@ def test_selected_provider_key_change_rebuilds_the_router(hub):
     assert hub.client.put(f"{BASE}/model.deepseek/key", json={"value": MODEL_KEY}, headers=ADMIN).json()[
         "applied"] == "now"
     assert hub.orch.llm_router.detects == before + 1
-    hub.client.put(f"{BASE}/model.gemini/key", json={"value": "gemini-synthetic-key-123456"}, headers=ADMIN)
+    # Gemini answers as soon as its key is set: its consent is asked when the key is saved.
+    asked = hub.client.put(f"{BASE}/model.gemini/key", json={"value": "gemini-synthetic-key-123456"}, headers=ADMIN)
+    assert asked.status_code == 409 and asked.json()["needs"] == ["acknowledge_training"]
+    assert "GEMINI_API_KEY" not in os.environ
+    saved = hub.client.put(f"{BASE}/model.gemini/key", headers=ADMIN,
+                           json={"value": "gemini-synthetic-key-123456", "acknowledge_training": True})
+    assert saved.status_code == 200
     assert hub.orch.llm_router.gemini_api_key == "gemini-synthetic-key-123456"
+    assert any(a == "model_training_consent" and "Google Gemini" in p for a, p in hub.orch.audit.rows)
+    # Anthropic's API terms say no training: no consent asked.
+    assert hub.client.put(f"{BASE}/model.anthropic/key", json={"value": "anthropic-synthetic-key-123456"},
+                          headers=ADMIN).status_code == 200
 
 
 def test_a_malformed_request_never_echoes_the_key(hub):
@@ -218,6 +228,7 @@ def test_choosing_an_adopted_model_provider_collects_the_audited_consent(hub):
 
 
 def test_a_consent_that_cannot_be_recorded_changes_nothing(hub):
+    hub.client.put(f"{BASE}/search.exa/key", json={"value": KEY}, headers=ADMIN)
     hub.orch.audit = None
     refused = hub.client.post(f"{BASE}/search.exa/use", headers=ADMIN,
                               json={"acknowledge_training": True, "confirm_expensive": True})
@@ -228,6 +239,9 @@ def test_a_consent_that_cannot_be_recorded_changes_nothing(hub):
 def test_choosing_an_adopted_search_backend_needs_the_same_acknowledgements(hub):
     from agents.core.plugins import web_providers
 
+    no_key = hub.client.post(f"{BASE}/search.exa/use", json={}, headers=ADMIN)
+    assert no_key.status_code == 409 and no_key.json()["error"] == "no_key"
+    hub.client.put(f"{BASE}/search.exa/key", json={"value": KEY}, headers=ADMIN)
     refused = hub.client.post(f"{BASE}/search.exa/use", json={}, headers=ADMIN)
     assert refused.status_code == 409
     body = refused.json()
@@ -265,13 +279,14 @@ def test_model_test_probes_only_that_provider(hub, monkeypatch):
 
     monkeypatch.setattr(provider_probe, "probe", probe)
     monkeypatch.setattr(provider_probe, "probe_all", probe_all)
-    response = hub.client.post(f"{BASE}/model.deepseek/test", headers=ADMIN)
+    not_set = hub.client.post(f"{BASE}/model.deepseek/test", json={}, headers=ADMIN).json()["test"]
+    assert not_set["verdict"] == "not_configured" and seen == []
+    hub.client.put(f"{BASE}/model.deepseek/key", json={"value": MODEL_KEY}, headers=ADMIN)
+    response = hub.client.post(f"{BASE}/model.deepseek/test", json={}, headers=ADMIN)
     assert response.status_code == 200
     test = response.json()["test"]
     assert seen == [("deepseek", {"force": True})]
     assert test["ok"] is False and "rejected the key" in test["message"]
-    hub.client.put(f"{BASE}/model.deepseek/key", json={"value": MODEL_KEY}, headers=ADMIN)
-    response = hub.client.post(f"{BASE}/model.deepseek/test", headers=ADMIN)
     assert response.json()["integration"]["status"] == "error"
 
 
@@ -285,10 +300,10 @@ def test_search_test_runs_that_backend_through_the_egress_client(hub, monkeypatc
         return [{"title": "t", "url": "https://example.org", "snippet": ""}]
 
     monkeypatch.setattr(WebSearchPlugin, "_ask", ask)
-    not_set = hub.client.post(f"{BASE}/search.exa/test", headers=ADMIN).json()["test"]
+    not_set = hub.client.post(f"{BASE}/search.exa/test", json={}, headers=ADMIN).json()["test"]
     assert not_set["verdict"] == "not_configured" and asked == []
     hub.client.put(f"{BASE}/search.exa/key", json={"value": KEY}, headers=ADMIN)
-    result = hub.client.post(f"{BASE}/search.exa/test", headers=ADMIN)
+    result = hub.client.post(f"{BASE}/search.exa/test", json={}, headers=ADMIN)
     assert result.status_code == 200 and KEY not in result.text
     assert result.json()["test"]["ok"] is True
     assert asked == [("exa", True, 1)]
@@ -306,3 +321,163 @@ def test_the_secret_broker_never_lists_or_injects_an_integration_key(tmp_path):
     assert KEY not in out["text"]
     assert broker.delete(integration_keys.KEY_PREFIX + "EXA_API_KEY") is False
     assert KEY not in broker.redact(f"leaked {KEY} here")
+
+
+# ── review fixes (adversarial review of the first version) ──────────────────────
+
+DASH = ("DASHSCOPE_API_KEY", "ALIBABA_CODING_PLAN_API_KEY", "ALIBABA_CODING_PLAN_CN_API_KEY")
+
+
+@pytest.fixture
+def clean_dash(monkeypatch):
+    for name in DASH:
+        monkeypatch.delenv(name, raising=False)
+    yield
+    for name in DASH:
+        os.environ.pop(name, None)
+
+
+def test_a_search_key_alone_never_sends_searches_to_an_adopted_backend(hub, monkeypatch):
+    """M1: auto never picks an adopted backend and none is a rescue target; only a named
+    (consented) choice makes it answer."""
+    from agents.core.plugins import web_providers
+
+    hub.client.put(f"{BASE}/search.exa/key", json={"value": KEY}, headers=ADMIN)
+    view = SimpleNamespace(tavily_api_key="", searxng_url="")
+    selection = web_providers.resolve(view)
+    assert selection.primary is None or selection.primary.name != "exa"
+    assert _row(hub.client, "search.exa")["status"] == "key_set"
+    assert not [a for a, _ in hub.orch.audit.rows if a == "search_backend_consent"]
+    tavily = SimpleNamespace(tavily_api_key="tavily-synthetic", searxng_url="")
+    with_tavily = web_providers.resolve(tavily, rescue=True)
+    assert with_tavily.primary.name == "tavily"
+    assert all(p.name != "exa" for p in with_tavily.rescue)
+    monkeypatch.setenv("JARVIS_WEB_BACKEND", "tavily")
+    assert all(p.name != "exa" for p in web_providers.resolve(tavily, rescue=True).rescue)
+    monkeypatch.setenv("JARVIS_WEB_BACKEND", "exa")
+    assert web_providers.resolve(view).primary.name == "exa"
+
+
+def test_a_shared_key_name_needs_confirmation_and_stays_with_its_own_entry(hub, clean_dash):
+    """M3: a PUT writes the entry's own primary name; a name other entries read needs the
+    owner's confirmation; DELETE takes only what this entry set."""
+    first = hub.client.put(f"{BASE}/model.alibaba/key", json={"value": "intl-key-00000000000000001"},
+                           headers=ADMIN)
+    assert first.status_code == 409 and first.json()["error"] == "shared_key"
+    assert "model.alibaba-cn" in first.json()["shared_with"]
+    assert "DASHSCOPE_API_KEY" not in os.environ
+    ok = hub.client.put(f"{BASE}/model.alibaba/key", headers=ADMIN,
+                        json={"value": "intl-key-00000000000000001", "same_key": True})
+    assert ok.status_code == 200
+    coding = hub.client.put(f"{BASE}/model.alibaba-coding-plan/key", headers=ADMIN,
+                            json={"value": "coding-key-0000000000000002", "same_key": True})
+    assert coding.status_code == 200
+    assert os.environ["DASHSCOPE_API_KEY"] == "intl-key-00000000000000001"
+    assert os.environ["ALIBABA_CODING_PLAN_API_KEY"] == "coding-key-0000000000000002"
+    removed = hub.client.delete(f"{BASE}/model.alibaba-coding-plan/key", headers=ADMIN)
+    assert removed.status_code == 200 and removed.json()["removed"] == ["ALIBABA_CODING_PLAN_API_KEY"]
+    assert os.environ["DASHSCOPE_API_KEY"] == "intl-key-00000000000000001"
+    assert "ALIBABA_CODING_PLAN_API_KEY" not in os.environ
+
+
+def test_a_sibling_key_is_shown_as_shared_and_never_tested_on_the_other_host(hub, clean_dash, monkeypatch):
+    """M2: alibaba's key is not alibaba-cn's: shown as shared, and Test does not send it
+    to the mainland host."""
+    from agents.core.llm import provider_probe
+
+    seen = []
+
+    async def probe(pid, **_kw):
+        seen.append(pid)
+        return {"verdict": "ok", "models": 1}
+
+    monkeypatch.setattr(provider_probe, "probe", probe)
+    hub.client.put(f"{BASE}/model.alibaba/key", headers=ADMIN,
+                   json={"value": "intl-key-00000000000000001", "same_key": True})
+    rows = {r["id"]: r for r in hub.client.get(BASE, headers=ADMIN).json()["integrations"]}
+    cn = rows["model.alibaba-cn"]
+    assert cn["status"] == "shared" and cn["key"]["own"] is False
+    assert "model.alibaba" in cn["key"]["shared_with"]
+    assert rows["model.alibaba"]["status"] != "shared"
+    result = hub.client.post(f"{BASE}/model.alibaba-cn/test", json={}, headers=ADMIN).json()["test"]
+    assert result["verdict"] == "not_sent" and seen == []
+    assert hub.client.post(f"{BASE}/model.alibaba/test", json={}, headers=ADMIN).json()["test"]["ok"] is True
+    assert seen == ["alibaba"]
+
+
+def test_every_panel_key_is_kept_from_sandboxed_children():
+    """M4: no key the panel can set may be handed to a skill or an execute_code child."""
+    from agents.core import code_env
+
+    assert integrations_catalog.managed_keys() <= code_env._MANAGED_NAMES
+    assert "TAVILY_API_KEY" in code_env._MANAGED_NAMES
+
+
+def test_only_managed_names_and_known_choices_are_applied_at_start(hub, monkeypatch):
+    """m1: a hand-written store entry cannot put an arbitrary variable in the environment."""
+    from agents.core.secrets import SecretStore
+
+    for name in ("LD_PRELOAD", "JARVIS_ADMIN_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
+    store = SecretStore(path=hub.store)
+    store.set(integration_keys.KEY_PREFIX + "LD_PRELOAD", "/tmp/evil.so")
+    store.set(integration_keys.CHOICE_PREFIX + "JARVIS_ADMIN_TOKEN", "x")
+    store.set(integration_keys.CHOICE_PREFIX + "JARVIS_WEB_BACKEND", "attacker-backend")
+    store.set(integration_keys.KEY_PREFIX + "EXA_API_KEY", KEY)
+    assert integration_keys.apply_stored() == ["EXA_API_KEY"]
+    assert "LD_PRELOAD" not in os.environ and "JARVIS_ADMIN_TOKEN" not in os.environ
+    assert "JARVIS_WEB_BACKEND" not in os.environ
+
+
+def test_removing_a_key_env_took_over_purges_the_stored_copy(hub):
+    """m2: a stale panel key cannot come back after a .env takeover and its removal."""
+    hub.client.put(f"{BASE}/search.exa/key", json={"value": KEY}, headers=ADMIN)
+    integration_keys._PLACED.clear()
+    os.environ["EXA_API_KEY"] = "env-key-000000000000000009"
+    row = _row(hub.client, "search.exa")
+    assert row["key"]["source"] == "env" and row["key"]["stored_copy"] is True
+    out = hub.client.delete(f"{BASE}/search.exa/key", headers=ADMIN)
+    assert out.status_code == 200 and out.json()["env_still_set"] == ["EXA_API_KEY"]
+    assert os.environ["EXA_API_KEY"] == "env-key-000000000000000009"
+    del os.environ["EXA_API_KEY"]
+    assert integration_keys.apply_stored() == []
+    assert "EXA_API_KEY" not in os.environ
+
+
+def test_a_long_lived_broker_redacts_a_key_saved_after_it_started(hub):
+    """m3: the broker's store sees the panel's write without a restart."""
+    from agents.core.secrets import SecretStore
+    from agents.core.security.secret_broker import SecretBroker
+
+    hub.store.parent.mkdir(parents=True, exist_ok=True)
+    long_lived = SecretStore(path=hub.store)
+    long_lived.set("other", "zzz-other-value")
+    broker = SecretBroker(long_lived)
+    broker.redact("warm the cache")
+    hub.client.put(f"{BASE}/search.exa/key", json={"value": KEY}, headers=ADMIN)
+    assert KEY not in broker.redact(f"leak: {KEY}")
+
+
+def test_cross_site_and_non_json_writes_are_refused(hub, monkeypatch):
+    """m6: on a default install loopback is trusted; a page the owner visits cannot
+    choose, test or change a key."""
+    monkeypatch.setattr(web, "_admin_configured", lambda: False)
+    monkeypatch.setattr(web, "_real_client_host", lambda req: "127.0.0.1")
+    c = hub.client
+    body = b'{"acknowledge_training":true,"confirm_expensive":true}'
+    assert c.post(f"{BASE}/search.exa/use", content=body).status_code == 415
+    assert c.post(f"{BASE}/search.exa/use", content=body,
+                  headers={"content-type": "text/plain"}).status_code == 415
+    assert c.post(f"{BASE}/search.exa/test").status_code == 415
+    cross = {"sec-fetch-site": "cross-site", "content-type": "application/json"}
+    assert c.post(f"{BASE}/search.exa/use", content=body, headers=cross).status_code == 403
+    assert c.put(f"{BASE}/search.exa/key", json={"value": KEY},
+                 headers={"sec-fetch-site": "cross-site"}).status_code == 403
+    assert c.request("DELETE", f"{BASE}/search-choice",
+                     headers={"sec-fetch-site": "cross-site"}).status_code == 403
+    assert "EXA_API_KEY" not in os.environ and "JARVIS_WEB_BACKEND" not in os.environ
+
+
+def test_a_short_key_shows_no_characters(hub):
+    hub.client.put(f"{BASE}/search.exa/key", json={"value": "short-key-1234567"}, headers=ADMIN)
+    assert _row(hub.client, "search.exa")["key"]["hint"] is None

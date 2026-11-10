@@ -2920,7 +2920,17 @@
   the settings write (`admin._guard_selection`); an adopted search backend needs the same two
   acknowledgements and a required `search_backend_consent` row; one HUD consent card, one "I
   understand, use it". Routes `/api/admin/integrations*` (6, admin). Tests:
-  `tests/test_integrations_panel_routes.py` (15), `frontend/src/panels/integrations.test.tsx` (8).
+  `tests/test_integrations_panel_routes.py` (24), `frontend/src/panels/integrations.test.tsx` (12).
+  **Adversarial review (2026-11-10): 4 MAJOR fixed** — (M1) adopted search backends answer only when
+  named (`SearchProvider.explicit_only`: never `auto`'s pick or a rescue, a key alone sends nothing;
+  also for a `.env` key); (M2) Test sends a key only to the entry it was given for (or the selected
+  provider), sibling keys show `shared`; (M3) a PUT writes the entry's own primary name, a name other
+  entries read needs `same_key`, DELETE releases only this entry's claim (owners recorded per key);
+  (M4) `TAVILY_API_KEY` joins `code_env`'s managed names, pinned by a test. Minors: start-up applies
+  only managed names / known choices; a stale stored copy under a `.env` key can be purged; the secret
+  store re-reads a changed file (broker redaction current); the `Orchestrator` applies stored keys
+  before building the router (`agents/run.py` path); Gemini's key save asks its consent; writes are
+  same-origin (403 cross-site, 415 non-JSON POST); `/use` without a key refused; hint only from 20 chars.
   Left: the Settings → LLM provider select and `JARVIS_WEB_BACKEND` docs still exist beside the panel
   (not removed); the `nerva` CLI has no `integrations` verb yet; no live call to any provider was made.
 

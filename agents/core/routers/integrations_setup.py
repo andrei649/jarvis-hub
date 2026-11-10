@@ -28,7 +28,7 @@ import asyncio
 import logging
 import time
 
-from fastapi import APIRouter, Depends, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
@@ -63,9 +63,29 @@ class _QuietRoute(APIRoute):
 router = APIRouter(route_class=_QuietRoute, tags=["integrations"])
 
 
+async def same_origin_write(request: Request) -> None:
+    """A panel write must come from this origin (H157's rule for settings writes). On a
+    default install the admin guard trusts loopback, so a page the owner visits could post
+    a body that needs no browser pre-check: a POST must be JSON (which forces the pre-check
+    the CORS allow-list decides), and any write a browser marks cross-site is refused."""
+    if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+        raise HTTPException(status_code=403, detail="an integrations change must come from this origin")
+    if request.method == "POST":
+        kind = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        if kind != "application/json":
+            raise HTTPException(status_code=415, detail="expected application/json")
+
+
+WRITE_GUARDS = [Depends(admin_guard), Depends(same_origin_write)]
+
+
 class KeyBody(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     value: SecretStr = Field(min_length=1, max_length=4096)
+    #: The owner confirmed this is the same key for the other entries that read its name.
+    same_key: StrictBool = False
+    #: For a provider used as soon as its key is set (Gemini): its data-policy consent.
+    acknowledge_training: StrictBool = False
 
 
 class UseBody(BaseModel):
@@ -163,46 +183,103 @@ async def integrations_list():
     return nocache_json(await asyncio.to_thread(integrations_catalog.listing))
 
 
-@router.put("/api/admin/integrations/{entry_id}/key", dependencies=[Depends(admin_guard)])
+@router.put("/api/admin/integrations/{entry_id}/key", dependencies=WRITE_GUARDS)
 async def integration_key_put(body: KeyBody, entry_id: str = Path(pattern=ENTRY_PATTERN)):
     from agents.core import integration_keys, integrations_catalog
 
     entry = _entry(entry_id)
     if entry is None or not entry.keys:
         return _not_found()
-    state = integrations_catalog._key_state(entry)
-    name = state["name"] or entry.keys[0]
+    # Always the entry's OWN primary name: never a sibling's name that happens to be set.
+    name = entry.keys[0]
+    if integration_keys.env_owned(name):
+        return _env_managed(name)
+    all_entries = integrations_catalog.entries()
+    shared = [e for e in all_entries if e.id != entry.id and name in e.keys]
+    if shared and not body.same_key:
+        names = ", ".join(e.display_name for e in shared)
+        return nocache_json({
+            "error": "shared_key", "name": name, "shared_with": [e.id for e in shared],
+            "detail": f"{name} is also read by {names}. Saving it here gives them the same key "
+                      "(each still needs its own consent to be used). Confirm it is the same key "
+                      "for all of them."}, status_code=409)
+    consent = _key_consent(entry)
+    if consent and not body.acknowledge_training:
+        return nocache_json({"error": "selection_guard", "detail": consent["message"],
+                             "needs": ["acknowledge_training"], "guards": [consent]}, status_code=409)
+    if consent:
+        try:
+            await _audit(f"consent (integrations): {entry.display_name} ({entry.host}) is used as soon as its "
+                         f"key is set, knowing {consent['message']}", "model_training_consent", required=True)
+        except Exception:
+            return nocache_json({"error": "consent_not_recorded",
+                                 "detail": "the acknowledgement could not be written to the audit log; "
+                                           "nothing was changed"}, status_code=503)
     try:
         await asyncio.to_thread(integration_keys.set_key, name, body.value.get_secret_value(),
-                                allowed=integrations_catalog.managed_keys())
+                                allowed=integrations_catalog.managed_keys(), owner=entry.id,
+                                keep_owners=body.same_key)
     except integration_keys.EnvManaged:
         return _env_managed(name)
     except ValueError:
         return nocache_json({"error": "invalid_key"}, status_code=422)
-    integrations_catalog.LAST_TEST.pop(entry_id, None)
+    for e in [entry, *shared]:
+        integrations_catalog.LAST_TEST.pop(e.id, None)
     applied = await _apply_live(entry)
-    await _audit(f"integrations: key {name} set for {entry_id} (stored encrypted; value not logged)",
-                 "integration_key_set")
+    await _audit(f"integrations: key {name} set for {entry_id}"
+                 + (f" (also read by {', '.join(e.id for e in shared)})" if shared else "")
+                 + " (stored encrypted; value not logged)", "integration_key_set")
     return nocache_json({"ok": True, "applied": applied, "integration": _row(entry_id)})
 
 
-@router.delete("/api/admin/integrations/{entry_id}/key", dependencies=[Depends(admin_guard)])
+def _key_consent(entry) -> dict | None:
+    """A provider the router uses as soon as its key is set (Gemini, Anthropic) has no
+    "use" step, so its data-policy consent is asked when the key is saved."""
+    from agents.core import integrations_catalog
+
+    if entry.kind != integrations_catalog.KIND_MODEL or entry.selectable:
+        return None
+    if entry.data_policy not in ("unknown", "trains-on-inputs"):
+        return None
+    knowing = ("the vendor may train on your prompts" if entry.data_policy == "trains-on-inputs"
+               else "how it handles your prompts has not been verified")
+    return {"guard": "data_policy", "needs": "acknowledge_training", "setting": entry.keys[0],
+            "provider": entry.name, "model": "",
+            "message": f"{entry.display_name} answers as soon as this key is set; {knowing}"
+                       + (f" — {entry.data_policy_note}" if entry.data_policy_note else ""),
+            "detail": {"policy": entry.data_policy, "provider": entry.name}}
+
+
+@router.delete("/api/admin/integrations/{entry_id}/key", dependencies=WRITE_GUARDS)
 async def integration_key_delete(entry_id: str = Path(pattern=ENTRY_PATTERN)):
+    """Remove what THIS entry set: its claim on each stored key. A key another entry also
+    vouched for stays for that one; a ``.env`` key stays in effect (an older stored copy
+    of it is purged, so it cannot come back when the ``.env`` line goes)."""
     from agents.core import integration_keys, integrations_catalog
 
     entry = _entry(entry_id)
     if entry is None or not entry.keys:
         return _not_found()
-    for name in entry.keys:
-        if integration_keys.env_owned(name):
-            return _env_managed(name)
-    for name in entry.keys:
-        await asyncio.to_thread(integration_keys.clear_key, name,
-                                allowed=integrations_catalog.managed_keys())
+    mine = [n for n in entry.keys if entry.id in integration_keys.owners(n)]
+    if not mine:
+        env = next((n for n in entry.keys if integration_keys.env_owned(n)), None)
+        if env:
+            return _env_managed(env)
+        return nocache_json({"ok": True, "removed": [], "kept_for": [], "env_still_set": [],
+                             "integration": _row(entry_id)})
+    removed, kept, env_set = [], [], []
+    for name in mine:
+        out = await asyncio.to_thread(integration_keys.release_key, name, entry.id,
+                                      allowed=integrations_catalog.managed_keys())
+        (removed if out["removed"] else kept).append(name)
+        if out["env"]:
+            env_set.append(name)
     integrations_catalog.LAST_TEST.pop(entry_id, None)
     applied = await _apply_live(entry)
-    await _audit(f"integrations: key removed for {entry_id}", "integration_key_removed")
-    return nocache_json({"ok": True, "applied": applied, "integration": _row(entry_id)})
+    await _audit(f"integrations: key removed for {entry_id} (removed {removed}, kept for others {kept})",
+                 "integration_key_removed")
+    return nocache_json({"ok": True, "applied": applied, "removed": removed, "kept_for": kept,
+                         "env_still_set": env_set, "integration": _row(entry_id)})
 
 
 # ── test ─────────────────────────────────────────────────────────────────────────
@@ -228,8 +305,18 @@ _SEARCH_SAYS = {
 
 
 async def _test_model(entry) -> dict:
+    from agents.core import integrations_catalog
     from agents.core.llm import provider_probe
 
+    key = integrations_catalog._key_state(entry)
+    if not key["set"]:
+        return {"ok": False, "verdict": "not_configured", "message": _MODEL_SAYS["not_configured"]}
+    if not _may_probe(entry, key):
+        others = ", ".join(key["shared_with"]) or "another use"
+        return {"ok": False, "verdict": "not_sent",
+                "message": f"Not tested: the key in effect ({key['name']}) was not given for {entry.display_name} "
+                           f"(it is shared with {others}), so Nerva will not send it to {entry.host or 'this host'}. "
+                           "Save a key for this provider here, or choose it with your consent first."}
     # One provider, the one being tested (never probe_all); an adopted provider's probe
     # takes the same destination pin as its backend (provider_probe._send).
     result = await provider_probe.probe(entry.name, force=True)
@@ -242,6 +329,24 @@ async def _test_model(entry) -> dict:
         message = f"{message} (Checked moments ago; showing that result.)"
     return {"ok": ok, "verdict": verdict, "message": message,
             "status_code": result.get("status_code")}
+
+
+def _may_probe(entry, key: dict) -> bool:
+    """``provider_probe``'s rule (a key that belongs to another host is not sent here),
+    for one provider: the key in effect was given for this entry (typed for it, or set in
+    ``.env`` under a name no other entry reads), or the owner selected this provider, and
+    no other profile's base URL claims the key (``_key_for_elsewhere`` for a native one)."""
+    from agents.core.llm import provider_probe
+    from agents.core.llm.hermes_profiles import is_adopted_profile
+    from agents.core.llm.providers import get_profile
+
+    profile = get_profile(entry.name)
+    selected = provider_probe._selected_compatible()
+    if not key["own"] and selected != entry.name:
+        return False
+    if is_adopted_profile(profile):
+        return True     # its own key (above); the adopted half of the rule is that sharing
+    return not provider_probe._key_for_elsewhere(profile, None, selected)
 
 
 async def _test_search(entry) -> dict:
@@ -281,7 +386,7 @@ async def _test_search(entry) -> dict:
     return {"ok": True, "verdict": "ok", "message": f"The search service answered ({len(rows)} result)."}
 
 
-@router.post("/api/admin/integrations/{entry_id}/test", dependencies=[Depends(admin_guard)])
+@router.post("/api/admin/integrations/{entry_id}/test", dependencies=WRITE_GUARDS)
 async def integration_test(entry_id: str = Path(pattern=ENTRY_PATTERN)):
     from agents.core import integrations_catalog
 
@@ -324,6 +429,9 @@ async def _use_search(entry, body: UseBody):
 
     if integration_keys.env_owned(integrations_catalog.WEB_BACKEND):
         return _env_managed(integrations_catalog.WEB_BACKEND)
+    if not integrations_catalog._key_state(entry)["set"]:
+        return nocache_json({"error": "no_key", "detail": f"set a key for {entry.display_name} first"},
+                            status_code=409)
     guards = _search_guards(entry)
     given = {"acknowledge_training": body.acknowledge_training is True,
              "confirm_expensive": body.confirm_expensive is True}
@@ -391,7 +499,7 @@ async def _use_model(entry, body: UseBody):
                          "guards": [f.as_dict() for f in guarded], "integration": _row(entry.id)})
 
 
-@router.post("/api/admin/integrations/{entry_id}/use", dependencies=[Depends(admin_guard)])
+@router.post("/api/admin/integrations/{entry_id}/use", dependencies=WRITE_GUARDS)
 async def integration_use(body: UseBody, entry_id: str = Path(pattern=ENTRY_PATTERN)):
     from agents.core import integrations_catalog
 
@@ -403,7 +511,7 @@ async def integration_use(body: UseBody, entry_id: str = Path(pattern=ENTRY_PATT
     return await _use_model(entry, body)
 
 
-@router.delete("/api/admin/integrations/search-choice", dependencies=[Depends(admin_guard)])
+@router.delete("/api/admin/integrations/search-choice", dependencies=WRITE_GUARDS)
 async def integration_search_auto():
     from agents.core import integration_keys, integrations_catalog
 

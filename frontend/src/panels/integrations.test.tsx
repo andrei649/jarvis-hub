@@ -11,7 +11,7 @@ const facts = (host, extra = {}) => ({ host, host_country: null, data_policy: 'u
   data_policy_note: 'not verified', price_known: 'no', price_note: 'Nerva has no price', receives: 'your search queries', ...extra });
 const row = (over) => ({
   id: 'search.exa', kind: 'search', name: 'exa', display_name: 'Exa', origin: 'hermes', status: 'not_set_up',
-  key: { names: ['EXA_API_KEY'], name: 'EXA_API_KEY', set: false, source: null, hint: null, editable: true },
+  key: { names: ['EXA_API_KEY'], name: 'EXA_API_KEY', set: false, source: null, hint: null, editable: true, own: true, shared_with: [] },
   facts: facts('api.exa.ai'), selectable: true, selected: false, choice_editable: true, models: [], last_test: null, ...over,
 });
 
@@ -23,13 +23,13 @@ const listing = (rows) => ({
   model: { selected: '' }, precedence: 'env',
 });
 
-const SET = row({ status: 'key_set', key: { names: ['EXA_API_KEY'], name: 'EXA_API_KEY', set: true, source: 'hub', hint: '…WXYZ', editable: true } });
+const SET = row({ status: 'key_set', key: { names: ['EXA_API_KEY'], name: 'EXA_API_KEY', set: true, source: 'hub', hint: '…WXYZ', editable: true, own: true, shared_with: [] } });
 const DEEPSEEK = row({ id: 'model.deepseek', kind: 'model', name: 'deepseek', display_name: 'DeepSeek', status: 'key_set',
-  key: { names: ['DEEPSEEK_API_KEY'], name: 'DEEPSEEK_API_KEY', set: true, source: 'hub', hint: '…7788', editable: true },
+  key: { names: ['DEEPSEEK_API_KEY'], name: 'DEEPSEEK_API_KEY', set: true, source: 'hub', hint: '…7788', editable: true, own: true, shared_with: [] },
   facts: facts('api.deepseek.com', { receives: 'your conversations (the prompts and replies of the turns it answers)' }),
   models: ['deepseek-v4-pro', 'deepseek-flash'] });
 const ENV = row({ id: 'search.parallel', name: 'parallel', display_name: 'Parallel', status: 'key_set',
-  key: { names: ['PARALLEL_API_KEY'], name: 'PARALLEL_API_KEY', set: true, source: 'env', hint: null, editable: false },
+  key: { names: ['PARALLEL_API_KEY'], name: 'PARALLEL_API_KEY', set: true, source: 'env', hint: null, editable: false, own: true, shared_with: [] },
   facts: facts('api.parallel.ai') });
 
 function hub(routes) {
@@ -174,5 +174,72 @@ describe('Integrations panel', () => {
     for (const el of document.querySelectorAll('input')) {
       expect(document.querySelector(`label[for="${el.id}"]`)).toBeTruthy();
     }
+  });
+
+  it('a key set for a sibling shows as shared, not as this provider key', async () => {
+    const cn = row({ id: 'model.alibaba-cn', kind: 'model', name: 'alibaba-cn', display_name: 'Alibaba Cloud DashScope (China)',
+      status: 'shared', facts: facts('dashscope.aliyuncs.com', { host_country: 'China (mainland)' }),
+      key: { names: ['DASHSCOPE_API_KEY'], name: 'DASHSCOPE_API_KEY', set: true, source: 'hub', hint: '…0001', editable: true,
+        own: false, shared_with: ['model.alibaba'] } });
+    hub(() => ({ status: 200, body: listing([cn]) }));
+    render(<IntegrationsPanel />);
+    const line = (await screen.findByText('Alibaba Cloud DashScope (China)')).closest('li');
+    expect(within(line).getByText('shared key')).toBeTruthy();
+    fireEvent.click(within(line).getByRole('button', { name: /Alibaba Cloud DashScope \(China\)/ }));
+    expect(screen.getByText(/was set for model\.alibaba/)).toBeTruthy();
+    expect(screen.queryByText('remove key')).toBeNull();
+  });
+
+  it('a shared key name asks once whether it is the same key, then resends with that answer', async () => {
+    const calls = hub((url, method, body) => {
+      if (method === 'PUT') {
+        if (!body.same_key) return { status: 409, body: { error: 'shared_key', detail: 'DASHSCOPE_API_KEY is also read by Alibaba Cloud DashScope (China).' } };
+        return { status: 200, body: { ok: true, applied: 'now' } };
+      }
+      return { status: 200, body: listing([row({ id: 'model.alibaba', kind: 'model', name: 'alibaba', display_name: 'Alibaba', facts: facts('dashscope-intl.aliyuncs.com') })]) };
+    });
+    render(<IntegrationsPanel />);
+    fireEvent.click(await screen.findByRole('button', { name: 'set up Alibaba' }));
+    fireEvent.change(screen.getByLabelText(/API key for Alibaba/), { target: { value: SECRET } });
+    fireEvent.click(screen.getByText('save key'));
+    await screen.findByText(/also read by Alibaba Cloud DashScope \(China\)/);
+    expect(document.body.textContent).not.toContain(SECRET);
+    fireEvent.click(screen.getByText('yes, it is the same key'));
+    await screen.findByText(/key saved · in effect now/);
+    const puts = calls.filter((c) => c.method === 'PUT');
+    expect(puts.map((c) => c.body)).toEqual([{ value: SECRET }, { value: SECRET, same_key: true }]);
+  });
+
+  it('a provider used as soon as its key is set asks for consent when the key is saved', async () => {
+    const gemini = row({ id: 'model.gemini', kind: 'model', name: 'gemini', display_name: 'Google Gemini', origin: 'native',
+      selectable: false, facts: facts('generativelanguage.googleapis.com', { receives: 'your conversations' }),
+      key: { names: ['GEMINI_API_KEY'], name: 'GEMINI_API_KEY', set: false, source: null, hint: null, editable: true, own: false, shared_with: [] } });
+    const calls = hub((url, method, body) => {
+      if (method === 'PUT') {
+        if (!body.acknowledge_training) return { status: 409, body: { error: 'selection_guard', needs: ['acknowledge_training'],
+          guards: [{ guard: 'data_policy', needs: 'acknowledge_training', setting: 'GEMINI_API_KEY', provider: 'gemini', model: '', message: 'Google Gemini answers as soon as this key is set' }] } };
+        return { status: 200, body: { ok: true, applied: 'now' } };
+      }
+      return { status: 200, body: listing([gemini]) };
+    });
+    render(<IntegrationsPanel />);
+    fireEvent.click(await screen.findByRole('button', { name: 'set up Google Gemini' }));
+    fireEvent.change(screen.getByLabelText(/API key for Google Gemini/), { target: { value: SECRET } });
+    fireEvent.click(screen.getByText('save key'));
+    const card = await screen.findByRole('alertdialog');
+    expect(within(card).getByText(/answers as soon as this key is set/)).toBeTruthy();
+    fireEvent.click(within(card).getByText('I understand, use it'));
+    await screen.findByText(/key saved · in effect now/);
+    expect(calls.filter((c) => c.method === 'PUT').map((c) => c.body)).toEqual([
+      { value: SECRET }, { value: SECRET, acknowledge_training: true }]);
+    expect(document.body.textContent).not.toContain(SECRET);
+  });
+
+  it('offers to remove an older stored copy when .env took the key over', async () => {
+    const calls = hub(() => ({ status: 200, body: listing([{ ...ENV, key: { ...ENV.key, stored_copy: true } }]) }));
+    render(<IntegrationsPanel />);
+    fireEvent.click(await screen.findByRole('button', { name: 'manage Parallel' }));
+    fireEvent.click(screen.getByText('remove the stored copy'));
+    await waitFor(() => expect(calls.some((c) => c.method === 'DELETE' && c.url.includes('/search.parallel/key'))).toBe(true));
   });
 });

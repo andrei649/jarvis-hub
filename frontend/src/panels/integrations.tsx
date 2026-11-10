@@ -17,7 +17,7 @@
      "I understand, use it" sends the same acknowledgements the hub's selection guards
      require; the hub records the consent in the audit log and stays the one that decides.
    - The Hermes skills catalog is summarised and opens in Skills Import, where it lives. */
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { apiDelete, apiPost, apiPut } from '../api/client';
 import { navigateHud } from '../hud-routing';
 import { Card, Tag, inpS, mono, refusalReason, useApi } from '../panel-kit';
@@ -25,12 +25,13 @@ import { guardFlags, guardRefusal, type GuardFlags, type GuardRefusal } from '..
 
 export const INTEGRATIONS_PATH = '/api/admin/integrations';
 
-type KeyState = { names: string[]; name: string; set: boolean; source: 'env' | 'hub' | null; hint: string | null; editable: boolean };
+type KeyState = { names: string[]; name: string; primary?: string; set: boolean; source: 'env' | 'hub' | null; hint: string | null;
+  editable: boolean; own: boolean; shared_with: string[]; primary_shared_with?: string[]; stored_copy?: boolean };
 type Facts = { host: string; host_country: string | null; data_policy: string; data_policy_note: string;
   price_known: 'yes' | 'some' | 'no'; price_note: string; receives: string };
 export type Integration = {
   id: string; kind: 'search' | 'model'; name: string; display_name: string; origin: 'native' | 'hermes';
-  status: 'not_set_up' | 'key_set' | 'active' | 'error'; key: KeyState; facts: Facts;
+  status: 'not_set_up' | 'key_set' | 'shared' | 'active' | 'error'; key: KeyState; facts: Facts;
   selectable: boolean; selected: boolean; choice_editable: boolean; models: string[];
   last_test?: { ok: boolean; message: string } | null;
 };
@@ -38,6 +39,7 @@ export type Integration = {
 const STATUS: Record<string, [string, string]> = {
   not_set_up: ['not set up', 'var(--ink-2)'],
   key_set: ['key set', 'var(--amber)'],
+  shared: ['shared key', 'var(--ink-2)'],
   active: ['active', 'var(--green)'],
   error: ['error', 'var(--red)'],
 };
@@ -84,7 +86,11 @@ function IntegrationDetail({ item, onChanged }: { item: Integration; onChanged: 
   const [msg, setMsg] = useState<string | null>(null);
   const [testMsg, setTestMsg] = useState<string | null>(item.last_test ? item.last_test.message : null);
   const [model, setModel] = useState(item.models[0] || '');
-  const [consent, setConsent] = useState<GuardRefusal | null>(null);
+  const [consent, setConsent] = useState<{ refusal: GuardRefusal; forKey: boolean } | null>(null);
+  const [shared, setShared] = useState<string | null>(null);
+  // The key waiting for the owner's answer (same key for the siblings? the consent card),
+  // never rendered and dropped on cancel or once sent.
+  const pending = useRef('');
   const inputId = `key-${item.id}`;
   const modelId = `model-${item.id}`;
   const f = item.facts;
@@ -95,12 +101,29 @@ function IntegrationDetail({ item, onChanged }: { item: Integration; onChanged: 
       .catch((err: any) => setMsg(`not done · ${refusalReason(err, String(err?.status || 'error'))}`))
       .finally(() => setBusy(false));
   };
-  const saveKey = () => {
-    const v = value.trim();
+  const drop = () => { pending.current = ''; setShared(null); setConsent(null); };
+  const saveKey = (extra: { same_key?: true; acknowledge_training?: true } = {}) => {
+    const v = value.trim() || pending.current;
     if (!v) return;
-    setValue('');   // the typed key leaves the page's state at once
-    void run(apiPut(`/api/admin/integrations/${item.id}/key`, { value: v }, { admin: true }), 'key saved · in effect now');
+    pending.current = v;
+    setValue('');   // the typed key leaves the input at once
+    setBusy(true); setMsg(null); setShared(null); setConsent(null);
+    apiPut(`/api/admin/integrations/${item.id}/key`, { value: v, ...extra }, { admin: true })
+      .then((r: any) => {
+        pending.current = '';
+        setMsg(r?.applied === 'now' ? 'key saved · in effect now' : 'key saved');
+        onChanged();
+      })
+      .catch((err: any) => {
+        const refusal = guardRefusal(err);
+        if (refusal) { setConsent({ refusal, forKey: true }); return; }
+        if (err?.status === 409 && err?.body?.error === 'shared_key') { setShared(String(err.body.detail || '')); return; }
+        pending.current = '';
+        setMsg(`not saved · ${refusalReason(err, String(err?.status || 'error'))}`);
+      })
+      .finally(() => setBusy(false));
   };
+  const sameKeyFlags = useRef<{ same_key?: true }>({});
   const removeKey = () => void run(apiDelete(`/api/admin/integrations/${item.id}/key`, { admin: true }), 'key removed');
   const test = () => {
     setBusy(true); setTestMsg('testing…');
@@ -119,7 +142,7 @@ function IntegrationDetail({ item, onChanged }: { item: Integration; onChanged: 
     apiPost(`/api/admin/integrations/${item.id}/use`, body, { admin: true, accept: asksConsent })
       .then((r: any) => {
         const refusal = guardRefusal({ status: r?.error === 'selection_guard' ? 409 : 200, body: r });
-        if (refusal) { setConsent(refusal); return; }
+        if (refusal) { setConsent({ refusal, forKey: false }); return; }
         setMsg(item.kind === 'search' ? 'searches use it now' : `in use now · ${model}`);
         onChanged();
       })
@@ -138,21 +161,39 @@ function IntegrationDetail({ item, onChanged }: { item: Integration; onChanged: 
       </dl>
 
       <div style={{ fontSize: 11, marginBottom: 4 }}>
-        {item.key.set
-          ? <>Key <b>set</b>{item.key.hint ? <span style={mono}> ({item.key.hint})</span> : null}
-              {item.key.source === 'env' ? <> · in <span style={mono}>.env</span>, edit it there ({item.key.name})</> : ' · stored encrypted by Nerva'}</>
-          : <>No key yet{item.key.names.length ? <> · <span style={mono}>{item.key.names.join(' / ')}</span></> : null}</>}
+        {item.key.set && !item.key.own
+          ? <>Key <b>shared</b>: <span style={mono}>{item.key.name}</span> was set for {item.key.shared_with.join(', ') || 'another use'}, not for {item.display_name}.
+              It is not tested here, and using {item.display_name} asks for its own consent.</>
+          : item.key.set
+            ? <>Key <b>set</b>{item.key.hint ? <span style={mono}> ({item.key.hint})</span> : null}
+                {item.key.source === 'env' ? <> · in <span style={mono}>.env</span>, edit it there ({item.key.name})</> : ' · stored encrypted by Nerva'}</>
+            : <>No key yet{item.key.names.length ? <> · <span style={mono}>{item.key.names.join(' / ')}</span></> : null}</>}
       </div>
+      {item.key.stored_copy && (
+        <div style={{ fontSize: 10.5, marginBottom: 4 }}>
+          Nerva still holds an older copy of this key from this panel; the .env key is the one in use.
+          <button className="tool-btn" style={{ marginLeft: 6 }} disabled={busy} onClick={removeKey}>remove the stored copy</button>
+        </div>
+      )}
       {item.key.editable && (
-        <form onSubmit={(ev) => { ev.preventDefault(); saveKey(); }} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <label htmlFor={inputId} style={{ fontSize: 10.5 }}>{item.key.set ? 'Replace the key' : 'API key'} for {item.display_name}</label>
+        <form onSubmit={(ev) => { ev.preventDefault(); saveKey(sameKeyFlags.current); }} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label htmlFor={inputId} style={{ fontSize: 10.5 }}>{item.key.set && item.key.own ? 'Replace the key' : 'API key'} for {item.display_name}</label>
           <input id={inputId} type="password" autoComplete="off" spellCheck={false} value={value}
             onChange={(ev) => setValue(ev.target.value)} style={{ ...inpS, minWidth: 180 }} />
           <button className="tool-btn" type="submit" disabled={busy || !value.trim()}>save key</button>
-          {item.key.set && item.key.source === 'hub' && (
+          {item.key.set && item.key.own && item.key.source === 'hub' && (
             <button className="tool-btn" type="button" disabled={busy} onClick={removeKey}>remove key</button>
           )}
         </form>
+      )}
+      {shared && (
+        <div role="alertdialog" aria-label="the same key for other providers" style={{ marginTop: 6, padding: 6, border: '1px solid var(--amber)', borderRadius: 4, fontSize: 10.5 }}>
+          <div>{shared}</div>
+          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+            <button className="tool-btn" onClick={() => { sameKeyFlags.current = { same_key: true }; saveKey({ same_key: true }); }}>yes, it is the same key</button>
+            <button className="tool-btn" onClick={drop}>Cancel</button>
+          </div>
+        </div>
       )}
 
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
@@ -175,7 +216,10 @@ function IntegrationDetail({ item, onChanged }: { item: Integration; onChanged: 
       </div>
       {testMsg && <div role="status" style={{ fontSize: 10.5, marginTop: 4 }}>{testMsg}</div>}
       {msg && <div role="status" style={{ fontSize: 10.5, marginTop: 4, color: msg.startsWith('not ') ? 'var(--amber)' : 'var(--ink-2)' }}>{msg}</div>}
-      {consent && <ConsentCard item={item} refusal={consent} onCancel={() => setConsent(null)} onConfirm={(flags) => use(flags)} />}
+      {consent && <ConsentCard item={item} refusal={consent.refusal} onCancel={drop}
+        onConfirm={(flags) => (consent.forKey
+          ? saveKey({ ...sameKeyFlags.current, ...(flags.acknowledge_training ? { acknowledge_training: true as const } : {}) })
+          : use(flags))} />}
     </div>
   );
 }

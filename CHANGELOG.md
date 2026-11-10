@@ -13,17 +13,30 @@
   knows it, whether its data handling was checked and whether Nerva knows its price.
 - Type a key there and it works right away. Nerva keeps it encrypted in its own secret store,
   never in the browser or in settings, and never shows it again: only "set" and its last four
-  characters. You can remove it the same way. A key you already have in `.env` keeps working and
-  wins; the panel shows it as "set in .env" and leaves it alone.
+  characters (none for a short key). You can remove it the same way. A key you already have in
+  `.env` keeps working and wins; the panel shows it as "set in .env" and leaves it alone. If the
+  panel still holds an older copy of that key, you can remove the copy so it never comes back.
+- A key name that several providers read (Alibaba's `DASHSCOPE_API_KEY`, for example) asks you
+  once whether it is the same key for all of them. Another provider that reads it shows
+  "shared key": the panel does not test it there, and using that provider asks for its own
+  consent. Removing a key from one provider leaves the others' keys alone.
+- Gemini answers as soon as its key is set, so saving a Gemini key shows the consent card
+  first (Google's handling depends on your plan). Anthropic's terms say no training, so it
+  does not ask.
+- Exa, Brave Search and Parallel now answer only when you choose them ("Use", or
+  `NERVA_WEB_BACKEND` in `.env`). Before, a key alone was enough for automatic search to send
+  your queries there, or to fall back to them; now automatic search and fallback never use them.
 - "Test" tries that one service and tells you in plain words whether the key works. For a
-  model provider it checks only that provider; for a search service it runs one search through
-  Nerva's network rules.
+  model provider it checks only that provider, and only with a key given for it; for a search
+  service it runs one search through Nerva's network rules.
 - "Use" picks the provider or the search service. When a choice needs your say-so (its data
   handling has not been checked, or Nerva has no price for it), one card shows who receives
   your conversations or searches, the address, the data policy and the price, and one button,
   "I understand, use it", records your consent in the audit log, as Settings does. The choice
   takes effect without a restart.
-- Admins only: a user token cannot read the list or change anything.
+- Admins only: a user token cannot read the list or change anything, and a web page you
+  visit cannot make changes for you (a change must come from the HUD itself).
+- The Tavily key is now kept from skills and code-running tools, like the other provider keys.
 
 **The product says Nerva everywhere you look (#1347)**
 - The HUD top bar, page titles, the installable web app, installers and the desktop app now

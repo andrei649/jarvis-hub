@@ -79,6 +79,12 @@ services (Tavily, Exa, Brave Search, Parallel), the cloud model providers that t
 - **`.env` still works and wins.** A key or search choice set in `.env` (or the hub's
   environment) is shown as "set in .env" and cannot be changed or removed from the panel.
   At start, a key stored from the panel is used only when `.env` does not set that name.
+- **Shared key names.** A name several providers read (`DASHSCOPE_API_KEY`) is one key: the
+  panel asks whether it is the same key for all of them, shows it as "shared key" on the
+  others, does not test it there, and removing it from one provider keeps it for the rest.
+- **Gemini** answers as soon as its key is set, so its key asks for your consent when saved.
+- **Search services from Hermes** (Exa, Brave Search, Parallel) answer only when chosen
+  ("Use", or `NERVA_WEB_BACKEND` in `.env`); automatic search never picks or falls back to them.
 - **Test** asks that one provider or search service whether the key works, in plain words.
 - **Use** picks the search service or the cloud model provider (with its model). If the
   choice needs your acknowledgement (data handling not verified, no known price), one card
