@@ -90,6 +90,8 @@ Write-Host "Installing service '$ServiceName' → $python $serve"
 # successor), so Default stays Restart; a clean exit (0) is a stop and stays stopped.
 & $nssm set $ServiceName AppExit Default Restart
 & $nssm set $ServiceName AppExit 0 Exit
+# RB-2: 78 = the hub refused its configuration (serve.py): restarting cannot help.
+& $nssm set $ServiceName AppExit 78 Exit
 & $nssm set $ServiceName AppRestartDelay 5000
 
 Write-Host "Starting '$ServiceName'…"

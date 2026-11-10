@@ -34,11 +34,12 @@ config_sources      advisory   informational: which layer supplied each configur
                                the ``JARVIS_`` name the hub reads; the row says when the
                                deprecated ``JARVIS_`` spelling supplied it (``NERVA_<X>`` is
                                preferred, RB-2), and the check is ``fail`` when one layer sets
-                               both spellings to different values (``env_spelling_conflict``),
-                               builds a path, endpoint, credential or allowlist from a
-                               ``${...}`` reference to nothing, or leaves a path at the
-                               filesystem root (``env_unsafe_value``): the hub refuses to
-                               start on each. Read from the running hub when it
+                               both spellings to different values (``env_spelling_conflict``)
+                               or builds a path or a credential from a ``${...}`` reference
+                               to nothing (``env_reference_to_nothing``): the hub refuses to
+                               start on each. A path written out as the filesystem root is a
+                               ``warn`` (``env_root_path``): the hub starts on it, loudly.
+                               Read from the running hub when it
                                answers (asked without a credential first; the admin token
                                follows a refusal only to a hub on this machine), else
                                predicted from this shell; warns when it withholds a .env name
@@ -929,7 +930,8 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
     unreadable: list = []
     values: dict | None = {}
     conflicts: dict = {}
-    unsafe: dict = {}
+    refused: dict = {}
+    roots: dict = {}
     if hub is not None:
         table = {row["key"]: {"layer": row.get("layer"), "shadowed": _layers(row.get("shadowed"))}
                  for row in hub["sources"] if isinstance(row, dict) and isinstance(row.get("key"), str)}
@@ -957,14 +959,14 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
         if profile_env is not None:
             # H689b — a profile's hub reads its own root's .env and neither shared file.
             table = ep.derive(None, profile_env, env)
-            spellings, conflicts, unsafe = ep.derive_alias(None, profile_env, env)
+            spellings, conflicts, refused, roots = ep.derive_alias(None, profile_env, env)
             detail = (f"profile .env {_file_state(ep, profile_env)}; the repo and data-home .env are "
                       f"{ep.PROFILE_NOT_READ}")
             sources = (("user_env", profile_env),)
         else:
             repo_env = root / ".env"
             table = ep.derive(repo_env, _home_env, env)
-            spellings, conflicts, unsafe = ep.derive_alias(repo_env, _home_env, env)
+            spellings, conflicts, refused, roots = ep.derive_alias(repo_env, _home_env, env)
             home = _home_env(ep.after_repo_layer(repo_env, env))
             detail = f"repo .env {_file_state(ep, repo_env)}; data-home .env {_file_state(ep, home)}"
             sources = (("repo_env", repo_env), ("user_env", home))
@@ -1024,6 +1026,15 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
         reason = (f"withheld_env_names:{withheld} — {withheld} .env key{'s' if withheld != 1 else ''} not "
                   f"shown: not a name Nerva reads or .env.example declares, nor a plain one-case name with "
                   f"a value (an unquoted or mis-escaped multi-line value may produce such keys). " + reason)
+    if roots:
+        # RB-2: a path-typed variable written out as the filesystem root. The hub starts on
+        # it (it is the operator's to choose) and says so; so does the doctor.
+        status = WARN
+        named = "; ".join(f"{', '.join(names)} in the {ep.LABELS.get(layer, layer)}"
+                          for layer, names in sorted(roots.items()))
+        reason = (f"env_root_path:{','.join(sorted({n for names in roots.values() for n in names}))} — "
+                  f"{named}: set to the filesystem root, so everything on this machine is inside it. "
+                  + reason)
     if conflicts:
         # RB-2: one layer sets a hub variable under both spellings, differently. The hub
         # refuses to start on that, so this is the one red row this check has.
@@ -1036,23 +1047,27 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
                   f"with different values: the hub refuses to start. Keep one line; if one of them "
                   f"comes from the container image, the compose file, the service unit or a start "
                   f"script, override it under the spelling that launcher uses (JARVIS_<X>). " + reason)
-    if unsafe:
-        # RB-2: a path, endpoint, credential or allowlist built from a ${...} reference to
-        # nothing, or a path-typed variable at the filesystem root. The hub refuses these too.
+    if refused:
+        # RB-2: a path or a credential a .env builds from a ${...} reference to nothing. The
+        # hub refuses these too (python-dotenv silently dropped that part of the value).
         status = FAIL
-        named = "; ".join(f"{', '.join(names)} in the {ep.LABELS.get(layer, layer)}"
-                          for layer, names in sorted(unsafe.items()))
-        reason = (f"env_unsafe_value:{','.join(sorted({n for names in unsafe.values() for n in names}))} — "
-                  f"{named}: built from a ${{...}} reference to a variable nothing sets, or left at the "
-                  f"filesystem root. The hub refuses to start; set the variable the reference names or "
-                  f"write the value out. " + reason)
+        why = {ep.PATH_UNSET: "a path built from a reference nothing sets",
+               ep.PATH_ROOTED: "a path that opens with an empty reference",
+               ep.CREDENTIAL_UNSET: "a credential with a reference nothing sets"}
+        named = "; ".join(f"{name} in the {ep.LABELS.get(layer, layer)} ({why.get(kind, kind)})"
+                          for layer, found in sorted(refused.items()) for name, kind in sorted(found.items()))
+        reason = (f"env_reference_to_nothing:{','.join(sorted({n for found in refused.values() for n in found}))}"
+                  f" — {named}. The hub refuses to start; set the variable the reference names, give it a "
+                  f"default (${{NAME:-value}}) or write the value out. " + reason)
     data = {"sources": rows, "labels": dict(ep.LABELS)}
     if old_spelling:
         data["deprecated_spellings"] = old_spelling      # {the name set: the name to use}
     if conflicts:
         data["spelling_conflicts"] = {layer: list(names) for layer, names in sorted(conflicts.items())}
-    if unsafe:
-        data["unsafe_values"] = {layer: list(names) for layer, names in sorted(unsafe.items())}
+    if refused:
+        data["references_to_nothing"] = {layer: dict(found) for layer, found in sorted(refused.items())}
+    if roots:
+        data["root_paths"] = {layer: list(names) for layer, names in sorted(roots.items())}
     return Check("config_sources", status, reason, f"{where}; {detail}", data=data)
 
 

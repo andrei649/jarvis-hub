@@ -93,7 +93,7 @@ def test_a_reference_to_a_process_variable_resolves_under_either_spelling(clean,
         assert predicted[f"JARVIS_{name}"] == expected, name                    # the prediction agrees
         assert ep.hub_value(f"NERVA_{name}", predicted) == expected
         assert table[f"JARVIS_{name}"]["layer"] == "repo_env" and f"NERVA_{name}" not in os.environ
-    assert env_alias.unsafe_paths() == []
+    assert env_alias.root_paths() == []
 
 
 @pytest.mark.parametrize("defined", ["NERVA", "JARVIS"])
@@ -145,82 +145,8 @@ def test_the_load_and_every_prediction_use_one_function(clean, tmp_path):
     values = ep.layer_values((("NERVA_HOME", "/x"), ("A", "${JARVIS_HOME}/a"), ("B", "${NERVA_NOPE}/b"),
                               ("C", None), ("D", "${C}-${NERVA_HOME:-z}")), {"PATH": "/bin"})
     assert values.values == {"NERVA_HOME": "/x", "A": "/x/a", "B": "/b", "D": "-/x"}
-    assert values.empty == {"B": ("NERVA_NOPE",), "D": ("C",)}
-
-
-@pytest.mark.parametrize("spelling", ["NERVA", "JARVIS"])
-@pytest.mark.parametrize("line, names", [
-    ("{p}_FILE_ROOTS=${{{p}_USER_HOME}}/", ["FILE_ROOTS", "USER_HOME"]),
-    ("{p}_TERMINAL_LOCAL_ROOTS=${{TYPO_NAME}}/", ["TERMINAL_LOCAL_ROOTS", "TYPO_NAME"]),
-    ("{p}_KEY_DIR=${{{p}_HOME}}/keys", ["KEY_DIR", "HOME"]),
-    ("{p}_HA_URL=${{HA_ADDRESS}}", ["HA_URL", "HA_ADDRESS"]),
-    ("{p}_ADMIN_TOKEN=${{MY_TOKEN_VAR}}", ["ADMIN_TOKEN", "MY_TOKEN_VAR"]),
-    ("{p}_ALLOWED_HOSTS=nerva.local,${{TAILNET_NAME}}", ["ALLOWED_HOSTS", "TAILNET_NAME"]),
-    ("{p}_TRUSTED_PROXIES=${{PROXY_CIDR}}", ["TRUSTED_PROXIES", "PROXY_CIDR"]),
-    ("{p}_BLANK_REF=\n{p}_EXEC_TEMP_DIR=${{{p}_KEY_DIR}}/t", ["EXEC_TEMP_DIR", "KEY_DIR"]),
-])
-def test_a_sensitive_line_built_from_a_reference_to_nothing_stops_the_load(clean, tmp_path, spelling, line, names):
-    """The pre-existing JARVIS_ form of the mistake is caught too: the guard is about the
-    variable, not the spelling. Nothing of the file is in effect when it refuses."""
-    repo = _write(tmp_path / ".env", "PROV_BEFORE=1\n" + line.format(p=spelling) + "\n")
-    with pytest.raises(env_alias.ConfigurationRefused) as refused:
-        ep.load_layered_env(repo, None)
-    message = str(refused.value)
-    assert message.startswith("Refusing to start") and "repo .env" in message
-    assert f"{spelling}_{names[0]}" in message and "${" + (names[1] if "_" in names[1] and names[1].isupper()
-                                                           and not env_config.other_spelling("JARVIS_" + names[1])
-                                                           else f"{spelling}_{names[1]}") + "}" in message
-    assert "PROV_BEFORE" not in os.environ and f"JARVIS_{names[0]}" not in os.environ
-    spellings, conflicts, unsafe = ep.derive_alias(repo, None, {})
-    assert unsafe == {"repo_env": [f"{spelling}_{names[0]}"]} and conflicts == {}
-
-
-def test_what_the_guard_leaves_alone(clean, tmp_path):
-    """A default covers a reference; a reference that resolves is fine; a line that is not
-    a path, an endpoint, a credential or an allowlist keeps python-dotenv's behaviour; and
-    a name the load leaves out anyway (process-only) is not judged."""
-    repo = _write(tmp_path / ".env",
-                  "NERVA_KEY_DIR=${NOPE:-/etc/nerva}/keys\n"            # a default
-                  "NERVA_LOG_LEVEL=${NOPE}\n"                           # not sensitive: empty, as before
-                  "OTHER_TOOL_URL=${NOPE}/x\n"                          # not a hub variable
-                  "NERVA_HOME=${NOPE}/data\n"                           # process-only: recorded, never in effect
-                  "NERVA_HA_URL=${NOPE:-}\n")                           # an explicit empty default: deliberate
-    ep.load_layered_env(repo, None)
-    assert os.environ["JARVIS_KEY_DIR"] == "/etc/nerva/keys" and os.environ["JARVIS_LOG_LEVEL"] == ""
-    assert os.environ["OTHER_TOOL_URL"] == "/x" and "JARVIS_HOME" not in os.environ
-    assert os.environ["JARVIS_HA_URL"] == ""
-    assert ep.derive_alias(repo, None, {})[2] == {}
-
-
-@pytest.mark.parametrize("name", sorted(env_alias.PATH_TYPED))
-@pytest.mark.parametrize("spelling", ["NERVA", "JARVIS"])
-def test_a_path_typed_variable_at_the_filesystem_root_is_refused_from_any_layer(clean, tmp_path, name, spelling):
-    key = f"{spelling}_{name}"
-    for value in ("/", "//", "/srv/ok,/", " / "):
-        assert env_alias.unsafe_paths({key: value}) == [key], (key, value)
-        with pytest.raises(env_alias.ConfigurationRefused) as refused:
-            boot_guards.assert_parseable_posture_flags({key: value})
-        assert key in str(refused.value) and "filesystem root" in str(refused.value)
-    for value in ("/srv/nerva", "/srv/a,/srv/b", "", "relative/dir", "/a:/b"):
-        assert env_alias.unsafe_paths({key: value}) == []
-    if f"JARVIS_{name}" in ep.FROM_PROCESS_ONLY:
-        return                                              # a file cannot set it at all
-    repo = _write(tmp_path / ".env", f"{key}=${{NOPE:-}}/\n")       # the default hides nothing: it IS "/"
-    with pytest.raises(env_alias.ConfigurationRefused) as refused:
-        ep.load_layered_env(repo, None)
-    assert key in str(refused.value) and "repo .env" in str(refused.value)
-    assert f"JARVIS_{name}" not in os.environ
-
-
-def test_the_process_environment_at_the_root_stops_every_guard_and_the_load(clean, tmp_path):
-    clean.setenv("NERVA_FILE_ROOTS", "/")
-    env_alias.normalize_process_env()
-    for guard in (boot_guards.assert_parseable_posture_flags, boot_guards.enforce_boot_posture,
-                  lambda: ep.load_layered_env(_write(tmp_path / ".env", "PROV_X=1\n"), None)):
-        with pytest.raises(env_alias.ConfigurationRefused) as refused:
-            guard()
-        assert "NERVA_FILE_ROOTS" in str(refused.value) or "JARVIS_FILE_ROOTS" in str(refused.value)
-    assert "PROV_X" not in os.environ
+    assert {key: [(ref.name, ref.state, ref.leading) for ref in refs] for key, refs in values.empty.items()} == {
+        "B": [("NERVA_NOPE", ep.UNSET, True)], "D": [("C", ep.BLANK, False)]}
 
 
 def test_every_hub_variable_that_names_a_path_is_on_the_list():
@@ -243,54 +169,12 @@ def test_every_hub_variable_that_names_a_path_is_on_the_list():
     assert env_alias.PATH_TYPED - {"TERMINAL_SSH_KNOWN_HOSTS"} <= env_config.HUB_ENV_SUFFIXES
     assert not (not_a_path & env_alias.PATH_TYPED) and not_a_path <= env_config.HUB_ENV_SUFFIXES
     for suffix in env_alias.PATH_TYPED:
-        assert env_alias.path_typed("NERVA_" + suffix) and env_alias.reference_sensitive("JARVIS_" + suffix)
-    for name in ("JARVIS_HA_URL", "NERVA_LM_STUDIO_URL", "JARVIS_ADMIN_TOKEN", "NERVA_AUDIT_KEY", "JARVIS_HOST",
-                 "NERVA_ALLOWED_HOSTS", "JARVIS_TRUSTED_PROXIES", "NERVA_BROWSER_ALLOWED_DOMAINS",
-                 "JARVIS_CORS_ORIGINS", "NERVA_ROLE_VISION_BASE_URL", "JARVIS_ROLE_VIDEO_KEY",
-                 "NERVA_TLS_INSECURE_TARGETS", "JARVIS_MCP_STDIO_ALLOWED_ENV"):
-        assert env_alias.reference_sensitive(name), name
-    for name in ("JARVIS_PORT", "NERVA_LOG_LEVEL", "JARVIS_HARDENED", "OTHER_URL", "NERVA_HUB_URL"):
-        assert not env_alias.reference_sensitive(name), name
-
-
-def test_a_whole_hub_does_not_start_on_a_root_built_from_nothing(tmp_path):
-    """End to end, the reviewer's file: process NERVA_HOME/NERVA_USER_HOME, the documented
-    spelling in the .env — the roots are the directories, and a typo'd reference refuses."""
-    probe = ("import json, os, sys\n"
-             "from agents.core import env_provenance as ep, boot_guards\n"
-             "try:\n"
-             "    ep.load_layered_env(None, sys.argv[1]); boot_guards.assert_parseable_posture_flags()\n"
-             "    from agents.core.file_tools import ROOTS_ENV\n"
-             "    from agents.core.env_config import env_list\n"
-             "    print('OK' + json.dumps({'roots': env_list(ROOTS_ENV), 'key': os.environ.get('JARVIS_KEY_DIR')}))\n"
-             "except SystemExit as exc:\n"
-             "    print('REFUSED' + json.dumps(str(exc)))\n")
-    good = _write(tmp_path / "good.env", "NERVA_FILE_ROOTS=${NERVA_USER_HOME}/\nNERVA_KEY_DIR=${NERVA_HOME}/keys\n")
-    bad = _write(tmp_path / "bad.env", "NERVA_FILE_ROOTS=${NERVA_USR_HOME}/\n")
-    env = _child_env({"NERVA_HOME": str(tmp_path / "data"), "NERVA_USER_HOME": str(tmp_path / "home")})
-    out = subprocess.run([sys.executable, "-c", probe, str(good)], cwd=ROOT, env=env, capture_output=True,
-                         text=True, timeout=120)
-    assert out.returncode == 0, out.stderr[-2000:]
-    answer = json.loads(out.stdout.rsplit("OK", 1)[1])
-    assert answer == {"roots": [str(tmp_path / "home") + "/"], "key": str(tmp_path / "data" / "keys")}
-    out = subprocess.run([sys.executable, "-c", probe, str(bad)], cwd=ROOT, env=env, capture_output=True,
-                         text=True, timeout=120)
-    refusal = json.loads(out.stdout.rsplit("REFUSED", 1)[1])
-    assert "NERVA_FILE_ROOTS references ${NERVA_USR_HOME}" in refusal and "data-home .env" in refusal
-
-
-def test_the_doctor_fails_on_an_unsafe_value_and_names_it(tmp_path):
-    from scripts import doctor
-
-    root = tmp_path / "repo"
-    _write(root / ".env", "NERVA_FILE_ROOTS=${NERVA_USER_HOME}/\nNERVA_PORT=8081\n")
-    check = doctor.check_config_sources(root, {"PATH": "/usr/bin"})
-    assert check.status == doctor.FAIL and check.reason.startswith("env_unsafe_value:NERVA_FILE_ROOTS")
-    assert check.data["unsafe_values"] == {"repo_env": ["NERVA_FILE_ROOTS"]}
-    fine = doctor.check_config_sources(root, {"NERVA_USER_HOME": "/srv/nerva"})
-    assert fine.status == doctor.OK and "unsafe_values" not in fine.data
-    rooted = doctor.check_config_sources(tmp_path / "empty", {"JARVIS_KEY_DIR": "/"})
-    assert rooted.status == doctor.FAIL and rooted.data["unsafe_values"] == {"process": ["JARVIS_KEY_DIR"]}
+        assert env_alias.path_typed("NERVA_" + suffix) and env_alias.path_typed("JARVIS_" + suffix)
+    # by name, never by a substring: these only LOOK like paths, endpoints or files
+    for name in ("JARVIS_HOME_ASSISTANT", "JARVIS_FILE_TOOLS", "JARVIS_FILE_MAX_BYTES", "JARVIS_PLAYWRIGHT_HOST",
+                 "JARVIS_DESKTOP_HOST", "JARVIS_HOST", "JARVIS_HA_URL", "JARVIS_LOG_LEVEL", "NERVA_HUB_URL", "PATH"):
+        assert not env_alias.path_typed(name), name
+    assert not hasattr(env_alias, "reference_sensitive") and not hasattr(env_alias, "refuse_unsafe_paths")
 
 
 # ── B2: one rule, a truthful refusal, a supervisor that stops ───────────────────────

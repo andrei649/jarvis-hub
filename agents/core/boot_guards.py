@@ -42,8 +42,10 @@ spelling). The process environment and each ``.env`` layer are folded onto the
 ``NERVA_CHANNEL_OPEN`` is refused by the same parse check, and the guards that take a
 mapping of the caller's own read it under either spelling (``_get``). A variable set
 under both spellings with different values is refused first, by name
-(``env_alias.refuse_conflicts``), and so is a path-typed variable left at the filesystem
-root (``env_alias.refuse_unsafe_paths``: what ``${UNSET}/`` in a ``.env`` comes to).
+(``env_alias.refuse_conflicts``). A path-typed variable written out as the filesystem root
+is not refused: it gets one ``[SECURITY]`` line naming it. (A path that only *becomes* a
+root because a ``${...}`` reference in a ``.env`` expanded to nothing is refused where the
+file is loaded, ``env_provenance.judge``.)
 """
 
 from __future__ import annotations
@@ -234,12 +236,15 @@ def assert_parseable_posture_flags(environ: Mapping[str, str] | None = None) -> 
     ``os.environ`` by its own helper. (Hermes absorption 5b)
     """
     env = os.environ if environ is None else environ
-    # RB-2 — before any flag is parsed: one variable set under both spellings,
-    # differently; then a path-typed variable left at the filesystem root.
-    from agents.core.env_alias import refuse_conflicts, refuse_unsafe_paths
+    # RB-2 — before any flag is parsed: one variable set under both spellings, differently.
+    from agents.core.env_alias import refuse_conflicts, root_path_warning, root_paths
 
     refuse_conflicts(env)
-    refuse_unsafe_paths(env)
+    # A path the operator wrote out as the filesystem root boots, as it always did — and
+    # says so on the console, by name, so an open file scope is never silent.
+    rooted = root_paths(env)
+    if rooted:
+        print(f"[SECURITY] {root_path_warning(rooted, 'the environment the hub starts with')}")
     _unparseable_bool_flags(env, _PARSE_CRITICAL_BOOL_FLAGS)
     # Same rule, non-boolean flag: JARVIS_TASK_MEDIATION selects the B7 tamper-evidence
     # posture (off|hold|enforce) and its default, `off`, is the UNPROTECTED position — so

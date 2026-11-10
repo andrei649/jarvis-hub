@@ -39,7 +39,8 @@ EnvironmentFile=-/etc/jarvis-hub/jarvis.env
 # Restart policy — defense-in-depth over the in-process respawn loop.
 Restart=on-failure
 # 78 = the coordinator refused its configuration (one variable under both the NERVA_ and
-# the JARVIS_ spelling with different values, or a path at "/"): restarting cannot help.
+# the JARVIS_ spelling with different values, or a path/credential in .env built from a
+# ${...} reference that nothing sets): restarting cannot help.
 RestartPreventExitStatus=78
 RestartSec=5
 

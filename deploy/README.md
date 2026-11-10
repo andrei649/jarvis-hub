@@ -18,8 +18,9 @@ Both wire the H23.11 operability knobs (`JARVIS_HOST` / `JARVIS_PORT` /
 `JARVIS_RUNTIME_LOG` / `JARVIS_RUNTIME_STATE`) under the `JARVIS_` spelling. Override a
 pinned variable under that same spelling — in `jarvis.env`, or with the PowerShell
 script's parameters. `NERVA_HOST` beside the unit's `JARVIS_HOST` is one variable set
-twice with two values: the hub refuses to start and names it, and the runtime
-supervisor stops with exit status 78 instead of respawning. Every variable the launcher
+twice with two values: the hub refuses to start and names it. A refused configuration
+is exit status 78 from the hub and from the runtime supervisor, and neither unit (nor
+the NSSM service: `AppExit 78 Exit`) restarts on it. Every variable the launcher
 does not pin can be written either way. The full list is in
 [`docs/FLAGS.md`](../docs/FLAGS.md#variable-names--nerva_x-and-jarvis_x-are-one-variable-rb-2).
 

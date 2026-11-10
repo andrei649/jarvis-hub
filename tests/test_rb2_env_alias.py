@@ -394,7 +394,8 @@ def test_the_predictions_agree_with_the_load(files, clean, tmp_path):
                        "NERVA_PORT=9000\nNERVA_AUDIT_KEY=audit-key-from-home\n")
     shell = dict(os.environ)
     derived = ep.derive(repo, lambda env: Path(env["JARVIS_USER_HOME"]) / ".env", shell)
-    spellings, conflicts, unsafe = ep.derive_alias(repo, lambda env: Path(env["JARVIS_USER_HOME"]) / ".env", shell)
+    spellings, conflicts, refused, roots = ep.derive_alias(
+        repo, lambda env: Path(env["JARVIS_USER_HOME"]) / ".env", shell)
     merged = ep.after_repo_layer(repo, shell)
     assert merged["JARVIS_HARDENED"] == "1" and merged["JARVIS_USER_TOKEN"] == "shell-user-token"
     assert "NERVA_HARDENED" not in merged
@@ -405,7 +406,7 @@ def test_the_predictions_agree_with_the_load(files, clean, tmp_path):
     assert table["JARVIS_PORT"] == {"layer": "repo_env", "shadowed": ["user_env"]}
     assert table["JARVIS_USER_TOKEN"] == {"layer": "process", "shadowed": ["repo_env"]}
     assert spellings["JARVIS_PORT"] == "JARVIS_PORT" and spellings["JARVIS_AUDIT_KEY"] == "NERVA_AUDIT_KEY"
-    assert conflicts == {} and unsafe == {}
+    assert conflicts == {} and refused == {} and roots == {}
     _write(repo, "NERVA_HARDENED=1\nJARVIS_HARDENED=0\n")
     assert ep.derive_alias(repo, None, {"NERVA_ADMIN_TOKEN": "a", "JARVIS_ADMIN_TOKEN": "b"})[1] == {
         "process": ["JARVIS_ADMIN_TOKEN"], "repo_env": ["JARVIS_HARDENED"]}
@@ -690,13 +691,20 @@ def test_the_cli_refuses_a_variable_set_twice_differently_and_lets_the_doctor_ex
 
     for entry in (["scripts/nerva.py"], ["-m", "agents.cli"]):
         for suffix in ("ADMIN_TOKEN", "HOME", "HARDENED"):
-            code, out, err = run(entry, ["config", "env-path"],
-                                 {f"NERVA_{suffix}": NEW_VALUE, f"JARVIS_{suffix}": OLD_VALUE})
+            pair = {f"NERVA_{suffix}": NEW_VALUE, f"JARVIS_{suffix}": OLD_VALUE}
+            code, out, err = run(entry, ["status"], pair)
             assert code == 2 and f"NERVA_{suffix} / JARVIS_{suffix}" in err, (entry, suffix, err[-500:])
             assert NEW_VALUE not in out + err and OLD_VALUE not in out + err
+            # a verb that diagnoses or repairs a configuration is never refused: it says so, and runs
+            code, out, err = run(entry, ["config", "env-path"], pair)
+            assert code == 0 and "repo .env:" in out, (entry, suffix, err[-500:])
+            assert "warning: the hub will not start" in err and f"NERVA_{suffix} / JARVIS_{suffix}" in err
+            assert NEW_VALUE not in err and OLD_VALUE not in err
+            if suffix != "HOME":             # (the data root is what `config env-path` is asked to show)
+                assert NEW_VALUE not in out and OLD_VALUE not in out
         code, out, err = run(entry, ["config", "path"], {"NERVA_HOME": str(tmp_path / "data")})
         assert code == 0 and str(tmp_path / "data") in out, err[-500:]      # the new spelling names the root
-        code, out, err = run(entry, ["-p", "work", "config", "env-path"],
+        code, out, err = run(entry, ["-p", "work", "status"],
                              {"NERVA_PORT": "1", "JARVIS_PORT": "2"})         # any variable: refused
         assert code == 2 and "NERVA_PORT / JARVIS_PORT" in err, err[-500:]
         assert "under the SAME spelling the launcher uses" in err

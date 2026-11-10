@@ -1752,17 +1752,37 @@ file or compose file needs no change. This page and the code keep the `JARVIS_` 
   `${NERVA_HA_URL}` / `${env:NERVA_HA_URL}` reference in a setting.
 - **References in a `.env`.** `${NAME}` and `${NAME:-default}` resolve under either
   spelling of a hub variable, from the environment first and the file's earlier lines
-  second, in every layer. A line that defines a path, an address, a credential or an
-  allowlist from a `${NAME}` that nothing sets (and that has no `:-default`) is refused
-  at start, and so is a path-typed variable whose value is the filesystem root: before
-  this, `JARVIS_FILE_ROOTS=${UNSET}/` silently became `/`. The path-typed variables:
-  `HOME`, `USER_HOME`, `MEMORY_DIR`, `APP_ROOT`, `FILE_ROOTS`, `TERMINAL_LOCAL_ROOTS`,
-  `MEDIA_ROOTS`, `KEY_DIR`, `EXEC_TEMP_DIR`, `FORGET_ARCHIVE_DIR`,
-  `PLAYWRIGHT_DOWNLOAD_DIR`, `DRIVE_AI_DEST`, `EVAL_STORE`, `LOG_FILE`, `RUNTIME_LOG`,
-  `RUNTIME_STATE`, `SUBAGENT_SPAWN_LOG`, `CA_BUNDLE`, `WASM_PYTHON`,
-  `TERMINAL_SSH_KNOWN_HOSTS`.
+  second, in every layer, and (as python-dotenv always did) in every value, quoted or
+  not. For a `JARVIS_`-only file the values are exactly what they were, with three
+  exceptions — things python-dotenv did silently that nobody meant, which now stop the
+  start and name the variable (never a value):
+  1. a **path-typed** variable built from a reference that nothing sets
+     (`JARVIS_LOG_FILE=${LOGDIR}/hub.log` with no `LOGDIR` used to become `/hub.log`);
+  2. a path-typed variable that **opens with a reference that is set but empty**, a `/`
+     following (`JARVIS_FILE_ROOTS=${DATA}/` with `DATA=` used to become `/`);
+  3. a hub **credential** whose value contains a reference that nothing sets (part of
+     the token was dropped). If the `${` is part of the secret itself, set that variable
+     in the process environment, or write its dollar sign as `${LITERAL_DOLLAR:-$}`.
+
+  Everything else starts as before: a reference that is defined and blank (`HA_URL=`
+  then `JARVIS_HA_URL=${HA_URL}`, a feature switched off), an address, allowlist or flag
+  built from an unset reference (one warning names the variable), and any reference with
+  a `:-default`. A path **written out** as the filesystem root (`JARVIS_FILE_ROOTS=/`)
+  also starts, with one `[SECURITY]` line naming the variable; `nerva doctor` warns.
+  The path-typed variables, by name: `HOME`, `USER_HOME`, `MEMORY_DIR`, `APP_ROOT`,
+  `FILE_ROOTS`, `TERMINAL_LOCAL_ROOTS`, `MEDIA_ROOTS`, `KEY_DIR`, `EXEC_TEMP_DIR`,
+  `FORGET_ARCHIVE_DIR`, `PLAYWRIGHT_DOWNLOAD_DIR`, `DRIVE_AI_DEST`, `EVAL_STORE`,
+  `LOG_FILE`, `RUNTIME_LOG`, `RUNTIME_STATE`, `SUBAGENT_SPAWN_LOG`, `CA_BUNDLE`,
+  `WASM_PYTHON`, `TERMINAL_SSH_KNOWN_HOSTS`.
+- **A refused start is exit status 78**, from `serve.py` and from the coordinator, and
+  both systemd units and the Windows service are told not to restart on it
+  (`RestartPreventExitStatus=78`, `AppExit 78 Exit`). The tools that repair a broken
+  configuration are never refused: `scripts/token_recover.py`, `nerva doctor`,
+  `nerva config …`, `nerva support`, `nerva logs`, `nerva uninstall` and
+  `nerva completion` run and report what the hub will refuse.
 - **Seeing it.** `nerva doctor` (`config_sources`) marks each key still supplied under
-  the old spelling and fails on a conflict or an unsafe value; `/api/admin/env/sources`
+  the old spelling, fails on a conflict or a reference to nothing, and warns on a path
+  set to the filesystem root; `/api/admin/env/sources`
   reports `spelling`, `preferred` and `deprecated` per hub variable.
 
 ### Variables a launcher pins — override these as `JARVIS_<X>`
@@ -1772,7 +1792,11 @@ A launcher that sets a variable itself puts it in the process environment under 
 (`docker run -e`, a compose `environment:` or `env_file:`, a systemd `EnvironmentFile`),
 the hub sees one variable with two values and refuses to start; the message says that
 one of the two may be the launcher's. **Override a pinned variable under the spelling
-the launcher uses, or change the launcher's own line.**
+the launcher uses, or change the launcher's own line.** How to override depends on the
+launcher: with `docker run`, `-e JARVIS_PORT=…` replaces the image's value; in a systemd
+`EnvironmentFile`, a `JARVIS_PORT=…` line replaces the unit's `Environment=` value; under
+**compose, `environment:` beats `env_file:`, so a line in `.env` changes nothing — edit
+the compose file's own line.**
 
 | Launcher | Pins (always) |
 |---|---|

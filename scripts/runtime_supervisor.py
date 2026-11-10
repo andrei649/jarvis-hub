@@ -131,6 +131,12 @@ def _child_env() -> dict[str, str]:
     found = os.environ.get("JARVIS_RUNTIME_LOG") or _file_run_log()
     if found:
         env["JARVIS_RUNTIME_LOG"] = found
+    try:        # RB-2: the coordinator keeps this process's note of which names were spelled NERVA_
+        from agents.core.env_alias import hand_over
+
+        hand_over(env)
+    except Exception:  # noqa: BLE001  # nosec B110 - display-only; the app package may not import
+        pass
     return env
 
 

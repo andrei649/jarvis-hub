@@ -46,10 +46,12 @@ variables under the ``JARVIS_`` spelling (``docs/FLAGS.md`` lists them). The ref
 says so, and says the remedy: override a pinned variable under the spelling the
 launcher uses, or change the launcher's line.
 
-**Paths.** ``refuse_unsafe_paths`` is a second boot guard, for the variables that name
-a directory or a file (``PATH_TYPED``): a value that is the filesystem root is refused,
-under either spelling and from any layer. It is what stands between a mistyped
-``${...}`` reference that expanded to nothing and a file tool rooted at ``/``.
+**Paths.** ``PATH_TYPED`` names the variables whose value is a directory or a file.
+Nothing here refuses one for what it *is*: a root the operator wrote out
+(``JARVIS_FILE_ROOTS=/``) boots, as it always did, with one loud warning naming the
+variable (``root_paths``). What is refused is a path that a ``.env`` builds from a
+``${...}`` reference to nothing — that is decided where the reference is expanded
+(``env_provenance``), from the record of the expansion and never from the final string.
 
 **Which spelling was used** is the one thing a move forgets, and the operator is owed it
 (``/api/admin/env/sources`` and ``nerva doctor`` flag the deprecated spelling). It is kept
@@ -57,7 +59,9 @@ in the environment itself as a list of names — never values — under ``MARKER
 the hub is importable under two module names and both must see it. It is this process's
 own note: a value inherited from outside is discarded at the first fold, a ``.env`` file
 cannot write it, the admin env routes skip names that start with ``_``, and every
-child-process allowlist drops it.
+child-process allowlist drops it. The hub's own re-exec and the supervisor's spawn of the
+coordinator pass it on explicitly (``hand_over``: the marker plus the pid that vouches for
+it), so the note survives a self-restart; it is display-only, names and never values.
 
 Standard library only; never logs, prints or returns a value.
 """
@@ -65,6 +69,7 @@ Standard library only; never logs, prints or returns a value.
 from __future__ import annotations
 
 import os
+import posixpath
 import re
 import sys
 from collections.abc import Container, Mapping, MutableMapping
@@ -73,6 +78,7 @@ from typing import NamedTuple
 from .env_config import (
     DEPRECATED_PREFIX,
     PREFERRED_PREFIX,
+    env_str,
     other_spelling,
     resolve_spellings,
 )
@@ -80,6 +86,11 @@ from .env_config import (
 #: Names (never values) of the hub variables whose value in effect was supplied under
 #: the preferred spelling. See the module docstring.
 MARKER = "_NERVA_ENV_PREFERRED"
+
+#: Set beside the marker by a parent that passes it on: that parent's pid (``hand_over``).
+HANDOFF = "_NERVA_ENV_PREFERRED_PID"
+#: The hub's own notes in the environment: no ``.env`` file may set them.
+PRIVATE_NAMES = frozenset({MARKER, HANDOFF})
 
 #: Exit status of a process that stopped because its configuration is refused (sysexits'
 #: EX_CONFIG): retrying cannot help, so a supervisor must not respawn on it.
@@ -207,12 +218,27 @@ _FOLDED_FLAG = "_nerva_env_alias_folded"
 
 def normalize_process_env() -> Fold:
     """``normalize(os.environ)`` — the process-start step (see the module docstring). The
-    first call in a process also discards a spelling marker it inherited: that note is
-    never trusted from outside (a forked child keeps its parent's, being the same image)."""
+    first call in a process also discards a spelling marker it inherited, unless the
+    process that started this one handed it over (``hand_over``): the note is never
+    trusted from anywhere else (a forked child keeps its parent's, being the same image)."""
     if not getattr(sys, _FOLDED_FLAG, False):
-        os.environ.pop(MARKER, None)
+        vouched = os.environ.pop(HANDOFF, None)
+        # the hub re-executing itself keeps its pid; a spawned coordinator or successor
+        # names its parent (the successor may outlive it: serve.py records the same pid)
+        if not vouched or not (vouched in (str(os.getpid()), str(os.getppid()))
+                               or vouched == env_str("NERVA_RESTART_PREDECESSOR", None)):
+            os.environ.pop(MARKER, None)
         setattr(sys, _FOLDED_FLAG, True)
     return normalize(os.environ)
+
+
+def hand_over(environ: MutableMapping[str, str]) -> MutableMapping[str, str]:
+    """For the hub's own exec or spawn of the next hub process: vouch, with this
+    process's pid, for the spelling marker *environ* carries. Display-only; returns
+    *environ*."""
+    if environ.get(MARKER):
+        environ[HANDOFF] = str(os.getpid())
+    return environ
 
 
 def normalized(environ: Mapping[str, str]) -> dict[str, str]:
@@ -267,6 +293,7 @@ def refuse_conflicts(environ: Mapping[str, str] | None = None, *,
 #: ``<X>`` of the hub variables whose value names a directory or a file (one path, or a
 #: list of them). Measured from the readers in ``agents/`` and ``scripts/``; the test
 #: ``tests/test_rb2_review_fixes.py`` fails when a name that looks like one is missing.
+#: A variable is path-typed by being listed here, by name.
 PATH_TYPED = frozenset({
     "HOME", "USER_HOME", "MEMORY_DIR", "APP_ROOT",                      # where the hub's own files live
     "FILE_ROOTS", "TERMINAL_LOCAL_ROOTS", "MEDIA_ROOTS",                # what the tools may reach
@@ -274,62 +301,39 @@ PATH_TYPED = frozenset({
     "EVAL_STORE", "LOG_FILE", "RUNTIME_LOG", "RUNTIME_STATE", "SUBAGENT_SPAWN_LOG",
     "CA_BUNDLE", "WASM_PYTHON", "TERMINAL_SSH_KNOWN_HOSTS",
 })
-#: What a ``.env`` line may not be built from nothing for: the path-typed variables, and
-#: every hub variable that names an endpoint, a credential or an allowlist.
-_REFERENCE_SENSITIVE = re.compile(
-    r"(?:^|_)(?:URL|URLS|ORIGIN|ORIGINS|HOST|HOSTS|TOKEN|KEY|SECRET|PASSWORD|ALLOWED|ALLOWLIST|DOMAINS"
-    r"|TARGETS|PROXIES|PROXY|ROOTS|ROOT|DIR|HOME|PATH|FILE|STORE)(?:_|$)")
 _DRIVE_ROOT = re.compile(r"[A-Za-z]:[\\/]*\Z")
-_LIST_SEPARATORS = re.compile("[,;\n" + re.escape(os.pathsep) + "]")   # how the roots lists are split
 
 
 def path_typed(name: str) -> bool:
-    """Whether the hub variable *name* (either spelling) names a directory or a file."""
+    """Whether the hub variable *name* (either spelling) names a directory or a file:
+    exactly the names in ``PATH_TYPED``, never a guess from a substring."""
     key = canonical(name)
     return key.startswith(DEPRECATED_PREFIX) and key[len(DEPRECATED_PREFIX):] in PATH_TYPED
 
 
-def reference_sensitive(name: str) -> bool:
-    """Whether a ``${...}`` reference that expands to nothing may not build the hub
-    variable *name*: a path, an endpoint, a credential or an allowlist."""
-    key = canonical(name)
-    if other_spelling(key) is None:
-        return False
-    suffix = key[len(DEPRECATED_PREFIX):]
-    return suffix in PATH_TYPED or _REFERENCE_SENSITIVE.search(suffix) is not None
-
-
-def _is_filesystem_root(entry: str) -> bool:
-    entry = entry.strip().strip("'\"")
-    return bool(entry) and (not entry.strip("/\\") or _DRIVE_ROOT.match(entry) is not None)
-
-
-def unsafe_paths(environ: Mapping[str, str] | None = None) -> list[str]:
-    """The path-typed hub variables whose value, or one entry of whose list, is the
-    filesystem root (``/``, ``//``, ``C:\\``), as spelled in *environ* (sorted names)."""
+def root_paths(environ: Mapping[str, str] | None = None) -> list[str]:
+    """The path-typed hub variables whose whole value is literally a filesystem root
+    (``/``, ``//``, ``/.``, ``/tmp/..``, ``C:\\``), as spelled in *environ* (sorted names). For a warning: a
+    root an operator wrote out is theirs to choose, and the value is not parsed as a
+    list (each variable has its own syntax; none is reinterpreted here)."""
     environ = os.environ if environ is None else environ
-    found = set()
+    found = []
     for key, value in list(environ.items()):
-        if isinstance(key, str) and path_typed(key) and any(
-                _is_filesystem_root(entry) for entry in _LIST_SEPARATORS.split(str(value))):
-            found.add(key)
+        if not (isinstance(key, str) and path_typed(key)):
+            continue
+        text = str(value).strip()
+        # "/", "//", "/.", "/tmp/.." — what the string says, nothing looked up on disk
+        if text and (not posixpath.normpath(text.replace("\\", "/")).strip("/")
+                     or _DRIVE_ROOT.match(text) is not None):
+            found.append(key)
     return sorted(found)
 
 
-def unsafe_path_message(names, where: str = PROCESS_ENVIRONMENT) -> str:
-    return ("Refusing to start: " + ", ".join(names) + f" — set to the filesystem root in {where}.\n"
-            "A variable that names where the hub keeps its files, or what its tools may reach, is never "
-            "the root of the filesystem. This is what a ${...} reference to a variable that is not set "
-            "leaves behind (\"${NAME}/\" becomes \"/\"): name the directory itself, or fix the reference.")
-
-
-def refuse_unsafe_paths(environ: Mapping[str, str] | None = None, *,
-                        where: str = PROCESS_ENVIRONMENT) -> None:
-    """The boot guard for paths: stop when a path-typed hub variable is the filesystem
-    root. Names the variable, never a value."""
-    names = unsafe_paths(environ)
-    if names:
-        raise ConfigurationRefused(unsafe_path_message(names, where))
+def root_path_warning(names, where: str = PROCESS_ENVIRONMENT) -> str:
+    """The loud line for a literal root: the variables, never a value."""
+    return (", ".join(names) + f" {'is' if len(names) == 1 else 'are'} set to the filesystem root in "
+            f"{where}: everything on this machine is inside what {'it names' if len(names) == 1 else 'they name'}. "
+            "If that is not what you meant, name the directory itself.")
 
 
 def spelling_info(key: str, environ: Mapping[str, str] | None = None) -> dict:
@@ -349,9 +353,9 @@ def supplied_name(name: str, environ: Mapping[str, str] | None = None) -> str:
 
 
 __all__ = [
-    "CONFIG_REFUSED_EXIT", "ConfigurationRefused", "DEPRECATED_PREFIX", "Fold", "MARKER", "PATH_TYPED",
-    "PREFERRED_PREFIX", "PROCESS_ENVIRONMENT", "canonical", "conflict_message", "conflicts", "fold", "lookup",
-    "normalize", "normalize_process_env", "normalized", "path_typed", "preferred_name", "preferred_supplied",
-    "refuse_conflicts", "refuse_unsafe_paths", "reference_sensitive", "spelling_info", "supplied_name",
-    "unsafe_path_message", "unsafe_paths",
+    "CONFIG_REFUSED_EXIT", "ConfigurationRefused", "DEPRECATED_PREFIX", "Fold", "HANDOFF", "MARKER",
+    "PATH_TYPED", "PREFERRED_PREFIX", "PRIVATE_NAMES", "PROCESS_ENVIRONMENT", "canonical", "conflict_message",
+    "conflicts", "fold", "hand_over", "lookup", "normalize", "normalize_process_env", "normalized", "path_typed",
+    "preferred_name", "preferred_supplied", "refuse_conflicts", "root_path_warning", "root_paths",
+    "spelling_info", "supplied_name",
 ]
