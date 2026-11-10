@@ -526,6 +526,15 @@ Executor = Callable[[Task], Awaitable[dict]]
 Notifier = Callable[[Task], Awaitable[bool]]
 
 
+#: H484 — deciders that are not a person. Under the approval mode ``off`` an approval by
+#: one of these (or by a decider not listed anywhere: unknown is a machine) does not run.
+#: The checkpoint controller's set, plus the auxiliary model and the runtime.
+MACHINE_DECIDERS = frozenset({"", "policy", "system", "kernel", "auto", "worker", "scheduler",
+                              "smart_approval", "owner_once", "consent", "aux_llm", "runtime"})
+#: The decisions that are a person's approval.
+HUMAN_APPROVALS = frozenset({"accept", "approve", "edit"})
+
+
 class _ExecutionPermit:
     """Shared one-use permit that cannot be replayed by a copied ContextVar."""
 
@@ -668,6 +677,7 @@ class AutonomyWorker:
             self.policy.outcome_provider = self._capability_outcome_stats
         self.executor = executor
         self._parallel_tick_lock = asyncio.Lock()
+        self._recall_refused: set[int] = set()     # H484: logged once, not every tick
         self.notifier = notifier
         self.budget = budget or InterruptBudget()
         self.delivery_broker = delivery_broker or getattr(self.budget, "delivery_broker", None)
@@ -1217,36 +1227,71 @@ class AutonomyWorker:
             by_mode = recalled or (
                 decision is not None and decision.outcome == ASK
                 and str(getattr(decision, "reason", "")).startswith(MODE_REASON))
-            record(task.id, {"mode": mode, "source": source, "global": overall, "by_mode": by_mode})
+            record(task.id, {"mode": mode, "source": source, "global": overall, "by_mode": by_mode,
+                             "recalled": recalled})
         except Exception:
             logger.warning("ask context unavailable for task %s", getattr(task, "id", "?"), exc_info=True)
 
-    def _recalled_by_off(self, task: Task) -> bool:
-        """H484 — True when *task* must not run now: it was approved by the policy alone
-        (never by a human) and the approval mode that applies to its agent is ``off``.
-        The task returns to the decision inbox; if the store will not take that
-        transition it stays approved and simply does not run while the mode is off."""
-        if task.decided_by != "policy":
+    @staticmethod
+    def _human_approved(task: Task) -> bool:
+        """H484 — whether a person approved *task*: a decider that is not a machine
+        (``MACHINE_DECIDERS``; an empty or unknown one counts as a machine) whose decision
+        is an approval, or one the queue recorded a human decision for."""
+        decider = str(task.decided_by or "").strip().lower()
+        if decider in MACHINE_DECIDERS:
             return False
+        return task.decision in HUMAN_APPROVALS or bool(task.human_decision)
+
+    def _recalled_by_off(self, task: Task) -> bool:
+        """H484 — True when *task* must not run now: the approval mode that applies to its
+        agent is ``off`` and no person approved it — the policy, the smart reviewer, a
+        standing consent, or a decider this code does not know did. The task returns to
+        the decision inbox, whatever its attention mode; if the store will not take that
+        transition it stays approved and does not run while the mode is off."""
         effective = getattr(self.policy, "effective_mode", None)
         try:
             if not callable(effective) or effective(task.agent) != "off":
                 return False
         except Exception:
             return False
+        if self._human_approved(task):
+            return False
         try:
             blocked = self.queue.transition(
                 task.id, TaskStatus.BLOCKED, decided_by="policy", decision="needs-approval",
                 expected_status=TaskStatus.APPROVED,
             )
-        except TaskQueueError:
-            logger.warning("approval mode off: task %s is held, not run", task.id, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 — whatever refused it, the task does not run
+            if task.id not in self._recall_refused:
+                self._recall_refused.add(task.id)
+                logger.warning("approval mode off: task %s is held, not run (%s: it could not be "
+                               "returned to the inbox)", task.id, type(exc).__name__)
             return True
+        self._recall_refused.discard(task.id)
         self._record_ask_context(blocked, recalled=True)
         self._audit("autonomy.recalled_by_off", blocked, "approval mode off — returned to the owner")
         if blocked.attention_mode == "interrupt":
             self._schedule_push(blocked)
         return True
+
+    def _receipt_refused(self, task: Task, result) -> dict | None:
+        """H484 — the failure record for an approved task whose handler ran nothing because
+        the kernel queued its action instead of honouring the approval (it honours an
+        approval receipt only while the approval mode is ``auto``). Such a task is not
+        done: it failed, and its result says why and what to do. None otherwise."""
+        if not (isinstance(result, dict) and result.get("status") == "failed"
+                and result.get("reason") == "kernel_queued"):
+            return None
+        effective = getattr(self.policy, "effective_mode", None)
+        try:
+            mode = effective(task.agent) if callable(effective) else None
+        except Exception:
+            mode = None
+        if mode not in ("ask", "off"):
+            return None
+        return {**result, "error": (
+            f"not run: the approval mode is {mode}, and an approval of this kind of action takes "
+            "effect only in auto. Set the approval mode to auto and propose it again.")}
 
     def _strictest_level(self, requested: str, decided: str) -> str:
         rank = self._LEVEL_RANK
@@ -2030,6 +2075,13 @@ class AutonomyWorker:
                             result=_retry_record(e, failures=failures, recorded=recorded_before),
                         )
                         logger.info(f"Task #{task.id} failed (attempt {attempts}), will retry: {e}")
+                    continue
+                refused = self._receipt_refused(task, result)
+                if refused is not None:
+                    # Nothing ran: never "done". Not an attempt of the capability either.
+                    self.queue.transition(task.id, TaskStatus.FAILED, result=refused)
+                    self._audit("autonomy.failed", task, "approval not honoured: approval mode is not auto")
+                    failed += 1
                     continue
                 try:
                     if (task.kind == "toolrpc.terminal_run"

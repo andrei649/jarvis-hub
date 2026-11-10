@@ -631,7 +631,7 @@ class AutonomyCoordinator:
                         max_tier = 1  # reversible/read-only only
                 dispatch_settings_unavailable = False
                 try:
-                    dispatch_enabled = amode != "off" and all(
+                    dispatch_enabled = amode not in ("off", "unknown") and all(
                         self._orch.get_setting(key, False) is True
                         for key in ("llm.kanban", "llm.kanban_dispatch", "llm.tool_loop_enabled")
                     )
@@ -658,7 +658,7 @@ class AutonomyCoordinator:
                 except Exception:
                     logger.warning("Kanban dispatcher intake failed", exc_info=True)
                 # Proactive passes self-generate new tasks — paused entirely in OFF mode.
-                if amode != "off":
+                if amode not in ("off", "unknown"):
                     # Sample the host and turn state changes into gated tasks.
                     if self._orch.observer and self._orch.get_setting(
                         "system.observer_enabled", True

@@ -133,6 +133,12 @@ def _audited_values(category: str, values: dict) -> str:
     kinds = {(row["category"], row["key"]): row.get("kind") for row in settings_db.DEFAULTS}
     parts = []
     for key in sorted(values):
+        if (category, key) == ("autonomy", "agent_modes"):
+            # H484: a validated map of agent id → mode; the row says what the write made it.
+            from agents.core.autonomy.mode import _map_text
+
+            parts.append(f"agent_modes={_map_text(values[key])}")
+            continue
         if key in settings_db.SECRET_KEYS or kinds.get((category, key)) not in _VALUE_AUDITED_KINDS:
             continue
         try:
@@ -189,8 +195,14 @@ def _selection_write_refusal(exc: Exception) -> JSONResponse:
 
 
 async def _drain_settings_write(fn, *args, **kwargs):
-    """A cancelled request waits for its already-started durable write outcome."""
-    task = asyncio.create_task(asyncio.to_thread(fn, *args, **kwargs))
+    """A cancelled request waits for its already-started durable write outcome.
+
+    H484: every settings write (a category PUT, an import, a reset, a reseed, an undo)
+    runs under the approval-mode lock and brings the live policy to what the store then
+    holds before the lock is released (``autonomy.mode.locked_settings_write``)."""
+    from agents.core.autonomy.mode import locked_settings_write
+
+    task = asyncio.create_task(asyncio.to_thread(locked_settings_write, get_orch(), fn, *args, **kwargs))
     cancelled = False
     while not task.done():
         try:
@@ -291,8 +303,6 @@ async def admin_put_category(category: str, body: AdminPutBody):
         await _audit_settings_change(category, changed, values)
         if retention.retention_part({category: {k: values[k] for k in changed}}):
             await _lower_approval()
-        if category == "autonomy" and {"mode", "agent_modes"} & set(changed):
-            _apply_approval_mode()
     resp = {"updated": updated, "category": category}
     if skipped:
         resp["skipped"] = skipped
@@ -301,24 +311,6 @@ async def admin_put_category(category: str, body: AdminPutBody):
     if pending is not None:
         return JSONResponse({**resp, "pending": pending["pending"], "gated": gated}, status_code=202)
     return resp
-
-
-def _apply_approval_mode() -> None:
-    """H484 — a settings write of the approval mode or the per-agent overrides reaches
-    the live policy at once (reload, then ``autonomy.mode.sync_policy``), not on the next
-    settings reload and coordinator tick."""
-    orch = get_orch()
-    if orch is None:
-        return
-    try:
-        from agents.core.autonomy.mode import sync_policy
-
-        reload = getattr(orch, "load_runtime_settings", None)
-        if callable(reload):
-            reload()
-        sync_policy(orch)
-    except Exception:  # noqa: BLE001 — the write stands; the coordinator's tick syncs it
-        logger.warning("approval mode: the live policy was not updated at once", exc_info=True)
 
 
 async def _retention_gate(changes: dict, *, confirm: bool = False) -> tuple[list, dict, dict | None]:

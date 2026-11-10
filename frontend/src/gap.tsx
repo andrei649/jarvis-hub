@@ -11,6 +11,7 @@ import { navigateHud, routeHref } from './hud-routing';
 import { apiGet, apiPost, apiPut, apiPatch, apiDelete, actionFailures, onActionFailure, clearActionFailures } from './api/client';
 import { localModelStatus } from './api/live';
 import { approvalModeNote } from './api/loaders';
+import { setAgentAutonomyMode, agentModeRefusalNote } from './api/actions';
 import { OperatorPanel } from './operator-panel';
 import { CoachPanel } from './panels/coach';
 import { DocsPanel, docHref, sectionIndex } from './panels/docs';
@@ -3778,7 +3779,15 @@ export function AgentAutonomyPanel() {
   const entries = Object.keys(agents).map((k) => [k, agents[k]]);
   const [agent, setAgent] = useState('');
   const [mode, setMode] = useState('ask');
-  const setPolicy = (ag, m) => actA('/autonomy/policy', { agent: ag, mode: m }, reload);
+  // H484: a refused override write (422 invalid agent, 503 not saved / not in force) is
+  // shown with what the agent actually runs — it used to be ignored.
+  const [refusal, setRefusal] = useState(null);
+  const setPolicy = (ag, m) => {
+    setRefusal(null);
+    return setAgentAutonomyMode(ag, m)
+      .then((r) => { setRefusal(agentModeRefusalNote(ag, m, r)); reload(); })
+      .catch(() => { setRefusal(`${ag}: ${m} was not applied (the hub refused the request)`); });
+  };
   const modeColor = (m) => m === 'auto' ? 'var(--green)' : m === 'ask' ? 'var(--amber)' : m === 'off' ? 'var(--red)' : 'var(--ink-2)';
   return (
     <Card title="PER-AGENT AUTONOMY" live={asLive(d)} sub={d ? `global: ${globalMode}` : null} onReload={reload}>
@@ -3793,6 +3802,8 @@ export function AgentAutonomyPanel() {
         </Row>
       ))}
       {entries.length === 0 && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>no overrides · every agent follows the global mode ({globalMode})</div>}
+      {globalMode === 'off' && entries.length > 0 && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>the global mode is off: no override applies</div>}
+      {refusal && <div role="alert" style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>{refusal}</div>}
       <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
         <input value={agent} onChange={(ev) => setAgent(ev.target.value)} placeholder="agent" style={{ ...inpS, flex: 1 }} />
         <select value={mode} onChange={(ev) => setMode(ev.target.value)} style={{ ...inpS }}>

@@ -1735,6 +1735,8 @@ def _write_setting(settings: Any, name: str, category: str, key: str, value: Any
             guards.record(findings, "cli", _audit_log())
         except guards.ConsentNotRecorded as exc:
             return [f"{name}: {exc}"]
+    approval_key = category == "autonomy" and key in ("mode", "agent_modes")
+    before = settings.get_value(category, key) if approval_key else None
     try:
         if pair_state is not None:
             settings.put_category(category, {key: value},
@@ -1745,6 +1747,11 @@ def _write_setting(settings: Any, name: str, category: str, key: str, value: Any
         return [f'{name}: compatible provider/model changed or busy — not changed, retry']
     except sqlite3.OperationalError as exc:
         return [f"{name}: {_busy(exc)}"]
+    if approval_key:
+        # H484: the approval dial written straight to the store is on the audit log too.
+        from agents.core.autonomy.mode import audit_offline_write
+
+        audit_offline_write(_audit_log(), key, before, value, actor="owner", surface="cli")
     if f"{category}.{key}" in retention.RETENTION_KEYS:
         # H262 review — a narrowing is a human decision too: the approval is lowered to it,
         # so deepening again later needs a new approval (never raised here).
@@ -2331,7 +2338,26 @@ def _cmd_approvals_mode(ns: argparse.Namespace, ctx: Context) -> int:
     if wanted is None:
         ctx.err.write("mode must be auto|ask|off (manual and smart are read as ask and auto)\n")
         return EXIT_USAGE
-    reply = ctx.client().post("/autonomy/mode", {"mode": wanted})
+    client = ctx.client()
+    try:
+        reply = client.post("/autonomy/mode", {"mode": wanted})
+    except HubError as exc:
+        if exc.status != 503:
+            raise
+        # The hub saved nothing, or saved it but runs another mode: say which is in force.
+        try:
+            now = client.get("/autonomy/policy")
+        except (HubError, HubUnavailable):
+            now = None
+        live = now.get("global") if isinstance(now, Mapping) else None
+        if live not in _APPROVAL_MODES:
+            ctx.err.write(f"approval mode {wanted} was not confirmed by the hub\n")
+        elif live == wanted:
+            ctx.err.write(f"approval mode in force: {live} (the hub did not confirm the write; "
+                          "check `nerva approvals mode` again)\n")
+        else:
+            ctx.err.write(f"approval mode in force: {live}; {wanted} did not take effect\n")
+        return EXIT_FAILED
     effective = reply.get("mode") if isinstance(reply, Mapping) else None
     if effective != wanted or reply.get("ok") is not True:
         ctx.err.write(f"approval mode {wanted} did not become effective"

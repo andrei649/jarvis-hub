@@ -159,7 +159,9 @@ def test_in_safe_mode_each_loosening_setting_is_put_back(monkeypatch):
     assert out["llm.guest_tools"] == ["echo"]
     assert out["llm.cloud_fallback"] == "on-demand"
     assert out["product.posture"] == "off"
-    assert "autonomy.agent_modes" not in out and "learning.auto_promote" not in out
+    assert "learning.auto_promote" not in out
+    # H484: an override that is not a mode reads as ask, which asks more: it is kept.
+    assert out["autonomy.agent_modes"] == {"jarvis": "ask"}
     assert out["llm.temperature"] == 1.3                                 # not a loosening key
     for key in safe_mode.FORCED_SETTINGS:                                 # a missing key: the default
         assert key in out
@@ -636,3 +638,44 @@ def test_the_banner_names_every_layer():
     labels = source.split("LABELS", 1)[1].split("}", 1)[0]
     for layer in safe_mode.LAYERS:
         assert f"{layer}:" in labels, layer
+
+
+# ── H484: the per-agent approval overrides in safe mode ──────────────────────
+
+
+def test_safe_mode_keeps_the_overrides_that_ask_more_and_drops_the_looser(monkeypatch):
+    stored = {"friday": "off", "trader": "ask", "scout": "auto", "odd": "yolo", "blank": " ",
+              "smart": "smart", "manual": "manual", "false": False}
+    settings_db.put_category("autonomy", {"agent_modes": stored})
+    assert safe_mode.get_value("autonomy", "agent_modes", {}) == stored
+    assert safe_mode.override_settings({"autonomy.agent_modes": stored})["autonomy.agent_modes"] == stored
+    _on(monkeypatch)
+    kept = {"friday": "off", "trader": "ask", "odd": "ask", "manual": "ask", "false": "off"}
+    assert safe_mode.get_value("autonomy", "agent_modes", {}) == kept              # the boot read
+    assert safe_mode.override_settings({"autonomy.agent_modes": stored})["autonomy.agent_modes"] == kept
+    assert safe_mode.status()["skipped"] == ["settings_overrides"]
+
+
+def test_safe_mode_moves_nothing_when_every_override_already_asks_more(monkeypatch):
+    _on(monkeypatch)
+    flat = {"autonomy.agent_modes": {"friday": "off", "trader": "ask"}}
+    served = safe_mode.override_settings(flat)
+    assert served["autonomy.agent_modes"] == {"friday": "off", "trader": "ask"}
+    assert "autonomy.agent_modes" not in safe_mode.override_settings({"autonomy.agent_modes": {"scout": "auto"}})
+    assert "autonomy.agent_modes" not in safe_mode.override_settings({"autonomy.agent_modes": "friday=auto"})
+
+
+def test_in_safe_mode_no_agent_asks_less_than_it_does_outside(monkeypatch):
+    from agents.core.autonomy.mode import resolve
+
+    stored = {"friday": "off", "trader": "ask", "scout": "auto", "odd": "yolo"}
+    rank = {"auto": 0, "ask": 1, "off": 2}
+    for overall in ("auto", "ask", "off"):
+        monkeypatch.delenv(safe_mode.ENV_NAME, raising=False)
+        normal = {agent: resolve(overall, stored.get(agent))[0] for agent in (*stored, "other")}
+        _on(monkeypatch)
+        served = safe_mode.stricter_overrides(stored)
+        safe = {agent: resolve(overall, served.get(agent))[0] for agent in (*stored, "other")}
+        for agent in normal:
+            # `scout` (auto under a global ask) is the one loosening override: safe mode drops it.
+            assert rank[safe[agent]] >= rank[normal[agent]], (overall, agent)

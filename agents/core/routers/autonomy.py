@@ -216,6 +216,15 @@ def _task_judge_status(orch) -> dict:
     return {"judge": status} if status.get("configured") else {}
 
 
+def _recalled_waiting(orch) -> int:
+    """H484 — how many tasks `off` returned to the inbox still wait there."""
+    count = getattr(getattr(orch, "autonomy_queue", None), "recalled_waiting", None)
+    try:
+        return int(count()) if callable(count) else 0
+    except Exception:
+        return 0
+
+
 #: The statuses in which a task is an approval card (it waits on the owner).
 _WAITING_STATUSES = frozenset({"proposed", "blocked", "deferred"})
 
@@ -548,6 +557,8 @@ async def autonomy_set_mode(body: AutonomyModeBody):
         # live policy keeps the stricter mode until they agree. Not a success.
         return JSONResponse({"error": "mode_not_effective", "requested": result["mode"],
                              "live": result["live"], "was": result["was"],
+                             "held": approval_mode.stricter(result["live"], result["mode"]) == result["live"]
+                             and result["live"] != result["mode"],
                              "audited": result["audited"]}, status_code=503)
     return nocache_json({"mode": result["mode"], "ok": True, "was": result["was"],
                          "audited": result["audited"], "effective": True,
@@ -587,18 +598,30 @@ async def autonomy_set_policy(body: AutonomyPolicyBody):
         return JSONResponse({"error": "not initialized"}, status_code=503)
     from agents.core.autonomy import mode as approval_mode
 
-    agent = body.agent.strip()
+    agent = body.agent
     mode = str(body.mode or "").strip().lower()
-    if not agent or mode not in (*approval_mode.MODES, "default"):
+    if mode not in (*approval_mode.MODES, "default"):
         return JSONResponse({"error": "mode must be auto|ask|off|default"}, status_code=422)
+    # H484: a well-formed id of an agent this hub has (or a documented special id). An
+    # override that is already stored can always be cleared, whoever it names.
+    problem = approval_mode.agent_id_problem(agent) or (
+        None if mode == "default" else approval_mode.roster_problem(orch, agent))
+    if problem:
+        return JSONResponse({"error": "invalid_agent", "detail": problem}, status_code=422)
     try:
         result = await asyncio.to_thread(
             approval_mode.set_agent_mode, orch, agent, mode, actor="admin", surface="api")
     except approval_mode.ModeNotSaved:
         return JSONResponse({"error": "mode_not_saved"}, status_code=503)
+    if not result["effective"]:
+        # Saved, but not what the agent runs (safe mode serves no looser override; or the
+        # store could not be read back). Not a success: say what is in force.
+        return JSONResponse({"error": "mode_not_effective", "agent": agent, "requested": result["mode"],
+                             "live": approval_mode.describe(orch, agent)["effective"],
+                             "agents": result["agents"], "audited": result["audited"]}, status_code=503)
     return nocache_json({"ok": True, "agent": agent, "mode": result["mode"],
                          "agents": result["agents"], "audited": result["audited"],
-                         "effective": result["effective"],
+                         "effective": True,
                          "looser": approval_mode.looser_overrides(orch)})
 
 
@@ -672,6 +695,7 @@ async def autonomy_approvals():
     return nocache_json({
         "pending": annotated,
         "mode": approval_mode.global_mode(orch),
+        "recalled_waiting": _recalled_waiting(orch),
         **_task_judge_status(orch),
         "reversible": reversible,
         "irreversible": irreversible,

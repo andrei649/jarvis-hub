@@ -2,7 +2,7 @@ import { appUrl } from './base-path';
 import React, { useState as uS2, useEffect as uE2, useMemo } from 'react';
 import { V2, Conversation, InputBar } from './ui';
 import { Icon as Ic, ICONS as IK, Glyph as Gl } from './ui';
-import { installSkill, getAutonomyMode, setAutonomyMode, getNorthStar } from './api/actions';
+import { installSkill, getAutonomyMode, setAutonomyMode, modeRefusalNote, getNorthStar } from './api/actions';
 import { getToken } from './api/client';
 import { WorldIntelligencePanel } from './world-intelligence';
 /* HUD v2 · MODES II — Autonomy, Build, Observe, Interop */
@@ -27,12 +27,24 @@ function AutonomyMode({ t }){
   // the proactive loop is paused. Per-agent rows below are informational.
   const [mode, setMode] = uS2(null);     // null until loaded
   const [busy, setBusy] = uS2(false);
+  const [modeNote, setModeNote] = uS2(null);   // H484: why a write did not take effect
   uE2(()=>{ let ok=true; getAutonomyMode().then(r=>{ if(ok&&r&&r.mode) setMode(String(r.mode).toLowerCase()); }).catch(()=>{}); return ()=>{ok=false;}; }, []);
   const choose = async (m)=>{
     if(busy||m===mode) return;
-    const prev = mode; setMode(m); setBusy(true);
-    try { const r = await setAutonomyMode(m) as { mode?: string } | null; if(r&&r.mode) setMode(String(r.mode).toLowerCase()); }
-    catch { setMode(prev); }   // revert on failure (e.g. needs admin token)
+    const prev = mode; setMode(m); setBusy(true); setModeNote(null);
+    try {
+      const r = await setAutonomyMode(m) as { mode?: string } | null;
+      // H484: a refused write shows the mode IN FORCE (the hub's `live`, or what it
+      // reports when asked) and why — never the clicked mode, never a silent revert.
+      const refused = modeRefusalNote(m, r);
+      if (refused) {
+        let live = refused.live;
+        if (!live) { try { const now = await getAutonomyMode(); if (now && now.mode) live = String(now.mode).toLowerCase(); } catch { /* keep prev */ } }
+        setMode(live || prev);
+        setModeNote(refused.text);
+      } else if(r&&r.mode) setMode(String(r.mode).toLowerCase());
+    }
+    catch { setMode(prev); setModeNote(m.toUpperCase()+' was not applied (the hub refused the request).'); }
     finally { setBusy(false); }
   };
   const MODES = ['auto','ask','off'];
@@ -88,10 +100,11 @@ function AutonomyMode({ t }){
             {MODES.map(m=>(
               <button key={m} className={'pmode '+m+(mode===m?' on':'')} aria-pressed={mode===m}
                 disabled={busy||mode==null} onClick={()=>choose(m)}
-                title={m==='auto'?'balanced — low-risk acts, risky asks':m==='ask'?'everything with a side-effect waits for approval':'nothing auto-runs; proactive loop paused'}
+                title={m==='auto'?'balanced — low-risk acts, risky asks; a payment inside your money caps runs':m==='ask'?'everything with a side-effect waits for approval':'nothing a machine approved runs; proactive loop paused; no per-agent override loosens it'}
                 style={mode===m?{}:{opacity:.7}}>{m.toUpperCase()}</button>
             ))}
           </div>
+          {modeNote && <div role="alert" className="pol-note" style={{color:'var(--amber)'}}>{modeNote}</div>}
           <div className="pol-note">Global <b>AUTO / ASK / OFF</b> (live). Per-task approvals run via the Console (accept / edit / reject / defer).</div>
           <SubH style={{marginTop:14}}>PER-AGENT SCOPE · reference</SubH>
           {policies.map((p,i)=>(

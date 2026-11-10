@@ -79,7 +79,12 @@ def writes(monkeypatch):
             store.update({f"{category}.{key}": value for key, value in values.items()})
         return len(values), []
 
+    def read(key, default):                # the store the doubles share: the latest one's
+        return _stores[-1].get(f"autonomy.{key}", default) if _stores else default
+
     monkeypatch.setattr(mode_module, "_put_category", put_category)
+    monkeypatch.setattr(mode_module, "_read_store", read)
+    monkeypatch.setattr(mode_module, "_read_raw", read)
     return seen
 
 
@@ -88,7 +93,9 @@ def writes(monkeypatch):
 
 @pytest.mark.parametrize("stored,expected,known", [
     ("auto", "auto", True), ("ASK", "ask", True), (" Off ", "off", True),
-    (None, "auto", True), ("", "auto", True),
+    (None, "auto", True),
+    # An explicitly stored empty string is not "unset": it asks.
+    ("", "ask", False),
     # YAML 1.1 reads a bare `off` as False: it is the dial's off, never the loosest position.
     (False, "off", True),
     # Anything else is not a position: fall back to asking, and say so.
@@ -154,7 +161,7 @@ def test_set_global_mode_persists_applies_live_reloads_and_audits(writes):
                       "effective": True, "live": "ask"}
     assert writes == [("autonomy", {"mode": "ask"})]
     assert orch.autonomy.policy.mode == "ask"
-    assert orch.reloads == 1          # the coordinator's next tick reads the new value
+    assert orch.store["autonomy.mode"] == "ask"      # what the coordinator's next tick reads
     (event,) = orch.audit.events
     assert event.event_type == SecurityEventType.SETTINGS_CHANGE
     assert event.action_taken == "settings_update"
@@ -242,6 +249,7 @@ async def test_off_is_the_strictest_position_and_the_reply_says_so(writes):
     outcome = await _say(orch, "/approvals off")
     assert orch.autonomy.policy.mode == "off"
     assert "every action waits for your approval" in outcome.reply
+    assert "returns to your inbox" in outcome.reply
     assert "no position that turns approvals off" in outcome.reply
 
 

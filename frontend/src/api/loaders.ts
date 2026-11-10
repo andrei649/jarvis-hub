@@ -55,7 +55,7 @@ const APPROVAL_MODES = ['auto', 'ask', 'off'];
    why a task waits (its risk tier, a money cap or a safety check is). */
 const MODE_HOLDS: Record<string, string> = {
   ask: 'anything with a side effect waits for you',
-  off: 'nothing the policy would approve on its own runs',
+  off: 'nothing a machine approved runs',
 };
 
 /* H484 — the approval mode on an approval card, from what the backend sent:

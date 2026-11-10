@@ -258,8 +258,8 @@ async def test_the_override_route_persists_applies_and_audits(store, tmp_path, m
             assert hub.autonomy.policy.agent_modes == {"friday": "ask"}
             (event,) = hub.audit.events
             assert event.action_taken == "settings_update"
-            assert "agent_modes[friday]" in event.content_preview
-            assert "default → ask" in event.content_preview and "via api, by admin" in event.content_preview
+            assert "agent_modes: {} → {friday: ask}" in event.content_preview
+            assert "via api, by admin" in event.content_preview
             cleared = await client.post("/autonomy/policy", json={"agent": "friday", "mode": "default"})
             assert cleared.json()["agents"] == {} and len(hub.audit.events) == 2
             assert (await client.post("/autonomy/policy", json={"agent": "friday", "mode": "yolo"})).status_code == 422
@@ -296,32 +296,38 @@ async def test_no_reply_claims_the_irreversible_tier_always_asks(store, tmp_path
 
 
 async def test_a_tightening_survives_a_reload_that_quietly_failed(store, tmp_path):
+    """The store is the truth: a runtime-settings cache that did not reload can neither
+    revert a tightening nor hold back what the store holds."""
     hub = _hub(store, tmp_path, reload_works=False, correctable=False)
     try:
         reply = (await _say(hub, "/approvals off")).reply
+        assert "Approval mode: off" in reply
         assert store.get_value("autonomy", "mode") == "off"
         assert hub.get_setting("autonomy.mode") == "auto"            # the stale cache
         assert hub.autonomy.policy.mode == "off"
-        assert "running settings still read" in reply
         for _ in range(3):                                           # the coordinator's ticks
             assert mode_module.sync_policy(hub) == "off"
-        assert hub.autonomy.policy.mode == "off"
         external = {"kind": "email.send", "risk_tier": int(RiskTier.EXTERNAL), "agent": "friday"}
         assert hub.autonomy.policy.decide(external).outcome == ASK
-        # Once the settings catch up, the pending value is spent and the store decides.
-        hub.reload_works = True
-        hub.load_runtime_settings()
-        assert mode_module.sync_policy(hub) == "off"
-        store.put_category("autonomy", {"mode": "ask"})
-        hub.load_runtime_settings()
+        store.put_category("autonomy", {"mode": "ask"})              # another process
         assert mode_module.sync_policy(hub) == "ask"
     finally:
         hub.autonomy_queue.close()
 
 
-async def test_a_loosening_that_did_not_take_effect_is_reported_as_such(store, tmp_path, monkeypatch):
-    store.put_category("autonomy", {"mode": "off"})
-    hub = _hub(store, tmp_path, reload_works=False, correctable=False)
+async def test_a_write_the_store_does_not_hold_afterwards_is_reported_as_such(store, tmp_path, monkeypatch):
+    """Another writer's value is in the store by the time this one reads it back: the
+    live policy follows the store, and nobody is told their value is in force."""
+    store.put_category("autonomy", {"mode": "ask"})
+    hub = _hub(store, tmp_path)
+    real_put = mode_module._put_category
+
+    def overtaken(category, values):
+        out = real_put(category, values)
+        store.put_category("autonomy", {"mode": "off"})
+        return out
+
+    monkeypatch.setattr(mode_module, "_put_category", overtaken)
     try:
         result = mode_module.set_global_mode(hub, "auto", actor="owner", surface="test")
         assert result["effective"] is False and result["live"] == "off"
@@ -336,7 +342,27 @@ async def test_a_loosening_that_did_not_take_effect_is_reported_as_such(store, t
         hub.autonomy_queue.close()
 
 
-async def test_a_failed_reload_is_corrected_in_the_cache_the_coordinator_reads(store, tmp_path):
+async def test_a_store_that_cannot_be_read_back_never_loosens_the_policy(store, tmp_path, monkeypatch):
+    store.put_category("autonomy", {"mode": "ask"})
+    hub = _hub(store, tmp_path)
+
+    def unreadable(key, default):
+        raise OSError("settings store unreadable")
+
+    monkeypatch.setattr(mode_module, "_read_store", unreadable)
+    try:
+        loosen = mode_module.set_global_mode(hub, "auto", actor="owner", surface="test")
+        assert loosen["effective"] is False and hub.autonomy.policy.mode == "ask"
+        tighten = mode_module.set_global_mode(hub, "off", actor="owner", surface="test")
+        assert tighten["live"] == "off" and hub.autonomy.policy.mode == "off"
+        with pytest.raises(OSError):
+            mode_module.sync_policy(hub)
+        assert hub.autonomy.policy.mode == "off"                     # left exactly as it was
+    finally:
+        hub.autonomy_queue.close()
+
+
+async def test_the_cache_the_other_readers_use_is_corrected_from_the_store(store, tmp_path):
     hub = _hub(store, tmp_path, reload_works=False, correctable=True)
     try:
         result = mode_module.set_global_mode(hub, "off", actor="owner", surface="test")
@@ -476,7 +502,7 @@ async def test_a_task_returned_by_off_records_that(store, tmp_path):
         hub.autonomy.policy.mode = "off"
         await hub.autonomy.tick()
         assert hub.autonomy_queue.ask_context(task.id) == {
-            "mode": "off", "source": "global", "global": "off", "by_mode": True}
+            "mode": "off", "source": "global", "global": "off", "by_mode": True, "recalled": True}
     finally:
         hub.autonomy_queue.close()
 
@@ -486,11 +512,11 @@ async def test_a_task_returned_by_off_records_that(store, tmp_path):
 
 def test_a_blank_override_is_no_override_and_a_blank_mode_is_not_auto():
     reversible = {"kind": "note.write", "risk_tier": int(RiskTier.REVERSIBLE), "agent": "friday"}
-    for blank in ("   ", "\t", ""):
+    for blank in ("   ", "\t", "", None):
         policy = AutonomyPolicy(mode="ask", agent_modes={"friday": blank})
         assert policy.effective_mode("friday") == "ask" and policy.decide(reversible).outcome == ASK
     assert mode_module.normalize_mode("   ") == ("ask", False)
-    assert mode_module.normalize_mode("") == ("auto", True)
+    assert mode_module.normalize_mode("") == ("ask", False)
 
 
 def test_hermes_words_mean_the_same_stored_or_typed():

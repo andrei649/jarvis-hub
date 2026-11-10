@@ -1233,6 +1233,8 @@ class TaskQueue:
         try:
             clean = {"mode": str(context["mode"]), "source": str(context["source"]),
                      "global": str(context["global"]), "by_mode": context["by_mode"] is True}
+            if context.get("recalled") is True:
+                clean["recalled"] = True
             with self._lock:
                 self._conn.execute(
                     "INSERT OR REPLACE INTO task_ask_context (task_id, context) VALUES (?, ?)",
@@ -1242,6 +1244,18 @@ class TaskQueue:
         except Exception:
             logger.warning("ask context for task %s was not recorded", task_id, exc_info=True)
             return False
+
+    def recalled_waiting(self) -> int:
+        """H484 — how many tasks the approval mode ``off`` returned to the inbox are still
+        waiting there for the owner (they do not resume by themselves)."""
+        try:
+            with self._lock:
+                rows = self._conn.execute(
+                    "SELECT c.context FROM task_ask_context c JOIN tasks t ON t.id = c.task_id "
+                    "WHERE t.status IN ('blocked', 'proposed', 'deferred')").fetchall()
+            return sum(1 for row in rows if json.loads(row[0]).get("recalled") is True)
+        except Exception:
+            return 0
 
     def ask_context(self, task_id: int) -> dict | None:
         """The context :meth:`record_ask_context` stored for *task_id*, or None."""

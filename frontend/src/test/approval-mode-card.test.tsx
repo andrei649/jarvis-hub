@@ -25,7 +25,7 @@ describe('approvalModeNote', () => {
       why: 'Held because the approval mode was ask when this was queued: anything with a side effect waits for you. The mode is auto now.',
     });
     expect(approvalModeNote(now('off'), asked('off', true)).why)
-      .toBe('Held because the approval mode was off when this was queued: nothing the policy would approve on its own runs.');
+      .toBe('Held because the approval mode was off when this was queued: nothing a machine approved runs.');
     expect(approvalModeNote(now('auto'), asked('auto', false))).toEqual({
       label: 'asked under auto',
       why: 'Queued under approval mode auto. The mode is not why it waits: its risk tier, a money cap or a safety check is.',
@@ -79,7 +79,7 @@ describe('the cockpit decision card', () => {
     const { container } = render(<ContextColumn decisions={decisions} onDecision={() => {}} t={t} />);
     const cards = [...container.querySelectorAll('.dcard')];
     expect(cards[0].querySelector('.dm').textContent).toBe('asked under off');
-    expect(cards[0].querySelector('.dm').getAttribute('title')).toContain('nothing the policy would approve on its own runs');
+    expect(cards[0].querySelector('.dm').getAttribute('title')).toContain('nothing a machine approved runs');
     expect(cards[1].querySelector('.dm')).toBeNull();
   });
 });

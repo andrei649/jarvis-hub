@@ -755,6 +755,20 @@ async def _approvals(ctx: CommandContext) -> str:
     usage = f"Usage: /approvals [{approval_mode.USAGE}]"
     current = approval_mode.global_mode(ctx.orch)
     words = (ctx.args or "").split()
+
+    def recalled(still: bool) -> str:
+        count = getattr(getattr(ctx.orch, "autonomy_queue", None), "recalled_waiting", None)
+        try:
+            waiting = int(count()) if callable(count) else 0
+        except Exception:  # noqa: BLE001 — a count that cannot be read is not reported
+            waiting = 0
+        if not waiting:
+            return ""
+        tasks = "1 task" if waiting == 1 else f"{waiting} tasks"
+        verb = ("is" if waiting == 1 else "are") + (" still" if still else "")
+        return (f"{tasks} recalled by off {verb} waiting in your inbox"
+                + ("; they do not resume by themselves." if still else "."))
+
     if not words:
         lines = [f"Approval mode: {current} — {approval_mode.meaning(current)}."]
         overrides = approval_mode.agent_modes(ctx.orch)
@@ -765,6 +779,8 @@ async def _approvals(ctx: CommandContext) -> str:
         looser = _looser_note(approval_mode, ctx.orch, still=False)
         if looser:
             lines.append(looser)
+        if recalled(False):
+            lines.append(recalled(False))
         lines.append("No position turns approvals off: the kernel's owner-approval floor asks "
                      f"in every mode. {usage}")
         return "\n".join(lines)
@@ -782,21 +798,21 @@ async def _approvals(ctx: CommandContext) -> str:
         return (f"Approval mode remains {approval_mode.global_mode(ctx.orch)}; "
                 "the requested value did not become effective.")
     live = approval_mode.global_mode(ctx.orch)
-    if not result["effective"] and live != wanted:
-        return (f"Approval mode remains {live}; the requested value did not become effective: it "
-                "was saved, but the running settings still read the old value. It applies once "
-                "they reload (at the latest on a restart).")
+    if live != wanted:
+        return (f"Approval mode remains {live}; the requested value did not become effective: "
+                f"the settings store holds {live} (another write, or a store that could not be "
+                "read back). The stricter mode stays in force.")
     lines = [f"Approval mode: {live} (persistent setting) — {approval_mode.meaning(live)}."]
-    if not result["effective"]:
-        lines.append("It is in force now. The running settings still read the old value; the stricter "
-                     "mode holds until they reload.")
     if live == "off":
         lines.append("This is the strictest position, and no per-agent override loosens it: Nerva has "
-                     "no position that turns approvals off. Work the policy had already approved "
-                     "returns to your inbox instead of running; what you approved yourself still runs.")
+                     "no position that turns approvals off. Work approved by anything but you (the "
+                     "policy, the smart reviewer, a standing consent) returns to your inbox instead of "
+                     "running, and waits there until you decide it — also after you leave off.")
     looser = _looser_note(approval_mode, ctx.orch, still=True)
     if looser:
         lines.append(looser)
+    if result["was"] == "off" and live != "off" and recalled(True):
+        lines.append(recalled(True))
     if not result["audited"]:
         lines.append("The change is in effect, but it could not be recorded in the audit log.")
     return "\n".join(lines)

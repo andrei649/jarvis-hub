@@ -137,11 +137,28 @@ FORCED_SETTINGS: dict[str, object] = {
 UNSEEDED_SETTINGS: tuple[str, ...] = (
     "learning.auto_promote", "security.sandbox_max_tool_calls",
 )
-#: Loosening settings that do have a shipped row but no stricter-of rule: in safe mode
-#: they are served as absent too. H484 declared ``autonomy.agent_modes`` (it was unseeded,
-#: so the store dropped every write); a per-agent override can ask less than the global
-#: mode, so safe mode runs every agent at the global mode.
+#: H484 — the per-agent approval overrides (``autonomy.agent_modes``): a map whose entries
+#: can ask less than the global mode (``auto``) or more (``ask``, ``off``). Safe mode
+#: relaxes no gate and an owner who tightened one keeps it: it serves only the entries
+#: that ask more, each normalised (an unknown value reads as ``ask``), and drops ``auto``.
 ABSENT_SETTINGS: tuple[str, ...] = ("autonomy.agent_modes",)
+
+
+def stricter_overrides(value) -> dict:
+    """The per-agent overrides safe mode serves from a stored *value*: the entries whose
+    normalised mode is ``ask`` or ``off``. Anything that is not a map serves none."""
+    from .autonomy.mode import is_unset, normalize_mode
+
+    if not isinstance(value, dict):
+        return {}
+    kept = {}
+    for agent, raw in value.items():
+        if is_unset(raw):
+            continue
+        mode = normalize_mode(raw)[0]
+        if mode != "auto":
+            kept[str(agent)] = mode
+    return kept
 #: The refusal a write that would need a skipped layer answers with.
 REASON = "safe_mode"
 
@@ -224,8 +241,16 @@ def override_settings(flat: dict) -> dict:
         if key in out and out[key] != value:
             moved = True
         out[key] = value
-    for key in (*UNSEEDED_SETTINGS, *ABSENT_SETTINGS):
+    for key in UNSEEDED_SETTINGS:
         moved = out.pop(key, None) is not None or moved
+    for key in ABSENT_SETTINGS:
+        if key in out:
+            kept = stricter_overrides(out[key])
+            moved = moved or kept != out[key]
+            if kept:
+                out[key] = kept
+            else:
+                del out[key]
     if moved:
         note("settings_overrides")
     return out
@@ -238,9 +263,12 @@ def get_value(category: str, key: str, default=None):
     from .settings_db import get_value as stored
 
     full = f"{category}.{key}"
-    if full in ABSENT_SETTINGS and enabled():
-        return default
     value = stored(category, key, default)
+    if full in ABSENT_SETTINGS and enabled():
+        kept = stricter_overrides(value)
+        if kept != value:
+            note("settings_overrides")
+        return kept if isinstance(value, dict) else default
     if enabled() and full in FORCED_SETTINGS:
         safe = stricter(full, value, shipped_default(full))
         if safe != value:

@@ -1462,6 +1462,10 @@ def validate_category(cat: str, data: dict[str, Any], *, references: bool = True
         err = _validate_value(key, value, spec.get("kind", "text"), spec.get("opts", []) or [])
         if err is None and cat == "sessions":
             err = _session_setting_problem(key, value)
+        if err is None and (cat, key) == ("autonomy", "agent_modes"):
+            from .autonomy.mode import overrides_problem
+
+            err = overrides_problem(value)     # H484: agent id → auto|ask|off, bounded
         if err is None and (cat, key) == ("commands", "quick_commands"):
             from .quick_commands import configuration_problem
 
