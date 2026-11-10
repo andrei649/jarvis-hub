@@ -95,7 +95,9 @@ class ServerHealth:
         self.next_retry_at = None
         self.breaker_open_until = None
         self.connect_ms = connect_ms
-        self.failures.clear()
+        # ``failures`` is NOT cleared: a server that connects and then dies again and
+        # again (flapping) still trips the breaker, because each post-handshake death
+        # (:meth:`lost`) lands in the same 60 s window as the connect failures.
 
     def failed(self, reason: str, *, now: float | None = None,
                rng: random.Random | None = None) -> None:
@@ -170,23 +172,29 @@ class ServerHealth:
         }
 
 
-def halted(kill_switch: Any = None, scope: str = "mcp") -> str | None:
+def halted(kill_switch: Any = None, scope: str = "mcp", *, server: str | None = None,
+           include_estop: bool = True) -> str | None:
     """``"estop_engaged"`` / ``"kill_switch_engaged"`` while either is on, else None.
 
     The e-stop's own check fails safe (an unreadable sentinel reads as engaged); a kill
-    switch that cannot be read is treated the same way.
+    switch that cannot be read is treated the same way. With *server*, both kill-switch
+    scopes count: ``mcp`` (every server) and ``mcp:<server>`` (that one); the switch's
+    own global scope always counts. Owner chat calls pass ``include_estop=False``: the
+    e-stop pauses new autonomous work, not the owner's own conversation.
     """
-    try:
-        from agents.core import estop
-
-        if estop.is_engaged():
-            return "estop_engaged"
-    except Exception:
-        logger.warning("e-stop state unreadable; MCP host work refused", exc_info=True)
-        return "estop_engaged"
-    if kill_switch is not None:
+    if include_estop:
         try:
-            if kill_switch.is_halted(scope):
+            from agents.core import estop
+
+            if estop.is_engaged():
+                return "estop_engaged"
+        except Exception:
+            logger.warning("e-stop state unreadable; MCP host work refused", exc_info=True)
+            return "estop_engaged"
+    if kill_switch is not None:
+        scopes = [scope] + ([f"mcp:{server}"] if server else [])
+        try:
+            if any(kill_switch.is_halted(s) for s in scopes):
                 return "kill_switch_engaged"
         except Exception:
             logger.warning("kill switch unreadable; MCP host work refused", exc_info=True)

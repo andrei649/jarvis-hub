@@ -12,7 +12,9 @@ server's say-so:
 * It is charged to the owner's budget: a :class:`~agents.core.kernel.budget.BudgetLedger`
   dimension ``mcp_sampling_tokens`` with a daily ceiling (``JARVIS_MCP_SAMPLING_DAILY_TOKENS``,
   default 20 000 estimated tokens), reserved before the call and settled after it. Over
-  the ceiling the request is refused before any card is shown.
+  the ceiling the request is refused before any card is shown. The ledger is the K3
+  primitive held in memory by this host: it resets when Nerva restarts (and at UTC
+  midnight); it is not written to disk.
 * Per-server limits: a 60-second sliding-window rate limit (``max_rpm``, default 10; the
   same rule as Hermes ``SamplingHandler._check_rate_limit``, written natively), an output
   cap (``max_tokens_cap``, default and ceiling 1024) and a timeout (default 30 s).
@@ -23,11 +25,20 @@ server's say-so:
   name the server picks: ``capable`` (the auxiliary ``review`` task's model) when the
   server's intelligence priority leads, otherwise ``fast`` (the auxiliary one-shot model).
   A hint that names a role is honoured; any other hint is ignored. The owner can pin a
-  role (``sampling_role``) or narrow the set (``allowed_roles``). The answer names the role
+  role (``role``) or narrow the set (``allowed_roles``). The answer names the role
   (``nerva-fast``), not the local model.
 
 **Elicitation** (``elicitation/create``): the server wants input from the person.
 
+* Off unless the owner turns it on for the server (``elicitation: true``), at most 3 cards
+  a minute per server and 2 server requests per client call.
+* Every server-chosen string on a card (message, field names, descriptions, enum values,
+  a sampling request's text) goes through ``subagents.card_safe``: no newline, ANSI,
+  bidi or zero-width trick can make it look like Nerva's own words.
+* The wait sits in a native human-wait window, so the tool loop's deadline stretches
+  while the card is pending and no longer. If the call ends first (deadline, stop), the
+  card is withdrawn, the server is told ``cancel``, and a late answer is refused as
+  ``too_late``.
 * It goes to the owner as an approval card (``tool: mcp.elicitation``) showing the
   server's message and the fields it asks for. Nothing answers it automatically.
 * The owner answers by filling the fields (``POST /api/admin/mcp/elicitations/{id}/answer``,
@@ -36,8 +47,8 @@ server's say-so:
   ``decline``; a timeout or any failure is ``cancel``. URL-mode elicitation is declined.
   The schema is read under both spellings (``requestedSchema`` / ``requested_schema``).
 
-Both are refused while the e-stop or the kill switch (global or ``mcp:<server>``) is
-engaged, checked again after an approval and before any work.
+Both are refused while the e-stop or the kill switch (global, ``mcp`` or ``mcp:<server>``)
+is engaged, checked again after an approval and before any work.
 """
 
 from __future__ import annotations
@@ -53,7 +64,7 @@ from typing import Any
 from agents.core.env_config import env_str
 from agents.core.kernel.budget import BudgetLedger
 from agents.core.mcp.resilience import halted
-from agents.core.security.quarantine import strip_invisible_deep
+from agents.core.mcp.resources import clean_text
 
 logger = logging.getLogger("jarvis.mcp.host")
 
@@ -144,8 +155,12 @@ class SamplingConfig:
 
 @dataclass
 class ElicitationConfig:
-    enabled: bool = True
+    """Off unless the owner turns it on for the server, like sampling: each request puts a
+    card in front of the owner, so a server may not do that on its own say-so."""
+
+    enabled: bool = False
     timeout: float = 300.0
+    max_per_minute: int = 3
 
     @classmethod
     def from_config(cls, raw: Any) -> ElicitationConfig:
@@ -153,11 +168,13 @@ class ElicitationConfig:
             return cls(enabled=raw)
         if not isinstance(raw, dict):
             return cls()
-        return cls(enabled=raw.get("enabled", True) is not False,
-                   timeout=_num(raw.get("timeout"), 300.0, lo=1.0, hi=3600.0))
+        return cls(enabled=raw.get("enabled") is True,
+                   timeout=_num(raw.get("timeout"), 300.0, lo=1.0, hi=3600.0),
+                   max_per_minute=int(_num(raw.get("max_per_minute"), 3, lo=1, hi=30)))
 
     def to_config(self) -> dict:
-        return {"enabled": self.enabled, "timeout": self.timeout}
+        return {"enabled": self.enabled, "timeout": self.timeout,
+                "max_per_minute": self.max_per_minute}
 
 
 class RateLimiter:
@@ -226,7 +243,21 @@ class SamplingBudget:
 
 
 def estimate_tokens(text: str) -> int:
-    return max(1, (len(text or "") + 3) // 4)
+    """A conservative estimate: four ASCII characters per token, one per other character
+    (a CJK character is about one token, so ``len/4`` would undercount it fourfold)."""
+    text = text or ""
+    wide = sum(1 for ch in text if ord(ch) > 0x7F)
+    return max(1, (len(text) - wide + 3) // 4 + wide)
+
+
+def card_text(value: Any, limit: int) -> str:
+    """A server-chosen string made safe to show on an approval card: the same treatment
+    as ``subagents.card_safe`` (no control, format, bidi, zero-width, private-use
+    character, no square bracket, whitespace collapsed), then cut to *limit*."""
+    from agents.core.subagents import card_safe
+
+    text = card_safe(value)
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 def map_model_preferences(prefs: Any, cfg: SamplingConfig) -> str:
@@ -262,7 +293,7 @@ def _flatten_messages(messages: Any) -> tuple[str, int]:
         blocks = content if isinstance(content, list) else [content]
         for block in blocks:
             if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
-                lines.append(f"{role}: {strip_invisible_deep(block['text'])}")
+                lines.append(f"{role}: {clean_text(block['text'])}")
             else:
                 dropped += 1
     return "\n\n".join(lines)[:MAX_PROMPT_CHARS], dropped
@@ -309,6 +340,47 @@ class MCPHost:
     budget: SamplingBudget = field(default_factory=SamplingBudget)
     limiter: RateLimiter = field(default_factory=RateLimiter)
     _elicitations: dict[str, _PendingElicitation] = field(default_factory=dict)
+    #: Cards whose call ended before the owner answered: card id → reason (bounded).
+    _closed: dict[str, str] = field(default_factory=dict)
+    elicit_limiter: RateLimiter = field(default_factory=RateLimiter)
+
+    @staticmethod
+    def refusal(method: str, reason: str) -> dict:
+        """The answer for a server request Nerva will not serve (or no longer can)."""
+        if method == "elicitation/create":
+            return {"result": {"action": "cancel"}}
+        return _error(ERR_REJECTED, reason)
+
+    def _close_card(self, card: str | None, reason: str) -> None:
+        """Withdraw a card whose request is gone, so an answer cannot land on nothing."""
+        if not card:
+            return
+        self._elicitations.pop(card, None)
+        self._closed[card] = reason
+        while len(self._closed) > 500:
+            self._closed.pop(next(iter(self._closed)))
+        queue = self.approvals()
+        try:
+            item = queue.get(card) if queue is not None else None
+            if item and item.get("status") == "pending":
+                queue.decide(card, False, by="system", reason=f"withdrawn: {reason}")
+        except Exception:
+            logger.warning("MCP card %s could not be withdrawn", card, exc_info=True)
+
+    async def _await_card(self, queue: Any, card: str, timeout: float) -> str:
+        """Wait for the owner, inside a native human-wait window: the tool loop's deadline
+        is extended while the card is pending (``native_human_wait``), and only then."""
+        from agents.core.native_human_wait import native_human_wait_window
+
+        def current() -> bool:
+            try:
+                item = queue.get(card)
+            except Exception:
+                return False
+            return bool(item) and item.get("status") == "pending"
+
+        with native_human_wait_window(deadline=time.monotonic() + timeout, current=current):
+            return await queue.await_decision(card, timeout=timeout)
 
     # ── capability declaration ───────────────────────────────────────────
 
@@ -322,7 +394,7 @@ class MCPHost:
         return caps
 
     def _halted(self, server: str) -> str | None:
-        return halted(self.kill_switch(), f"mcp:{server}")
+        return halted(self.kill_switch(), "mcp", server=server)
 
     # ── dispatch ─────────────────────────────────────────────────────────
 
@@ -355,7 +427,11 @@ class MCPHost:
         item = queue.request({"tool": tool, "args": args, "agent": f"mcp:{server}",
                               "summary": summary, "risk_tier": 2})
         card = item.get("id")
-        status = await queue.await_decision(card, timeout=timeout)
+        try:
+            status = await self._await_card(queue, card, timeout)
+        except asyncio.CancelledError:
+            self._close_card(card, "the MCP call that asked has ended")
+            raise
         return status, card
 
     async def _sampling(self, server: Any, params: dict) -> dict:
@@ -373,7 +449,7 @@ class MCPHost:
         prompt, dropped = _flatten_messages(params.get("messages"))
         if not prompt.strip():
             return _error(ERR_INVALID_PARAMS, "no text messages to answer")
-        server_system = strip_invisible_deep(str(params.get("systemPrompt") or ""))[:4000]
+        server_system = clean_text(params.get("systemPrompt") or "")[:4000]
         system = SYSTEM_PREAMBLE + ("\n\n" + server_system if server_system else "")
         requested = params.get("maxTokens")
         max_tokens = int(_num(requested, cfg.max_tokens_cap, lo=1, hi=cfg.max_tokens_cap))
@@ -388,8 +464,8 @@ class MCPHost:
                 status, _card = await self._ask(
                     "mcp.sampling", name,
                     {"server": name, "role": role, "max_tokens": max_tokens,
-                     "system_prompt": server_system[:1000], "messages": prompt[:2000],
-                     "untrusted": True},
+                     "system_prompt": card_text(server_system, 1000),
+                     "messages": card_text(prompt, 2000), "untrusted": True},
                     f"MCP server '{name}' asks for a model completion (up to {max_tokens} tokens)",
                     cfg.approval_timeout,
                 )
@@ -455,28 +531,39 @@ class MCPHost:
         schema = params.get("requestedSchema") or params.get("requested_schema") or {}
         if not isinstance(schema, dict):
             return answer("decline")
-        message = strip_invisible_deep(str(params.get("message") or ""))[:2000]
+        if not schema_is_clean(schema):
+            # A field name or choice the card would have to clean is one the owner could
+            # not answer exactly (the cleaned text is not the server's key): decline.
+            return answer("decline")
+        if not self.elicit_limiter.admit(name, cfg.max_per_minute):
+            return answer("decline")
+        message = card_text(params.get("message") or "", 500)
         fields = describe_fields(schema)
         queue = self.approvals()
         if queue is None:
             return answer("cancel")
+        card = None
         try:
             item = queue.request({
                 "tool": "mcp.elicitation", "agent": f"mcp:{name}",
                 "args": {"server": name, "message": message, "fields": fields,
-                         "required": _required(schema), "untrusted": True},
-                "summary": f"MCP server '{name}' asks you for input: {message[:160]}",
+                         "required": [card_text(r, 100) for r in _required(schema)],
+                         "untrusted": True},
+                "summary": f"MCP server '{card_text(name, 64)}' asks you for input: {message[:160]}",
                 "risk_tier": 2,
             })
             card = item.get("id")
             self._elicitations[card] = _PendingElicitation(server=name, schema=schema)
-            status = await queue.await_decision(card, timeout=cfg.timeout)
+            status = await self._await_card(queue, card, cfg.timeout)
         except asyncio.CancelledError:
+            self._close_card(card, "the MCP call that asked has ended")
             raise
         except Exception:
             logger.warning("MCP %s elicitation card failed", name, exc_info=True)
+            self._close_card(card, "failed")
             return answer("cancel")
         pending = self._elicitations.pop(card, None)
+        self._closed[card] = status
         if status == "rejected":
             return answer("decline")
         if status != "approved":
@@ -497,7 +584,14 @@ class MCPHost:
         """The owner's typed answer to an elicitation card: validate, store, approve."""
         pending = self._elicitations.get(card_id)
         if pending is None:
+            closed = self._closed.get(card_id)
+            if closed == "approved":
+                return {"ok": False, "error": "already_answered"}
+            if closed:
+                return {"ok": False, "error": "too_late", "reason": closed}
             return {"ok": False, "error": "unknown_elicitation"}
+        if pending.content is not None:
+            return {"ok": False, "error": "already_answered"}
         clean, reason = validate_content(pending.schema, content)
         if reason:
             return {"ok": False, "error": reason}
@@ -512,6 +606,25 @@ class MCPHost:
         return {"ok": True, "id": card_id, "server": pending.server}
 
 
+def schema_is_clean(schema: dict) -> bool:
+    """Every field name and enum choice is shown on the card exactly as the server sent it:
+    no character ``card_text`` would remove or replace."""
+    props = schema.get("properties", {})
+    if not isinstance(props, dict) or len(props) > 50:
+        return False
+
+    def exact(value: Any, limit: int) -> bool:
+        return isinstance(value, str) and bool(value) and card_text(value, limit) == value
+
+    for key, spec in props.items():
+        if not exact(key, 100):
+            return False
+        enum = spec.get("enum") if isinstance(spec, dict) else None
+        if isinstance(enum, list) and not all(exact(v, 100) for v in enum):
+            return False
+    return True
+
+
 def _required(schema: dict) -> list[str]:
     req = schema.get("required")
     return [r for r in req if isinstance(r, str)] if isinstance(req, list) else []
@@ -522,12 +635,12 @@ def describe_fields(schema: dict) -> list[dict]:
     out = []
     for key, spec in (props.items() if isinstance(props, dict) else []):
         spec = spec if isinstance(spec, dict) else {}
-        row = {"name": strip_invisible_deep(str(key))[:100],
-               "type": str(spec.get("type") or "string")[:20]}
+        row = {"name": card_text(key, 100),
+               "type": card_text(spec.get("type") or "string", 20)}
         if spec.get("description"):
-            row["description"] = strip_invisible_deep(str(spec["description"]))[:300]
+            row["description"] = card_text(spec["description"], 300)
         if isinstance(spec.get("enum"), list):
-            row["enum"] = [str(v)[:100] for v in spec["enum"][:50]]
+            row["enum"] = [card_text(v, 100) for v in spec["enum"][:50]]
         out.append(row)
     return out[:50]
 

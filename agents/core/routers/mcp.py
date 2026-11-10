@@ -304,10 +304,14 @@ async def admin_mcp_remove(name: str):
         return refusal
     if name not in orch.mcp.servers:
         return JSONResponse({"error": f"MCP server '{name}' not found"}, status_code=404)
-    srv = orch.mcp.servers[name]
-    if srv._proc:
+    if callable(getattr(type(orch.mcp), "remove_server", None)):
+        # Closed in every state — connected, connecting, waiting to reconnect — so no
+        # child is left running outside the manager (H556).
+        await orch.mcp.remove_server(name)
+    else:
+        srv = orch.mcp.servers[name]
         await srv.close()
-    del orch.mcp.servers[name]
+        del orch.mcp.servers[name]
     # Persist to settings DB
     _web()._save_mcp_config()
     return {"ok": True, "server": name, "message": f"MCP server '{name}' removed"}
@@ -357,12 +361,11 @@ async def admin_mcp_disconnect(name: str):
     if name not in orch.mcp.servers:
         return JSONResponse({"error": f"MCP server '{name}' not found"}, status_code=404)
     srv = orch.mcp.servers[name]
-    if srv._proc or getattr(srv, "_http", None) is not None:
-        await srv.close()
+    was_up = bool(srv._proc or getattr(srv, "_http", None) is not None)
+    # Always: a server waiting to reconnect, or mid-connect, is stopped too (H556).
+    await srv.close()
+    if was_up:
         return {"ok": True, "server": name, "message": f"MCP server '{name}' disconnected"}
-    # Not connected, but it may be waiting to reconnect: stop that too (H556).
-    if getattr(srv, "wanted", False):
-        await srv.close()
     return {"ok": True, "server": name, "message": f"MCP server '{name}' was not connected"}
 
 
@@ -381,7 +384,9 @@ async def admin_mcp_elicitation_answer(card_id: str, body: ElicitationAnswer):
         return JSONResponse({"error": "elicitation_unavailable"}, status_code=503)
     result = host.answer_elicitation(card_id, body.content)
     if not result.get("ok"):
-        status = 404 if result.get("error") == "unknown_elicitation" else 400
+        # too_late: the call that asked ended before the answer; the card was withdrawn.
+        status = {"unknown_elicitation": 404, "too_late": 410,
+                  "already_answered": 409}.get(result.get("error"), 400)
         return JSONResponse(result, status_code=status)
     return result
 

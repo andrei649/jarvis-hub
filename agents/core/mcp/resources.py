@@ -15,9 +15,14 @@ the server's words, and a prompt is literally text written to be read *as instru
 So, beyond the fence and the taint the bridge's ``untrusted_output`` declaration already
 gives every MCP result:
 
-* invisible Unicode (TAG characters and other format characters) is stripped;
+* every server string is cleaned of format characters (zero-width marks, bidi overrides,
+  TAG characters), private-use and surrogate code points and control characters other
+  than newline and tab (ANSI escapes); an identifier the model must send back verbatim
+  (a uri, a prompt or argument name) that carries any of them is withheld instead, and
+  the result counts it under ``withheld``;
 * every text is run through ``detect_injection_normalized`` (the scan used for fetched
-  pages and skill text); hits are listed under ``injection_flags`` with a warning line;
+  pages and skill text), on a worker thread when the texts are large; hits are listed
+  under ``injection_flags`` with a warning line;
 * the turn's action origin is raised to the tainted-recall label here, at read time
   (``mark_turn_recall_tainted``), so a later action in the turn queues for approval even
   on a path that reads the result without the loop's fence;
@@ -27,23 +32,30 @@ gives every MCP result:
 Listings follow ``nextCursor`` for at most :data:`MAX_PAGES` pages. A single resource
 larger than :data:`MAX_RESOURCE_BYTES` (50 MiB, decoded) is refused. A binary block (a
 ``blob`` resource, or an image / audio / embedded-resource block in a prompt message) is
-written to Nerva's data directory, mode 0600, under a content-hash name, and the model
-gets the path, its MIME type and size — never megabytes of base64.
+written to ``<data>/mcp_cache/<server>/``, mode 0600, under a content-hash name with an
+extension from a short allowlist (``.png``, ``.jpg``, ``.mp3`` …, else ``.bin``: a server
+cannot make a cached file look like a document), and the model gets the path, MIME type
+and size, never megabytes of base64. Each server's cache keeps at most 500 files, 256 MiB
+and 7 days, oldest first out. ``file_read`` treats a file there as third-party (tainted).
 """
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
+import contextlib
 import hashlib
 import logging
 import os
 import re
+import time
+import unicodedata
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
-from agents.core.security.quarantine import detect_injection_normalized, strip_invisible_deep
+from agents.core.security.quarantine import detect_injection_normalized
 
 logger = logging.getLogger("jarvis.mcp.resources")
 
@@ -119,6 +131,50 @@ def utility_ops_for(capabilities: dict | None) -> list[str]:
 
 # ── untrusted-text treatment ────────────────────────────────────────────────
 
+#: Unicode categories removed from every server string the model or a card sees: format
+#: characters (zero-width, bidi overrides, TAG characters), private use, surrogates.
+_DROP_CATEGORIES = frozenset({"Cf", "Co", "Cs"})
+#: Control characters kept in body text; every other control (ANSI escapes, \r …) goes.
+_KEEP_CONTROLS = frozenset({"\n", "\t"})
+#: Above this many characters the injection scan runs on a worker thread.
+SCAN_INLINE_CHARS = 32_000
+
+
+def clean_text(value: Any) -> str:
+    """*value* without format / private-use / surrogate characters or controls other
+    than newline and tab (zero-width marks, bidi overrides, TAG characters, ANSI)."""
+    text = str(value if value is not None else "")
+    if text.isascii() and text.isprintable():
+        return text
+    return "".join(
+        ch for ch in text
+        if (ch in _KEEP_CONTROLS)
+        or (unicodedata.category(ch) not in _DROP_CATEGORIES and unicodedata.category(ch) != "Cc")
+    )
+
+
+def clean_deep(obj: Any, _depth: int = 0) -> Any:
+    """:func:`clean_text` over every string, keys included, in a JSON-shaped value."""
+    if isinstance(obj, str):
+        return clean_text(obj)
+    if _depth > 64:
+        return None
+    if isinstance(obj, dict):
+        return {clean_text(k): clean_deep(v, _depth + 1) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [clean_deep(v, _depth + 1) for v in obj]
+    return obj
+
+
+def identifier(value: Any, limit: int) -> str | None:
+    """An identifier the model will send back verbatim (uri, prompt or argument name):
+    returned unchanged only when it has nothing :func:`clean_text` would remove and fits
+    *limit*; otherwise None and the entry is withheld, since a cleaned copy would no
+    longer name the same thing."""
+    if not isinstance(value, str) or not value or len(value) > limit:
+        return None
+    return value if clean_text(value) == value and "\n" not in value and "\t" not in value else None
+
 
 def _cut(text: str, limit: int = MAX_TEXT_CHARS) -> str:
     if len(text) <= limit:
@@ -129,21 +185,36 @@ def _cut(text: str, limit: int = MAX_TEXT_CHARS) -> str:
 
 
 class _Scan:
-    """Collects what the injection scan found across one result's texts."""
+    """Cleans each text (cut first, so work is bounded) and scans them all at the end."""
 
     def __init__(self) -> None:
         self.flags: list[str] = []
+        self._texts: list[str] = []
+        self.withheld = 0
 
-    def text(self, value: Any) -> str:
-        clean = strip_invisible_deep(str(value if value is not None else ""))
-        for hit in detect_injection_normalized(clean):
-            if hit not in self.flags:
-                self.flags.append(hit)
+    def text(self, value: Any, limit: int = MAX_TEXT_CHARS) -> str:
+        clean = clean_text(_cut(str(value if value is not None else ""), limit))
+        self._texts.append(clean)
         return clean
 
-    def finish(self, payload: dict) -> dict:
+    def _scan_all(self) -> list[str]:
+        hits: list[str] = []
+        for text in self._texts:
+            for hit in detect_injection_normalized(text):
+                if hit not in hits:
+                    hits.append(hit)
+        return hits
+
+    async def finish(self, payload: dict) -> dict:
+        if sum(len(t) for t in self._texts) > SCAN_INLINE_CHARS:
+            self.flags = await asyncio.to_thread(self._scan_all)
+        else:
+            self.flags = self._scan_all()
         _taint_turn()
+        payload = clean_deep(payload)
         payload["tainted"] = True
+        if self.withheld:
+            payload["withheld"] = self.withheld
         if self.flags:
             payload["injection_flags"] = list(self.flags)
             payload["warning"] = ("This text matched prompt-injection patterns. It is the MCP "
@@ -162,15 +233,59 @@ def _taint_turn() -> None:
 
 # ── binary blocks ───────────────────────────────────────────────────────────
 
+#: MIME type → file extension for cached blocks. Anything else is saved as ``.bin``, so a
+#: server cannot pick an extension that sends the file through document extraction.
+SAFE_EXTENSIONS = {
+    "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp",
+    "audio/mpeg": "mp3", "audio/wav": "wav", "audio/x-wav": "wav", "audio/ogg": "ogg",
+}
+_MIME_RE = re.compile(r"^[a-z0-9][a-z0-9.+-]{0,63}/[a-z0-9][a-z0-9.+-]{0,63}$")
+#: Per-server cache bounds: bytes, files, and age. Oldest files go first.
+CACHE_MAX_BYTES = 256 * 1024 * 1024
+CACHE_MAX_FILES = 500
+CACHE_MAX_AGE_SECONDS = 7 * 24 * 3600
+CACHE_DIRNAME = "mcp_cache"
+
+
+def safe_mime(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    return text if _MIME_RE.match(text) else "application/octet-stream"
+
 
 def cache_dir(server: str) -> Path:
     from agents.core.paths import data_path
 
-    return data_path("mcp_cache", _SAFE_PART.sub("_", server)[:64] or "server")
+    return data_path(CACHE_DIRNAME, _SAFE_PART.sub("_", server)[:64] or "server")
 
 
-def _store_blob(server: str, data_b64: Any, mime: str, *, root: Path | None = None) -> dict:
+def _enforce_quota(folder: Path, keep: Path | None = None) -> None:
+    """Delete the oldest cached files past the age, count or byte bounds."""
+    try:
+        files = [p for p in folder.iterdir() if p.is_file() and not p.is_symlink()]
+    except OSError:
+        return
+    now = time.time()
+    stats = []
+    for p in files:
+        try:
+            st = p.stat()
+        except OSError:
+            continue
+        stats.append((st.st_mtime, st.st_size, p))
+    stats.sort(reverse=True)                     # newest first
+    total = 0
+    for index, (mtime, size, p) in enumerate(stats):
+        total += size
+        over = (index >= CACHE_MAX_FILES or total > CACHE_MAX_BYTES
+                or now - mtime > CACHE_MAX_AGE_SECONDS)
+        if over and p != keep:
+            with contextlib.suppress(OSError):
+                p.unlink()
+
+
+def _store_blob(server: str, data_b64: Any, mime: Any, *, root: Path | None = None) -> dict:
     """Decode a base64 block, refuse it over the cap, write it 0600, return a path row."""
+    mime = safe_mime(mime)
     if not isinstance(data_b64, str):
         return {"type": "binary", "error": "bad_blob"}
     if len(data_b64) > (MAX_RESOURCE_BYTES * 4) // 3 + 8:
@@ -182,43 +297,52 @@ def _store_blob(server: str, data_b64: Any, mime: str, *, root: Path | None = No
     if len(raw) > MAX_RESOURCE_BYTES:
         return {"type": "binary", "error": "resource_too_large", "limit_bytes": MAX_RESOURCE_BYTES}
     digest = hashlib.sha256(raw).hexdigest()
-    ext = _SAFE_PART.sub("", (mime or "").split("/")[-1])[:12] or "bin"
+    ext = SAFE_EXTENSIONS.get(mime, "bin")
     folder = root if root is not None else cache_dir(server)
-    folder.mkdir(parents=True, exist_ok=True)
+    folder.mkdir(parents=True, exist_ok=True, mode=0o700)
     path = folder / f"{digest[:32]}.{ext}"
-    if not path.exists():
+    if path.exists():
+        os.utime(path)
+    else:
         fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "wb") as handle:
             handle.write(raw)
-    return {"type": "binary", "path": str(path), "mimeType": mime or "application/octet-stream",
+    _enforce_quota(folder, keep=path)
+    return {"type": "binary", "path": str(path), "mimeType": mime,
             "bytes": len(raw), "sha256": digest}
 
 
-def cache_result_blocks(server: str, result: Any, *, root: Path | None = None) -> Any:
+async def store_blob(server: str, data_b64: Any, mime: Any, *, root: Path | None = None) -> dict:
+    """:func:`_store_blob` off the event loop for a large block (decode + hash + write)."""
+    try:
+        if isinstance(data_b64, str) and len(data_b64) > 256 * 1024:
+            return await asyncio.to_thread(_store_blob, server, data_b64, mime, root=root)
+        return _store_blob(server, data_b64, mime, root=root)
+    except OSError:
+        logger.warning("MCP %s: a binary block could not be cached", server, exc_info=True)
+        return {"type": "binary", "error": "cache_write_failed"}
+
+
+async def cache_result_blocks(server: str, result: Any, *, root: Path | None = None) -> Any:
     """A ``tools/call`` result with its binary blocks swapped for cached-file rows.
 
     Image and audio blocks (``data``) and embedded resources carrying a ``blob`` are written
     to disk like a resource read, so a tool result never puts megabytes of base64 in front
-    of the model. Text blocks and ``structuredContent`` pass through unchanged.
+    of the model. Other blocks and ``structuredContent`` pass through.
     """
     if not isinstance(result, dict) or not isinstance(result.get("content"), list):
         return result
     blocks = []
     for block in result["content"]:
         if isinstance(block, dict) and block.get("type") in ("image", "audio") and "data" in block:
-            try:
-                blocks.append(_store_blob(server, block.get("data"), str(block.get("mimeType") or ""),
-                                          root=root))
-            except OSError:
-                blocks.append({"type": "binary", "error": "cache_write_failed"})
+            blocks.append(await store_blob(server, block.get("data"), block.get("mimeType"), root=root))
             continue
         res = block.get("resource") if isinstance(block, dict) else None
         if isinstance(block, dict) and block.get("type") == "resource" and isinstance(res, dict) and "blob" in res:
-            try:
-                row = _store_blob(server, res.get("blob"), str(res.get("mimeType") or ""), root=root)
-            except OSError:
-                row = {"type": "binary", "error": "cache_write_failed"}
-            row["uri"] = str(res.get("uri") or "")[:MAX_URI_CHARS]
+            row = await store_blob(server, res.get("blob"), res.get("mimeType"), root=root)
+            uri = identifier(res.get("uri"), MAX_URI_CHARS)
+            if uri:
+                row["uri"] = uri
             blocks.append(row)
             continue
         blocks.append(block)
@@ -234,7 +358,9 @@ def _result(resp: Any) -> dict:
     if "error" in resp:
         err = resp.get("error")
         code = err.get("code") if isinstance(err, dict) else None
-        raise ResourceError(f"mcp_error:{code}" if code is not None else "mcp_error")
+        if isinstance(err, dict) and err.get("message") == "message_too_large":
+            raise ResourceError("message_too_large")
+        raise ResourceError(f"mcp_error:{code}" if isinstance(code, int) else "mcp_error")
     result = resp.get("result")
     if not isinstance(result, dict):
         raise ResourceError("bad_result")
@@ -273,16 +399,17 @@ async def run_utility(op: str, args: dict, request: Request, *, server: str,
         items, cut = await list_all(request, "resources/list", "resources")
         rows = []
         for r in items:
-            uri = r.get("uri")
-            if not isinstance(uri, str) or not uri or len(uri) > MAX_URI_CHARS:
+            uri = identifier(r.get("uri"), MAX_URI_CHARS)
+            if uri is None:
+                scan.withheld += 1
                 continue
-            row = {"uri": uri, "name": scan.text(r.get("name") or "")[:200]}
+            row = {"uri": uri, "name": scan.text(r.get("name") or "", 200)}
             if r.get("description"):
-                row["description"] = _cut(scan.text(r["description"]), 1_000)
-            if isinstance(r.get("mimeType"), str):
-                row["mimeType"] = r["mimeType"][:100]
+                row["description"] = scan.text(r["description"], 1_000)
+            if r.get("mimeType") is not None:
+                row["mimeType"] = safe_mime(r.get("mimeType"))
             rows.append(row)
-        return scan.finish({"server": server, "resources": rows, "truncated": cut})
+        return await scan.finish({"server": server, "resources": rows, "truncated": cut})
     if op == OP_READ_RESOURCE:
         uri = args.get("uri")
         if not isinstance(uri, str) or not uri.strip() or len(uri) > MAX_URI_CHARS:
@@ -292,36 +419,45 @@ async def run_utility(op: str, args: dict, request: Request, *, server: str,
         for block in result.get("contents") or []:
             if not isinstance(block, dict):
                 continue
-            mime = str(block.get("mimeType") or "")[:100]
             if isinstance(block.get("text"), str):
                 if len(block["text"]) > MAX_RESOURCE_BYTES:
                     parts.append({"type": "text", "error": "resource_too_large"})
                     continue
-                parts.append({"type": "text", "mimeType": mime or "text/plain",
-                              "text": _cut(scan.text(block["text"]))})
+                parts.append({"type": "text", "mimeType": safe_mime(block.get("mimeType") or "text/plain"),
+                              "text": scan.text(block["text"])})
             elif "blob" in block:
-                parts.append(_store_blob(server, block.get("blob"), mime, root=cache_root))
-        return scan.finish({"server": server, "uri": uri, "contents": parts})
+                parts.append(await store_blob(server, block.get("blob"), block.get("mimeType"),
+                                              root=cache_root))
+        return await scan.finish({"server": server, "uri": uri, "contents": parts})
     if op == OP_LIST_PROMPTS:
         items, cut = await list_all(request, "prompts/list", "prompts")
         rows = []
         for p in items:
-            name = p.get("name")
-            if not isinstance(name, str) or not name:
+            name = identifier(p.get("name"), 200)
+            if name is None:
+                scan.withheld += 1
                 continue
-            row: dict[str, Any] = {"name": name[:200]}
+            row: dict[str, Any] = {"name": name}
             if p.get("description"):
-                row["description"] = _cut(scan.text(p["description"]), 1_000)
+                row["description"] = scan.text(p["description"], 1_000)
             argrows = []
+            bad_arg = False
             for a in p.get("arguments") or []:
-                if isinstance(a, dict) and isinstance(a.get("name"), str):
-                    argrows.append({"name": a["name"][:100],
-                                    "description": scan.text(a.get("description") or "")[:500],
-                                    "required": a.get("required") is True})
+                if not isinstance(a, dict):
+                    continue
+                arg = identifier(a.get("name"), 100)
+                if arg is None:
+                    bad_arg = True
+                    break
+                argrows.append({"name": arg, "description": scan.text(a.get("description") or "", 500),
+                                "required": a.get("required") is True})
+            if bad_arg:
+                scan.withheld += 1
+                continue
             if argrows:
                 row["arguments"] = argrows
             rows.append(row)
-        return scan.finish({"server": server, "prompts": rows, "truncated": cut})
+        return await scan.finish({"server": server, "prompts": rows, "truncated": cut})
     if op == OP_GET_PROMPT:
         name = args.get("name")
         if not isinstance(name, str) or not name.strip():
@@ -344,23 +480,29 @@ async def run_utility(op: str, args: dict, request: Request, *, server: str,
                     continue
                 kind = block.get("type")
                 if kind == "text":
-                    out.append({"type": "text", "text": _cut(scan.text(block.get("text")))})
+                    out.append({"type": "text", "text": scan.text(block.get("text"))})
                 elif kind in ("image", "audio"):
-                    out.append(_store_blob(server, block.get("data"), str(block.get("mimeType") or ""),
-                                           root=cache_root))
+                    out.append(await store_blob(server, block.get("data"), block.get("mimeType"),
+                                                root=cache_root))
                 elif kind == "resource" and isinstance(block.get("resource"), dict):
                     res = block["resource"]
+                    row: dict[str, Any]
                     if isinstance(res.get("text"), str):
-                        out.append({"type": "text", "uri": str(res.get("uri") or "")[:MAX_URI_CHARS],
-                                    "text": _cut(scan.text(res["text"]))})
+                        row = {"type": "text", "text": scan.text(res["text"])}
                     elif "blob" in res:
-                        out.append(_store_blob(server, res.get("blob"), str(res.get("mimeType") or ""),
-                                               root=cache_root))
+                        row = await store_blob(server, res.get("blob"), res.get("mimeType"),
+                                               root=cache_root)
+                    else:
+                        continue
+                    uri = identifier(res.get("uri"), MAX_URI_CHARS)
+                    if uri:
+                        row["uri"] = uri
+                    out.append(row)
                 else:
-                    out.append({"type": "dropped", "block_type": str(kind)[:40]})
+                    out.append({"type": "dropped", "block_type": scan.text(kind, 40)})
             messages.append({"role": role, "content": out})
-        payload: dict[str, Any] = {"server": server, "name": name, "messages": messages}
+        payload: dict[str, Any] = {"server": server, "name": clean_text(name)[:200], "messages": messages}
         if result.get("description"):
-            payload["description"] = _cut(scan.text(result["description"]), 1_000)
-        return scan.finish(payload)
+            payload["description"] = scan.text(result["description"], 1_000)
+        return await scan.finish(payload)
     raise ResourceError("unknown_utility")

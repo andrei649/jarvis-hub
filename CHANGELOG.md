@@ -224,8 +224,13 @@
   (`sampling`: off by default, "ask" for an approval card each time, or "auto"). It runs on your
   local model, without tools, within a daily allowance (`JARVIS_MCP_SAMPLING_DAILY_TOKENS`,
   20 000 by default) and at most 10 requests a minute per server.
-- A server that needs information from you mid-task now asks through an approval card. Nerva
-  never answers it for you: you fill it in, decline it, or it lapses after five minutes.
+- If you allow it for a server (off by default), a server that needs information from you
+  mid-task asks through an approval card. Nerva never answers it for you: you fill it in,
+  decline it, or it lapses after five minutes. The card shows the server's words cleaned of
+  hidden characters, so it cannot pass itself off as a message from Nerva; if the task that
+  asked ends first, the card is withdrawn. Filling it in is done through the admin API for
+  now; the HUD shows the card but has no form yet.
+- The daily allowance for server requests is kept in memory and starts again after a restart.
 - The emergency stop and the kill switch refuse all of this: no reconnects, no model answers,
   no questions.
 

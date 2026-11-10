@@ -546,20 +546,30 @@ the default; `JARVIS_MCP_STDIO_ALLOWED_ENV` is the narrow remedy, `=0` the blunt
 ### MCP client: resources, prompts, reconnects, sampling, elicitation (H552 · H556 · H553)
 
 Code: `agents/core/mcp/resources.py`, `resilience.py`, `host_requests.py`, wired in
-`agents/core/mcp/client.py`. Tests: `tests/test_mcp_g6_g7_client.py` (a fake stdio server,
-`tests/fixtures/mcp_fake_server.py`).
+`agents/core/mcp/client.py`. Tests: `tests/test_mcp_g6_g7_client.py` and
+`tests/test_mcp_g6_g7_review.py` (a fake stdio server, `tests/fixtures/mcp_fake_server.py`,
+with a hostile mode).
 
 **Resources and prompts.** A server that declares `resources` or `prompts` on `initialize`
 gets up to four extra tools next to its own: `mcp__<server>__list_resources`,
 `read_resource` (uri), `list_prompts`, `get_prompt` (name, arguments). They read only, so
 neither trust tier blocks them, and the owner's `tools_allow` / `tools_deny` patterns apply
 to these names too. Their output is third-party text and is treated like a fetched web
-page: invisible characters stripped, scanned for prompt injection (hits are listed as
-`injection_flags` with a warning), fenced as data, and the turn's action origin raised so a
-later action in the same turn waits for approval. Listings follow `nextCursor` for at most
-50 pages; one resource may be at most 50 MiB; text shown to the model is cut at 100 000
-characters; binary content (resource blobs, prompt images and audio) is saved under
-`<data>/mcp_cache/<server>/` (mode 0600, content-hash name) and the model gets the path.
+page: format characters (zero-width, bidi, TAG), private-use code points and control
+characters other than newline and tab are removed from every string; a uri, prompt name or
+argument name carrying one is withheld instead (counted as `withheld`), because a cleaned
+copy would name something else; texts are scanned for prompt injection (on a worker thread
+when large; hits are listed as `injection_flags` with a warning), fenced as data, and the
+turn's action origin is raised so a later action in the same turn waits for approval.
+Listings follow `nextCursor` for at most 50 pages; one resource may be at most 50 MiB, over
+stdio (the line limit is 72 MiB; a longer line drops the connection, which the supervisor
+restores) and over Streamable HTTP (`resources/read` and `prompts/get` replies may be up to
+72 MiB there; every other HTTP reply keeps its 4 MiB cap); text shown to the model is cut
+at 100 000 characters. Binary content (resource blobs, prompt and tool-result images,
+audio and embedded blobs) is saved under `<data>/mcp_cache/<server>/` (mode 0600,
+content-hash name, extension only from a short image/audio allowlist, else `.bin`), the
+model gets the path, `file_read` treats those files as third-party (tainted), and each
+server's cache keeps at most 500 files, 256 MiB and 7 days.
 
 **Connecting and staying connected.** `MCPManager.connect_all()` connects every server at
 once (at most 4 in flight), each with its own 30 s deadline, so a server that hangs costs
@@ -567,8 +577,14 @@ only its own slot. A supervisor started at boot reconnects a server that dropped
 jittered exponential backoff (5 retries, 60 s ceiling, ±20 %), a circuit breaker (3
 failures within 60 s pause it for 60 s) and a parked state probed every 300 s; it pings an
 idle stdio server every 60 s and reads each child's stderr into the log so a chatty server
-cannot block on a full pipe. A server the owner disconnected is not reconnected. Nothing is
-connected, reconnected or pinged while the e-stop or kill switch is engaged.
+cannot block on a full pipe (read in chunks, so an over-long line cannot stop the drain).
+Only the owner (connect, `connect_all`, autoconnect) marks a server as wanted; the
+supervisor re-checks that, the e-stop and both kill-switch scopes under the server's lock
+right before it spawns, so a disconnect or removal made mid-pass holds, and removing a
+server closes it in every state. A server that keeps dying right after connecting trips
+the breaker like one that never connects. Nothing is connected, reconnected or pinged
+while the e-stop or a kill switch (`mcp` or `mcp:<server>`) is engaged; the kill switch
+also refuses calls (the e-stop does not: it pauses new autonomous work, not chat).
 `GET /api/admin/mcp` shows, per server, `health` (state, attempts, last error, seconds to
 the next retry, circuit state, connect time, sampling/elicitation counters),
 `resource_tools`, `sampling` and `elicitation`, plus the day's `sampling_budget` and the
@@ -590,16 +606,26 @@ intelligence priority leads, `fast` (the one-shot model) otherwise; the saved `s
 `allowed_roles` pin or narrow it.
 
 - **`JARVIS_MCP_SAMPLING_DAILY_TOKENS`** — default **20000**: the owner's daily allowance
-  (estimated tokens, prompt + answer) for all MCP sampling together, kept on the kernel
-  budget ledger as `mcp_sampling_tokens`. `0` refuses every sampling request.
+  (estimated tokens: four ASCII characters or one other character per token, prompt +
+  answer) for all MCP sampling together, on a K3 `BudgetLedger` dimension
+  `mcp_sampling_tokens`. The ledger is in memory: it resets when Nerva restarts and at UTC
+  midnight. `0` refuses every sampling request.
 
-**Elicitation** (a server asks the owner for input). It becomes an approval card
-(`mcp.elicitation`) with the server's message and the fields it asks for; it is never
-answered automatically. `POST /api/admin/mcp/elicitations/{card_id}/answer` with
-`{"content": {...}}` fills the fields (checked against the server's schema) and approves the
-card; rejecting the card declines; a card nobody answers within 300 s is cancelled.
-Approving without content accepts only a request with no required fields. URL-mode
-requests are declined. `elicitation: false` on a server turns it off.
+**Elicitation** (a server asks the owner for input). Off unless the owner turns it on for
+the server (`elicitation: true`); at most 3 cards a minute per server and 2 server requests
+per client call. It becomes an approval card (`mcp.elicitation`) with the server's message
+and the fields it asks for, every server-chosen string passed through `card_safe` (no
+newline, ANSI, bidi or zero-width trick); a request whose field names or choices would need
+cleaning is declined without a card. It is never answered automatically.
+`POST /api/admin/mcp/elicitations/{card_id}/answer` with `{"content": {...}}` fills the
+fields (checked against the server's schema) and approves the card; a second answer is
+refused (409); rejecting the card declines; a card nobody answers within 300 s is
+cancelled. While the card is pending the tool loop's deadline is extended (a native
+human-wait window), and no longer; if the call ends first, the card is withdrawn, the
+server is told `cancel`, and a late answer gets `too_late` (410). Approving without content
+accepts only a request with no required fields. URL-mode requests are declined. There is
+no HUD form for the answer yet: the card shows in the approval inbox, the typed answer
+goes through the route.
 
 **Not done (H556 stays partial):** a schema cache with lazy connect (Hermes's
 `mcp_schema_cache.py` was not adopted: its fingerprint leaves out `cwd`, `env`, headers and

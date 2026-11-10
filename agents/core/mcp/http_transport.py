@@ -77,6 +77,10 @@ _TRANSPORT_ALIASES = {
 # until the matching response arrives, but never past these caps.
 MAX_SSE_EVENTS = 256
 MAX_REPLY_BYTES = 4 * 1024 * 1024
+#: H552 — the cap for content replies (``resources/read``, ``prompts/get``): a 50 MiB
+#: resource as base64 plus its envelope. Asked for per request; every other reply keeps
+#: :data:`MAX_REPLY_BYTES`.
+MAX_CONTENT_REPLY_BYTES = 72 * 1024 * 1024
 _ACCEPTED_STATUSES = frozenset({200, 202, 204})
 _SESSION_HEADER = "Mcp-Session-Id"
 _VERSION_HEADER = "MCP-Protocol-Version"
@@ -290,14 +294,17 @@ class StreamableHttpTransport:
         await self.notify("notifications/initialized")
         return result
 
-    async def request(self, method: str, params: dict | None = None) -> dict:
-        """Send one request; return the matching JSON-RPC response (``{}`` on any failure)."""
+    async def request(self, method: str, params: dict | None = None, *,
+                      max_bytes: int | None = None) -> dict:
+        """Send one request; return the matching JSON-RPC response (``{}`` on any failure).
+        *max_bytes* raises the reply cap for this request only (content reads)."""
         async with self._lock:
             self._next_id += 1
             req_id = self._next_id
             body = {"jsonrpc": "2.0", "id": req_id, "method": method, "params": params or {}}
             try:
-                return await asyncio.wait_for(self._post(body, req_id), timeout=self.timeout)
+                return await asyncio.wait_for(self._post(body, req_id, max_bytes=max_bytes),
+                                              timeout=self.timeout)
             except MCPTransportError:
                 raise
             except PluginEgressError as exc:
@@ -327,7 +334,7 @@ class StreamableHttpTransport:
             except Exception as exc:
                 logger.debug("MCP HTTP notification dropped (type=%s)", type(exc).__name__)
 
-    async def _post(self, body: dict, req_id: int | None) -> dict:
+    async def _post(self, body: dict, req_id: int | None, *, max_bytes: int | None = None) -> dict:
         payload = json.dumps(body, separators=(",", ":")).encode("utf-8")
         async with self._client.stream(
             "POST", self.url, headers=self._request_headers(), content=payload,
@@ -349,8 +356,8 @@ class StreamableHttpTransport:
                 return {}
             ctype = (response.headers.get("content-type") or "").split(";")[0].strip().lower()
             if ctype == "text/event-stream":
-                return await self._read_sse(response, req_id)
-            raw = await self._read_capped(response)
+                return await self._read_sse(response, req_id, max_bytes=max_bytes)
+            raw = await self._read_capped(response, max_bytes=max_bytes)
             try:
                 messages = json.loads(raw.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError):
@@ -359,26 +366,28 @@ class StreamableHttpTransport:
             return _match_response(messages, req_id) or {}
 
     @staticmethod
-    async def _read_capped(response) -> bytes:
+    async def _read_capped(response, *, max_bytes: int | None = None) -> bytes:
+        cap = int(max_bytes or MAX_REPLY_BYTES)
         chunks: list[bytes] = []
         size = 0
         async for chunk in response.aiter_bytes():
             size += len(chunk)
-            if size > MAX_REPLY_BYTES:
-                raise MCPTransportError("reply_too_large", f">{MAX_REPLY_BYTES} bytes")
+            if size > cap:
+                raise MCPTransportError("reply_too_large", f">{cap} bytes")
             chunks.append(chunk)
         return b"".join(chunks)
 
     @staticmethod
-    async def _read_sse(response, req_id: int) -> dict:
+    async def _read_sse(response, req_id: int, *, max_bytes: int | None = None) -> dict:
         """Consume an SSE stream until the response with our id arrives (or caps hit)."""
+        cap = int(max_bytes or MAX_REPLY_BYTES)
         data_lines: list[str] = []
         events = 0
         size = 0
         async for raw_line in response.aiter_lines():
             size += len(raw_line)
-            if size > MAX_REPLY_BYTES:
-                raise MCPTransportError("reply_too_large", f">{MAX_REPLY_BYTES} bytes")
+            if size > cap:
+                raise MCPTransportError("reply_too_large", f">{cap} bytes")
             line = raw_line.rstrip("\r\n")
             if line:
                 if line.startswith(":"):

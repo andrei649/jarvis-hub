@@ -424,8 +424,8 @@ async def test_sampling_refused_by_kill_switch():
             return scope == "mcp:docs"
 
     host, calls = _host(None)
-    host.kill_switch = lambda: Kill()
     manager, srv = await _sampling_server("auto", host)
+    host.kill_switch = lambda: Kill()
     try:
         reply = _reply(await srv.call_tool("ask_sample"))
         assert reply["error"]["message"] == "refused: kill_switch_engaged" and calls == []
@@ -493,7 +493,7 @@ def test_model_preferences_map_onto_nerva_roles_not_server_model_names():
 async def _elicit_server(host: MCPHost, **elicitation) -> tuple[MCPManager, MCPServer]:
     manager = MCPManager(host=host)
     srv = MCPServer("docs", command=_cmd("full"), trust="full",
-                    elicitation={"enabled": True, **elicitation})
+                    elicitation={"enabled": True, "max_per_minute": 30, **elicitation})
     manager.register(srv)
     assert await srv.connect()
     return manager, srv
@@ -576,4 +576,5 @@ def test_sampling_and_elicitation_settings_persist():
     assert row["sampling"]["mode"] == "ask" and row["sampling"]["max_rpm"] == 3
     assert row["elicitation"]["enabled"] is False
     assert manager.servers["a"].host is manager.host
+    assert MCPServer("b", command="x").elicitation.enabled is False    # off unless the owner says
     assert os.environ.get("JARVIS_MCP_AUTOCONNECT") in (None, "", "0")

@@ -77,6 +77,7 @@ from agents.core.mcp.http_transport import (
     CLIENT_INFO,
     CLIENT_PROTOCOL_VERSION,
     HTTP_CLIENT_FLAG,
+    MAX_CONTENT_REPLY_BYTES,
     SUPPORTED_TRANSPORTS,
     TRANSPORT_STDIO,
     TRANSPORT_STREAMABLE_HTTP,
@@ -381,6 +382,16 @@ def _permanent_refusal(reason: str | None) -> bool:
         ("unsupported_transport", "transport_disabled"))
 
 
+#: H552 — the longest JSON-RPC line read off a stdio server: a 50 MiB resource as base64
+#: plus its envelope. asyncio's default (64 KiB) failed every larger reply and left the
+#: rest of the line in the pipe. Memory per read stays bounded by this limit; a longer
+#: line drops the connection (it cannot be resynchronised) and the supervisor reconnects.
+STDIO_LINE_LIMIT = 72 * 1024 * 1024
+#: H552 — the content reads whose replies may be large on Streamable HTTP too.
+_CONTENT_METHODS = frozenset({"resources/read", "prompts/get"})
+#: H553 — server requests (sampling, elicitation) answered per client call; more are refused.
+MAX_HOST_REQUESTS_PER_CALL = 2
+
 #: H556 — parallel connects at once, and the supervisor's cadence.
 CONNECT_CONCURRENCY = 4
 SUPERVISOR_INTERVAL = 5.0
@@ -502,6 +513,10 @@ class MCPServer:
         #: The owner (or autoconnect) wants this server up: the supervisor reconnects it.
         self.wanted = False
         self._stderr_task: asyncio.Task | None = None
+        #: Bumped by every owner disconnect: a connect that started before it is undone.
+        self._epoch = 0
+        #: One connect at a time per server, so a check made under it holds for the spawn.
+        self._connect_lock = asyncio.Lock()
         self._proc = None
         self._http: StreamableHttpTransport | None = None
         self._http_factory = http_transport_factory or StreamableHttpTransport
@@ -513,14 +528,41 @@ class MCPServer:
         self._io_lock = asyncio.Lock()
         self._next_id = 0
 
-    async def connect(self) -> bool:
+    def _halted(self, *, include_estop: bool = True) -> str | None:
+        kill = self.host.kill_switch() if self.host is not None else None
+        return halted(kill, "mcp", server=self.name, include_estop=include_estop)
+
+    async def connect(self, *, require_wanted: bool = False) -> bool:
         """Connect within :attr:`connect_timeout`, recording the outcome on :attr:`health`.
 
         A server that hangs on spawn or on ``initialize`` is torn down at the deadline
         (``connect_timeout``) instead of holding the caller. A configuration refusal
         (unsafe command, transport switched off) is not retried by the supervisor.
+
+        Only the owner decides whether a server should be up (:attr:`wanted`, set by
+        :meth:`MCPManager.connect_server` / ``connect_all``); this method never sets it.
+        Under the per-server lock it re-checks, right before spawning, the e-stop, both
+        kill-switch scopes and — for the supervisor (*require_wanted*) — that the owner
+        still wants the server. An owner disconnect during the connect undoes it.
         """
-        self.wanted = True
+        async with self._connect_lock:
+            stop = self._halted()
+            if stop:
+                self.last_error = stop
+                return False
+            if require_wanted and not self.wanted:
+                return False
+            epoch = self._epoch
+            ok = await self._connect_guarded()
+            if ok and (self._epoch != epoch or (require_wanted and not self.wanted)):
+                # The owner disconnected or removed the server while it was connecting.
+                await self._teardown()
+                self.health.stopped()
+                self.last_error = "closed_by_owner"
+                return False
+            return ok
+
+    async def _connect_guarded(self) -> bool:
         self.health.begin()
         started = time.monotonic()
         try:
@@ -573,6 +615,7 @@ class MCPServer:
                 stderr=asyncio.subprocess.PIPE,
                 cwd=self.cwd or None,
                 env=self._merged_env(),
+                limit=STDIO_LINE_LIMIT,
             )
             self._start_stderr_drain()
             await self._initialize()
@@ -736,21 +779,23 @@ class MCPServer:
     def _start_stderr_drain(self) -> None:
         """Read the child's stderr into the log (H556): an unread pipe fills and blocks it."""
         stream = getattr(self._proc, "stderr", None)
-        if stream is None or not hasattr(stream, "readline"):
+        if stream is None or not hasattr(stream, "read"):
             return
 
         async def drain() -> None:
-            seen = 0
+            # Read in chunks, not lines: one line longer than the reader's limit would
+            # raise and end the drain, and the child would block on a full pipe again.
+            logged = 0
             try:
                 while True:
-                    raw = await stream.readline()
-                    if not raw:
+                    chunk = await stream.read(65536)
+                    if not chunk:
                         return
-                    seen += 1
-                    self.health.bump("stderr_lines")
-                    if seen <= 200:
+                    self.health.bump("stderr_bytes", len(chunk))
+                    if logged < 200:
+                        logged += 1
                         logger.debug("MCP %s stderr: %s", self.name,
-                                     raw.decode("utf-8", "replace").rstrip()[:200])
+                                     chunk[:200].decode("utf-8", "replace").rstrip())
             except (asyncio.CancelledError, Exception):
                 return
 
@@ -844,7 +889,7 @@ class MCPServer:
             # A remote server's text is untrusted: invisible TAG characters can carry an
             # instruction the owner never sees (Hermes absorption 4a).
             # H552 — image/audio/embedded binary blocks go to disk; the model gets a path.
-            return cache_result_blocks(self.name, strip_invisible_deep(resp["result"]))
+            return await cache_result_blocks(self.name, strip_invisible_deep(resp["result"]))
         return resp
 
     async def _call_utility(self, op: str, arguments: dict) -> dict:
@@ -900,7 +945,10 @@ class MCPServer:
                 logger.warning(f"MCP server {self.name} not connected")
                 return {}
             try:
-                return await self._http.request(msg.get("method", ""), msg.get("params") or {})
+                method = msg.get("method", "")
+                return await self._http.request(
+                    method, msg.get("params") or {},
+                    max_bytes=MAX_CONTENT_REPLY_BYTES if method in _CONTENT_METHODS else None)
             except MCPTransportError as exc:
                 logger.warning("MCP HTTP call refused (%s): %s", self.name, exc.reason)
                 return {"error": {"code": -32000, "message": exc.reason}}
@@ -919,13 +967,25 @@ class MCPServer:
                 # Read until the reply whose id matches ours, skipping
                 # notifications and any stale reply from a timed-out call.
                 # Bounded so a peer echoing a fixed id can't spin forever.
+                host_requests = 0
                 for _ in range(32):
                     remaining = deadline - loop.time()
                     if remaining <= 0:
                         return {}
-                    raw = await asyncio.wait_for(
-                        self._proc.stdout.readline(), timeout=remaining
-                    )
+                    try:
+                        raw = await asyncio.wait_for(
+                            self._proc.stdout.readline(), timeout=remaining
+                        )
+                    except (ValueError, asyncio.LimitOverrunError):
+                        # A line past STDIO_LINE_LIMIT: the reader has dropped part of it,
+                        # so the pipe cannot be resynchronised. Drop the connection; the
+                        # supervisor reconnects a server the owner wants.
+                        logger.warning("MCP %s sent a message over %d bytes; disconnecting",
+                                       self.name, STDIO_LINE_LIMIT)
+                        self.last_error = "message_too_large"
+                        self.health.lost("message_too_large")
+                        await self._teardown()
+                        return {"error": {"code": -32000, "message": "message_too_large"}}
                     if not raw:
                         return {}
                     try:
@@ -938,8 +998,11 @@ class MCPServer:
                         # H553 — the server asks the client something mid-call (sampling,
                         # elicitation, ping). It is answered here, on the same pipe, and the
                         # time the owner or the model took does not count against our call.
+                        host_requests += 1
                         started = loop.time()
-                        await self._answer_server_request(resp)
+                        await self._answer_server_request(
+                            resp, refuse=host_requests > MAX_HOST_REQUESTS_PER_CALL)
+                        # Bounded: at most MAX_HOST_REQUESTS_PER_CALL waits extend it.
                         deadline += loop.time() - started
                         continue
                     if resp.get("id") == req_id:
@@ -949,24 +1012,35 @@ class MCPServer:
                 logger.warning(f"MCP error ({self.name}): {e}")
                 return {}
 
-    async def _answer_server_request(self, req: dict) -> None:
+    async def _answer_server_request(self, req: dict, *, refuse: bool = False) -> None:
         method = str(req.get("method") or "")
         if self.host is None:
             out = {"error": {"code": -32601, "message": "method not supported by this client"}}
+        elif refuse and method != "ping":
+            out = MCPHost.refusal(method, "too many requests in one call")
         else:
             try:
                 out = await self.host.handle(self, method, req.get("params"))
             except asyncio.CancelledError:
+                # The call that was waiting ended (the tool loop's deadline, a stop): tell
+                # the server so it does not wait forever, then let the cancel go on.
+                self._write_reply(req, MCPHost.refusal(method, "the request was withdrawn"))
                 raise
             except Exception:
                 logger.warning("MCP %s: answering %s failed", self.name, method[:60], exc_info=True)
                 out = {"error": {"code": -32603, "message": "internal error"}}
+        self._write_reply(req, out)
         try:
-            line = json.dumps({"jsonrpc": "2.0", "id": req.get("id"), **out}) + "\n"
-            self._proc.stdin.write(line.encode())
             await self._proc.stdin.drain()
         except Exception:
             logger.warning("MCP %s: reply to %s not written", self.name, method[:60])
+
+    def _write_reply(self, req: dict, out: dict) -> None:
+        try:
+            line = json.dumps({"jsonrpc": "2.0", "id": req.get("id"), **out}) + "\n"
+            self._proc.stdin.write(line.encode())
+        except Exception:
+            logger.warning("MCP %s: reply not written", self.name)
 
     async def ping(self) -> bool:
         """Keepalive (H556): False when the server did not answer within the deadline."""
@@ -997,8 +1071,10 @@ class MCPServer:
             logger.info(f"MCP server closed: {self.name}")
 
     async def close(self):
-        """The owner's disconnect: stop the transport and stop reconnecting."""
+        """The owner's disconnect: stop the transport and stop reconnecting. A connect in
+        flight sees the bumped epoch and undoes itself."""
         self.wanted = False
+        self._epoch += 1
         self.health.stopped()
         await self._teardown()
 
@@ -1029,8 +1105,8 @@ class MCPManager:
             srv.health.policy = self.policy
         return srv
 
-    def _halted(self) -> str | None:
-        return halted(self.host.kill_switch(), "mcp")
+    def _halted(self, server: str | None = None) -> str | None:
+        return halted(self.host.kill_switch(), "mcp", server=server)
 
     def reserve_names(self, names) -> None:
         """Declare the built-in tool names a third-party MCP tool may never shadow."""
@@ -1111,14 +1187,29 @@ class MCPManager:
 
     # ── H556: parallel bounded connects, reconnect with backoff, keepalive ──
 
-    async def _connect_one(self, srv: MCPServer, gate: asyncio.Semaphore) -> bool:
+    async def _connect_one(self, srv: MCPServer, gate: asyncio.Semaphore, *,
+                           supervised: bool = False) -> bool:
         async with gate:
             self._adopt(srv)
             try:
-                return await srv.connect()
+                ok = await srv.connect(require_wanted=supervised)
             except Exception as e:                       # connect() records; this is a last net
                 logger.warning(f"MCP connect failed ({srv.name}): {type(e).__name__}")
                 return False
+            if self.servers.get(srv.name) is not srv:
+                # Removed while connecting: never leave a child running outside `servers`.
+                await srv.close()
+                return False
+            return ok
+
+    async def remove_server(self, name: str) -> bool:
+        """The owner removes a server: closed in every state (connected, connecting,
+        backing off), so no child is left running outside :attr:`servers`."""
+        srv = self.servers.pop(name, None)
+        if srv is None:
+            return False
+        await srv.close()
+        return True
 
     async def connect_all(self, names=None) -> dict[str, bool]:
         """Connect every server (or *names*) at once, at most :attr:`connect_concurrency`
@@ -1128,6 +1219,8 @@ class MCPManager:
             logger.warning("MCP connect_all refused: %s", self._halted())
             return {}
         chosen = [srv for name, srv in self.servers.items() if names is None or name in names]
+        for srv in chosen:
+            srv.wanted = True                            # the owner's (or autoconnect's) ask
         gate = asyncio.Semaphore(max(1, int(self.connect_concurrency)))
         results = await asyncio.gather(*(self._connect_one(srv, gate) for srv in chosen))
         return {srv.name: bool(ok) for srv, ok in zip(chosen, results, strict=True)}
@@ -1136,6 +1229,7 @@ class MCPManager:
         srv = self.servers.get(name)
         if srv is None:
             return False
+        srv.wanted = True                                # only the owner sets this
         return await self._connect_one(srv, asyncio.Semaphore(1))
 
     async def tick(self, now: float | None = None) -> dict[str, str]:
@@ -1148,7 +1242,7 @@ class MCPManager:
         done: dict[str, str] = {}
         due: list[MCPServer] = []
         for srv in list(self.servers.values()):
-            if not srv.wanted:
+            if not srv.wanted or self._halted(srv.name):
                 continue
             if srv.is_connected():
                 if (srv.transport == TRANSPORT_STDIO and not srv._io_lock.locked()
@@ -1166,7 +1260,11 @@ class MCPManager:
                 due.append(srv)
         if due:
             gate = asyncio.Semaphore(max(1, int(self.connect_concurrency)))
-            results = await asyncio.gather(*(self._connect_one(srv, gate) for srv in due))
+            # Each connect re-checks, under its server's lock and right before spawning,
+            # that the owner still wants it and nothing is halted: a disconnect made while
+            # this pass was pinging another server is not undone.
+            results = await asyncio.gather(*(self._connect_one(srv, gate, supervised=True)
+                                             for srv in due))
             for srv, ok in zip(due, results, strict=True):
                 done[srv.name] = "reconnected" if ok else "retry_failed"
         return done
@@ -1263,12 +1361,16 @@ class MCPManager:
         srv, bare, error = self._resolve(name, server)
         if error is not None or srv is None:
             return error
-        if srv.wanted and not srv.is_connected() and not self._halted():
+        if srv._halted(include_estop=False):
+            # Both kill-switch scopes (``mcp`` and ``mcp:<server>``) stop calls too. The
+            # e-stop does not: it pauses new autonomous work, not the owner's chat.
+            return {"error": "kill_switch_engaged", "tool": bare, "server": srv.name}
+        if srv.wanted and not srv.is_connected() and not self._halted(srv.name):
             # H556 — a server that dropped is reconnected on its next use, when its
             # backoff allows; otherwise the call answers at once instead of waiting.
             srv.health.lost("transport_lost")
             if srv.health.retry_due():
-                await self._connect_one(srv, asyncio.Semaphore(1))
+                await self._connect_one(srv, asyncio.Semaphore(1), supervised=True)
         return await srv.call_tool(bare, arguments)
 
     async def close_all(self):
