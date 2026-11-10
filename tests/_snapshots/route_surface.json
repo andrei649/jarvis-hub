@@ -382,6 +382,7 @@
   "GET /security/status",
   "GET /sessions",
   "GET /sessions/todo",
+  "GET /sessions/{session_id}/context",
   "GET /sessions/{session_id}/todo",
   "GET /sessions/{session_id}/trajectories",
   "GET /skills",

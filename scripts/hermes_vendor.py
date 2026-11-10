@@ -160,6 +160,15 @@ REWRITE_RULES: tuple[Rule, ...] = (
     Rule("urllib-request", r"^(?P<i>[ \t]*)import urllib\.request(?P<rest>[ \t]*(?:#.*)?)$",
          r"\g<i>from agents.vendor.hermes_compat import urllib_refused as urllib\g<rest>",
          "a request object only; opening one is refused (catalog fetches are Nerva's)"),
+    # G2 — session commands (hermes_cli/loops.py).
+    Rule("hermes-cli-config", r"^(?P<i>[ \t]*)from hermes_cli\.config import ",
+         r"\g<i>from agents.vendor.hermes_compat.loops_config import ",
+         "the loops.* settings come from Nerva's settings store, bounded",
+         paths=("hermes_cli/loops.py",)),
+    Rule("hermes-cli-goals", r"^(?P<i>[ \t]*)from hermes_cli\.goals import ",
+         r"\g<i>from agents.vendor.hermes_compat.goals import ",
+         "loop state in Nerva's per-session store; the judge and the goal probe are Nerva's",
+         paths=("hermes_cli/loops.py",)),
 )
 
 # ── what a vendored file may contain (an allowlist, applied by pull, status and CI) ────
@@ -183,6 +192,8 @@ COMPAT_MODULES = frozenset({
     "sdk", "sdk.exa_py", "sdk.parallel",
     # slice 2 (model-provider profiles)
     "providers", "hermes_cli", "locks", "account_usage", "urllib_refused",
+    # G2 (session commands: /loop)
+    "loops_config", "goals",
     # slice 4 (A2A client tools)
     "urllib", "a2a_shared", "futures",
 })
@@ -195,6 +206,12 @@ A2A_PACKAGE = "agents.vendor.hermes.plugins.platforms.a2a"
 WIRE_DATA_STRINGS = frozenset({"http"})
 PATH_SCOPED_COMPAT: dict[str, tuple[str, ...]] = {
     "urllib": (A2A_PATH,), "a2a_shared": (A2A_PATH,), "futures": (A2A_PATH,),
+}
+#: Underscore names a compat module exports on purpose, because the upstream code imports
+#: them by that name (G2: ``hermes_cli/loops.py`` takes SessionDB access from
+#: ``hermes_cli.goals``). Every other underscore name of a compat module stays private.
+COMPAT_PRIVATE_EXPORTS: dict[str, frozenset[str]] = {
+    f"{COMPAT_PACKAGE}.goals": frozenset({"_get_session_db", "_warn_dropped_write"}),
 }
 VENDOR_PACKAGE = "agents.vendor.hermes"
 #: Attribute / imported / string names that reach the network, a process or the import
@@ -233,8 +250,9 @@ CATALOG_SUFFIXES = DATA_SUFFIXES
 CATALOG_NAMES = frozenset({"LICENSE"})
 #: Nerva-written package markers for upstream packages whose own ``__init__.py`` is not
 #: adopted (``providers/__init__.py`` is Hermes's plugin loader, ``agent/__init__.py``
-#: preloads a JSON library). Each must be a docstring and nothing else (``status``).
-_LOCAL_PACKAGE_MARKERS = ("agent/__init__.py", "providers/__init__.py",
+#: preloads a JSON library, ``hermes_cli/__init__.py`` is the CLI's package). Each must be a
+#: docstring and nothing else (``status``).
+_LOCAL_PACKAGE_MARKERS = ("agent/__init__.py", "providers/__init__.py", "hermes_cli/__init__.py",
                           # slice 4: upstream's a2a ``__init__`` is the gateway plugin loader
                           "plugins/platforms/__init__.py", "plugins/platforms/a2a/__init__.py")
 
@@ -358,7 +376,8 @@ def unmapped_imports(text: str, path: str = "x.py") -> list[str]:
             for alias in node.names:
                 if alias.name in DENIED_ATTRS or alias.name == "*":
                     found.append(f"line {line}: from {module} import {alias.name}")
-                elif module.startswith(COMPAT_PACKAGE) and alias.name.startswith("_"):
+                elif (module.startswith(COMPAT_PACKAGE) and alias.name.startswith("_")
+                        and alias.name not in COMPAT_PRIVATE_EXPORTS.get(module, ())):
                     found.append(f"line {line}: from {module} import {alias.name} (private)")
                 elif node.level == 0 and scoped_module(f"{module}.{alias.name}"):
                     found.append(f"line {line}: from {module} import {alias.name} (path-scoped module)")

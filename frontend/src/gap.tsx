@@ -56,6 +56,7 @@ import { WritebackDigestPanel } from './panels/writeback-digest';
 import { SupportVoicePanel } from './panels/support-voice';
 import { AgentsArenaPanel } from './panels/agents-arena';
 import { MissionCanvasPanel } from './panels/mission-canvas';
+import { ContextMeterPanel } from './panels/context-meter';
 import { SkillsImportPanel } from './panels/skills-import';
 import { TodayReceiptPanel } from './panels/today-receipt';
 import { JobsPanel } from './panels/jobs';
@@ -5699,6 +5700,7 @@ const PANEL_COMPONENTS = {
   JobsPanel,
   LearningPanel,
   SessionsPanel,
+  ContextMeterPanel,
   HeartbeatPanel,
   TranscriptPanel,
   EscalationPanel,

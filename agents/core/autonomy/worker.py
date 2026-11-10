@@ -332,6 +332,8 @@ _REFUSALS_BY_KIND: dict[str, tuple[str, ...]] = {
                  "mediation_execution_required", "local_image_disabled", "kernel_required",
                  "heavy_features_paused"),
     "repo.sync": (),
+    # session.loop_tick — a /loop wakeup is a turn, never an autonomy-worker task.
+    "session.loop_tick": (),
     "admin.kill_switch": (),
     "admin.capability_issue": (),
     # admin.agent_roster — H202's roster changes run only from admin routes and the CLI,

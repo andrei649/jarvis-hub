@@ -63,6 +63,10 @@ MAX_ONESHOT_CHARS = 48_000
 BTW_SNAPSHOT_CHARS = 12_000
 BTW_QUESTION_CHARS = 1_000
 BTW_MAX_TOKENS = 400
+#: H669 — the ``/btw`` fork reads the whole conversation, not a 12,000-character snapshot:
+#: as much of it as the local model's window holds (less the answer and the question),
+#: never more than this many characters.
+BTW_FORK_MAX_CHARS = 480_000
 #: Purposes are short labels (``btw``, ``plugin:weather``); the ledger keeps this many.
 MAX_ONESHOT_PURPOSES = 64
 _PURPOSE = re.compile(r"[a-z][a-z0-9_.:-]{0,63}")
@@ -320,5 +324,86 @@ async def run_oneshot(
                         model=model, answered=False)
         raise
     _record_oneshot(purpose, prompt_chars=prompt_chars, max_tokens=max_tokens,
+                    model=model, answered=True)
+    return answer
+
+
+async def resolve_btw_fork_budget(router) -> int:
+    """H669 — ``btw_fork_budget_chars`` against the window the local backend really serves:
+    Ollama's effective ``num_ctx`` (``resolve_context_window``) or a backend's own
+    ``context_window(model)``; the family table only when neither answers."""
+    window = None
+    try:
+        backend = getattr(router, "local_backend", None)
+    except Exception:  # noqa: BLE001 — no local backend: the fork itself will say so
+        backend = None
+    try:
+        model = resolve_auxiliary_model("oneshot", getattr(router, "active_model", None))
+    except Exception:  # noqa: BLE001
+        model = ""
+    try:
+        resolve = getattr(backend, "resolve_context_window", None)
+        if callable(resolve):
+            window = await resolve(model)
+        elif callable(getattr(backend, "context_window", None)):
+            window = backend.context_window(model)
+    except Exception:  # noqa: BLE001 — an unknown window takes the family table
+        window = None
+    if isinstance(window, bool) or not isinstance(window, int) or window <= 0:
+        window = None
+    return btw_fork_budget_chars(router, window=window)
+
+
+def btw_fork_budget_chars(router, *, window: int | None = None) -> int:
+    """H669 — how much of the conversation a ``/btw`` fork may replay: the local one-shot
+    model's window (``context_compressor.window_for``, the conservative per-family table)
+    in characters, less the answer's budget and a margin, capped at ``BTW_FORK_MAX_CHARS``."""
+    from ..context_compressor import window_for
+
+    try:
+        model = resolve_auxiliary_model("oneshot", getattr(router, "active_model", None))
+    except Exception:  # noqa: BLE001 — an unknown model takes the conservative default
+        model = ""
+    window_tokens = window_for(model) if window is None else int(window)
+    usable = max(0, window_tokens - BTW_MAX_TOKENS - 1_024)
+    budget = min(BTW_FORK_MAX_CHARS, usable * 3)
+    # The 12,000-character floor only stands in for an unknown window; a window the
+    # backend reports is never exceeded.
+    return budget if window is not None else max(BTW_SNAPSHOT_CHARS, budget)
+
+
+async def run_side_fork(router, conversation: str, question: str, *, system: str,
+                        max_tokens: int = BTW_MAX_TOKENS, temperature: float = 0.2) -> str:
+    """H669 — the ``/btw`` fork: the whole conversation replayed once, beside it, on the
+    same strict-local auxiliary rail as ``run_oneshot`` (``prepare_local_auxiliary``: the
+    fail-closed local backend, no job pin, the auxiliary data-handling and usage scopes).
+    Like every auxiliary call it offers the model no tools, so the fork cannot act; it
+    reads and writes no session turn. Its bound is the model's window
+    (``btw_fork_budget_chars``), not the one-shot's 48,000 characters. Counted in the
+    one-shot ledger under ``btw``; the caller charges its usage to the parent session."""
+    if not isinstance(conversation, str) or not conversation.strip():
+        raise AuxiliaryConfigError("a side fork needs a conversation")
+    if len(conversation) > BTW_FORK_MAX_CHARS:
+        raise AuxiliaryConfigError(f"a side fork reads at most {BTW_FORK_MAX_CHARS} characters")
+    question = _bounded_text(question, name="question", required=True)
+    system = _bounded_text(system, name="system", required=False)
+    prompt = f"Conversation:\n{conversation}\n\nQuestion about this conversation: {question}"
+    model = None
+    try:
+        generate = prepare_local_auxiliary(router, "oneshot")
+        model = resolve_auxiliary_model("oneshot", getattr(router, "active_model", None))
+        answer = await generate(system=system, prompt=prompt, max_tokens=max_tokens,
+                                temperature=temperature)
+        from .base import is_backend_failure_reply
+
+        if is_backend_failure_reply(answer):
+            raise AuxiliaryBackendFailure("the local model did not answer")
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        _record_oneshot("btw", prompt_chars=len(prompt) + len(system), max_tokens=max_tokens,
+                        model=model, answered=False)
+        raise
+    _record_oneshot("btw", prompt_chars=len(prompt) + len(system), max_tokens=max_tokens,
                     model=model, answered=True)
     return answer

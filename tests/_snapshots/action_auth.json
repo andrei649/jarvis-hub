@@ -33,6 +33,7 @@
  "repo.sync": "kernel",
  "report.export": "kernel",
  "research": "kernel",
+ "session.loop_tick": "kernel",
  "settings.voice_command": "kernel",
  "skill.generation": "kernel",
  "skill.install": "kernel",

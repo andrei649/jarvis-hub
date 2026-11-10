@@ -2925,6 +2925,18 @@
   missing 112 → 80; headline 148. Next: first review of the 55 rows never reassessed since 2026-09-07
   (running), a UX pass (one Integrations panel, keys in the HUD, one consent card), then the waves in
   `docs/hermes/missing-rows-plan-2026-11-10.md`.
+  **G2 + G3 — session commands (2026-11-10):** `/plan` puts a conversation in plan mode (the Action
+  Kernel and the tool door let only reads run; persisted; owner-only on and off) and feeds Hermes's
+  `plan_prompt.py`, adopted byte-identical; the hub saves the reply under `<data>/plans/`. `/loop`
+  (`/proactive`) runs Hermes's `hermes_cli/loops.py`, adopted behind two new rewrite rules and a
+  file-free compat layer; each wakeup crosses the kernel as `session.loop_tick`, the e-stop, kill
+  switch, plan mode, approval mode `off` and the loop's budget pause it, and the heartbeat scheduler
+  is the 15 s watcher. `/btw` is now a whole-conversation fork with usage on the parent session.
+  `/context`, `/compress`, `GET /sessions/{id}/context` and the HUD Context Meter read the compaction
+  policy itself. Ledger: H668, H578 → equivalent; H460 partial (no loop delivery to Slack/Discord/email, no loops in groups); H669, H412 stay partial (no cache-parity
+  fork, prompt.btw, @diff/page refs or acting manual compaction). User docs:
+  `docs/SESSION_COMMANDS.md`. Tests: `tests/test_g2_session_commands.py` (62; two adversarial review rounds added the per-tick owner re-check, a fresh allotment on resume, migration with the conversation and an explicit read-kind list) and
+  `frontend/src/panels/context-meter.test.tsx` (2).
 
   **UX pass done (2026-11-10): the Integrations panel** (owner request: make the Hermes integration
   coherent before adopting more). Console → Start → Integrations lists the 4 search backends (Tavily +

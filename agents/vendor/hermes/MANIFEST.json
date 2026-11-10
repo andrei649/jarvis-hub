@@ -1,11 +1,28 @@
 {
   "files": [
     {
+      "path": "agent/plan_prompt.py",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "81a4ce937a78eb5b766c6ecdc414a7d0570e8875845b46f1a63b5fe70ec1b45b",
+      "vendored_sha256": "81a4ce937a78eb5b766c6ecdc414a7d0570e8875845b46f1a63b5fe70ec1b45b"
+    },
+    {
       "path": "agent/reasoning_effort.py",
       "rules_applied": [],
       "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
       "upstream_sha256": "050b8d56b474f24aaa0a63e542554f0382ffc49431ba769133157f617e5a8c6f",
       "vendored_sha256": "050b8d56b474f24aaa0a63e542554f0382ffc49431ba769133157f617e5a8c6f"
+    },
+    {
+      "path": "hermes_cli/loops.py",
+      "rules_applied": [
+        "hermes-cli-config",
+        "hermes-cli-goals"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "34577862a48abe3e7a0e7dc0e3433ccfc80441648e7d4d35199a3ef68c9a228e",
+      "vendored_sha256": "7c0ff64eb35de93a9f4c11e35fc1833f7432cabb155dcc11b38dec3a06b37d0e"
     },
     {
       "path": "optional-skills/autonomous-ai-agents/agent-merge-conflict-arbiter/SKILL.md",
@@ -3858,6 +3875,24 @@
       "pattern": "^(?P<i>[ \\t]*)import urllib\\.request(?P<rest>[ \\t]*(?:#.*)?)$",
       "replacement": "\\g<i>from agents.vendor.hermes_compat import urllib_refused as urllib\\g<rest>",
       "why": "a request object only; opening one is refused (catalog fetches are Nerva's)"
+    },
+    {
+      "id": "hermes-cli-config",
+      "paths": [
+        "hermes_cli/loops.py"
+      ],
+      "pattern": "^(?P<i>[ \\t]*)from hermes_cli\\.config import ",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat.loops_config import ",
+      "why": "the loops.* settings come from Nerva's settings store, bounded"
+    },
+    {
+      "id": "hermes-cli-goals",
+      "paths": [
+        "hermes_cli/loops.py"
+      ],
+      "pattern": "^(?P<i>[ \\t]*)from hermes_cli\\.goals import ",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat.goals import ",
+      "why": "loop state in Nerva's per-session store; the judge and the goal probe are Nerva's"
     }
   ],
   "upstream": {
