@@ -2829,6 +2829,20 @@
   key. A logging filter keeps queries out of the logs. Brave counts as paid. Search
   only (vendored `extract` is not wired); no live vendor call made. No ledger row moves: the owner's
   decision 1 (count adopted code as delivered) is still open. Guide: `docs/hermes/ADOPT_LANE.md`.
+  **Adopt lane, slice 2 (2026-11-10):** model-provider profiles. 19 Hermes profile modules
+  (`plugins/model-providers/*`, 24 provider ids: DeepSeek, Z.AI, Kimi ×2, Fireworks, Hugging Face,
+  NVIDIA NIM, Ollama Cloud, Nebius, Upstage, Novita, GMI, Vercel AI Gateway, Kilo Code, CommandCode,
+  Arcee, StepFun, Xiaomi, Alibaba ×6) plus `providers/base.py` and `agent/reasoning_effort.py` are
+  vendored from `9c0560f8` (8 new rewrite rules, 5 small compat modules). The bridge
+  (`agents/core/llm/hermes_profiles.py`) registers each as a Nerva provider profile on the existing
+  OpenAI-compatible backend: base URL, model list and request extras come from the Hermes profile;
+  client, egress ledger, streaming, tools, retries, cost and keys stay Nerva's. Each client is pinned
+  to its profile's HTTPS host (other hosts and local addresses refused before the transport); keys
+  are read per provider through `env_config` and are managed; off until the key is set and the owner
+  picks `llm.compatible_provider`. Reasoning: Nerva clamps first to the levels the profile sends
+  verbatim, then a check lets the profile only restate the choice. Native providers kept native;
+  13 profile modules not adoptable yet (other wires, OAuth, no fixed host, core deps) — table in the guide.
+  Data policy `unknown` for all; no live vendor call made; no ledger row moves (decision 1 open).
 
 ## Darwin feature absorption — 2026-09-09
 

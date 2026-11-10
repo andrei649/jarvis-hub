@@ -1,11 +1,354 @@
 {
   "files": [
     {
+      "path": "agent/reasoning_effort.py",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "050b8d56b474f24aaa0a63e542554f0382ffc49431ba769133157f617e5a8c6f",
+      "vendored_sha256": "050b8d56b474f24aaa0a63e542554f0382ffc49431ba769133157f617e5a8c6f"
+    },
+    {
       "path": "plugins/__init__.py",
       "rules_applied": [],
       "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
       "upstream_sha256": "afceb915688f3d01bec6cc3290d83159534c0939edb05775d24a54afb35353dc",
       "vendored_sha256": "afceb915688f3d01bec6cc3290d83159534c0939edb05775d24a54afb35353dc"
+    },
+    {
+      "path": "plugins/model-providers/ai-gateway/__init__.py",
+      "rules_applied": [
+        "providers-base",
+        "providers-registry"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "d59d6bf990b3817b33dc2b5477d61396d18882092ea9964c8321f48da168059e",
+      "vendored_sha256": "0e274a5215fc845f52666fceab7d4281f8b5d0076037b9922e3a27425b6a7f81"
+    },
+    {
+      "path": "plugins/model-providers/ai-gateway/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "27abc9036060a968d6b5be84bbd03734554133e1186378caf76dedc1d913279b",
+      "vendored_sha256": "27abc9036060a968d6b5be84bbd03734554133e1186378caf76dedc1d913279b"
+    },
+    {
+      "path": "plugins/model-providers/alibaba-coding-plan/__init__.py",
+      "rules_applied": [
+        "providers-base",
+        "providers-registry",
+        "reasoning-effort"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "d37daa680d02c48cb7c165470fa51ddfaa35f90637f2c57f30bc6c26ef6d1759",
+      "vendored_sha256": "c429e67da3513f14c6b940b77f3961996478fa679b1574968e4d3bc9ec36e7c8"
+    },
+    {
+      "path": "plugins/model-providers/alibaba-coding-plan/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "672b7972ac1dbafa98407b59b1c359d9789c3e00aa22a5564261dbf0125cce1b",
+      "vendored_sha256": "672b7972ac1dbafa98407b59b1c359d9789c3e00aa22a5564261dbf0125cce1b"
+    },
+    {
+      "path": "plugins/model-providers/alibaba/__init__.py",
+      "rules_applied": [
+        "providers-base",
+        "providers-registry",
+        "reasoning-effort"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "e4fa3e75ce787558f12b51fa1f8b1a971fe17b6cbd3527f10adab76b6241e1b6",
+      "vendored_sha256": "ca308c3391a3732df70fa9ae18ad1bc776b1006549cc859c6c76a3d2d2f1ab4f"
+    },
+    {
+      "path": "plugins/model-providers/alibaba/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "ef778d2319a617c2a30a7ca47c159ca6e46e73c0a9e8690189505ad12ecc4e14",
+      "vendored_sha256": "ef778d2319a617c2a30a7ca47c159ca6e46e73c0a9e8690189505ad12ecc4e14"
+    },
+    {
+      "path": "plugins/model-providers/arcee/__init__.py",
+      "rules_applied": [
+        "providers-base",
+        "providers-registry"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "42268f1c6ad743fd9a89977c4941a61fe23c5e9973ac07663ed3bd04d7d3636b",
+      "vendored_sha256": "51dae0ce4a69f4ce9c4d062ade59110a6cb067543e81c992ef2a48a31dace5db"
+    },
+    {
+      "path": "plugins/model-providers/arcee/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "6b43ee22a633966ec3d41a6042fed51da91181ff6fb3932c60be16ccb341c384",
+      "vendored_sha256": "6b43ee22a633966ec3d41a6042fed51da91181ff6fb3932c60be16ccb341c384"
+    },
+    {
+      "path": "plugins/model-providers/commandcode/__init__.py",
+      "rules_applied": [
+        "providers-base",
+        "providers-registry",
+        "hermes-cli-leaf",
+        "urllib-request"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "86ac199fae8744e8aa7bdf1c5d4385aa1a2df9147da31273b5196da185ff2de9",
+      "vendored_sha256": "10dd4acfa2a578b0d5bcb84f6f0d36348f3982cb965f501106d52012b17682e0"
+    },
+    {
+      "path": "plugins/model-providers/commandcode/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "05d894a4fa8fd37e1884e64d29f51eb4ccf130fa13640f592aff9c0cfb6ada6d",
+      "vendored_sha256": "05d894a4fa8fd37e1884e64d29f51eb4ccf130fa13640f592aff9c0cfb6ada6d"
+    },
+    {
+      "path": "plugins/model-providers/deepseek/__init__.py",
+      "rules_applied": [
+        "providers-base",
+        "providers-registry",
+        "reasoning-effort"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "c534fabea55549d28fb6340a9e26a70b13166aa9aa396bb43bffa5350bb0fda8",
+      "vendored_sha256": "fb0772ecb00355ea4107a6655e81f98ae8dfe6092a1e0e7ecceb02cd8caebddb"
+    },
+    {
+      "path": "plugins/model-providers/deepseek/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "4f9f0df080363471bd2256e1f03079e3bec9889e18e31be22a85f982725f0731",
+      "vendored_sha256": "4f9f0df080363471bd2256e1f03079e3bec9889e18e31be22a85f982725f0731"
+    },
+    {
+      "path": "plugins/model-providers/fireworks/__init__.py",
+      "rules_applied": [
+        "providers-base",
+        "providers-registry",
+        "hermes-cli-leaf"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "044a84b62ee0b03085e9f490fe57c8c3a0f47ce2d3e5ad0e5cf066a7bf403b52",
+      "vendored_sha256": "8558cf35d102da57015cf3fab583d5a443fe3565bd4a3462d06585b275dab526"
+    },
+    {
+      "path": "plugins/model-providers/fireworks/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "6b4741eae138394e4f1e2d5afb637c34df34096f36b1e11e07ddb3ae8cde181d",
+      "vendored_sha256": "6b4741eae138394e4f1e2d5afb637c34df34096f36b1e11e07ddb3ae8cde181d"
+    },
+    {
+      "path": "plugins/model-providers/gmi/__init__.py",
+      "rules_applied": [
+        "providers-base",
+        "providers-registry",
+        "hermes-cli-leaf"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "ce5a7c15559943eca58ce750cc813d2c774820baed47271aba99dec4fac3fb55",
+      "vendored_sha256": "9a812c48e52713b39c96ec72286c23450f8f00e4ecc43c8d3b44f3105a97d533"
+    },
+    {
+      "path": "plugins/model-providers/gmi/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "44d0c29de15fdb00f602a8096dc1236d0ce0e49e21c6e4269a2c6faa8f1a115b",
+      "vendored_sha256": "44d0c29de15fdb00f602a8096dc1236d0ce0e49e21c6e4269a2c6faa8f1a115b"
+    },
+    {
+      "path": "plugins/model-providers/huggingface/__init__.py",
+      "rules_applied": [
+        "providers-base",
+        "providers-registry"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "88a5c2f345a0e3da30b2993f18d11307ac4d293b4d9270f904cc2f9fc7af011d",
+      "vendored_sha256": "4f829c80a82882e4b5e7d653c661f10cd9605e3805acdedf4a80b9b1ad464ac7"
+    },
+    {
+      "path": "plugins/model-providers/huggingface/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "35a1732997d0206635d962706e58a11aecba4de1976939cef1afa69b9145503a",
+      "vendored_sha256": "35a1732997d0206635d962706e58a11aecba4de1976939cef1afa69b9145503a"
+    },
+    {
+      "path": "plugins/model-providers/kilocode/__init__.py",
+      "rules_applied": [
+        "providers-base",
+        "providers-registry"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "34698a725a22f355189816beff958dcea1f7afb5c837d5f7be6a13e6ec802329",
+      "vendored_sha256": "7688744f009f3dbc49861dbd50737061d8e806b86964a18cd5f68dbb8fcac4f6"
+    },
+    {
+      "path": "plugins/model-providers/kilocode/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "15025d545c72815e492032cace7333d5fe8c198d8d29c1ff04e72165cd5d2a25",
+      "vendored_sha256": "15025d545c72815e492032cace7333d5fe8c198d8d29c1ff04e72165cd5d2a25"
+    },
+    {
+      "path": "plugins/model-providers/kimi-coding/__init__.py",
+      "rules_applied": [
+        "providers-base",
+        "providers-registry",
+        "reasoning-effort",
+        "hermes-cli-leaf"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "0f1ed5079f1a5b3837a6df30d71aba67056f7025709f25c0ee003ab37b2b1f83",
+      "vendored_sha256": "95700bace05a3e12518ba630632e2df7f15e946fcb2115416371836b7470a190"
+    },
+    {
+      "path": "plugins/model-providers/kimi-coding/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "7409231cc61bdbc686bdc49c95b239844dd762d2ee6b359846c718c90c865c02",
+      "vendored_sha256": "7409231cc61bdbc686bdc49c95b239844dd762d2ee6b359846c718c90c865c02"
+    },
+    {
+      "path": "plugins/model-providers/nebius-token-factory/__init__.py",
+      "rules_applied": [
+        "providers-base",
+        "providers-registry",
+        "reasoning-effort"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "2ac113698c549bf1224527252c50dda966a63f372fa6f98e604ab7cc4a6bfa2d",
+      "vendored_sha256": "0222f7af304146df259ed08fbe98daadb21c830499d78702d40b93688a6862ae"
+    },
+    {
+      "path": "plugins/model-providers/nebius-token-factory/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "1e8ce0a3eff29165f13985f7fb0e339261057fd3dc561cd7d9a22c228775bd12",
+      "vendored_sha256": "1e8ce0a3eff29165f13985f7fb0e339261057fd3dc561cd7d9a22c228775bd12"
+    },
+    {
+      "path": "plugins/model-providers/novita/__init__.py",
+      "rules_applied": [
+        "providers-base",
+        "providers-registry"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "19e5b6fc302981b45148c05eccca057f51de22a068eae06f7ede64fb22b856c2",
+      "vendored_sha256": "4be2b6d5edbd09d4d5042d6ec4ee3d7239ddbd8b5f8ddfc212c5e37a200ef09c"
+    },
+    {
+      "path": "plugins/model-providers/novita/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "65f78eba193964b2c306fda49b8631d98805a216a78964d58d2a72a0d9d577aa",
+      "vendored_sha256": "65f78eba193964b2c306fda49b8631d98805a216a78964d58d2a72a0d9d577aa"
+    },
+    {
+      "path": "plugins/model-providers/nvidia/__init__.py",
+      "rules_applied": [
+        "providers-base",
+        "providers-registry"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "199ca112b6d5760226b6b481e1495d4df9459fd2863a2ae46291bef637c7aa3d",
+      "vendored_sha256": "9bc8eacda58bbdb6921e4c9bc853ea778142422d3fc574e3a944892070becc40"
+    },
+    {
+      "path": "plugins/model-providers/nvidia/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "5154fe0a7dccc41802a2d57ca930c4621e622530c4aad7986b430451e05a335f",
+      "vendored_sha256": "5154fe0a7dccc41802a2d57ca930c4621e622530c4aad7986b430451e05a335f"
+    },
+    {
+      "path": "plugins/model-providers/ollama-cloud/__init__.py",
+      "rules_applied": [
+        "providers-base",
+        "providers-registry",
+        "reasoning-effort"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "16bc259bd3737d34a706c49a604bbb2737128b94db62b1fe89fc750452e00ab8",
+      "vendored_sha256": "fb2462fc74dff6caa9dec62b48708b9ef6b837e03f4788a6d1e83647e5f718c0"
+    },
+    {
+      "path": "plugins/model-providers/ollama-cloud/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "92b09d63464548385715fccd276bd6dd073ecb9b9150779ab73961c43e98fd4c",
+      "vendored_sha256": "92b09d63464548385715fccd276bd6dd073ecb9b9150779ab73961c43e98fd4c"
+    },
+    {
+      "path": "plugins/model-providers/stepfun/__init__.py",
+      "rules_applied": [
+        "providers-base",
+        "providers-registry"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "935f440d36dae0bb1f33a3dad73390c765c9ec22bc3528e9cfcca8bb271ef07b",
+      "vendored_sha256": "9fd24e0b4a6ac96814feb3bb05e60c5c32495a073a2a0d08e0c085d0f75069ec"
+    },
+    {
+      "path": "plugins/model-providers/stepfun/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "527e1875123fd578c0f7fe899a7f87cde9af01e9088bc830af8342d74d4e5474",
+      "vendored_sha256": "527e1875123fd578c0f7fe899a7f87cde9af01e9088bc830af8342d74d4e5474"
+    },
+    {
+      "path": "plugins/model-providers/upstage/__init__.py",
+      "rules_applied": [
+        "providers-base",
+        "providers-registry",
+        "reasoning-effort"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "34bc6eca4c810714bf6a5e763e8d2afccffa5602620bd8a2958b67e4fddf8ecd",
+      "vendored_sha256": "708511ab262ab9ed708695f50ac440eec9c6ea42a1c933c612b9b525bf62e549"
+    },
+    {
+      "path": "plugins/model-providers/upstage/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "20f531f3eb22ec38f978607472116502006e8948fd27c6bd509c644b0bd8bafc",
+      "vendored_sha256": "20f531f3eb22ec38f978607472116502006e8948fd27c6bd509c644b0bd8bafc"
+    },
+    {
+      "path": "plugins/model-providers/xiaomi/__init__.py",
+      "rules_applied": [
+        "providers-base",
+        "providers-registry"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "bfea5d6817480db02a593806cb609e4a125db04904d042158c49ab5a7d2bc245",
+      "vendored_sha256": "94386116c2b0e555e5ea4ac3c17a4d523a58d940d24a239c560fd2028591cf50"
+    },
+    {
+      "path": "plugins/model-providers/xiaomi/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "74fc3f227e6bdb252cc35c92443082ff7f161d417d0e71d6a1869839b6996e12",
+      "vendored_sha256": "74fc3f227e6bdb252cc35c92443082ff7f161d417d0e71d6a1869839b6996e12"
+    },
+    {
+      "path": "plugins/model-providers/zai/__init__.py",
+      "rules_applied": [
+        "providers-base",
+        "providers-registry",
+        "reasoning-effort-module"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "963504f89a7de677cc51e825079ba63dfa5e6414724ff23494dc71444e3d9fdc",
+      "vendored_sha256": "06a345a24740d10f5e3ada87e94f5b4e54a6e84da460bc5625e25ed174387644"
+    },
+    {
+      "path": "plugins/model-providers/zai/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "e92e4459749cf6c9689b55ef691fad0f3aecbdbcdebdd15bf7b24c65e491aa05",
+      "vendored_sha256": "e92e4459749cf6c9689b55ef691fad0f3aecbdbcdebdd15bf7b24c65e491aa05"
     },
     {
       "path": "plugins/web/__init__.py",
@@ -106,6 +449,18 @@
       "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
       "upstream_sha256": "4fb30747fb869bec4c0ec7a35fe0b1c2f948a846eb07c79f096ad4a63c5f6e11",
       "vendored_sha256": "4f69736abec14998fda0ae3d579e36cb698f6da5ecd5e7cc5c95f5bd738cc5d4"
+    },
+    {
+      "path": "providers/base.py",
+      "rules_applied": [
+        "account-usage",
+        "hermes-cli-leaf",
+        "threading-locks",
+        "urllib-request"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "18ca1205ecd73458e1bea8917cd209f8d3df6739cf61290af72c619ff9fff003",
+      "vendored_sha256": "a11dcf10ff25fe471683eccb085393df40628b75861b956f60f28ab8c1ebb026"
     }
   ],
   "local_files": [
@@ -180,6 +535,54 @@
       "pattern": "^(?P<i>[ \\t]*)client\\.headers\\[\"x-exa-integration\"\\] = \"hermes-agent\"(?P<rest>[ \\t]*(?:#.*)?)$",
       "replacement": "\\g<i>client.headers[\"x-exa-integration\"] = \"nerva\"\\g<rest>",
       "why": "tell Exa the caller is Nerva, not Hermes Agent"
+    },
+    {
+      "id": "providers-base",
+      "pattern": "^(?P<i>[ \\t]*)from providers\\.base import ",
+      "replacement": "\\g<i>from agents.vendor.hermes.providers.base import ",
+      "why": "the vendored ProviderProfile base"
+    },
+    {
+      "id": "providers-registry",
+      "pattern": "^(?P<i>[ \\t]*)from providers import ",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat.providers import ",
+      "why": "register_provider fills the compat registry; Nerva's bridge reads it"
+    },
+    {
+      "id": "reasoning-effort",
+      "pattern": "^(?P<i>[ \\t]*)from agent\\.reasoning_effort import ",
+      "replacement": "\\g<i>from agents.vendor.hermes.agent.reasoning_effort import ",
+      "why": "the vendored effort vocabulary (pure)"
+    },
+    {
+      "id": "reasoning-effort-module",
+      "pattern": "^(?P<i>[ \\t]*)from agent import reasoning_effort\\b",
+      "replacement": "\\g<i>from agents.vendor.hermes.agent import reasoning_effort",
+      "why": "the vendored effort vocabulary, imported as a module"
+    },
+    {
+      "id": "account-usage",
+      "pattern": "^(?P<i>[ \\t]*)from agent\\.account_usage import ",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat.account_usage import ",
+      "why": "a type name only; Nerva keeps its own usage accounting"
+    },
+    {
+      "id": "hermes-cli-leaf",
+      "pattern": "^(?P<i>[ \\t]*)from hermes_cli\\.(?:version_info|auth|urllib_security|chat_catalog) import ",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat.hermes_cli import ",
+      "why": "user agent, credential pool, catalog fetch: Nerva-owned or refused"
+    },
+    {
+      "id": "threading-locks",
+      "pattern": "^(?P<i>[ \\t]*)import threading(?P<rest>[ \\t]*(?:#.*)?)$",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat import locks as threading\\g<rest>",
+      "why": "locks only; vendored code starts no thread"
+    },
+    {
+      "id": "urllib-request",
+      "pattern": "^(?P<i>[ \\t]*)import urllib\\.request(?P<rest>[ \\t]*(?:#.*)?)$",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat import urllib_refused as urllib\\g<rest>",
+      "why": "a request object only; opening one is refused (catalog fetches are Nerva's)"
     }
   ],
   "upstream": {
