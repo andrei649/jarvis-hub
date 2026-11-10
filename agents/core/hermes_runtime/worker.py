@@ -28,7 +28,7 @@ else:
     _env_spec.loader.exec_module(_env_module)
     env_str = _env_module.env_str
 
-SOURCE_SHA = "0808ed8ec0420ef2c8e1363d919ef1d83fc4e5e7"
+SOURCE_SHA = "9c0560f8e6856bc14c11bfe6d666df06be14d2de"
 
 
 def native_rpc_completion(response, rid):
@@ -89,8 +89,10 @@ def install_guards(broker):
     ToolRegistry.dispatch = dispatch
     original_connector = connectors.dispatch_connector_call
 
-    def connector(name, args, tool_call_id):
-        return broker.run("tool", name, args, lambda: original_connector(name, args, tool_call_id))
+    def connector(name, args, tool_call_id, *context, **named):
+        # Upstream passes turn/task ids after the call id; forward them untouched.
+        return broker.run("tool", name, args,
+                          lambda: original_connector(name, args, tool_call_id, *context, **named))
 
     connectors.dispatch_connector_call = connector
     connector_exports.dispatch_connector_call = connector

@@ -2843,6 +2843,22 @@
   verbatim, then a check lets the profile only restate the choice. Native providers kept native;
   13 profile modules not adoptable yet (other wires, OAuth, no fixed host, core deps) — table in the guide.
   Data policy `unknown` for all; no live vendor call made; no ledger row moves (decision 1 open).
+  **Run lane, slice 1 (2026-11-10):** the governed Hermes sidecar moves from `0808ed8` to `9c0560f8`
+  and the move is now a script: `scripts/hermes_runtime.py bump --commit <sha>`
+  (`scripts/hermes_runtime_bump.py`) re-verifies the current pin, downloads and verifies the new
+  archive, computes every lock field the way `distribution.py` checks them, regenerates the RPC
+  catalog from upstream's OpenRPC contract and prints the full diff. It never classifies: new methods
+  and the old policy `source_sha` keep every Hermes RPC refused until a reviewer signs off. The catalog
+  is 262 methods / 16 server requests / 78 notifications (18 methods added, 7 removed, 15 with changed
+  params); the 18 new ones are classified 16 × tier 3, 2 × tier 0 (table in
+  `docs/hermes/RUNTIME_INTEGRATION.md`). The worker's connector guard now forwards upstream's new
+  turn/task arguments (it would have broken every connector call). `install` sets aside a source tree
+  left by the previous pin. Codeload refused this environment, so the archive came from `git archive |
+  gzip -n`, accepted because it reproduces the old pin's codeload hash exactly. Not done: `install` and
+  the live test on the new pin (large download), so no claim that the sidecar runs on it. Found, open:
+  upstream's inline tool executors (`memory`, `clarify`, `manage_connections`, …) bypass
+  `ToolRegistry.dispatch` and so the worker's tool guard, at both pins; gate them in the
+  governed-availability work. No ledger row moves.
 
 ## Darwin feature absorption — 2026-09-09
 

@@ -16,19 +16,25 @@ from urllib.parse import urlsplit
 from agents.core.archive_safe import ArchiveLimits, ArchiveRejected, extract_tar_path
 
 PIN_FILE = Path(__file__).resolve().parents[3] / "runtime/hermes/upstream.lock.json"
+# Second anchor beside the lock file: a reviewed code change, rewritten only by
+# `scripts/hermes_runtime.py bump`, so an edited lock alone cannot move the pin.
+PINNED_COMMIT = "9c0560f8e6856bc14c11bfe6d666df06be14d2de"
+ARCHIVE_URL = "https://codeload.github.com/NousResearch/hermes-agent/tar.gz/{commit}"
 _MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
 _MAX_FILES = 100_000
 _MAX_EXTRACTED_BYTES = 2 * 1024 * 1024 * 1024
 _GENERATED_TOP_LEVEL = {".git", ".hermes", "__pycache__"}
 
 
-def load_pin() -> dict:
-    pin = json.loads(PIN_FILE.read_text(encoding="utf-8"))
-    if pin.get("project") != "NousResearch/hermes-agent" or pin.get("commit") != "0808ed8ec0420ef2c8e1363d919ef1d83fc4e5e7":
+def load_pin(path: Path | None = None, *, commit: str | None = None) -> dict:
+    pin = json.loads(Path(path or PIN_FILE).read_text(encoding="utf-8"))
+    if pin.get("project") != "NousResearch/hermes-agent" or pin.get("commit") != (commit or PINNED_COMMIT):
         raise ValueError("Hermes source pin is invalid")
-    if pin.get("archive_url") != f"https://codeload.github.com/NousResearch/hermes-agent/tar.gz/{pin['commit']}":
+    if pin.get("archive_url") != ARCHIVE_URL.format(commit=pin["commit"]):
         raise ValueError("Hermes archive URL is not pinned")
-    for key, size in (("archive_sha256", 64), ("source_sha256", 64), ("tree_sha1", 40)):
+    if pin.get("archive_root") != f"hermes-agent-{pin['commit']}":
+        raise ValueError("Hermes archive root is not pinned")
+    for key, size in (("archive_sha256", 64), ("source_sha256", 64), ("tree_sha1", 40), ("git_tree_sha1", 40)):
         value = pin.get(key, "")
         if len(value) != size or any(char not in "0123456789abcdef" for char in value):
             raise ValueError(f"Invalid Hermes {key}")
@@ -93,7 +99,7 @@ def _source_sha256(root: Path) -> str:
     return digest.hexdigest()
 
 
-def verify_source(source: Path) -> dict:
+def verify_source(source: Path, pin: dict | None = None) -> dict:
     source = Path(source)
     if source.is_symlink() or not source.is_dir():
         raise ValueError("Hermes source must be a real directory")
@@ -101,7 +107,7 @@ def verify_source(source: Path) -> dict:
         raise ValueError("Hermes source must not contain Git metadata or hooks")
     if (source / ".hermes").is_symlink():
         raise ValueError("Hermes source has an unsafe generated launcher path")
-    pin = load_pin()
+    pin = pin or load_pin()
     content_identity = _source_sha256(source)
     if content_identity != pin["source_sha256"]:
         raise ValueError("Hermes source identity differs from pinned upstream")
@@ -111,7 +117,8 @@ def verify_source(source: Path) -> dict:
     return {"commit": pin["commit"], "tree_sha1": identity, "source_sha256": content_identity, "source": str(source.resolve())}
 
 
-def _extract_archive(archive: Path, destination: Path, archive_root: str) -> None:
+def _extract_archive(archive: Path, destination: Path, archive_root: str,
+                     executable_paths: list[str] | None = None) -> None:
     """Use the sole product extractor, then restore pinned executable metadata.
 
     archive_safe deliberately ignores untrusted Unix modes. The donor's small
@@ -133,7 +140,8 @@ def _extract_archive(archive: Path, destination: Path, archive_root: str) -> Non
         root = unpacked / archive_root
         if not root.is_dir():
             raise ValueError("Unsafe Hermes archive root")
-        executable_paths = json.loads(PIN_FILE.with_name("executable-paths.json").read_text(encoding="utf-8"))
+        if executable_paths is None:
+            executable_paths = json.loads(PIN_FILE.with_name("executable-paths.json").read_text(encoding="utf-8"))
         for relative in executable_paths:
             path = Path(relative)
             if path.is_absolute() or ".." in path.parts:

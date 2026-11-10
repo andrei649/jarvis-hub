@@ -115,6 +115,21 @@
   compatible provider, Nerva picks the nearest level the model accepts, never a stronger one.
   A provider whose model cannot turn thinking off says so instead of thinking anyway.
 - How these providers handle your data has not been checked yet; each is marked "unknown".
+**The optional Hermes runtime moves to a newer Hermes, and future updates are one command**
+- If you installed the optional Hermes runtime (Admin → Hermes Runtime), Nerva now expects the
+  Hermes version of 10 November instead of the one from October. Run
+  `python scripts/hermes_runtime.py install` again to download and verify it; until you do,
+  `status` reports the old install as out of date and the runtime does not start on it.
+- That version has 18 new actions and drops 7. Two new ones only read (your machine's hardware
+  summary, and which chats still have helpers running). The other 16 (spending settings, the
+  free trial, first-run setup, group-chat files and notes, saved-login fill, showing a local
+  image, the plugin catalogue lookup, renaming a connected account) wait for your approval,
+  like every other action that changes something.
+- Maintainers update the version with `python scripts/hermes_runtime.py bump --commit <id>`. It
+  downloads and checks the new version and lists every action that was added, removed or
+  changed. Nerva refuses all Hermes actions until someone has reviewed the new ones.
+- Not tested yet: the new version has not been installed and run end to end, because that needs
+  a large download. The checks above were run against its source code.
 
 **Three status pages now need your user token (#1347)**
 - An independent security review found that the Oracle status, learning stats and local-docs

@@ -40,3 +40,38 @@ def test_broker_failure_never_runs_effect():
     assert not effect
     assert 'error' in result
     assert 'unavailable' in json.dumps(result)
+
+
+def test_worker_connector_guard_forwards_upstream_context(monkeypatch):
+    """Upstream calls dispatch_connector_call(name, args, call_id, turn_id, task_id)."""
+    import sys
+    import types
+
+    from agents.core.hermes_runtime import worker
+
+    calls = []
+
+    def original(name, arguments, tool_call_id, turn_id=None, task_id=None):
+        calls.append((name, arguments, tool_call_id, turn_id, task_id))
+        return 'ok'
+
+    dispatch = types.SimpleNamespace(dispatch_connector_call=original)
+    exports = types.ModuleType('tools.connectors')
+    exports.dispatch = dispatch
+    exports.dispatch_connector_call = original
+    registry = types.SimpleNamespace(ToolRegistry=type('ToolRegistry', (), {'dispatch': lambda self, *a, **k: None}))
+    server = types.SimpleNamespace(_methods={}, register_method=lambda name, handler: None)
+    modules = {'tools': types.ModuleType('tools'), 'tools.connectors': exports,
+               'tools.connectors.dispatch': dispatch, 'tools.registry': registry,
+               'tui_gateway': types.SimpleNamespace(server=server), 'tui_gateway.server': server}
+    for name, module in modules.items():
+        monkeypatch.setitem(sys.modules, name, module)
+
+    class Broker:
+        def run(self, kind, name, args, call):
+            assert kind == 'tool'
+            return call()
+
+    worker.install_guards(Broker())
+    assert exports.dispatch_connector_call('gmail.send', {'to': 'x'}, 'call-1', 'turn-1', 'task-1') == 'ok'
+    assert calls == [('gmail.send', {'to': 'x'}, 'call-1', 'turn-1', 'task-1')]
