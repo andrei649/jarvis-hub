@@ -65,6 +65,17 @@
   instead of quietly replacing it.
 - The list of imported skills now needs your user token (it showed local folder paths).
 
+**Sub-agents you can pause, with a time limit (#1347)**
+- The assistant can hand work to sub-agents itself with a new `delegate_task` tool. It is off
+  until you turn it on in settings.
+- Pause new sub-agents from the HUD or with `POST /api/subagents/pause` (and `/resume`); the
+  pause survives a restart. While the emergency stop is engaged no sub-agent starts either.
+- Each sub-agent stops after 5 minutes by default (adjustable from 5 seconds to an hour).
+- A sub-agent only gets the tools its parent had, minus the risky ones (more delegation,
+  memory writes, sending messages, writing skills), and that is enforced on every call.
+- When a sub-agent asks for your approval, the card names the action first and then says which
+  sub-agent asked and for what.
+
 **Three status pages now need your user token (#1347)**
 - An independent security review found that the Oracle status, learning stats and local-docs
   status pages answered anyone on the network with personal details. They now ask for the same

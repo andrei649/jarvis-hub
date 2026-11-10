@@ -2791,6 +2791,18 @@
   refused), the sixth clean. `equivalent`; the sync flag is H345's and the patch-generation fields
   are outside the frozen sentence. The same reviews surfaced an open read on main, now guarded:
   `GET /skills/imported` served local source paths without credentials. Headline 147 → **148/697**.
+  **H400 (2026-11-10, #1347):** sub-agent delegation — a model-callable `delegate_task` tool (off
+  by default; the owner turns it on), one spawn gate that refuses under the emergency stop, the kill
+  switch or the owner's spawn pause (`POST /api/subagents/pause` and `/resume`, persisted), a 300 s
+  child wall-clock timeout, a batch quality gate against placeholder goals, child tool allowlists
+  enforced where tools run and not only where they are offered, and approval cards that say a
+  sub-agent asked. Two adversarial reviews: the first found a sub-agent slot stranded on a failed
+  run, `off` not meaning off for the tool, and child approvals indistinguishable from the parent's
+  (fixed); the second found the child's goal could spoof the action named on a card with terminal
+  escapes, bidi marks or brackets (fixed: the action is named first and model text is cleaned). The
+  row stays `partial`: the model cannot list, steer or stop its own children, a tainted turn under
+  the Action Kernel refuses delegation instead of asking, and there is no per-child credential
+  resolution. Headline unchanged at 148/697.
 
 ## Darwin feature absorption — 2026-09-09
 
