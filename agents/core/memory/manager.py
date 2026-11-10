@@ -30,6 +30,21 @@ class RewindRefused(RuntimeError):
     """The prepared conversation tail no longer has the same durable authority."""
 
 
+def _turn_untrusted() -> bool:
+    """H443 — whether the turn in flight is untrusted (``orchestrator._turn_is_untrusted``;
+    without the orchestrator loaded, its action origin alone). Fails closed."""
+    try:
+        from ..orchestrator import _turn_is_untrusted
+    except Exception:
+        try:
+            from ..action_origin import current_action_origin
+
+            return taint.is_untrusted_source(current_action_origin())
+        except Exception:
+            return True
+    return _turn_is_untrusted()
+
+
 @dataclass(frozen=True)
 class RollbackRewindTicket:
     nonce: str
@@ -343,6 +358,11 @@ class MemoryManager:
                 metadata.update({"channel": channel, "origin": origin})
                 if role == "user" and origin == INBOUND_ACTION_ORIGIN:
                     metadata = taint.mark(metadata, source=f"inbound:{channel}")
+            if not taint.is_tainted(metadata) and _turn_untrusted():
+                # H443: whatever an untrusted turn (a channel's, a guest's, one that read
+                # web text, a flagged recall or a file) puts here — its reply included —
+                # is not the owner's word, and says so when it is recalled later.
+                metadata = taint.mark(metadata, source="turn:untrusted")
             if media is not None:
                 # H586: an image turn carries the model's reading of an image (text in an
                 # image is attacker-controllable), so recalling it later taints the turn.

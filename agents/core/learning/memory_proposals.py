@@ -36,13 +36,24 @@ list, which fails closed:
   every turn it replays is dated at or after the admission (a turn restored from disk, or
   with no readable time, predates the watch).
 
-Everything else is not clean, with nothing to remember about it: a conversation older
-than the ledger, one copied or continued from another (``/undo``, a continuation, a
-rewind into a new session), one whose admission was dropped at :data:`MAX_CLEAN_SESSIONS`,
-and every conversation when the ledger file is missing or cannot be read (an unreadable
-file is moved aside, ``.unreadable-<time>``, and an empty ledger started). A conversation
-that is not clean never becomes clean again unless it is emptied. Its reviews hold their
-memory writes for the owner.
+Everything else is not clean: a conversation older than the ledger, one copied or
+continued from another (``/undo``, a continuation, a rewind into a new session), one whose
+admission was dropped at :data:`MAX_CLEAN_SESSIONS`, and every conversation when the
+ledger file is missing or cannot be read (an unreadable file is moved aside,
+``.unreadable-<time>``, and an empty ledger started). A conversation that is not clean
+never becomes clean again unless it is emptied. Its reviews hold their memory writes for
+the owner.
+
+"Not proven clean" and "known unclean" are two different things, and only the second
+taints a turn's **actions** (:func:`hits_trust`). A revocation records *why*, durably,
+per session (``{sid: {reason, at}}``, one of :data:`REVOKE_REASONS`): a conversation
+revoked only because it read an owner conversation the ledger never watched
+(:data:`RECALLED_UNPROVEN`) is unproven, every other reason is known unclean. A
+conversation the ledger never saw (older than it, or its record dropped at
+:data:`MAX_REVOKED_SESSIONS`) is unproven unless the caller's own evidence says otherwise
+(an import or continuation, a channel conversation, a taint mark on the record): an
+upgraded install's whole history is the owner's own, and reading it gates only the
+automatic memory writes, never the actions.
 """
 
 from __future__ import annotations
@@ -52,6 +63,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
+from contextvars import ContextVar, Token
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -81,6 +93,18 @@ PENDING_TTL_S = 14 * 86400.0
 #: Clean conversations tracked at once; the oldest admission is dropped first (and that
 #: conversation is then not clean).
 MAX_CLEAN_SESSIONS = 4096
+#: Why a conversation left (or never joined) the clean list. Every reason but
+#: :data:`RECALLED_UNPROVEN` makes it known unclean.
+RECALLED_UNPROVEN = "recalled_unproven"
+REVOKE_REASONS = frozenset({"inbound", "observed", "guest", "foreign_import", "web_or_file_or_image",
+                            "flagged_recall", "undecidable", RECALLED_UNPROVEN})
+#: Revocation reasons kept at once (ids and a word each). Generous; a record dropped past
+#: it reads as never seen (unproven unless the caller's evidence says otherwise), never as
+#: unclean, and a known-unclean record is dropped only after every unproven one.
+MAX_REVOKED_SESSIONS = 100_000
+#: A session's standing, worst last.
+TRUST_CLEAN, TRUST_UNPROVEN, TRUST_UNCLEAN = "clean", "unproven", "unclean"
+_TRUST_RANK = {TRUST_CLEAN: 0, TRUST_UNPROVEN: 1, TRUST_UNCLEAN: 2}
 SETTING_CATEGORY, SETTING_KEY = "memory", "write_approval"
 SETTING = f"{SETTING_CATEGORY}.{SETTING_KEY}"
 
@@ -179,21 +203,81 @@ def hit_session(hit: Any, _depth: int = 0) -> str | None:
     return None
 
 
-def hits_from_unclean(hits: Any, is_clean: Callable[[str], bool] | None) -> bool:
-    """H443 — whether any hit is text from a conversation that is not on the clean list
-    (a stranger's, a guest's, a channel's, an imported one, one older than the ledger):
-    reading it makes the turn untrusted, as reading a flagged hit does. *is_clean* None
-    (no ledger) reads every named conversation as not clean; a check that fails, too."""
+def hits_trust(hits: Any, trust: Callable[[str], str] | None) -> str:
+    """H443 — the worst standing among the conversations *hits* were taken from
+    (:data:`TRUST_CLEAN` when none names one). *trust* is ``session_id -> standing``
+    (:meth:`MemoryProposalStore.session_trust` with the hub's evidence); None (no ledger)
+    reads every named conversation as unproven. A check that fails reads as unclean.
+    Only :data:`TRUST_UNCLEAN` taints the turn's actions; :data:`TRUST_UNPROVEN` holds its
+    conversation's automatic memory writes (:func:`note_unproven_read`)."""
+    worst = TRUST_CLEAN
+    seen: set[str] = set()
     for hit in hits or []:
         sid = hit_session(hit)
-        if sid is None:
+        if sid is None or sid in seen:
             continue
+        seen.add(sid)
         try:
-            if is_clean is None or is_clean(sid) is not True:
-                return True
+            standing = TRUST_UNPROVEN if trust is None else trust(sid)
         except Exception:
-            return True
-    return False
+            standing = TRUST_UNCLEAN
+        if standing not in _TRUST_RANK:
+            standing = TRUST_UNCLEAN
+        if _TRUST_RANK[standing] > _TRUST_RANK[worst]:
+            worst = standing
+            if worst == TRUST_UNCLEAN:
+                break
+    return worst
+
+
+def as_trust(check: Callable[[str], Any] | None) -> Callable[[str], str] | None:
+    """A standing check from either a standing check or a clean-list check
+    (``session_id -> bool``: True is clean, False only unproven — not being on the list
+    is no evidence of anything)."""
+    if check is None:
+        return None
+
+    def trust(session_id: str) -> str:
+        answer = check(session_id)
+        if answer is True:
+            return TRUST_CLEAN
+        if answer is False:
+            return TRUST_UNPROVEN
+        return answer
+
+    return trust
+
+
+def hits_from_unclean(hits: Any, check: Callable[[str], Any] | None) -> bool:
+    """Whether any hit comes from a conversation known to be unclean (:func:`hits_trust`)."""
+    return hits_trust(hits, as_trust(check)) == TRUST_UNCLEAN
+
+
+#: H443 — this turn read text from a conversation that is not proven clean. A mutable
+#: holder bound at the turn's start, so a tool handler running in a copy of the turn's
+#: context (a task, a thread) still reaches it.
+_UNPROVEN_READS: ContextVar[list | None] = ContextVar("nerva_h443_unproven_reads", default=None)
+
+
+def open_unproven_reads() -> Token:
+    """Bind a fresh holder for the turn about to run; reset with :func:`close_unproven_reads`."""
+    return _UNPROVEN_READS.set([])
+
+
+def close_unproven_reads(token: Token) -> None:
+    _UNPROVEN_READS.reset(token)
+
+
+def note_unproven_read() -> None:
+    """The turn in flight read text from an unproven owner conversation (nothing when no
+    turn is bound: a route, a script)."""
+    holder = _UNPROVEN_READS.get()
+    if holder is not None and not holder:
+        holder.append(True)
+
+
+def turn_read_unproven() -> bool:
+    return bool(_UNPROVEN_READS.get())
 
 
 def _turn_time(value: Any) -> float | None:
@@ -219,6 +303,8 @@ class MemoryProposalStore(JsonStore):
         self._card_lock = threading.Lock()
         self._items: dict[str, dict] = {}
         self._clean: dict[str, float] = {}
+        #: Why each revoked session is off the clean list: ``{sid: {"reason", "at"}}``.
+        self._revoked: dict[str, dict] = {}
         #: Held writes refused because :data:`MAX_PENDING` were already waiting.
         self._dropped = 0
         #: The clean list as an admission is saving it (shown only once it is on disk),
@@ -231,7 +317,8 @@ class MemoryProposalStore(JsonStore):
 
     def _serialize(self):
         clean = self._saving_clean if self._saving_clean is not None else self._clean
-        return {"proposals": self._items, "clean_sessions": clean, "dropped_at_cap": self._dropped}
+        return {"proposals": self._items, "clean_sessions": clean, "dropped_at_cap": self._dropped,
+                "revoked_sessions": self._revoked}
 
     def _deserialize(self, raw) -> None:
         raw = raw if isinstance(raw, dict) else {}
@@ -247,6 +334,18 @@ class MemoryProposalStore(JsonStore):
         self._clean = ({str(k): float(v) for k, v in clean.items()
                         if isinstance(v, (int, float)) and not isinstance(v, bool)}
                        if isinstance(clean, dict) else {})
+        revoked = raw.get("revoked_sessions")
+        self._revoked = {}
+        for key, rec in (revoked.items() if isinstance(revoked, dict) else []):
+            reason = rec.get("reason") if isinstance(rec, dict) else None
+            at = rec.get("at") if isinstance(rec, dict) else None
+            if not isinstance(at, (int, float)) or isinstance(at, bool):
+                at = 0.0
+            # A damaged reason is the stricter one: known unclean, cause unknown.
+            self._revoked[str(key)] = {"reason": reason if reason in REVOKE_REASONS else "undecidable",
+                                       "at": float(at)}
+            # A session revoked is never clean, whatever the file says.
+            self._clean.pop(str(key), None)
 
     def _load(self) -> None:
         import json
@@ -285,19 +384,31 @@ class MemoryProposalStore(JsonStore):
         with self._lock:
             if sid in self._clean:
                 return False
+            if self.revoked_reason(sid) == "foreign_import":
+                # A continuation or an import looks empty until its seed loads: it stays
+                # off the list.
+                return False
             # Saved first, shown after: a reader (which takes no lock, see is_clean) never
             # sees an admission the ledger does not hold.
             candidate = {**self._clean, sid: self._now()}
             while len(candidate) > MAX_CLEAN_SESSIONS:
                 candidate.pop(min(candidate, key=candidate.__getitem__))
             current, self._saving_clean = self._clean, candidate
+            # An empty conversation starts over: the reason recorded for it before goes.
+            before = self._revoked
+            if sid in before:
+                self._revoked = {key: value for key, value in before.items() if key != sid}
             try:
                 self._save()
+            except BaseException:
+                if sid in before and sid not in self._revoked:
+                    self._revoked = {**self._revoked, sid: before[sid]}
+                raise
             finally:
                 self._saving_clean = None
-            if sid in self._revoking:
+            if sid in self._revoking or sid in self._revoked:
                 # A revocation of this session ran while this was saving: it wins, and
-                # saves next (it is waiting for this lock).
+                # saves next (it is waiting for this lock, or flushes).
                 return False
             if self._clean is current:
                 self._clean = candidate
@@ -306,36 +417,117 @@ class MemoryProposalStore(JsonStore):
                 self._clean = {**self._clean, sid: candidate[sid]}
             return True
 
-    def revoke(self, session_id: str) -> bool:
-        """Take *session_id* off the clean list: a turn of it is untrusted. Saved before
-        it returns; True when it was on the list. A revocation that cannot be saved raises
-        and still holds in this process (the stricter side), and is written with the
-        ledger's next save."""
+    def _reason_changes(self, sid: str, reason: str) -> bool:
+        """Whether recording *reason* for *sid* changes what is recorded: a first reason,
+        or a known-unclean one over :data:`RECALLED_UNPROVEN` (never the other way)."""
+        current = self._revoked.get(sid)
+        if current is None:
+            return True
+        return current.get("reason") == RECALLED_UNPROVEN and reason != RECALLED_UNPROVEN
+
+    def _record_reason(self, sid: str, reason: str) -> bool:
+        """Record *reason* for *sid* in memory (lock-free swap); True when it changed."""
+        if not self._reason_changes(sid, reason):
+            return False
+        revoked = {key: value for key, value in self._revoked.items() if key != sid}
+        revoked[sid] = {"reason": reason, "at": self._now()}
+        if len(revoked) > MAX_REVOKED_SESSIONS:
+            # Unproven records go first, oldest first; a dropped record reads as never seen.
+            order = sorted(revoked, key=lambda key: (revoked[key]["reason"] != RECALLED_UNPROVEN,
+                                                     revoked[key]["at"]))
+            for key in order[:len(revoked) - MAX_REVOKED_SESSIONS]:
+                if key != sid:
+                    revoked.pop(key, None)
+        self._revoked = revoked
+        return True
+
+    def needs_revoke(self, session_id: str, reason: str) -> bool:
+        """Whether :meth:`revoke` with *reason* would change anything (no lock, no save):
+        the session is on the clean list, or the reason is new for it."""
         sid = str(session_id or "")
+        if not sid:
+            return False
+        reason = reason if reason in REVOKE_REASONS else "undecidable"
+        saving = self._saving_clean
+        return (sid in self._clean or (saving is not None and sid in saving)
+                or self._reason_changes(sid, reason))
+
+    def flush(self) -> None:
+        """Save the ledger as it stands (a revocation made in memory only:
+        :meth:`forget_clean`). Blocking."""
+        with self._lock:
+            self._save()
+
+    def revoked_reason(self, session_id: str) -> str | None:
+        rec = self._revoked.get(str(session_id or ""))
+        return rec.get("reason") if rec else None
+
+    def session_trust(self, session_id: str, evidence: Callable[[str], bool] | None = None) -> str:
+        """*session_id*'s standing: :data:`TRUST_CLEAN` while on the clean list;
+        :data:`TRUST_UNCLEAN` when revoked for any reason but :data:`RECALLED_UNPROVEN`;
+        otherwise (revoked only for reading an unproven conversation, or never seen by
+        this ledger) :data:`TRUST_UNPROVEN`, unless *evidence* (``session_id -> bool``, the
+        hub's own record: an import or continuation, a channel conversation) says it is
+        unclean. Blocking only as far as *evidence* is."""
+        sid = str(session_id or "")
+        if sid in self._clean:
+            return TRUST_CLEAN
+        reason = self.revoked_reason(sid)
+        if reason is not None and reason != RECALLED_UNPROVEN:
+            return TRUST_UNCLEAN
+        if evidence is not None and evidence(sid) is True:
+            return TRUST_UNCLEAN
+        return TRUST_UNPROVEN
+
+    def revoke(self, session_id: str, reason: str = "undecidable") -> bool:
+        """Take *session_id* off the clean list and record why (*reason*, one of
+        :data:`REVOKE_REASONS`; anything else is ``undecidable``). A session that was never
+        on the list is recorded too: its reason decides whether reading it taints a
+        turn's actions. Saved before it returns; True when anything changed. A revocation
+        that cannot be saved raises and still holds in this process (the stricter side),
+        and is written with the ledger's next save."""
+        sid = str(session_id or "")
+        if not sid:
+            return False
+        reason = reason if reason in REVOKE_REASONS else "undecidable"
         saving = self._saving_clean
         if sid not in self._clean and not (saving is not None and sid in saving):
-            return False
+            if not self._reason_changes(sid, reason):
+                return False
+            with self._lock:
+                if not self._record_reason(sid, reason):
+                    return False
+                self._save()
+                return True
         # Shown first (the stricter side holds at once, with no lock a turn would wait
         # on), saved after. An admission of the same session that is being saved right
         # now is told not to show itself.
         self._revoking.add(sid)
         self._clean = {key: value for key, value in self._clean.items() if key != sid}
+        self._record_reason(sid, reason)
         try:
             with self._lock:
                 if sid in self._clean:
                     self._clean = {key: value for key, value in self._clean.items() if key != sid}
+                self._record_reason(sid, reason)
                 self._save()
                 return True
         finally:
             self._revoking.discard(sid)
 
-    def forget_clean(self, session_id: str) -> None:
-        """Take *session_id* off the clean list in memory only (a caller that cannot block:
-        a history load under the conversation lock). The next save writes it."""
+    def forget_clean(self, session_id: str, reason: str = "foreign_import") -> bool:
+        """Take *session_id* off the clean list in memory only, recording *reason*; True
+        when that changed anything. The next save writes it (:meth:`flush`)."""
         sid = str(session_id or "")
-        if sid in self._clean:
-            self._revoking.add(sid)
+        if not sid:
+            return False
+        reason = reason if reason in REVOKE_REASONS else "undecidable"
+        self._revoking.add(sid)
+        try:
+            was_clean = sid in self._clean
             self._clean = {key: value for key, value in self._clean.items() if key != sid}
+            return self._record_reason(sid, reason) or was_clean
+        finally:
             self._revoking.discard(sid)
 
     def is_clean(self, session_id: str) -> bool:
@@ -433,7 +625,8 @@ class MemoryProposalStore(JsonStore):
             return {"by_status": counts, "pending": waiting, "max_pending": MAX_PENDING,
                     "oldest_pending_age_s": (max(0.0, round(self._now() - oldest, 1))
                                              if oldest is not None else None),
-                    "dropped_at_cap": self._dropped, "clean_sessions": len(self._clean)}
+                    "dropped_at_cap": self._dropped, "clean_sessions": len(self._clean),
+                    "revoked_sessions": len(self._revoked)}
 
     def is_full(self) -> bool:
         with self._lock:

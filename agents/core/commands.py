@@ -951,6 +951,13 @@ async def _memory(ctx: CommandContext) -> str:
                 lines.append(f"- {pid}: rejected, nothing written")
             elif reason == "apply_incomplete":
                 lines.append(f"- {pid}: approved, not written yet (a memory file was busy); it is retried")
+            elif reason.startswith("not_pending:"):
+                # Decided elsewhere first (the HUD, another command): say how, not "not decided".
+                status = reason.split(":", 1)[1]
+                done = {mp.STATUS_APPLIED: "approved and written", mp.STATUS_APPLYING: "approved, being written",
+                        mp.STATUS_REJECTED: "rejected", mp.STATUS_EXPIRED: "expired",
+                        mp.STATUS_FAILED: "approved, nothing written"}.get(status, status or "closed")
+                lines.append(f"- {pid}: already decided ({done})")
             else:
                 lines.append(f"- {pid}: not decided ({reason or result.get('status') or 'unknown'})")
         return "\n".join(lines)

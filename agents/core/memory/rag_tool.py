@@ -29,6 +29,7 @@ loop's byte envelope.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 import math
@@ -444,6 +445,7 @@ def _cap_text(out: dict, field: str) -> None:
 
 
 def register_search_memory(server: Any, recall_getter: Callable[[], Any], *, scan: bool = True,
+                           trust: Callable[[str], str] | None = None,
                            is_clean: Callable[[str], bool] | None = None) -> str:
     """Expose ``search_memory`` on a ToolRPC server, over whatever recall the getter
     returns at call time (the live memory manager's fused recall, sync or async).
@@ -452,7 +454,15 @@ def register_search_memory(server: Any, recall_getter: Callable[[], Any], *, sca
     either — memory is the owner's own data; what is untrusted is one *hit*, and that
     verdict is per hit and declared through ``"tainted"`` on the result. The handler
     never raises: no recall, or a recall that fails, is a short named reason.
+
+    H443: *trust* (``session_id -> standing``; *is_clean*, a clean-list-only check, is
+    read as clean / unproven) — a hit taken from a conversation known to be unclean taints
+    the result; one from a conversation merely not proven clean is noted on the turn
+    (its own conversation's automatic memory writes are held) and taints nothing.
     """
+    from ..learning.memory_proposals import as_trust
+
+    standing = as_trust(trust if trust is not None else is_clean)
 
     async def _handle(args: dict) -> dict:
         query = str(args.get("query") or "")
@@ -476,12 +486,20 @@ def register_search_memory(server: Any, recall_getter: Callable[[], Any], *, sca
         tool = MemorySearchTool(lambda _q, _k: hits, scan=scan)
         try:
             result = tool.search(query, top_k)
-            from ..learning.memory_proposals import hits_from_unclean
+            from ..learning.memory_proposals import (
+                TRUST_UNCLEAN,
+                TRUST_UNPROVEN,
+                hits_trust,
+                note_unproven_read,
+            )
 
-            # H443: a hit taken from a conversation that is not on the review's clean list
-            # (a stranger's, a guest's, a channel's) is not the owner's word either.
+            # H443: a hit taken from a conversation known to be unclean (a stranger's, a
+            # guest's, a channel's, an imported one) is not the owner's word either.
+            verdict = await asyncio.to_thread(hits_trust, raw, standing) if raw else "clean"
             result["tainted"] = (any(_hit_tainted(h) for h in result.get("hits") or [])
-                                 or hits_from_unclean(raw, is_clean))
+                                 or verdict == TRUST_UNCLEAN)
+            if verdict == TRUST_UNPROVEN:
+                note_unproven_read()
         except Exception as exc:
             # the scan/verdict never leaks a traceback to the model: a named refusal,
             # and nothing from the hits is delivered

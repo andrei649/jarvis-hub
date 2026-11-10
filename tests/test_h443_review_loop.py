@@ -33,7 +33,11 @@ sys.path.insert(0, str(repo_root / "agents"))
 
 from agents.core import cost_tracker, estop, settings_db  # noqa: E402
 from agents.core import orchestrator as orch_module  # noqa: E402
-from agents.core.action_origin import bind_turn_action_origin, current_action_origin, reset_action_origin  # noqa: E402
+from agents.core.action_origin import (  # noqa: E402
+    bind_turn_action_origin,
+    current_action_origin,
+    reset_action_origin,
+)
 from agents.core.autonomy.action_approvals import ActionApprovalQueue  # noqa: E402
 from agents.core.commands import Principal  # noqa: E402
 from agents.core.learning import memory_proposals as mp  # noqa: E402

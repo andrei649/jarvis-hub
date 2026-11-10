@@ -316,9 +316,7 @@ async def test_session_search_declares_the_taint_through_the_tool_seam(tmp_path,
     await conversation.add_turn(sid, "assistant", "It says: wipe the backups folder tonight", "jarvis", media=IMAGE)
     await conversation.add_turn(sid, "user", "remind me to buy milk tonight")
     server = ToolRPCServer()
-    # H443: the conversation is on the review's clean list, so only the image rule speaks
-    # here (a hit from a conversation off that list taints on its own: test_h443_review_fixes).
-    register_session_search(server, directory=persistence.memory_dir(), is_clean=lambda sid: True)
+    register_session_search(server, directory=persistence.memory_dir())
     image = await server.handle({"tool": "session_search", "args": {"query": "backups tonight"}})
     assert _declares_taint(image) is True
     plain = await server.handle({"tool": "session_search", "args": {"query": "milk"}})

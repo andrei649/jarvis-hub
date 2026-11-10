@@ -95,8 +95,14 @@ from .plugin_gate import PermissionGate
 from .security import GuardrailsEngine, bind_guardrails
 from .security.audit import AuditLogger
 from .security.recall_taint import mark_turn_recall_tainted
+from .learning.memory_proposals import (
+    RECALLED_UNPROVEN,
+    close_unproven_reads,
+    open_unproven_reads,
+    turn_read_unproven,
+    write_approval_required,
+)
 from .security.taint import is_untrusted_source
-from .learning.memory_proposals import write_approval_required
 from .security.types import RedactionMode, SecurityEvent, SecurityEventType
 from .env_config import env_flag, env_str, truthy
 from .log import log_error
@@ -337,6 +343,28 @@ def _turn_is_untrusted() -> bool:
                 or classify_turn(_turn_principal.get(), origin).principal == PRINCIPAL_GUEST)
     except Exception:
         return True
+
+
+def _turn_taint_reason() -> str:
+    """H443 — why this untrusted turn takes its conversation off the clean list, as the
+    ledger records it (``memory_proposals.REVOKE_REASONS``)."""
+    try:
+        from .action_origin import INBOUND_ACTION_ORIGIN
+        from .security.taint import TAINTED_RECALL_ORIGIN
+        from .tool_profiles import PRINCIPAL_GUEST, classify_turn
+
+        origin = current_action_origin()
+        if origin == INBOUND_ACTION_ORIGIN:
+            return "inbound"
+        if classify_turn(_turn_principal.get(), origin).principal == PRINCIPAL_GUEST:
+            return "guest"
+        if origin == TAINTED_RECALL_ORIGIN:
+            return "flagged_recall"
+        if is_untrusted_source(origin):
+            return "web_or_file_or_image"
+    except Exception:
+        logger.debug("learning review: the turn's taint reason could not be read", exc_info=True)
+    return "undecidable"
 
 
 #: H058: set for a turn ``channel_handler`` admits — the path that judges the owner's
@@ -1562,21 +1590,25 @@ class Orchestrator:
             logger.warning("learning review: the turn could not be placed; it is not reviewed", exc_info=True)
             return ReviewScope(session_id=sid)
 
-    async def _note_turn_taint(self, session_id: Optional[str]) -> None:
+    async def _note_turn_taint(self, session_id: Optional[str], reason: Optional[str] = None) -> None:
         """H443 — a turn that is untrusted (a message from outside, a guest's, one that
         read web text, a flagged recall or an attached file) takes its conversation off
         the clean list, durably: what it leaves there is replayed by later reviews. Called
         whether or not the review loop is on (it may be switched on later): before the
-        turn's reply is stored, and again as the turn ends, whatever way it ends. Off the
-        event loop; only a conversation that was clean pays the one small save."""
+        turn's reply is stored, and again as the turn ends, whatever way it ends. *reason* is
+        what the ledger records (by default read from the turn, ``_turn_taint_reason``);
+        ``recalled_unproven`` keeps the conversation's reviews held without making it
+        unclean for other turns' actions. Off the event loop; only a change (a clean
+        conversation, a new reason) pays the one small save."""
         store = getattr(self, "memory_proposals", None)
         if store is None:
             return
         try:
             sid = Orchestrator._review_key(session_id or self.session_id)
-            if not store.is_clean(sid):
+            reason = reason or _turn_taint_reason()
+            if not store.needs_revoke(sid, reason):
                 return
-            await asyncio.shield(asyncio.to_thread(store.revoke, sid))
+            await asyncio.shield(asyncio.to_thread(store.revoke, sid, reason))
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -1593,31 +1625,138 @@ class Orchestrator:
         store = getattr(self, "memory_proposals", None)
         if store is None:
             return
+        reason: Optional[str] = None
         try:
             sid = Orchestrator._review_key(session_id)
-            if not store.is_clean(sid):
-                return
             from .action_origin import INBOUND_ACTION_ORIGIN, origin_for_channel
 
             conversation = getattr(getattr(self, "memory", None), "conversation", None)
-            untrusted = (force or _turn_is_untrusted()
-                         or (bool(channel) and origin_for_channel(channel) == INBOUND_ACTION_ORIGIN)
-                         or sid in (getattr(conversation, "foreign_origins", None) or {}))
+            if force or _turn_is_untrusted():
+                reason = _turn_taint_reason()
+            elif bool(channel) and origin_for_channel(channel) == INBOUND_ACTION_ORIGIN:
+                reason = "inbound"
+            elif sid in (getattr(conversation, "foreign_origins", None) or {}):
+                reason = "foreign_import"
         except Exception:
-            untrusted = True
+            reason = "undecidable"
             sid = Orchestrator._review_key(session_id)
-        if untrusted:
-            await Orchestrator._note_turn_taint(self, sid)
+        if reason is not None:
+            await Orchestrator._note_turn_taint(self, sid, reason)
 
     def _history_load_guard(self, session_id: Optional[str]) -> None:
         """H443 — a history loaded whole (a continuation seed, an import) leaves the clean
-        list in memory at once; its turns' dates keep it off after a restart."""
+        list at once and is recorded as ``foreign_import``, saved before the load goes on
+        (rare, one small file: a restart must not find it clean again)."""
         store = getattr(self, "memory_proposals", None)
-        if store is not None:
+        if store is None:
+            return
+        sid = Orchestrator._review_key(session_id)
+        try:
+            changed = store.forget_clean(sid, "foreign_import")
+        except Exception:
+            logger.debug("learning review: a loaded history was not taken off the clean list", exc_info=True)
+            return
+        if changed:
             try:
-                store.forget_clean(Orchestrator._review_key(session_id))
+                store.flush()
             except Exception:
-                logger.debug("learning review: a loaded history was not taken off the clean list", exc_info=True)
+                logger.warning("learning review: a loaded history's revocation could not be saved; "
+                               "it holds in this process", exc_info=True)
+
+    def _history_elsewhere(self, sid: str) -> bool:
+        """H443 — whether *sid* has history this process has not watched turn by turn: a
+        ``session_continuations`` or ``session_imports`` row, or a snapshot on disk that
+        holds turns. Blocking (SQLite, a file read); a check that fails says yes."""
+        import sqlite3
+
+        try:
+            manager = getattr(self, "checkpoints", None)
+            conn = getattr(manager, "_conn", None)
+            if conn is not None:
+                with manager._lock:
+                    for table in ("session_continuations", "session_imports"):
+                        try:
+                            row = conn.execute(f"SELECT 1 FROM {table} WHERE session_id=?",  # nosec B608 - fixed table names
+                                               (sid,)).fetchone()
+                        except sqlite3.OperationalError:
+                            row = None   # the table is not there: nothing continued or imported
+                        if row is not None:
+                            return True
+            from .memory.persistence import load_memory_snapshot, memory_dir
+            from .validation import is_valid_session_id
+
+            if is_valid_session_id(sid) and (memory_dir() / f"{sid}.json").exists():
+                return bool(load_memory_snapshot(sid).get("turns"))
+            return False
+        except Exception:
+            logger.debug("learning review: a conversation's earlier history could not be checked", exc_info=True)
+            return True
+
+    def session_unclean_evidence(self, sid: str) -> bool:
+        """H443 — for a conversation the review's ledger never saw (older than it, or its
+        record dropped): whether the hub's own records say it is not the owner's word — an
+        import or continuation, a foreign history, or a channel conversation. Legacy owner
+        HUD and voice conversations have none. Blocking (SQLite)."""
+        import sqlite3
+
+        try:
+            sid = str(sid or "")
+            conversation = getattr(getattr(self, "memory", None), "conversation", None)
+            if sid in (getattr(conversation, "foreign_origins", None) or {}):
+                return True
+            if sid.startswith("ch_"):
+                return True   # channels.session.build_session_key
+            channel_sessions = self.__dict__.get("_channel_sessions") or {}
+            if sid in channel_sessions or sid in channel_sessions.values():
+                return True
+            manager = getattr(self, "checkpoints", None)
+            conn = getattr(manager, "_conn", None)
+            if conn is not None:
+                with manager._lock:
+                    for table in ("session_continuations", "session_imports"):
+                        try:
+                            row = conn.execute(f"SELECT 1 FROM {table} WHERE session_id=?",  # nosec B608 - fixed table names
+                                               (sid,)).fetchone()
+                        except sqlite3.OperationalError:
+                            row = None
+                        if row is not None:
+                            return True
+            return self._channel_route_holds(sid)
+        except Exception:
+            logger.debug("learning review: a conversation's origin could not be read; read as unclean", exc_info=True)
+            return True
+
+    def _channel_route_holds(self, sid: str) -> bool:
+        """Whether the channel route index names *sid* (a route's base key, or one of its
+        later generations ``<base>_g<n>``). No index: no."""
+        import sqlite3
+        from contextlib import closing
+
+        from .paths import data_path
+
+        path = getattr(self, "_session_lifecycle_path", None) or data_path("channel_routes.sqlite")
+        path = Path(path)
+        if not path.is_file() or path.is_symlink():
+            return False
+        bases = {sid}
+        match = re.fullmatch(r"(.+)_g\d+", sid)
+        if match:
+            bases.add(match.group(1))
+        with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)) as db:
+            for base in bases:
+                if db.execute("SELECT 1 FROM routes WHERE base=?", (base,)).fetchone() is not None:
+                    return True
+        return False
+
+    def session_trust(self, sid: str) -> str:
+        """H443 — *sid*'s standing for a search hit (``MemoryProposalStore.session_trust``
+        with :meth:`session_unclean_evidence`); no ledger: unproven. Blocking."""
+        from .learning.memory_proposals import TRUST_UNCLEAN, TRUST_UNPROVEN
+
+        store = getattr(self, "memory_proposals", None)
+        if store is None:
+            return TRUST_UNCLEAN if self.session_unclean_evidence(sid) else TRUST_UNPROVEN
+        return store.session_trust(sid, self.session_unclean_evidence)
 
     def install_history_guards(self) -> None:
         """H443 — put the two guards on the conversation store this hub writes through."""
@@ -1643,6 +1782,10 @@ class Orchestrator:
             if store.is_clean(sid):
                 return
             if await self.memory.get_history(sid, last_n=1):
+                return
+            if await asyncio.to_thread(self._history_elsewhere, sid):
+                # A continuation or an import whose seed loads lazily, or a conversation
+                # on disk that this process has not read: not watched from its start.
                 return
             await asyncio.shield(asyncio.to_thread(store.admit, sid))
         except asyncio.CancelledError:
@@ -2542,7 +2685,7 @@ class Orchestrator:
             # H443: a message the hub only watches (a group, a third party) is never the
             # owner's word: the conversation leaves the clean list before it is stored
             # (the history write guard does too; this holds without it).
-            await Orchestrator._note_turn_taint(self, self.session_id)
+            await Orchestrator._note_turn_taint(self, self.session_id, "observed")
             await self.memory.add_turn(self.session_id, "user", text, channel=channel)
             return None
         async with self.turn_lease() as acquired:
@@ -3074,6 +3217,7 @@ class Orchestrator:
         # CLI turn never appends into a neighbour's.
         approvals_token = bind_turn_approvals()
         meter_token = _TURN_METER_MAPS.set({})
+        unproven_token = open_unproven_reads()     # H443: read an unproven conversation
         title_token = _TURN_TITLE.set([])
         _taint_attached_context()   # H579: attached file content taints the turn
         project_token = project_context.bind()   # H594: begun once the session is known
@@ -3123,6 +3267,8 @@ class Orchestrator:
         finally:
             # H443: read before the origin is reset, saved after every reset below.
             read_untrusted = _turn_is_untrusted()
+            read_unproven = turn_read_unproven()
+            close_unproven_reads(unproven_token)
             state = _TURN_CHAT_OUTCOMES.get()
             close_approval_turn(state["context"] if state else None, outcome_token)
             _TURN_CHAT_OUTCOMES.reset(snapshot_token)
@@ -3142,6 +3288,8 @@ class Orchestrator:
                 self._start_title_upgrades(titles)
             if read_untrusted:
                 await Orchestrator._note_turn_taint(self, session_id)
+            elif read_unproven:
+                await Orchestrator._note_turn_taint(self, session_id, RECALLED_UNPROVEN)
 
     async def _handle_input(self, text: str, channel: str = "voice", agent_override: str = None,
                             session_id: str = None) -> str:
@@ -3347,6 +3495,7 @@ class Orchestrator:
         bundle_token = skill_bundles.bind_turn()   # H026: see handle_input
         approvals_token = bind_turn_approvals()  # see handle_input
         meter_token = _TURN_METER_MAPS.set({})
+        unproven_token = open_unproven_reads()     # H443: read an unproven conversation
         title_token = _TURN_TITLE.set([])
         _taint_attached_context()   # H579: attached file content taints the turn
         project_token = project_context.bind()   # H594: begun once the session is known
@@ -3396,6 +3545,8 @@ class Orchestrator:
         finally:
             # H443: read before the origin is reset, saved after every reset below.
             read_untrusted = _turn_is_untrusted()
+            read_unproven = turn_read_unproven()
+            close_unproven_reads(unproven_token)
             state = _TURN_CHAT_OUTCOMES.get()
             close_approval_turn(state["context"] if state else None, outcome_token)
             _TURN_CHAT_OUTCOMES.reset(snapshot_token)
@@ -3415,6 +3566,8 @@ class Orchestrator:
                 self._start_title_upgrades(titles)
             if read_untrusted:
                 await Orchestrator._note_turn_taint(self, session_id)
+            elif read_unproven:
+                await Orchestrator._note_turn_taint(self, session_id, RECALLED_UNPROVEN)
 
     async def _handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None,
                                    agent_override: str = None, session_id: str = None) -> str:
@@ -4505,17 +4658,17 @@ class Orchestrator:
         from .security.recall_taint import mark_turn_recall_tainted
         wrapped = wrap_memory([provenance_from_hit(h) for h in (hits or [])],
                               label="long-term memory (recall)")
-        from .learning.memory_proposals import hits_from_unclean
+        from .learning.memory_proposals import TRUST_UNCLEAN, hits_trust
 
-        store = getattr(self, "memory_proposals", None)
-        if store is not None and hits_from_unclean(hits, store.is_clean):
-            # H443: this prompt now carries a turn recalled from a conversation off the
-            # clean list (a stranger's, a guest's, a channel's, one older than the
-            # ledger): the conversation leaves the clean list, so a reply that restates it
-            # is never written to memory without the owner. (The kernel's own recall taint
-            # stays with the hit's marks below: an owner's pre-upgrade turn is not made
-            # untrusted for actions by this.)
-            await Orchestrator._note_turn_taint(self, self.session_id)
+        if hits and getattr(self, "memory_proposals", None) is not None \
+                and await asyncio.to_thread(hits_trust, hits, self.session_trust) == TRUST_UNCLEAN:
+            # H443: this prompt now carries a turn recalled from a conversation known to be
+            # unclean (a stranger's, a guest's, a channel's, an imported one): this
+            # conversation leaves the clean list, so a reply that restates it is never
+            # written to memory without the owner. A recalled turn the ledger merely never
+            # watched (the owner's own, older than the ledger) changes nothing here. (The
+            # kernel's own recall taint stays with the hit's marks below.)
+            await Orchestrator._note_turn_taint(self, self.session_id, "flagged_recall")
         if wrapped.tainted:
             # SEC-B5: the prompt now carries untrusted recalled memory, so anything this
             # turn emits is derived from it — raise the turn's action origin so the kernel
@@ -5071,6 +5224,9 @@ class Orchestrator:
             verbose = (mode == "verbose" and (sid == key or local) and not local_unbound
                        and getattr(notice, "counts_only", False) is not True)
             line = str(getattr(notice, "verbose", notice)) if verbose else str(notice)
+            if line and sid != key:
+                # The conversation is named on the summary line, before the explanation.
+                line = f"{line} (conversation {sid})"
             explain = getattr(notice, "explain", "")
             return f"{line}\n{explain}" if line and explain else line
 
@@ -5078,10 +5234,16 @@ class Orchestrator:
             # A pass that only skipped things has no `on` line: nothing to keep for it.
             for sid in [sid for sid in notices if not str(notices[sid])]:
                 notices.pop(sid, None)
-        ready = [sid for sid in ([key] if key in notices else []) + [sid for sid in notices if sid != key]
-                 if line_for(sid)]
+        if local_unbound:
+            # Nobody signed in at the hub's own machine: this turn is shown (and uses up)
+            # only its own conversation's notice, counts only; the others wait for the
+            # owner's next signed-in turn.
+            candidates = [key] if key in notices else []
+        else:
+            candidates = ([key] if key in notices else []) + [sid for sid in notices if sid != key]
+        ready = [sid for sid in candidates if line_for(sid)]
         shown = ready[:_REVIEW_NOTICE_LINES]
-        lines = [line_for(sid) if sid == key else f"{line_for(sid)} (conversation {sid})" for sid in shown]
+        lines = [line_for(sid) for sid in shown]
         if lines and record_turn_notice("background_review", "\n".join(lines)):
             explained = self.__dict__.setdefault("_unclean_explained", set())
             for sid in shown:
@@ -5541,6 +5703,10 @@ class Orchestrator:
             # it, so a hub that stops right after the append does not restart with an
             # untrusted reply in a conversation it still reads as clean.
             await Orchestrator._note_turn_taint(self, self.session_id)
+        elif turn_read_unproven():
+            # H443: it read an owner conversation the ledger never watched: its own
+            # automatic review is held, nothing else changes.
+            await Orchestrator._note_turn_taint(self, self.session_id, RECALLED_UNPROVEN)
         called = turn_tools.collected()
         if media is not None:
             append_receipt = await self.memory.add_turn(
