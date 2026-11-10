@@ -125,7 +125,11 @@ async def _call(request, method, kwargs, *, refresh=False):
     from agents.core.llm.custom_endpoints import CustomEndpointConflict, CustomEndpointInvalid
     from agents.core.llm.providers.packages import ProviderPackageError
     from agents.core.llm.providers.selection_gates import SelectionBusy, SelectionUnavailable
+    from agents.core.managed_scope import check_llm_write
 
+    if method in {'create', 'rename', 'activate', 'clear', 'delete', 'credential_mutation'}:
+        # G1 — managed mode refuses every change; a pinned model choice refuses (de)activation
+        check_llm_write(selection=method in {'activate', 'clear', 'delete'})
     try:
         if method == 'validate':
             service, actor = await _worker(_context, request)

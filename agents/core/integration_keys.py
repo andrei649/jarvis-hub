@@ -64,6 +64,24 @@ class UnknownName(KeyError):
     """A name the Integrations panel does not manage."""
 
 
+def _refuse_managed(name: str) -> None:
+    """G1 — raise ``managed_scope.ManagedRefused`` when the administrator pinned *name*
+    (or no configuration write may happen now: managed mode, an unreadable managed file)."""
+    from agents.core.managed_scope import check_env_write
+
+    check_env_write(name)
+
+
+def admin_managed(name: str) -> bool:
+    """G1 — True when the administrator's managed ``.env`` pins *name* (either spelling)."""
+    try:
+        from agents.core.managed_scope import canonical_env, env_pins
+
+        return canonical_env(name) in env_pins(strict=False)
+    except Exception:  # noqa: BLE001 — a view: never fail on the managed layer
+        return False
+
+
 def _digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
@@ -158,6 +176,7 @@ def set_key(name: str, value: str, *, allowed: frozenset[str] | None = None, own
     panel entry it was typed for; *keep_owners* keeps the entries that already vouched for
     the same key (the owner confirmed it is the same key), else they are replaced."""
     _check(name, allowed)
+    _refuse_managed(name)
     value = str(value or "").strip()
     if not value or len(value) > MAX_VALUE or any(ch in value for ch in "\r\n\x00"):
         raise ValueError("a key is one line of at most 4096 characters")
@@ -178,6 +197,7 @@ def release_key(name: str, owner: str, *, allowed: frozenset[str] | None = None)
     entry vouched for it; it leaves the environment only if this module put it there (a
     ``.env`` value stays). ``{"removed", "kept_for", "env"}``."""
     _check(name, allowed)
+    _refuse_managed(name)
     with _LOCK:
         others = [o for o in owners(name) if o != owner]
         if others:
@@ -196,6 +216,7 @@ def release_key(name: str, owner: str, *, allowed: frozenset[str] | None = None)
 def clear_key(name: str, *, allowed: frozenset[str] | None = None) -> dict:
     """Remove the stored key *name* entirely and take it out of effect now."""
     _check(name, allowed)
+    _refuse_managed(name)
     with _LOCK:
         if env_owned(name):
             raise EnvManaged(name)
@@ -215,7 +236,8 @@ def status(name: str) -> dict:
         value = os.environ.get(spelling)
         if value is None or not value.strip():
             continue
-        source = "hub" if placed_here(spelling) else "env"
+        source = ("managed" if admin_managed(spelling)          # G1: pinned by the administrator
+                  else "hub" if placed_here(spelling) else "env")
         value = value.strip()
         hint = f"…{value[-4:]}" if len(value) >= HINT_MIN_LENGTH else None
         return {"set": True, "source": source, "hint": hint}
@@ -228,6 +250,7 @@ def set_choice(name: str, value: str) -> None:
     """Store a non-secret choice (``JARVIS_WEB_BACKEND``) and put it in effect; an empty
     value removes it (back to the default)."""
     value = str(value or "").strip()
+    _refuse_managed(name)
     with _LOCK:
         if env_owned(name):
             raise EnvManaged(name)
@@ -277,6 +300,12 @@ def apply_stored() -> list[str]:
         logger.warning("integration keys not applied (type=%s)", type(exc).__name__)
         return []
     keys, choices = _allowed_names()
+    try:            # G1 — a name the administrator pinned is never overwritten by a stored copy
+        from agents.core.managed_scope import env_pins
+
+        pinned = frozenset(env_pins(strict=False))
+    except Exception:  # noqa: BLE001 — the hub's load already refused an unreadable managed file
+        pinned = frozenset()
     applied = []
     with _LOCK:
         for stored in names:
@@ -289,6 +318,10 @@ def apply_stored() -> list[str]:
             else:
                 continue
             if not name or not allowed_here or env_owned(name) or placed_here(name):
+                continue
+            from agents.core.managed_scope import canonical_env
+
+            if canonical_env(name) in pinned:
                 continue
             try:
                 value = store.get(stored)

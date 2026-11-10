@@ -558,6 +558,9 @@ async def autonomy_set_mode(body: AutonomyModeBody):
     try:
         result = await asyncio.to_thread(
             approval_mode.set_global_mode, orch, mode, actor="admin", surface="api")
+    except approval_mode.ModeManaged as exc:      # G1: pinned by the administrator
+        return JSONResponse({"error": "managed", "detail": str(exc), "mode": approval_mode.global_mode(orch)},
+                            status_code=409)
     except approval_mode.ModeNotSaved:
         return JSONResponse({"error": "mode_not_saved", "mode": approval_mode.global_mode(orch)},
                             status_code=503)
@@ -620,6 +623,8 @@ async def autonomy_set_policy(body: AutonomyPolicyBody):
     try:
         result = await asyncio.to_thread(
             approval_mode.set_agent_mode, orch, agent, mode, actor="admin", surface="api")
+    except approval_mode.ModeManaged as exc:      # G1: pinned by the administrator
+        return JSONResponse({"error": "managed", "detail": str(exc)}, status_code=409)
     except approval_mode.ModeNotSaved:
         return JSONResponse({"error": "mode_not_saved"}, status_code=503)
     if not result["effective"]:

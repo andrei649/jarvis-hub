@@ -40,6 +40,7 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictBool, StrictStr
 
 from agents.core.app_state import get_orch
+from agents.core.managed_scope import ManagedRefused
 from agents.core.web_helpers import nocache_json
 
 from ._deps import admin_guard
@@ -114,6 +115,25 @@ def _env_managed(name: str) -> JSONResponse:
     return nocache_json({"error": "env_managed", "name": name,
                          "detail": f"{name} is set in .env (or the hub's environment); change it there"},
                         status_code=409)
+
+
+async def _managed_env(*names: str) -> JSONResponse | None:
+    """G1 — 409 naming the managed file when the administrator pinned one of *names* (or no
+    configuration write may happen now), audited; None when the write may go on."""
+    from agents.core.managed_scope import ManagedRefused, check_env_write
+
+    try:
+        for name in names:
+            check_env_write(name)
+    except ManagedRefused as exc:
+        await _audit(f"integrations: write refused: {exc.names} {exc}", "settings_managed_refused")
+        return nocache_json(exc.payload(), status_code=409)
+    return None
+
+
+async def _managed_refused(exc: Exception) -> JSONResponse:
+    await _audit(f"integrations: write refused: {getattr(exc, 'names', [])} {exc}", "settings_managed_refused")
+    return nocache_json(exc.payload(), status_code=409)
 
 
 async def _audit(preview: str, action: str, *, required: bool = False) -> None:
@@ -197,6 +217,9 @@ async def integration_key_put(body: KeyBody, entry_id: str = Path(pattern=ENTRY_
         return _not_found()
     # Always the entry's OWN primary name: never a sibling's name that happens to be set.
     name = entry.keys[0]
+    refused = await _managed_env(name)            # G1: pinned by the administrator
+    if refused is not None:
+        return refused
     if integration_keys.env_owned(name):
         return _env_managed(name)
     all_entries = integrations_catalog.entries()
@@ -226,6 +249,8 @@ async def integration_key_put(body: KeyBody, entry_id: str = Path(pattern=ENTRY_
                                 keep_owners=body.same_key)
     except integration_keys.EnvManaged:
         return _env_managed(name)
+    except ManagedRefused as exc:                 # G1: the managed layer changed under this write
+        return await _managed_refused(exc)
     except ValueError:
         return nocache_json({"error": "invalid_key"}, status_code=422)
     for e in [entry, *shared]:
@@ -265,6 +290,9 @@ async def integration_key_delete(entry_id: str = Path(pattern=ENTRY_PATTERN)):
     entry = _entry(entry_id)
     if entry is None or not entry.keys:
         return _not_found()
+    refused = await _managed_env(*entry.keys)     # G1: pinned by the administrator
+    if refused is not None:
+        return refused
     mine = [n for n in entry.keys if entry.id in integration_keys.owners(n)]
     if not mine:
         env = next((n for n in entry.keys if integration_keys.env_owned(n)), None)
@@ -274,8 +302,11 @@ async def integration_key_delete(entry_id: str = Path(pattern=ENTRY_PATTERN)):
                              "integration": _row(entry_id)})
     removed, kept, env_set = [], [], []
     for name in mine:
-        out = await asyncio.to_thread(integration_keys.release_key, name, entry.id,
-                                      allowed=integrations_catalog.managed_keys())
+        try:
+            out = await asyncio.to_thread(integration_keys.release_key, name, entry.id,
+                                          allowed=integrations_catalog.managed_keys())
+        except ManagedRefused as exc:             # G1
+            return await _managed_refused(exc)
         (removed if out["removed"] else kept).append(name)
         if out["env"]:
             env_set.append(name)
@@ -445,6 +476,9 @@ def _search_guards(entry) -> list[dict]:
 async def _use_search(entry, body: UseBody):
     from agents.core import integration_keys, integrations_catalog
 
+    refused = await _managed_env(integrations_catalog.WEB_BACKEND)     # G1
+    if refused is not None:
+        return refused
     if integration_keys.env_owned(integrations_catalog.WEB_BACKEND):
         return _env_managed(integrations_catalog.WEB_BACKEND)
     if not integrations_catalog._key_state(entry)["set"]:
@@ -470,6 +504,8 @@ async def _use_search(entry, body: UseBody):
         await asyncio.to_thread(integration_keys.set_choice, integrations_catalog.WEB_BACKEND, entry.name)
     except integration_keys.EnvManaged:
         return _env_managed(integrations_catalog.WEB_BACKEND)
+    except ManagedRefused as exc:                 # G1
+        return await _managed_refused(exc)
     if not guards:
         await _audit(f"integrations: {integrations_catalog.WEB_BACKEND} → {entry.name}", "search_backend_chosen")
     return nocache_json({"ok": True, "applied": "now", "integration": _row(entry.id)})
@@ -486,6 +522,13 @@ async def _use_model(entry, body: UseBody):
         return nocache_json({"error": "model_required", "detail": "name the model to use"}, status_code=422)
     values = {"compatible_provider": entry.name, "compatible_model": model}
     changes = {"llm": values}
+    from agents.core.managed_scope import ManagedRefused, check_setting_write
+
+    try:                                          # G1: a pinned provider/model is refused first
+        for key, value in values.items():
+            check_setting_write("llm", key, value)
+    except ManagedRefused as exc:
+        return await _managed_refused(exc)
     try:
         pair_state = await admin._pair_snapshot(changes)
     except Exception as exc:
@@ -503,7 +546,13 @@ async def _use_model(entry, body: UseBody):
         updated, skipped = await admin._drain_settings_write(
             put_category, "llm", values, expected_pair_revision=pair_state[0] if pair_state else None)
     except Exception as exc:
+        if admin._is_managed_refusal(exc):
+            return await _managed_refused(exc)
         return admin._selection_write_refusal(exc)
+    from agents.core.settings_db import managed_setting_names
+
+    pinned = set(managed_setting_names("llm"))      # G1: the pinned values themselves are in force
+    skipped = [key for key in skipped if f"llm.{key}" not in pinned]
     if skipped:
         return nocache_json({"error": "not_stored", "skipped": skipped}, status_code=409)
     await admin._audit_settings_change("llm", list(values), values)
@@ -550,6 +599,9 @@ def _video_guards(entry) -> list[dict]:
 async def _use_video(entry, body: UseBody):
     from agents.core import integration_keys, integrations_catalog
 
+    refused = await _managed_env(integrations_catalog.VIDEO_CHOICE)     # G1
+    if refused is not None:
+        return refused
     if integration_keys.env_owned(integrations_catalog.VIDEO_CHOICE):
         return _env_managed(integrations_catalog.VIDEO_CHOICE)
     if not integrations_catalog._key_state(entry)["set"]:
@@ -574,6 +626,8 @@ async def _use_video(entry, body: UseBody):
         await asyncio.to_thread(integration_keys.set_choice, integrations_catalog.VIDEO_CHOICE, entry.name)
     except integration_keys.EnvManaged:
         return _env_managed(integrations_catalog.VIDEO_CHOICE)
+    except ManagedRefused as exc:                 # G1
+        return await _managed_refused(exc)
     return nocache_json({"ok": True, "applied": "now", "integration": _row(entry.id)})
 
 
@@ -582,10 +636,15 @@ async def integration_video_off():
     """Turn video generation off: no provider is chosen any more."""
     from agents.core import integration_keys, integrations_catalog
 
+    refused = await _managed_env(integrations_catalog.VIDEO_CHOICE)     # G1
+    if refused is not None:
+        return refused
     try:
         await asyncio.to_thread(integration_keys.set_choice, integrations_catalog.VIDEO_CHOICE, "")
     except integration_keys.EnvManaged:
         return _env_managed(integrations_catalog.VIDEO_CHOICE)
+    except ManagedRefused as exc:                 # G1
+        return await _managed_refused(exc)
     await _audit(f"integrations: {integrations_catalog.VIDEO_CHOICE} → off", "video_provider_chosen")
     return nocache_json({"ok": True, "applied": "now"})
 
@@ -594,9 +653,14 @@ async def integration_video_off():
 async def integration_search_auto():
     from agents.core import integration_keys, integrations_catalog
 
+    refused = await _managed_env(integrations_catalog.WEB_BACKEND)     # G1
+    if refused is not None:
+        return refused
     try:
         await asyncio.to_thread(integration_keys.set_choice, integrations_catalog.WEB_BACKEND, "")
     except integration_keys.EnvManaged:
         return _env_managed(integrations_catalog.WEB_BACKEND)
+    except ManagedRefused as exc:                 # G1
+        return await _managed_refused(exc)
     await _audit(f"integrations: {integrations_catalog.WEB_BACKEND} → auto", "search_backend_chosen")
     return nocache_json({"ok": True, "applied": "now"})

@@ -114,7 +114,7 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert tree["security"] == ["audit"]
     # H006: edit opens $VISUAL/$EDITOR on the declared settings; path / env-path name the
     # files; migrate writes this build's defaults and retired-model rewrites into a store.
-    assert tree["config"] == ["check", "edit", "env-path", "get", "list", "migrate", "path", "set", "unset"]
+    assert tree["config"] == ["check", "edit", "env-path", "get", "list", "managed", "migrate", "path", "set", "unset"]
     # H484: `mode` shows or sets the approval dial (auto|ask|off) through the admin route.
     assert tree["approvals"] == ["accept", "consent", "defer", "edit", "list", "mode", "reject"]
     assert tree["checkpoints"] == [

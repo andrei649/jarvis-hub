@@ -261,7 +261,7 @@ def _key_state(entry: Entry, by_name: dict[str, list[str]] | None = None) -> dic
         own = entry.id in integration_keys.owners(name)
     else:
         own = not shared_with
-    stored = state["source"] == "env" and integration_keys.stored_copy(name)
+    stored = state["source"] in ("env", "managed") and integration_keys.stored_copy(name)
     return {"name": name, "primary": entry.keys[0], **state, "shared_with": shared_with,
             "own": own, "stored_copy": stored}
 
@@ -361,7 +361,8 @@ def listing() -> dict:
             for e in all_entries]
     return {"integrations": rows, "skills": skills_summary(),
             "search": {"backend": backend, "answers": primary,
-                       "choice_source": ("env" if integration_keys.env_owned(WEB_BACKEND)
+                       "choice_source": ("managed" if integration_keys.admin_managed(WEB_BACKEND)   # G1
+                                         else "env" if integration_keys.env_owned(WEB_BACKEND)
                                          else ("hub" if integration_keys.placed_here(WEB_BACKEND) else None))},
             "model": {"selected": selected},
             "video": {"provider": _video_choice() or None,

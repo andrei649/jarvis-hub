@@ -166,23 +166,30 @@ async def _restore_local_provider(
 ) -> dict[str, bool]:
     """Attempt and verify persisted plus live cross-provider rollback."""
     settings_write_ok = False
+    # G1 — a setting the administrator pinned was never changed and stays the pin: the
+    # rollback restores only the others, and does not count the pinned one as lost.
     try:
-        updated, skipped = put_category(
-            "llm",
-            {"backend_type": backend_type, "default_model": default_model},
-        )
-        settings_write_ok = updated == 2 and not skipped
+        from agents.core.settings_db import managed_setting_names
+
+        pinned = set(managed_setting_names("llm"))
+    except Exception:  # noqa: BLE001
+        pinned = set()
+    restore = {key: value for key, value in
+               (("backend_type", backend_type), ("default_model", default_model))
+               if f"llm.{key}" not in pinned}
+    try:
+        if restore:
+            updated, skipped = put_category("llm", restore)
+            settings_write_ok = updated == len(restore) and not skipped
+        else:
+            settings_write_ok = True
     except Exception:
         logger.warning("model rollback settings write failed")
 
     settings_readback_ok = False
     try:
-        restored_backend_type = get_value("llm", "backend_type", None)
-        restored_default_model = get_value("llm", "default_model", None)
-        settings_readback_ok = (
-            restored_backend_type == backend_type
-            and restored_default_model == default_model
-        )
+        read_back = {key: get_value("llm", key, None) for key in restore}      # every key read
+        settings_readback_ok = all(read_back[key] == value for key, value in restore.items())
     except Exception:
         logger.warning("model rollback settings readback failed")
 
@@ -330,6 +337,17 @@ async def _switch_local_model_locked(
     target_provider = provider or providers[0]
     current_provider = _local_provider_name(router_)
     previous_model = getattr(router_, "active_model", None)
+    # G1 — a pinned model (or provider) is refused before the live router is touched.
+    from agents.core.managed_scope import ManagedRefused, check_setting_write
+
+    try:
+        check_setting_write("llm", "default_model", model_id)
+        if target_provider != current_provider:
+            check_setting_write("llm", "backend_type", target_provider)
+    except ManagedRefused as exc:
+        from . import admin
+
+        return await admin._managed_refusal(exc, "llm")
     if target_provider != current_provider:
         if target_provider not in {"lm-studio", "ollama"}:
             return nocache_json(
@@ -618,8 +636,21 @@ async def _provider_install_worker(fn, *args):
     return result
 
 
+#: Provider-package steps that change what the hub can run (G1: refused in managed mode).
+_PACKAGE_MUTATIONS = frozenset({"stage", "propose", "decide"})
+
+
+def _refuse_package_change_when_managed() -> None:
+    from agents.core.managed_scope import check_llm_write
+
+    check_llm_write(selection=False)
+
+
 async def _provider_install_call(request: Request, method: str, *args, **kwargs):
     from agents.core.llm.providers.packages import ProviderPackageError
+
+    if method in _PACKAGE_MUTATIONS:
+        _refuse_package_change_when_managed()       # G1: ManagedRefused → 409, audited
 
     try:
         result = await _provider_install_worker(_provider_install_sync,
@@ -677,6 +708,8 @@ async def provider_packages_promote(proposal_id: str, request: Request):
     from agents.core.llm.providers import lifecycle_gates
     from agents.core.llm.providers.packages import ProviderPackageError
 
+    _refuse_package_change_when_managed()           # G1
+
     try:
         service, actor = await _provider_install_worker(_provider_install_context, request)
         provider = await _provider_install_worker(
@@ -695,6 +728,8 @@ async def provider_packages_promote(proposal_id: str, request: Request):
              dependencies=[Depends(admin_guard)])
 async def provider_packages_revoke(provider_id: str, request: Request):
     from agents.core.llm.providers.packages import ProviderPackageError
+
+    _refuse_package_change_when_managed()           # G1
 
     try:
         service, actor = await _provider_install_worker(_provider_install_context, request)

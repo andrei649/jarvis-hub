@@ -533,6 +533,9 @@ def acknowledge(router, provider, acknowledged, scope, audit, *, target=None, ro
         else:
             values.pop(provider, None)
         _ack_map(values)
+        from agents.core.managed_scope import check_setting_write
+
+        check_setting_write(*SETTING, values)                           # G1
         conn.execute("UPDATE settings SET value=? WHERE category=? AND key=?", (json.dumps(values), *SETTING))
         if row is None:
             raise ConsentUnavailable("consent setting missing")
@@ -581,6 +584,9 @@ def _acknowledge_role(router, provider, acknowledged, scope, audit, target, *, r
         _role_ack_map(values)
         if row is None:
             raise ConsentUnavailable("role consent setting missing")
+        from agents.core.managed_scope import check_setting_write
+
+        check_setting_write(*ROLE_SETTING, values)                      # G1
         conn.execute("UPDATE settings SET value=? WHERE category=? AND key=?", (json.dumps(values), *ROLE_SETTING))
         conn.commit()
     except Exception as exc:

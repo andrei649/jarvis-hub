@@ -799,6 +799,19 @@ async def security_block_handler(request: Request, exc: SecurityBlockError):
     )
 
 
+from agents.core.managed_scope import ManagedRefused  # noqa: E402
+
+
+@app.exception_handler(ManagedRefused)
+async def managed_refused_handler(request: Request, exc: ManagedRefused):
+    """G1 — a configuration write the administrator's managed layer refuses, from any
+    route: 409 naming the managed file, audited (a route that maps it itself answers first)."""
+    from agents.core.managed_scope import audit_refusal
+
+    await asyncio.to_thread(audit_refusal, exc, f"{request.method} {request.url.path}")
+    return _nocache_json(exc.payload(), status_code=409)
+
+
 @app.exception_handler(Exception)
 async def generic_error_handler(request: Request, exc: Exception):
     log_error(logger, E_INTERNAL_UNEXPECTED, component="web", detail=str(exc), exc=exc)

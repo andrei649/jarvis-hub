@@ -210,6 +210,22 @@ def _held_refusal(name: str):
     )
 
 
+async def _managed_refusal():
+    """G1 — the saved MCP server list is configuration: when the administrator pinned
+    ``mcp.servers`` (or managed mode is on, or the managed configuration cannot be read),
+    an add or a remove is refused before the live manager changes. 409, audited."""
+    import asyncio
+
+    from agents.core.managed_scope import ANY, ManagedRefused, audit_refusal, check_setting_write
+
+    try:
+        check_setting_write("mcp", "servers", ANY)
+    except ManagedRefused as exc:
+        await asyncio.to_thread(audit_refusal, exc, "mcp servers")
+        return JSONResponse(exc.payload(), status_code=409)
+    return None
+
+
 def _safe_mode_refusal():
     """H275: in safe mode the saved servers are not loaded, so an add or a remove would
     rewrite the saved list from an empty manager. Both refuse until a normal boot."""
@@ -230,7 +246,7 @@ async def admin_mcp_add(req: MCPServerConfig):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    refusal = _safe_mode_refusal() or _held_refusal(req.name)
+    refusal = _safe_mode_refusal() or _held_refusal(req.name) or await _managed_refusal()
     if refusal is not None:
         return refusal
     from core.mcp.client import TRUST_TIERS, MCPServer, normalize_trust, tool_patterns_over_bounds
@@ -299,7 +315,7 @@ async def admin_mcp_remove(name: str):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    refusal = _safe_mode_refusal() or _held_refusal(name)
+    refusal = _safe_mode_refusal() or _held_refusal(name) or await _managed_refusal()
     if refusal is not None:
         return refusal
     if name not in orch.mcp.servers:

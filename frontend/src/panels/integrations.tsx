@@ -25,7 +25,7 @@ import { guardFlags, guardRefusal, type GuardFlags, type GuardRefusal } from '..
 
 export const INTEGRATIONS_PATH = '/api/admin/integrations';
 
-type KeyState = { names: string[]; name: string; primary?: string; set: boolean; source: 'env' | 'hub' | null; hint: string | null;
+type KeyState = { names: string[]; name: string; primary?: string; set: boolean; source: 'env' | 'hub' | 'managed' | null; hint: string | null;
   editable: boolean; own: boolean; shared_with: string[]; primary_shared_with?: string[]; stored_copy?: boolean };
 type Facts = { host: string; host_country: string | null; data_policy: string; data_policy_note: string;
   price_known: 'yes' | 'some' | 'no'; price_note: string; receives: string };
@@ -167,7 +167,9 @@ function IntegrationDetail({ item, onChanged }: { item: Integration; onChanged: 
               It is not tested here, and using {item.display_name} asks for its own consent.</>
           : item.key.set
             ? <>Key <b>set</b>{item.key.hint ? <span style={mono}> ({item.key.hint})</span> : null}
-                {item.key.source === 'env' ? <> · in <span style={mono}>.env</span>, edit it there ({item.key.name})</> : ' · stored encrypted by Nerva'}</>
+                {item.key.source === 'managed'
+                  ? <span data-testid="key-managed"> · 🔒 managed by your administrator ({item.key.name})</span>
+                  : item.key.source === 'env' ? <> · in <span style={mono}>.env</span>, edit it there ({item.key.name})</> : ' · stored encrypted by Nerva'}</>
             : <>No key yet{item.key.names.length ? <> · <span style={mono}>{item.key.names.join(' / ')}</span></> : null}</>}
       </div>
       {item.key.stored_copy && (
@@ -258,7 +260,7 @@ export function IntegrationsPanel() {
       {search && (
         <div style={{ fontSize: 11, marginBottom: 6 }}>
           Searches use <b>{search.answers || 'nothing configured'}</b> · choice <span style={mono}>{search.backend}</span>
-          {search.choice_source === 'env' ? ' (set in .env)' : null}
+          {search.choice_source === 'env' ? ' (set in .env)' : search.choice_source === 'managed' ? ' (🔒 managed by your administrator)' : null}
           {search.choice_source === 'hub' && <button className="tool-btn" style={{ marginLeft: 6 }} onClick={() => void auto()}>choose automatically</button>}
           {note && <span role="status" style={{ marginLeft: 6, color: 'var(--ink-2)' }}>{note}</span>}
         </div>
