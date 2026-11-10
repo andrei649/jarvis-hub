@@ -1,4 +1,5 @@
 {
+  "action:a2a.outbound": "wired",
   "action:admin.agent_roster": "wired",
   "action:admin.capability_issue": "wired",
   "action:admin.kill_switch": "wired",
@@ -64,6 +65,7 @@
   "component:soul_versions": "wired",
   "component:transparency": "wired",
   "component:widgets": "wired",
+  "plugin:a2a": "wired",
   "plugin:analytics": "wired",
   "plugin:apple-health": "wired",
   "plugin:balance": "wired",

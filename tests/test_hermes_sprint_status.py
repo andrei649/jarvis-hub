@@ -456,12 +456,12 @@ def test_cli_unknown_row_is_a_named_failure(capsys):
 def test_cli_verify_reads_a_junit_result_without_running_tests(tmp_path, capsys):
     _, _, areas = hs.load()
     area = next(a for a in areas["areas"] if a["id"] == "agent-interop")
-    module = area["suite"][0][:-3].replace("/", ".")
+    modules = [entry.split("::")[0][:-3].replace("/", ".") for entry in area["suite"]]
     path = tmp_path / "junit.xml"
-    path.write_text(junit((module, "test_anything", "passed")), encoding="utf-8")
+    path.write_text(junit(*[(m, "test_anything", "passed") for m in modules]), encoding="utf-8")
     assert hs.main(["verify", "--junit", str(path), "--area", "agent-interop"]) == 0
     assert "1/1 area suites pass" in capsys.readouterr().out
-    path.write_text(junit((module, "test_anything", "failure")), encoding="utf-8")
+    path.write_text(junit(*[(m, "test_anything", "failure") for m in modules]), encoding="utf-8")
     assert hs.main(["verify", "--junit", str(path), "--area", "agent-interop"]) == 1
     assert "FAIL agent-interop" in capsys.readouterr().out
     assert hs.main(["verify", "--junit", str(path), "--area", "nowhere"]) == 2

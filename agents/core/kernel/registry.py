@@ -39,6 +39,10 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # Wave 1 — kernel-mediated.
     "node.dispatch": Mediation.KERNEL,
     "call.outbound": Mediation.KERNEL,
+    # G14 — a message to an A2A peer sends the owner's text off the box. The outbound
+    # runtime asks the kernel at send time (a DENY — halt, budget, loop — refuses it) after
+    # the owner approved the gated tool call; its egress also crosses plugin.egress.
+    "a2a.outbound": Mediation.KERNEL,
     "social.*": Mediation.KERNEL,
     "writeback.*": Mediation.KERNEL,
     # Payment micro-wave — admissible requests routed through kernel.authorize

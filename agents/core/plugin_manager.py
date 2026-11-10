@@ -252,6 +252,9 @@ class PluginManager:
         # have loaded the files before anything they read, so this is their table; an
         # entry that did not (agents/run.py before its main) loads here, once.
         load_hub_env()
+        # The HUD's Integrations panel keys (encrypted store), where .env left a name unset.
+        from .integration_keys import apply_stored
+        apply_stored()
         self.plugins["cloud-llm"] = CloudLLMPlugin(
             anthropic_key=env_str("ANTHROPIC_API_KEY"),
             openai_key=env_str("OPENAI_API_KEY"),

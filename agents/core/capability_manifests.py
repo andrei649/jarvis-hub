@@ -181,6 +181,17 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         ),
         implementation="agents.core.autonomy.call_broker:CallBroker.request",
     ),
+    "a2a.outbound": _action(
+        "a2a.outbound",
+        "Send the owner's task to a configured A2A peer agent (call or fan-out) after approval.",
+        required=("tool", "peers"),
+        rollback=RollbackContract(
+            mode="cancel",
+            description="Reject the approval card before the message is sent.",
+            limitations="A message a peer has received cannot be recalled.",
+        ),
+        implementation="agents.core.a2a_outbound:A2AOutbound.run",
+    ),
     "social.*": _action(
         "social.*",
         "Publish or mutate content through a governed social provider.",

@@ -11,8 +11,8 @@ Din acestea, **151** au fost reevaluate pe cod în această livrare; **0** păst
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
 | Echivalent | 151 | 21.7% |
-| Parțial | 460 | 66.0% |
-| Lipsă | 54 | 7.7% |
+| Parțial | 461 | 66.1% |
+| Lipsă | 53 | 7.6% |
 | Exclus intenționat | 32 | 4.6% |
 | De reverificat | 0 | 0.0% |
 
@@ -46,7 +46,7 @@ Fiecare rând aparține unui singur domeniu din [areas.json](docs/hermes/areas.j
 | [media](docs/HERMES_CAPABILITIES.md#area-media) — Media: images, video, voice, vision | adopt/own | 27 | 7 | 19 | 1 | 0 | 0 | 100 | seed din dovezi |
 | [editor-acp](docs/HERMES_CAPABILITIES.md#area-editor-acp) — Editor agent over ACP | own/adopt | 6 | 0 | 0 | 5 | 1 | 0 | 2 | **subțire**, seed din dovezi |
 | [mcp](docs/HERMES_CAPABILITIES.md#area-mcp) — MCP client and server | own/run | 13 | 2 | 5 | 6 | 0 | 0 | 7 | **subțire**, seed din dovezi |
-| [agent-interop](docs/HERMES_CAPABILITIES.md#area-agent-interop) — OpenAI-compatible API and agent-to-agent (A2A) | own/adopt | 5 | 0 | 2 | 2 | 1 | 0 | 1 | **subțire**, seed din dovezi |
+| [agent-interop](docs/HERMES_CAPABILITIES.md#area-agent-interop) — OpenAI-compatible API and agent-to-agent (A2A) | own/adopt | 5 | 0 | 3 | 1 | 1 | 0 | 2 | **subțire**, seed din dovezi |
 | [extensions](docs/HERMES_CAPABILITIES.md#area-extensions) — Extensions, hooks and deployment packaging | own/adopt | 9 | 1 | 6 | 0 | 2 | 0 | 13 | seed din dovezi |
 | [feature-pages](docs/HERMES_CAPABILITIES.md#area-feature-pages) — Upstream feature pages (cross-cutting) | own/adopt/run | 48 | 5 | 35 | 5 | 3 | 0 | 169 | seed din dovezi |
 | [user-journeys](docs/HERMES_CAPABILITIES.md#area-user-journeys) — User journeys from the rest of the docs (cross-cutting) | own | 33 | 3 | 25 | 2 | 3 | 0 | 62 | seed din dovezi |

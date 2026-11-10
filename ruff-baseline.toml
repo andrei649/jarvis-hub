@@ -16,6 +16,9 @@
 # Vendored Hermes source (Adopt lane): upstream text, byte-identical but for the import
 # rewrites in MANIFEST.json, so style-only rules are not ours to apply. Bug rules stay on.
 "agents/vendor/hermes/**" = ["I001", "UP035", "UP045", "F401", "B904"]
+# The A2A client tools (slice 4) only: F811 (two upstream `import urllib.x` lines both rewrite
+# to the compat `urllib`) and B018 (upstream validates a port by reading `parts.port`).
+"agents/vendor/hermes/plugins/platforms/a2a/**" = ["F811", "B018"]
 
 # --- 2. baseline (generated; burndown) ---
 ".claude/plugins/superpowers/tests/claude-code/analyze-token-usage.py" = ["I001", "UP015"]

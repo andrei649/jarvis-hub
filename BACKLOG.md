@@ -2879,6 +2879,22 @@
   install|repair [--force]` call the route. Catalog page: `docs/SKILLS_CATALOG.md`. Still open on
   H336: installing the 55 skills that carry code (needs a scanned, approved package path).
   Tests: `tests/test_h336_catalog_owner_install.py` (14), panel vitest (+1).
+  **Adopt lane, slice 4 — G14 A2A outbound (2026-11-10):** Hermes's A2A client tools
+  (`plugins/platforms/a2a/{tools,protocol,security}.py`) vendored with three path-scoped rules
+  (`a2a-urllib`, `a2a-shared`, `a2a-futures`) and compat `urllib` / `a2a_shared` / `futures`.
+  `PUT|DELETE /api/a2a/peers/{id}/outbound` (admin) gives a peer a URL, a token (secret store),
+  `allow_lan` (private IP literal only), timeout, tags. With `JARVIS_A2A_ENABLED` the coordinator
+  registers `a2a_call` + `a2a_orchestrate` (gated) and `a2a_discover`, `a2a_list`, `a2a_history`
+  (ungated, read-only); e-stop, kernel kind `a2a.outbound`, `a2a` egress manifest (allowlist =
+  configured peers), a per-call origin/credential guard, untrusted + tainted replies. H562 →
+  partial (the approved reply does not return into the asking turn; raw URLs only to configured
+  peers). Adversarial review fixes: `a2a_discover` takes a peer (id/name/exact URL) and the guard
+  allows a GET of the two card paths only (no model text in a path or query); denied strings in
+  dicts/comparisons exempt only `"http"` and only in the a2a package; recipients on the card,
+  re-checked at the approved run; per-peer transcript names, redacted, rotated, capped, in the
+  forget; e-stop re-read per request; per-peer fan-out refusals; confined home; path-scoped and
+  private compat names refused in every import form. Tests: `tests/test_a2a_outbound.py` (65).
+  Guide: `docs/hermes/ADOPT_LANE.md` → slice 4.
   **Run lane, slice 1 (2026-11-10):** the governed Hermes sidecar moves from `0808ed8` to `9c0560f8`
   and the move is now a script: `scripts/hermes_runtime.py bump --commit <sha>`
   (`scripts/hermes_runtime_bump.py`) re-verifies the current pin, downloads and verifies the new
@@ -2918,6 +2934,33 @@
   fork, prompt.btw, @diff/page refs or acting manual compaction). User docs:
   `docs/SESSION_COMMANDS.md`. Tests: `tests/test_g2_session_commands.py` (41) and
   `frontend/src/panels/context-meter.test.tsx` (2).
+
+  **UX pass done (2026-11-10): the Integrations panel** (owner request: make the Hermes integration
+  coherent before adopting more). Console → Start → Integrations lists the 4 search backends (Tavily +
+  the 3 adopted), the 6 native key-taking model providers + the 24 adopted ones, and the skills catalog
+  (summary, opens Skills Import), each with kind, origin, status, host, host country (only the `*-cn`
+  profiles; nothing else is recorded), data policy and price known. Keys typed there go to the encrypted
+  `SecretStore` (`integration.key.*`, internal to the secret broker) and into the hub's environment, so
+  the readers see them without a restart (the router re-detects for Gemini/Anthropic/the selected
+  compatible provider); never echoed (set + last 4). `.env` wins (409 `env_managed`; `apply_stored()`
+  after the `.env` load fills gaps only). Test = `provider_probe.probe` for that provider only / one
+  search through the `websearch` egress client. Use = the same selection guards and audited consent as
+  the settings write (`admin._guard_selection`); an adopted search backend needs the same two
+  acknowledgements and a required `search_backend_consent` row; one HUD consent card, one "I
+  understand, use it". Routes `/api/admin/integrations*` (6, admin). Tests:
+  `tests/test_integrations_panel_routes.py` (24), `frontend/src/panels/integrations.test.tsx` (12).
+  **Adversarial review (2026-11-10): 4 MAJOR fixed** — (M1) adopted search backends answer only when
+  named (`SearchProvider.explicit_only`: never `auto`'s pick or a rescue, a key alone sends nothing;
+  also for a `.env` key); (M2) Test sends a key only to the entry it was given for (or the selected
+  provider), sibling keys show `shared`; (M3) a PUT writes the entry's own primary name, a name other
+  entries read needs `same_key`, DELETE releases only this entry's claim (owners recorded per key);
+  (M4) `TAVILY_API_KEY` joins `code_env`'s managed names, pinned by a test. Minors: start-up applies
+  only managed names / known choices; a stale stored copy under a `.env` key can be purged; the secret
+  store re-reads a changed file (broker redaction current); the `Orchestrator` applies stored keys
+  before building the router (`agents/run.py` path); Gemini's key save asks its consent; writes are
+  same-origin (403 cross-site, 415 non-JSON POST); `/use` without a key refused; hint only from 20 chars.
+  Left: the Settings → LLM provider select and `JARVIS_WEB_BACKEND` docs still exist beside the panel
+  (not removed); the `nerva` CLI has no `integrations` verb yet; no live call to any provider was made.
 
 ## Darwin feature absorption — 2026-09-09
 

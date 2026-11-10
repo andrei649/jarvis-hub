@@ -676,6 +676,11 @@ class Orchestrator:
         self.config = config
         self.agents: dict[str, Agent] = {}
         self.router = IntentRouter(config)
+        # Keys the owner set in the HUD's Integrations panel, where .env left a name unset:
+        # here too, because an entry such as agents/run.py builds the router before
+        # PluginManager.build applies them (idempotent; no store, nothing to do).
+        from .integration_keys import apply_stored as _apply_integration_keys
+        _apply_integration_keys()
         gemini_key = env_str("GEMINI_API_KEY")
         anthropic_key = env_str("ANTHROPIC_API_KEY")
         self.llm_router = HybridRouter(gemini_api_key=gemini_key, anthropic_api_key=anthropic_key)

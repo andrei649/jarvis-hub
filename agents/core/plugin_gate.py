@@ -345,6 +345,21 @@ BUILTIN_PLUGINS = {
         data_scope=DataScope.PROCESSED,
         agents_served=["all"],
     ),
+    # G14 — the adopted Hermes A2A client tools call the owner's configured peers. The
+    # allowlist is empty here and filled at call time with the configured peers' hosts
+    # (``set_dynamic_domains``); the outbound runtime then pins each request to the exact
+    # origin of a peer the call targets. A message is the owner's text sent to another
+    # agent, so the scope is TRANSMITTED.
+    "a2a": PluginManifest(
+        id="a2a",
+        name="A2A Peers (outbound)",
+        version="0.1.0",
+        description="Call the owner's configured A2A peer agents (discover, call, fan out)",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.TRANSMITTED,
+        allowed_domains=[],
+        agents_served=["all"],
+    ),
     "kanban-attachments": PluginManifest(
         id="kanban-attachments",
         name="Kanban URL Attachments",
@@ -583,6 +598,21 @@ def register_dynamic_domain(plugin_id: str, url_or_host: str) -> None:
     host = (parsed.hostname or "").lower().strip().rstrip(".")
     if host:
         _DYNAMIC_DOMAINS.setdefault(plugin_id, set()).add(host)
+
+
+def set_dynamic_domains(plugin_id: str, urls_or_hosts) -> None:
+    """Replace *plugin_id*'s runtime hosts with exactly these (an owner-edited list such as
+    the A2A peers: a removed peer's host must stop being reachable)."""
+    if not plugin_id:
+        return
+    hosts: set[str] = set()
+    for raw in urls_or_hosts or ():
+        raw = str(raw or "").strip()
+        parsed = urlparse(raw if "//" in raw else "//" + raw)
+        host = (parsed.hostname or "").lower().strip().rstrip(".")
+        if host:
+            hosts.add(host)
+    _DYNAMIC_DOMAINS[plugin_id] = hosts
 
 
 def dynamic_domains(plugin_id: str) -> list[str]:

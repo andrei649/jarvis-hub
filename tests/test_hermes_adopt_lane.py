@@ -276,8 +276,15 @@ async def test_a_policy_block_through_websearch_is_not_rescued(monkeypatch):
     egress = Egress(ip="192.168.1.20")
     monkeypatch.setenv("EXA_API_KEY", "k")
     monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "k")
+    # An adopted backend answers only when named (explicit_only): with keys alone, auto
+    # never picks one, and nothing falls back to one.
+    keys_only = ws.WebSearchPlugin()
+    assert keys_only.selection().primary is None or keys_only.selection().primary.name not in wp.ADOPTED_PROVIDERS
+    monkeypatch.setenv("JARVIS_WEB_BACKEND", "exa")
+    monkeypatch.setenv("JARVIS_WEB_RESCUE", "1")
     plugin = ws.WebSearchPlugin()
     plugin._client = egress.client
+    assert all(p.name not in wp.ADOPTED_PROVIDERS for p in plugin.selection().rescue)
     outcome = await plugin.search_detailed("q")
     assert outcome.provider == "exa" and outcome.reason == "policy_blocked"
     assert outcome.rescued_from == "" or outcome.rescued_from is None
@@ -525,11 +532,32 @@ def test_the_rewrite_is_idempotent():
               "from agent.reasoning_effort import clamp_effort\nfrom agent import reasoning_effort as re_\n"
               "    from agent.account_usage import AccountUsageSnapshot\n"
               "        from hermes_cli.version_info import hermes_user_agent\n"
-              "import threading\n        import urllib.request\n"
-              "        from hermes_cli.config import load_config\n"
-              "        from hermes_cli.goals import judge_goal\n")
+              "import threading\n        import urllib.request\n")
     once, applied = hv.rewrite(sample)
-    assert len(applied) == len(hv.REWRITE_RULES)
+    assert len(applied) == len([r for r in hv.REWRITE_RULES if not r.paths])
+    # Slice 4: the A2A-scoped rules apply to the a2a package only, and are idempotent too.
+    a2a_sample = ("import urllib.error\nimport urllib.request\nimport urllib.parse\n"
+                  "from gateway.platforms._shared import coerce_port\n"
+                  "    from hermes_cli.config import load_config_readonly\n"
+                  "from hermes_constants import get_hermes_home\nfrom pathlib import Path\n"
+                  "from agent.proxy_bypass import is_loopback_host\n"
+                  "        from agent.secret_scope import get_secret\n"
+                  "    from agent.redact import redact_for_egress\n"
+                  "from concurrent.futures import Future\n")
+    a2a_path = "plugins/platforms/a2a/tools.py"
+    a2a_once, a2a_applied = hv.rewrite(a2a_sample, a2a_path)
+    assert a2a_applied == [r.id for r in hv.REWRITE_RULES if r.paths and r.applies_to(a2a_path)]
+    # G2: the loop module's two rules apply to hermes_cli/loops.py only.
+    loops_sample = ("        from hermes_cli.config import load_config\n"
+                    "        from hermes_cli.goals import judge_goal\n")
+    loops_once, loops_applied = hv.rewrite(loops_sample, "hermes_cli/loops.py")
+    assert loops_applied == ["hermes-cli-config", "hermes-cli-goals"]
+    assert hv.rewrite(loops_once, "hermes_cli/loops.py") == (loops_once, [])
+    assert hv.rewrite(loops_sample, "plugins/web/x.py")[1] == []
+    assert hv.rewrite(a2a_once, a2a_path) == (a2a_once, [])
+    assert hv.unmapped_imports("\n".join(line.strip() for line in a2a_once.splitlines()),
+                               a2a_path) == []
+    assert hv.rewrite(a2a_sample)[1] == ["urllib-request"]    # elsewhere: the refused shim
     assert hv.rewrite(once) == (once, [])
     assert once.count("\n") == sample.count("\n")
     assert hv.unmapped_imports("\n".join(line.strip() for line in once.splitlines())) == []
