@@ -27,7 +27,7 @@ from agents.core.mcp.client import MCPManager, MCPServer
 from agents.core.mcp.host_requests import MCPHost, estimate_tokens
 from agents.core.mcp.http_transport import MAX_REPLY_BYTES, StreamableHttpTransport
 from agents.core.mcp.model_bridge import MCPModelBridge
-from agents.core.mcp.resilience import STATE_OPEN, ReconnectPolicy, ServerHealth
+from agents.core.mcp.resilience import STATE_OPEN, STATE_PARKED, ReconnectPolicy, ServerHealth
 from agents.core.tool_rpc import ToolRPCServer
 
 FAKE = Path(__file__).resolve().parent / "fixtures" / "mcp_fake_server.py"
@@ -179,12 +179,17 @@ async def test_kill_switch_scope_mcp_stops_calls():
         await manager.close_all()
 
 
-def test_a_flapping_server_trips_the_breaker():
+def test_a_flapping_server_trips_the_breaker_then_parks():
     health = ServerHealth(policy=ReconnectPolicy(jitter=0.0))
     for t in (0.0, 10.0, 20.0):
         health.succeeded(now=t)
         health.lost("process_exited", now=t + 1)
-    assert health.state == STATE_OPEN and health.consecutive_failures == 1
+    assert health.state == STATE_OPEN and health.consecutive_failures == 3
+    # Spread out past the breaker window, it still never stays up: it parks.
+    for t in (200.0, 400.0, 600.0):
+        health.succeeded(now=t)
+        health.lost("process_exited", now=t + 1)
+    assert health.state == STATE_PARKED and health.next_retry_at == 601.0 + 300.0
 
 
 # ── M1: the wait outlives nothing, and nothing outlives the call ────────────

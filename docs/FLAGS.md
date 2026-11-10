@@ -547,8 +547,8 @@ the default; `JARVIS_MCP_STDIO_ALLOWED_ENV` is the narrow remedy, `=0` the blunt
 
 Code: `agents/core/mcp/resources.py`, `resilience.py`, `host_requests.py`, wired in
 `agents/core/mcp/client.py`. Tests: `tests/test_mcp_g6_g7_client.py` and
-`tests/test_mcp_g6_g7_review.py` (a fake stdio server, `tests/fixtures/mcp_fake_server.py`,
-with a hostile mode).
+`tests/test_mcp_g6_g7_review.py`, `tests/test_mcp_g6_g7_round2.py` (a fake stdio server,
+`tests/fixtures/mcp_fake_server.py`, with hostile modes).
 
 **Resources and prompts.** A server that declares `resources` or `prompts` on `initialize`
 gets up to four extra tools next to its own: `mcp__<server>__list_resources`,
@@ -564,8 +564,15 @@ turn's action origin is raised so a later action in the same turn waits for appr
 Listings follow `nextCursor` for at most 50 pages; one resource may be at most 50 MiB, over
 stdio (the line limit is 72 MiB; a longer line drops the connection, which the supervisor
 restores) and over Streamable HTTP (`resources/read` and `prompts/get` replies may be up to
-72 MiB there; every other HTTP reply keeps its 4 MiB cap); text shown to the model is cut
-at 100 000 characters. Binary content (resource blobs, prompt and tool-result images,
+72 MiB there; every other HTTP reply keeps its 4 MiB cap). One result (a resource read,
+a prompt, a tool call) keeps at most 100 blocks and 2 000 000 characters of text in all,
+each block cut head+tail at 100 000; the cut happens before any cleaning or scanning, and
+cleaning, scanning and bounding run on a worker thread for large results. On stdio the
+reader's line limit is 1 MiB while idle (so a server can park at most about 2 MiB in the
+hub; one that writes that much unsolicited output is disconnected), 16 MiB during an
+ordinary call and 72 MiB only during a content read, of which at most 2 run at once
+across all servers. Parsing a maximum-size reply still holds the interpreter for a
+fraction of a second (about 0.15–0.25 s for 60 MB). Binary content (resource blobs, prompt and tool-result images,
 audio and embedded blobs) is saved under `<data>/mcp_cache/<server>/` (mode 0600,
 content-hash name, extension only from a short image/audio allowlist, else `.bin`), the
 model gets the path, `file_read` treats those files as third-party (tainted), and each
@@ -582,7 +589,8 @@ Only the owner (connect, `connect_all`, autoconnect) marks a server as wanted; t
 supervisor re-checks that, the e-stop and both kill-switch scopes under the server's lock
 right before it spawns, so a disconnect or removal made mid-pass holds, and removing a
 server closes it in every state. A server that keeps dying right after connecting trips
-the breaker like one that never connects. Nothing is connected, reconnected or pinged
+the breaker like one that never connects, and parks once its failures since the last
+connection that stayed up for 60 s pass the retry limit. Nothing is connected, reconnected or pinged
 while the e-stop or a kill switch (`mcp` or `mcp:<server>`) is engaged; the kill switch
 also refuses calls (the e-stop does not: it pauses new autonomous work, not chat).
 `GET /api/admin/mcp` shows, per server, `health` (state, attempts, last error, seconds to
@@ -621,8 +629,10 @@ cleaning is declined without a card. It is never answered automatically.
 fields (checked against the server's schema) and approves the card; a second answer is
 refused (409); rejecting the card declines; a card nobody answers within 300 s is
 cancelled. While the card is pending the tool loop's deadline is extended (a native
-human-wait window), and no longer; if the call ends first, the card is withdrawn, the
-server is told `cancel`, and a late answer gets `too_late` (410). Approving without content
+human-wait window), and no longer; MCP cards together may hold one turn open for at most
+15 minutes, and open cards count against the per-minute limit. If the call ends first, the
+card is withdrawn, the server is told `cancel`, and a late answer gets `too_late` (410);
+an answer given just before the call ended is the one the server receives. Approving without content
 accepts only a request with no required fields. URL-mode requests are declined. There is
 no HUD form for the answer yet: the card shows in the approval inbox, the typed answer
 goes through the route.

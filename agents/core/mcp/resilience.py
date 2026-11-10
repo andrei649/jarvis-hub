@@ -89,7 +89,9 @@ class ServerHealth:
         if self.consecutive_failures or self.state in (STATE_BACKOFF, STATE_OPEN, STATE_PARKED):
             self.reconnects += 1
         self.state = STATE_CONNECTED
-        self.consecutive_failures = 0
+        # ``consecutive_failures`` is NOT reset here: a connect only proves itself by
+        # staying up for the breaker window (:meth:`lost`). A server that connects and
+        # dies again and again therefore keeps counting and parks after max_retries.
         self.last_error = None
         self.last_ok_at = now
         self.next_retry_at = None
@@ -122,9 +124,20 @@ class ServerHealth:
         self.next_retry_at = now + delay
 
     def lost(self, reason: str, *, now: float | None = None) -> None:
-        """A connected server stopped answering (process exited, ping failed): retry soon."""
+        """A connected server stopped answering (process exited, ping failed): retry soon.
+        A connection that stayed up for the breaker window had proven itself, so the
+        count starts again; one that died sooner adds to it (flapping parks)."""
         if self.state == STATE_CONNECTED:
+            now = time.time() if now is None else now
+            if self.last_ok_at is not None and now - self.last_ok_at >= self.policy.breaker_window:
+                self.consecutive_failures = 0
             self.failed(reason, now=now)
+
+    def stable(self, now: float | None = None) -> bool:
+        """Connected for at least the breaker window."""
+        now = time.time() if now is None else now
+        return (self.state == STATE_CONNECTED and self.last_ok_at is not None
+                and now - self.last_ok_at >= self.policy.breaker_window)
 
     def refused(self, reason: str) -> None:
         """A configuration refusal (unsafe command, transport off): retrying cannot help."""
@@ -161,7 +174,7 @@ class ServerHealth:
         return {
             "state": self.state,
             "attempts": self.attempts,
-            "consecutive_failures": self.consecutive_failures,
+            "consecutive_failures": 0 if self.stable(now) else self.consecutive_failures,
             "reconnects": self.reconnects,
             "last_error": self.last_error,
             "last_ok_at": self.last_ok_at,

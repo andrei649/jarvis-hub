@@ -92,16 +92,17 @@ from agents.core.mcp.resilience import ReconnectPolicy, ServerHealth, halted
 from agents.core.mcp.resources import (
     UTILITY_OPS,
     ResourceError,
+    bound_tool_result,
     cache_result_blocks,
     run_utility,
     utility_ops_for,
+    warm_cleaner,
 )
 from agents.core.mcp.schema_normalize import (
     PROVIDER_NAME_PREFIX,
     mcp_provider_name,
     normalize_mcp_input_schema,
 )
-from agents.core.security.quarantine import strip_invisible_deep
 
 logger = logging.getLogger("jarvis.mcp")
 
@@ -387,6 +388,31 @@ def _permanent_refusal(reason: str | None) -> bool:
 #: rest of the line in the pipe. Memory per read stays bounded by this limit; a longer
 #: line drops the connection (it cannot be resynchronised) and the supervisor reconnects.
 STDIO_LINE_LIMIT = 72 * 1024 * 1024
+#: The reader's limit while no request is in flight (and so at most about twice this is
+#: buffered from an idle server: asyncio pauses the pipe there), and for ordinary
+#: requests. Only a content read (resources/read, prompts/get) raises it to
+#: STDIO_LINE_LIMIT, and at most CONTENT_READS_AT_ONCE of those run at once, hub-wide.
+STDIO_IDLE_LINE_LIMIT = 1024 * 1024
+STDIO_CALL_LINE_LIMIT = 16 * 1024 * 1024
+CONTENT_READS_AT_ONCE = 2
+#: A reply line longer than this is parsed on a worker thread.
+_THREAD_PARSE_BYTES = 1024 * 1024
+_CONTENT_GATES: dict[int, asyncio.Semaphore] = {}
+
+
+def _content_gate() -> asyncio.Semaphore:
+    """The hub-wide bound on concurrent large content reads (one per event loop)."""
+    loop = asyncio.get_running_loop()
+    gate = _CONTENT_GATES.get(id(loop))
+    if gate is None:
+        _CONTENT_GATES.clear()
+        gate = _CONTENT_GATES[id(loop)] = asyncio.Semaphore(CONTENT_READS_AT_ONCE)
+    return gate
+
+
+def _set_line_limit(reader: Any, limit: int) -> None:
+    if reader is not None and hasattr(reader, "_limit"):
+        reader._limit = int(limit)
 #: H552 — the content reads whose replies may be large on Streamable HTTP too.
 _CONTENT_METHODS = frozenset({"resources/read", "prompts/get"})
 #: H553 — server requests (sampling, elicitation) answered per client call; more are refused.
@@ -513,6 +539,8 @@ class MCPServer:
         #: The owner (or autoconnect) wants this server up: the supervisor reconnects it.
         self.wanted = False
         self._stderr_task: asyncio.Task | None = None
+        #: H553 — the reply to send when a call is cancelled after the owner answered.
+        self._cancel_reply: dict | None = None
         #: Bumped by every owner disconnect: a connect that started before it is undone.
         self._epoch = 0
         #: One connect at a time per server, so a check made under it holds for the spawn.
@@ -615,7 +643,7 @@ class MCPServer:
                 stderr=asyncio.subprocess.PIPE,
                 cwd=self.cwd or None,
                 env=self._merged_env(),
-                limit=STDIO_LINE_LIMIT,
+                limit=STDIO_IDLE_LINE_LIMIT,
             )
             self._start_stderr_drain()
             await self._initialize()
@@ -888,8 +916,9 @@ class MCPServer:
         if resp and "result" in resp:
             # A remote server's text is untrusted: invisible TAG characters can carry an
             # instruction the owner never sees (Hermes absorption 4a).
-            # H552 — image/audio/embedded binary blocks go to disk; the model gets a path.
-            return await cache_result_blocks(self.name, strip_invisible_deep(resp["result"]))
+            # H552 — bounded (blocks, total text) and stripped off the event loop; image,
+            # audio and embedded binary blocks go to disk and the model gets a path.
+            return await cache_result_blocks(self.name, await bound_tool_result(resp["result"]))
         return resp
 
     async def _call_utility(self, op: str, arguments: dict) -> dict:
@@ -955,7 +984,26 @@ class MCPServer:
         if not self._proc or self._proc.stdin.is_closing():
             logger.warning(f"MCP server {self.name} not connected")
             return {}
+        if msg.get("method") in _CONTENT_METHODS:
+            async with _content_gate():
+                return await self._send_stdio(msg, STDIO_LINE_LIMIT)
+        return await self._send_stdio(msg, STDIO_CALL_LINE_LIMIT)
+
+    async def _send_stdio(self, msg: dict, line_limit: int) -> dict:
         async with self._io_lock:
+            if self._proc is None:
+                return {}
+            reader = self._proc.stdout
+            buffered = len(getattr(reader, "_buffer", b"") or b"")
+            if buffered >= STDIO_IDLE_LINE_LIMIT:
+                # Unsolicited output while idle, up to the point asyncio paused the pipe:
+                # a server flooding the hub. Drop it rather than read it.
+                logger.warning("MCP %s wrote %d unsolicited bytes; disconnecting", self.name, buffered)
+                self.last_error = "unsolicited_output"
+                self.health.lost("unsolicited_output")
+                await self._teardown()
+                return {"error": {"code": -32000, "message": "unsolicited_output"}}
+            _set_line_limit(reader, line_limit)
             try:
                 self._next_id += 1
                 req_id = self._next_id
@@ -981,7 +1029,7 @@ class MCPServer:
                         # so the pipe cannot be resynchronised. Drop the connection; the
                         # supervisor reconnects a server the owner wants.
                         logger.warning("MCP %s sent a message over %d bytes; disconnecting",
-                                       self.name, STDIO_LINE_LIMIT)
+                                       self.name, line_limit)
                         self.last_error = "message_too_large"
                         self.health.lost("message_too_large")
                         await self._teardown()
@@ -989,8 +1037,11 @@ class MCPServer:
                     if not raw:
                         return {}
                     try:
-                        resp = json.loads(raw.decode())
-                    except json.JSONDecodeError:
+                        if len(raw) > _THREAD_PARSE_BYTES:
+                            resp = await asyncio.to_thread(json.loads, raw)
+                        else:
+                            resp = json.loads(raw)
+                    except (json.JSONDecodeError, UnicodeDecodeError):
                         continue
                     if not isinstance(resp, dict):
                         continue
@@ -1011,6 +1062,10 @@ class MCPServer:
             except Exception as e:
                 logger.warning(f"MCP error ({self.name}): {e}")
                 return {}
+            finally:
+                # Back to the idle limit: an idle server can park at most ~2 MiB here.
+                if self._proc is not None:
+                    _set_line_limit(self._proc.stdout, STDIO_IDLE_LINE_LIMIT)
 
     async def _answer_server_request(self, req: dict, *, refuse: bool = False) -> None:
         method = str(req.get("method") or "")
@@ -1019,12 +1074,15 @@ class MCPServer:
         elif refuse and method != "ping":
             out = MCPHost.refusal(method, "too many requests in one call")
         else:
+            self._cancel_reply = None
             try:
                 out = await self.host.handle(self, method, req.get("params"))
             except asyncio.CancelledError:
                 # The call that was waiting ended (the tool loop's deadline, a stop): tell
-                # the server so it does not wait forever, then let the cancel go on.
-                self._write_reply(req, MCPHost.refusal(method, "the request was withdrawn"))
+                # the server so it does not wait forever, then let the cancel go on. If
+                # the owner's answer had already been accepted, that answer is sent.
+                late, self._cancel_reply = self._cancel_reply, None
+                self._write_reply(req, late or MCPHost.refusal(method, "the request was withdrawn"))
                 raise
             except Exception:
                 logger.warning("MCP %s: answering %s failed", self.name, method[:60], exc_info=True)
@@ -1064,6 +1122,12 @@ class MCPServer:
                     await asyncio.wait_for(proc.wait(), timeout=5.0)
             except (TimeoutError, ProcessLookupError, AttributeError):
                 pass
+            # Close the pipes too: a reader paused by a full buffer never sees EOF, and
+            # its transport would otherwise outlive the process.
+            transport = getattr(proc, "_transport", None)
+            if transport is not None:
+                with suppress(Exception):
+                    transport.close()
             logger.info(f"MCP server closed: {self.name}")
         if self._http is not None:
             http, self._http = self._http, None
@@ -1191,6 +1255,7 @@ class MCPManager:
                            supervised: bool = False) -> bool:
         async with gate:
             self._adopt(srv)
+            await warm_cleaner()          # build the cleaner's character table off the loop
             try:
                 ok = await srv.connect(require_wanted=supervised)
             except Exception as e:                       # connect() records; this is a last net

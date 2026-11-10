@@ -45,10 +45,13 @@ import asyncio
 import base64
 import binascii
 import contextlib
+import functools
 import hashlib
+import json
 import logging
 import os
 import re
+import sys
 import time
 import unicodedata
 from collections.abc import Awaitable, Callable
@@ -68,8 +71,13 @@ OP_GET_PROMPT = "get_prompt"
 MAX_PAGES = 50
 #: One resource, decoded (Hermes ``_MCP_RESOURCE_MAX_BYTES``).
 MAX_RESOURCE_BYTES = 50 * 1024 * 1024
-#: Text handed to the model per result, head+tail.
+#: Text handed to the model per block (head+tail) …
 MAX_TEXT_CHARS = 100_000
+#: … and per result, all blocks together (Hermes's hard result cap is 2M characters).
+#: Applied before any cleaning or scanning, so their cost is bounded by it.
+MAX_RESULT_TEXT_CHARS = 2_000_000
+#: Content blocks kept from one result (resource contents, prompt messages, tool content).
+MAX_RESULT_BLOCKS = 100
 #: Items kept from one listing, whatever the pages held.
 MAX_LIST_ITEMS = 2_000
 MAX_URI_CHARS = 2_048
@@ -140,17 +148,37 @@ _KEEP_CONTROLS = frozenset({"\n", "\t"})
 SCAN_INLINE_CHARS = 32_000
 
 
+@functools.lru_cache(maxsize=1)
+def _drop_pattern() -> re.Pattern:
+    """One character class for every code point :func:`clean_text` removes, built once
+    from the Unicode database, so cleaning is a single C-level ``sub`` pass."""
+    ranges: list[tuple[int, int]] = []
+    for cp in range(sys.maxunicode + 1):
+        ch = chr(cp)
+        cat = unicodedata.category(ch)
+        if (cat in _DROP_CATEGORIES or cat == "Cc") and ch not in _KEEP_CONTROLS:
+            if ranges and ranges[-1][1] == cp - 1:
+                ranges[-1] = (ranges[-1][0], cp)
+            else:
+                ranges.append((cp, cp))
+    parts = "".join(
+        re.escape(chr(a)) if a == b else f"{re.escape(chr(a))}-{re.escape(chr(b))}"
+        for a, b in ranges
+    )
+    return re.compile(f"[{parts}]")
+
+
+async def warm_cleaner() -> None:
+    """Build :func:`_drop_pattern` on a worker thread (about half a second, once)."""
+    if _drop_pattern.cache_info().currsize == 0:
+        await asyncio.to_thread(_drop_pattern)
+
+
 def clean_text(value: Any) -> str:
     """*value* without format / private-use / surrogate characters or controls other
     than newline and tab (zero-width marks, bidi overrides, TAG characters, ANSI)."""
     text = str(value if value is not None else "")
-    if text.isascii() and text.isprintable():
-        return text
-    return "".join(
-        ch for ch in text
-        if (ch in _KEEP_CONTROLS)
-        or (unicodedata.category(ch) not in _DROP_CATEGORIES and unicodedata.category(ch) != "Cc")
-    )
+    return _drop_pattern().sub("", text)
 
 
 def clean_deep(obj: Any, _depth: int = 0) -> Any:
@@ -185,34 +213,53 @@ def _cut(text: str, limit: int = MAX_TEXT_CHARS) -> str:
 
 
 class _Scan:
-    """Cleans each text (cut first, so work is bounded) and scans them all at the end."""
+    """Cuts each text against a per-block and a per-result budget, then cleans and scans
+    the whole payload at the end — on a worker thread when it is large."""
 
-    def __init__(self) -> None:
+    def __init__(self, budget: int = MAX_RESULT_TEXT_CHARS) -> None:
         self.flags: list[str] = []
         self._texts: list[str] = []
         self.withheld = 0
+        self.remaining = budget
+        self.cut = False
+        self.blocks_omitted = 0
 
     def text(self, value: Any, limit: int = MAX_TEXT_CHARS) -> str:
-        clean = clean_text(_cut(str(value if value is not None else ""), limit))
-        self._texts.append(clean)
-        return clean
+        raw = value if isinstance(value, str) else str(value if value is not None else "")
+        allowed = max(0, min(limit, self.remaining))
+        if len(raw) > allowed:
+            self.cut = True
+        text = _cut(raw, allowed) if allowed >= 200 else raw[:allowed]
+        self.remaining -= len(text)
+        self._texts.append(text)
+        return text
 
-    def _scan_all(self) -> list[str]:
+    def block_allowed(self, index: int) -> bool:
+        if index < MAX_RESULT_BLOCKS:
+            return True
+        self.blocks_omitted += 1
+        return False
+
+    def _work(self, payload: dict) -> tuple[dict, list[str]]:
+        cleaned = clean_deep(payload)
         hits: list[str] = []
         for text in self._texts:
-            for hit in detect_injection_normalized(text):
+            for hit in detect_injection_normalized(clean_text(text)):
                 if hit not in hits:
                     hits.append(hit)
-        return hits
+        return cleaned, hits
 
     async def finish(self, payload: dict) -> dict:
         if sum(len(t) for t in self._texts) > SCAN_INLINE_CHARS:
-            self.flags = await asyncio.to_thread(self._scan_all)
+            payload, self.flags = await asyncio.to_thread(self._work, payload)
         else:
-            self.flags = self._scan_all()
+            payload, self.flags = self._work(payload)
         _taint_turn()
-        payload = clean_deep(payload)
         payload["tainted"] = True
+        if self.cut:
+            payload["text_truncated"] = True
+        if self.blocks_omitted:
+            payload["blocks_omitted"] = self.blocks_omitted
         if self.withheld:
             payload["withheld"] = self.withheld
         if self.flags:
@@ -255,7 +302,9 @@ def safe_mime(value: Any) -> str:
 def cache_dir(server: str) -> Path:
     from agents.core.paths import data_path
 
-    return data_path(CACHE_DIRNAME, _SAFE_PART.sub("_", server)[:64] or "server")
+    # A short hash of the exact name keeps two servers whose names sanitise alike apart.
+    tag = hashlib.sha256(str(server).encode("utf-8", "surrogatepass")).hexdigest()[:8]
+    return data_path(CACHE_DIRNAME, f"{_SAFE_PART.sub('_', server)[:48] or 'server'}-{tag}")
 
 
 def _enforce_quota(folder: Path, keep: Path | None = None) -> None:
@@ -321,6 +370,50 @@ async def store_blob(server: str, data_b64: Any, mime: Any, *, root: Path | None
     except OSError:
         logger.warning("MCP %s: a binary block could not be cached", server, exc_info=True)
         return {"type": "binary", "error": "cache_write_failed"}
+
+
+def _bound_tool_result(result: Any) -> Any:
+    """A ``tools/call`` result inside the per-result bounds, invisible TAG characters
+    stripped (runs on a worker thread): at most :data:`MAX_RESULT_BLOCKS` blocks, text
+    blocks sharing :data:`MAX_RESULT_TEXT_CHARS`, ``structuredContent`` replaced by a
+    notice when its JSON is larger than that."""
+    from agents.core.security.quarantine import strip_invisible_deep
+
+    if not isinstance(result, dict):
+        return strip_invisible_deep(result)
+    out = dict(result)
+    remaining = MAX_RESULT_TEXT_CHARS
+    notes: dict[str, Any] = {}
+    if isinstance(result.get("content"), list):
+        blocks = []
+        for index, block in enumerate(result["content"]):
+            if index >= MAX_RESULT_BLOCKS:
+                notes["blocks_omitted"] = len(result["content"]) - MAX_RESULT_BLOCKS
+                break
+            if isinstance(block, dict) and isinstance(block.get("text"), str):
+                text = block["text"]
+                allowed = max(0, min(MAX_TEXT_CHARS, remaining))
+                if len(text) > allowed:
+                    notes["text_truncated"] = True
+                    text = _cut(text, allowed) if allowed >= 200 else text[:allowed]
+                remaining -= len(text)
+                block = {**block, "text": text}
+            blocks.append(block)
+        out["content"] = blocks
+    if "structuredContent" in result:
+        try:
+            size = len(json.dumps(result["structuredContent"], default=str))
+        except (TypeError, ValueError, RecursionError):
+            size = MAX_RESULT_TEXT_CHARS + 1
+        if size > MAX_RESULT_TEXT_CHARS:
+            out["structuredContent"] = f"[structuredContent omitted: {size} characters]"
+            notes["text_truncated"] = True
+    out.update(notes)
+    return strip_invisible_deep(out)
+
+
+async def bound_tool_result(result: Any) -> Any:
+    return await asyncio.to_thread(_bound_tool_result, result)
 
 
 async def cache_result_blocks(server: str, result: Any, *, root: Path | None = None) -> Any:
@@ -416,8 +509,9 @@ async def run_utility(op: str, args: dict, request: Request, *, server: str,
             raise ResourceError("bad_uri")
         result = _result(await request("resources/read", {"uri": uri}))
         parts: list[dict] = []
-        for block in result.get("contents") or []:
-            if not isinstance(block, dict):
+        contents = result.get("contents") if isinstance(result.get("contents"), list) else []
+        for index, block in enumerate(contents):
+            if not isinstance(block, dict) or not scan.block_allowed(index):
                 continue
             if isinstance(block.get("text"), str):
                 if len(block["text"]) > MAX_RESOURCE_BYTES:
@@ -468,15 +562,16 @@ async def run_utility(op: str, args: dict, request: Request, *, server: str,
         prompt_args = {str(k): str(v) for k, v in raw_args.items()}
         result = _result(await request("prompts/get", {"name": name, "arguments": prompt_args}))
         messages = []
-        for msg in result.get("messages") or []:
-            if not isinstance(msg, dict):
+        listed = result.get("messages") if isinstance(result.get("messages"), list) else []
+        for index, msg in enumerate(listed):
+            if not isinstance(msg, dict) or not scan.block_allowed(index):
                 continue
             role = msg.get("role") if msg.get("role") in ("user", "assistant") else "user"
             content = msg.get("content")
             blocks = content if isinstance(content, list) else [content]
             out = []
-            for block in blocks:
-                if not isinstance(block, dict):
+            for sub, block in enumerate(blocks):
+                if not isinstance(block, dict) or not scan.block_allowed(sub):
                     continue
                 kind = block.get("type")
                 if kind == "text":

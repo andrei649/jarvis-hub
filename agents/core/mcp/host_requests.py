@@ -84,6 +84,8 @@ DEFAULT_DAILY_TOKENS = 20_000
 BUDGET_DIMENSION = "mcp_sampling_tokens"
 MAX_PROMPT_CHARS = 32_000
 MAX_FIELD_CHARS = 4_000
+#: The most one turn may be held open by MCP cards (elicitation, ask-sampling) together.
+TURN_CARD_WAIT_SECONDS = 900.0
 
 #: JSON-RPC error codes. ``-1`` is the spec's "user rejected" for sampling.
 ERR_REJECTED = -1
@@ -351,14 +353,17 @@ class MCPHost:
             return {"result": {"action": "cancel"}}
         return _error(ERR_REJECTED, reason)
 
+    def _remember_closed(self, card: str, reason: str) -> None:
+        self._closed[card] = reason
+        while len(self._closed) > 500:
+            self._closed.pop(next(iter(self._closed)))
+
     def _close_card(self, card: str | None, reason: str) -> None:
         """Withdraw a card whose request is gone, so an answer cannot land on nothing."""
         if not card:
             return
         self._elicitations.pop(card, None)
-        self._closed[card] = reason
-        while len(self._closed) > 500:
-            self._closed.pop(next(iter(self._closed)))
+        self._remember_closed(card, reason)
         queue = self.approvals()
         try:
             item = queue.get(card) if queue is not None else None
@@ -367,11 +372,36 @@ class MCPHost:
         except Exception:
             logger.warning("MCP card %s could not be withdrawn", card, exc_info=True)
 
+    @staticmethod
+    def _turn_wait_left(timeout: float) -> float:
+        """How long a card may hold this turn: its own timeout, within what is left of the
+        turn's MCP card allowance (:data:`TURN_CARD_WAIT_SECONDS`). Outside a tool-loop
+        turn there is no turn to hold, so the card's own timeout applies."""
+        from agents.core.native_human_wait import current_human_wait_scope
+
+        scope = current_human_wait_scope()
+        if scope is None:
+            return timeout
+        spent = float(getattr(scope, "_mcp_card_seconds", 0.0))
+        return max(0.0, min(timeout, TURN_CARD_WAIT_SECONDS - spent))
+
     async def _await_card(self, queue: Any, card: str, timeout: float) -> str:
         """Wait for the owner, inside a native human-wait window: the tool loop's deadline
-        is extended while the card is pending (``native_human_wait``), and only then."""
-        from agents.core.native_human_wait import native_human_wait_window
+        is extended while the card is pending (``native_human_wait``), and only then. The
+        time is charged to the turn's MCP card allowance."""
+        from agents.core.native_human_wait import current_human_wait_scope, native_human_wait_window
 
+        scope = current_human_wait_scope()
+        started = time.monotonic()
+        try:
+            return await self._await_card_window(queue, card, timeout, native_human_wait_window)
+        finally:
+            if scope is not None:
+                spent = float(getattr(scope, "_mcp_card_seconds", 0.0))
+                scope._mcp_card_seconds = spent + (time.monotonic() - started)
+
+    @staticmethod
+    async def _await_card_window(queue: Any, card: str, timeout: float, window: Any) -> str:
         def current() -> bool:
             try:
                 item = queue.get(card)
@@ -379,7 +409,7 @@ class MCPHost:
                 return False
             return bool(item) and item.get("status") == "pending"
 
-        with native_human_wait_window(deadline=time.monotonic() + timeout, current=current):
+        with window(deadline=time.monotonic() + timeout, current=current):
             return await queue.await_decision(card, timeout=timeout)
 
     # ── capability declaration ───────────────────────────────────────────
@@ -424,6 +454,9 @@ class MCPHost:
         queue = self.approvals()
         if queue is None:
             return "no_approval_queue", None
+        timeout = self._turn_wait_left(timeout)
+        if timeout < 1.0:
+            return "turn_wait_exhausted", None
         item = queue.request({"tool": tool, "args": args, "agent": f"mcp:{server}",
                               "summary": summary, "risk_tier": 2})
         card = item.get("id")
@@ -535,8 +568,13 @@ class MCPHost:
             # A field name or choice the card would have to clean is one the owner could
             # not answer exactly (the cleaned text is not the server's key): decline.
             return answer("decline")
-        if not self.elicit_limiter.admit(name, cfg.max_per_minute):
+        # Cards still open count against the rate too: a slow owner is not a free pass.
+        open_here = sum(1 for p in self._elicitations.values() if p.server == name)
+        if open_here >= cfg.max_per_minute or not self.elicit_limiter.admit(name, cfg.max_per_minute):
             return answer("decline")
+        wait = self._turn_wait_left(cfg.timeout)
+        if wait < 1.0:
+            return answer("decline")             # the turn's card allowance is used up
         message = card_text(params.get("message") or "", 500)
         fields = describe_fields(schema)
         queue = self.approvals()
@@ -554,16 +592,24 @@ class MCPHost:
             })
             card = item.get("id")
             self._elicitations[card] = _PendingElicitation(server=name, schema=schema)
-            status = await self._await_card(queue, card, cfg.timeout)
+            status = await self._await_card(queue, card, wait)
         except asyncio.CancelledError:
-            self._close_card(card, "the MCP call that asked has ended")
+            pending = self._elicitations.get(card) if card else None
+            if pending is not None and pending.content is not None:
+                # The owner's answer crossed the cancellation: it was approved and stored,
+                # so it is what the server gets (the client writes it), not a cancel.
+                server._cancel_reply = answer("accept", pending.content)
+                self._elicitations.pop(card, None)
+                self._remember_closed(card, "approved")
+            else:
+                self._close_card(card, "the MCP call that asked has ended")
             raise
         except Exception:
             logger.warning("MCP %s elicitation card failed", name, exc_info=True)
             self._close_card(card, "failed")
             return answer("cancel")
         pending = self._elicitations.pop(card, None)
-        self._closed[card] = status
+        self._remember_closed(card, status)
         if status == "rejected":
             return answer("decline")
         if status != "approved":

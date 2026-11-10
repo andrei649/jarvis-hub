@@ -231,6 +231,11 @@
   asked ends first, the card is withdrawn. Filling it in is done through the admin API for
   now; the HUD shows the card but has no form yet.
 - The daily allowance for server requests is kept in memory and starts again after a restart.
+- One answer from a server is capped (100 parts, about 2 million characters), so a server
+  cannot flood the conversation or freeze Nerva with a huge reply; a server that floods Nerva
+  while idle is disconnected, and a server that keeps crashing right after it starts is set
+  aside instead of being restarted over and over. Questions from servers can hold up one
+  answer for at most 15 minutes in total.
 - The emergency stop and the kill switch refuse all of this: no reconnects, no model answers,
   no questions.
 

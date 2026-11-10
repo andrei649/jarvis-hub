@@ -314,7 +314,10 @@ def test_backoff_breaker_and_parking():
         health.failed("boom", now=t)
     assert health.state == STATE_PARKED and health.next_retry_at == 4300.0
     health.succeeded(now=4300.0)
-    assert health.state == STATE_CONNECTED and health.consecutive_failures == 0
+    assert health.state == STATE_CONNECTED and not health.stable(4330.0) and health.stable(4360.0)
+    assert health.status(now=4360.0)["consecutive_failures"] == 0
+    health.lost("dropped", now=5000.0)                   # after a stable run the count restarts
+    assert health.consecutive_failures == 1 and health.state != STATE_PARKED
 
 
 async def test_unsafe_command_is_refused_not_retried(mgr):
