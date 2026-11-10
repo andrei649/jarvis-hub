@@ -458,6 +458,12 @@ _REFINE_REFUSALS = {
     "review_unparsed": ("The local model's review was cut off or malformed, so nothing was kept. Raise "
                         "learning.review_max_tokens, or try a narrower focus."),
     "empty_conversation": "There is no conversation here to review yet.",
+    "not_owner": "Only the owner's own turns are reviewed; nothing was read or kept.",
+    "no_scope": "The review could not place this turn, so it did not run; nothing was kept.",
+    "foreign_history_not_promotable": ("This conversation was imported from another assistant; it is never "
+                                       "reviewed into memory or skills."),
+    "image_history_not_promotable": ("This conversation holds an image reading; it is never reviewed into "
+                                     "memory or skills."),
     "unavailable": "The learning reviewer is not available on this hub.",
 }
 
@@ -482,6 +488,9 @@ async def _refine(ctx: CommandContext) -> str:
     lines = [head, *[f"- {a}" for a in actions]]
     if any("patch proposed" in a for a in actions):
         lines.append("A skill change waits for your approval in the Decision Inbox.")
+    if any("memory write" in a and "proposed" in a for a in actions):
+        lines.append("Nothing was written to memory yet: read the held writes in Long-Term Memory "
+                     "(GET /api/memory/proposals) and approve or reject them there or in the Decision Inbox.")
     if any("quarantined" in a for a in actions):
         lines.append("A new skill waits in the pending skills list (SELF-IMPROVEMENT) until you approve it.")
     return "\n".join(lines)
@@ -822,6 +831,139 @@ async def _approvals(ctx: CommandContext) -> str:
     return "\n".join(lines)
 
 
+_MEMORY_USAGE = "Usage: /memory pending | approve <id|all> | reject <id|all> | approval [on|off]"
+
+
+def _memory_age(seconds) -> str:
+    if not isinstance(seconds, (int, float)):
+        return "?"
+    if seconds < 3600:
+        return f"{int(seconds // 60)} min"
+    if seconds < 86400:
+        return f"{int(seconds // 3600)} h"
+    return f"{int(seconds // 86400)} d"
+
+
+async def _memory(ctx: CommandContext) -> str:
+    """H443 — Hermes' ``/memory pending | approve | reject | approval``: the memory writes the
+    post-turn review (or a /refine) holds for the owner. Owner-only and DM-only: a group
+    never reads or decides the owner's held facts, and a non-owner is refused here as well
+    as by the tier. A decision goes through the same settle path as the HUD and the API
+    (the proposal's own card, applied once); switching approval goes through the audited
+    writer the route uses. A fact's text is shown only where it came from, or on the
+    hub's own screen (the verbose notification rule); elsewhere, counts."""
+    import asyncio
+
+    from .action_origin import OPERATOR_TURN_CHANNELS
+    from .learning import memory_proposals as mp
+    from .learning.review_policy import STAGE_REASONS
+
+    if not ctx.principal.admin:
+        return "Only the owner can read or decide held memory writes; nothing changed."
+    if ctx.principal.scope != "dm":
+        return ("Held memory writes are the owner's: /memory answers only in a direct conversation "
+                "with you, never in a group. Nothing was read or changed.")
+    orch = ctx.orch
+    store = getattr(orch, "memory_proposals", None)
+    words = (ctx.args or "").split()
+    sub = words[0].lower() if words else "pending"
+    if sub == "approval":
+        if len(words) == 1:
+            on = await asyncio.to_thread(mp.write_approval_required)
+            return (f"Memory write approval is {'on' if on else 'off'}: the post-turn review and /refine "
+                    + ("ask before they write memory." if on else
+                       "write on their own, except from a conversation that read untrusted content or "
+                       "was not watched from its start.")
+                    + " The model's memory tool and /api/memory/remember are not held by it.")
+        wanted = {"on": True, "off": False}.get(words[1].lower()) if len(words) == 2 else None
+        if wanted is None:
+            return _MEMORY_USAGE
+        actor = f"{ctx.principal.channel}:{ctx.principal.sender or 'owner'}"
+        try:
+            await asyncio.to_thread(mp.set_write_approval, wanted, audit=getattr(orch, "intent_log", None),
+                                    actor=actor)
+        except Exception:
+            logger.warning("/memory approval: the gate could not be changed", exc_info=True)
+            now = await asyncio.to_thread(mp.write_approval_required)
+            return (f"Memory write approval stays {'on' if now else 'off'}: the change or its audit "
+                    "record could not be saved.")
+        now = await asyncio.to_thread(mp.write_approval_required)
+        return f"Memory write approval is now {'on' if now else 'off'}."
+    if store is None:
+        return "Held memory writes are not available on this hub."
+    settle = getattr(orch, "settle_memory_proposals", None)
+    if callable(settle):
+        await settle()
+    records = await asyncio.to_thread(store.list)
+    waiting = [rec for rec in records if rec.get("status") in (mp.STATUS_PENDING, mp.STATUS_APPLYING)]
+    if sub == "pending" and len(words) == 1:
+        stats = await asyncio.to_thread(store.stats)
+        if not waiting:
+            lines = ["No memory writes are waiting for you."]
+        else:
+            lines = [f"{len(waiting)} memory write proposal(s) wait for you "
+                     f"(oldest {_memory_age(stats.get('oldest_pending_age_s'))}):"]
+        here = str(ctx.principal.channel or "").strip().lower()
+        local = here in OPERATOR_TURN_CHANNELS
+        current = str(getattr(orch, "session_id", "") or "default")
+        for rec in waiting[:20]:
+            ops = rec.get("operations") or []
+            why = STAGE_REASONS.get(str(rec.get("reason")), str(rec.get("reason") or "held"))
+            lines.append(f"- {rec['id']}: {len(ops)} fact(s), {why}"
+                         + (" [approved, retrying]" if rec.get("status") == mp.STATUS_APPLYING else ""))
+            if local or rec.get("session_id") == current:
+                for op in ops[:12]:
+                    text = " ".join(str(op.get("text") or "").split())
+                    lines.append(f"    {mp.TARGET_LABELS.get(op.get('target'), op.get('target'))}: "
+                                 f"\u201c{text[:80]}{'\u2026' if len(text) > 80 else ''}\u201d")
+        if len(waiting) > 20:
+            lines.append(f"\u2026 and {len(waiting) - 20} more (Long-Term Memory in the HUD lists them all).")
+        if stats.get("dropped_at_cap"):
+            lines.append(f"{stats['dropped_at_cap']} held write(s) were not kept because "
+                         f"{stats.get('max_pending')} were already waiting.")
+        if waiting:
+            lines.append("Decide with /memory approve <id|all> or /memory reject <id|all>.")
+        return "\n".join(lines)
+    if sub in ("approve", "reject") and len(words) == 2:
+        approved = sub == "approve"
+        target = words[1]
+        chosen = [rec["id"] for rec in waiting if rec.get("status") == mp.STATUS_PENDING] if target == "all" \
+            else [target]
+        if not chosen:
+            return "No memory writes are waiting for you; nothing changed."
+        decide = getattr(orch, "decide_memory_proposal", None)
+        if not callable(decide):
+            return "Held memory writes cannot be decided on this hub; nothing changed."
+        by = f"{ctx.principal.channel}:{ctx.principal.sender or 'owner'}"
+        lines = []
+        for pid in chosen[:mp.MAX_PENDING]:
+            if not ctx.principal.admin:          # the owner, re-checked at the write
+                return "Only the owner can decide held memory writes."
+            result = await decide(pid, approved, by=by)
+            reason = str(result.get("reason") or "")
+            if reason == "unknown_proposal":
+                lines.append(f"- {pid}: no such held write")
+            elif approved and result.get("applied"):
+                lines.append(f"- {pid}: approved, {result.get('written', 0)} written")
+            elif approved and result.get("status") == mp.STATUS_FAILED:
+                lines.append(f"- {pid}: approved, nothing written (memory is off, or every fact was refused)")
+            elif not approved and result.get("status") == mp.STATUS_REJECTED:
+                lines.append(f"- {pid}: rejected, nothing written")
+            elif reason == "apply_incomplete":
+                lines.append(f"- {pid}: approved, not written yet (a memory file was busy); it is retried")
+            elif reason.startswith("not_pending:"):
+                # Decided elsewhere first (the HUD, another command): say how, not "not decided".
+                status = reason.split(":", 1)[1]
+                done = {mp.STATUS_APPLIED: "approved and written", mp.STATUS_APPLYING: "approved, being written",
+                        mp.STATUS_REJECTED: "rejected", mp.STATUS_EXPIRED: "expired",
+                        mp.STATUS_FAILED: "approved, nothing written"}.get(status, status or "closed")
+                lines.append(f"- {pid}: already decided ({done})")
+            else:
+                lines.append(f"- {pid}: not decided ({reason or result.get('status') or 'unknown'})")
+        return "\n".join(lines)
+    return _MEMORY_USAGE
+
+
 def build_default_registry() -> CommandRegistry:
     from .checkpoint_commands import checkpoint_command
     from .goal_commands import goal_command, subgoal_command
@@ -850,6 +992,8 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("personality", "switch this conversation's personality preset", _personality,
                                    tier=ADMIN, usage="[<name>|none|default|global <name|none>]"))
     registry.register(SlashCommand("refine", "review this conversation now for memories and skill changes", _refine, tier=ADMIN, usage="[focus]"))
+    registry.register(SlashCommand("memory", "memory writes waiting for your approval: pending, approve, reject, approval",
+                                   _memory, tier=ADMIN, usage="pending | approve <id|all> | reject <id|all> | approval [on|off]"))
     registry.register(SlashCommand("bundles", "your skill bundles, and how to load one into a turn", _bundles,
                                    tier=ADMIN))
     registry.register(SlashCommand("bundle", "load every skill of a bundle into this turn (/<bundle> works too)",

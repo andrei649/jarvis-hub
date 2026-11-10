@@ -12,6 +12,8 @@ import os
 import secrets
 import time
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Optional
 
@@ -28,6 +30,36 @@ logger = logging.getLogger("jarvis.memory")
 
 class RewindRefused(RuntimeError):
     """The prepared conversation tail no longer has the same durable authority."""
+
+
+#: H443 — set around a copy of a conversation known to be unclean (``/undo``): every turn
+#: the copy embeds carries the taint mark, as the source's would.
+_EMBED_UNTRUSTED: ContextVar[bool] = ContextVar("nerva_h443_embed_untrusted", default=False)
+
+
+@contextmanager
+def untrusted_embeddings(on: bool = True):
+    """Mark every turn embedded inside the block as untrusted (when *on*)."""
+    token = _EMBED_UNTRUSTED.set(bool(on) or _EMBED_UNTRUSTED.get())
+    try:
+        yield
+    finally:
+        _EMBED_UNTRUSTED.reset(token)
+
+
+def _turn_untrusted() -> bool:
+    """H443 — whether the turn in flight is untrusted (``orchestrator._turn_is_untrusted``;
+    without the orchestrator loaded, its action origin alone). Fails closed."""
+    try:
+        from ..orchestrator import _turn_is_untrusted
+    except Exception:
+        try:
+            from ..action_origin import current_action_origin
+
+            return taint.is_untrusted_source(current_action_origin())
+        except Exception:
+            return True
+    return _turn_is_untrusted()
 
 
 @dataclass(frozen=True)
@@ -310,14 +342,16 @@ class MemoryManager:
             self._bind_history_instance(session_id)
             self._check_rewind_head_before_append(session_id)
             try:
+                # H443: the channel rides along to the write guard.
+                extra = {"channel": channel} if channel else {}
                 if tools or media is not None:
                     append_receipt = await self.conversation.add_turn(
                         session_id, role, content, agent_id,
                         **({"tools": tools} if tools else {}),
-                        **({"media": media} if media is not None else {}))
+                        **({"media": media} if media is not None else {}), **extra)
                 else:
                     append_receipt = await self.conversation.add_turn(
-                        session_id, role, content, agent_id)
+                        session_id, role, content, agent_id, **extra)
             except persistence.RewindPersistenceError as exc:
                 if exc.inconsistent:
                     self._quarantine_rewind(session_id)
@@ -341,6 +375,11 @@ class MemoryManager:
                 metadata.update({"channel": channel, "origin": origin})
                 if role == "user" and origin == INBOUND_ACTION_ORIGIN:
                     metadata = taint.mark(metadata, source=f"inbound:{channel}")
+            if not taint.is_tainted(metadata) and (_EMBED_UNTRUSTED.get() or _turn_untrusted()):
+                # H443: whatever an untrusted turn (a channel's, a guest's, one that read
+                # web text, a flagged recall or a file) puts here — its reply included —
+                # is not the owner's word, and says so when it is recalled later.
+                metadata = taint.mark(metadata, source="turn:untrusted")
             if media is not None:
                 # H586: an image turn carries the model's reading of an image (text in an
                 # image is attacker-controllable), so recalling it later taints the turn.

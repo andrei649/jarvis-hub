@@ -7812,6 +7812,79 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/memory/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Memory Proposals
+         * @description H443 — the memory writes the post-turn review (or a ``/refine``) holds for the
+         *     owner (Hermes's ``/memory pending``): each with its facts, the ring each would go to,
+         *     why it waits (``memory.write_approval``, a conversation that read untrusted content,
+         *     the approval dial) and its approval card. Admin-only: a held fact is not yet the
+         *     owner's memory. ``write_approval`` is the gate as the settings store holds it now.
+         */
+        get: operations["memory_proposals_api_memory_proposals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory/proposals/{proposal_id}/decide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Memory Proposal Decide
+         * @description H443 — approve or reject one held memory write (Hermes's ``/memory approve|reject``).
+         *     It decides the proposal's own approval card, and what the card then says is what
+         *     happens: approved, each fact goes through the ring's own checks (the owner's memory
+         *     switch, the injection scan, the budget) and the reply says what landed; rejected,
+         *     nothing is written. Deciding the card in the Decision Inbox does the same.
+         */
+        post: operations["memory_proposal_decide_api_memory_proposals__proposal_id__decide_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory/approval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Memory Write Approval
+         * @description H443 — the owner turns ``memory.write_approval`` on or off (Hermes's ``/memory
+         *     approval on|off``). On, the post-turn review's and a ``/refine``'s memory writes wait
+         *     for the owner; the model's ``memory`` tool and ``POST /api/memory/remember`` are not
+         *     held by it. The gate is read from the settings store on every review pass, so it
+         *     holds from the next pass on. Recorded in the intent log as ``memory.write_approval``;
+         *     switching it **off** is refused when that record cannot be written.
+         */
+        post: operations["memory_write_approval_api_memory_approval_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/memory/reset": {
         parameters: {
             query?: never;
@@ -7920,6 +7993,30 @@ export interface paths {
          * @description Return per-agent LLM usage and cost summary (H7.10).
          */
         get: operations["get_analytics_cost_api_analytics_cost_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/session-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Usage
+         * @description H403/H443 — what one conversation has used, in all and by purpose: its turns
+         *     (``turn``) and the post-turn learning reviews made for it (``background_review``, a
+         *     ``/refine`` included), each with calls, tokens, cost and ``unmeasured_calls`` (calls
+         *     that were dispatched and never certified by the provider: a review cancelled or
+         *     failed mid-call). ``found`` is false for a conversation the ledger has no row for.
+         */
+        get: operations["get_session_usage_api_analytics_session_usage_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -15238,6 +15335,18 @@ export interface components {
             /** Valid */
             valid: boolean;
             stats: components["schemas"]["MediationCounts"] | null;
+        };
+        /** MemoryApprovalBody */
+        MemoryApprovalBody: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** MemoryProposalDecision */
+        MemoryProposalDecision: {
+            /** Approved */
+            approved: boolean;
+            /** Reason */
+            reason?: string | null;
         };
         /** MemorySwitchBody */
         MemorySwitchBody: {
@@ -29259,6 +29368,94 @@ export interface operations {
             };
         };
     };
+    memory_proposals_api_memory_proposals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    memory_proposal_decide_api_memory_proposals__proposal_id__decide_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryProposalDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    memory_write_approval_api_memory_approval_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryApprovalBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     memory_reset_api_memory_reset_post: {
         parameters: {
             query?: never;
@@ -29394,6 +29591,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_session_usage_api_analytics_session_usage_get: {
+        parameters: {
+            query?: {
+                session_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

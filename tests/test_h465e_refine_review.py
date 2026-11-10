@@ -110,6 +110,7 @@ def test_every_skipped_passes_reason_is_logged(caplog, monkeypatch):
     orch.reviewer = _reviewer(_LLM(CUT_AFTER_INNER))
     orch.reviewer.should_run()
     orch._session_id_default = "web-1"
+    orch._runtime_settings, orch._last_channel = {}, "web"   # H443: a local turn, nobody signed in
     caplog.set_level(logging.DEBUG, logger="jarvis")
     asyncio.run(orch._background_review_task("hi", "hello"))
     assert any("learning review skipped: review_unparsed" in r.getMessage() for r in caplog.records)

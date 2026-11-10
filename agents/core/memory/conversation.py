@@ -135,6 +135,15 @@ class ConversationMemory:
         self.persist = persist
         self.current_session_id: Optional[str] = None
         self._dirty = set()
+        #: H443 — the one check every turn written into a session passes first:
+        #: ``async (session_id, channel, *, force=False)``. The hub installs it
+        #: (``Orchestrator._history_write_guard``); a turn whose speaker or channel is
+        #: not trusted for the owner takes the conversation off the review's clean list
+        #: before its text joins the history. ``load_guard(session_id)`` is the same for
+        #: a history loaded whole from elsewhere (a continuation seed, an import), in
+        #: memory (it runs under the conversation lock). None: nothing to keep clean.
+        self.write_guard = None
+        self.load_guard = None
         self._lock = asyncio.Lock()
 
         if persist:
@@ -250,7 +259,13 @@ class ConversationMemory:
         self.current_session_id = session_id
 
     async def add_turn(self, session_id: str, role: str, content: str, agent_id: str = None,
-                       tools: list[str] | None = None, media: dict | None = None):
+                       tools: list[str] | None = None, media: dict | None = None,
+                       channel: str | None = None):
+        guard = self.write_guard
+        if guard is not None:
+            # H443: before the turn joins the history, outside the lock (the guard may
+            # save the clean list off the event loop). It never raises.
+            await guard(session_id, channel)
         async with self._lock:
             if session_id in self.pending_rewinds:
                 raise UnverifiedRewind("conversation rewind head unverified")

@@ -24,6 +24,7 @@ from agents.core.learning.background_review import (
     BackgroundReviewer,
     conversation_snapshot,
 )
+from agents.core.learning.memory_proposals import MemoryProposalStore
 from agents.core.orchestrator import Orchestrator
 
 
@@ -156,8 +157,9 @@ class _FakeReviewer:
         self.calls = []
         self.result = result or {"ran": True, "nothing": False, "actions": ["Core memory updated (+1)"]}
 
-    async def run_on_demand(self, history, *, focus=""):
+    async def run_on_demand(self, history, *, focus="", scope=None):
         self.calls.append((history, focus))
+        self.scopes = [*getattr(self, "scopes", []), scope]     # H443: the turn it inherits
         return self.result
 
 
@@ -170,6 +172,8 @@ def _orch(turns=(), reviewer=None):
     orch.memory = _Memory(list(turns))
     orch.reviewer = reviewer if reviewer is not None else _FakeReviewer()
     orch._session_id_default = "web-1"
+    orch._runtime_settings = {}                       # H443: the scope reads the approval dial
+    orch.memory_proposals = MemoryProposalStore(None)
     return orch
 
 
