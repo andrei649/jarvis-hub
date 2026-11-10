@@ -212,24 +212,7 @@ def parse_openai_tool_calls(
             )
             continue
 
-        try:
-            parsed_arguments = json.loads(
-                raw_arguments,
-                parse_constant=_reject_non_finite_constant,
-            )
-        except _NonFiniteNumber:
-            arguments = None
-            parse_error = "non_finite_number"
-        except (TypeError, RecursionError, ValueError):
-            arguments = None
-            parse_error = "invalid_json"
-        else:
-            if isinstance(parsed_arguments, dict):
-                parse_error = _json_value_error(parsed_arguments)
-                arguments = parsed_arguments if parse_error is None else None
-            else:
-                arguments = None
-                parse_error = "arguments_not_object"
+        arguments, parse_error = parse_tool_arguments(raw_arguments)
         calls.append(
             ToolCall(
                 id=call_id,
@@ -240,6 +223,33 @@ def parse_openai_tool_calls(
             )
         )
     return tuple(calls)
+
+
+def parse_tool_arguments(raw_arguments: str) -> tuple[dict[str, Any] | None, str | None]:
+    """``(arguments, parse_error)`` for one call's JSON argument text — the one parse every
+    path that turns model text into tool arguments uses (the provider parser above, and
+    the tool-search bridge's inner arguments). Rejects invalid UTF-8, NaN/Infinity,
+    nesting too deep to parse, a non-object, and unsafe values at any depth."""
+    if not isinstance(raw_arguments, str):
+        return None, "arguments_not_string"
+    if not _valid_unicode(raw_arguments):
+        return None, "arguments_invalid_unicode"
+    try:
+        parsed = json.loads(raw_arguments, parse_constant=_reject_non_finite_constant)
+    except _NonFiniteNumber:
+        return None, "non_finite_number"
+    except (TypeError, RecursionError, ValueError):
+        return None, "invalid_json"
+    return validate_tool_arguments(parsed)
+
+
+def validate_tool_arguments(value: Any) -> tuple[dict[str, Any] | None, str | None]:
+    """``(arguments, parse_error)`` for arguments that arrived already decoded: an object
+    whose every value is plain, finite, valid-Unicode JSON (iterative, any depth)."""
+    if not isinstance(value, dict):
+        return None, "arguments_not_object"
+    error = _json_value_error(value)
+    return (value if error is None else None), error
 
 
 class _NonFiniteNumber(ValueError):

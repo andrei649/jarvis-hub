@@ -474,7 +474,24 @@ class AgentToolRuntime:
         if not disclosure.active:
             return tools, gated_tools, untrusted_tools, None
         gated_tools = {**gated_tools, **{row["name"]: False for row in disclosure.bridge_rows()}}
+        # What tool_search / tool_describe answer is a third-party server's text: fenced
+        # as data, with the turn's recall taint raised, like the tools' own output.
+        untrusted_tools = {*untrusted_tools, *LOOKUP_TOOL_NAMES}
         return offer_specs(disclosure), gated_tools, untrusted_tools, disclosure
+
+    async def _emit_disclosure(self, event_sink: ToolEventSink | None, agent_id: str,
+                               disclosure: Any, reason: str) -> None:
+        if disclosure is None:
+            return
+        await self._emit(event_sink, {
+            "event": "tool_disclosure",
+            "agent_id": _bounded_identity(agent_id),
+            "reason": reason,
+            "tier": disclosure.tier,
+            "listing": disclosure.listing_form,
+            "direct": len(disclosure.core),
+            "deferred": len(disclosure.deferred),
+        })
 
     def _guided_system(self, base: str, *, model: str, agent_id: str,
                        metadata: list[dict[str, Any]], backend: Any = None) -> str:
@@ -817,16 +834,10 @@ class AgentToolRuntime:
         from .llm.job_selection import selected_window
         disclosure_window = (effective_window.tokens if effective_window is not None
                              else selected_window(model)) or int(window_for(model) or 0)
-        tools, gated_tools, untrusted_tools, disclosure = self._disclose(metadata, disclosure_window)
-        if disclosure is not None:
-            await self._emit(event_sink, {
-                "event": "tool_disclosure",
-                "agent_id": _bounded_identity(agent_id),
-                "tier": disclosure.tier,
-                "listing": disclosure.listing_form,
-                "direct": len(disclosure.core),
-                "deferred": len(disclosure.deferred),
-            })
+        # A first plan over hundreds of new MCP tools cleans every description: off the loop.
+        tools, gated_tools, untrusted_tools, disclosure = await asyncio.to_thread(
+            contextvars.copy_context().run, self._disclose, metadata, disclosure_window)
+        await self._emit_disclosure(event_sink, agent_id, disclosure, "turn_start")
         messages = [
             {"role": "system", "content": self._guided_system(
                 system, model=model, agent_id=agent_id, metadata=metadata, backend=backend)},
@@ -941,8 +952,9 @@ class AgentToolRuntime:
                             },
                         )
                         return ToolLoopResult(_TOOLS_WITHDRAWN_REPLY, ToolLoopExitReason.TOOLS_WITHDRAWN)
-                    tools, gated_tools, untrusted_tools, disclosure = self._disclose(
-                        metadata, disclosure_window)
+                    tools, gated_tools, untrusted_tools, disclosure = await asyncio.to_thread(
+                        contextvars.copy_context().run, self._disclose, metadata, disclosure_window)
+                    await self._emit_disclosure(event_sink, agent_id, disclosure, "offer_refreshed")
                     trajectory.note_tools(tools)  # H652: the refreshed offer joins the record
                     schema_tokens = (
                         estimate_tokens(json.dumps([tool.as_openai() for tool in tools]))
@@ -1070,13 +1082,21 @@ class AgentToolRuntime:
             # one, so the provider replays its own call); everything from here on —
             # caps, the offered check, approvals, ToolRPC, the kernel, the fence, the
             # stall observer — sees the real tool a bridge call names.
-            exec_calls = (tuple(unwrap_call(call) for call in bounded_calls)
+            exec_calls = (tuple(unwrap_call(call, disclosure) for call in bounded_calls)
                           if disclosure is not None else tuple(bounded_calls))
             capped = self._note_tool_counts(exec_calls, tool_counts)
             assistant_message = turn.as_assistant_message()
             assistant_message["tool_calls"] = [call.as_openai() for call in bounded_calls]
             messages.append(assistant_message)
-            trajectory.note_message(assistant_message)
+            if disclosure is not None:
+                # H652: the record names the real tool each bridge call reached.
+                trajectory.note_message({**assistant_message, "tool_calls": [
+                    {**call.as_openai(),
+                     **({"bridged_tool": real.name}
+                        if call.name != real.name and real.parse_error is None else {})}
+                    for call, real in zip(bounded_calls, exec_calls, strict=True)]})
+            else:
+                trajectory.note_message(assistant_message)
             observations = await self._execute_turn_calls(
                 exec_calls,
                 agent_id=agent_id,

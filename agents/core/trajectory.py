@@ -210,8 +210,12 @@ class TrajectoryRecorder:
                 function = call.get("function") if isinstance(call, Mapping) else None
                 if not isinstance(function, Mapping):
                     continue
-                calls.append({"id": str(call.get("id") or ""), "name": str(function.get("name") or ""),
-                              "arguments": function.get("arguments") or "{}"})
+                entry = {"id": str(call.get("id") or ""), "name": str(function.get("name") or ""),
+                         "arguments": function.get("arguments") or "{}"}
+                if isinstance(call.get("bridged_tool"), str):
+                    # G8: a tool_call bridge call, with the tool it reached.
+                    entry["bridged_tool"] = call["bridged_tool"][:64]
+                calls.append(entry)
             step["tool_calls"] = calls
         elif role == "tool":
             step["tool_call_id"] = str(message.get("tool_call_id") or "")

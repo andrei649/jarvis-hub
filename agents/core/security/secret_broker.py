@@ -22,8 +22,10 @@ _HANDLE = re.compile(r"\{\{\s*secret:([A-Za-z0-9_.\-]+)\s*\}\}")
 # ``h034.``: the external secret sources' own config and bootstrap tokens.
 # ``integration.``: keys the owner set in the HUD's Integrations panel (integration_keys);
 # they reach their provider through the process environment, never through a handle.
-_INTERNAL_PREFIX = ("h034.", "integration.")
-_REDACT_INTERNAL = ("h034.token.", "integration.key.")
+# ``mcp.secret.`` / ``mcp.oauth.``: an MCP server's own secrets and OAuth tokens (G9); they
+# reach that server only (spawn env, connect header), never through a handle.
+_INTERNAL_PREFIX = ("h034.", "integration.", "mcp.secret.", "mcp.oauth.")
+_REDACT_INTERNAL = ("h034.token.", "integration.key.", "mcp.secret.", "mcp.oauth.")
 
 
 class _DictStore:

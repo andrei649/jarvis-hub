@@ -181,6 +181,9 @@ IN_HANDLER_GUARDED = {
     "POST /api/a2a/task": "allowlisted peer's HMAC x-signature-256",
     "POST /api/mcp/server/rpc": "OAuth bearer, or the HF-1 user/admin token posture",
     "POST /api/oauth/callback": "a state minted by this hub (verify_state)",
+    # G9 / H692: a browser redirect carries no admin token; the start's binding cookie and
+    # a waiting flow's state, both compared in constant time and redeemed once.
+    "GET /api/oauth/mcp/callback": "a waiting MCP sign-in's state plus its owner-binding cookie",
     "POST /api/widget/{token}/message": "widget capability token in the path",
     "GET /api/widget/{token}": "widget capability token in the path",
     "GET /api/widget/{token}/config": "widget capability token in the path",
