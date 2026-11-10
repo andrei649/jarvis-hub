@@ -22,6 +22,15 @@ matrix lists these routes as in-handler guarded and ``tests/test_route_inhandler
 proves each refuses without a key and admits with one.
 
 Errors use OpenAI's envelope ``{"error": {"message", "type", "param", "code"}}``.
+
+Why not through the channel gateway (``Gateway.route``, as the widget does): the gateway's
+contribution for an untrusted door is the inbound origin (bound here, at the boundary, and by
+the orchestrator's own chokepoint), a per-channel rate limit (here per key, plus concurrency
+and size caps) and injection flags that annotate the inbox record (this API keeps no inbox).
+``Gateway.route`` also returns only a finished string, so it cannot stream or address a session.
+What protects the owner from a guest key is the orchestrator's guest posture: no plugin data,
+core memory or recall in the prompt, no learning from the turn (``_turn_is_guest``,
+``_record_interactions``), the guest tool list and the kernel's taint escalation.
 """
 from __future__ import annotations
 
@@ -65,8 +74,9 @@ def _audit(kind: str, *, owner: bool, reason: str, request: Request) -> None:
         logger.debug("openai_api: auth audit unavailable", exc_info=True)
 
 
-def _admit(request: Request) -> ApiKey:
-    """The switch, the bearer key and the key's rate limit, in that order."""
+def _admit_sync(request: Request) -> tuple[ApiKey, policy.Limits]:
+    """The switch, the bearer key and the key's rate limit, in that order (SQLite reads: run
+    off the event loop by :func:`_admit`)."""
     if not policy.enabled():
         raise ApiError(404, "The OpenAI-compatible API is turned off. The owner turns it on in "
                        "Settings (openai_api.enabled).", code="api_disabled")
@@ -83,14 +93,26 @@ def _admit(request: Request) -> ApiKey:
         raise ApiError(401, "Incorrect API key provided.", code="invalid_api_key",
                        headers={"WWW-Authenticate": "Bearer"})
     _audit("auth_success", owner=key.owner, reason="credential", request=request)
-    if not policy.GATE.allow(key.key_id, policy.limits().rate_limit_per_min):
+    limits = policy.limits()
+    if not policy.GATE.allow(key.key_id, limits.rate_limit_per_min):
         raise ApiError(429, "Rate limit reached for this API key. Try again in a minute.",
                        code="rate_limit_exceeded", err_type="requests", headers={"Retry-After": "60"})
+    return key, limits
+
+
+async def _admit(request: Request) -> ApiKey:
+    """Admit the request; its limits are read once and kept on ``request.state``."""
+    key, limits = await asyncio.to_thread(_admit_sync, request)
+    request.state.openai_limits = limits
     return key
 
 
+def _limits(request: Request) -> policy.Limits:
+    return request.state.openai_limits
+
+
 async def _read_json(request: Request) -> tuple[bytes, dict]:
-    limit = policy.limits().max_request_bytes
+    limit = _limits(request).max_request_bytes
     declared = request.headers.get("content-length", "")
     if declared.isdigit() and int(declared) > limit:
         raise ApiError(413, f"The request body is larger than {limit // 1024} KB.", code="request_too_large")
@@ -105,6 +127,8 @@ async def _read_json(request: Request) -> tuple[bytes, dict]:
         body = json.loads(raw.decode("utf-8")) if raw else None
     except (UnicodeDecodeError, ValueError):
         raise ApiError(400, "The request body is not valid JSON.", code="invalid_json") from None
+    except RecursionError:
+        raise ApiError(400, "The request body is nested too deeply.", code="invalid_json") from None
     if not isinstance(body, dict):
         raise ApiError(400, "The request body must be a JSON object.", code="invalid_json")
     return raw, body
@@ -122,8 +146,8 @@ def _agents(orch) -> list[str]:
     return sorted(str(name) for name in agents) if isinstance(agents, dict) else []
 
 
-def _check_size(text: str) -> None:
-    cap = policy.limits().max_input_chars
+def _check_size(request: Request, text: str) -> None:
+    cap = _limits(request).max_input_chars
     if len(text) > cap:
         raise ApiError(413, f"The conversation sent for this turn is longer than {cap} characters. "
                        "Start a new conversation or send less history.", code="context_length_exceeded")
@@ -152,12 +176,13 @@ def _idempotency_refusal(response) -> ApiError:
 class _Slot:
     """One of the key's concurrent-turn slots, released exactly once."""
 
-    def __init__(self, key: ApiKey) -> None:
+    def __init__(self, key: ApiKey, limits: policy.Limits) -> None:
         self.key = key
+        self.limits = limits
         self.token: int | None = None
 
     def take(self) -> None:
-        token = policy.GATE.acquire(self.key.key_id, policy.limits().max_concurrent)
+        token = policy.GATE.acquire(self.key.key_id, self.limits.max_concurrent)
         if token is None:
             raise ApiError(429, "This API key already has as many turns running as it may. "
                            "Wait for one to finish.", code="too_many_concurrent_requests",
@@ -170,12 +195,34 @@ class _Slot:
             policy.GATE.release(self.key.key_id, token)
 
 
+class _SlotStreamingResponse(StreamingResponse):
+    """A stream that gives its key's concurrent-turn slot back however the response ends —
+    including a client that left before the stream began, when the generator (whose own
+    ``finally`` also releases) never ran."""
+
+    def __init__(self, slot: _Slot, content, **kwargs) -> None:
+        super().__init__(content, **kwargs)
+        self._slot = slot
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self._slot.release()
+            close = getattr(self.body_iterator, "aclose", None)
+            if close is not None:
+                try:
+                    await close()       # an unstarted generator: nothing runs; a started one: its finally
+                except Exception:  # noqa: BLE001
+                    logger.debug("openai_api: stream close failed", exc_info=True)
+
+
 # ── /v1/models ───────────────────────────────────────────────────────────────
 
 @router.get("/v1/models")
 async def openai_models(request: Request):
     try:
-        _admit(request)
+        await _admit(request)
         orch = _orch()
     except ApiError as exc:
         return _error(exc)
@@ -192,7 +239,25 @@ def _chat_session(request: Request, key: ApiKey, body: dict, convo: protocol.Con
         handle = protocol.conversation_handle(metadata.get("conversation_id"), param="metadata.conversation_id")
     if handle is not None:
         return protocol.session_for(key.key_id, tag="conversation", value=handle)
-    return protocol.session_for(key.key_id, tag="fingerprint", value=protocol.fingerprint_handle(convo))
+    return protocol.session_for(key.key_id, tag="fingerprint",
+                                value=protocol.fingerprint_handle(convo, body.get("user")))
+
+
+async def _turn_input(request: Request, key: ApiKey, convo: protocol.Conversation,
+                      session_id: str) -> tuple[str, bool, str | None]:
+    """``(text, known, instructions digest)``: what the turn receives in this session."""
+    command = protocol.refused_command(convo)
+    if command is not None:
+        raise ApiError(400, f"/{command} acts on the HUD's own conversation and does nothing here. "
+                       "To start over, start a new conversation in your app (or send a new "
+                       "X-Nerva-Conversation-Id).", code="unsupported_command", param="messages")
+    turns, stored_digest = await asyncio.to_thread(get_store().conversation_state, session_id, key.key_id)
+    known = turns > 0
+    digest = protocol.instructions_digest(convo)
+    text = protocol.turn_text(convo, include_history=not known,
+                              include_instructions=not known or digest != stored_digest)
+    _check_size(request, text)
+    return text, known, digest
 
 
 @router.post("/v1/chat/completions")
@@ -201,7 +266,7 @@ async def openai_chat_completions(request: Request):
 
     started = None
     try:
-        key = _admit(request)
+        key = await _admit(request)
         raw, body = await _read_json(request)
         orch = _orch()
         stream = protocol.stream_flag(body)
@@ -209,20 +274,18 @@ async def openai_chat_completions(request: Request):
         convo = protocol.chat_conversation(body)
         session_id = _chat_session(request, key, body, convo)
         store = get_store()
-        known = await asyncio.to_thread(store.conversation_turns, session_id, key.key_id) > 0
-        text = protocol.turn_text(convo, include_history=not known)
-        _check_size(text)
+        text, known, digest = await _turn_input(request, key, convo, session_id)
         stream_options = body.get("stream_options")
         include_usage = isinstance(stream_options, dict) and stream_options.get("include_usage") is True
         if stream:
             refusal = idempotency.check_header(request)
             if refusal is not None:
                 raise _idempotency_refusal(refusal)
-            slot = _Slot(key)
+            slot = _Slot(key, _limits(request))
             slot.take()
-            return StreamingResponse(
-                _chat_stream(orch, key, slot, text, session_id=session_id, agent=agent, model=model,
-                             known=known, include_usage=include_usage),
+            return _SlotStreamingResponse(
+                slot, _chat_stream(orch, key, slot, text, session_id=session_id, agent=agent, model=model,
+                                   known=known, include_usage=include_usage, digest=digest),
                 media_type="text/event-stream", headers=_SSE_HEADERS)
         started = await asyncio.to_thread(idempotency.begin, request, f"openai_api:{key.key_id}", raw)
         if started.refusal is not None:
@@ -237,7 +300,7 @@ async def openai_chat_completions(request: Request):
     except ApiError as exc:
         return _error(exc)
 
-    slot = _Slot(key)
+    slot = _Slot(key, _limits(request))
     try:
         slot.take()
     except ApiError as exc:
@@ -263,7 +326,7 @@ async def openai_chat_completions(request: Request):
         raise
     finally:
         slot.release()
-    await asyncio.to_thread(store.record_turn, session_id, key.key_id)
+    await asyncio.to_thread(store.record_turn, session_id, key.key_id, digest)
     completion_id = protocol.new_id("chatcmpl-")
     completion = protocol.chat_completion(completion_id, model, outcome.text, created=int(time.time()),
                                           session_id=session_id, approvals=outcome.approvals,
@@ -275,7 +338,7 @@ async def openai_chat_completions(request: Request):
 
 
 async def _chat_stream(orch, key: ApiKey, slot: _Slot, text: str, *, session_id: str, agent: str | None,
-                       model: str, known: bool, include_usage: bool):
+                       model: str, known: bool, include_usage: bool, digest: str | None):
     """``chat.completion.chunk`` frames; the turn runs in a task that a disconnect cancels."""
     completion_id = protocol.new_id("chatcmpl-")
     created = int(time.time())
@@ -297,7 +360,7 @@ async def _chat_stream(orch, key: ApiKey, slot: _Slot, text: str, *, session_id:
             logger.exception("openai_api: stream runner failed")
             await queue.put(("error", TurnIncomplete("turn_failed")))
             return
-        await asyncio.to_thread(get_store().record_turn, session_id, key.key_id)
+        await asyncio.to_thread(get_store().record_turn, session_id, key.key_id, digest)
         await queue.put(("end", outcome))
 
     task = asyncio.create_task(runner())
@@ -349,7 +412,7 @@ async def _chat_stream(orch, key: ApiKey, slot: _Slot, text: str, *, session_id:
 @router.post("/v1/responses")
 async def openai_create_response(request: Request):
     try:
-        key = _admit(request)
+        key = await _admit(request)
         _raw, body = await _read_json(request)
         orch = _orch()
         stream = protocol.stream_flag(body)
@@ -376,24 +439,25 @@ async def openai_create_response(request: Request):
             session_id = protocol.session_for(key.key_id, tag="fingerprint",
                                               value=protocol.fingerprint_handle(convo))
         else:
-            session_id = protocol.session_for(key.key_id, tag="response", value=response_id)
+            # A one-shot request (no conversation, no chain, no history) continues the key's own
+            # rolling conversation, so stateless callers do not leave a new session per request.
+            session_id = protocol.session_for(key.key_id, tag="responses-default", value="")
         keep = body.get("store", True)
         if not isinstance(keep, bool):
             raise ApiError(400, "'store' must be a boolean", param="store")
-        known = await asyncio.to_thread(store.conversation_turns, session_id, key.key_id) > 0
-        text = protocol.turn_text(convo, include_history=not known)
-        _check_size(text)
+        text, known, digest = await _turn_input(request, key, convo, session_id)
         instructions = body.get("instructions") if isinstance(body.get("instructions"), str) else None
         context = {"response_id": response_id, "model": model, "previous": previous,
                    "instructions": instructions, "conversation": conversation, "keep": keep,
-                   "session_id": session_id}
-        slot = _Slot(key)
+                   "session_id": session_id, "digest": digest}
+        slot = _Slot(key, _limits(request))
         slot.take()
     except ApiError as exc:
         return _error(exc)
     if stream:
-        return StreamingResponse(_responses_stream(orch, key, slot, text, agent=agent, known=known, **context),
-                                 media_type="text/event-stream", headers=_SSE_HEADERS)
+        return _SlotStreamingResponse(slot, _responses_stream(orch, key, slot, text, agent=agent, known=known,
+                                                              **context),
+                                      media_type="text/event-stream", headers=_SSE_HEADERS)
     created = int(time.time())
     try:
         outcome = await run_turn(orch, key, text, session_id=session_id, agent_override=agent,
@@ -403,7 +467,7 @@ async def openai_create_response(request: Request):
                                                    "pending_approvals": getattr(exc, "approvals", [])}})
     finally:
         slot.release()
-    await asyncio.to_thread(store.record_turn, session_id, key.key_id)
+    await asyncio.to_thread(store.record_turn, session_id, key.key_id, digest)
     obj = _response(context, created=created, status="completed", text=outcome.text,
                     approvals=outcome.approvals, usage=outcome.usage)
     if keep:
@@ -452,7 +516,7 @@ async def _responses_stream(orch, key: ApiKey, slot: _Slot, text: str, *, agent:
             logger.exception("openai_api: responses stream runner failed")
             await queue.put(("error", TurnIncomplete("turn_failed")))
             return
-        await asyncio.to_thread(get_store().record_turn, session_id, key.key_id)
+        await asyncio.to_thread(get_store().record_turn, session_id, key.key_id, context["digest"])
         await queue.put(("end", outcome))
 
     task = asyncio.create_task(runner())
@@ -514,7 +578,7 @@ async def _responses_stream(orch, key: ApiKey, slot: _Slot, text: str, *, agent:
 @router.get("/v1/responses/{response_id}")
 async def openai_get_response(response_id: str, request: Request):
     try:
-        key = _admit(request)
+        key = await _admit(request)
         stored = await asyncio.to_thread(get_store().get_response, response_id, key.key_id)
         if stored is None:
             raise ApiError(404, f"No stored response '{response_id[:80]}' for this key.", code="not_found")
@@ -526,7 +590,7 @@ async def openai_get_response(response_id: str, request: Request):
 @router.delete("/v1/responses/{response_id}")
 async def openai_delete_response(response_id: str, request: Request):
     try:
-        key = _admit(request)
+        key = await _admit(request)
         deleted = await asyncio.to_thread(get_store().delete_response, response_id, key.key_id)
         if not deleted:
             raise ApiError(404, f"No stored response '{response_id[:80]}' for this key.", code="not_found")

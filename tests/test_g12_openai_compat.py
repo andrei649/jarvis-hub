@@ -683,3 +683,137 @@ def test_a_real_orchestrator_answers_and_continues_the_same_session(enabled, sto
                           headers=_auth(guest))
         assert res.status_code == 200, res.text
         assert res.json()["nerva"]["session_id"] != session
+
+
+# ── review fixes ─────────────────────────────────────────────────────────────
+
+def test_a_deeply_nested_body_is_a_400_not_a_500(enabled, store, hub, client):
+    key, _ = _key(store)
+    raw = "[" * 100_000 + "]" * 100_000
+    res = client.post("/v1/chat/completions", content=raw,
+                      headers={**_auth(key), "Content-Type": "application/json"})
+    assert res.status_code in (400, 413) and res.json()["error"]["type"] == "invalid_request_error"
+    settings_db.put_category("openai_api", {"max_request_kb": 4096})
+    res = client.post("/v1/chat/completions", content=raw,
+                      headers={**_auth(key), "Content-Type": "application/json"})
+    assert res.status_code == 400 and res.json()["error"]["code"] == "invalid_json"
+
+
+def test_the_client_user_field_keeps_people_on_one_key_apart(enabled, store, hub, client):
+    key, _ = _key(store)
+    opening = [{"role": "system", "content": "You are helpful"}, {"role": "user", "content": "hi"}]
+    for user in ("ana", "bogdan", None):
+        body = {"model": "nerva", "messages": opening, **({"user": user} if user else {})}
+        client.post("/v1/chat/completions", json=body, headers=_auth(key))
+    assert len({s["session"] for s in hub.seen}) == 3
+
+
+@pytest.mark.parametrize("command", ["/new", "/reset", "/undo", "/retry hard"])
+def test_session_commands_are_refused_with_a_clear_message(enabled, store, hub, client, command):
+    key, _ = _key(store, owner=True)
+    res = client.post("/v1/chat/completions", json=_chat(command), headers=_auth(key))
+    assert res.status_code == 400 and res.json()["error"]["code"] == "unsupported_command"
+    assert "new conversation" in res.json()["error"]["message"] and hub.seen == []
+
+
+def test_the_client_system_prompt_is_sent_once_and_again_only_when_it_changes(enabled, store, hub, client):
+    key, _ = _key(store)
+    head = {"X-Nerva-Conversation-Id": "c1", **_auth(key)}
+
+    def send(system, text):
+        client.post("/v1/chat/completions", headers=head, json={"model": "nerva", "messages": [
+            {"role": "system", "content": system}, {"role": "user", "content": text}]})
+        return hub.seen[-1]["text"]
+
+    assert send("be brief", "one").startswith(protocol.INSTRUCTIONS_LABEL)
+    assert send("be brief", "two") == "two"
+    assert send("be verbose", "three").startswith(protocol.INSTRUCTIONS_LABEL)
+    assert send("be verbose", "four") == "four"
+
+
+def test_one_shot_responses_share_the_keys_rolling_session(enabled, store, hub, client):
+    import sqlite3
+
+    key, _ = _key(store)
+    for _ in range(5):
+        client.post("/v1/responses", json={"input": "hello", "store": False}, headers=_auth(key))
+    assert len({s["session"] for s in hub.seen}) == 1
+    rows = sqlite3.connect(store.path).execute("select count(*) from conversations").fetchone()[0]
+    assert rows == 1
+
+
+def test_conversations_and_responses_are_bounded_per_key(store, monkeypatch):
+    import sqlite3
+
+    from agents.core.openai_api import store as store_mod
+
+    monkeypatch.setattr(store_mod, "MAX_CONVERSATIONS_PER_KEY", 3)
+    monkeypatch.setattr(store_mod, "MAX_RESPONSES_PER_KEY", 2)
+    for i in range(6):
+        store.record_turn(f"oai-a{i}", "key_a")
+        store.save_response(f"resp_a{i}", "key_a", "oai-a", {"i": i})
+    store.record_turn("oai-b", "key_b")
+    store.save_response("resp_b", "key_b", "oai-b", {})
+    conn = sqlite3.connect(store.path)
+    assert conn.execute("select count(*) from conversations where key_id='key_a'").fetchone()[0] == 3
+    assert conn.execute("select count(*) from responses where key_id='key_a'").fetchone()[0] == 2
+    assert store.conversation_turns("oai-b", "key_b") == 1 and store.get_response("resp_b", "key_b")
+
+
+def test_last_used_is_written_at_most_once_a_minute(store, monkeypatch):
+    from agents.core.openai_api import store as store_mod
+
+    key, _ = _key(store)
+    clock = [1000.0]
+    monkeypatch.setattr(store_mod.time, "time", lambda: clock[0])
+    assert store.verify(key).last_used_at == 1000.0
+    clock[0] = 1030.0
+    assert store.verify(key).last_used_at == 1000.0
+    clock[0] = 1061.0
+    assert store.verify(key).last_used_at == 1061.0
+
+
+def test_an_aborted_stream_gives_its_slot_back(store):
+    from starlette.requests import ClientDisconnect
+
+    from agents.core.routers.openai_compat import _Slot, _SlotStreamingResponse
+
+    _key_text, record = _key(store)
+    limits = policy.Limits(rate_limit_per_min=20, max_concurrent=2, max_request_bytes=4096,
+                           max_input_chars=1000)
+    slot = _Slot(record, limits)
+    slot.take()
+
+    async def never_started():
+        yield "data: x\n\n"
+
+    async def gone(_message):
+        raise OSError("client went away")
+
+    async def receive():
+        return {"type": "http.disconnect"}
+
+    response = _SlotStreamingResponse(slot, never_started(), media_type="text/event-stream")
+    scope = {"type": "http", "asgi": {"spec_version": "2.4"}}
+    with pytest.raises(ClientDisconnect):
+        asyncio.run(response(scope, receive, gone))
+    held = [policy.GATE.acquire(record.key_id, 2) for _ in range(2)]
+    assert None not in held                          # every slot is free again
+
+
+def test_a_star_command_policy_does_not_reach_guest_api_keys(settings):
+    from agents.core import slash_access
+    from agents.core.commands import USER, Principal
+
+    settings_db.put_category("commands", {"user_allowed_commands": {"*": {"dm": ["status"]}}})
+
+    class Registry:
+        def commands(self):
+            return [type("C", (), {"name": "status", "tier": USER})()]
+
+    guest = Principal(channel="openai_api", sender="apikey:k", admin=False)
+    telegram = Principal(channel="telegram", sender="9", admin=False)
+    assert "status" not in slash_access.allowed_names(Registry(), guest)
+    assert "status" in slash_access.allowed_names(Registry(), telegram)
+    settings_db.put_category("commands", {"user_allowed_commands": {"openai_api": {"dm": ["status"]}}})
+    assert "status" in slash_access.allowed_names(Registry(), guest)

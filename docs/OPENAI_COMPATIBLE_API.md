@@ -41,6 +41,8 @@ and admin tokens do not work as API keys, and an API key opens nothing else in N
 | Who Nerva thinks is speaking | you, as at the HUD | someone else, through an outside door |
 | Actions that change something (write memory, send, buy, run) | follow your normal autonomy settings | always wait in your approval queue |
 | Tools offered | your normal tools | the guest tool list |
+| Your private context (calendar, mail, money and social data, core memory, long-term recall) | given to the model as at the HUD | never given |
+| What it says is learned into your memory (knowledge graph, entity index, learning ledger) | yes, as at the HUD | no: only the conversation itself is kept, marked as not yours |
 
 Give a guest key to anything you do not fully control (a shared machine, a friend's app, a
 browser extension). A system prompt sent by the app cannot change any of this: it reaches the
@@ -85,7 +87,7 @@ If Nerva is reachable from other machines, put it behind HTTPS (a reverse proxy 
 | Endpoint | What it does |
 |---|---|
 | `POST /v1/chat/completions` | One answer, whole or streamed (`"stream": true`, with `stream_options.include_usage`). |
-| `POST /v1/responses` | The Responses API: answers are stored, `previous_response_id` continues the same conversation, `conversation` names one, `"stream": true` sends the typed events (`response.created` … `response.completed`). `"store": false` keeps nothing. |
+| `POST /v1/responses` | The Responses API: answers are stored, `previous_response_id` continues the same conversation, `conversation` names one, `"stream": true` sends the typed events (`response.created` … `response.completed`). `"store": false` stores no response object (so it cannot be continued by id); the turn itself is still part of Nerva's conversation for that key. |
 | `GET /v1/responses/{id}`, `DELETE /v1/responses/{id}` | Read or delete a stored response. Only the key that made it can see it. |
 | `GET /v1/models` | `nerva` and `nerva/<agent>` for each Nerva agent. |
 
@@ -93,8 +95,20 @@ If Nerva is reachable from other machines, put it behind HTTPS (a reverse proxy 
 remembers it, so it reads only the newest message. It uses the earlier messages only when a
 conversation is new to Nerva. To keep one conversation across devices or restarts, send an
 `X-Nerva-Conversation-Id` header, or `metadata.conversation_id` in the body. Without one, Nerva
-recognises the conversation by its first messages. Each key has its own conversations. A key
-never reaches your HUD conversations or another key's.
+recognises the conversation by its first messages (and the app's `user` field, when it sends
+one). An app that serves several people with one key must send `X-Nerva-Conversation-Id` or a
+`user` field, or two people who open with the same words share a conversation. A Responses call
+with no conversation, no `previous_response_id` and no history continues the key's own rolling
+conversation. Each key has its own conversations. A key never reaches your HUD conversations or
+another key's.
+
+**Instructions.** The app's system prompt is given to Nerva when a conversation starts and
+again only when it changes, so it is not stored with every message.
+
+**Commands.** `/new`, `/reset`, `/undo`, `/retry`, `/rollback` and `/resume` act on the HUD's
+own conversation, so the API refuses them (`400 unsupported_command`); start a new conversation
+in the app instead. A guest key may run only `/help`, `/whoami` and the commands
+`commands.user_allowed_commands` lists under `"openai_api"` (a `"*"` entry does not cover it).
 
 **Approvals.** When a turn queues an action, the answer lists the approval ids in its `nerva`
 field (`nerva.pending_approvals`). You approve or reject them in the HUD as usual.
@@ -119,6 +133,7 @@ Errors use OpenAI's format, `{"error": {"message", "type", "param", "code"}}`:
 |---|---|---|
 | 404 | `api_disabled` | The API is off (step 1). |
 | 401 | `invalid_api_key` | No key, a wrong key or a revoked key. |
+| 400 | `unsupported_command` | A session command the API cannot honour (see Commands). |
 | 404 | `model_not_found` | Use `nerva` or a name from `/v1/models`. |
 | 409 | `conversation_busy` | Nerva is still answering the previous message in this conversation. |
 | 502 | `agent_incomplete` | The turn failed. Nerva reports it as an error, not as the answer. |

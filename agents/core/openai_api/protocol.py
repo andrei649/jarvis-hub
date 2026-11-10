@@ -165,10 +165,32 @@ def responses_conversation(body: dict) -> Conversation:
     return convo
 
 
-def turn_text(convo: Conversation, *, include_history: bool) -> str:
-    """The one message Nerva's turn receives."""
+def instructions_digest(convo: Conversation) -> str | None:
+    if not convo.instructions:
+        return None
+    return hashlib.sha256("\n\n".join(convo.instructions).encode()).hexdigest()[:32]
+
+
+#: Owner commands that act on the HUD's own conversation, not on an API session: refused,
+#: so an API client is told instead of silently getting nothing done.
+SESSION_COMMANDS = frozenset({"new", "reset", "undo", "retry", "rollback", "resume"})
+
+
+def refused_command(convo: Conversation) -> str | None:
+    """The session command the last message is, when it is one the API cannot honour."""
+    words = convo.message.strip().split(maxsplit=1)
+    if not words or not words[0].startswith("/"):
+        return None
+    name = words[0][1:].split("@", 1)[0].lower()
+    return name if name in SESSION_COMMANDS else None
+
+
+def turn_text(convo: Conversation, *, include_history: bool, include_instructions: bool = True) -> str:
+    """The one message Nerva's turn receives. The client's instructions are sent when the
+    conversation starts and again only when they change, so Nerva's memory does not store
+    the same system prompt with every message."""
     blocks = []
-    if convo.instructions:
+    if convo.instructions and include_instructions:
         blocks.append(INSTRUCTIONS_LABEL + "\n" + "\n\n".join(convo.instructions))
     if include_history and convo.history:
         lines = [f"{_ROLE_NAMES[role]}: {text}" for role, text in convo.history]
@@ -198,9 +220,14 @@ def conversation_handle(value: Any, *, param: str) -> str | None:
     return value.strip()
 
 
-def fingerprint_handle(convo: Conversation) -> str:
+def fingerprint_handle(convo: Conversation, user: Any = None) -> str:
+    """The stateless-front-end handle: the first instruction and user message, plus the
+    client's ``user`` field when it sends one, so two people opening with the same words on a
+    shared key stay apart. A front end that serves several people without a ``user`` field
+    must send ``X-Nerva-Conversation-Id``."""
     first_instruction = convo.instructions[0] if convo.instructions else ""
-    return f"{first_instruction}\n{convo.first_user}"
+    who = user.strip()[:MAX_CONVERSATION_ID_CHARS] if isinstance(user, str) and user.strip() else ""
+    return f"{who}\0{first_instruction}\n{convo.first_user}"
 
 
 def resolve_model(model: Any, agents: list[str]) -> tuple[str, str | None]:

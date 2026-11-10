@@ -12,7 +12,7 @@ One SQLite file (``<data root>/openai_api.db``) holds three small tables:
 - ``responses``: what a ``/v1/responses`` call (or a non-streamed chat completion) answered,
   scoped to the key that asked, so ``previous_response_id`` can continue the same session and
   ``GET``/``DELETE /v1/responses/{id}`` work. Rows expire after :data:`RESPONSE_TTL_SECONDS`
-  and the table is capped at :data:`MAX_RESPONSES`.
+  and each key keeps at most :data:`MAX_RESPONSES_PER_KEY`.
 
 Nothing in this file is a credential Nerva could use elsewhere: a key hash only opens this API.
 """
@@ -32,7 +32,13 @@ from typing import Any
 
 KEY_PREFIX = "nrv-"
 RESPONSE_TTL_SECONDS = 30 * 24 * 3600
-MAX_RESPONSES = 5_000
+#: stored responses kept per key (the oldest go first)
+MAX_RESPONSES_PER_KEY = 1_000
+#: conversations remembered per key, and how long an idle one is remembered
+MAX_CONVERSATIONS_PER_KEY = 2_000
+CONVERSATION_TTL_SECONDS = 90 * 24 * 3600
+#: ``last_used_at`` is written at most this often per key (not on every request)
+LAST_USED_RESOLUTION_SECONDS = 60.0
 MAX_KEYS = 200
 MAX_NAME_CHARS = 64
 BUSY_TIMEOUT_SECONDS = 5.0
@@ -81,12 +87,16 @@ class OpenAIApiStore:
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS conversations ("
                 " session_id TEXT PRIMARY KEY, key_id TEXT NOT NULL, created_at REAL NOT NULL,"
-                " last_used_at REAL NOT NULL, turns INTEGER NOT NULL DEFAULT 0)")
+                " last_used_at REAL NOT NULL, turns INTEGER NOT NULL DEFAULT 0, instructions TEXT)")
+            if "instructions" not in {row[1] for row in conn.execute("PRAGMA table_info(conversations)")}:
+                conn.execute("ALTER TABLE conversations ADD COLUMN instructions TEXT")
+            conn.execute("CREATE INDEX IF NOT EXISTS conversations_key ON conversations (key_id, last_used_at)")
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS responses ("
                 " response_id TEXT PRIMARY KEY, key_id TEXT NOT NULL, session_id TEXT NOT NULL,"
                 " created_at REAL NOT NULL, body TEXT NOT NULL)")
             conn.execute("CREATE INDEX IF NOT EXISTS responses_created ON responses (created_at)")
+            conn.execute("CREATE INDEX IF NOT EXISTS responses_key ON responses (key_id, created_at)")
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -132,8 +142,11 @@ class OpenAIApiStore:
             if row is None or not secrets.compare_digest(row[2], digest) or row[5] is not None:
                 return None
             now = time.time()
-            conn.execute("UPDATE keys SET last_used_at=? WHERE key_id=?", (now, row[0]))
-        return ApiKey(row[0], row[1], bool(row[3]), row[4], row[5], now)
+            last_used = row[6]
+            if last_used is None or now - last_used >= LAST_USED_RESOLUTION_SECONDS:
+                conn.execute("UPDATE keys SET last_used_at=? WHERE key_id=?", (now, row[0]))
+                last_used = now
+        return ApiKey(row[0], row[1], bool(row[3]), row[4], row[5], last_used)
 
     def list_keys(self) -> list[ApiKey]:
         with self._lock, self._connect() as conn:
@@ -150,20 +163,32 @@ class OpenAIApiStore:
 
     # ── conversations ───────────────────────────────────────────────────────
 
-    def conversation_turns(self, session_id: str, key_id: str) -> int:
-        """How many turns this key already ran in the session (0: new to Nerva)."""
+    def conversation_state(self, session_id: str, key_id: str) -> tuple[int, str | None]:
+        """``(turns, instructions digest)`` this key already ran in the session (0: new to Nerva)."""
         with self._lock, self._connect() as conn:
-            row = conn.execute("SELECT turns FROM conversations WHERE session_id=? AND key_id=?",
+            row = conn.execute("SELECT turns, instructions FROM conversations WHERE session_id=? AND key_id=?",
                                (session_id, key_id)).fetchone()
-        return int(row[0]) if row else 0
+        return (int(row[0]), row[1]) if row else (0, None)
 
-    def record_turn(self, session_id: str, key_id: str) -> None:
+    def conversation_turns(self, session_id: str, key_id: str) -> int:
+        return self.conversation_state(session_id, key_id)[0]
+
+    def record_turn(self, session_id: str, key_id: str, instructions: str | None = None) -> None:
+        """Count a turn and remember which instructions the session last received. Idle
+        conversations expire and each key keeps its newest :data:`MAX_CONVERSATIONS_PER_KEY`."""
         now = time.time()
         with self._lock, self._connect() as conn:
             conn.execute(
-                "INSERT INTO conversations (session_id, key_id, created_at, last_used_at, turns)"
-                " VALUES (?, ?, ?, ?, 1) ON CONFLICT(session_id) DO UPDATE SET"
-                " last_used_at=excluded.last_used_at, turns=turns+1", (session_id, key_id, now, now))
+                "INSERT INTO conversations (session_id, key_id, created_at, last_used_at, turns, instructions)"
+                " VALUES (?, ?, ?, ?, 1, ?) ON CONFLICT(session_id) DO UPDATE SET"
+                " last_used_at=excluded.last_used_at, turns=turns+1,"
+                " instructions=COALESCE(excluded.instructions, instructions)",
+                (session_id, key_id, now, now, instructions))
+            conn.execute("DELETE FROM conversations WHERE last_used_at < ?", (now - CONVERSATION_TTL_SECONDS,))
+            conn.execute(
+                "DELETE FROM conversations WHERE key_id=? AND session_id NOT IN (SELECT session_id FROM"
+                " conversations WHERE key_id=? ORDER BY last_used_at DESC LIMIT ?)",
+                (key_id, key_id, MAX_CONVERSATIONS_PER_KEY))
 
     # ── stored responses ────────────────────────────────────────────────────
 
@@ -174,10 +199,11 @@ class OpenAIApiStore:
             conn.execute("DELETE FROM responses WHERE created_at < ?", (now - RESPONSE_TTL_SECONDS,))
             conn.execute("INSERT OR REPLACE INTO responses (response_id, key_id, session_id, created_at, body)"
                          " VALUES (?, ?, ?, ?, ?)", (response_id, key_id, session_id, now, text))
-            excess = conn.execute("SELECT COUNT(*) FROM responses").fetchone()[0] - MAX_RESPONSES
+            excess = conn.execute("SELECT COUNT(*) FROM responses WHERE key_id=?",
+                                  (key_id,)).fetchone()[0] - MAX_RESPONSES_PER_KEY
             if excess > 0:
                 conn.execute("DELETE FROM responses WHERE response_id IN (SELECT response_id FROM responses"
-                             " ORDER BY created_at LIMIT ?)", (excess,))
+                             " WHERE key_id=? ORDER BY created_at LIMIT ?)", (key_id, excess))
 
     def get_response(self, response_id: str, key_id: str) -> tuple[str, dict] | None:
         """``(session_id, body)`` of a response this key stored, else ``None`` (never another key's)."""

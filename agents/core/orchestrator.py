@@ -345,6 +345,21 @@ def _turn_is_untrusted() -> bool:
         return True
 
 
+def _turn_is_guest() -> bool:
+    """G12 review — whether this turn's speaker is not the owner: a guest principal on any
+    surface (a non-admin HUD token, a non-owner on Telegram or another chat channel, the
+    embedded widget, a guest API key) or an inbound turn nobody vouched for. Such a turn is
+    given none of the owner's private context: no live plugin data (calendar, mail, money,
+    social), no core memory and no long-term recall. Internal turns (a heartbeat, a job, a
+    workflow) and the owner on any channel are not guests. Undecidable reads as a guest."""
+    try:
+        from .tool_profiles import PRINCIPAL_GUEST, classify_turn
+
+        return classify_turn(_turn_principal.get(), current_action_origin()).principal == PRINCIPAL_GUEST
+    except Exception:
+        return True
+
+
 def _turn_taint_reason() -> str:
     """H443 — why this untrusted turn takes its conversation off the clean list, as the
     ledger records it (``memory_proposals.REVOKE_REASONS``)."""
@@ -4294,6 +4309,8 @@ class Orchestrator:
         return plugin_gatherer.any_agent_can(self, plugin, intent)
 
     async def _gather_plugin_data(self, text: str, intent) -> dict:
+        if _turn_is_guest():
+            return {}          # G12 review: a guest never reads the owner's live data
         return await plugin_gatherer.gather_plugin_data(self, text, intent)
 
     def _extract_location(self, text: str) -> str:
@@ -4754,6 +4771,8 @@ class Orchestrator:
         record_recall_status(None, provider="long_term_memory")
         if not self.get_setting("memory.recall_enabled", False):
             return ""
+        if _turn_is_guest():
+            return ""          # G12 review: the owner's long-term memory is not a guest's
         from . import safe_mode
 
         if safe_mode.enabled():
@@ -5061,7 +5080,9 @@ class Orchestrator:
             parts.append(f"Agent context: {agent_context}")
 
         await self._reread_core_rings_for_render()
-        core_memory_block = (self._living_core_memory_block() if freeze_core
+        # G12 review: the owner's core memory is never rendered into a guest's prompt.
+        core_memory_block = ("" if _turn_is_guest()
+                             else self._living_core_memory_block() if freeze_core
                              else self._living_core_memory_block(freeze=False))
         if core_memory_block:
             parts.append(core_memory_block)
@@ -6982,16 +7003,22 @@ class Orchestrator:
         return agent
 
     def _record_interactions(self, text: str, responses: dict, synthesized: str, route_name: str = "", channel: str = "web"):
+        # G12 review: a turn that is not the owner's own word (a guest, an inbound channel,
+        # an untrusted read — H443's predicate) writes nothing into the owner's entity index,
+        # knowledge graph or learning ledger text. Its metrics (latency, tokens, cost) are
+        # still recorded, without the words.
+        untrusted = _turn_is_untrusted()
+        text_for_memory = "" if untrusted else text
         # H8.1b: index named entities from the user's turn (best-effort, offline).
-        if getattr(self, "entities", None) is not None and text:
+        if getattr(self, "entities", None) is not None and text_for_memory:
             try:
-                self.entities.ingest_text(text, source="conversation")
+                self.entities.ingest_text(text_for_memory, source="conversation")
             except Exception:
                 logger.debug("entity ingest skipped", exc_info=True)
         # H12.6: incrementally extract triples into the KG (same-session memory).
-        if getattr(self, "kg_updater", None) is not None and text:
+        if getattr(self, "kg_updater", None) is not None and text_for_memory:
             try:
-                self.kg_updater.ingest(text, source="conversation")
+                self.kg_updater.ingest(text_for_memory, source="conversation")
             except Exception:
                 logger.debug("incremental KG ingest skipped", exc_info=True)
         for agent_id, resp in responses.items():
@@ -7050,8 +7077,8 @@ class Orchestrator:
                 }
                 self.learning.record(
                     agent_id=agent_id,
-                    task=text[:200],
-                    response=resp[:500],
+                    task="" if untrusted else text[:200],
+                    response="" if untrusted else resp[:500],
                     success=success,
                     latency=latency,
                     error=resp if not success else None,

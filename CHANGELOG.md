@@ -28,6 +28,10 @@
   it off. Your HUD tokens do not open it, and an API key opens nothing else.
 - A key is a guest unless you issue it with `--owner`. Anything a guest key's turn wants to
   change waits in your approval queue. A system prompt sent by the app cannot change that.
+- Anyone who is not you (a guest API key, a non-admin HUD token, a non-owner on Telegram or
+  another chat, the embedded widget) no longer gets your calendar, mail, money or social data,
+  your core memory or your long-term recall in their answers, and what they say is no longer
+  learned into your knowledge graph. This closes a gap on all of those doors, not only the API.
 - Each key has its own conversations, a rate limit, a limit on turns running at once and a
   size cap. Images, app-defined tools and HUD key management are not there yet. How to set it
   up: [docs/OPENAI_COMPATIBLE_API.md](docs/OPENAI_COMPATIBLE_API.md).
