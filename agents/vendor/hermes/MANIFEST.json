@@ -15,6 +15,48 @@
       "vendored_sha256": "050b8d56b474f24aaa0a63e542554f0382ffc49431ba769133157f617e5a8c6f"
     },
     {
+      "path": "agent/verify/environment.py",
+      "rules_applied": [
+        "verify-fs",
+        "verify-siblings"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "82be90c84b395929bdaf899b99667cbd75469a301782ead5ff99795dffe6bcca",
+      "vendored_sha256": "5eec90493ab408fced6363db5ee4eda52857567742e5b3cf6f84de1f44949b8f"
+    },
+    {
+      "path": "agent/verify/recipes.py",
+      "rules_applied": [
+        "verify-fs"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "e024b6d796f5328c2871c67b035476ab26fc62289211be80df8b840b90550cdf",
+      "vendored_sha256": "ccfa316090d816edf166bf140fb1e7305fcc45775fb154e7b8ce61c009a0575f"
+    },
+    {
+      "path": "agent/video_gen_provider.py",
+      "rules_applied": [
+        "video-provider-media",
+        "video-shared",
+        "video-clock",
+        "video-openai-sdk"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "c602aef85f785147d14024c726e0e8b9d8539ee0a47b1de499e8f2ca1e99195f",
+      "vendored_sha256": "dadbff70f4e0beb51d43d2369095b1c0fe329c9da606f720629d5d1f812c77a5"
+    },
+    {
+      "path": "agent/video_gen_registry.py",
+      "rules_applied": [
+        "video-gen-provider",
+        "video-shared",
+        "video-registry-export"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "cf8a4a15ed8774dd9440d67e12bd1e9b69729f420d4c18c6b66dae5964df7735",
+      "vendored_sha256": "559aa8114987a90f39233671934f826e87e5bfd222467806a94b66910f0c65fe"
+    },
+    {
       "path": "hermes_cli/loops.py",
       "rules_applied": [
         "hermes-cli-config",
@@ -2600,6 +2642,63 @@
       "vendored_sha256": "a5a0d5de0241f76c87e53af5a842075f9e1e69b044c0f8b2d1f30f8c118d37c2"
     },
     {
+      "path": "plugins/video_gen/deepinfra/__init__.py",
+      "rules_applied": [
+        "video-gen-provider",
+        "video-shared"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "4f2a053e3ba725000b4c0bf60341659eb9b7521c19b1fb2b80c7995e1395e23b",
+      "vendored_sha256": "e73deae51f8030073a0ef9ee4e997113a96e02cd2c605bc382dc08fed5b4f10d"
+    },
+    {
+      "path": "plugins/video_gen/deepinfra/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "e63855e060c0a43ded1cc6570438150c4284d1815ea610e670bd7f9047ccd06c",
+      "vendored_sha256": "e63855e060c0a43ded1cc6570438150c4284d1815ea610e670bd7f9047ccd06c"
+    },
+    {
+      "path": "plugins/video_gen/fal/__init__.py",
+      "rules_applied": [
+        "os-env",
+        "threading-locks",
+        "video-gen-provider",
+        "video-shared"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "9c47805bedd620dad361e85611669c4cf533203eb9343c2e6271e07f59b12d43",
+      "vendored_sha256": "91fa5e79ab5c0d9dabd1ea473d48c048c4e57da5fee1c2fd95929359cfedd34e"
+    },
+    {
+      "path": "plugins/video_gen/fal/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "eb9a85ba48f2f686aecebdcdcf37f9bc82a1b5678811a4e1da5c1c843abef7db",
+      "vendored_sha256": "eb9a85ba48f2f686aecebdcdcf37f9bc82a1b5678811a4e1da5c1c843abef7db"
+    },
+    {
+      "path": "plugins/video_gen/xai/__init__.py",
+      "rules_applied": [
+        "httpx",
+        "video-gen-provider",
+        "video-shared",
+        "video-xai-http-module",
+        "video-mimetypes",
+        "video-xai-asyncio"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "0c0af2bf476bda3d1c1d499a608b10d3af6e0e2c82d290ade2a4f7cfee955302",
+      "vendored_sha256": "41b3b65d21369767e17e3662ee8e3ec3358ca69a0838e67a69b672a5cfc7e1bd"
+    },
+    {
+      "path": "plugins/video_gen/xai/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "d6898a9a781607480bbe3ad83abd4a008624ac6e57880d83ecad2d839f101753",
+      "vendored_sha256": "d6898a9a781607480bbe3ad83abd4a008624ac6e57880d83ecad2d839f101753"
+    },
+    {
       "path": "plugins/web/__init__.py",
       "rules_applied": [],
       "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
@@ -3893,6 +3992,121 @@
       "pattern": "^(?P<i>[ \\t]*)from hermes_cli\\.goals import ",
       "replacement": "\\g<i>from agents.vendor.hermes_compat.goals import ",
       "why": "loop state in Nerva's per-session store; the judge and the goal probe are Nerva's"
+    },
+    {
+      "id": "verify-fs",
+      "paths": [
+        "agent/verify/"
+      ],
+      "pattern": "^(?P<i>[ \\t]*)from pathlib import ",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat.verify_fs import ",
+      "why": "a project path confined to the owner's file roots and the one project being verified: bounded reads, writes only to the manifest Nerva's /verify save allows"
+    },
+    {
+      "id": "verify-siblings",
+      "paths": [
+        "agent/verify/"
+      ],
+      "pattern": "^(?P<i>[ \\t]*)from agent\\.verify\\.",
+      "replacement": "\\g<i>from agents.vendor.hermes.agent.verify.",
+      "why": "vendored siblings live under agents.vendor.hermes"
+    },
+    {
+      "id": "video-gen-provider",
+      "paths": [
+        "agent/video_gen_provider.py",
+        "agent/video_gen_registry.py",
+        "plugins/video_gen/"
+      ],
+      "pattern": "^(?P<i>[ \\t]*)from agent\\.video_gen_provider import ",
+      "replacement": "\\g<i>from agents.vendor.hermes.agent.video_gen_provider import ",
+      "why": "the vendored VideoGenProvider ABC"
+    },
+    {
+      "id": "video-provider-media",
+      "paths": [
+        "agent/video_gen_provider.py",
+        "agent/video_gen_registry.py",
+        "plugins/video_gen/"
+      ],
+      "pattern": "^(?P<i>[ \\t]*)from agent import provider_media(?P<rest>[ \\t]*(?:#.*)?)$",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat import video_media as provider_media\\g<rest>",
+      "why": "a download lands only in the staging folder of one approved video task, through the compat httpx, size-capped and content-checked"
+    },
+    {
+      "id": "video-shared",
+      "paths": [
+        "agent/video_gen_provider.py",
+        "agent/video_gen_registry.py",
+        "plugins/video_gen/"
+      ],
+      "pattern": "^(?P<i>[ \\t]*)from (?:agent\\.provider_base|agent\\.provider_registry|agent\\.secret_scope|agent\\.process_bootstrap|agent\\.file_safety|hermes_cli\\.config|hermes_cli\\.models|tools\\.managed_tool_gateway|tools\\.tool_backend_helpers|tools\\.fal_common|tools\\.xai_http|pathlib) import ",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat.video_shared import ",
+      "why": "provider base and registry, per-provider keys, the owner's choice, the FAL queue and xAI helpers over the compat httpx; no managed gateway, no local file read, no live catalog"
+    },
+    {
+      "id": "video-xai-http-module",
+      "paths": [
+        "agent/video_gen_provider.py",
+        "agent/video_gen_registry.py",
+        "plugins/video_gen/"
+      ],
+      "pattern": "^(?P<i>[ \\t]*)from tools import xai_http(?P<rest>[ \\t]*(?:#.*)?)$",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat.video_shared import xai_http\\g<rest>",
+      "why": "the xAI credential and storage helpers (fixed host, scoped key, storage off)"
+    },
+    {
+      "id": "video-mimetypes",
+      "paths": [
+        "agent/video_gen_provider.py",
+        "agent/video_gen_registry.py",
+        "plugins/video_gen/"
+      ],
+      "pattern": "^(?P<i>[ \\t]*)import mimetypes(?P<rest>[ \\t]*(?:#.*)?)$",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat.video_shared import mimetypes\\g<rest>",
+      "why": "a suffix table; no system MIME database is read"
+    },
+    {
+      "id": "video-clock",
+      "paths": [
+        "agent/video_gen_provider.py",
+        "agent/video_gen_registry.py",
+        "plugins/video_gen/"
+      ],
+      "pattern": "^(?P<i>[ \\t]*)import time(?P<rest>[ \\t]*(?:#.*)?)$",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat import video_clock as time\\g<rest>",
+      "why": "a poll sleep that wakes when the approved task is cancelled or its deadline passes"
+    },
+    {
+      "id": "video-openai-sdk",
+      "paths": [
+        "agent/video_gen_provider.py",
+        "agent/video_gen_registry.py",
+        "plugins/video_gen/"
+      ],
+      "pattern": "^(?P<i>[ \\t]*)import openai(?P<rest>[ \\t]*(?:#.*)?)$",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat import video_openai as openai\\g<rest>",
+      "why": "the OpenAI SDK's videos API (create, retrieve, download) over the compat httpx"
+    },
+    {
+      "id": "video-xai-asyncio",
+      "paths": [
+        "plugins/video_gen/xai/"
+      ],
+      "pattern": "^(?P<i>[ \\t]*)import asyncio(?P<rest>[ \\t]*(?:#.*)?)$",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat import video_asyncio as asyncio\\g<rest>",
+      "why": "the xAI poll's sleep wakes when the approved task is cancelled or out of time"
+    },
+    {
+      "id": "video-registry-export",
+      "paths": [
+        "agent/video_gen_provider.py",
+        "agent/video_gen_registry.py",
+        "plugins/video_gen/"
+      ],
+      "pattern": "^(?P<i>[ \\t]*)_registry\\.export\\(globals\\(\\)\\)(?P<rest>[ \\t]*(?:#.*)?)$",
+      "replacement": "\\g<i>_registry.export(__name__)\\g<rest>",
+      "why": "the registry binds its API by module name; globals() stays a denied name"
     }
   ],
   "upstream": {

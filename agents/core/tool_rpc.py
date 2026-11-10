@@ -1158,6 +1158,15 @@ class ToolRPCServer:
                 failed["detail"] = self._scrub(detail)
             return failed
         self._record("toolrpc.execute", name, agent=effective_actor)
+        if name in {"file_write", "file_delete"} and isinstance(result, Mapping):
+            # G5 — an applied edit makes the project's verification evidence stale.
+            from .verify.evidence import mark_edited
+
+            try:
+                await asyncio.to_thread(mark_edited, getattr(task, "id", None),
+                                        result.get("path") or args.get("path"))
+            except Exception:
+                logger.warning("verify evidence: edit not recorded", exc_info=True)
         return {"status": "ok", "tool": name, "result": self._scrub(result)}
 
     # ── internals ────────────────────────────────────────────────────────────

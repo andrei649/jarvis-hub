@@ -2279,6 +2279,123 @@
       }
     },
     {
+      "name": "video_generate",
+      "gated": true,
+      "capability_id": "tool:video_generate",
+      "untrusted_output": false,
+      "live_overrides": false,
+      "risk": "sensitive",
+      "rollback": {
+        "mode": "implementation_specific",
+        "description": "Use the rollback declared by the selected tool.",
+        "automatic": false,
+        "handler_ref": null,
+        "limitations": "The action is not reversible when the tool declares no rollback."
+      },
+      "description": "Propose one paid video (text-to-video, image-to-video, reference-guided; xAI edit/extend) on the provider the owner chose; owner approval with a cost estimate required.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "prompt"
+        ],
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "What the video shows: subject, motion, camera, style."
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "deepinfra",
+              "fal",
+              "xai"
+            ],
+            "description": "Default: the provider the owner chose in Integrations."
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "FAL family id, xAI model, or DeepInfra model id (required for DeepInfra)."
+          },
+          "duration": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "description": "Seconds; the provider clamps it. Omit for its default."
+          },
+          "aspect_ratio": {
+            "type": "string",
+            "enum": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "3:2",
+              "2:3",
+              "21:9"
+            ]
+          },
+          "resolution": {
+            "type": "string",
+            "enum": [
+              "480p",
+              "540p",
+              "720p",
+              "768p",
+              "1080p"
+            ]
+          },
+          "image": {
+            "type": "string",
+            "maxLength": 2048,
+            "description": "Animate this still: a generated image id, or the provider's own media URL."
+          },
+          "reference_images": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 7,
+            "items": {
+              "type": "string",
+              "maxLength": 2048
+            },
+            "description": "xAI only: reference-guided generation (image ids or xAI media URLs)."
+          },
+          "negative_prompt": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "seed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "audio": {
+            "type": "boolean",
+            "description": "FAL families with an audio toggle."
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "generate",
+              "edit",
+              "extend"
+            ],
+            "description": "xAI only: edit or extend a video Nerva generated with xAI."
+          },
+          "source_task_id": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9223372036854775807,
+            "description": "The task of the xAI video to edit or extend."
+          }
+        }
+      }
+    },
+    {
       "name": "web_extract",
       "gated": false,
       "capability_id": "tool:web_extract",

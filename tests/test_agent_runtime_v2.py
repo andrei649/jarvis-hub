@@ -1892,6 +1892,8 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
     assert orch.tool_rpc._audit is intent_log
     assert orch.tool_rpc._kernel is action_kernel
     from agents.core import pointer_tool
+    from agents.core.creative.video_generation import DESCRIPTION as VIDEO_TOOL_DESCRIPTION
+    from agents.core.creative.video_generation import INPUT_SCHEMA as VIDEO_INPUT_SCHEMA
     from agents.core.image_tool_dispatcher import INPUT_SCHEMA
     from agents.core.memory_tool import INPUT_SCHEMA as MEMORY_SCHEMA
     from agents.core.memory_tool import OFF_DESCRIPTION as MEMORY_OFF_DESCRIPTION
@@ -2157,6 +2159,14 @@ async def test_autonomy_coordinator_wires_one_live_governed_agent_tool_runtime()
             "description": TODO_DESCRIPTION,
             "input_schema": TODO_SCHEMA,
             "capability_id": "tool:todo",
+        },
+        {
+            # G19 (H516): one paid video per approval card with its cost.
+            "name": "video_generate",
+            "gated": True,
+            "description": VIDEO_TOOL_DESCRIPTION,
+            "input_schema": VIDEO_INPUT_SCHEMA,
+            "capability_id": "tool:video_generate",
         },
         {
             # H310: up to five URLs, a 15,000-char head+tail budget, the full text on disk.

@@ -46,14 +46,16 @@ async def test_boot_registry_reality_cases_hold_for_every_wired_capability():
     results = {item["capability_id"]: item["passed"] for item in out["results"]}
 
     # Six default-off image-provider manifests now have separate policy cases.
-    # 85: the A2A outbound plugin (plugin:a2a, Adopt lane slice 4) joined the wired set.
-    assert len(cases) == len(records) == 85
+    # 85: the A2A outbound plugin (plugin:a2a, Adopt lane slice 4) joined the wired set;
+    # 88: the three default-off cloud video providers (G19) joined the registry.
+    assert len(cases) == len(records) == 88
     assert results["plugin:a2a"] is True
     assert results["plugin:ntfy"] is True
     # The six disabled cloud-image plugins still have real manifest egress rails;
     # proving that policy does not change their default-off readiness state.
     default_off = {f"plugin:cloud-image-{provider}" for provider in (
         "fal", "codex", "openrouter", "krea", "xai", "deepinfra")}
+    default_off |= {f"plugin:cloud-video-{provider}" for provider in ("fal", "xai", "deepinfra")}
     assert {capability_id for capability_id, record in records.items()
             if record.state == cr.SEAM} == default_off | {"skill:Weather Intel"}
     assert all(results[capability_id] is True for capability_id in default_off)

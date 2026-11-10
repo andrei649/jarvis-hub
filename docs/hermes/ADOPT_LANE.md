@@ -45,8 +45,10 @@ are on the `websearch` manifest allowlist, the same way the built-ins' hosts are
 The rules live in `REWRITE_RULES` in `scripts/hermes_vendor.py` and are copied into the
 manifest. `status` fails if the two differ. Each rule rewrites one import line in place, so
 line numbers stay the same and upstream diffs stay readable. No replacement matches any
-pattern, so the rewrite is idempotent. All rules but one rewrite an import. The exception,
-`exa-integration-tag`, changes the caller name the Exa provider sends.
+pattern, so the rewrite is idempotent. All rules but two rewrite an import. The exceptions:
+`exa-integration-tag` changes the caller name the Exa provider sends, and
+`video-registry-export` (G19) turns the video registry's `_registry.export(globals())` into
+`_registry.export(__name__)`.
 
 | Rule | Upstream line | Becomes |
 |---|---|---|
@@ -611,3 +613,170 @@ surface walk skips the vendor tree (Nerva's own registration is walked).
   is on; with it off the approval card and the e-stop are the gates.
 - Three upstream bandit findings in the vendored files (two `try/except/pass`, one B104 on a
   blocklist literal) are recorded in `.bandit-baseline.json`.
+
+## Project verification recipes (slice 5, G5 / H023, H405, H406)
+
+Hermes's `hermes verify` detects how a project is built, tested and started and keeps a
+user-editable `.hermes/environment.json`. Slice 5 (same pin, `9c0560f8`) runs the detection
+as it is: `agent/verify/recipes.py` (fan-in 0) and `agent/verify/environment.py` (1 import,
+its sibling). Everything that *runs* or *decides* is Nerva's, in `agents/core/verify/`:
+
+| Upstream file | Lane | Nerva |
+|---|---|---|
+| `agent/verify/recipes.py`, `environment.py` | **Adopt** (byte-for-byte but two import lines) | `verify/project.py` calls `detect_recipe`, `load_or_detect`, `save_manifest` |
+| `agent/verify/runner.py` | **Not adopted**: it spawns the phases and the app itself | `verify/runner.py`: every command is a `terminal_run` through `ToolRPCServer.handle` |
+| `agent/verification_evidence.py` | reference (SQLite, threads, `hermes_constants`) | `verify/evidence.py`: hash-chained rows anchored in the signed intent log |
+| `agent/verification_stop.py`, `turn_stop_gates.py` | reference | `verify/stop.py` + one gate in `agent_runtime.py` |
+| `agent/coding_context.py` | reference (spawns git through `hermes_cli`) | `verify/coding.py`, `verify/workspace.py` |
+| `agent/verify/__init__.py` | not adopted (it imports the runner) | a Nerva docstring marker |
+
+### Compat and rule additions
+
+| Upstream line | Rule (scoped to `agent/verify/`) | Becomes |
+|---|---|---|
+| `from pathlib import Path` | `verify-fs` | `hermes_compat.verify_fs.Path`: no I/O of its own; every look goes to the file system Nerva bound for the call (`bound(fs)`, `verify/project.ConfinedFS`): one project root, walked component by component with `lstat` (any symlink, `..` or secret-looking component is absent), regular single-link files only (no hard link out of the root), reads `O_NOFOLLOW` and capped at 256 KiB, the only write the exact manifest `/verify save` names, opened `O_NOFOLLOW`; nothing bound means an empty, read-only disk |
+| `from agent.verify.… import` | `verify-siblings` | the vendored `agents.vendor.hermes.agent.verify.…` |
+
+`verify_fs` is path-scoped (`PATH_SCOPED_COMPAT`): only files under `agent/verify/` may
+import it. It imports no Nerva module, no `os` and no I/O library; all confinement is Nerva code.
+
+### How a verification run is governed
+
+- **Detect, status, ledger**: reads only (the confined stand-in, the evidence DB).
+- **Save** (`/verify save`): the owner's command; refused in plan mode and under the e-stop;
+  one file, audited as `verify.manifest_saved`.
+- **Run** (`/verify run`, or the model's own `terminal_run`): refused before anything is queued
+  under the e-stop and in plan mode; then each command goes through the tool front door, so the
+  plan-mode floor, the approval card (ask tier), the approval mode and its sealed-receipt rule,
+  smart approvals and standing consents, the target policy plane, `HARDLINE`, the
+  `terminal.exec` contract and the Action Kernel all apply exactly as for any command. A command
+  needing a shell (`|`, `&&`, `>`) is refused, since the governed transports run a plain argv.
+- **Plan mode**: a verification run executes the project's code, so it is not a read: refused.
+  The coding snapshot's fixed `git status`/`log`/`diff --shortstat` reads are reads and run in
+  plan mode; they are not run under the e-stop.
+- **The snapshot's git reads**: run only when the repository's config (local and worktree
+  scopes, `git config --list --show-scope`, no `--includes`) holds allowlisted plain keys only
+  (`verify/workspace.ALLOWED_KEYS`); anything else (filters in any letter case, includes,
+  `extensions.*` but the object format, `gpg.*`, `core.sshCommand`, `core.fsmonitor`, aliases,
+  drivers) withholds the git part and names the key. Second layer: `-c` overrides for hooks,
+  fsmonitor, signatures and `gpg.*` programs, `core.sshCommand`, `protocol.allow=never`,
+  `GIT_NO_LAZY_FETCH=1`, no system/global config; one 6 s deadline per snapshot and a streamed
+  64 KB output cap.
+- **Evidence**: `autonomy_coordinator._rpc_terminal_run` passes each finished, redacted result to
+  `evidence.record_terminal`; `ToolRPCServer.execute` passes each applied `file_write`/
+  `file_delete` to `evidence.mark_edited`. The session is the one whose turn queued the call
+  (`evidence.note_task` at intake).
+
+### Limits of slice 5
+
+- No app boot and readiness poll (Hermes's `start` phase): the governed transports run a
+  bounded command to completion and cannot keep a server alive and tear its process group down.
+  The start command and port are shown, never run.
+- No `pre_verify` plugin hook: Nerva has no hook that returns prompt text (extension events
+  are observe-only; owner hooks are G17, an open owner decision).
+- Edit-format steering: Nerva's only editor is `file_write` (whole file), so the per-family
+  table (patch vs replace) applies only if a patch-style tool is offered (an MCP server's).
+- No `nerva verify` CLI verb in this slice (`agents/cli/nerva.py` is another builder's file this
+  wave); `/verify` works from every chat surface, `nerva chat` included.
+- A call queued before a hub restart has no session, so its result counts for the project only.
+- Tested with fake project trees, a fake tool server, the real `ToolRPCServer` front door and a
+  real local git repository; no project's real test suite was run through a live terminal target.
+
+## Video generation (G19 / H516)
+
+Same pin (`9c0560f8`). Adopted as they are: Hermes's `VideoGenProvider` ABC with its
+`OpenAICompatibleVideoGenProvider` (`agent/video_gen_provider.py`), the registry
+(`agent/video_gen_registry.py`) and three provider plugins with their `plugin.yaml`:
+**FAL** (`plugins/video_gen/fal/`, 21 model families), **xAI Grok Imagine**
+(`plugins/video_gen/xai/`, text-, image- and reference-to-video plus `run_xai_video_edit` /
+`run_xai_video_extend`) and **DeepInfra** (`plugins/video_gen/deepinfra/`, the OpenAI
+`client.videos` flow). `plugins/video_gen/__init__.py` is a Nerva docstring marker.
+
+**Not adopted:** the OpenRouter video plugin (it resolves its key through
+`hermes_cli.runtime_provider`, Hermes's runtime credential resolver, and dials with
+`requests`), and `tools/video_generation_tool.py` (Hermes's tool; Nerva has its own,
+below). Inside the FAL plugin the managed Nous gateway path stays in the file but is never
+reached: `resolve_managed_tool_gateway` answers `None` and `_ManagedFalSyncClient` refuses.
+FAL's SeedVR2 upscale pass is never asked for (`upscale` is not a tool option: its cost is
+not on the card).
+
+### The Nerva side
+
+| Piece | Where | What it does |
+|---|---|---|
+| Provider table, registry load, request check, price | `agents/core/creative/video_providers.py` | `PROVIDERS`: the three reviewed names, each with one egress identity, one key name, its API host and the media hosts it accepts image URLs from. The plugins register through a ctx with one method (`register_video_gen_provider`); any other name is refused. `normalize_request` checks and clamps the arguments the way the plugin will (FAL family duration snap, xAI model by modality and resolution fallback), so the card shows what is sent. `estimate` is the upper-bound cost from **verified list prices only** (`FAL_PRICES` per family, modality, resolution and audio; `XAI_PRICES` per model and resolution; `DEEPINFRA_PRICES` per model; checked 2026-11-10). A family, modality, resolution or model without a verified price is refused (`price_unverified`) before any card; an unknown audio default counts as on, a dropped resolution at the dearest rate, an unset duration at the family's longest. |
+| Runtime | `agents/core/creative/video_generation.py` (`CloudVideoRuntime`) | The reviewed cloud-image governance (`cloud_image_runtime` helpers): availability (heavy features, enforced mediation, kernel on, signer, the consented choice, the key, e-stop off), one `plugin.egress` approval task per video with `amount` = estimate, a configuration generation bound to the key, prompt screening, the proposal binding, a durable attempt marker before the first POST (never replayed), a live check before every request (approval still binds, e-stop, mediation receipt, kernel), publication into the media store. |
+| Tool | `video_generate` (gated, `register_video_tool`) | Preflight validates; intake proposes one card; it never runs in the turn. Plan mode refuses it at the tool front door. |
+| Worker wiring | `wire_cloud_video` (outermost `plugin.egress` guard/handler in `AutonomyCoordinator.build_executor`) | `orch.cloud_videos`. |
+| Manifests | `cloud-video-fal` (`queue.fal.run`, `fal.media`), `cloud-video-xai` (`api.x.ai`, `vidgen.x.ai`), `cloud-video-deepinfra` (`api.deepinfra.com`) | RESTRICTED, https only, shipped **disabled** like the cloud-image manifests: the runtime treats one as on only while the owner has that provider chosen. Exactly one POST per task, to the approved URL (`task.payload["url"]`); a second POST (a retry, FAL's upscale pass) is refused (`second_submit_refused` / `dispatch_changed`). |
+| Owner surface | Integrations panel (`video.*` entries), `/api/media` (`cloud_video`, `kinds.video`) | Key, consent card (`video_provider_consent` audit row), `DELETE /api/admin/integrations/video-choice`. |
+
+**Running the vendored code.** The synchronous `generate` runs on its own executor (2
+threads, 2 jobs at a time) with three bindings in its context: the compat `httpx` call on
+the task's `PluginHTTPClient`, the provider scope (its one key) and the video sink (a
+staging folder and a byte cap). The job has 15 minutes. When the worker cancels the task or
+the deadline passes, `call.abandon()` wakes the poll's sleep (`video_clock.sleep` waits on
+the call's abandonment event) and the next request is refused, so the thread ends. A
+refusal raised by the live check is a `PluginEgressError` (latched by the compat `httpx`: the
+plugin cannot retry past it) and its reason is reported, not the plugin's text.
+
+**The file.** A provider URL is fetched by `video_media.save_url` through `httpx.download`: a
+stream capped at 16 MiB (a declared length over the cap is refused before reading), no
+redirect, no credential to a media host. The bytes are kept only if the media store
+recognizes them as MP4 (including fragmented `iso5`/`iso6`), QuickTime or WebM; they get a Nerva-minted name in `media/generated` and a
+catalog row (kind `video`), served by `/api/artifacts/md-…/blob`. Provider text (errors,
+model names in answers) reaches nobody except as a fixed reason code.
+
+**Image inputs.** Only an image Nerva generated (its 32-hex id; digest bound to the card,
+re-checked before sending, sent as a data URI) or the provider's own media URL. The xAI plugin
+would inline a local file a model names; here `Path` is inert and the read guard refuses.
+
+### Compat and rule additions
+
+All path-scoped to `VIDEO_PATHS` (the two `agent/video_gen_*` files and `plugins/video_gen/`):
+
+| Upstream line | Rule | Becomes |
+|---|---|---|
+| `from agent.video_gen_provider import …` | `video-gen-provider` | the vendored ABC |
+| `from agent import provider_media` | `video-provider-media` | `hermes_compat.video_media`: saves only into the bound sink, downloads through `httpx.download` |
+| `from agent.provider_base / provider_registry / secret_scope / process_bootstrap / file_safety`, `hermes_cli.config / models`, `tools.managed_tool_gateway / tool_backend_helpers / fal_common / xai_http`, `pathlib import …` | `video-shared` | `hermes_compat.video_shared`: base classes, a plain registry whose configured provider is `JARVIS_VIDEO_PROVIDER`, per-provider keys (`FAL_KEY`, `XAI_API_KEY`, `DEEPINFRA_API_KEY`; no `*_BASE_URL`), the FAL queue client (`queue.fal.run` submit, status polls, result), xAI helpers (fixed base, user agent "Nerva", storage off), no managed gateway, no live catalog, inert `Path`, refusing read guard |
+| `from tools import xai_http` | `video-xai-http-module` | `video_shared.xai_http` |
+| `import mimetypes` | `video-mimetypes` | a suffix table |
+| `import time` | `video-clock` | `hermes_compat.video_clock`: `sleep` wakes on cancel/deadline |
+| `import openai` | `video-openai-sdk` | `hermes_compat.video_openai`: `OpenAI(...).videos.create / retrieve / download_content` over the compat `httpx`, job ids checked as plain tokens |
+| `_registry.export(globals())` | `video-registry-export` | `_registry.export(__name__)` (`globals` stays a denied name) |
+
+The global `httpx`, `os-env` and `threading-locks` rules also apply. `hermes_compat.httpx`
+gained `AsyncClient` (the xAI plugin awaits it inside a private loop on its worker thread;
+each call is the same governed `request`) and `download`; `os_env` gained `environ.get` under
+the same allowlist (FAL's `FAL_VIDEO_MODEL` reads as unset, so the approved family is used).
+`COMPAT_PRIVATE_EXPORTS` lists the four underscore names the FAL and DeepInfra plugins import
+(`_ManagedFalSyncClient`, `_extract_http_status`, `_managed_fal_billing_error`,
+`_fetch_deepinfra_models_by_tag`). Acceptance: `tests/test_hermes_video_generation.py`.
+
+### Limits
+
+- Tested against fake providers at the transport only; no live video was generated, so the
+  wire shapes (FAL queue, xAI videos, DeepInfra's OpenAI-compatible videos endpoint, sent as
+  JSON) follow the vendors' documentation and upstream code, unproven live.
+- A provider that serves the finished file from a host outside its manifest (a DeepInfra
+  delivery URL on a CDN, an xAI host other than `vidgen.x.ai`) is refused
+  (`video_host_not_admitted`), not fetched.
+- Videos over 16 MiB are refused (the media store's serving limit).
+- **Cost.** xAI edit is priced on the source video's real length (its completion record) plus
+  xAI's $0.01/s input-video charge; extend adds the same input charge. When a provider reports
+  a cost above the estimate (xAI), the result carries `warning: reported_cost_above_estimate`
+  and the difference is added to the approval policy's spend, so the daily accounting holds
+  the real amount.
+- **DeepInfra delivery.** A delivery URL off `api.deepinfra.com` is never dialled: the same
+  file is fetched from the OpenAI videos content endpoint on the API host (the job id the
+  stand-in recorded), and a `data:video/...;base64` answer is decoded, capped, in place. A
+  URL off any other provider's hosts is refused before any request (`video_host_not_admitted`).
+- The compat registry's `export` binds only `agents.vendor.hermes.agent.video_gen_registry`, and
+  the vendor allowlist refuses any `.export(...)` call except `export(__name__)` in that file.
+- xAI's `await asyncio.sleep(5)` between polls is `video_asyncio.sleep` (rule `video-xai-asyncio`,
+  xAI plugin only), which wakes on cancel or deadline like the other polls.
+- DeepInfra needs a named model (no catalog fetch). Prices: list for three models, a stated
+  refusal for the rest; a provider-reported price is recorded only for xAI.
+- Cancelling a running video stops Nerva's polling; the provider's job itself is not
+  cancelled at the provider.

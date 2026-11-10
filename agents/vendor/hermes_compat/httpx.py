@@ -191,18 +191,8 @@ def request(method: str, url: str, *, params: Any = None, headers: Any = None,
             json: Any = None, data: Any = None, content: Any = None, timeout: Any = None,
             follow_redirects: bool = False) -> Response:
     """Send one request through the bound Nerva egress client, or refuse."""
-    call = _CALL.get()
-    if call is None:
-        raise EgressRefused("no Nerva egress client is bound")
-    if call.policy_block:
-        raise EgressRefused("refused earlier in this call")
-    if call.abandoned.is_set() or time.monotonic() >= call.deadline:
-        call.failure = call.failure or "timeout"
-        raise TimeoutException("timeout")
-    if threading.get_ident() == call.loop_thread:
-        # A blocking wait on the loop that must run the request would deadlock it.
-        call.failure = call.failure or "called_on_event_loop"
-        raise ConnectError("vendored code ran on the event loop")
+    # A blocking wait on the loop that must run the request would deadlock it (_ready).
+    call = _ready(_CALL.get())
     if follow_redirects and any(str(k).lower() in CREDENTIAL_HEADERS for k in dict(headers or {})):
         call.failure = call.failure or "redirect_with_credentials"
         raise ConnectError("a credential-bearing request does not follow redirects")
@@ -219,6 +209,31 @@ def request(method: str, url: str, *, params: Any = None, headers: Any = None,
         call.failure = call.failure or "unsupported_method"
         raise ConnectError("unsupported method")
     future = asyncio.run_coroutine_threadsafe(sender(url, **kwargs), call.loop)
+    resp = _wait(call, future, timeout)
+    wrapped = Response.from_egress(resp)
+    call.statuses.append(wrapped.status_code)
+    if wrapped.status_code >= 400:
+        call.failure = call.failure or f"http_{wrapped.status_code}"
+    return wrapped
+
+
+def _ready(call: EgressCall | None) -> EgressCall:
+    """The bound call, refused when there is none or it may not send any more."""
+    if call is None:
+        raise EgressRefused("no Nerva egress client is bound")
+    if call.policy_block:
+        raise EgressRefused("refused earlier in this call")
+    if call.abandoned.is_set() or time.monotonic() >= call.deadline:
+        call.failure = call.failure or "timeout"
+        raise TimeoutException("timeout")
+    if threading.get_ident() == call.loop_thread:
+        call.failure = call.failure or "called_on_event_loop"
+        raise ConnectError("vendored code ran on the event loop")
+    return call
+
+
+def _wait(call: EgressCall, future: Any, timeout: Any) -> Any:
+    """Wait for *future* (scheduled on the call's loop) in short polls; classify errors."""
     give_up = min(call.deadline, time.monotonic() + _timeout_seconds(timeout))
     try:
         while True:
@@ -245,14 +260,95 @@ def request(method: str, url: str, *, params: Any = None, headers: Any = None,
     except TimeoutError:
         call.failure = call.failure or "timeout"
         raise TimeoutException("timeout") from None
+    except DownloadTooLarge:
+        call.failure = call.failure or "too_large"
+        raise
     except Exception as exc:
         call.failure = call.failure or type(exc).__name__
         raise ConnectError(type(exc).__name__) from None
-    wrapped = Response.from_egress(resp)
-    call.statuses.append(wrapped.status_code)
-    if wrapped.status_code >= 400:
-        call.failure = call.failure or f"http_{wrapped.status_code}"
-    return wrapped
+    return resp
+
+
+class DownloadTooLarge(HTTPError):
+    """A capped download went over its byte limit (G19: generated video files)."""
+
+
+def download(url: str, *, max_bytes: int, headers: Any = None,
+             timeout: Any = None) -> tuple[int, bytes, str]:
+    """GET *url* through the bound egress client as a stream, keeping at most *max_bytes*.
+
+    Returns ``(status, body, content type)``; the body is empty for a non-200 answer. A
+    declared or streamed length over the cap raises :class:`DownloadTooLarge` before more
+    is read. Never follows a redirect. Same binding, refusal latch, deadline and
+    abandonment as :func:`request`."""
+    call = _ready(_CALL.get())
+    limit = int(max_bytes)
+    if limit <= 0:
+        raise DownloadTooLarge("no download allowance")
+    stream = getattr(call.client, "stream", None)
+    if not callable(stream):
+        call.failure = call.failure or "unsupported_method"
+        raise ConnectError("unsupported method")
+    request_headers = {**dict(headers or {}), "Accept-Encoding": "identity"}
+    call.requests += 1
+
+    async def fetch() -> tuple[int, bytes, str]:
+        async with stream("GET", url, headers=request_headers, follow_redirects=False) as resp:
+            status = int(getattr(resp, "status_code", 0) or 0)
+            kind = str(resp.headers.get("content-type", "") or "").split(";", 1)[0].strip().lower()
+            if status != 200:
+                return status, b"", kind
+            if resp.headers.get("content-encoding", "identity") not in ("identity", ""):
+                raise DownloadTooLarge("encoded body refused")
+            declared = resp.headers.get("content-length")
+            if declared is not None and str(declared).isdigit() and int(declared) > limit:
+                raise DownloadTooLarge("declared length over the cap")
+            body = bytearray()
+            async for chunk in resp.aiter_bytes():
+                if len(body) + len(chunk) > limit:
+                    raise DownloadTooLarge("body over the cap")
+                body.extend(chunk)
+            return status, bytes(body), kind
+
+    future = asyncio.run_coroutine_threadsafe(fetch(), call.loop)
+    status, body, kind = _wait(call, future, timeout)
+    call.statuses.append(status)
+    if status >= 400:
+        call.failure = call.failure or f"http_{status}"
+    return status, body, kind
+
+
+class AsyncClient:
+    """``httpx.AsyncClient`` as the adopted xAI video plugin uses it (G19): ``post`` /
+    ``get`` awaited inside a private event loop that the vendored code runs on its own
+    worker thread. Each call is the synchronous :func:`request` above (the worker's loop
+    is not the hub's, so blocking it is the vendored code's own business), so the egress
+    binding, refusal latch, deadline and abandonment all apply. No transport, proxy, TLS
+    or base-URL override is honoured."""
+
+    def __init__(self, *, headers: Any = None, timeout: Any = None, **_ignored: Any) -> None:
+        self.headers = dict(headers or {})
+        self.timeout = timeout
+
+    async def request(self, method: str, url: str, **kwargs: Any) -> Response:
+        headers = {**self.headers, **dict(kwargs.pop("headers", None) or {})}
+        kwargs.setdefault("timeout", self.timeout)
+        return request(method, url, headers=headers, **kwargs)
+
+    async def get(self, url: str, **kwargs: Any) -> Response:
+        return await self.request("GET", url, **kwargs)
+
+    async def post(self, url: str, **kwargs: Any) -> Response:
+        return await self.request("POST", url, **kwargs)
+
+    async def aclose(self) -> None:
+        return None
+
+    async def __aenter__(self) -> AsyncClient:
+        return self
+
+    async def __aexit__(self, *exc: Any) -> None:
+        return None
 
 
 def get(url: str, **kwargs: Any) -> Response:
@@ -303,6 +399,7 @@ class Client:
 
 
 __all__ = [
-    "Client", "ConnectError", "EgressRefused", "HTTPError", "HTTPStatusError", "RequestError",
-    "Response", "TimeoutException", "bound_egress", "current_call", "get", "post", "request",
+    "AsyncClient", "Client", "ConnectError", "DownloadTooLarge", "EgressRefused", "HTTPError",
+    "HTTPStatusError", "RequestError", "Response", "TimeoutException", "bound_egress", "current_call",
+    "download", "get", "post", "request",
 ]

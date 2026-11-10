@@ -126,6 +126,28 @@ BUILTIN_PLUGINS = {
         network_access=NetworkAccess.RESTRICTED, data_scope=DataScope.TRANSMITTED,
         allowed_domains=["api.deepinfra.com"], agents_served=["jarvis"], enabled=False,
     ),
+    # G19 (H516): adopted Hermes video providers. Shipped disabled like the cloud-image
+    # manifests; the video runtime treats one as on only while the owner has chosen that
+    # provider with consent (JARVIS_VIDEO_PROVIDER). Each reaches its own hosts only.
+    "cloud-video-fal": PluginManifest(
+        id="cloud-video-fal", name="Approved FAL video generation", version="0.1.0",
+        description="One approved FAL queue job (submit, status polls, result) and a capped video download",
+        network_access=NetworkAccess.RESTRICTED, data_scope=DataScope.TRANSMITTED,
+        allowed_domains=["queue.fal.run", "fal.media"], agents_served=["jarvis"], enabled=False,
+    ),
+    "cloud-video-xai": PluginManifest(
+        id="cloud-video-xai", name="Approved xAI video generation", version="0.1.0",
+        description="One approved xAI Imagine video job (generate, edit or extend) and a capped download",
+        network_access=NetworkAccess.RESTRICTED, data_scope=DataScope.TRANSMITTED,
+        # The REST reference serves finished videos from vidgen.x.ai.
+        allowed_domains=["api.x.ai", "vidgen.x.ai"], agents_served=["jarvis"], enabled=False,
+    ),
+    "cloud-video-deepinfra": PluginManifest(
+        id="cloud-video-deepinfra", name="Approved DeepInfra video generation", version="0.1.0",
+        description="One approved DeepInfra video job and a capped download from api.deepinfra.com",
+        network_access=NetworkAccess.RESTRICTED, data_scope=DataScope.TRANSMITTED,
+        allowed_domains=["api.deepinfra.com"], agents_served=["jarvis"], enabled=False,
+    ),
     "cloud-llm": PluginManifest(
         id="cloud-llm",
         name="Cloud LLM Fallback",

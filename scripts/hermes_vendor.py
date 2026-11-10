@@ -81,6 +81,14 @@ class Rule:
 # line in place: line numbers are preserved, so upstream diffs stay readable.
 #: The adopted A2A client package (slice 4); the only place the governed ``urllib`` exists.
 A2A_PATH = "plugins/platforms/a2a/"
+#: The adopted project-verification recipes (G5); the only place the confined ``verify_fs`` exists.
+VERIFY_PATH = "agent/verify/"
+#: G19: the adopted video-generation files (the ABC, the registry and the provider plugins).
+VIDEO_PATHS = ("agent/video_gen_provider.py", "agent/video_gen_registry.py", "plugins/video_gen/")
+#: The one vendored file that may call the compat registry's ``export`` (on itself).
+REGISTRY_EXPORT_PATH = "agent/video_gen_registry.py"
+#: The adopted xAI video plugin (its private event loop's sleep is governed).
+XAI_VIDEO_PATH = "plugins/video_gen/xai/"
 
 REWRITE_RULES: tuple[Rule, ...] = (
     Rule("httpx", r"^(?P<i>[ \t]*)import httpx(?P<rest>[ \t]*(?:#.*)?)$",
@@ -169,6 +177,56 @@ REWRITE_RULES: tuple[Rule, ...] = (
          r"\g<i>from agents.vendor.hermes_compat.goals import ",
          "loop state in Nerva's per-session store; the judge and the goal probe are Nerva's",
          paths=("hermes_cli/loops.py",)),
+    # G5 — project verification recipes (agent/verify/{recipes,environment}.py).
+    Rule("verify-fs", r"^(?P<i>[ \t]*)from pathlib import ",
+         r"\g<i>from agents.vendor.hermes_compat.verify_fs import ",
+         "a project path confined to the owner's file roots and the one project being "
+         "verified: bounded reads, writes only to the manifest Nerva's /verify save allows",
+         paths=(VERIFY_PATH,)),
+    Rule("verify-siblings", r"^(?P<i>[ \t]*)from agent\.verify\.",
+         r"\g<i>from agents.vendor.hermes.agent.verify.",
+         "vendored siblings live under agents.vendor.hermes",
+         paths=(VERIFY_PATH,)),
+    # G19 — video generation (agent/video_gen_{provider,registry}.py, plugins/video_gen/*).
+    Rule("video-gen-provider", r"^(?P<i>[ \t]*)from agent\.video_gen_provider import ",
+         r"\g<i>from agents.vendor.hermes.agent.video_gen_provider import ",
+         "the vendored VideoGenProvider ABC", paths=VIDEO_PATHS),
+    Rule("video-provider-media", r"^(?P<i>[ \t]*)from agent import provider_media(?P<rest>[ \t]*(?:#.*)?)$",
+         r"\g<i>from agents.vendor.hermes_compat import video_media as provider_media\g<rest>",
+         "a download lands only in the staging folder of one approved video task, through the "
+         "compat httpx, size-capped and content-checked", paths=VIDEO_PATHS),
+    Rule("video-shared",
+         r"^(?P<i>[ \t]*)from (?:agent\.provider_base|agent\.provider_registry|agent\.secret_scope"
+         r"|agent\.process_bootstrap|agent\.file_safety|hermes_cli\.config|hermes_cli\.models"
+         r"|tools\.managed_tool_gateway|tools\.tool_backend_helpers|tools\.fal_common|tools\.xai_http"
+         r"|pathlib) import ",
+         r"\g<i>from agents.vendor.hermes_compat.video_shared import ",
+         "provider base and registry, per-provider keys, the owner's choice, the FAL queue and xAI "
+         "helpers over the compat httpx; no managed gateway, no local file read, no live catalog",
+         paths=VIDEO_PATHS),
+    Rule("video-xai-http-module", r"^(?P<i>[ \t]*)from tools import xai_http(?P<rest>[ \t]*(?:#.*)?)$",
+         r"\g<i>from agents.vendor.hermes_compat.video_shared import xai_http\g<rest>",
+         "the xAI credential and storage helpers (fixed host, scoped key, storage off)",
+         paths=VIDEO_PATHS),
+    Rule("video-mimetypes", r"^(?P<i>[ \t]*)import mimetypes(?P<rest>[ \t]*(?:#.*)?)$",
+         r"\g<i>from agents.vendor.hermes_compat.video_shared import mimetypes\g<rest>",
+         "a suffix table; no system MIME database is read", paths=VIDEO_PATHS),
+    Rule("video-clock", r"^(?P<i>[ \t]*)import time(?P<rest>[ \t]*(?:#.*)?)$",
+         r"\g<i>from agents.vendor.hermes_compat import video_clock as time\g<rest>",
+         "a poll sleep that wakes when the approved task is cancelled or its deadline passes",
+         paths=VIDEO_PATHS),
+    Rule("video-openai-sdk", r"^(?P<i>[ \t]*)import openai(?P<rest>[ \t]*(?:#.*)?)$",
+         r"\g<i>from agents.vendor.hermes_compat import video_openai as openai\g<rest>",
+         "the OpenAI SDK's videos API (create, retrieve, download) over the compat httpx",
+         paths=VIDEO_PATHS),
+    Rule("video-xai-asyncio", r"^(?P<i>[ \t]*)import asyncio(?P<rest>[ \t]*(?:#.*)?)$",
+         r"\g<i>from agents.vendor.hermes_compat import video_asyncio as asyncio\g<rest>",
+         "the xAI poll's sleep wakes when the approved task is cancelled or out of time",
+         paths=(XAI_VIDEO_PATH,)),
+    Rule("video-registry-export", r"^(?P<i>[ \t]*)_registry\.export\(globals\(\)\)(?P<rest>[ \t]*(?:#.*)?)$",
+         r"\g<i>_registry.export(__name__)\g<rest>",
+         "the registry binds its API by module name; globals() stays a denied name",
+         paths=VIDEO_PATHS),
 )
 
 # ── what a vendored file may contain (an allowlist, applied by pull, status and CI) ────
@@ -196,6 +254,10 @@ COMPAT_MODULES = frozenset({
     "loops_config", "goals",
     # slice 4 (A2A client tools)
     "urllib", "a2a_shared", "futures",
+    # G5 (project verification recipes)
+    "verify_fs",
+    # G19 (video generation)
+    "video_shared", "video_media", "video_clock", "video_openai", "video_asyncio",
 })
 #: Compat modules only some vendored paths may import: the governed ``urllib`` can open a
 #: request (through the egress binding of one A2A call), so no other adopted file may
@@ -206,12 +268,19 @@ A2A_PACKAGE = "agents.vendor.hermes.plugins.platforms.a2a"
 WIRE_DATA_STRINGS = frozenset({"http"})
 PATH_SCOPED_COMPAT: dict[str, tuple[str, ...]] = {
     "urllib": (A2A_PATH,), "a2a_shared": (A2A_PATH,), "futures": (A2A_PATH,),
+    "verify_fs": (VERIFY_PATH,),
+    "video_shared": VIDEO_PATHS, "video_media": VIDEO_PATHS, "video_clock": VIDEO_PATHS,
+    "video_openai": VIDEO_PATHS, "video_asyncio": (XAI_VIDEO_PATH,),
 }
 #: Underscore names a compat module exports on purpose, because the upstream code imports
 #: them by that name (G2: ``hermes_cli/loops.py`` takes SessionDB access from
 #: ``hermes_cli.goals``). Every other underscore name of a compat module stays private.
 COMPAT_PRIVATE_EXPORTS: dict[str, frozenset[str]] = {
     f"{COMPAT_PACKAGE}.goals": frozenset({"_get_session_db", "_warn_dropped_write"}),
+    # G19: the FAL plugin and the DeepInfra plugin import these by their upstream names.
+    f"{COMPAT_PACKAGE}.video_shared": frozenset({
+        "_ManagedFalSyncClient", "_extract_http_status", "_managed_fal_billing_error",
+        "_fetch_deepinfra_models_by_tag"}),
 }
 VENDOR_PACKAGE = "agents.vendor.hermes"
 #: Attribute / imported / string names that reach the network, a process or the import
@@ -254,7 +323,11 @@ CATALOG_NAMES = frozenset({"LICENSE"})
 #: docstring and nothing else (``status``).
 _LOCAL_PACKAGE_MARKERS = ("agent/__init__.py", "providers/__init__.py", "hermes_cli/__init__.py",
                           # slice 4: upstream's a2a ``__init__`` is the gateway plugin loader
-                          "plugins/platforms/__init__.py", "plugins/platforms/a2a/__init__.py")
+                          "plugins/platforms/__init__.py", "plugins/platforms/a2a/__init__.py",
+                          # G5: upstream's verify ``__init__`` also imports the process runner
+                          "agent/verify/__init__.py",
+                          # G19: upstream has no ``plugins/video_gen/__init__.py`` (a plugin folder)
+                          "plugins/video_gen/__init__.py")
 
 
 def rewrite(text: str, path: str | None = None) -> tuple[str, list[str]]:
@@ -337,6 +410,13 @@ def unmapped_imports(text: str, path: str = "x.py") -> list[str]:
                              and item.value in WIRE_DATA_STRINGS)
     for node in ast.walk(tree):
         line = getattr(node, "lineno", 0)
+        # G19: the compat registry's ``export`` binds an API into a module by name. Only the
+        # vendored video registry may call it, and only on itself (``export(__name__)``).
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "export"
+                and (path != REGISTRY_EXPORT_PATH or node.keywords or len(node.args) != 1
+                     or not isinstance(node.args[0], ast.Name) or node.args[0].id != "__name__")):
+            found.append(f"line {line}: .export(...) (only export(__name__) in {REGISTRY_EXPORT_PATH})")
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if not _module_allowed(alias.name):

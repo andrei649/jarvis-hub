@@ -701,6 +701,7 @@ table, the snapshot, or a tool named in these docs drifts from the registry.
 | `time` | ungated | read_only | none | trusted | static | `tool:time` |
 | `todo` | ungated | reversible | compensate | trusted | static | `tool:todo` |
 | `video_analyze` | gated | sensitive | implementation_specific | untrusted | static | `tool:video_analyze` |
+| `video_generate` | gated | sensitive | implementation_specific | trusted | static | `tool:video_generate` |
 | `web_extract` | ungated | read_only | none | untrusted | static | `tool:web_extract` |
 | `web_search` | ungated | read_only | none | untrusted | static | `tool:web_search` |
 

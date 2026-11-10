@@ -68,6 +68,12 @@ INTENTIONALLY_SEAM: set[str] = {
     "plugin:cloud-image-krea",
     "plugin:cloud-image-xai",
     "plugin:cloud-image-deepinfra",
+    # Video providers (G19, Adopt lane): the same default-off policy as the image adapters
+    # (tests/test_hermes_video_generation.py); a provider's egress opens only while the owner
+    # has chosen it in the Integrations panel.
+    "plugin:cloud-video-fal",
+    "plugin:cloud-video-xai",
+    "plugin:cloud-video-deepinfra",
 }
 # WIRED capabilities with no matching executable reality case. H27.5 reconciled the
 # complete boot snapshot, so this escape set is intentionally empty. Kept honest below.

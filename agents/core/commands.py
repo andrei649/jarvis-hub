@@ -1033,6 +1033,7 @@ def build_default_registry() -> CommandRegistry:
     from .goal_commands import goal_command, subgoal_command
     from .plan_commands import plan_command
     from .session_loops import loop_command
+    from .verify.command import verify_command
 
     registry = CommandRegistry()
     registry.register(SlashCommand("help", "the commands you can use here", _help))
@@ -1090,6 +1091,9 @@ def build_default_registry() -> CommandRegistry:
                                    _context_meter, tier=ADMIN, usage="[all]"))
     registry.register(SlashCommand("compress", "what compaction does to this conversation now (it changes nothing)",
                                    _context_meter, tier=ADMIN))
+    registry.register(SlashCommand("verify", "detect, save and run a project's test/build recipe; its evidence",
+                                   verify_command, tier=ADMIN,
+                                   usage="[status|detect|save|run [phases]|ledger] [path] | on-stop on|off | coding auto|on|off"))
     return registry
 
 

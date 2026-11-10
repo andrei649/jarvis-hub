@@ -432,12 +432,17 @@ async def media_status():
     status = configuration_status()
     runtime = getattr(get_orch(), "cloud_images", None)
     cloud = runtime.status() if runtime is not None else {"configured": False}
+    videos = getattr(get_orch(), "cloud_videos", None)
+    video = videos.status() if videos is not None else {"provider": None}
     return nocache_json({
         "cloud_image": cloud,
+        "cloud_video": video,
         "kinds": {"image": status["configured"] or cloud["configured"] or
                   any(entry.get("enabled") and entry.get("configured")
                       for entry in cloud.get("providers", {}).values()),
-                  "thumbnail": False, "video": False},
+                  "thumbnail": False,
+                  "video": bool(video.get("provider")
+                                and video.get("providers", {}).get(video["provider"], {}).get("configured"))},
         "local_image": status,
     })
 
