@@ -725,12 +725,6 @@ def _reload(loader: Any, targets: list[_Target]) -> None:
                 logger.debug("skill batch: approval prune skipped", exc_info=True)
             continue
         try:
-            if not target.existing:
-                # H349: a created skill's sidecar row starts fresh unless these are the
-                # bytes the row of that name last saw (decided at creation, by the bytes).
-                mark = getattr(loader, "mark_new", None)
-                if callable(mark):
-                    mark(target.live)
             loader._load_skill(target.live, discovery_root=target.live.parent)
         except Exception:
             logger.warning("skill batch: %s could not be reloaded", target.name, exc_info=True)
@@ -755,35 +749,61 @@ def _note_patched(loader: Any, targets: list[_Target]) -> None:
                 logger.debug("skill batch: usage note skipped for %s", target.name, exc_info=True)
 
 
-def _note_created(loader: Any, targets: list[_Target], actor: str) -> None:
-    """H046 / H349 — a skill the agent's batch created is a skill the agent made.
+def _settle_created(loader: Any, targets: list[_Target], actor: str) -> dict[str, dict | None]:
+    """H046 / H349 — write the sidecar row of every skill this batch creates, now, before
+    its folder appears; hand back the rows that were there, for :func:`_unsettle`.
 
-    Every created skill's sidecar row was started when it registered (:func:`_reload`
-    marks the folder new): nothing a former holder of the name left is inherited unless
-    the bytes are the same. A ``create`` in a batch the model proposed (applied on the
-    owner's card, ``actor`` the batch's origin) then gets the sticky agent marker, as
-    ``generate_skill`` sets it, so the learning journey lists it from the start. Its write
-    origin is the model's skill tool inside a turn (Hermes: a foreground ``skill_manage
-    create`` is user-directed), so the curator never ages it out; only the background
-    review and the learning loop write curated skills. A skill the owner's own batch
-    created is not agent-made."""
-    if not str(actor or "").startswith("agent"):
-        return
-    note = getattr(loader, "note_new", None)
-    if not callable(note):
-        return
+    The row is decided at creation and by the bytes (``SkillUsageStore.settle_created``):
+    fresh, never pinned, with the counters of the row that was there only when the staged
+    bytes are the ones that row last saw. A ``create`` in a batch the model proposed
+    (applied on the owner's card, ``actor`` the batch's origin) carries the sticky agent
+    marker, as ``generate_skill`` sets it, so the learning journey lists it from the start;
+    its write origin is the model's skill tool inside a turn (Hermes: a foreground
+    ``skill_manage create`` is user-directed), so the curator never ages it out. A skill
+    the owner's own batch created is not agent-made.
+
+    Written before the swap so that no later registration has to remember anything: a
+    skill the owner's load set keeps unloaded, or a crash right after the swap, finds the
+    right row at whatever start first sees the folder. Raises when the sidecar cannot be
+    written — the batch then creates nothing, rather than a skill that reads as nobody's
+    or inherits what an earlier holder of the name left (a pin)."""
+    usage = getattr(loader, "_usage", None)
+    settle = getattr(usage, "settle_created", None)
+    if not callable(settle):
+        return {}
     from .usage import WRITE_TOOL
 
-    loaded = getattr(loader, "skills", {}) or {}
-    for target in targets:
-        if target.existing or target.deleted:
-            continue
-        # The sidecar is keyed by the skill's registered name, as generate_skill keys it.
-        name = next((n for n, s in loaded.items() if Path(getattr(s, "path", "")) == target.live), target.name)
+    agent = str(actor or "").startswith("agent")
+    fingerprint = getattr(loader, "folder_fingerprint", None)
+    name_of = getattr(loader, "manifest_name", None)
+    prior: dict[str, dict | None] = {}
+    try:
+        for target in targets:
+            if target.existing or target.deleted or target.staged is None:
+                continue
+            # The sidecar is keyed by the name the skill will register under.
+            name = target.name
+            if callable(name_of):
+                try:
+                    name = name_of(target.live, (target.staged / _SKILL_FILE).read_text(encoding="utf-8")) or name
+                except (OSError, UnicodeError):
+                    name = target.name
+            staged_fp = fingerprint(target.staged) if callable(fingerprint) else ""
+            prior[name] = settle(name, staged_fp, agent_created=agent, write_origin=WRITE_TOOL if agent else "")
+    except BaseException:
+        _unsettle(loader, prior)
+        raise
+    return prior
+
+
+def _unsettle(loader: Any, prior: dict[str, dict | None]) -> None:
+    """Put the sidecar rows back as they were: the creation did not happen."""
+    put_back = getattr(getattr(loader, "_usage", None), "put_back", None)
+    if prior and callable(put_back):
         try:
-            note(name, agent_created=True, write_origin=WRITE_TOOL)
+            put_back(prior)
         except Exception:
-            logger.warning("skill batch: the agent marker of the new skill %s could not be set", target.name,
+            logger.warning("skill batch: the usage rows of %s could not be put back", ", ".join(sorted(prior)),
                            exc_info=True)
 
 
@@ -1200,7 +1220,12 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
                 logger.warning("skill batch: staging failed", exc_info=True)
                 return BatchError("skill_batch_io", f"the batch could not be staged: {exc.strerror or exc}").payload()
             order = list(targets.values())
+            shown_pin = getattr(getattr(loader, "_usage", None), "is_pinned", None)
             summary = [{"name": t.name, "change": "deleted" if t.deleted else "changed" if t.existing else "created",
+                        # H349: the owner decides on this preview, so it says which of the
+                        # skills it changes the owner has pinned.
+                        **({"pinned": True} if t.existing and callable(shown_pin) and shown_pin(_usage_name(t))
+                           else {}),
                         "files": _diffs(t), "lint": _lint(t),
                         **({"migrated_for": list(t.migrated_for)} if t.migrated_for else {})} for t in order]
             report: dict[str, Any] = {}
@@ -1261,6 +1286,15 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
                 if held is not None and held.blocked:
                     stopped = [t.name for t in removed if _usage_name(t) in held.blocked]
                     return {**_pinned_error(stopped, owner=actor == "owner").payload(), **report}
+                try:
+                    settled = _settle_created(loader, order, actor)
+                except Exception:
+                    logger.warning("skill batch %s: the usage sidecar could not record the created skills",
+                                   batch_id, exc_info=True)
+                    return {**BatchError("skill_batch_usage_unavailable", "the usage sidecar could not be "
+                                         "written, so the new skill's record (who made it, and that it is not "
+                                         "pinned) could not be kept; nothing was applied",
+                                         hints=["try again; nothing changed"]).payload(), **report}
                 swapped: list[_Target] = []
                 rewritten: list[tuple[Path, bytes]] = []
                 failure = ""
@@ -1276,6 +1310,7 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
                     logger.warning("skill batch %s: swap failed; rolling back %d skill(s)", batch_id, len(swapped),
                                    exc_info=True)
                     bundles_stuck = _restore_bundles(rewritten)
+                    _unsettle(loader, settled)
                     undone, stuck = [], []
                     for target in reversed(swapped):
                         try:
@@ -1335,7 +1370,6 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
                         logger.warning("skill batch: the old bundle %s could not be archived", path, exc_info=True)
             _reload(loader, order)
             _note_patched(loader, order)
-            _note_created(loader, order, actor)
             return {"ok": True, "applied": True, "dry_run": False, "batch_id": batch_id, "operations": len(ops),
                     "skills": summary, **report, **({"backup": str(backup)} if backup else {})}
         finally:

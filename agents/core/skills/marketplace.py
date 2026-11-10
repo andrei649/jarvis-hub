@@ -12,6 +12,7 @@ import sqlite3
 import tempfile
 import threading
 import time
+import uuid
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,9 +31,9 @@ from agents.core.paths import data_path
 from agents.core.persistence.migrations import apply_migrations
 
 from . import signing
-from .loader import EXTERNAL_SOURCE_MARKER, OWNER_APPROVED_MARKER, SkillLoader
+from .loader import EXTERNAL_SOURCE_MARKER, OWNER_APPROVED_MARKER, SkillLoader, install_id_of
 from .skill_history import SkillHistory
-from .validate import Problem, SkillDocumentInvalid, declared_name, require_valid
+from .validate import Problem, SkillDocumentInvalid, declared_name, name_holder, require_valid
 
 logger = logging.getLogger("jarvis.skills.marketplace")
 
@@ -834,6 +835,18 @@ class SkillMarketplace:
                 raise SkillDocumentInvalid([Problem(
                     "name", f"{skill_name!r} would replace the folder {target_dir.name!r}, which holds "
                             "another skill: uninstall that one first, or rename this one")])
+            holder = name_holder(self.skills_dir, skill_name, except_dir=target_dir)
+            if holder is not None and not self.is_registered(skill_name):
+                # H349 (third review, B1): the package declares the name of a skill installed
+                # from another folder. The loader lets a later folder take a name, so it
+                # would take that skill's slot while the owner's folder stays. A name the
+                # owner published here is the registry's own: installing its package beside
+                # the folder it was published from is the documented flow, and the usage
+                # row of the name is not reset while that folder stays (the loader reports
+                # the slot as shadowed).
+                raise SkillDocumentInvalid([Problem(
+                    "name", f"a skill named {skill_name!r} is already installed from the folder "
+                            f"{holder.name!r}: remove or rename that one first, or rename this one")])
             if ((target_dir.exists() or target_dir.is_symlink()) and not self._installed_here(target_dir)
                     and not self.is_registered(skill_name)):
                 # H349 (review M2): a same-named skill the marketplace neither installed nor
@@ -858,14 +871,17 @@ class SkillMarketplace:
             # Marketplace content remains external after extraction. A package cannot
             # self-grant the separate owner approval used for in-process execution.
             # Written in staging, so the tree never appears in place without them.
+            # H349 (third review, M1): a new install stamps an install id beside the
+            # source, so the usage sidecar knows the folder for new whenever the hub first
+            # sees it; a reinstall over its own folder keeps the id that folder has.
+            existed = target_dir.exists() or target_dir.is_symlink()
+            install_id = install_id_of(target_dir) if existed else uuid.uuid4().hex
+            marker = "source=marketplace\n" + (f"install={install_id}\n" if install_id else "")
             for provenance_dir in {package, staged_sig_dir}:
                 (provenance_dir / OWNER_APPROVED_MARKER).unlink(missing_ok=True)
-                (provenance_dir / EXTERNAL_SOURCE_MARKER).write_text(
-                    "source=marketplace\n", encoding="utf-8"
-                )
+                (provenance_dir / EXTERNAL_SOURCE_MARKER).write_text(marker, encoding="utf-8")
 
             self.last_created = None
-            existed = target_dir.exists() or target_dir.is_symlink()
             self._place(package, target_dir, staging)
             if not existed:
                 self.last_created = target_dir

@@ -240,6 +240,7 @@ async def pin_skill(body: SkillPinBody):
     something. The one write is ``SkillUsageStore.pin``, which makes the same checks under
     the sidecar's lock, so the answer is what the sidecar file now holds."""
     import asyncio
+    import contextlib
 
     from agents.core.skills import switches
     from agents.core.skills.usage import PinRefused, usage_summary
@@ -255,15 +256,20 @@ async def pin_skill(body: SkillPinBody):
     name = found.name if found is not None else body.skill
 
     def _write():
-        if found is not None:
-            sync = getattr(orch.skills, "sync_origins", None)
-            if callable(sync):
-                # The row and its origin, as the folder is now. Strict: a sidecar that
-                # cannot be written is the 503 below, not "no such skill".
-                sync([name], strict=True)
-        elif body.pinned:
-            raise PinRefused("not_found", f"no installed skill named {body.skill!r}")
-        return usage.pin(name, body.pinned)
+        # One hold of the sidecar's lock across the look at the folder, the sync of the row
+        # and the pin: a removal (which takes the same lock for its move) cannot land in
+        # between and be undone, or leave a pin on a skill that is gone.
+        hold = getattr(usage, "locked", None)
+        with (hold() if callable(hold) else contextlib.nullcontext()):
+            if found is not None:
+                sync = getattr(orch.skills, "sync_origins", None)
+                if callable(sync):
+                    # The row and its origin, as the folder is now. Strict: a sidecar that
+                    # cannot be written is the 503 below, not "no such skill".
+                    sync([name], strict=True)
+            elif body.pinned:
+                raise PinRefused("not_found", f"no installed skill named {body.skill!r}")
+            return usage.pin(name, body.pinned)
 
     try:
         outcome = await asyncio.to_thread(_write)
@@ -703,16 +709,6 @@ async def sandbox_execute(body: SandboxExecuteBody, request: Request):
     }
 
 
-def _mark_new_install(orch, installer) -> None:
-    """H349 — when the install just made a new skill folder, tell the loader before it
-    registers the skill, so its usage row starts fresh unless these are the bytes the row
-    of that name last saw. An install that updated its own earlier one keeps its row."""
-    created = getattr(installer, "last_created", None)
-    mark = getattr(getattr(orch, "skills", None), "mark_new", None)
-    if created is not None and callable(mark):
-        mark(created)
-
-
 @router.post("/skills/import", dependencies=[Depends(user_guard)])
 async def skills_import(req: Request):
     orch = get_orch()
@@ -732,9 +728,14 @@ async def skills_import(req: Request):
     else:
         ok = await orch.skill_importer.import_from_github(source, skill_name)
     if ok:
-        _mark_new_install(orch, orch.skill_importer)
         orch.skills.discover()
         return {"ok": True, "source": source, "skill": skill_name}
+    if getattr(orch.skill_importer, "last_conflict", "") == "name_taken":
+        # H349: its SKILL.md declares the name of a skill installed from another folder.
+        return JSONResponse({"ok": False, "error": f"the skill '{skill_name}' in {source} declares the name of a "
+                                                    "skill that is already installed from another folder; nothing "
+                                                    "was written. Remove or rename that one first",
+                             "reason": "name_taken"}, status_code=409)
     if getattr(orch.skill_importer, "last_conflict", "") == "exists":
         # H349: the folder holds a skill this source did not import; nothing was written.
         return JSONResponse({"ok": False, "error": f"a skill folder named '{skill_name}' already exists and was "
@@ -857,7 +858,6 @@ async def marketplace_install(body: InstallSkillBody):
     try:
         ok = orch.marketplace.install_skill(body.name)
         if ok:
-            _mark_new_install(orch, orch.marketplace)
             orch.skills.discover()
             return {"ok": True, "installed": body.name, **_install_warnings(orch)}
         return JSONResponse({"error": f"Failed to install skill '{body.name}'"}, status_code=500)
@@ -908,7 +908,6 @@ async def marketplace_install_zip(body: InstallZipBody):
         zip_bytes = base64.b64decode(body.zip_base64)
         ok = orch.marketplace.install_from_zip(zip_bytes)
         if ok:
-            _mark_new_install(orch, orch.marketplace)
             orch.skills.discover()
             return {"ok": True, **_install_warnings(orch)}
         return JSONResponse({"error": "Failed to install skill from zip"}, status_code=500)

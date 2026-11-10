@@ -547,7 +547,10 @@ def test_a_creation_marker_that_cannot_be_written_is_logged(hub, caplog):
     blocker.write_text("x", encoding="utf-8")
     hub.usage.path = blocker / "skill_usage.json"
     with caplog.at_level(logging.WARNING, logger="jarvis.skills"):
-        _generate(hub)
+        made = hub.loader.generate_skill("jarvis", "tidy the meeting notes", ["open the notes", "tidy them"])
+    # Third review: the row is written before the folder, and a skill whose row cannot be
+    # written is not generated at all (it would read as nobody's, or inherit a stale pin).
+    assert made is None and list(hub.home.iterdir()) == []
     assert any("agent-made" in r.getMessage() for r in caplog.records)
 
 

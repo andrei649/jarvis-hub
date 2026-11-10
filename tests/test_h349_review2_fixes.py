@@ -188,7 +188,9 @@ def test_the_same_bytes_created_again_are_the_same_skill(hub):
                     backup_dir=hub.tmp / "skill-archive")
     assert out["ok"] is True, out
     row = hub.on_disk()["gamma"]
-    assert (row["pinned"], row["use_count"]) == (True, 1)              # byte for byte the skill the row knew
+    # Byte for byte the skill the row knew: its use is kept. Its pin is not (third review):
+    # a pin is the owner's act on the skill as it was, and a creation is never born pinned.
+    assert (row["pinned"], row["use_count"]) == (False, 1)
 
 
 async def test_an_install_into_a_new_folder_does_not_inherit_a_row_left_under_the_name(hub, monkeypatch):

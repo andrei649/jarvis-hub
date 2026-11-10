@@ -6,18 +6,26 @@ per-skill counters, provenance, the owner's pin and lifecycle state. The curator
 derived latest-activity timestamp to decide active → stale → archived
 transitions; only **agent-created, unpinned** skills are ever curatable.
 
-**Identity (H349, second review).** A row is its skill's *name*; nothing about where the
-skill's folder lives is recorded, so moving the skills folder, restoring a backup under
-another path or user, or a volume that is away for a start changes no row. The sidecar
-never destroys or resets a row because of what it fails to see: a skill that is not
-registered now keeps its row exactly as it is (it simply cannot be newly pinned, and is
-not counted as installed). A row ends only through an explicit removal act —
-:meth:`SkillUsageStore.forget` (batch delete, reject from review, uninstall) or
-:meth:`SkillUsageStore.retire` (curator archive, journey forget: a tombstone bound to the
-removed bytes' fingerprint) — and is replaced by a fresh one in exactly two cases, both
-decided by the bytes and never by absence or path: a creation path made a new skill under
-the name whose bytes are not the ones the row last saw, or bytes other than a tombstone's
-register under its name.
+**Identity (H349).** A row is its skill's *name*; nothing about where the skill's folder
+lives is recorded, so moving the skills folder, restoring a backup under another path or
+user, or a volume that is away for a start changes no row. The sidecar never destroys or
+resets a row because of what it fails to see: a skill that is not registered now keeps its
+row exactly as it is (it simply cannot be newly pinned, and is not counted as installed).
+
+A row ends only through an explicit removal act — :meth:`SkillUsageStore.forget` (batch
+delete, reject from review, uninstall) or :meth:`SkillUsageStore.retire` (curator archive,
+journey forget: a tombstone bound to the removed bytes' fingerprint).
+
+A row starts fresh only when a skill is *created* under the name, and that is decided at
+creation, never at a later registration (third review): generation and a batch create
+write the new row into the sidecar before the folder appears
+(:meth:`SkillUsageStore.start`, :meth:`SkillUsageStore.settle_created`); an install
+(import, marketplace, migration) stamps its folder with an install id, and a folder whose
+id the row has never seen is a new install whenever it is first registered — after a
+crash, or after an offline import, just the same. A created skill is never born pinned,
+carries the agent marker exactly when the agent created it, and keeps the counters of the
+row only when its bytes are the ones the row last saw. Apart from that, bytes other than a
+tombstone's registering under its name start fresh; the same bytes are a restore.
 
 Pattern adapted from hermes-agent `tools/skill_usage.py` (Nous Research, MIT)
 — see LICENSES/THIRD_PARTY.md — rebuilt on jarvis's JsonStore (single-process
@@ -69,6 +77,10 @@ WRITE_BACKGROUND = "background_review"
 WRITE_LEARNING = "learning"
 WRITE_TOOL = "assistant_tool"
 _WRITE_ORIGINS = (WRITE_BACKGROUND, WRITE_LEARNING, WRITE_TOOL)
+# A stored write origin that is not one of the words above (a hand-edited file): nobody
+# knows who wrote the skill, so the curator never touches it.
+WRITE_UNKNOWN = "unknown"
+_INSTALL_ID_RE = re.compile(r"[0-9a-f]{32}")
 
 #: Where an import can come from (review m2): the local installs the migration importer
 #: reads (``importer.MIGRATION_SOURCES``) and the two upstream catalogs. Anything else an
@@ -150,6 +162,24 @@ def _word(value: Any, allowed: tuple[str, ...]) -> bool:
     return isinstance(value, str) and value in allowed
 
 
+def clean_install_id(value: Any) -> str:
+    """An install id as an install writes it into its folder (32 hex digits), or ``""``."""
+    return value if isinstance(value, str) and _INSTALL_ID_RE.fullmatch(value) else ""
+
+
+class _Dup(dict):
+    """A JSON object that repeated a key: which value was meant cannot be known."""
+
+
+def _pairs(pairs: list) -> dict:
+    out: dict = {}
+    repeated = False
+    for key, value in pairs:
+        repeated = repeated or key in out
+        out[key] = value
+    return _Dup(out) if repeated else out
+
+
 def _pin_blocks(rec: Any) -> bool:
     """Whether a row stops automation (the curator, an agent's delete). Only an exact
     ``false`` or no flag at all reads as "not pinned" here: a flag that is not a bool is
@@ -203,10 +233,16 @@ def _repair(rec: dict) -> bool:
         damaged = True
     rec["source"] = _stored_source(source) if rec["origin"] == ORIGIN_IMPORT else ""
     write_origin = rec.get("write_origin", "")
-    if write_origin != "" and not _word(write_origin, _WRITE_ORIGINS):
+    if write_origin != "" and not _word(write_origin, (*_WRITE_ORIGINS, WRITE_UNKNOWN)):
+        # Not a word this store writes: nobody knows who wrote the skill. That is the
+        # never-curated side (an empty one is a row from before the field: curated).
         damaged = True
-        write_origin = ""
+        write_origin = WRITE_UNKNOWN
     rec["write_origin"] = write_origin
+    install_id = rec.get("install_id", "")
+    if install_id != "" and not clean_install_id(install_id):
+        install_id, damaged = "", True
+    rec["install_id"] = install_id
     fingerprint = rec.get("fingerprint", "")
     if not isinstance(fingerprint, str):
         fingerprint, damaged = "", True
@@ -214,8 +250,17 @@ def _repair(rec: dict) -> bool:
     if "pinned" not in rec:
         rec["pinned"] = False
     if "restore_pending" in rec and rec["restore_pending"] is not True:
-        damaged = damaged or rec["restore_pending"] is not False
-        del rec["restore_pending"]
+        pending = rec["restore_pending"]
+        if pending is False or pending is None:
+            del rec["restore_pending"]
+        else:
+            # Not a bool: read as pending, the side on which the curator leaves the skill
+            # alone until its next pass settles it.
+            damaged = True
+            if pending:
+                rec["restore_pending"] = True
+            else:
+                del rec["restore_pending"]
     # An earlier build of this change recorded the folder's absolute path. Identity is the
     # name; the path is dropped, not kept.
     rec.pop("folder", None)
@@ -251,6 +296,8 @@ class SkillUsageStore(JsonStore):
         # row on disk says what a skill was, not that it is installed.
         self._registered: set[str] = set()
         self._synced = False                    # whether a loader has reported every skill
+        self._bumps_dropped = 0                 # counters given up on behind a removal
+        self._removals = 0                      # removals holding the lock right now
         self._items: dict[str, dict] = {}
         super().__init__(path)
         # Re-entrant: a removal holds the lock across its folder move, and the reload that
@@ -276,7 +323,9 @@ class SkillUsageStore(JsonStore):
         if self.path is None or not self.path.exists():
             return
         try:
-            raw = json.loads(self.path.read_text(encoding="utf-8"))
+            # utf-8-sig: an editor's byte-order mark is not damage. Repeated keys are
+            # detected rather than silently resolved to the last one.
+            raw = json.loads(self.path.read_text(encoding="utf-8-sig"), object_pairs_hook=_pairs)
             if not isinstance(raw, dict) or not isinstance(raw.get("skills", {}), dict):
                 raise ValueError("not a skill usage sidecar")
             items, dropped, repaired = self._parse(raw)
@@ -307,13 +356,24 @@ class SkillUsageStore(JsonStore):
         are not records, and how many rows had a field repaired."""
         items = raw.get("skills", {}) if isinstance(raw, dict) else {}
         items = items if isinstance(items, dict) else {}
+        # A file, or a table of rows, that repeats a key cannot say which row was meant:
+        # every row is then read as ambiguous. So is a row that repeats a field.
+        all_ambiguous = isinstance(raw, _Dup) or isinstance(items, _Dup)
         out: dict[str, dict] = {}
         dropped = repaired = 0
         for name, rec in items.items():
             if not isinstance(rec, dict):
                 dropped += 1
                 continue
-            repaired += 1 if _repair(rec) else 0
+            ambiguous = all_ambiguous or isinstance(rec, _Dup)
+            rec = dict(rec)
+            damaged = _repair(rec)
+            if ambiguous:
+                # The stricter side for each reader: not shown as pinned, yet automation
+                # keeps its hands off (a pin flag that is not a bool), and not agent-made.
+                rec["pinned"], rec["agent_created"], rec["write_origin"] = "ambiguous", False, ""
+                damaged = True
+            repaired += 1 if damaged else 0
             out[str(name)] = rec
         return out, dropped, repaired
 
@@ -350,7 +410,7 @@ class SkillUsageStore(JsonStore):
     def _fresh() -> dict:
         return {
             "origin": ORIGIN_UNKNOWN, "source": "", "agent_created": False, "write_origin": "",
-            "created_at": _now_iso(), "fingerprint": "",
+            "created_at": _now_iso(), "fingerprint": "", "install_id": "",
             "use_count": 0, "view_count": 0, "patch_count": 0,
             "last_used_at": None, "last_viewed_at": None, "last_patched_at": None,
             "pinned": False, "state": STATE_ACTIVE, "archived_at": None,
@@ -385,11 +445,15 @@ class SkillUsageStore(JsonStore):
     # ── creation ──────────────────────────────────────────────────────────────────
 
     def start(self, name: str, *, agent_created: bool = False, write_origin: str = "",
-              origin: str | None = None) -> dict:
-        """Open a fresh row for ``name`` unconditionally and vouch that the skill is
-        installed. For a caller that holds no loader (tests, tools); the loader's own
-        creation paths go through :meth:`reconcile_origins` with ``created`` instead,
-        which keeps the row when the bytes are the ones it knew."""
+              origin: str | None = None, registered: bool = True) -> dict:
+        """A skill is being created under ``name``: its row starts fresh, written now.
+
+        Whatever an earlier holder of the name left — a pin, an agent marker, an origin,
+        counters, a tombstone — is gone, so the new skill is never born pinned and
+        carries the agent marker exactly when ``agent_created``. ``generate_skill`` calls
+        this before it writes the folder (``registered=False``: the skill is not loaded
+        yet, and may not be for a while), so the row is right however and whenever the
+        skill later registers. A write that fails raises and changes nothing."""
         key = str(name)
         with self._lock:
             before = self._snapshot([key])
@@ -400,8 +464,46 @@ class SkillUsageStore(JsonStore):
                 ORIGIN_AGENT if agent_created is True else ORIGIN_UNKNOWN)
             self._items[key] = rec
             self._commit(before)
-            self._registered.add(key)
+            if registered:
+                self._registered.add(key)
             return dict(rec)
+
+    def settle_created(self, name: str, fingerprint: str | None = "", *, agent_created: bool = False,
+                       write_origin: str = "") -> dict | None:
+        """A skill with these bytes is being created under ``name`` (a batch create): write
+        its row now, and hand back the row that was there (None when there was none) so a
+        creation that then fails can put it back (:meth:`put_back`).
+
+        The row starts fresh — not pinned, the agent marker exactly when ``agent_created``
+        — and keeps only the counters and their timestamps of the row that was there when
+        ``fingerprint`` is the one that row last saw: the same bytes are the same skill as
+        far as its use goes, but a pin is the owner's act on the skill as it was, and a
+        re-creation is never born pinned. A write that fails raises and changes nothing."""
+        key = str(name)
+        with self._lock:
+            before = self._snapshot([key])
+            old = self._items.get(key)
+            rec = self._fresh()
+            if isinstance(old, dict) and isinstance(fingerprint, str) and fingerprint \
+                    and old.get("fingerprint") == fingerprint:
+                for field in (*_COUNTERS, "created_at", "last_used_at", "last_viewed_at", "last_patched_at",
+                              "last_switched_on_at"):
+                    if field in old:
+                        rec[field] = old[field]
+            rec["agent_created"] = agent_created is True
+            rec["write_origin"] = write_origin if agent_created is True and _word(write_origin, _WRITE_ORIGINS) else ""
+            rec["origin"] = ORIGIN_AGENT if agent_created is True else ORIGIN_LOCAL
+            rec["fingerprint"] = fingerprint if isinstance(fingerprint, str) else ""
+            self._items[key] = rec
+            self._commit(before)
+            return before[key]
+
+    def put_back(self, rows: dict[str, dict | None]) -> None:
+        """Undo :meth:`settle_created` for a creation that did not happen."""
+        with self._lock:
+            before = self._snapshot(list(rows))
+            self._restore({str(k): v for k, v in rows.items()})
+            self._commit(before)
 
     def note_created(self, name: str, origin: str = ORIGIN_AGENT) -> dict:
         """Record a new skill and its provenance at creation time. ``agent`` sets the
@@ -426,49 +528,60 @@ class SkillUsageStore(JsonStore):
 
     # ── provenance ────────────────────────────────────────────────────────────────
 
-    def reconcile_origins(self, observed: dict[str, tuple], *, full: bool = False) -> list[str]:
+    def reconcile_origins(self, observed: dict[str, tuple], *, full: bool = False,
+                          verify: Any = None) -> list[str]:
         """H349 — record where each registered skill came from, as its folder shows it.
 
         ``observed`` maps a registered skill's name to ``(origin, source[, fingerprint[,
-        created]])``: ``bundled`` (it ships with Nerva), or ``import`` with the source its
+        facts]])``: ``bundled`` (it ships with Nerva), or ``import`` with the source its
         install record names, or ``(None, "")`` when the folder carries no install record;
         then the row reads ``agent`` when the skill carries the agent marker and ``local``
         otherwise. ``agent_created`` is never changed here: an install record beside an
         agent-made skill is shown next to the marker, it does not replace it.
 
-        The row of a name is that skill's row, wherever its folder lives. It is replaced
-        by a fresh one only on evidence in the bytes, in two cases:
+        The row of a name is that skill's row, wherever its folder lives. An observation
+        replaces it by a fresh one in two cases only, both read from the folder:
 
-        - ``created``: a creation path just made this skill (generation, a batch create,
-          an install into a new folder) and its fingerprint is not the one the row last
-          saw. Whatever held the name before is not this skill, so nothing of it — pin,
-          agent marker, origin, counters — is inherited. The same bytes are the same
-          skill and keep the row.
+        - the folder carries an install id (``facts["install_id"]``, stamped by the
+          import, marketplace or migration install that made it) the row has never seen:
+          a new install, whenever it is first registered — in the same request, after a
+          crash, or at the start after an offline import. Nothing of the row that was
+          there is inherited (no pin, no agent marker, no counters). Not when the name's
+          holder is still installed in another folder (``facts["shadowed"]``: a duplicate
+          never costs the holder its row). Only the installers write an id, into a folder
+          they create; an update keeps the id its folder has, and nothing the agent can
+          write (a batch reaches SKILL.md and four sub-folders, never the install record)
+          can put one into an installed skill.
         - a tombstone (an explicit removal happened) under which other bytes register. The
           same bytes are a restore: the state comes back and the idle clock restarts
           (``restored_at``, and ``restore_pending`` until the curator's next pass settles
-          it on its own clock), so the curator does not archive it again at once. A tombstone
-          from before fingerprints were kept cannot be compared: its counters stay, the
-          agent marker does not.
+          it on its own clock). A tombstone from before fingerprints were kept is restored
+          too, marker included: its folder came back out of the archive.
 
         Names that are not in ``observed`` are never touched (second review, B2): a skill
-        that is not seen — its folder moved, missing, unreadable, on a volume that is away
-        — keeps its row exactly as it is. ``full`` only says ``observed`` is every
-        registered skill, which is what "installed now" then means to :meth:`pin` and
-        :meth:`stats`. One lock, one write, only when a row changed; the names whose row
-        changed come back. A failed write leaves every row as it was and raises."""
+        that is not seen keeps its row exactly as it is. ``verify`` (name → bool), asked
+        under the lock, drops an observation whose folder has gone since it was made, so a
+        removal that landed in between is never undone. ``full`` only says ``observed`` is
+        every registered skill, which is what "installed now" then means to :meth:`pin`
+        and :meth:`stats`. One lock, one write, only when a row changed; the names whose
+        row changed come back. A failed write leaves every row as it was and raises."""
         changed: list[str] = []
         with self._lock:
+            if callable(verify):
+                observed = {n: seen for n, seen in observed.items() if verify(n)}
             names = [str(n) for n in observed]
             before = self._snapshot(names)
             for raw_name, seen in observed.items():
                 name = str(raw_name)
                 origin, source = seen[0], seen[1]
                 fingerprint = seen[2] if len(seen) > 2 and isinstance(seen[2], str) else ""
-                created = bool(seen[3]) if len(seen) > 3 else False
+                facts = seen[3] if len(seen) > 3 and isinstance(seen[3], dict) else {}
+                install_id = clean_install_id(facts.get("install_id"))
                 rec = self._items.get(name)
                 was = dict(rec) if isinstance(rec, dict) else None
-                if not isinstance(rec, dict):
+                new_install = bool(install_id and isinstance(rec, dict) and rec.get("install_id") != install_id
+                                   and not facts.get("shadowed"))
+                if not isinstance(rec, dict) or new_install:
                     rec = self._fresh()
                 elif rec.get("state") == STATE_ARCHIVED:
                     known = rec.get("fingerprint") or ""
@@ -479,13 +592,11 @@ class SkillUsageStore(JsonStore):
                     else:
                         rec["state"], rec["archived_at"], rec["restored_at"] = STATE_ACTIVE, None, _now_iso()
                         rec["restore_pending"] = True        # until the curator's next pass sees it
-                        if not known:
-                            rec["agent_created"], rec["write_origin"] = False, ""
-                elif created and (not fingerprint or rec.get("fingerprint") != fingerprint):
-                    rec = self._fresh()                                      # a new skill took the name
                 self._items[name] = rec
                 if fingerprint:
                     rec["fingerprint"] = fingerprint
+                if install_id and not facts.get("shadowed"):
+                    rec["install_id"] = install_id
                 if origin == ORIGIN_BUNDLED:
                     rec["origin"], rec["source"] = ORIGIN_BUNDLED, ""
                 elif origin == ORIGIN_IMPORT:
@@ -503,6 +614,14 @@ class SkillUsageStore(JsonStore):
             else:
                 self._registered.update(names)
         return changed
+
+    @contextmanager
+    def locked(self) -> Iterator[None]:
+        """Hold the writers' lock across a check and the write that relies on it (the pin
+        route: the folder is looked at, the row synced and the pin written in one hold, so
+        no removal lands in between)."""
+        with self._lock:
+            yield
 
     def settle_restore(self, name: str, when: str) -> None:
         """The curator saw the restored skill ``name`` at ``when`` (its own clock): the
@@ -536,8 +655,11 @@ class SkillUsageStore(JsonStore):
         # A skill runs on the event loop, and a removal may hold the lock across a folder
         # move (review m2): wait for it only briefly. A counter that is not counted is the
         # best-effort contract; a stalled loop is not.
-        if not self._lock.acquire(timeout=BUMP_WAIT_SECONDS):
-            logger.debug("usage bump skipped for %s/%s: the sidecar is busy with a removal", name, kind)
+        # Only a removal is worth giving up on: other writers hold the lock for one save.
+        if not self._lock.acquire(timeout=BUMP_WAIT_SECONDS if self._removals else -1):
+            self._bumps_dropped += 1
+            logger.info("a %s counter of skill %r was not counted: the usage sidecar was busy with a removal "
+                        "(%d dropped since the start)", kind, str(name), self._bumps_dropped)
             return
         try:
             rec = self._rec(str(name))
@@ -650,8 +772,12 @@ class SkillUsageStore(JsonStore):
         removed, all before a pin can land: a pin asked for meanwhile waits, and is then
         answered against a skill that is no longer installed. Readers do not wait."""
         with self._lock:
-            blocked = [str(n) for n in names if respect_pins and _pin_blocks(self._items.get(str(n)))]
-            yield _Removal(self, blocked)
+            self._removals += 1
+            try:
+                blocked = [str(n) for n in names if respect_pins and _pin_blocks(self._items.get(str(n)))]
+                yield _Removal(self, blocked)
+            finally:
+                self._removals -= 1
 
     # ── reads (no lock: see the class docstring) ──────────────────────────────────
 
@@ -665,13 +791,15 @@ class SkillUsageStore(JsonStore):
     def curatable(self, name: str) -> bool:
         """Only what the agent made on its own initiative, unpinned and not archived, may
         be curated. Every doubt reads as "leave it alone": the marker must be exactly
-        true, the write origin must not be a turn's tool call (Hermes: a skill the user
-        asked a foreground agent for is theirs), the pin flag must read as not pinned, and
-        a skill that ships with Nerva is never curated."""
+        true, the write origin must be the background review or the learning loop — or
+        absent, a row from before the field — and never a turn's tool call (Hermes: a
+        skill the user asked a foreground agent for is theirs) or a word this store does
+        not write, the pin flag must read as not pinned, and a skill that ships with
+        Nerva is never curated."""
         rec = self.get(str(name))
         return bool(rec is not None
                     and rec.get("agent_created") is True
-                    and rec.get("write_origin") != WRITE_TOOL
+                    and rec.get("write_origin", "") in ("", WRITE_BACKGROUND, WRITE_LEARNING)
                     and rec.get("origin") != ORIGIN_BUNDLED
                     and not _pin_blocks(rec)
                     and rec.get("state", STATE_ACTIVE) in (STATE_ACTIVE, STATE_STALE))
@@ -680,7 +808,9 @@ class SkillUsageStore(JsonStore):
         """Counts over the sidecar. ``total`` is the installed skills' rows: once a loader
         has reported its skills, the rows of the ones registered now; before that, every
         row that is not a tombstone. ``not_installed`` counts the rows kept for skills
-        that are not registered now (away, moved, removed by hand) — kept, not counted."""
+        that are not registered now (away, moved, removed by hand) — kept, not counted.
+        ``bumps_dropped`` counts the counters given up on since the start because a removal
+        held the sidecar (see :meth:`bump`)."""
         registered, synced = set(self._registered), self._synced
         by_state, by_origin, total, absent = {}, {}, 0, 0
         for name, r in self.list().items():
@@ -694,7 +824,8 @@ class SkillUsageStore(JsonStore):
             total += 1
             origin = r.get("origin") if _word(r.get("origin"), _ORIGINS) else "?"
             by_origin[origin] = by_origin.get(origin, 0) + 1
-        return {"total": total, "by_state": by_state, "by_origin": by_origin, "not_installed": absent}
+        return {"total": total, "by_state": by_state, "by_origin": by_origin, "not_installed": absent,
+                "bumps_dropped": self._bumps_dropped}
 
     def summary(self, name: str) -> dict:
         """The owner-facing counters of one skill (see :func:`usage_summary`)."""
@@ -788,4 +919,4 @@ __all__ = ["SkillUsageStore", "latest_activity_at", "usage_summary",
            "STATE_ACTIVE", "STATE_STALE", "STATE_ARCHIVED",
            "ORIGIN_AGENT", "ORIGIN_IMPORT", "ORIGIN_BUNDLED", "ORIGIN_LOCAL", "ORIGIN_UNKNOWN",
            "WRITE_BACKGROUND", "WRITE_LEARNING", "WRITE_TOOL", "KNOWN_SOURCES", "SOURCE_MARKETPLACE",
-           "CORRUPT_COPIES_KEPT", "PinRefused", "clean_source"]
+           "WRITE_UNKNOWN", "CORRUPT_COPIES_KEPT", "PinRefused", "clean_source", "clean_install_id"]
