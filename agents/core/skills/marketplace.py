@@ -31,9 +31,16 @@ from agents.core.paths import data_path
 from agents.core.persistence.migrations import apply_migrations
 
 from . import signing
-from .loader import EXTERNAL_SOURCE_MARKER, OWNER_APPROVED_MARKER, SkillLoader, install_id_of
+from .loader import (
+    EXTERNAL_SOURCE_MARKER,
+    OWNER_APPROVED_MARKER,
+    SkillLoader,
+    install_id_of,
+    loader_name,
+    name_holder,
+)
 from .skill_history import SkillHistory
-from .validate import Problem, SkillDocumentInvalid, declared_name, name_holder, require_valid
+from .validate import Problem, SkillDocumentInvalid, declared_name, require_valid
 
 logger = logging.getLogger("jarvis.skills.marketplace")
 
@@ -835,15 +842,19 @@ class SkillMarketplace:
                 raise SkillDocumentInvalid([Problem(
                     "name", f"{skill_name!r} would replace the folder {target_dir.name!r}, which holds "
                             "another skill: uninstall that one first, or rename this one")])
-            holder = name_holder(self.skills_dir, skill_name, except_dir=target_dir)
-            if holder is not None and not self.is_registered(skill_name):
+            # Fourth review: asked of every root the loader discovers and of what is loaded,
+            # with the package named by the loader's own parse of its SKILL.md.
+            registers_as = loader_name(target_dir, skill_md_bytes) or skill_name
+            holder = name_holder(registers_as, except_dir=target_dir, extra_roots=[self.skills_dir])
+            if holder is not None and not (self.is_registered(skill_name) and self._is_ours(holder)):
                 # H349 (third review, B1): the package declares the name of a skill installed
                 # from another folder. The loader lets a later folder take a name, so it
                 # would take that skill's slot while the owner's folder stays. A name the
-                # owner published here is the registry's own: installing its package beside
-                # the folder it was published from is the documented flow, and the usage
-                # row of the name is not reset while that folder stays (the loader reports
-                # the slot as shadowed).
+                # owner published here, held by a folder of this marketplace's own root, is
+                # the registry's own: installing its package beside the folder it was
+                # published from is the documented flow. The package then has its own usage
+                # row (its install id), so the source's pin and counters are never shown on,
+                # or lost to, the package's bytes — whichever folder holds the name.
                 raise SkillDocumentInvalid([Problem(
                     "name", f"a skill named {skill_name!r} is already installed from the folder "
                             f"{holder.name!r}: remove or rename that one first, or rename this one")])
@@ -904,6 +915,14 @@ class SkillMarketplace:
         # reason is a fixed label.
         logger.info("Installed a marketplace skill package (signature: %s)", reason)
         return True
+
+    def _is_ours(self, folder: Path) -> bool:
+        """Whether ``folder`` lies directly in this marketplace's own skills root (where
+        ``publish_skill`` reads the folder a package was published from)."""
+        try:
+            return Path(folder).resolve().parent == self.skills_dir.resolve()
+        except OSError:
+            return False
 
     @staticmethod
     def _installed_here(target_dir: Path) -> bool:

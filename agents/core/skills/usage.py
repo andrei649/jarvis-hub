@@ -27,6 +27,14 @@ carries the agent marker exactly when the agent created it, and keeps the counte
 row only when its bytes are the ones the row last saw. Apart from that, bytes other than a
 tombstone's registering under its name start fresh; the same bytes are a restore.
 
+Each install has its own row (fourth review). A row carries the install id of the folder
+it describes (none for the owner's own, an agent-made or a legacy skill). When a folder
+with another install id holds the name — a duplicate, a package beside its published
+source, an import that registered alone while the owner's volume was away — the row that
+was there is put on the shelf, untouched, and the newcomer gets its own; when the earlier
+folder holds the name again its row comes back off the shelf. So a pin, a counter or an
+agent marker is never lent to other bytes and never lost to them.
+
 Pattern adapted from hermes-agent `tools/skill_usage.py` (Nous Research, MIT)
 — see LICENSES/THIRD_PARTY.md — rebuilt on jarvis's JsonStore (single-process
 atomic persistence) instead of hermes's cross-process fcntl/msvcrt locking.
@@ -92,8 +100,13 @@ _REPO_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,38}")
 _TOKEN_PREFIX_RE = re.compile(r"(?i)^(gh[pousr]_|github_pat_|sk-|xox[a-z]-|glpat-|akia)")
 _ALNUM_RUN_RE = re.compile(r"[A-Za-z0-9]{20,}")
 
-#: How long a counter bump waits for a removal that holds the store lock before it gives up.
+#: How long a counter bump waits for a removal that holds the store lock before it gives
+#: up, and how long it waits for any other writer. Both are bounds: a bump runs on the
+#: event loop, and nothing there may wait on this lock without one.
 BUMP_WAIT_SECONDS = 0.25
+BUMP_WAIT_BUSY_SECONDS = 1.0
+#: Rows kept on the shelf for one name (one per install id seen holding it).
+SHELF_PER_NAME = 8
 
 #: How many ``<sidecar>.corrupt-<time>`` copies are kept beside the sidecar (review m3).
 CORRUPT_COPIES_KEPT = 3
@@ -110,6 +123,9 @@ _BUMP_KEYS = {"use": ("use_count", "last_used_at"),
               # A recorded switch-on restarts the idle clock: a switched-off skill records
               # no use, and the curator must not count that time as neglect.
               "switch_on": ("switch_on_count", "last_switched_on_at")}
+
+
+_SHELF_KEY = "\x00shelf"       # the shelves inside a snapshot (never a skill's name)
 
 
 class PinRefused(Exception):
@@ -298,6 +314,12 @@ class SkillUsageStore(JsonStore):
         self._synced = False                    # whether a loader has reported every skill
         self._bumps_dropped = 0                 # counters given up on behind a removal
         self._removals = 0                      # removals holding the lock right now
+        # name → rows of other installs that held the name (see the module docstring).
+        self._shelf: dict[str, list[dict]] = {}
+        # Removals the sidecar could not record (it was not writable): applied, and
+        # written, at the next sync that can write. An explicit record of an explicit
+        # act — never inferred from a skill being absent.
+        self._pending: dict[str, tuple] = {}
         self._items: dict[str, dict] = {}
         super().__init__(path)
         # Re-entrant: a removal holds the lock across its folder move, and the reload that
@@ -319,7 +341,7 @@ class SkillUsageStore(JsonStore):
 
         A warning names both files, never their contents. At most
         :data:`CORRUPT_COPIES_KEPT` copies are kept."""
-        self._items = {}
+        self._items, self._shelf = {}, {}
         if self.path is None or not self.path.exists():
             return
         try:
@@ -329,13 +351,15 @@ class SkillUsageStore(JsonStore):
             if not isinstance(raw, dict) or not isinstance(raw.get("skills", {}), dict):
                 raise ValueError("not a skill usage sidecar")
             items, dropped, repaired = self._parse(raw)
+            shelf, shelf_damaged = self._parse_shelf(raw)
+            repaired += shelf_damaged
         except Exception as exc:        # RecursionError, UnicodeError, OSError, … : any of them
             kept = self._set_aside(move=True)
             logger.warning("the skill usage sidecar %s could not be read (%s); it was %s and the hub starts "
                            "with no pins, agent markers or counters", self.path.name, type(exc).__name__,
                            f"kept as {kept.name}" if kept else "left in place (it could not be moved)")
             return
-        self._items = items
+        self._items, self._shelf = items, shelf
         if not dropped and not repaired:
             return
         kept = self._set_aside(move=False)
@@ -377,8 +401,37 @@ class SkillUsageStore(JsonStore):
             out[str(name)] = rec
         return out, dropped, repaired
 
+    @staticmethod
+    def _parse_shelf(raw: Any) -> tuple[dict[str, list[dict]], int]:
+        """The shelved rows of a parsed sidecar (name → rows), and how many entries were
+        dropped or repaired. Anything that is not a name with a list of records goes."""
+        shelved = raw.get("shelved") if isinstance(raw, dict) else None
+        if shelved is None:
+            return {}, 0
+        if not isinstance(shelved, dict):
+            return {}, 1
+        out: dict[str, list[dict]] = {}
+        damaged = 0
+        for name, rows in shelved.items():
+            if not isinstance(rows, list):
+                damaged += 1
+                continue
+            kept = []
+            for rec in rows[:SHELF_PER_NAME * 4]:
+                if not isinstance(rec, dict):
+                    damaged += 1
+                    continue
+                rec = dict(rec)
+                damaged += 1 if _repair(rec) else 0
+                kept.append(rec)
+            damaged += 1 if len(rows) > SHELF_PER_NAME * 4 else 0
+            if kept:
+                out[str(name)] = kept
+        return out, damaged
+
     def _deserialize(self, raw) -> None:
         self._items = self._parse(raw)[0]
+        self._shelf = self._parse_shelf(raw)[0]
 
     def _set_aside(self, *, move: bool) -> Path | None:
         """Keep the sidecar as it is under ``<name>.corrupt-<time>`` (moved, or copied),
@@ -404,7 +457,8 @@ class SkillUsageStore(JsonStore):
         return dest
 
     def _serialize(self):
-        return {"skills": self._items}
+        shelved = {name: rows for name, rows in self._shelf.items() if rows}
+        return {"skills": self._items, **({"shelved": shelved} if shelved else {})}
 
     @staticmethod
     def _fresh() -> dict:
@@ -423,24 +477,56 @@ class SkillUsageStore(JsonStore):
         self._items[name] = rec = self._fresh()
         return rec
 
-    def _snapshot(self, names) -> dict[str, dict | None]:
-        return {str(n): (dict(row) if isinstance(row := self._items.get(str(n)), dict) else None) for n in names}
+    def _snapshot(self, names) -> dict:
+        """The rows, and the shelves, of ``names`` as they are: what :meth:`_restore` puts
+        back when a write does not reach the disk."""
+        keys = [str(n) for n in names]
+        rows: dict = {n: (dict(row) if isinstance(row := self._items.get(n), dict) else None) for n in keys}
+        rows[_SHELF_KEY] = {n: [dict(r) for r in self._shelf.get(n, [])] for n in keys}
+        return rows
 
-    def _restore(self, before: dict[str, dict | None]) -> None:
+    def _restore(self, before: dict) -> None:
         """Put rows back as they were before a write that did not reach the disk, so what
         this process answers never differs from what the file holds."""
         for name, row in before.items():
-            if row is None:
+            if name == _SHELF_KEY:
+                for shelf_name, rows in row.items():
+                    if rows:
+                        self._shelf[shelf_name] = rows
+                    else:
+                        self._shelf.pop(shelf_name, None)
+            elif row is None:
                 self._items.pop(name, None)
             else:
                 self._items[name] = row
 
-    def _commit(self, before: dict[str, dict | None]) -> None:
+    def _commit(self, before: dict) -> None:
         try:
             self._save()
         except BaseException:
             self._restore(before)
             raise
+
+    # ── the shelf: one row per install that held the name ─────────────────────────
+
+    def _put_on_shelf(self, name: str, rec: dict) -> None:
+        rows = [r for r in self._shelf.get(name, []) if r.get("install_id", "") != rec.get("install_id", "")]
+        rows.append(rec)
+        # The owner's own row (no install id) is never the one dropped.
+        while len(rows) > SHELF_PER_NAME:
+            drop = next((i for i, r in enumerate(rows) if r.get("install_id")), 0)
+            rows.pop(drop)
+        self._shelf[name] = rows
+
+    def _take_off_shelf(self, name: str, install_id: str) -> dict | None:
+        rows = self._shelf.get(name) or []
+        for index, rec in enumerate(rows):
+            if rec.get("install_id", "") == install_id:
+                rows.pop(index)
+                if not rows:
+                    self._shelf.pop(name, None)
+                return rec
+        return None
 
     # ── creation ──────────────────────────────────────────────────────────────────
 
@@ -469,10 +555,10 @@ class SkillUsageStore(JsonStore):
             return dict(rec)
 
     def settle_created(self, name: str, fingerprint: str | None = "", *, agent_created: bool = False,
-                       write_origin: str = "") -> dict | None:
-        """A skill with these bytes is being created under ``name`` (a batch create): write
-        its row now, and hand back the row that was there (None when there was none) so a
-        creation that then fails can put it back (:meth:`put_back`).
+                       write_origin: str = "") -> dict:
+        """A skill with these bytes is being created under ``name`` (generation, a batch
+        create): write its row now, and hand back what was there (for :meth:`put_back`) so
+        a creation that then fails can put it back.
 
         The row starts fresh — not pinned, the agent marker exactly when ``agent_created``
         — and keeps only the counters and their timestamps of the row that was there when
@@ -494,15 +580,18 @@ class SkillUsageStore(JsonStore):
             rec["write_origin"] = write_origin if agent_created is True and _word(write_origin, _WRITE_ORIGINS) else ""
             rec["origin"] = ORIGIN_AGENT if agent_created is True else ORIGIN_LOCAL
             rec["fingerprint"] = fingerprint if isinstance(fingerprint, str) else ""
+            if isinstance(old, dict) and old.get("install_id"):
+                self._put_on_shelf(key, old)        # another install's row: kept, not overwritten
             self._items[key] = rec
             self._commit(before)
-            return before[key]
+            return before
 
-    def put_back(self, rows: dict[str, dict | None]) -> None:
-        """Undo :meth:`settle_created` for a creation that did not happen."""
+    def put_back(self, rows: dict) -> None:
+        """Undo :meth:`settle_created` for a creation that did not happen (``rows`` is what
+        it handed back; several can be merged with ``dict.update``)."""
         with self._lock:
-            before = self._snapshot(list(rows))
-            self._restore({str(k): v for k, v in rows.items()})
+            before = self._snapshot([k for k in rows if k != _SHELF_KEY])
+            self._restore(dict(rows))
             self._commit(before)
 
     def note_created(self, name: str, origin: str = ORIGIN_AGENT) -> dict:
@@ -542,16 +631,14 @@ class SkillUsageStore(JsonStore):
         The row of a name is that skill's row, wherever its folder lives. An observation
         replaces it by a fresh one in two cases only, both read from the folder:
 
-        - the folder carries an install id (``facts["install_id"]``, stamped by the
-          import, marketplace or migration install that made it) the row has never seen:
-          a new install, whenever it is first registered — in the same request, after a
-          crash, or at the start after an offline import. Nothing of the row that was
-          there is inherited (no pin, no agent marker, no counters). Not when the name's
-          holder is still installed in another folder (``facts["shadowed"]``: a duplicate
-          never costs the holder its row). Only the installers write an id, into a folder
-          they create; an update keeps the id its folder has, and nothing the agent can
-          write (a batch reaches SKILL.md and four sub-folders, never the install record)
-          can put one into an installed skill.
+        - the folder carries another install id than the row (``facts["install_id"]``,
+          stamped by the import, marketplace or migration install that made it; none for
+          the owner's own, an agent-made or a legacy skill): another install holds the
+          name. The row that was there is shelved untouched and this folder gets its own
+          row — the one shelved for its id, else a fresh one. Whenever it is first
+          registered: in the same request, after a crash, at the start after an offline
+          import. Nothing is inherited and nothing is lost, whichever folder holds the
+          name at the next start.
         - a tombstone (an explicit removal happened) under which other bytes register. The
           same bytes are a restore: the state comes back and the idle clock restarts
           (``restored_at``, and ``restore_pending`` until the curator's next pass settles
@@ -570,7 +657,10 @@ class SkillUsageStore(JsonStore):
             if callable(verify):
                 observed = {n: seen for n, seen in observed.items() if verify(n)}
             names = [str(n) for n in observed]
-            before = self._snapshot(names)
+            before = self._snapshot([*names, *self._pending])
+            pending_was = dict(self._pending)
+            if self._apply_pending():
+                changed.append("")
             for raw_name, seen in observed.items():
                 name = str(raw_name)
                 origin, source = seen[0], seen[1]
@@ -579,11 +669,18 @@ class SkillUsageStore(JsonStore):
                 install_id = clean_install_id(facts.get("install_id"))
                 rec = self._items.get(name)
                 was = dict(rec) if isinstance(rec, dict) else None
-                new_install = bool(install_id and isinstance(rec, dict) and rec.get("install_id") != install_id
-                                   and not facts.get("shadowed"))
-                if not isinstance(rec, dict) or new_install:
-                    rec = self._fresh()
-                elif rec.get("state") == STATE_ARCHIVED:
+                if isinstance(rec, dict) and (rec.get("install_id") or "") != install_id:
+                    # Another install holds the name now (or the owner's own skill again):
+                    # the row that was there goes on the shelf as it is, and this folder
+                    # gets its own — the one it had before, or a fresh one.
+                    self._put_on_shelf(name, rec)
+                    rec = None
+                if not isinstance(rec, dict):
+                    rec = self._take_off_shelf(name, install_id)
+                    if rec is None:
+                        rec = self._fresh()
+                        rec["install_id"] = install_id
+                if rec.get("state") == STATE_ARCHIVED:
                     known = rec.get("fingerprint") or ""
                     if known and fingerprint and fingerprint != known:
                         rec = self._fresh()                                  # other bytes after a removal
@@ -595,8 +692,6 @@ class SkillUsageStore(JsonStore):
                 self._items[name] = rec
                 if fingerprint:
                     rec["fingerprint"] = fingerprint
-                if install_id and not facts.get("shadowed"):
-                    rec["install_id"] = install_id
                 if origin == ORIGIN_BUNDLED:
                     rec["origin"], rec["source"] = ORIGIN_BUNDLED, ""
                 elif origin == ORIGIN_IMPORT:
@@ -607,7 +702,12 @@ class SkillUsageStore(JsonStore):
                 if rec != was:
                     changed.append(name)
             if changed:
-                self._commit(before)
+                try:
+                    self._commit(before)
+                except BaseException:
+                    self._pending = dict(pending_was)
+                    raise
+            changed = [n for n in changed if n]
             if full:
                 self._registered = set(names)
                 self._synced = True
@@ -655,10 +755,11 @@ class SkillUsageStore(JsonStore):
         # A skill runs on the event loop, and a removal may hold the lock across a folder
         # move (review m2): wait for it only briefly. A counter that is not counted is the
         # best-effort contract; a stalled loop is not.
-        # Only a removal is worth giving up on: other writers hold the lock for one save.
-        if not self._lock.acquire(timeout=BUMP_WAIT_SECONDS if self._removals else -1):
+        # A removal may hold the lock across a folder move: give up on it quickly. Other
+        # writers hold it for one save; that wait is bounded too.
+        if not self._lock.acquire(timeout=BUMP_WAIT_SECONDS if self._removals else BUMP_WAIT_BUSY_SECONDS):
             self._bumps_dropped += 1
-            logger.info("a %s counter of skill %r was not counted: the usage sidecar was busy with a removal "
+            logger.info("a %s counter of skill %r was not counted: the usage sidecar was busy "
                         "(%d dropped since the start)", kind, str(name), self._bumps_dropped)
             return
         try:
@@ -726,20 +827,38 @@ class SkillUsageStore(JsonStore):
 
     # ── removal: the only acts that end a row ─────────────────────────────────────
 
-    def forget(self, name: str) -> bool:
+    def forget(self, name: str, install_id: str | None = None) -> bool:
         """An explicit removal for good (a batch delete, an uninstall, a reject from
         review): the row goes with the skill — pin, agent marker, origin and counters.
         They described that skill; one that takes the name later starts from zero. Never
-        called because a skill was merely not seen."""
+        called because a skill was merely not seen.
+
+        ``install_id`` names which install's row goes when several folders have held the
+        name: the active row when it is that install's, else its shelved one. Rows of
+        other installs under the name are left where they are.
+
+        When the sidecar cannot be written the removal is kept as pending (applied and
+        written at the next sync that can write, see :meth:`pending_removals`), the name
+        counts as not installed at once, and the error is raised for the caller to say."""
         key = str(name)
         with self._lock:
             self._registered.discard(key)
-            if key not in self._items:
-                return False
             before = self._snapshot([key])
-            del self._items[key]
-            self._commit(before)
+            if not self._forget_locked(key, install_id):
+                return False
+            try:
+                self._commit(before)
+            except BaseException:
+                self._pending[key] = ("forget", "", install_id)
+                raise
+            self._pending.pop(key, None)
             return True
+
+    def _forget_locked(self, key: str, install_id: str | None) -> bool:
+        rec = self._items.get(key)
+        if install_id is None or (isinstance(rec, dict) and (rec.get("install_id") or "") == install_id):
+            return self._items.pop(key, None) is not None
+        return self._take_off_shelf(key, install_id) is not None
 
     def retire(self, name: str, fingerprint: str | None = "") -> bool:
         """An explicit removal into an archive the owner can move back (the curator's
@@ -747,20 +866,44 @@ class SkillUsageStore(JsonStore):
         and ``archived_at`` say so; the pin is cleared (nothing is installed to protect);
         the counters, the origin and the agent marker stay, bound to the fingerprint of
         the removed bytes — ``fingerprint`` when given, else the one the row last saw.
-        Only those bytes registering again get them back (:meth:`reconcile_origins`)."""
+        Only those bytes registering again get them back (:meth:`reconcile_origins`).
+        An unwritable sidecar keeps it pending, as for :meth:`forget`."""
         key = str(name)
         with self._lock:
             self._registered.discard(key)
-            rec = self._items.get(key)
-            if not isinstance(rec, dict):
-                return False
             before = self._snapshot([key])
-            rec["state"], rec["archived_at"] = STATE_ARCHIVED, _now_iso()
-            rec["pinned"] = False
-            if isinstance(fingerprint, str) and fingerprint:
-                rec["fingerprint"] = fingerprint
-            self._commit(before)
+            if not self._retire_locked(key, fingerprint):
+                return False
+            try:
+                self._commit(before)
+            except BaseException:
+                self._pending[key] = ("retire", fingerprint if isinstance(fingerprint, str) else "", None)
+                raise
+            self._pending.pop(key, None)
             return True
+
+    def _retire_locked(self, key: str, fingerprint: str | None) -> bool:
+        rec = self._items.get(key)
+        if not isinstance(rec, dict):
+            return False
+        rec["state"], rec["archived_at"] = STATE_ARCHIVED, _now_iso()
+        rec["pinned"] = False
+        if isinstance(fingerprint, str) and fingerprint:
+            rec["fingerprint"] = fingerprint
+        return True
+
+    def pending_removals(self) -> list[str]:
+        """The names whose explicit removal could not be written yet."""
+        return sorted(self._pending)
+
+    def _apply_pending(self) -> bool:
+        """Apply the removals that could not be written (in memory; the caller commits)."""
+        done = False
+        for key, (kind, fingerprint, install_id) in list(self._pending.items()):
+            done = (self._retire_locked(key, fingerprint) if kind == "retire"
+                    else self._forget_locked(key, install_id)) or done
+        self._pending.clear()
+        return done
 
     @contextmanager
     def removal(self, names, *, respect_pins: bool) -> Iterator[_Removal]:
@@ -825,7 +968,8 @@ class SkillUsageStore(JsonStore):
             origin = r.get("origin") if _word(r.get("origin"), _ORIGINS) else "?"
             by_origin[origin] = by_origin.get(origin, 0) + 1
         return {"total": total, "by_state": by_state, "by_origin": by_origin, "not_installed": absent,
-                "bumps_dropped": self._bumps_dropped}
+                "shelved": sum(len(rows) for rows in list(self._shelf.values())),
+                "pending_removals": len(self._pending), "bumps_dropped": self._bumps_dropped}
 
     def summary(self, name: str) -> dict:
         """The owner-facing counters of one skill (see :func:`usage_summary`)."""

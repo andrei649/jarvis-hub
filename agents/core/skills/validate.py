@@ -232,39 +232,12 @@ def dialect(document: str) -> str:
 
 
 def name_holder(skills_dir, name: str, *, except_dir=None):
-    """H349 — the folder directly under ``skills_dir`` whose SKILL.md already declares
-    ``name`` (ignoring case), other than ``except_dir``; None when no other folder does.
+    """The folder of an installed skill that already holds ``name``, or None. Delegates to
+    THE holder check (``loader.name_holder``: every root the loader discovers, the live
+    registry, the loader's own parse); ``skills_dir`` is scanned as well."""
+    from .loader import name_holder as _holder
 
-    Every install path asks this before it writes anything: a package that declares the
-    name of a skill installed from another folder would take that skill's registry slot
-    (the loader lets a later folder take a name) while the owner's folder stays where it
-    is. Read from the folders themselves, so it holds for an install made while the hub is
-    down as well. Links and oversized files are not read."""
-    from pathlib import Path
-
-    wanted = name.strip().casefold() if isinstance(name, str) else ""
-    if not wanted:
-        return None
-    try:
-        skip = Path(except_dir).resolve() if except_dir is not None else None
-        folders = sorted(Path(skills_dir).iterdir())
-    except OSError:
-        return None
-    for folder in folders:
-        try:
-            if folder.name.startswith(".") or folder.is_symlink() or not folder.is_dir():
-                continue
-            if skip is not None and folder.resolve() == skip:
-                continue
-            skill_md = folder / "SKILL.md"
-            if skill_md.is_symlink() or not skill_md.is_file() or skill_md.stat().st_size > 1_048_576:
-                continue
-            held = declared_name(skill_md.read_bytes())
-        except OSError:
-            continue
-        if isinstance(held, str) and held.casefold() == wanted:
-            return folder
-    return None
+    return _holder(name, except_dir=except_dir, extra_roots=[skills_dir])
 
 
 def declared_name(document: str | bytes) -> str | None:
@@ -276,7 +249,7 @@ def declared_name(document: str | bytes) -> str | None:
         data, _body = _fm.split_frontmatter(text, lenient=False)
         name = data.get("name") if isinstance(data, dict) else None
     else:
-        name = next((ln.strip()[2:] for ln in text.split("\n") if ln.strip().startswith("# ")), None)
+        name = _fm.heading_name(text)        # the loader's own reading: the last '# ' line
     return name.strip() if isinstance(name, str) and name.strip() else None
 
 

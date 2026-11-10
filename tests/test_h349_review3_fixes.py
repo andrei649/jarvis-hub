@@ -141,11 +141,16 @@ def test_a_hand_dropped_duplicate_takes_the_name_as_before_but_never_resets_the_
     (dup / "manifest.json").write_text(json.dumps({"imported": True, "source": "hermes", "install_id": "a" * 32}),
                                        encoding="utf-8")              # even with an install record
     hub.loader.discover()
+    # Fourth review: the duplicate (another install id) holds the name with a row of its
+    # own, never the owner's pin and counters; the owner's row is kept aside, untouched.
     row = hub.on_disk()["mine"]
-    assert (row["pinned"], row["use_count"]) == (True, 4)
+    assert (row["pinned"], row["use_count"], row["install_id"]) == (False, 0, "a" * 32)
     hub.boot()
+    assert hub.on_disk()["mine"]["pinned"] is False
+    shutil.rmtree(dup)
+    hub.boot()                                                         # the owner's folder holds it again
     row = hub.on_disk()["mine"]
-    assert (row["pinned"], row["use_count"]) == (True, 4)
+    assert (row["pinned"], row["use_count"], row["install_id"]) == (True, 4, "")
 
 
 def test_installing_a_package_the_owner_published_beside_its_source_never_resets_the_row(hub):
@@ -378,7 +383,7 @@ def test_a_removal_between_the_folder_check_and_the_write_is_not_undone(hub):
 def test_the_pin_route_holds_the_store_lock_across_its_check_and_its_write(hub):
     hub.write("victim")
     hub.boot()
-    real = hub.loader.sync_origins
+    real = hub.loader.record
     seen = {}
 
     def spying(names=None, **kw):
@@ -392,7 +397,7 @@ def test_the_pin_route_holds_the_store_lock_across_its_check_and_its_write(hub):
         probe.join(2)
         return real(names, **kw)
 
-    hub.loader.sync_origins = spying
+    hub.loader.record = spying
     assert hub.client.post(PIN, json={"skill": "victim", "pinned": True}, headers=ADMIN).status_code == 200
     assert seen["got"] is False                                        # nothing else could write meanwhile
 

@@ -385,6 +385,16 @@ def _resolve(name: str, index: int, op: dict, loader: Any, targets: dict[str, _T
                              preview=preview,
                              hints=[f"to change it, patch it: {{name: {name!r}, action: 'patch', old_string, "
                                     "new_string}", "or create the new skill under another name"])
+        # H349 (fourth review, m1): the registry and ``create_root/name`` are not all there
+        # is. A skill of this name may be installed and not loaded (the owner's load set,
+        # safe mode, a failed load), in a folder of another name or in another root: the
+        # one holder check every creation path asks. Refused before any row is touched,
+        # and without a word about what is there.
+        from .loader import name_holder
+
+        if name_holder(name, except_dir=live, extra_roots=[create_root], registry=skills) is not None:
+            raise BatchError("skill_batch_exists", f"a skill named {name!r} already exists", index=index, op=op,
+                             hints=["create the new skill under another name"])
         target = _Target(name, live, existing=False)
     else:
         skill = skills.get(name)
@@ -749,9 +759,10 @@ def _note_patched(loader: Any, targets: list[_Target]) -> None:
                 logger.debug("skill batch: usage note skipped for %s", target.name, exc_info=True)
 
 
-def _settle_created(loader: Any, targets: list[_Target], actor: str) -> dict[str, dict | None]:
+def _settle_created(loader: Any, targets: list[_Target], actor: str) -> list[dict]:
     """H046 / H349 — write the sidecar row of every skill this batch creates, now, before
-    its folder appears; hand back the rows that were there, for :func:`_unsettle`.
+    its folder appears; hand back what was there (one snapshot per skill), for
+    :func:`_unsettle`.
 
     The row is decided at creation and by the bytes (``SkillUsageStore.settle_created``):
     fresh, never pinned, with the counters of the row that was there only when the staged
@@ -770,13 +781,13 @@ def _settle_created(loader: Any, targets: list[_Target], actor: str) -> dict[str
     usage = getattr(loader, "_usage", None)
     settle = getattr(usage, "settle_created", None)
     if not callable(settle):
-        return {}
+        return []
     from .usage import WRITE_TOOL
 
     agent = str(actor or "").startswith("agent")
     fingerprint = getattr(loader, "folder_fingerprint", None)
     name_of = getattr(loader, "manifest_name", None)
-    prior: dict[str, dict | None] = {}
+    prior: list[dict] = []
     try:
         for target in targets:
             if target.existing or target.deleted or target.staged is None:
@@ -789,22 +800,23 @@ def _settle_created(loader: Any, targets: list[_Target], actor: str) -> dict[str
                 except (OSError, UnicodeError):
                     name = target.name
             staged_fp = fingerprint(target.staged) if callable(fingerprint) else ""
-            prior[name] = settle(name, staged_fp, agent_created=agent, write_origin=WRITE_TOOL if agent else "")
+            prior.append(settle(name, staged_fp, agent_created=agent, write_origin=WRITE_TOOL if agent else ""))
     except BaseException:
         _unsettle(loader, prior)
         raise
     return prior
 
 
-def _unsettle(loader: Any, prior: dict[str, dict | None]) -> None:
+def _unsettle(loader: Any, prior: list[dict]) -> None:
     """Put the sidecar rows back as they were: the creation did not happen."""
     put_back = getattr(getattr(loader, "_usage", None), "put_back", None)
-    if prior and callable(put_back):
+    if not callable(put_back):
+        return
+    for snapshot in reversed(prior or []):
         try:
-            put_back(prior)
+            put_back(snapshot)
         except Exception:
-            logger.warning("skill batch: the usage rows of %s could not be put back", ", ".join(sorted(prior)),
-                           exc_info=True)
+            logger.warning("skill batch: a usage row could not be put back", exc_info=True)
 
 
 # ── H330: a delete, what absorbs it, and what still names it ────────────────────────
@@ -1286,15 +1298,29 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
                 if held is not None and held.blocked:
                     stopped = [t.name for t in removed if _usage_name(t) in held.blocked]
                     return {**_pinned_error(stopped, owner=actor == "owner").payload(), **report}
+                warnings: list[str] = []
                 try:
                     settled = _settle_created(loader, order, actor)
                 except Exception:
                     logger.warning("skill batch %s: the usage sidecar could not record the created skills",
                                    batch_id, exc_info=True)
-                    return {**BatchError("skill_batch_usage_unavailable", "the usage sidecar could not be "
-                                         "written, so the new skill's record (who made it, and that it is not "
-                                         "pinned) could not be kept; nothing was applied",
-                                         hints=["try again; nothing changed"]).payload(), **report}
+                    if actor != "owner":
+                        # The safety property is about skills the agent makes: one whose
+                        # record cannot be kept is not created (it would read as nobody's,
+                        # or inherit what an earlier holder of the name left).
+                        return {**BatchError(
+                            "skill_batch_usage_unavailable", "the usage sidecar could not be written, so the "
+                            "new skill's record (who made it, and that it is not pinned) could not be kept; "
+                            "nothing was applied",
+                            hints=["nothing changed. The usage sidecar (learning/skill_usage.json in the data "
+                                   "folder) has to be writable first: free disk space or fix its permissions, "
+                                   "then propose the batch again; the owner can create the skill from their "
+                                   "own batch meanwhile"]).payload(), **report}
+                    # The owner's own act is not blocked by telemetry: the skill is created,
+                    # and its record is made when the loader next registers it.
+                    settled = []
+                    warnings.append("the usage sidecar could not be written: the new skill's usage record "
+                                    "(counters, origin) will be made when it is next loaded")
                 swapped: list[_Target] = []
                 rewritten: list[tuple[Path, bytes]] = []
                 failure = ""
@@ -1349,6 +1375,10 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
                         except Exception:
                             logger.warning("skill batch: the usage row of %s could not be retired", target.name,
                                            exc_info=True)
+                            # Said, not swallowed: the skill is gone, its row is not yet.
+                            warnings.append(f"the usage sidecar could not be written: the usage row of "
+                                            f"{target.name} (its pin and counters) is still in the file and "
+                                            "is removed when the sidecar can next be written")
             backup = None
             if backup_dir is not None and any(t.existing for t in order):
                 backup = Path(backup_dir) / f"{time.strftime('%Y%m%dT%H%M%S')}-{batch_id}"
@@ -1371,7 +1401,8 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
             _reload(loader, order)
             _note_patched(loader, order)
             return {"ok": True, "applied": True, "dry_run": False, "batch_id": batch_id, "operations": len(ops),
-                    "skills": summary, **report, **({"backup": str(backup)} if backup else {})}
+                    "skills": summary, **report, **({"backup": str(backup)} if backup else {}),
+                    **({"warnings": warnings} if warnings else {})}
         finally:
             if not keep:
                 _cleanup(list(targets.values()))

@@ -27,6 +27,7 @@ import re
 import time
 import uuid
 from collections.abc import Callable
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Optional
@@ -195,6 +196,23 @@ def _load_hermes_pin() -> _HermesPin:
         tree=data["tree"],
         skills=tuple(entries),
     )
+
+
+@dataclass(frozen=True)
+class ImportOutcome:
+    """How one import call ended: ``reason`` is ``""`` (imported, or simply not found),
+    ``name_taken``, ``exists`` or ``invalid_skill_md`` (with its ``problems``)."""
+
+    ok: bool
+    reason: str = ""
+    problems: tuple | list = ()
+
+
+#: The outcome of the import call running in THIS task (H349, fourth review). The
+#: importer is one shared instance and its ``last_*`` attributes are overwritten by
+#: whichever import finishes last; a caller that reads them after an ``await`` may read
+#: another request's. A context variable belongs to the calling task.
+_OUTCOME: ContextVar[ImportOutcome | None] = ContextVar("nerva_skill_import_outcome", default=None)
 
 
 class SkillImporter:
@@ -423,6 +441,7 @@ class SkillImporter:
         self.last_refusal = []
         self.last_conflict = ""
         self.last_created = None
+        _OUTCOME.set(ImportOutcome(False, ""))
         slug = _safe_slug(skill_name)
         if slug is None:
             logger.warning("Rejected skill import: unsafe name %r", skill_name)
@@ -457,6 +476,7 @@ class SkillImporter:
 
         self.last_refusal = validate_skill_md(skill_md_bytes if skill_md_bytes is not None else skill_md_text)
         if self.last_refusal:
+            _OUTCOME.set(ImportOutcome(False, "invalid_skill_md", list(self.last_refusal)))
             logger.warning("Rejected skill import: its SKILL.md is not valid (%s)",
                            "; ".join(str(p) for p in self.last_refusal))
             return False
@@ -467,18 +487,24 @@ class SkillImporter:
         # before anything is written, so a refusal leaves no partial write.
         if (target_dir.exists() or target_dir.is_symlink()) and not self._imported_here(target_dir, source):
             self.last_conflict = "exists"
+            _OUTCOME.set(ImportOutcome(False, "exists"))
             logger.warning("Rejected skill import: the folder %s holds a skill %s did not import", slug, source)
             return False
         # H349 (third review, B1) — nor does it install a package whose SKILL.md declares
         # the name of a skill installed from ANOTHER folder: the loader lets a later folder
         # take a name, so the package would take that skill's slot while the owner's
         # folder stays. The slug asked for says nothing about the name declared.
-        from .validate import declared_name, name_holder
+        # Fourth review: asked of every root the loader discovers and of what is loaded
+        # (``loader.name_holder``), and the package is named by the loader's own parse —
+        # the name it would register under, not what another parser reads off it.
+        from .loader import loader_name, name_holder
 
-        declared = declared_name(skill_md_bytes if skill_md_bytes is not None else skill_md_text)
-        holder = name_holder(self.skills_dir, declared or "", except_dir=target_dir)
+        final_bytes = skill_md_bytes if skill_md_bytes is not None else skill_md_text.encode("utf-8")
+        holder = name_holder(loader_name(target_dir, final_bytes), except_dir=target_dir,
+                             extra_roots=[self.skills_dir])
         if holder is not None:
             self.last_conflict = "name_taken"
+            _OUTCOME.set(ImportOutcome(False, "name_taken"))
             logger.warning("Rejected skill import: its SKILL.md declares a name the folder %s already holds",
                            holder.name)
             return False
@@ -528,8 +554,14 @@ class SkillImporter:
         if created:
             _write_skill_md()
 
+        _OUTCOME.set(ImportOutcome(True, ""))
         logger.info(f"Imported skill '{skill_name}' from {source} -> {target_dir}")
         return True
+
+    @staticmethod
+    def outcome() -> ImportOutcome:
+        """How the import call of the calling task ended (see :data:`_OUTCOME`)."""
+        return _OUTCOME.get() or ImportOutcome(False, "")
 
     @staticmethod
     def _install_id(target_dir: Path) -> str:
@@ -744,7 +776,9 @@ class SkillImporter:
             except (json.JSONDecodeError, IOError):
                 continue
             if data.get("imported") or data.get("source") in ("hermes", "openclaw"):
-                imported.append(data)
+                # H349: the install id says which install a usage row belongs to; it is the
+                # hub's own bookkeeping and is not served (this listing is an open route).
+                imported.append({k: v for k, v in data.items() if k != "install_id"})
         return imported
 
 
@@ -1345,7 +1379,7 @@ async def _import_local_skill(
         },
     )
     if not saved:
-        reason = "name_taken" if importer.last_conflict == "name_taken" else "save_refused"
+        reason = "name_taken" if importer.outcome().reason == "name_taken" else "save_refused"
         return _local_skill_result(slug, "rejected", reason, sha256=digest)
     # CDX-8 quarantine: registered for review, never exec'd until owner approval
     # (``SkillLoader.approve_generated_skill``). A foreign install's skill is

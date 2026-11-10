@@ -14,6 +14,7 @@ import re
 import stat
 import tempfile
 import threading
+import weakref
 from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -421,6 +422,101 @@ def origin_evidence(skill: "Skill") -> tuple[Optional[str], str]:
     return None, ""
 
 
+def skill_roots() -> list[Path]:
+    """Every folder skills are discovered in, in discovery order: the app-root skills tree,
+    then the owner's skills folder when one is active. THE list: ``discover()`` reads these
+    (minus the owner's in safe mode), and the name check of every creation path scans
+    these — one list, so no caller can look at fewer roots than the loader loads from."""
+    roots = [SKILLS_DIR]
+    user_dir = _user_skills_dir()
+    try:
+        if user_dir is not None and user_dir.is_dir() and user_dir.resolve() != SKILLS_DIR.resolve():
+            roots.append(user_dir)
+    except OSError:
+        pass
+    return roots
+
+
+_NAME_PARSER: "SkillLoader | None" = None
+#: The loader that discovered last (a weak reference): its registry is what is loaded now.
+_LIVE_LOADER: "weakref.ReferenceType | None" = None
+
+
+def loader_name(folder, source_bytes: bytes | None = None) -> str:
+    """The name the loader registers the skill in ``folder`` under — by the loader's own
+    parse of its SKILL.md (``source_bytes``, or the file) — or ``""`` when it cannot be
+    read. The one naming used to compare a new skill with the ones installed."""
+    global _NAME_PARSER
+    if _NAME_PARSER is None:
+        _NAME_PARSER = SkillLoader.__new__(SkillLoader)      # the parse methods keep no state
+    folder = Path(folder)
+    try:
+        manifest = _NAME_PARSER._parse_manifest(folder / "SKILL.md", source_bytes=source_bytes)
+        return str(manifest.get("name", folder.name))
+    except Exception:
+        return ""
+
+
+def name_holder(name: str, *, except_dir=None, extra_roots=(), registry=None) -> Optional[Path]:
+    """H349 — the folder of an installed skill that already holds ``name`` (ignoring
+    case), other than ``except_dir``; None when the name is free.
+
+    THE holder check, asked by every path that creates a skill before it writes anything
+    (an import, a marketplace install, the local migration, a batch create, generation):
+    a new skill under a held name would take that skill's registry slot — the loader lets
+    a later folder take a name — while the holder's folder stays where it is. It looks at
+
+    - the live registry (``registry``, else the loader that discovered last), so a skill
+      that is loaded counts even when its folder cannot be listed right now, and
+    - every folder under every root the loader discovers (:func:`skill_roots`, plus the
+      caller's own root in ``extra_roots``), named by the loader's own parse
+      (:func:`loader_name`), so a skill that is installed but not loaded — the owner's
+      load set, safe mode, a failed load — counts too, whichever root it lives in.
+    """
+    wanted = name.strip().casefold() if isinstance(name, str) else ""
+    if not wanted:
+        return None
+    try:
+        skip = Path(except_dir).resolve() if except_dir is not None else None
+    except OSError:
+        skip = None
+
+    def _other(folder: Path) -> bool:
+        try:
+            return skip is None or folder.resolve() != skip
+        except OSError:
+            return True
+
+    if registry is None and _LIVE_LOADER is not None:
+        live = _LIVE_LOADER()
+        registry = getattr(live, "skills", None)
+    for held, skill in list((registry or {}).items()):
+        folder = Path(getattr(skill, "path", "") or "")
+        if str(held).casefold() == wanted and _other(folder) and folder.is_dir():
+            return folder
+    seen: set[str] = set()
+    for base in [*skill_roots(), *[Path(r) for r in extra_roots]]:
+        try:
+            key = str(base.resolve())
+            if key in seen:
+                continue
+            seen.add(key)
+            folders = sorted(base.iterdir())
+        except OSError:
+            continue
+        for folder in folders:
+            try:
+                if folder.name.startswith(".") or not folder.is_dir() or not _other(folder):
+                    continue
+                if _small_file(folder / "SKILL.md") is None and not (folder / "SKILL.md").is_file():
+                    continue
+            except OSError:
+                continue
+            if loader_name(folder).casefold() == wanted:
+                return folder
+    return None
+
+
 def install_id_of(folder: Path) -> str:
     """H349 — the install id the install that made ``folder`` stamped into it, or ``""``:
     the ``install=`` line of the marketplace's ``EXTERNAL_SOURCE`` marker, or the
@@ -754,11 +850,10 @@ class SkillLoader:
         # H20.5 — optional usage-telemetry sidecar (SkillUsageStore); attached by
         # the orchestrator. None → zero behavior change.
         self._usage = None
-        # H349: set while discover() walks the roots (origins are recorded once, at its
-        # end); and, per name, what taking the registry slot showed (see _register), until
-        # the sidecar has been told.
+        # H349: set while discover() walks the roots (origins are recorded once, at its end).
         self._discovering = False
-        self._slot_facts: dict[str, dict] = {}
+        # What a creation in progress must put back in the usage sidecar if it fails.
+        self._creation_undo = None
         self._approval_store = approval_store or SkillApprovalStore()
 
     def _generation_kernel_refusal(self, payload: dict, *, title: str) -> str:
@@ -791,20 +886,29 @@ class SkillLoader:
         name, its install record, the fingerprint of its bytes and the install id its
         folder carries (:func:`install_id_of`) — never by where its folder is, and with
         nothing remembered from an earlier call: whether a skill is new is written at its
-        creation, in the sidecar or in the folder (third review, M1). One fact about the
-        registry slot goes with it (:meth:`_register`): the name's earlier holder is still
-        installed in another folder (the row is then never reset). A skill that is not
-        seen now (its folder moved, missing,
-        unreadable, on a volume that is away) is simply not reported: its row is left
-        exactly as it is, and the sidecar is only told the name is not registered.
+        creation, in the sidecar or in the folder (third review, M1). A skill that is not
+        seen now (its folder moved, missing, unreadable, on a volume that is away) is
+        simply not reported: its row is left exactly as it is, and the sidecar is only
+        told the name is not registered.
+
+        Two steps: :meth:`observe` reads the folders, taking no lock, and :meth:`record`
+        writes what was seen under the sidecar's lock. A caller that must hold that lock
+        across the write and something else (the pin route) calls them itself, so the
+        slow part — reading a folder — never runs inside the hold.
 
         Best-effort like the counters: a sidecar that cannot be written leaves loading
         alone, and the row is tried again at the next registration. ``strict`` raises
         instead, for a caller that is about to rely on the row (the pin route)."""
+        self.record(self.observe(names, strict=strict), full=names is None, strict=strict)
+
+    def observe(self, names=None, *, strict: bool = False) -> dict:
+        """What the folders of the registered skills ``names`` (or all) show now: name →
+        ``(origin, source, fingerprint, {"install_id": …})``. Reads files and takes no
+        lock. A skill whose folder is not there is left out (and, for a single name, the
+        sidecar is told it is not registered — its row is not touched)."""
         store = self._usage
-        reconcile = getattr(store, "reconcile_origins", None)
-        if not callable(reconcile):
-            return
+        if not callable(getattr(store, "reconcile_origins", None)):
+            return {}
         full = names is None
         observed = {}
         for name in (list(self.skills) if full else names):
@@ -820,18 +924,22 @@ class SkillLoader:
                         unregister(name)
                     continue
                 origin, source = origin_evidence(skill)
-                facts = dict(self._slot_facts.get(name) or {})
-                facts["install_id"] = install_id_of(folder)
-                observed[name] = (origin, source, self._fingerprint_of(skill, folder), facts)
+                observed[name] = (origin, source, self._fingerprint_of(skill, folder),
+                                  {"install_id": install_id_of(folder)})
             except Exception:
                 if strict:
                     raise
                 logger.warning("the origin of skill %r could not be read", name, exc_info=True)
-        if not observed and not full:
+        return observed
+
+    def record(self, observed: dict, *, full: bool = False, strict: bool = False) -> None:
+        """Write what :meth:`observe` saw into the usage sidecar (one lock, one write)."""
+        reconcile = getattr(self._usage, "reconcile_origins", None)
+        if not callable(reconcile) or (not observed and not full):
             return
 
         def _still_there(name) -> bool:
-            # Asked under the sidecar's lock: a removal that landed since the look above
+            # Asked under the sidecar's lock: a removal that landed since the look
             # must not be undone by this observation.
             seen = self.skills.get(name)
             return seen is not None and Path(seen.path).is_dir()
@@ -845,9 +953,6 @@ class SkillLoader:
             if strict:
                 raise
             logger.warning("skill origins could not be recorded in the usage sidecar", exc_info=True)
-            return
-        for name in observed:
-            self._slot_facts.pop(name, None)
 
     @staticmethod
     def _fingerprint_of(skill: "Skill", folder: Path) -> str:
@@ -889,18 +994,35 @@ class SkillLoader:
         except Exception:
             logger.warning("the usage row of the new skill in %s could not be started", folder.name, exc_info=True)
 
-    def forget_usage(self, name: str) -> None:
+    def forget_usage(self, name: str, install_id: str | None = None) -> None:
         """H349 — an explicit removal for good of the skill registered as ``name`` (a
         reject from review, an uninstall): its sidecar row goes with it
-        (``SkillUsageStore.forget``). Only removal acts call this; a skill that is merely
-        not seen keeps its row. Logged when it cannot be written."""
+        (``SkillUsageStore.forget``). ``install_id`` names which install's row, when
+        several folders have held the name. Only removal acts call this; a skill that is
+        merely not seen keeps its row. Logged when it cannot be written (the sidecar then
+        keeps the removal pending and applies it at its next writable sync)."""
         forget = getattr(self._usage, "forget", None)
         if not callable(forget):
             return
         try:
-            forget(name)
+            if install_id is None:
+                forget(name)
+            else:
+                forget(name, install_id)
         except Exception:
             logger.warning("the usage row of the removed skill %r could not be retired", name, exc_info=True)
+
+    def forget_removed(self, name: str, install_id: str = "") -> bool:
+        """H349 (fourth review, M3) — the folder of a skill named ``name`` was just removed
+        for good. Its own row goes; a row that belongs to another folder that still holds
+        the name does not: an install has a row of its own (by its install id), and a
+        folder without an id shares its row only with other id-less folders of that name,
+        so that row is left when one of those is still installed. Says whether another
+        holder remains (the caller then re-discovers, so it takes the slot)."""
+        other = name_holder(name, registry=self.skills) if name else None
+        if other is None or install_id:
+            self.forget_usage(name, install_id if other is not None else None)
+        return other is not None
 
     def approval_times(self, paths) -> dict[str, str]:
         """H046 — when the owner last approved each skill folder in ``paths`` (ISO), keyed by
@@ -943,22 +1065,17 @@ class SkillLoader:
             self._approval_store.prune_missing()
         except Exception:
             logger.warning("Skill approval prune failed", exc_info=True)
-        roots = [SKILLS_DIR]
+        global _LIVE_LOADER
+        _LIVE_LOADER = weakref.ref(self)
+        roots = skill_roots()
         owner_unread = False
         # The owner's personal skills (Documents/Jarvis/skills) load AFTER the
         # bundled tree so a same-named user skill wins the registry slot.
-        user_dir = _user_skills_dir()
-        if (
-            user_dir is not None
-            and user_dir.is_dir()
-            and user_dir.resolve() != SKILLS_DIR.resolve()
-        ):
-            if safe_mode.enabled():
-                # H275: safe mode discovers the shipped skills only.
-                safe_mode.note("owner_skills")
-                owner_unread = True
-            else:
-                roots.append(user_dir)
+        if len(roots) > 1 and safe_mode.enabled():
+            # H275: safe mode discovers the shipped skills only.
+            safe_mode.note("owner_skills")
+            owner_unread = True
+            roots = roots[:1]
         # H285: the owner's load set, read once for this pass.
         load_set.begin("skills")
         self._load_lists = load_set.declared("skills")
@@ -1004,18 +1121,6 @@ class SkillLoader:
             same_tree = Path(previous.path).parent == Path(skill.path).parent
             (logger.warning if same_tree else logger.info)(
                 "Skill name '%s' from %s replaces the one from %s", name, skill.path, previous.path)
-        # H349: what the sidecar needs to know about this slot. ``shadowed``: the name's
-        # holder is still installed in another folder (a duplicate, or the owner's skill
-        # over a shipped one) — its row is never reset for the newcomer.
-        facts = {}
-        if previous is not None:
-            try:
-                if (Path(previous.path).resolve() != Path(skill.path).resolve()
-                        and Path(previous.path).is_dir()):
-                    facts["shadowed"] = True
-            except OSError:
-                facts["shadowed"] = True
-        self._slot_facts[name] = facts
         self.skills[name] = skill
         # H349: the registry slot is the one place every installed skill passes. A
         # discovery pass records all of them once, at its end.
@@ -1250,7 +1355,7 @@ class SkillLoader:
         for line in content.split("\n"):
             stripped = line.strip()
             if stripped.startswith("# "):
-                manifest["name"] = stripped[2:].strip()
+                manifest["name"] = _fm.heading_name(stripped) or manifest["name"]   # the last one wins
                 in_commands = False
             elif stripped.startswith("> "):
                 manifest["description"] = stripped[2:].strip()
@@ -1361,7 +1466,24 @@ class SkillLoader:
 
         return None
 
-    def generate_skill(
+    def generate_skill(self, *args, **kwargs) -> Optional[str]:
+        """Generate a new skill (see :meth:`_generate_skill`). A generation that fails after
+        its usage row was written puts the sidecar back as it was: no stray agent row."""
+        self._creation_undo = None
+        try:
+            return self._generate_skill(*args, **kwargs)
+        except Exception:
+            undo, self._creation_undo = self._creation_undo, None
+            put_back = getattr(self._usage, "put_back", None)
+            if undo is not None and callable(put_back):
+                try:
+                    put_back(undo)
+                except Exception:
+                    logger.warning("the usage row of a skill that was not generated could not be removed",
+                                   exc_info=True)
+            raise
+
+    def _generate_skill(
         self,
         agent_id: str,
         task_description: str,
@@ -1473,11 +1595,18 @@ Agent-generated skill from successful task completion.
         # lets it in, or at the start after a crash. A skill whose row cannot be written is
         # not generated: it would otherwise read as nobody's, or inherit whatever an
         # earlier holder of the name left (a pin).
-        start = getattr(self._usage, "start", None)
-        if callable(start):
+        title = self.manifest_name(skill_dir, skill_md)
+        # Fourth review: the title is checked against every installed skill first (the
+        # registry and every root, :func:`name_holder`) — the folder check above compares
+        # folder names only, and a skill of this title may live in a folder of another
+        # name. A held name is never generated onto, and its row is not touched.
+        if title in self.skills or name_holder(title, except_dir=skill_dir, registry=self.skills) is not None:
+            logger.info("A skill named %r is already installed; skipping generation", title)
+            return None
+        settle = getattr(self._usage, "settle_created", None)
+        if callable(settle):
             try:
-                start(self.manifest_name(skill_dir, skill_md), agent_created=True, write_origin=write_origin,
-                      registered=False)
+                self._creation_undo = settle(title, "", agent_created=True, write_origin=write_origin)
             except Exception:
                 logger.warning("the usage sidecar could not record the new skill %r as agent-made; it is not "
                                "generated", skill_name, exc_info=True)
@@ -1765,8 +1894,9 @@ def register(skill):
         for key in [k for k, s in list(self.skills.items()) if Path(getattr(s, "path", "")) == skill_dir]:
             del self.skills[key]
             # H349: rejected for good (the discard archive is never loaded again), pinned or
-            # not: its sidecar row goes with it.
-            self.forget_usage(key)
+            # not: its sidecar row goes with it — unless another installed folder still
+            # holds the name, whose row it then is.
+            self.forget_removed(key)
         self.revoke_approval(skill_dir)
         logger.info("Pending skill '%s' discarded by the owner (archived to %s)", skill_dir.name, dest)
         return dest
