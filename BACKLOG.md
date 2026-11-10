@@ -2734,7 +2734,12 @@
   found the stored mode is not applied at boot (the policy runs `auto` until the first tick, and
   for as long as the e-stop is engaged — older than this row), `off` still runs policy-approved work
   and loses to a per-agent `auto`, and a tightening can revert after a failed settings reload; fixes
-  in progress. Both rows stay `partial` until re-reviewed; 146/697.
+  landed 2026-11-10 (stored mode applied at boot and under e-stop; `off` a floor that recalls
+  policy-approved work; per-agent overrides declared, persisted and audited — they used to be dropped
+  by the store within a tick; read-back on every write; 28 tests on a real store, worker and
+  coordinator). Open owner calls: should `off` also stop smart-reviewer and standing-consent
+  approvals, and should a per-agent `auto` keep beating a global `ask`. Both rows stay `partial`
+  until re-reviewed; 146/697.
 
 ## Darwin feature absorption — 2026-09-09
 

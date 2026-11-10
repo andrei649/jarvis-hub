@@ -16,6 +16,19 @@
   shows one row per conversation and opens its newest part; archive, pin and delete act on the
   whole conversation. `nerva chat -r "Title"` opens the newest part too.
 
+**The approval mode does what it says (#1347)**
+- `/approvals` in chat and `nerva approvals mode` show and set the mode (auto, ask, off); only
+  you can change it, and every change is in the audit log.
+- After a restart your stored mode applies from the first decision. Before, Nerva ran in auto
+  until its first check a minute later, and for as long as the emergency stop was engaged.
+- `off` now overrides every per-agent setting, and work the policy had already approved comes
+  back to your inbox instead of running. Work you approved yourself still runs.
+- Per-agent modes are now saved (they used to be lost within a minute) and audited. Under `ask`
+  a per-agent `auto` still applies; the command names those agents.
+- If a mode change does not take effect, you are told so instead of seeing a success message.
+- Approval cards show the mode a task was asked under. The wording no longer says the
+  irreversible tier always asks: in auto, a payment inside your spending caps runs.
+
 **Three status pages now need your user token (#1347)**
 - An independent security review found that the Oracle status, learning stats and local-docs
   status pages answered anyone on the network with personal details. They now ask for the same
