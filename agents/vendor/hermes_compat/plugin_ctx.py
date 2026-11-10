@@ -13,6 +13,9 @@ What the adapter decides, not the vendored code:
 * **Tier**: from :data:`PROVIDER_TIERS`, a server-owned table. A provider whose name is not
   in it is refused, so a vendored file cannot add a backend nobody reviewed.
 * **Keyless**: never. A provider is configured only when its key is set (off by default).
+* **Named only**: ``explicit_only``. A key alone never makes an adopted provider answer:
+  ``auto`` skips it and no backend falls back to it; the owner names it in
+  ``JARVIS_WEB_BACKEND`` (the HUD's Integrations panel does so after an audited consent).
 * **Classification**: a refusal recorded by the compat ``httpx`` raises ``PolicyBlock``
   (never rescued) whatever the vendored code returned; any other failure raises
   ``ProviderFailure`` with a reason code only.
@@ -137,6 +140,8 @@ def adapter_class(registry: ModuleType) -> type:
         plugin_id = EGRESS_IDENTITY
         keyless = False
         requires = None
+        # Answers only when named (JARVIS_WEB_BACKEND): never auto's pick, never a rescue.
+        explicit_only = True
 
         def __init__(self, hermes: WebSearchProvider) -> None:
             if not isinstance(hermes, WebSearchProvider):

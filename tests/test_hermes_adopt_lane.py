@@ -276,8 +276,15 @@ async def test_a_policy_block_through_websearch_is_not_rescued(monkeypatch):
     egress = Egress(ip="192.168.1.20")
     monkeypatch.setenv("EXA_API_KEY", "k")
     monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "k")
+    # An adopted backend answers only when named (explicit_only): with keys alone, auto
+    # never picks one, and nothing falls back to one.
+    keys_only = ws.WebSearchPlugin()
+    assert keys_only.selection().primary is None or keys_only.selection().primary.name not in wp.ADOPTED_PROVIDERS
+    monkeypatch.setenv("JARVIS_WEB_BACKEND", "exa")
+    monkeypatch.setenv("JARVIS_WEB_RESCUE", "1")
     plugin = ws.WebSearchPlugin()
     plugin._client = egress.client
+    assert all(p.name not in wp.ADOPTED_PROVIDERS for p in plugin.selection().rescue)
     outcome = await plugin.search_detailed("q")
     assert outcome.provider == "exa" and outcome.reason == "policy_blocked"
     assert outcome.rescued_from == "" or outcome.rescued_from is None
