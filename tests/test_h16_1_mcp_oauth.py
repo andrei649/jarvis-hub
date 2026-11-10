@@ -71,12 +71,12 @@ def test_challenge_points_at_metadata():
 
 def test_well_known_and_oauth_enforcement():
     from agents import web
+    if web.orch is None:                              # before anything is changed: an early
+        return                                        # return must not leave the token set
     old = web.ADMIN_TOKEN
     web.ADMIN_TOKEN = "test-secret"
     web._mcp_rs = None                                # reset cached RS
     hdr = {"X-Admin-Token": "test-secret"}
-    if web.orch is None:
-        return
     orig_get = web.orch.get_setting
     flags = {"mcp.server_enabled": True, "mcp.oauth_required": True}
     web.orch.get_setting = lambda key, default=None: flags.get(key, orig_get(key, default))

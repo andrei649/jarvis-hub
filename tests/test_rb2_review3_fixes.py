@@ -262,3 +262,16 @@ def test_the_workspace_session_cookies_are_not_passable_to_a_child():
     for name in ("NERVA_WS_SESSION", "NERVA_WS_ADMIN_SESSION", "NERVA_WORKSPACE_SETUP_CODE"):
         assert code_env._passable_name(name) is False, name
     assert code_env._passable_name("NERVA_HUB_URL") is True
+
+
+def test_the_repo_file_prediction_holds_no_value_of_a_refused_pair(tmp_path):
+    """Fourth review: `after_repo_layer` (and so `hub_value`) handed out one of the two
+    values of a pair the load refuses when the pair was in the REPO .env."""
+    from agents.core import env_provenance
+
+    repo = tmp_path / ".env"
+    repo.write_text("JARVIS_RUNTIME_LOG=/var/log/a.jsonl\nNERVA_RUNTIME_LOG=/var/log/b.jsonl\n"
+                    "JARVIS_PORT=8123\n", encoding="utf-8")
+    merged = env_provenance.after_repo_layer(repo, {})
+    assert "JARVIS_RUNTIME_LOG" not in merged and "NERVA_RUNTIME_LOG" not in merged
+    assert merged.get("JARVIS_PORT") == "8123"                 # the rest of the file still counts

@@ -7,11 +7,13 @@ this shell's environment onto the ``JARVIS_`` names the command tree reads
 work. What is left for the entry point is the one case the fold will not decide: a
 credential, a posture flag or a data root set under both spellings with different
 values. The hub refuses to start on that, by name; the command refuses too, rather than
-send one of two tokens or open one of two data roots. Only the read-only diagnostics
+send one of two tokens or open one of two data roots. Only the local diagnostics
 (``nerva doctor``, ``completion``, ``logs``, ``config path``, ``config env-path``) are
-never refused: they write nothing and send nothing, print the conflict as a warning
-and run (``doctor``'s ``config_sources`` is red). Every verb that writes a setting,
-deletes, uploads or talks to a hub with a token refuses, naming the variable.
+never refused: they change no setting, print the conflict as a warning and run
+(``doctor``'s ``config_sources`` is red). They are not inert: under a conflicting pair
+``doctor`` and ``logs`` use the ``JARVIS_``-spelled value — they open (and may create)
+that data root, and ``doctor`` asks the loopback hub with that spelling's credential.
+Every verb that writes a setting, deletes or uploads refuses, naming the variable.
 
 Both ways in (``python scripts/nerva.py`` and ``python -m agents.cli``) call ``main``
 here, which hands everything else to ``agents.cli.nerva.main`` unchanged.
@@ -22,9 +24,9 @@ from __future__ import annotations
 import os
 import sys
 
-#: The read-only diagnostics: they look at the configuration, write nothing and send
-#: nothing, so they are never refused — they report the conflict and run. ``logs`` reads
-#: the hub's log file on this machine. Of ``config`` only the two verbs that print where
+#: The local diagnostics: they look at the configuration and change no setting, so they
+#: are never refused — they report the conflict and run, on the ``JARVIS_``-spelled value
+#: of a conflicting pair (see the module text). ``logs`` reads the hub's log file here. Of ``config`` only the two verbs that print where
 #: things are; ``config set`` and the rest write, and refuse like everything else.
 READ_ONLY_VERBS = frozenset({"doctor", "completion", "logs"})
 READ_ONLY_CONFIG_VERBS = frozenset({"path", "env-path"})

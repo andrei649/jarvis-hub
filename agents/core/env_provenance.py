@@ -43,8 +43,8 @@ The fold takes ``NERVA_<X>`` out of the environment, so python-dotenv's own expa
 would turn ``${NERVA_USER_HOME}/`` into ``/``.
 
 What a reference to nothing means is decided by ``judge``, from the record of the
-expansion: a path built from a reference nothing sets, a path that opens with an empty
-reference, and a credential with a reference nothing sets stop the load — things
+expansion: a path built from a reference nothing sets and a credential with a reference
+nothing sets stop the load — things
 python-dotenv did silently and no operator meant. Everything else boots with the value
 it always had: a reference that is defined and blank (a feature switched off), an
 address or a flag built from an unset reference (a warning names the variable), and a
@@ -558,7 +558,8 @@ def after_repo_layer(repo_env, environ: Mapping[str, str]) -> dict[str, str]:
         return merged
     folded = _layer_fold(parsed[1], merged)
     merged.update({key: value for key, value in folded.values.items()
-                   if env_alias.canonical(key) not in FROM_PROCESS_ONLY})
+                   if env_alias.canonical(key) not in FROM_PROCESS_ONLY
+                   and env_alias.canonical(key) not in folded.refused})   # no value of a refused pair
     env_alias._record(merged, {key: used for key, used in folded.spelling.items()
                                if key not in FROM_PROCESS_ONLY})
     return merged

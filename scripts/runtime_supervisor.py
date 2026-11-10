@@ -193,7 +193,7 @@ def main() -> int:
             uptime = time.monotonic() - started_at
             if exit_code == CONFIG_REFUSED_EXIT:
                 # RB-2: the coordinator refused its configuration (one variable set under
-                # both spellings, a path at the filesystem root) and said why on stderr.
+                # both spellings in the process environment) and said why on stderr.
                 # That is not a crash: respawning repeats the refusal forever. Stop, once,
                 # with the same status, so the service manager does not restart it either.
                 _append_supervisor_event("config_refused", pid=child.pid, exit_code=exit_code)

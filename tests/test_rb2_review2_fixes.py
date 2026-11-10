@@ -6,10 +6,11 @@ piece of a credential. The rule this file pins:
 
     A JARVIS_-only configuration that boots on main boots here with the same effective
     values — except where the value on main was provably an accident. There are exactly
-    three such accidents, each a thing python-dotenv did silently in a ``.env``:
+    two such accidents, each a thing python-dotenv did silently in a ``.env``:
       1. a path-typed variable built from a ``${NAME}`` that nothing sets;
-      2. a path-typed variable that opens with a ``${NAME}`` that is set but empty;
-      3. a hub credential with a ``${NAME}`` that nothing sets.
+      2. a hub credential with a ``${NAME}`` that nothing sets.
+    (A path that opens with a set-but-empty ``${NAME}`` was a third until the third
+    review; it boots with main's value again.)
     (The fourth refusal, one variable under both spellings with different values, cannot
     exist in a JARVIS_-only file.)
 
