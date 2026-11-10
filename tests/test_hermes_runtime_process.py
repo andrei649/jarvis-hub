@@ -45,13 +45,13 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != '/__jarvis__/ready' or self.headers.get('X-Jarvis-Runtime-Token') != os.environ['HERMES_DASHBOARD_SESSION_TOKEN']:
             self.send_error(403)
             return
-        body = json.dumps({'ready': not bool(os.environ.get('OPENAI_API_KEY')), 'generation': os.environ['JARVIS_HERMES_GENERATION'], 'source_sha': '0808ed8ec0420ef2c8e1363d919ef1d83fc4e5e7'}).encode()
+        body = json.dumps({'ready': not bool(os.environ.get('OPENAI_API_KEY')), 'generation': os.environ['JARVIS_HERMES_GENERATION'], 'source_sha': 'PINNED_COMMIT'}).encode()
         self.send_response(200)
         self.end_headers()
         self.wfile.write(body)
     def log_message(self, *args): pass
 HTTPServer((args.host, int(args.port)), Handler).serve_forever()
-""")
+""".replace("PINNED_COMMIT", process.load_pin()["commit"]))
     monkeypatch.setattr(process, "WORKER_SCRIPT", worker)
     monkeypatch.setattr(process, "verify_source", lambda path: {})
     monkeypatch.setattr(process, "validate_python", lambda python, source, home: python)

@@ -1,6 +1,6 @@
 {
-  "source_sha": "0808ed8ec0420ef2c8e1363d919ef1d83fc4e5e7",
-  "contract_sha256": "5095cdd3d422bcc1f96b58d08b0276d2b0a530a892ee8681fa6d6351f9db15fc",
+  "source_sha": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+  "contract_sha256": "4226a518e977febdd01e47f51db0dd7814c2a52614340e1119de1d017eb3a4b2",
   "methods": [
     {
       "name": "agents.list",
@@ -301,6 +301,34 @@
       }
     },
     {
+      "name": "billing.keep_going_on_credits",
+      "summary": "Window plans: turn 'Keep going on credits' on/off (billing:manage).",
+      "params": {
+        "additionalProperties": false,
+        "properties": {
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "title": "BillingKeepGoingOnCreditsParams",
+        "type": "object"
+      }
+    },
+    {
       "name": "billing.state",
       "summary": "Read-only billing view (no scope); the Nous free tier is answered locally without a portal call.",
       "params": {
@@ -547,164 +575,8 @@
       }
     },
     {
-      "name": "browser.controller.detach",
-      "summary": "Hard-detach only the controller owned by this authenticated transport.",
-      "params": {
-        "additionalProperties": false,
-        "description": "Every controller call names the session the controller is attached to.",
-        "properties": {
-          "session_id": {
-            "title": "Session Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "session_id"
-        ],
-        "title": "BrowserControllerParams",
-        "type": "object"
-      }
-    },
-    {
-      "name": "browser.controller.heartbeat",
-      "summary": "Acknowledge a heartbeat only for this transport's own attached controller.",
-      "params": {
-        "additionalProperties": false,
-        "description": "Every controller call names the session the controller is attached to.",
-        "properties": {
-          "session_id": {
-            "title": "Session Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "session_id"
-        ],
-        "title": "BrowserControllerParams",
-        "type": "object"
-      }
-    },
-    {
-      "name": "browser.controller.register",
-      "summary": "Attach this connection as the browser controller for one session; fails closed (4403).",
-      "params": {
-        "additionalProperties": false,
-        "properties": {
-          "session_id": {
-            "title": "Session Id",
-            "type": "string"
-          },
-          "controller_id": {
-            "title": "Controller Id",
-            "type": "string"
-          },
-          "browser_profile_id": {
-            "title": "Browser Profile Id",
-            "type": "string"
-          },
-          "capabilities": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Capabilities"
-          },
-          "protocol_version": {
-            "anyOf": [
-              {},
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Protocol Version"
-          },
-          "principal_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Principal Id"
-          }
-        },
-        "required": [
-          "session_id",
-          "controller_id",
-          "browser_profile_id"
-        ],
-        "title": "BrowserControllerRegisterParams",
-        "type": "object"
-      }
-    },
-    {
-      "name": "browser.controller.result",
-      "summary": "Deliver one command result to the broker; accepted is false for unknown or settled command ids.",
-      "params": {
-        "additionalProperties": false,
-        "properties": {
-          "session_id": {
-            "title": "Session Id",
-            "type": "string"
-          },
-          "command_id": {
-            "title": "Command Id",
-            "type": "string"
-          },
-          "ok": {
-            "anyOf": [
-              {},
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Ok"
-          },
-          "result": {
-            "anyOf": [
-              {},
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Result"
-          },
-          "error": {
-            "anyOf": [
-              {},
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Error"
-          }
-        },
-        "required": [
-          "session_id",
-          "command_id"
-        ],
-        "title": "BrowserControllerResultParams",
-        "type": "object"
-      }
-    },
-    {
       "name": "browser.manage",
-      "summary": "Inspect, attach to, or drop the CDP browser the tools use, or switch Browser Use mode (``use``, applies to new sessions); ``messages`` narrate a connect.",
+      "summary": "Inspect, attach to, or drop the CDP browser the tools use; ``messages`` narrate a connect.",
       "params": {
         "additionalProperties": false,
         "properties": {
@@ -723,18 +595,6 @@
             ],
             "default": null,
             "title": "Url"
-          },
-          "enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Enabled"
           },
           "session_id": {
             "anyOf": [
@@ -858,6 +718,11 @@
           "server_requests": {
             "default": false,
             "title": "Server Requests",
+            "type": "boolean"
+          },
+          "desktop_local": {
+            "default": false,
+            "title": "Desktop Local",
             "type": "boolean"
           }
         },
@@ -1390,6 +1255,43 @@
       }
     },
     {
+      "name": "connectors.accounts.rename",
+      "summary": "Name or rename one hosted connector account owned by the scoped member.",
+      "params": {
+        "additionalProperties": false,
+        "properties": {
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          },
+          "connection_id": {
+            "minLength": 1,
+            "title": "Connection Id",
+            "type": "string"
+          },
+          "alias": {
+            "pattern": "^[a-z0-9][a-z0-9-]{0,31}$",
+            "title": "Alias",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection_id",
+          "alias"
+        ],
+        "title": "ConnectorAccountsRenameParams",
+        "type": "object"
+      }
+    },
+    {
       "name": "connectors.catalog",
       "summary": "The hosted connector catalog available to the scoped member.",
       "params": {
@@ -1462,6 +1364,32 @@
             "default": false,
             "title": "Reconnect",
             "type": "boolean"
+          },
+          "alias": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z0-9][a-z0-9-]{0,31}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Alias"
+          },
+          "connection_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Connection Id"
           }
         },
         "required": [
@@ -2286,6 +2214,17 @@
             ],
             "default": null,
             "title": "Name"
+          },
+          "staged_upload": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StagedFileUpload"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -2316,6 +2255,87 @@
           }
         },
         "title": "ProfileParams",
+        "type": "object"
+      }
+    },
+    {
+      "name": "free_tier.challenge_result",
+      "summary": "Report a browser window outcome for the matching pending attempt; mint remains authoritative.",
+      "params": {
+        "additionalProperties": false,
+        "properties": {
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "attempt": {
+            "default": 0,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "outcome": {
+            "enum": [
+              "done",
+              "failed",
+              "closed",
+              "timeout",
+              "refused",
+              "error",
+              "unsupported"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "outcome"
+        ],
+        "title": "FreeTierChallengeResultParams",
+        "type": "object"
+      }
+    },
+    {
+      "name": "free_tier.claim_nudge",
+      "summary": "Claim the due sign-in offer; true for exactly one caller each time an offer comes due.",
+      "params": {
+        "additionalProperties": false,
+        "properties": {
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          },
+          "kind": {
+            "default": "trial",
+            "enum": [
+              "trial",
+              "connector"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "title": "FreeTierClaimNudgeParams",
         "type": "object"
       }
     },
@@ -2432,6 +2452,101 @@
       }
     },
     {
+      "name": "groups.attachment.download",
+      "summary": "Read one committed attachment for a live room viewer.",
+      "params": {
+        "additionalProperties": false,
+        "properties": {
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          },
+          "room_id": {
+            "title": "Room Id",
+            "type": "string"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "attachment_id": {
+            "title": "Attachment Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "room_id",
+          "event_id",
+          "attachment_id"
+        ],
+        "title": "GroupsAttachmentDownloadParams",
+        "type": "object"
+      }
+    },
+    {
+      "name": "groups.attachment.upload",
+      "summary": "Store one attachment for a later groups.send manifest (idempotent per upload_id).",
+      "params": {
+        "additionalProperties": false,
+        "properties": {
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          },
+          "room_id": {
+            "title": "Room Id",
+            "type": "string"
+          },
+          "upload_id": {
+            "title": "Upload Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "mime": {
+            "title": "Mime",
+            "type": "string"
+          },
+          "data_base64": {
+            "title": "Data Base64",
+            "type": "string"
+          }
+        },
+        "required": [
+          "room_id",
+          "upload_id",
+          "kind",
+          "name",
+          "mime",
+          "data_base64"
+        ],
+        "title": "GroupsAttachmentUploadParams",
+        "type": "object"
+      }
+    },
+    {
       "name": "groups.capabilities",
       "summary": "Describe the hosted-room protocol implemented by this gateway.",
       "params": {
@@ -2451,6 +2566,115 @@
           }
         },
         "title": "GroupsCapabilitiesParams",
+        "type": "object"
+      }
+    },
+    {
+      "name": "groups.context",
+      "summary": "Set one hosted room's purpose and shared notes; members see them from the next message.",
+      "params": {
+        "additionalProperties": false,
+        "properties": {
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          },
+          "room_id": {
+            "title": "Room Id",
+            "type": "string"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "purpose": {
+            "title": "Purpose",
+            "type": "string"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "routing": {
+            "anyOf": [
+              {
+                "enum": [
+                  "everyone",
+                  "lead",
+                  "auto"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Routing"
+          },
+          "lead_member_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Lead Member Id"
+          }
+        },
+        "required": [
+          "room_id",
+          "event_id",
+          "purpose",
+          "notes"
+        ],
+        "title": "GroupsContextParams",
+        "type": "object"
+      }
+    },
+    {
+      "name": "groups.continue",
+      "summary": "Grant a discussion paused at its cap (room.activity bounded) one more budget; writes room.continued.",
+      "params": {
+        "additionalProperties": false,
+        "properties": {
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          },
+          "room_id": {
+            "title": "Room Id",
+            "type": "string"
+          },
+          "discussion_event_id": {
+            "title": "Discussion Event Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "room_id",
+          "discussion_event_id"
+        ],
+        "title": "GroupsContinueParams",
         "type": "object"
       }
     },
@@ -2588,6 +2812,51 @@
           "room_id"
         ],
         "title": "GroupsDisbandParams",
+        "type": "object"
+      }
+    },
+    {
+      "name": "groups.discard",
+      "summary": "Discard one indeterminate room task after explicit user confirmation.",
+      "params": {
+        "additionalProperties": false,
+        "properties": {
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          },
+          "room_id": {
+            "title": "Room Id",
+            "type": "string"
+          },
+          "member_id": {
+            "title": "Member Id",
+            "type": "string"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          },
+          "execution_generation": {
+            "title": "Execution Generation",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "room_id",
+          "member_id",
+          "task_id",
+          "execution_generation"
+        ],
+        "title": "GroupsDiscardParams",
         "type": "object"
       }
     },
@@ -2817,6 +3086,18 @@
             ],
             "default": null,
             "title": "Ttl Seconds"
+          },
+          "status_ttl_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Status Ttl Seconds"
           }
         },
         "title": "GroupsPeerInviteParams",
@@ -3131,6 +3412,30 @@
           "task_id": {
             "title": "Task Id",
             "type": "string"
+          },
+          "member_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Member Id"
+          },
+          "execution_generation": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Execution Generation"
           }
         },
         "required": [
@@ -3646,6 +3951,48 @@
       }
     },
     {
+      "name": "image.render",
+      "summary": "Lay out a local image for an inline terminal preview (kitty placeholders or half-blocks).",
+      "params": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "cols": {
+            "title": "Cols",
+            "type": "integer"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          },
+          "graphics": {
+            "default": false,
+            "title": "Graphics",
+            "type": "boolean"
+          },
+          "terminal": {
+            "default": "unicode",
+            "enum": [
+              "kitty",
+              "unicode"
+            ],
+            "title": "Terminal",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "cols",
+          "rows"
+        ],
+        "title": "ImageRenderParams",
+        "type": "object"
+      }
+    },
+    {
       "name": "input.detect_drop",
       "summary": "Recognise a terminal file drop pasted into the composer and turn it into an attachment.",
       "params": {
@@ -3968,6 +4315,17 @@
           }
         },
         "title": "LlmOneshotParams",
+        "type": "object"
+      }
+    },
+    {
+      "name": "machine.facts",
+      "summary": "Facts about the machine running this backend and its OS account, for the desktop first run.",
+      "params": {
+        "additionalProperties": false,
+        "description": "Client→server method params / server→client request params. Unknown keys are rejected.",
+        "properties": {},
+        "title": "Params",
         "type": "object"
       }
     },
@@ -4610,24 +4968,116 @@
       }
     },
     {
-      "name": "onboarding.ensure_setup_profile",
-      "summary": "Create-or-read the backend-owned setup profile; the backend picks the name and finds it by role.",
+      "name": "onboarding.set_run",
+      "summary": "Write onboarding.run in the root profile's config.yaml; answers the new state.",
       "params": {
         "additionalProperties": false,
-        "description": "Client→server method params / server→client request params. Unknown keys are rejected.",
-        "properties": {},
-        "title": "Params",
+        "description": "``mark_profile_offered`` also latches ``onboarding.seen.profile_build_offered`` in the root config,\nso the first chat after onboarding gets the plain intro instead of the profile offer.",
+        "properties": {
+          "run": {
+            "title": "Run",
+            "type": "boolean"
+          },
+          "mark_profile_offered": {
+            "default": false,
+            "title": "Mark Profile Offered",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "run"
+        ],
+        "title": "OnboardingSetRunParams",
         "type": "object"
       }
     },
     {
-      "name": "onboarding.reset_setup_profile",
-      "summary": "Restore the setup profile to its created state in place (soul, memories, skills, sessions).",
+      "name": "onboarding.skip",
+      "summary": "Skip setup: end the session's onboarding run and close the card that waits.",
       "params": {
         "additionalProperties": false,
-        "description": "Client→server method params / server→client request params. Unknown keys are rejected.",
-        "properties": {},
-        "title": "Params",
+        "properties": {
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "OnboardingSkipParams",
+        "type": "object"
+      }
+    },
+    {
+      "name": "onboarding.start",
+      "summary": "Open the onboarding chat in the default profile: create it, write its run record and play the opening.",
+      "params": {
+        "additionalProperties": false,
+        "description": "``rerun``: start a new onboarding chat even when one is in progress (Settings, Run onboarding\nagain; it never claims the welcome trial). ``fresh_launch``: the app's once-per-launch start; a run\nthe app was closed on does not count, so its chat is deleted and the run starts over.\n``facts_source``: whether the backend runs on the user's own computer. ``locale``: the desktop's UI\nlanguage, preferred over the backend OS locale. ``assume_fresh``: as on ``onboarding.state``. A new\nrun on a first install claims the welcome trial before its chat exists; a failed claim is error\n5079 and leaves no guest and no chat. A claim that is blocked (another install took the trial) with\nno trial or provider to run on is error 5080 and opens no chat.",
+        "properties": {
+          "rerun": {
+            "default": false,
+            "title": "Rerun",
+            "type": "boolean"
+          },
+          "fresh_launch": {
+            "default": false,
+            "title": "Fresh Launch",
+            "type": "boolean"
+          },
+          "assume_fresh": {
+            "default": false,
+            "title": "Assume Fresh",
+            "type": "boolean"
+          },
+          "facts_source": {
+            "$ref": "#/components/schemas/OnboardingFactsSource",
+            "default": "local"
+          },
+          "locale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Locale"
+          }
+        },
+        "title": "OnboardingStartParams",
+        "type": "object"
+      }
+    },
+    {
+      "name": "onboarding.state",
+      "summary": "Whether desktop first-run onboarding is due, and the chat in progress; reads the root profile's config.",
+      "params": {
+        "additionalProperties": false,
+        "description": "``assume_fresh``: the unpackaged desktop's ``--fresh-install`` launch; the backend treats this\nmachine as one that never used Hermes. Packaged builds never send it.",
+        "properties": {
+          "assume_fresh": {
+            "default": false,
+            "title": "Assume Fresh",
+            "type": "boolean"
+          }
+        },
+        "title": "OnboardingStateParams",
         "type": "object"
       }
     },
@@ -4839,6 +5289,15 @@
             "default": false,
             "title": "Graphics",
             "type": "boolean"
+          },
+          "terminal": {
+            "default": "unicode",
+            "enum": [
+              "kitty",
+              "unicode"
+            ],
+            "title": "Terminal",
+            "type": "string"
           }
         },
         "title": "PetCellsParams",
@@ -5378,6 +5837,36 @@
       }
     },
     {
+      "name": "plugins.catalog.lookup",
+      "summary": "One curated plugin-catalog entry by name, from the backend's live catalog (cached, with the in-tree fallback and kill list); backs hermes://plugin/install?catalog= deep links.",
+      "params": {
+        "additionalProperties": false,
+        "properties": {
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "PluginCatalogLookupParams",
+        "type": "object"
+      }
+    },
+    {
       "name": "plugins.list",
       "summary": "Loaded plugin manager entries (legacy flat view); the Plugins Hub uses plugins.manage list.",
       "params": {
@@ -5392,7 +5881,7 @@
       "summary": "Plugins Hub backend: list installed plugins, toggle, git-install, re-pin a catalog install, or remove a user install.",
       "params": {
         "additionalProperties": false,
-        "description": "``toggle``: ``key``/``name`` + ``enable``; ``install``: ``identifier``/``repo`` or ``catalog_name``\n(+ ``force``, ``enable``, ``ref``); ``update``: ``name`` (+ ``accept_capabilities`` to apply a re-pin\nthat widened the plugin after the user confirmed the ``delta``); ``remove``: ``name`` (user installs only);\n``settings``: ``key`` + ``values`` (``{setting_key: value}``, non-secret schema keys only).",
+        "description": "``toggle``: ``key``/``name`` + ``enable``; ``install``: ``identifier``/``repo`` or ``catalog_name``\n(+ ``force``, ``enable``, ``ref``, ``inspected_sha`` = the commit ``inspect`` read: a custom source with no\n``ref`` whose branch moved since is refused); ``inspect``: ``identifier``/``repo`` or ``catalog_name``;\n``install_desktop``: ``identifier``/``repo`` (any source ``install`` takes) or ``catalog_name``, always\nwith ``ref`` (the commit ``inspect`` read and the dialog showed; another commit is refused) (+ ``force``) — the desktop half onto\nthe host that serves this client; ``remove_desktop``: ``name``\n(+ ``force`` for a package's own half); ``update``: ``name`` (+ ``accept_capabilities`` to apply a re-pin\nthat widened the plugin after the user confirmed the ``delta``, + ``force`` to apply an update whose\nsecurity scan returned caution after the user saw the findings); ``remove``: ``name`` (user installs only);\n``settings``: ``key`` + ``values`` (``{setting_key: value}``, non-secret schema keys only);\n``presence``: ``names`` (catalog names, answered in that order); ``update_all``: no fields;\n``auto_update``: ``enable`` to set ``plugins.auto_apply`` (omit to read it).",
         "properties": {
           "profile": {
             "anyOf": [
@@ -5506,6 +5995,18 @@
             "default": null,
             "title": "Ref"
           },
+          "inspected_sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Inspected Sha"
+          },
           "accept_capabilities": {
             "anyOf": [
               {
@@ -5530,6 +6031,21 @@
             ],
             "default": null,
             "title": "Values"
+          },
+          "names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Names"
           }
         },
         "title": "PluginsManageParams",
@@ -5662,7 +6178,7 @@
     },
     {
       "name": "process.stop",
-      "summary": "Kill every background process in the registry (``/stop``), answering the count killed.",
+      "summary": "``/stop``: on the shared owner, kill the background processes ``session_id`` owns (required); a standalone sidecar kills every process it holds. Answers the count killed.",
       "params": {
         "additionalProperties": false,
         "properties": {
@@ -5872,7 +6388,7 @@
       "summary": "Create a profile (ws twin of POST /api/profiles), mirroring launch credentials by default.",
       "params": {
         "additionalProperties": false,
-        "description": "``clone_from`` omitted = fresh profile + bundled skills; ``mirror_credentials`` defaults on\nso a headless bot has a provider.",
+        "description": "``clone_from`` omitted = fresh profile + bundled skills; ``mirror_credentials`` and\n``share_auth`` default on (the bot page's defaults) so a headless bot has a provider.",
         "properties": {
           "profile": {
             "anyOf": [
@@ -6165,40 +6681,6 @@
           }
         },
         "title": "ProfilesListParams",
-        "type": "object"
-      }
-    },
-    {
-      "name": "profiles.remember_onboarding",
-      "summary": "Write the onboarding facts into the default profile's user memory and confirm they landed.",
-      "params": {
-        "additionalProperties": false,
-        "properties": {
-          "profile": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Profile"
-          },
-          "answers": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/OnboardingAnswers"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null
-          }
-        },
-        "title": "ProfilesRememberOnboardingParams",
         "type": "object"
       }
     },
@@ -7173,6 +7655,18 @@
             "default": null,
             "title": "Voice Context"
           },
+          "voice_turn": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Voice Turn"
+          },
           "title_preview": {
             "anyOf": [
               {
@@ -7245,6 +7739,18 @@
             "default": null,
             "title": "Confirm Empty Truncate"
           },
+          "confirm_deep_truncate": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Confirm Deep Truncate"
+          },
           "rebind_survivor_row_ids": {
             "anyOf": [
               {
@@ -7273,7 +7779,33 @@
       "summary": "Re-read ~/.hermes/.env (CLI /reload parity); built agents keep their pool until /new.",
       "params": {
         "additionalProperties": false,
-        "properties": {},
+        "description": "The shared owner serves ``/reload`` for one session the caller controls (``session_id``).",
+        "properties": {
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Session Id"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          }
+        },
         "title": "ReloadEnvParams",
         "type": "object"
       }
@@ -7416,6 +7948,30 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "undo_since": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Undo Since"
+          },
+          "undo_message_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Undo Message Id"
           }
         },
         "required": [
@@ -7462,6 +8018,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "all": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "All"
           }
         },
         "required": [
@@ -8286,6 +8854,18 @@
             ],
             "default": null,
             "title": "Last Seen"
+          },
+          "replay_epoch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Replay Epoch"
           }
         },
         "required": [
@@ -9894,6 +10474,30 @@
       }
     },
     {
+      "name": "subagent.roster",
+      "summary": "Per-conversation counts of live delegated children and running background processes, limited to conversations stored in the named profile (launch profile when omitted). Needs no attached session.",
+      "params": {
+        "additionalProperties": false,
+        "description": "Any method the desktop may route to a named profile (``requestGatewayForProfile`` adds ``profile``).",
+        "properties": {
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          }
+        },
+        "title": "ProfileParams",
+        "type": "object"
+      }
+    },
+    {
       "name": "subagent.steer",
       "summary": "Queue steering text into a live delegated child owned by this session.",
       "params": {
@@ -10478,6 +11082,42 @@
           }
         },
         "title": "VaultLockParams",
+        "type": "object"
+      }
+    },
+    {
+      "name": "vault.preview.fill",
+      "summary": "Fill a saved login into the in-app browser tab the renderer pinned (never submits).",
+      "params": {
+        "additionalProperties": false,
+        "description": "``target`` is the opaque binding the renderer minted for one in-app browser tab.",
+        "properties": {
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Profile"
+          },
+          "handle": {
+            "title": "Handle",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "handle",
+          "target"
+        ],
+        "title": "VaultPreviewFillParams",
         "type": "object"
       }
     },
@@ -11161,6 +11801,24 @@
       }
     },
     {
+      "name": "setup_beat",
+      "summary": "The onboarding chat's card for one beat; blocks setup_beat until answered (300 s).",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/SetupBeatRequestParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/SetupBeatResult"
+        }
+      }
+    },
+    {
       "name": "sudo",
       "summary": "Masked sudo password for the terminal tool.",
       "params": [
@@ -11193,6 +11851,42 @@
         "name": "result",
         "schema": {
           "$ref": "#/components/schemas/ValueResult"
+        }
+      }
+    },
+    {
+      "name": "theme.apply",
+      "summary": "Apply set_theme values in the window showing the session (JSON text answer).",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/ThemeApplyRequestParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/ValueResult"
+        }
+      }
+    },
+    {
+      "name": "theme.pick",
+      "summary": "Show an accent or layout picker card in the chat and wait for the pick.",
+      "params": [
+        {
+          "name": "params",
+          "schema": {
+            "$ref": "#/components/schemas/ThemePickRequestParams"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "schema": {
+          "$ref": "#/components/schemas/ThemePickResult"
         }
       }
     },
@@ -11289,6 +11983,18 @@
   ],
   "notifications": [
     {
+      "name": "agent.print",
+      "summary": "A status line the agent printed during a local viewer's turn.",
+      "params": [
+        {
+          "name": "payload",
+          "schema": {
+            "$ref": "#/components/schemas/AgentPrintPayload"
+          }
+        }
+      ]
+    },
+    {
       "name": "agent.terminal.output",
       "summary": "Output chunk from an agent-owned background process.",
       "params": [
@@ -11344,30 +12050,6 @@
           "name": "payload",
           "schema": {
             "$ref": "#/components/schemas/ChangeSignalPayload"
-          }
-        }
-      ]
-    },
-    {
-      "name": "browser.controller.cancel",
-      "summary": "Withdraw a pending controller command.",
-      "params": [
-        {
-          "name": "payload",
-          "schema": {
-            "$ref": "#/components/schemas/BrowserControllerCancelPayload"
-          }
-        }
-      ]
-    },
-    {
-      "name": "browser.controller.command",
-      "summary": "Dispatch one browser action to the attached controller.",
-      "params": [
-        {
-          "name": "payload",
-          "schema": {
-            "$ref": "#/components/schemas/BrowserControllerCommandPayload"
           }
         }
       ]
@@ -11493,6 +12175,18 @@
       ]
     },
     {
+      "name": "free_tier.challenge",
+      "summary": "The account service wants a browser challenge cleared before the free-tier token exchange (broadcast); the desktop loads ``url`` in a hidden window.",
+      "params": [
+        {
+          "name": "payload",
+          "schema": {
+            "$ref": "#/components/schemas/FreeTierChallengePayload"
+          }
+        }
+      ]
+    },
+    {
       "name": "gateway.ready",
       "summary": "First frame of a connection: the resolved skin, the change-event capability and the replay epoch.",
       "params": [
@@ -11500,18 +12194,6 @@
           "name": "payload",
           "schema": {
             "$ref": "#/components/schemas/GatewayReadyPayload"
-          }
-        }
-      ]
-    },
-    {
-      "name": "layout.apply",
-      "summary": "Apply a named desktop layout preset.",
-      "params": [
-        {
-          "name": "payload",
-          "schema": {
-            "$ref": "#/components/schemas/LayoutApplyPayload"
           }
         }
       ]
@@ -11530,12 +12212,12 @@
     },
     {
       "name": "message.delta",
-      "summary": "One streamed chunk of the assistant reply.",
+      "summary": "One streamed chunk of the assistant reply (null text: segment boundary).",
       "params": [
         {
           "name": "payload",
           "schema": {
-            "$ref": "#/components/schemas/StreamDeltaPayload"
+            "$ref": "#/components/schemas/MessageDeltaPayload"
           }
         }
       ]
@@ -11566,13 +12248,12 @@
     },
     {
       "name": "message.start",
-      "summary": "A turn began streaming; no payload.",
+      "summary": "A turn began streaming; an automation turn carries its async-result card.",
       "params": [
         {
           "name": "payload",
           "schema": {
-            "type": "object",
-            "additionalProperties": false
+            "$ref": "#/components/schemas/MessageStartPayload"
           }
         }
       ]
@@ -11657,6 +12338,18 @@
           "name": "payload",
           "schema": {
             "$ref": "#/components/schemas/NotificationShowPayload"
+          }
+        }
+      ]
+    },
+    {
+      "name": "onboarding.ended",
+      "summary": "A first-run onboarding run ended; sent to every connected window.",
+      "params": [
+        {
+          "name": "payload",
+          "schema": {
+            "$ref": "#/components/schemas/OnboardingEndedPayload"
           }
         }
       ]
@@ -11950,6 +12643,18 @@
       ]
     },
     {
+      "name": "skills.changed",
+      "summary": "A skill root moved (installed/removed elsewhere); refetch commands.catalog from the gateway.",
+      "params": [
+        {
+          "name": "payload",
+          "schema": {
+            "$ref": "#/components/schemas/ChangeSignalPayload"
+          }
+        }
+      ]
+    },
+    {
       "name": "skin.changed",
       "summary": "The active skin moved (name switch or live colour edit); repaint from this palette.",
       "params": [
@@ -12130,6 +12835,18 @@
       ]
     },
     {
+      "name": "tool.progress",
+      "summary": "Live progress of a running tool call (MCP notifications/progress).",
+      "params": [
+        {
+          "name": "payload",
+          "schema": {
+            "$ref": "#/components/schemas/ToolProgressPayload"
+          }
+        }
+      ]
+    },
+    {
       "name": "tool.start",
       "summary": "A tool call began (stable id + full args).",
       "params": [
@@ -12150,6 +12867,18 @@
           "schema": {
             "type": "object",
             "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "voice.partial",
+      "summary": "Live STT text so far while the user is still speaking.",
+      "params": [
+        {
+          "name": "payload",
+          "schema": {
+            "$ref": "#/components/schemas/VoicePartialPayload"
           }
         }
       ]

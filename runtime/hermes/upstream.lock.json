@@ -1,11 +1,11 @@
 {
   "project": "NousResearch/hermes-agent",
-  "commit": "0808ed8ec0420ef2c8e1363d919ef1d83fc4e5e7",
-  "tree_sha1": "d9d9232e36e067a90d92e4a264de1f741b1ee1b4",
-  "source_sha256": "413107320c0af4993e8e484c2c180016c26486f3a7def835f1784ca1361b5dc4",
-  "git_tree_sha1": "ee58f424daf921cbb47a203038cf2c1cc9e059d2",
-  "archive_url": "https://codeload.github.com/NousResearch/hermes-agent/tar.gz/0808ed8ec0420ef2c8e1363d919ef1d83fc4e5e7",
-  "archive_sha256": "4174aa7661a591bf822097c66d1d1109ffbde0e3af8be881dd495a8a8b243f63",
-  "archive_root": "hermes-agent-0808ed8ec0420ef2c8e1363d919ef1d83fc4e5e7",
+  "commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+  "tree_sha1": "d3f99f48ba8a3bf09ffeadced8458ba0c57da3e9",
+  "source_sha256": "686a92eabd04423c1dc692bffe021f00804ab9c533cf75ae79bdb950e04450cf",
+  "git_tree_sha1": "b7c44de5f9eea1452369985bc03e937faad44529",
+  "archive_url": "https://codeload.github.com/NousResearch/hermes-agent/tar.gz/9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+  "archive_sha256": "e8090f1533df0bee7f0e1d02374bd32923b32a923c754e152deb4cd55c84fd66",
+  "archive_root": "hermes-agent-9c0560f8e6856bc14c11bfe6d666df06be14d2de",
   "license": "MIT"
 }

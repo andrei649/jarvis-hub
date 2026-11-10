@@ -9,10 +9,10 @@ from agents.core.kernel import Decision, Verdict
 
 def test_catalog_contains_entire_pinned_protocol():
     value = catalog()
-    assert len(value['methods']) == 251
-    assert len(value['server_requests']) == 13
-    assert len(value['notifications']) == 75
-    assert value['source_sha'] == '0808ed8ec0420ef2c8e1363d919ef1d83fc4e5e7'
+    assert len(value['methods']) == 262
+    assert len(value['server_requests']) == 16
+    assert len(value['notifications']) == 78
+    assert value['source_sha'] == '9c0560f8e6856bc14c11bfe6d666df06be14d2de'
     assert classify('rpc', 'session.list') == 0
     assert classify('rpc', 'shell.exec') == 3
     with pytest.raises(RuntimeDenied):
@@ -48,3 +48,34 @@ def test_added_catalog_method_without_classification_fails_closed(tmp_path, monk
     monkeypatch.setattr(policy, 'CATALOG_FILE', path)
     with pytest.raises(RuntimeDenied, match='incomplete'):
         catalog()
+
+
+# Reviewed for the 9c0560f8 pin (docs/hermes/RUNTIME_INTEGRATION.md, "Pin 9c0560f8").
+NEW_AT_9C0560F8 = {
+    'billing.keep_going_on_credits': 3, 'connectors.accounts.rename': 3, 'free_tier.challenge_result': 3,
+    'free_tier.claim_nudge': 3, 'groups.attachment.download': 3, 'groups.attachment.upload': 3,
+    'groups.context': 3, 'groups.continue': 3, 'groups.discard': 3, 'image.render': 3,
+    'machine.facts': 0, 'onboarding.set_run': 3, 'onboarding.skip': 3, 'onboarding.start': 3,
+    'onboarding.state': 3, 'plugins.catalog.lookup': 3, 'subagent.roster': 0, 'vault.preview.fill': 3,
+}
+
+
+def test_methods_new_at_this_pin_carry_their_reviewed_tier():
+    assert {name: classify('rpc', name) for name in NEW_AT_9C0560F8} == NEW_AT_9C0560F8
+    tiers = [method['risk_tier'] for method in catalog()['methods']]
+    assert (tiers.count(0), tiers.count(2), tiers.count(3)) == (87, 15, 160)
+    for removed in ('browser.controller.register', 'onboarding.ensure_setup_profile', 'profiles.remember_onboarding'):
+        with pytest.raises(RuntimeDenied):
+            classify('rpc', removed)
+
+
+def test_every_pin_anchor_names_the_same_commit():
+    from pathlib import Path
+
+    from agents.core.hermes_runtime import distribution, worker
+
+    root = Path(distribution.__file__).resolve().parents[3]
+    commit = distribution.load_pin()['commit']
+    policy_file = json.loads((root / 'runtime/hermes/rpc-policy.json').read_text())
+    assert commit == distribution.PINNED_COMMIT == worker.SOURCE_SHA == catalog()['source_sha'] == policy_file['source_sha']
+    assert f'Commit: {commit}' in (root / 'runtime/hermes/NOTICE.md').read_text()
