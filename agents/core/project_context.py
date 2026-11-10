@@ -103,6 +103,8 @@ class TurnState:
     budget: int = MAX_TOTAL_BYTES
     files: int = 0
     block: str = ""
+    #: The turn's working directory (G5: the coding posture's project folder).
+    workdir: str = ""
     #: The turn's tool calls run in parallel, each in a thread of its own.
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
@@ -370,9 +372,10 @@ def build_turn(session: str, *, scope=None, setting=None, workdir: object = None
     except Exception:
         logger.debug("project context: no file scope", exc_info=True)
         return None
-    state = TurnState(session=session or "default", scope=scope)
+    first = start_dir(scope, workdir)
+    state = TurnState(session=session or "default", scope=scope, workdir=str(first))
     items: list[Loaded] = []
-    for start in [start_dir(scope, workdir), *map(Path, noted_dirs(state.session))]:
+    for start in [first, *map(Path, noted_dirs(state.session))]:
         try:
             items.extend(collect(chain(start, scope), state))
         except (OSError, ValueError):

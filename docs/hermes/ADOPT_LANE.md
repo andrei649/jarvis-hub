@@ -611,3 +611,63 @@ surface walk skips the vendor tree (Nerva's own registration is walked).
   is on; with it off the approval card and the e-stop are the gates.
 - Three upstream bandit findings in the vendored files (two `try/except/pass`, one B104 on a
   blocklist literal) are recorded in `.bandit-baseline.json`.
+
+## Project verification recipes (slice 5, G5 / H023, H405, H406)
+
+Hermes's `hermes verify` detects how a project is built, tested and started and keeps a
+user-editable `.hermes/environment.json`. Slice 5 (same pin, `9c0560f8`) runs the detection
+as it is: `agent/verify/recipes.py` (fan-in 0) and `agent/verify/environment.py` (1 import,
+its sibling). Everything that *runs* or *decides* is Nerva's, in `agents/core/verify/`:
+
+| Upstream file | Lane | Nerva |
+|---|---|---|
+| `agent/verify/recipes.py`, `environment.py` | **Adopt** (byte-for-byte but two import lines) | `verify/project.py` calls `detect_recipe`, `load_or_detect`, `save_manifest` |
+| `agent/verify/runner.py` | **Not adopted**: it spawns the phases and the app itself | `verify/runner.py`: every command is a `terminal_run` through `ToolRPCServer.handle` |
+| `agent/verification_evidence.py` | reference (SQLite, threads, `hermes_constants`) | `verify/evidence.py`: hash-chained rows anchored in the signed intent log |
+| `agent/verification_stop.py`, `turn_stop_gates.py` | reference | `verify/stop.py` + one gate in `agent_runtime.py` |
+| `agent/coding_context.py` | reference (spawns git through `hermes_cli`) | `verify/coding.py`, `verify/workspace.py` |
+| `agent/verify/__init__.py` | not adopted (it imports the runner) | a Nerva docstring marker |
+
+### Compat and rule additions
+
+| Upstream line | Rule (scoped to `agent/verify/`) | Becomes |
+|---|---|---|
+| `from pathlib import Path` | `verify-fs` | `hermes_compat.verify_fs.Path`: a path confined to the one project root Nerva bound for the call (`bound(root, writable=…, hidden=…)`); symlinks resolved and kept under the root; secret-looking paths (the file tools' rule) do not exist; reads capped at 256 KiB; `write_text`/`mkdir` only for the exact manifest `/verify save` names; nothing bound means an empty disk |
+| `from agent.verify.… import` | `verify-siblings` | the vendored `agents.vendor.hermes.agent.verify.…` |
+
+`verify_fs` is path-scoped (`PATH_SCOPED_COMPAT`): only files under `agent/verify/` may
+import it. It imports no Nerva module and no `os`; the secret rule is passed in by the caller.
+
+### How a verification run is governed
+
+- **Detect, status, ledger**: reads only (the confined stand-in, the evidence DB).
+- **Save** (`/verify save`): the owner's command; refused in plan mode and under the e-stop;
+  one file, audited as `verify.manifest_saved`.
+- **Run** (`/verify run`, or the model's own `terminal_run`): refused before anything is queued
+  under the e-stop and in plan mode; then each command goes through the tool front door, so the
+  plan-mode floor, the approval card (ask tier), the approval mode and its sealed-receipt rule,
+  smart approvals and standing consents, the target policy plane, `HARDLINE`, the
+  `terminal.exec` contract and the Action Kernel all apply exactly as for any command. A command
+  needing a shell (`|`, `&&`, `>`) is refused, since the governed transports run a plain argv.
+- **Plan mode**: a verification run executes the project's code, so it is not a read: refused.
+  The coding snapshot's fixed `git status`/`log`/`diff --shortstat` reads are reads and run in
+  plan mode; they are not run under the e-stop.
+- **Evidence**: `autonomy_coordinator._rpc_terminal_run` passes each finished, redacted result to
+  `evidence.record_terminal`; `ToolRPCServer.execute` passes each applied `file_write`/
+  `file_delete` to `evidence.mark_edited`. The session is the one whose turn queued the call
+  (`evidence.note_task` at intake).
+
+### Limits of slice 5
+
+- No app boot and readiness poll (Hermes's `start` phase): the governed transports run a
+  bounded command to completion and cannot keep a server alive and tear its process group down.
+  The start command and port are shown, never run.
+- No `pre_verify` plugin hook: Nerva has no hook that returns prompt text (extension events
+  are observe-only; owner hooks are G17, an open owner decision).
+- Edit-format steering: Nerva's only editor is `file_write` (whole file), so the per-family
+  table (patch vs replace) applies only if a patch-style tool is offered (an MCP server's).
+- No `nerva verify` CLI verb in this slice (`agents/cli/nerva.py` is another builder's file this
+  wave); `/verify` works from every chat surface, `nerva chat` included.
+- A call queued before a hub restart has no session, so its result counts for the project only.
+- Tested with fake project trees, a fake tool server, the real `ToolRPCServer` front door and a
+  real local git repository; no project's real test suite was run through a live terminal target.

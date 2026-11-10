@@ -2937,6 +2937,21 @@
   fork, prompt.btw, @diff/page refs or acting manual compaction). User docs:
   `docs/SESSION_COMMANDS.md`. Tests: `tests/test_g2_session_commands.py` (62; two adversarial review rounds added the per-tick owner re-check, a fresh allotment on resume, migration with the conversation and an explicit read-kind list) and
   `frontend/src/panels/context-meter.test.tsx` (2).
+  **G5 — project verification + coding posture (2026-11-10):** Hermes's `agent/verify/recipes.py`
+  and `environment.py` adopted behind two rules scoped to `agent/verify/` (`verify-fs`: a path
+  confined to one bound project root, secret paths absent, 256 KiB reads, writes only to the
+  manifest; `verify-siblings`); upstream's process runner not adopted. New `agents/core/verify/`:
+  project facts + recipe, a runner whose every command is a `terminal_run` through the tool front
+  door (approval card, approval mode, target policy, hardline, `terminal.exec`, kernel; refused under
+  the e-stop and in plan mode before anything is queued), an evidence ledger (hash-chained rows
+  anchored in the intent log; fed by the coordinator's terminal result hook and applied
+  `file_write`/`file_delete`), verify-on-stop in the tool loop (off by default, one nudge a turn,
+  two per edit generation, held answer as fallback), and the coding posture (brief, single-editor
+  edit-format line, a session-pinned fenced git snapshot read without repository hooks or filters).
+  Owner surface: `/verify [status|detect|save|run|ledger|on-stop|coding]`. Ledger: H023, H405, H406
+  stay **partial** (no app boot/readiness poll; no `pre_verify` hook; no patch editor to steer
+  toward, no focus-mode collapse). Guide: `docs/hermes/ADOPT_LANE.md` → slice 5; user docs:
+  `docs/SESSION_COMMANDS.md` → /verify. Tests: `tests/test_g5_project_verify.py` (35).
 
   **UX pass done (2026-11-10): the Integrations panel** (owner request: make the Hermes integration
   coherent before adopting more). Console → Start → Integrations lists the 4 search backends (Tavily +

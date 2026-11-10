@@ -81,6 +81,8 @@ class Rule:
 # line in place: line numbers are preserved, so upstream diffs stay readable.
 #: The adopted A2A client package (slice 4); the only place the governed ``urllib`` exists.
 A2A_PATH = "plugins/platforms/a2a/"
+#: The adopted project-verification recipes (G5); the only place the confined ``verify_fs`` exists.
+VERIFY_PATH = "agent/verify/"
 
 REWRITE_RULES: tuple[Rule, ...] = (
     Rule("httpx", r"^(?P<i>[ \t]*)import httpx(?P<rest>[ \t]*(?:#.*)?)$",
@@ -169,6 +171,16 @@ REWRITE_RULES: tuple[Rule, ...] = (
          r"\g<i>from agents.vendor.hermes_compat.goals import ",
          "loop state in Nerva's per-session store; the judge and the goal probe are Nerva's",
          paths=("hermes_cli/loops.py",)),
+    # G5 — project verification recipes (agent/verify/{recipes,environment}.py).
+    Rule("verify-fs", r"^(?P<i>[ \t]*)from pathlib import ",
+         r"\g<i>from agents.vendor.hermes_compat.verify_fs import ",
+         "a project path confined to the owner's file roots and the one project being "
+         "verified: bounded reads, writes only to the manifest Nerva's /verify save allows",
+         paths=(VERIFY_PATH,)),
+    Rule("verify-siblings", r"^(?P<i>[ \t]*)from agent\.verify\.",
+         r"\g<i>from agents.vendor.hermes.agent.verify.",
+         "vendored siblings live under agents.vendor.hermes",
+         paths=(VERIFY_PATH,)),
 )
 
 # ── what a vendored file may contain (an allowlist, applied by pull, status and CI) ────
@@ -196,6 +208,8 @@ COMPAT_MODULES = frozenset({
     "loops_config", "goals",
     # slice 4 (A2A client tools)
     "urllib", "a2a_shared", "futures",
+    # G5 (project verification recipes)
+    "verify_fs",
 })
 #: Compat modules only some vendored paths may import: the governed ``urllib`` can open a
 #: request (through the egress binding of one A2A call), so no other adopted file may
@@ -206,6 +220,7 @@ A2A_PACKAGE = "agents.vendor.hermes.plugins.platforms.a2a"
 WIRE_DATA_STRINGS = frozenset({"http"})
 PATH_SCOPED_COMPAT: dict[str, tuple[str, ...]] = {
     "urllib": (A2A_PATH,), "a2a_shared": (A2A_PATH,), "futures": (A2A_PATH,),
+    "verify_fs": (VERIFY_PATH,),
 }
 #: Underscore names a compat module exports on purpose, because the upstream code imports
 #: them by that name (G2: ``hermes_cli/loops.py`` takes SessionDB access from
@@ -254,7 +269,9 @@ CATALOG_NAMES = frozenset({"LICENSE"})
 #: docstring and nothing else (``status``).
 _LOCAL_PACKAGE_MARKERS = ("agent/__init__.py", "providers/__init__.py", "hermes_cli/__init__.py",
                           # slice 4: upstream's a2a ``__init__`` is the gateway plugin loader
-                          "plugins/platforms/__init__.py", "plugins/platforms/a2a/__init__.py")
+                          "plugins/platforms/__init__.py", "plugins/platforms/a2a/__init__.py",
+                          # G5: upstream's verify ``__init__`` also imports the process runner
+                          "agent/verify/__init__.py")
 
 
 def rewrite(text: str, path: str | None = None) -> tuple[str, list[str]]:

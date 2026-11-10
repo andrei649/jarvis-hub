@@ -21,6 +21,24 @@
   attachments) as a grid and a table; the HUD has the same meter (Console → Context Meter).
   `/compress` tells you what compaction will do on the next turn. Details:
   [docs/SESSION_COMMANDS.md](docs/SESSION_COMMANDS.md).
+**Check that a project still builds and passes its tests, and keep the proof**
+- `/verify` tells you how a project in your file roots is built and tested: its test, lint and
+  build commands and its run recipe (Node, Python, Go, Rust, Maven, Gradle, Make, docker
+  compose), detected by Hermes Agent's own code. `/verify save` writes the recipe to the
+  project's `.hermes/environment.json`, which you can edit; it then wins over detection.
+- `/verify run` runs the build and test commands one by one. Each is an ordinary terminal
+  command: you approve it, your approval mode and the command denylist apply, and nothing is
+  queued while the emergency stop is on or the conversation is in plan mode. Nerva does not
+  start the app itself.
+- Every finished test, lint or build run of a project, yours or the model's, is kept in an
+  evidence ledger that cannot be back-dated (`/verify ledger` checks it). An approved edit makes
+  earlier results stale.
+- `/verify on-stop on` (off by default): when the model is about to say it is done after code
+  in this conversation changed and nothing has passed since, it is asked once to run the
+  project's check first, and told that a check still waiting for you has not passed.
+- When the model works on code in a project, it now gets a short coding brief and a snapshot of
+  the repository (branch, ahead/behind, changed files, last commits, the project's commands),
+  read without running any of the repository's hooks or filters. `/verify coding off` turns it off.
 **Set up search services and cloud model providers from one HUD panel, no `.env` edit, no restart**
 - A new Console panel, Start → **Integrations**, lists everything that needs your setup: the four
   search services (Tavily, plus Exa, Brave Search and Parallel from Hermes Agent), the cloud model
