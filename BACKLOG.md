@@ -2756,8 +2756,10 @@
   under `off`); its two majors are fixed (the sync froze the event loop behind the write lock; an
   unreadable store was served from the last value seen) and its minors are listed on the row. H440 —
   one more blocker (a chat written to after it was continued was hidden with its newer turns), a
-  backup set cut by the next prune, and schema-refusal false positives; fixes in progress. Both rows
-  stay `partial`; 146/697.
+  backup set cut by the next prune, and schema-refusal false positives; all fixed (an earlier part
+  used after a continue is listed again; backups are kept and pruned per conversation; a refusal is
+  read from the schema field's name and forgotten after an hour; a title key column and linear sweep
+  lists; 65 more tests). That round is not yet re-reviewed. Both rows stay `partial`; 146/697.
 
 ## Darwin feature absorption — 2026-09-09
 

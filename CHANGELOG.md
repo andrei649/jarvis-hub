@@ -16,7 +16,11 @@
   shows the newest part of each conversation and hides the earlier ones; a chat you continued
   twice from the same point shows both branches. Archive and pin act on the whole conversation.
   Delete asks to remove the whole conversation and keeps a backup of every part.
-  `nerva chat -r "Title"` opens the newest part.
+  `nerva chat -r "Title"` opens the part you used last.
+- If an earlier part of a conversation gets new messages after it was continued, it shows up
+  in the list again, marked "earlier part · in use", so nothing you wrote is out of reach.
+- Session backups are kept per conversation: `JARVIS_SESSION_BACKUP_KEEP` now counts
+  conversations, not files, so a deleted conversation's backups are never cut in half.
 - Two chats that start with the same words are named "hello" and "hello (2)".
 
 **The approval mode does what it says (#1347)**
