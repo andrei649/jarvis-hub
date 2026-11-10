@@ -814,6 +814,14 @@ class Orchestrator:
         self.marketplace = SkillMarketplace(
             history=SkillHistory() if skill_history_enabled() else None)
         self.mcp = MCPManager()
+        # H553 — server-initiated sampling/elicitation answer through the owner's approval
+        # queue, the local model rail and the kill switch, each read when a request arrives.
+        from .mcp.host_requests import MCPHost
+        self.mcp.attach_host(MCPHost(
+            approvals=lambda: getattr(self, "action_approvals", None),
+            router=lambda: getattr(self, "llm_router", None),
+            kill_switch=lambda: getattr(self, "kill_switch", None),
+        ))
         self.channel_manager = ChannelManager()  # CLN-2: owns the channel registry + I/O
         self.checkpoints = CheckpointManager()
         self.memory.set_checkpoint_manager(self.checkpoints)

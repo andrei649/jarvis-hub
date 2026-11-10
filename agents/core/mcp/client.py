@@ -53,7 +53,9 @@ import logging
 import os
 import re
 import shlex
+import time
 from collections.abc import Callable
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -66,7 +68,14 @@ from agents.core.automation_contracts import (
 )
 from agents.core.env_alias import canonical
 from agents.core.env_config import env_flag, env_list, resolve_spellings
+from agents.core.mcp.host_requests import (
+    ElicitationConfig,
+    MCPHost,
+    SamplingConfig,
+)
 from agents.core.mcp.http_transport import (
+    CLIENT_INFO,
+    CLIENT_PROTOCOL_VERSION,
     HTTP_CLIENT_FLAG,
     SUPPORTED_TRANSPORTS,
     TRANSPORT_STDIO,
@@ -77,6 +86,14 @@ from agents.core.mcp.http_transport import (
     normalize_transport,
     transport_allowed,
     validate_mcp_url,
+)
+from agents.core.mcp.resilience import ReconnectPolicy, ServerHealth, halted
+from agents.core.mcp.resources import (
+    UTILITY_OPS,
+    ResourceError,
+    cache_result_blocks,
+    run_utility,
+    utility_ops_for,
 )
 from agents.core.mcp.schema_normalize import (
     PROVIDER_NAME_PREFIX,
@@ -351,6 +368,25 @@ def active_tool_call_contract() -> ContractTemplate:
     return MCP_TOOL_CALL_CONTRACT_HTTP if http_client_enabled() else MCP_TOOL_CALL_CONTRACT
 
 
+def _is_server_request(msg: dict) -> bool:
+    """A JSON-RPC request *from* the server: a method and an id, no result or error."""
+    return ("method" in msg and "id" in msg and msg.get("id") is not None
+            and "result" not in msg and "error" not in msg)
+
+
+def _permanent_refusal(reason: str | None) -> bool:
+    """A connect refusal no retry can fix: the configuration itself is refused."""
+    text = str(reason or "")
+    return text in {"unsafe_command", "missing_command"} or text.startswith(
+        ("unsupported_transport", "transport_disabled"))
+
+
+#: H556 — parallel connects at once, and the supervisor's cadence.
+CONNECT_CONCURRENCY = 4
+SUPERVISOR_INTERVAL = 5.0
+KEEPALIVE_INTERVAL = 60.0
+
+
 class MCPTool:
     def __init__(
         self,
@@ -359,8 +395,12 @@ class MCPTool:
         input_schema: dict,
         server: str,
         annotations: dict | None = None,
+        *,
+        utility: bool = False,
     ):
         self.name = name
+        #: H552 — one of the four resource/prompt tools this client adds, not the server's own.
+        self.utility = bool(utility)
         self.description = description
         #: What the server sent, kept for diagnostics only — never offered to a model.
         self.raw_input_schema = input_schema
@@ -404,6 +444,8 @@ class MCPServer:
         trust: str = TRUST_READ_ONLY,
         tools_allow: list[str] | None = None,
         tools_deny: list[str] | None = None,
+        sampling: object = None,
+        elicitation: object = None,
     ):
         """
         ``transport`` is normalised (``"HTTP"`` → ``streamable-http``); an unknown
@@ -443,6 +485,23 @@ class MCPServer:
         self.env = dict(env or {})
         self.headers = dict(headers or {})
         self.tools: list[MCPTool] = []
+        #: H552 — list_resources / read_resource / list_prompts / get_prompt, offered only
+        #: for the capabilities the server declared on ``initialize``.
+        self.utility_tools: list[MCPTool] = []
+        #: What the server declared on ``initialize`` (``resources``, ``prompts`` …).
+        self.server_capabilities: dict = {}
+        #: H553 — the owner's settings for requests the server sends back to Nerva.
+        self.sampling = SamplingConfig.from_config(sampling)
+        self.elicitation = ElicitationConfig.from_config(elicitation)
+        #: Host services (approval queue, model router, kill switch); set by the manager.
+        self.host: MCPHost | None = None
+        #: H556 — connection health, bounded connect, per-request deadline.
+        self.health = ServerHealth()
+        self.connect_timeout = 30.0
+        self.request_timeout = 10.0
+        #: The owner (or autoconnect) wants this server up: the supervisor reconnects it.
+        self.wanted = False
+        self._stderr_task: asyncio.Task | None = None
         self._proc = None
         self._http: StreamableHttpTransport | None = None
         self._http_factory = http_transport_factory or StreamableHttpTransport
@@ -454,7 +513,40 @@ class MCPServer:
         self._io_lock = asyncio.Lock()
         self._next_id = 0
 
-    async def connect(self):
+    async def connect(self) -> bool:
+        """Connect within :attr:`connect_timeout`, recording the outcome on :attr:`health`.
+
+        A server that hangs on spawn or on ``initialize`` is torn down at the deadline
+        (``connect_timeout``) instead of holding the caller. A configuration refusal
+        (unsafe command, transport switched off) is not retried by the supervisor.
+        """
+        self.wanted = True
+        self.health.begin()
+        started = time.monotonic()
+        try:
+            ok = bool(await asyncio.wait_for(self._connect_impl(), timeout=self.connect_timeout))
+        except TimeoutError:
+            logger.warning("MCP server %s did not connect within %.0fs", self.name, self.connect_timeout)
+            self.last_error = "connect_timeout"
+            await self._teardown()
+            ok = False
+        except asyncio.CancelledError:
+            await self._teardown()
+            raise
+        except Exception as exc:
+            logger.warning("MCP connect failed (%s): %s", self.name, type(exc).__name__)
+            self.last_error = "connect_error"
+            await self._teardown()
+            ok = False
+        if ok:
+            self.health.succeeded(connect_ms=(time.monotonic() - started) * 1000.0)
+        elif _permanent_refusal(self.last_error):
+            self.health.refused(self.last_error or "refused")
+        else:
+            self.health.failed(self.last_error or "connect_failed")
+        return ok
+
+    async def _connect_impl(self):
         self.last_error = None
         if self.transport == TRANSPORT_STREAMABLE_HTTP:
             return await self._connect_http()
@@ -468,11 +560,12 @@ class MCPServer:
             # registers no tools gets a fresh subprocess spawned (and the old one
             # orphaned) on every reconnect attempt.
             if self._proc is not None:
-                await self.close()
+                await self._teardown()
             # A reconnect re-lists from scratch (the HTTP path does the same): the old
             # list would otherwise be duplicated, and every duplicated pair is withheld
             # from the model as ambiguous (H557).
             self.tools = []
+            self.utility_tools = []
             self._proc = await asyncio.create_subprocess_exec(
                 *argv,
                 stdin=asyncio.subprocess.PIPE,
@@ -481,13 +574,16 @@ class MCPServer:
                 cwd=self.cwd or None,
                 env=self._merged_env(),
             )
+            self._start_stderr_drain()
             await self._initialize()
-            logger.info(f"MCP server connected: {self.name} ({len(self.tools)} tools)")
-            # No tools registered → the handshake failed; report failure so the
-            # caller stops treating a dead server as available.
-            if not self.tools:
+            logger.info(f"MCP server connected: {self.name} ({len(self.tools)} tools, "
+                        f"{len(self.utility_tools)} resource/prompt tools)")
+            # Nothing offered → the handshake failed; report failure so the caller stops
+            # treating a dead server as available. A server that publishes only resources
+            # or prompts is a live server (H552).
+            if not (self.tools or self.utility_tools):
                 self.last_error = "handshake_failed"
-            return bool(self.tools)
+            return bool(self.tools or self.utility_tools)
         elif self.transport != TRANSPORT_STDIO:
             # Anything that is not stdio or streamable-http (e.g. the deprecated
             # "sse" pair) is refused by name, loudly, rather than as a quiet False
@@ -515,19 +611,24 @@ class MCPServer:
             self.last_error = reason
             return False
         if self._http is not None:
-            await self.close()
+            await self._teardown()
         self.tools = []
+        self.utility_tools = []
         try:
             self._http = self._http_factory(self.url, self.headers, name=self.name)
             result = await self._http.initialize()
             if result:
+                # No server-to-client channel is read on this transport, so nothing is
+                # declared for sampling or elicitation; resources and prompts still work.
+                self._record_capabilities(result)
                 await self._list_tools()
+                self._refresh_utilities()
         except MCPTransportError as exc:
             logger.warning("MCP HTTP connect refused (%s): %s", self.name, exc.reason)
             self.last_error = exc.reason
             self._http = None
             return False
-        if not self.tools:
+        if not (self.tools or self.utility_tools):
             self.last_error = "handshake_failed"
             return False
         logger.info(f"MCP server connected: {self.name} ({len(self.tools)} tools, streamable-http)")
@@ -536,7 +637,7 @@ class MCPServer:
     def is_connected(self) -> bool:
         """Transport-aware liveness (the admin list used to read ``_proc`` directly)."""
         if self.transport == TRANSPORT_STREAMABLE_HTTP:
-            return self._http is not None and self._http.initialized and bool(self.tools)
+            return self._http is not None and self._http.initialized and bool(self.tools or self.utility_tools)
         return self._proc is not None and self._proc.returncode is None
 
     def _command_argv(self) -> list[str] | None:
@@ -599,10 +700,87 @@ class MCPServer:
         merged.update({str(k): str(v) for k, v in self.env.items()})
         return merged
 
+    def client_capabilities(self) -> dict:
+        """What this client declares on ``initialize`` (H553): sampling only when the owner
+        turned it on for this server, elicitation only when an approval queue can take it."""
+        if self.host is None:
+            return {}
+        return self.host.client_capabilities(self.sampling, self.elicitation)
+
+    def _record_capabilities(self, result: object) -> None:
+        caps = result.get("capabilities") if isinstance(result, dict) else None
+        self.server_capabilities = dict(caps) if isinstance(caps, dict) else {}
+
     async def _initialize(self):
-        resp = await self._send({"jsonrpc": "2.0", "method": "initialize", "params": {}, "id": 1})
+        resp = await self._send({"jsonrpc": "2.0", "method": "initialize", "id": 1, "params": {
+            "protocolVersion": CLIENT_PROTOCOL_VERSION,
+            "capabilities": self.client_capabilities(),
+            "clientInfo": dict(CLIENT_INFO),
+        }})
         if resp:
+            self._record_capabilities(resp.get("result"))
+            await self._notify("notifications/initialized")
             await self._list_tools()
+            self._refresh_utilities()
+
+    async def _notify(self, method: str, params: dict | None = None) -> None:
+        if self._proc is None or self._proc.stdin.is_closing():
+            return
+        try:
+            line = json.dumps({"jsonrpc": "2.0", "method": method, "params": params or {}}) + "\n"
+            self._proc.stdin.write(line.encode())
+            await self._proc.stdin.drain()
+        except Exception:
+            logger.debug("MCP %s: notification %s not sent", self.name, method, exc_info=True)
+
+    def _start_stderr_drain(self) -> None:
+        """Read the child's stderr into the log (H556): an unread pipe fills and blocks it."""
+        stream = getattr(self._proc, "stderr", None)
+        if stream is None or not hasattr(stream, "readline"):
+            return
+
+        async def drain() -> None:
+            seen = 0
+            try:
+                while True:
+                    raw = await stream.readline()
+                    if not raw:
+                        return
+                    seen += 1
+                    self.health.bump("stderr_lines")
+                    if seen <= 200:
+                        logger.debug("MCP %s stderr: %s", self.name,
+                                     raw.decode("utf-8", "replace").rstrip()[:200])
+            except (asyncio.CancelledError, Exception):
+                return
+
+        self._stderr_task = asyncio.get_running_loop().create_task(drain())
+
+    def _refresh_utilities(self) -> None:
+        """H552 — the resource/prompt tools the declared capabilities admit, minus any name a
+        server tool already uses and any name the owner's filter hides."""
+        own = {t.name for t in self.tools}
+        rows = []
+        for op in utility_ops_for(self.server_capabilities):
+            if op in own or not self.tool_visible(op):
+                continue
+            _cap, description, schema = UTILITY_OPS[op]
+            rows.append(MCPTool(op, description, schema, self.name,
+                                annotations={"readOnlyHint": True}, utility=True))
+        self.utility_tools = rows
+
+    def utility(self, name: str) -> MCPTool | None:
+        return next((t for t in self.utility_tools if t.name == name), None)
+
+    def has_tool(self, name: str) -> bool:
+        return any(t.name == name for t in self.tools) or self.utility(name) is not None
+
+    def all_tools(self) -> list[MCPTool]:
+        return list(self.tools) + list(self.utility_tools)
+
+    async def request(self, method: str, params: dict | None = None) -> dict:
+        """One JSON-RPC round trip on whichever transport this server speaks."""
+        return await self._send({"jsonrpc": "2.0", "method": method, "params": params or {}, "id": 0})
 
     async def _list_tools(self):
         resp = await self._send({"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 2})
@@ -629,6 +807,7 @@ class MCPServer:
             # A listing replaces the previous one (H557): appending made every reconnect
             # (or a tools/list refresh) duplicate each tool.
             self.tools = listed
+            self._refresh_utilities()
             if hidden:
                 logger.info("MCP server %s: %d tool(s) hidden by the owner's filter", self.name, hidden)
 
@@ -653,6 +832,8 @@ class MCPServer:
         blocked = self._tool_call_blocked(name, arguments)
         if blocked is not None:
             return blocked
+        if self.utility(name) is not None and not any(t.name == name for t in self.tools):
+            return await self._call_utility(name, arguments)
         resp = await self._send({
             "jsonrpc": "2.0",
             "method": "tools/call",
@@ -662,14 +843,26 @@ class MCPServer:
         if resp and "result" in resp:
             # A remote server's text is untrusted: invisible TAG characters can carry an
             # instruction the owner never sees (Hermes absorption 4a).
-            return strip_invisible_deep(resp["result"])
+            # H552 — image/audio/embedded binary blocks go to disk; the model gets a path.
+            return cache_result_blocks(self.name, strip_invisible_deep(resp["result"]))
         return resp
 
+    async def _call_utility(self, op: str, arguments: dict) -> dict:
+        """H552 — run one resource/prompt op; its text comes back scanned and tainted."""
+        try:
+            return await run_utility(op, arguments, self.request, server=self.name)
+        except ResourceError as exc:
+            return {"error": exc.reason, "tool": op, "server": self.name}
+        except OSError:
+            logger.warning("MCP %s: %s could not store a binary block", self.name, op, exc_info=True)
+            return {"error": "cache_write_failed", "tool": op, "server": self.name}
+
     def _trust_denial(self, name: str) -> dict | None:
-        """On a read-only server only a tool the server itself marked read-only may run."""
+        """On a read-only server only a tool the server itself marked read-only may run.
+        The resource/prompt tools read, so both tiers allow them."""
         if self.trust == TRUST_FULL:
             return None
-        tool = next((t for t in self.tools if t.name == name), None)
+        tool = next((t for t in self.tools if t.name == name), None) or self.utility(name)
         if tool is not None and tool.read_only:
             return None
         return {
@@ -722,7 +915,7 @@ class MCPServer:
                 self._proc.stdin.write(line.encode())
                 await self._proc.stdin.drain()
                 loop = asyncio.get_running_loop()
-                deadline = loop.time() + 10.0
+                deadline = loop.time() + self.request_timeout
                 # Read until the reply whose id matches ours, skipping
                 # notifications and any stale reply from a timed-out call.
                 # Bounded so a peer echoing a fixed id can't spin forever.
@@ -739,29 +932,105 @@ class MCPServer:
                         resp = json.loads(raw.decode())
                     except json.JSONDecodeError:
                         continue
-                    if isinstance(resp, dict) and resp.get("id") == req_id:
+                    if not isinstance(resp, dict):
+                        continue
+                    if _is_server_request(resp):
+                        # H553 — the server asks the client something mid-call (sampling,
+                        # elicitation, ping). It is answered here, on the same pipe, and the
+                        # time the owner or the model took does not count against our call.
+                        started = loop.time()
+                        await self._answer_server_request(resp)
+                        deadline += loop.time() - started
+                        continue
+                    if resp.get("id") == req_id:
                         return resp
                 return {}
             except Exception as e:
                 logger.warning(f"MCP error ({self.name}): {e}")
                 return {}
 
-    async def close(self):
+    async def _answer_server_request(self, req: dict) -> None:
+        method = str(req.get("method") or "")
+        if self.host is None:
+            out = {"error": {"code": -32601, "message": "method not supported by this client"}}
+        else:
+            try:
+                out = await self.host.handle(self, method, req.get("params"))
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.warning("MCP %s: answering %s failed", self.name, method[:60], exc_info=True)
+                out = {"error": {"code": -32603, "message": "internal error"}}
+        try:
+            line = json.dumps({"jsonrpc": "2.0", "id": req.get("id"), **out}) + "\n"
+            self._proc.stdin.write(line.encode())
+            await self._proc.stdin.drain()
+        except Exception:
+            logger.warning("MCP %s: reply to %s not written", self.name, method[:60])
+
+    async def ping(self) -> bool:
+        """Keepalive (H556): False when the server did not answer within the deadline."""
+        resp = await self._send({"jsonrpc": "2.0", "method": "ping", "params": {}, "id": 0})
+        return bool(resp) and "result" in resp
+
+    async def _teardown(self) -> None:
+        """Stop the transport without changing whether the owner wants the server up."""
+        if self._stderr_task is not None:
+            self._stderr_task.cancel()
+            self._stderr_task = None
         if self._proc:
-            self._proc.terminate()
-            await self._proc.wait()
+            proc, self._proc = self._proc, None
+            try:
+                if proc.returncode is None:
+                    proc.terminate()
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=5.0)
+                except TimeoutError:
+                    proc.kill()
+                    await asyncio.wait_for(proc.wait(), timeout=5.0)
+            except (TimeoutError, ProcessLookupError, AttributeError):
+                pass
             logger.info(f"MCP server closed: {self.name}")
         if self._http is not None:
             http, self._http = self._http, None
             await http.close()
             logger.info(f"MCP server closed: {self.name}")
 
+    async def close(self):
+        """The owner's disconnect: stop the transport and stop reconnecting."""
+        self.wanted = False
+        self.health.stopped()
+        await self._teardown()
+
 
 class MCPManager:
-    def __init__(self):
+    def __init__(self, *, host: MCPHost | None = None, policy: ReconnectPolicy | None = None):
         self.servers: dict[str, MCPServer] = {}
         #: Built-in governed tool names an MCP tool may never answer to (H557).
         self.reserved_names: frozenset[str] = frozenset()
+        #: H553 — approval queue, model router and kill switch for server-initiated requests.
+        self.host: MCPHost = host or MCPHost()
+        #: H556 — the reconnect numbers every server's health record uses.
+        self.policy = policy or ReconnectPolicy()
+        self.connect_concurrency = CONNECT_CONCURRENCY
+        self.keepalive_interval = KEEPALIVE_INTERVAL
+        self._supervisor: asyncio.Task | None = None
+        self._last_ping: dict[str, float] = {}
+
+    def attach_host(self, host: MCPHost) -> None:
+        self.host = host
+        for srv in self.servers.values():
+            srv.host = host
+
+    def _adopt(self, srv: "MCPServer") -> "MCPServer":
+        """Give a server the manager's host and reconnect policy (idempotent)."""
+        srv.host = self.host
+        if srv.health.policy is not self.policy:
+            srv.health.policy = self.policy
+        return srv
+
+    def _halted(self) -> str | None:
+        return halted(self.host.kill_switch(), "mcp")
 
     def reserve_names(self, names) -> None:
         """Declare the built-in tool names a third-party MCP tool may never shadow."""
@@ -777,7 +1046,7 @@ class MCPManager:
         pairs: list[tuple[MCPServer, MCPTool]] = []
         listed: set[tuple[str, str]] = set()
         for srv in self.servers.values():
-            for tool in srv.tools:
+            for tool in srv.all_tools():
                 # The same (server, tool) listed twice is one tool, not a collision: the
                 # first entry answers to it, as it does for dispatch.
                 key = (srv.name, tool.name)
@@ -833,18 +1102,108 @@ class MCPManager:
                 "server": srv.name,
                 "tool": tool.name,
                 "qualified_name": tool.qualified_name,
+                **({"utility": True} if tool.utility else {}),
             })
         return rows
 
     def register(self, server: MCPServer):
-        self.servers[server.name] = server
+        self.servers[server.name] = self._adopt(server)
 
-    async def connect_all(self):
-        for srv in self.servers.values():
+    # ── H556: parallel bounded connects, reconnect with backoff, keepalive ──
+
+    async def _connect_one(self, srv: MCPServer, gate: asyncio.Semaphore) -> bool:
+        async with gate:
+            self._adopt(srv)
             try:
-                await srv.connect()
-            except Exception as e:
-                logger.warning(f"MCP connect failed ({srv.name}): {e}")
+                return await srv.connect()
+            except Exception as e:                       # connect() records; this is a last net
+                logger.warning(f"MCP connect failed ({srv.name}): {type(e).__name__}")
+                return False
+
+    async def connect_all(self, names=None) -> dict[str, bool]:
+        """Connect every server (or *names*) at once, at most :attr:`connect_concurrency`
+        in flight. Each connect has its own deadline (``connect_timeout``), so one hung
+        server costs its own slot, never the others' answers."""
+        if self._halted():
+            logger.warning("MCP connect_all refused: %s", self._halted())
+            return {}
+        chosen = [srv for name, srv in self.servers.items() if names is None or name in names]
+        gate = asyncio.Semaphore(max(1, int(self.connect_concurrency)))
+        results = await asyncio.gather(*(self._connect_one(srv, gate) for srv in chosen))
+        return {srv.name: bool(ok) for srv, ok in zip(chosen, results, strict=True)}
+
+    async def connect_server(self, name: str) -> bool:
+        srv = self.servers.get(name)
+        if srv is None:
+            return False
+        return await self._connect_one(srv, asyncio.Semaphore(1))
+
+    async def tick(self, now: float | None = None) -> dict[str, str]:
+        """One supervisor pass: reconnect what is due, ping what is idle. Returns what it did.
+
+        Nothing is spawned or pinged while the e-stop or kill switch is engaged."""
+        if self._halted():
+            return {}
+        now = time.time() if now is None else now
+        done: dict[str, str] = {}
+        due: list[MCPServer] = []
+        for srv in list(self.servers.values()):
+            if not srv.wanted:
+                continue
+            if srv.is_connected():
+                if (srv.transport == TRANSPORT_STDIO and not srv._io_lock.locked()
+                        and now - self._last_ping.get(srv.name, 0.0) >= self.keepalive_interval):
+                    self._last_ping[srv.name] = now
+                    if await srv.ping():
+                        done[srv.name] = "ping_ok"
+                    else:
+                        srv.health.lost("keepalive_failed", now=now)
+                        await srv._teardown()
+                        done[srv.name] = "ping_failed"
+                continue
+            srv.health.lost("transport_lost", now=now)
+            if srv.health.retry_due(now):
+                due.append(srv)
+        if due:
+            gate = asyncio.Semaphore(max(1, int(self.connect_concurrency)))
+            results = await asyncio.gather(*(self._connect_one(srv, gate) for srv in due))
+            for srv, ok in zip(due, results, strict=True):
+                done[srv.name] = "reconnected" if ok else "retry_failed"
+        return done
+
+    async def _supervise(self, interval: float) -> None:
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                await self.tick()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.warning("MCP supervisor pass failed", exc_info=True)
+
+    def start(self, *, autoconnect: bool = False, interval: float = SUPERVISOR_INTERVAL) -> None:
+        """Start the reconnect/keepalive supervisor; with *autoconnect*, connect every saved
+        server in the background first (boot never waits on an MCP server)."""
+        for srv in self.servers.values():
+            self._adopt(srv)
+        if self._supervisor is not None and not self._supervisor.done():
+            return
+        loop = asyncio.get_running_loop()
+
+        async def run() -> None:
+            if autoconnect:
+                try:
+                    await self.connect_all()
+                except Exception:
+                    logger.warning("MCP background connect failed", exc_info=True)
+            await self._supervise(interval)
+
+        self._supervisor = loop.create_task(run())
+
+    def health(self) -> dict[str, dict]:
+        """One status for every surface: per server, connection health and host counters."""
+        return {name: {"connected": srv.is_connected(), **srv.health.status()}
+                for name, srv in self.servers.items()}
 
     def get_tools(self) -> list[MCPTool]:
         tools = []
@@ -877,10 +1236,10 @@ class MCPManager:
             srv = self.servers.get(server)
             if srv is None:
                 return None, bare, {"error": "server_not_found", "tool": bare, "server": server}
-            if not any(t.name == bare for t in srv.tools):
+            if not srv.has_tool(bare):
                 return None, bare, {"error": f"Tool '{bare}' not found", "server": server}
             return srv, bare, None
-        offering = [srv for srv in self.servers.values() if any(t.name == bare for t in srv.tools)]
+        offering = [srv for srv in self.servers.values() if srv.has_tool(bare)]
         if not offering:
             return None, bare, {"error": f"Tool '{bare}' not found"}
         if len(offering) > 1:
@@ -895,7 +1254,7 @@ class MCPManager:
         srv, bare, error = self._resolve(name, server)
         if error is not None or srv is None:
             return None
-        for t in srv.tools:
+        for t in srv.all_tools():
             if t.name == bare:
                 return t
         return None
@@ -904,9 +1263,20 @@ class MCPManager:
         srv, bare, error = self._resolve(name, server)
         if error is not None or srv is None:
             return error
+        if srv.wanted and not srv.is_connected() and not self._halted():
+            # H556 — a server that dropped is reconnected on its next use, when its
+            # backoff allows; otherwise the call answers at once instead of waiting.
+            srv.health.lost("transport_lost")
+            if srv.health.retry_due():
+                await self._connect_one(srv, asyncio.Semaphore(1))
         return await srv.call_tool(bare, arguments)
 
     async def close_all(self):
+        task, self._supervisor = self._supervisor, None
+        if task is not None:
+            task.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await task
         for srv in self.servers.values():
             await srv.close()
 
@@ -922,6 +1292,8 @@ class MCPManager:
                 "trust": srv.trust,
                 "tools_allow": srv.tools_allow,
                 "tools_deny": srv.tools_deny,
+                "sampling": srv.sampling.to_config(),
+                "elicitation": srv.elicitation.to_config(),
             }
             for srv in self.servers.values()
         ]
@@ -966,5 +1338,7 @@ class MCPManager:
                 trust=trust,
                 tools_allow=cfg.get("tools_allow"),
                 tools_deny=cfg.get("tools_deny"),
+                sampling=cfg.get("sampling"),
+                elicitation=cfg.get("elicitation"),
             )
-            self.servers[srv.name] = srv
+            self.servers[srv.name] = self._adopt(srv)

@@ -1,8 +1,8 @@
 # Sprint curent: echivalarea celor 697 de capabilități Hermes
 
-**148 / 697 = 21.2% echivalente complet în evaluarea documentată.**
+**149 / 697 = 21.4% echivalente complet în evaluarea documentată.**
 
-Din acestea, **148** au fost reevaluate pe cod în această livrare; **0** păstrează verdictul auditului din 7 septembrie.
+Din acestea, **149** au fost reevaluate pe cod în această livrare; **0** păstrează verdictul auditului din 7 septembrie.
 
 **Acesta este un status inițial conservator, nu o reauditare completă a celor 697.** Verdictele moștenite și cele actualizate sunt vizibile pentru fiecare rând. Procentul de 88% discutat anterior privea altă listă și nu se aplică aici.
 
@@ -10,13 +10,13 @@ Din acestea, **148** au fost reevaluate pe cod în această livrare; **0** păst
 
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
-| Echivalent | 148 | 21.2% |
-| Parțial | 460 | 66.0% |
-| Lipsă | 57 | 8.2% |
+| Echivalent | 149 | 21.4% |
+| Parțial | 462 | 66.3% |
+| Lipsă | 54 | 7.7% |
 | Exclus intenționat | 32 | 4.6% |
 | De reverificat | 0 | 0.0% |
 
-**Ținta acceptată în produs:** 665 rânduri; progres 148/665 = **22.3%**. Excluderi active: 32. Readmise explicit din vechiul audit: 75; readmiterea nu acordă credit de implementare.
+**Ținta acceptată în produs:** 665 rânduri; progres 149/665 = **22.4%**. Excluderi active: 32. Readmise explicit din vechiul audit: 75; readmiterea nu acordă credit de implementare.
 
 **Acoperirea reevaluării curente:** 665/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
 
@@ -45,14 +45,14 @@ Fiecare rând aparține unui singur domeniu din [areas.json](docs/hermes/areas.j
 | [security](docs/HERMES_CAPABILITIES.md#area-security) — Security: approvals, sandbox, secrets, egress | own | 34 | 7 | 25 | 1 | 1 | 0 | 211 | seed din dovezi |
 | [media](docs/HERMES_CAPABILITIES.md#area-media) — Media: images, video, voice, vision | adopt/own | 27 | 7 | 19 | 1 | 0 | 0 | 100 | seed din dovezi |
 | [editor-acp](docs/HERMES_CAPABILITIES.md#area-editor-acp) — Editor agent over ACP | own/adopt | 6 | 0 | 0 | 5 | 1 | 0 | 2 | **subțire**, seed din dovezi |
-| [mcp](docs/HERMES_CAPABILITIES.md#area-mcp) — MCP client and server | own/run | 13 | 2 | 5 | 6 | 0 | 0 | 7 | **subțire**, seed din dovezi |
+| [mcp](docs/HERMES_CAPABILITIES.md#area-mcp) — MCP client and server | own/run | 13 | 3 | 7 | 3 | 0 | 0 | 8 | seed din dovezi |
 | [agent-interop](docs/HERMES_CAPABILITIES.md#area-agent-interop) — OpenAI-compatible API and agent-to-agent (A2A) | own/adopt | 5 | 0 | 2 | 2 | 1 | 0 | 1 | **subțire**, seed din dovezi |
 | [extensions](docs/HERMES_CAPABILITIES.md#area-extensions) — Extensions, hooks and deployment packaging | own/adopt | 9 | 1 | 6 | 0 | 2 | 0 | 13 | seed din dovezi |
 | [feature-pages](docs/HERMES_CAPABILITIES.md#area-feature-pages) — Upstream feature pages (cross-cutting) | own/adopt/run | 48 | 4 | 35 | 6 | 3 | 0 | 168 | seed din dovezi |
 | [user-journeys](docs/HERMES_CAPABILITIES.md#area-user-journeys) — User journeys from the rest of the docs (cross-cutting) | own | 33 | 3 | 25 | 2 | 3 | 0 | 62 | seed din dovezi |
 | [upstream-delta](docs/HERMES_CAPABILITIES.md#area-upstream-delta) — Upstream delta v2026.8.27 to v2026.8.31 (cross-cutting) | own/adopt/run | 42 | 18 | 18 | 5 | 1 | 0 | 148 | seed din dovezi |
 
-Suite subțiri: desktop, tui, editor-acp, mcp, agent-interop.
+Suite subțiri: desktop, tui, editor-acp, agent-interop.
 
 ## Actualizare
 

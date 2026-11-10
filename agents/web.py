@@ -553,6 +553,12 @@ async def lifespan(application: FastAPI):
 
     # Load MCP servers from settings DB
     _load_mcp_config()
+    # H556 — reconnect/keepalive supervisor; JARVIS_MCP_AUTOCONNECT also connects every
+    # saved server in the background, in parallel and bounded (boot never waits on one).
+    try:
+        orch.mcp.start(autoconnect=env_flag("JARVIS_MCP_AUTOCONNECT", False))
+    except Exception:
+        logger.warning("MCP supervisor not started", exc_info=True)
 
     orch.checkpoints.create_session_record(
         orch.session_id,

@@ -125,11 +125,41 @@ async def admin_mcp_list():
                 }
                 for t in srv.tools
             ],
+            # H552 — the resource/prompt tools this server's capabilities admit.
+            "resource_tools": [t.name for t in getattr(srv, "utility_tools", [])],
+            # H556 — connection health (state, retries, last error, next retry) and the
+            # H553 sampling/elicitation counters; H553 — the owner's settings for both.
+            "health": _health_of(srv),
+            "sampling": _config_of(srv, "sampling"),
+            "elicitation": _config_of(srv, "elicitation"),
         })
     from agents.core import load_set
 
+    host = getattr(orch.mcp, "host", None)
+    budget = getattr(host, "budget", None)
     # H285: the saved servers the load set switched off, and what it names that is not saved.
-    return {"servers": servers, "total": len(servers), "load_set": load_set.status("mcp")}
+    return {"servers": servers, "total": len(servers), "load_set": load_set.status("mcp"),
+            "sampling_budget": _safe_call(getattr(budget, "status", None)),
+            "pending_elicitations": _safe_call(getattr(host, "pending_elicitations", None)) or []}
+
+
+def _safe_call(fn):
+    try:
+        return fn() if callable(fn) else None
+    except Exception:
+        return None
+
+
+def _health_of(srv) -> Optional[dict]:
+    health = getattr(srv, "health", None)
+    status = _safe_call(getattr(health, "status", None))
+    if isinstance(status, dict):
+        status["connected"] = bool(_safe_call(getattr(srv, "is_connected", None)))
+    return status
+
+
+def _config_of(srv, attr: str) -> Optional[dict]:
+    return _safe_call(getattr(getattr(srv, attr, None), "to_config", None))
 
 
 def _trust_of(srv) -> Optional[str]:
@@ -154,6 +184,15 @@ class MCPServerConfig(BaseModel):
     #: (a deny always wins). Attaching a server is not attaching every one of its tools.
     tools_allow: Optional[list[str]] = None
     tools_deny: Optional[list[str]] = None
+    #: H553 — may this server ask Nerva for a model completion: ``off`` (default), ``ask``
+    #: (an approval card per request) or ``auto`` (inside the budget and rate limit).
+    sampling: Optional[str] = None
+    #: H553 — may this server ask the owner for input (always as an approval card).
+    elicitation: Optional[bool] = None
+
+
+class ElicitationAnswer(BaseModel):
+    content: dict
 
 
 def _held_refusal(name: str):
@@ -221,6 +260,13 @@ async def admin_mcp_add(req: MCPServerConfig):
             or tool_patterns_over_bounds(patterns)
         ):
             return JSONResponse({"error": "invalid_tool_filter", "field": field}, status_code=400)
+    from core.mcp.host_requests import SAMPLING_MODES, normalize_sampling_mode
+    sampling = normalize_sampling_mode(getattr(req, "sampling", None))
+    if sampling is None:
+        return JSONResponse(
+            {"error": "invalid_sampling", "sampling": req.sampling, "supported": list(SAMPLING_MODES)},
+            status_code=400,
+        )
     if req.name in orch.mcp.servers:
         return JSONResponse({"error": f"MCP server '{req.name}' already exists"}, status_code=409)
     srv = MCPServer(
@@ -235,8 +281,13 @@ async def admin_mcp_add(req: MCPServerConfig):
         trust=trust,
         tools_allow=getattr(req, "tools_allow", None),
         tools_deny=getattr(req, "tools_deny", None),
+        sampling={"mode": sampling},
+        elicitation=getattr(req, "elicitation", None),
     )
-    orch.mcp.servers[srv.name] = srv
+    if callable(getattr(type(orch.mcp), "register", None)):
+        orch.mcp.register(srv)          # host services + reconnect policy (H553/H556)
+    else:
+        orch.mcp.servers[srv.name] = srv
     # Persist to settings DB
     _web()._save_mcp_config()
     return {"ok": True, "server": req.name, "message": f"MCP server '{req.name}' added"}
@@ -274,8 +325,12 @@ async def admin_mcp_connect(name: str):
     try:
         # connect() returns False for a failed handshake (and for any non-stdio
         # transport). Reporting a hardcoded connected:true made every dead server
-        # look healthy in the admin panel.
-        connected = bool(await srv.connect())
+        # look healthy in the admin panel. Through the manager when it can (H556): the
+        # server gets the host services and the reconnect policy before it connects.
+        if callable(getattr(type(orch.mcp), "connect_server", None)):
+            connected = bool(await orch.mcp.connect_server(name))
+        else:
+            connected = bool(await srv.connect())
         body = {
             "ok": connected,
             "server": name,
@@ -285,6 +340,7 @@ async def admin_mcp_connect(name: str):
         }
         if not connected:
             body["error"] = "connect_failed"
+            body["reason"] = getattr(srv, "last_error", None)
         return body
     except Exception:
         from core.log_safe import log_safe
@@ -301,10 +357,33 @@ async def admin_mcp_disconnect(name: str):
     if name not in orch.mcp.servers:
         return JSONResponse({"error": f"MCP server '{name}' not found"}, status_code=404)
     srv = orch.mcp.servers[name]
-    if srv._proc:
+    if srv._proc or getattr(srv, "_http", None) is not None:
         await srv.close()
         return {"ok": True, "server": name, "message": f"MCP server '{name}' disconnected"}
+    # Not connected, but it may be waiting to reconnect: stop that too (H556).
+    if getattr(srv, "wanted", False):
+        await srv.close()
     return {"ok": True, "server": name, "message": f"MCP server '{name}' was not connected"}
+
+
+@router.post("/api/admin/mcp/elicitations/{card_id}/answer", dependencies=[Depends(admin_guard)])
+async def admin_mcp_elicitation_answer(card_id: str, body: ElicitationAnswer):
+    """H553 — the owner's typed answer to an MCP server's request for input.
+
+    The card stays in the ordinary approval queue; this fills its fields (checked against
+    the schema the server sent) and approves it in one step. Rejecting the card there
+    declines; a card nobody answers is cancelled when it times out."""
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    host = getattr(orch.mcp, "host", None)
+    if host is None:
+        return JSONResponse({"error": "elicitation_unavailable"}, status_code=503)
+    result = host.answer_elicitation(card_id, body.content)
+    if not result.get("ok"):
+        status = 404 if result.get("error") == "unknown_elicitation" else 400
+        return JSONResponse(result, status_code=status)
+    return result
 
 
 # ── MCP server mode (H10.5) + OAuth resource server (H16.1) ───────
