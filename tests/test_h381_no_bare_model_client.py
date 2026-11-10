@@ -4017,3 +4017,32 @@ def test_a_reason_must_cite_a_test_that_exists():
         assert "test_the_house_transports_refuse_every_non_lan_destination" in NOT_A_MODEL_PROVIDER[rel][0]
     assert _citation_errors([("y", "see tests/test_plugin_egress.py and "
                                    "test_the_house_transports_refuse_every_non_lan_destination")]) == []
+
+
+# ── the Adopt lane: vendored Hermes code is scanned like any other module ───────
+
+_VENDORED = ("agents/vendor/hermes/", "agents/vendor/hermes_compat/")
+
+
+def test_vendored_hermes_code_has_no_bare_client_and_no_exemption():
+    """agents/vendor/ is under agents/, so the repo scan already covers it; this pins that
+    it holds no finding at all and that no allowlist or classification exempts it. The
+    vendored files reach the network only through the compat httpx, which owns no client
+    and hands every request to the bound PluginHTTPClient (tests/test_hermes_adopt_lane.py)."""
+    in_scope, outside, _ = _scan()
+    assert [rel for rel in (*in_scope, *outside) if rel.startswith(_VENDORED)] == []
+    assert [rel for rel in NOT_A_MODEL_PROVIDER if rel.startswith(_VENDORED)] == []
+    assert [key for key in (*PROMPT_SCOPE_ALLOWLIST, *HOOK_REWIRING_ALLOWLIST)
+            if key[0].startswith(_VENDORED)] == []
+    vendored = sorted((REPO / "agents" / "vendor").rglob("*.py"))
+    assert vendored, "the vendor tree moved; update this test"
+    for path in vendored:
+        rel = path.relative_to(REPO).as_posix()
+        assert scan_source(path.read_text(encoding="utf-8"), rel) == [], rel
+
+
+def test_a_vendored_file_keeping_the_real_httpx_is_caught():
+    """The rewrite undone (``import httpx`` left as upstream wrote it) is a bare client."""
+    rel = "agents/vendor/hermes/plugins/web/_common.py"
+    findings = _mutated(rel, "from agents.vendor.hermes_compat import httpx\n", "import httpx\n")
+    assert findings and all(q == "http_get_json" for q, _, _ in findings)

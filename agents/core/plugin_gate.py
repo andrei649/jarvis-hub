@@ -314,11 +314,13 @@ BUILTIN_PLUGINS = {
         id="websearch",
         name="Web Search",
         version="0.1.0",
-        description="Web search via Tavily / DuckDuckGo / (optional) SearXNG",
+        description="Web search via Tavily / DuckDuckGo / (optional) SearXNG, Exa, Brave, Parallel",
         network_access=NetworkAccess.RESTRICTED,
         data_scope=DataScope.PROCESSED,
-        # SearXNG host is config-driven (SEARXNG_URL) → registered dynamically.
-        allowed_domains=["api.tavily.com", "html.duckduckgo.com"],
+        # SearXNG host is config-driven (SEARXNG_URL) → registered dynamically. The last
+        # three are the adopted Hermes providers (agents/vendor/hermes, ADOPT_LANE.md).
+        allowed_domains=["api.tavily.com", "html.duckduckgo.com",
+                         "api.exa.ai", "api.search.brave.com", "api.parallel.ai"],
         agents_served=["all"],
     ),
     # Hermes absorption 5a: the page reader (``web_extract``) gets its own egress

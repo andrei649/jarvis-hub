@@ -2815,6 +2815,20 @@
   untrusted, and only conversations with such a reason or with evidence (channel, import) taint the
   actions of a turn that reads them. `partial`: channel conversations, the owner's own DM included,
   are always held, and the review fork's extra tools were not verified. Headline unchanged at 148/697.
+  **Adopt lane, slice 1 (2026-11-10):** the first Hermes code run as-is rather than ported, per
+  `docs/hermes/feature-integration-plan-2026-11-10.md`. Exa, Brave Search (free tier) and Parallel
+  search are vendored from Hermes `9c0560f8` under `agents/vendor/hermes/` (12 files, byte-identical
+  but for recorded import rewrites; `MANIFEST.json` + MIT `LICENSE`/`NOTICE.md`) and registered as
+  `web_search` backends through a compat layer (`agents/vendor/hermes_compat/`): requests go through
+  the `websearch` `PluginHTTPClient` (allowlist, SSRF pinning, ledger, kernel hook), keys are read
+  from an allowlist through `env_config`, the keyless tier stays off, and each backend is off until its
+  key is set. `scripts/hermes_vendor.py status|diff|pull` keeps them in step with upstream. An
+  adversarial review's fixes are in. Vendored code runs on its own bounded executor with a 25 s
+  deadline, so it no longer starves DNS on the default one. An allowlist now limits imports and
+  data files for pull, status and CI, and symlinks are refused. Each provider can read only its own
+  key. A logging filter keeps queries out of the logs. Brave counts as paid. Search
+  only (vendored `extract` is not wired); no live vendor call made. No ledger row moves: the owner's
+  decision 1 (count adopted code as delivered) is still open. Guide: `docs/hermes/ADOPT_LANE.md`.
 
 ## Darwin feature absorption — 2026-09-09
 

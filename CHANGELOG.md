@@ -87,6 +87,16 @@
 - When the assistant searches a past conversation that held someone else's text, the actions of
   that turn wait for your approval. Searching your own past conversations changes nothing.
 
+**Three more web search services (#1347)**
+- Web search can now use Exa, Brave Search or Parallel. Each stays off until you put
+  its key in `.env` (`EXA_API_KEY`, `BRAVE_SEARCH_API_KEY`, `PARALLEL_API_KEY`); pick one with
+  `NERVA_WEB_BACKEND=exa`, `brave-free` or `parallel`.
+- They are Hermes Agent's own code, run as-is, but every request still goes through Nerva's network
+  rules: only those services' addresses are allowed, local-network addresses are refused, the
+  emergency stop applies, and each request shows in the Network Monitor. Keys are never logged.
+- All three count as paid, Brave included, because a Brave key may be on a paid plan. With
+  `NERVA_WEB_PROVIDER_TIER=free` none of them answers.
+
 **Three status pages now need your user token (#1347)**
 - An independent security review found that the Oracle status, learning stats and local-docs
   status pages answered anyone on the network with personal details. They now ask for the same
