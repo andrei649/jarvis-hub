@@ -955,6 +955,8 @@ class AutonomyCoordinator:
             preflight=image_dispatcher.preflight, trusted_execution=True,
             gated_intake=image_dispatcher.intake,
         )
+        from .creative.video_generation import register_video_tool  # G19 (H516)
+        register_video_tool(server, lambda: getattr(self._orch, "cloud_videos", None), _APPROVED_TASK.get)
         from .browser_runtime import (
             BrowserRuntime, INPUT_SCHEMA as BROWSER_RUN_SCHEMA, local_browser_ready,
         )
@@ -2243,6 +2245,8 @@ class AutonomyCoordinator:
         self._wire_url_monitor(executor)
         self._wire_cloud_image(executor)
         self._wire_kanban_network(executor)
+        from .creative.video_generation import wire_cloud_video  # G19 (H516): outermost plugin.egress
+        wire_cloud_video(self._orch, executor)
         for kw in ("research", "search", "monitor", "scan", "lookup", "check"):
             executor.register(kw, _research)
         for kw in ("summarize", "analyze", "review", "draft", "plan", "prepare"):

@@ -1182,6 +1182,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/a2a/peers/{peer_id}/outbound": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * A2A Set Peer Outbound
+         * @description Let this hub call the peer (G14): URL, optional bearer token, LAN opt-in, tags.
+         *
+         *     A LAN address is refused unless ``allow_lan`` is set, and then only as a private IP
+         *     literal or ``localhost``; an internet peer must use https. The token is never echoed.
+         */
+        put: operations["a2a_set_peer_outbound_api_a2a_peers__peer_id__outbound_put"];
+        post?: never;
+        /** A2A Clear Peer Outbound */
+        delete: operations["a2a_clear_peer_outbound_api_a2a_peers__peer_id__outbound_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/a2a/card": {
         parameters: {
             query?: never;
@@ -6817,6 +6841,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/integrations/video-choice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Integration Video Off
+         * @description Turn video generation off: no provider is chosen any more.
+         */
+        delete: operations["integration_video_off_api_admin_integrations_video_choice_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/integrations/search-choice": {
         parameters: {
             query?: never;
@@ -9744,6 +9788,30 @@ export interface paths {
          * @description Disconnect from an MCP server.
          */
         post: operations["admin_mcp_disconnect_api_admin_mcp__name__disconnect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/mcp/elicitations/{card_id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Mcp Elicitation Answer
+         * @description H553 — the owner's typed answer to an MCP server's request for input.
+         *
+         *     The card stays in the ordinary approval queue; this fills its fields (checked against
+         *     the schema the server sent) and approves it in one step. Rejecting the card there
+         *     declines; a card nobody answers is cancelled when it times out.
+         */
+        post: operations["admin_mcp_elicitation_answer_api_admin_mcp_elicitations__card_id__answer_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -14086,6 +14154,38 @@ export interface components {
             /** Approve */
             approve: boolean;
         };
+        /**
+         * A2AOutboundBody
+         * @description Where and how this hub calls a peer (G14). The token is stored in the secret store.
+         */
+        A2AOutboundBody: {
+            /** Url */
+            url: string;
+            /** Token */
+            token?: string | null;
+            /**
+             * Keep Token
+             * @default false
+             */
+            keep_token: boolean;
+            /**
+             * Allow Lan
+             * @default false
+             */
+            allow_lan: boolean;
+            /**
+             * Timeout
+             * @default 60
+             */
+            timeout: number;
+            /** Capabilities */
+            capabilities?: string[];
+            /**
+             * Tenant
+             * @default
+             */
+            tenant: string;
+        };
         /** A2APeerBody */
         A2APeerBody: {
             /** Peer Id */
@@ -15024,6 +15124,13 @@ export interface components {
             /** Boot Id */
             boot_id: string;
         };
+        /** ElicitationAnswer */
+        ElicitationAnswer: {
+            /** Content */
+            content: {
+                [key: string]: unknown;
+            };
+        };
         /** EmptyBody */
         EmptyBody: Record<string, never>;
         /** EstimateBody */
@@ -15414,6 +15521,10 @@ export interface components {
             tools_allow?: string[] | null;
             /** Tools Deny */
             tools_deny?: string[] | null;
+            /** Sampling */
+            sampling?: string | null;
+            /** Elicitation */
+            elicitation?: boolean | null;
         };
         /** MapBody */
         MapBody: {
@@ -19008,6 +19119,72 @@ export interface operations {
         };
     };
     a2a_remove_peer_api_a2a_peers__peer_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                peer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    a2a_set_peer_outbound_api_a2a_peers__peer_id__outbound_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                peer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["A2AOutboundBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    a2a_clear_peer_outbound_api_a2a_peers__peer_id__outbound_delete: {
         parameters: {
             query?: never;
             header?: never;
@@ -28053,6 +28230,26 @@ export interface operations {
             };
         };
     };
+    integration_video_off_api_admin_integrations_video_choice_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     integration_search_auto_api_admin_integrations_search_choice_delete: {
         parameters: {
             query?: never;
@@ -32159,6 +32356,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_mcp_elicitation_answer_api_admin_mcp_elicitations__card_id__answer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ElicitationAnswer"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

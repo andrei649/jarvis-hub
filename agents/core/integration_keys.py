@@ -18,6 +18,9 @@ values here instead:
   for the next read, without a restart. The names are all on ``code_env``'s managed list
   (or are native keys a skill cannot be granted either), so the sandbox child
   environment never receives them.
+* **Choices.** Two non-secret choices are kept the same way: the search backend
+  (``JARVIS_WEB_BACKEND``) and the video provider (``JARVIS_VIDEO_PROVIDER``, G19), each
+  applied at start only with a value the panel offers.
 * **``.env`` wins.** A name the environment already sets (the process environment or a
   ``.env`` file, under either spelling for a ``JARVIS_``/``NERVA_`` name) belongs to it:
   the panel shows it as "set in .env" and refuses to overwrite or remove it there. At
@@ -273,7 +276,13 @@ def _allowed_names() -> tuple[frozenset[str], dict[str, frozenset[str]]]:
     except Exception:  # noqa: BLE001 — the static search rows still apply
         keys = frozenset(n for row in integrations_catalog.SEARCH_ROWS for n in row.keys)
     backends = frozenset(row.name for row in integrations_catalog.SEARCH_ROWS)
-    return keys, {integrations_catalog.WEB_BACKEND: backends}
+    try:
+        from agents.core.creative.video_providers import PROVIDERS
+
+        videos = frozenset(PROVIDERS)
+    except Exception:  # noqa: BLE001 — no video choice is applied then
+        videos = frozenset()
+    return keys, {integrations_catalog.WEB_BACKEND: backends, integrations_catalog.VIDEO_CHOICE: videos}
 
 
 def apply_stored() -> list[str]:

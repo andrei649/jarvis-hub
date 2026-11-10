@@ -253,4 +253,38 @@ describe('Integrations panel', () => {
     fireEvent.click(screen.getByText('remove the stored copy'));
     await waitFor(() => expect(calls.some((c) => c.method === 'DELETE' && c.url.includes('/search.parallel/key'))).toBe(true));
   });
+
+  it('chooses a video provider through the consent card and can turn video off (G19)', async () => {
+    const FAL = row({ id: 'video.fal', kind: 'video', name: 'fal', display_name: 'FAL (video)', status: 'key_set',
+      key: { names: ['FAL_KEY'], name: 'FAL_KEY', set: true, source: 'hub', hint: null, editable: true, own: true, shared_with: [] },
+      facts: facts('queue.fal.run', { receives: 'your video prompts and the images you ask it to animate',
+        price_known: 'some', price_note: 'paid per second of video' }), models: ['pixverse-v6'] });
+    const guards = [
+      { guard: 'data_policy', needs: 'acknowledge_training', setting: 'JARVIS_VIDEO_PROVIDER', provider: 'fal', model: '', message: 'FAL (video) receives your video prompts' },
+      { guard: 'cost', needs: 'confirm_expensive', setting: 'JARVIS_VIDEO_PROVIDER', provider: 'fal', model: '', message: 'billed per second of video' },
+    ];
+    let chosen = false;
+    const calls = hub((url, method, body) => {
+      if (method === 'POST' && url.endsWith('/use')) {
+        if (!body.acknowledge_training) return { status: 409, body: { error: 'selection_guard', needs: ['acknowledge_training', 'confirm_expensive'], guards } };
+        chosen = true;
+        return { status: 200, body: { ok: true, applied: 'now' } };
+      }
+      if (method === 'DELETE') { chosen = false; return { status: 200, body: { ok: true } }; }
+      return { status: 200, body: { ...listing([chosen ? { ...FAL, status: 'active', selected: true } : FAL]),
+        video: { provider: chosen ? 'fal' : null, choice_source: chosen ? 'hub' : null } } };
+    });
+    render(<IntegrationsPanel />);
+    fireEvent.click(await screen.findByText('video'));
+    fireEvent.click(await screen.findByRole('button', { name: 'manage FAL (video)' }));
+    fireEvent.click(screen.getByText('use for videos'));
+    const card = await screen.findByRole('alertdialog');
+    expect(within(card).getByText(/your video prompts and the images/)).toBeTruthy();
+    fireEvent.click(within(card).getByText('I understand, use it'));
+    await screen.findByText(/videos use it now/);
+    const uses = calls.filter((c) => c.url.endsWith('/video.fal/use'));
+    expect(uses[1].body).toEqual({ acknowledge_training: true, confirm_expensive: true });
+    fireEvent.click(await screen.findByText('turn video off'));
+    await waitFor(() => expect(calls.some((c) => c.method === 'DELETE' && c.url.endsWith('/video-choice'))).toBe(true));
+  });
 });

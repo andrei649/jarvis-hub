@@ -706,6 +706,7 @@ class Orchestrator:
         self.acquisition = None
         self.tool_rpc = None
         self.cloud_images = None
+        self.cloud_videos = None
         self.agent_tool_runtime = None
         self.writeback = None
         self.social = None
