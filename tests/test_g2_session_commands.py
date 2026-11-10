@@ -408,7 +408,7 @@ async def test_with_the_kernel_on_every_tick_is_authorized_by_it(_isolated, monk
     assert result["why"] == "kernel" and "approval mode" in result["reason"]
 
 
-async def test_the_watcher_never_fires_mid_turn_or_under_a_goal(_isolated):
+async def test_the_watcher_never_fires_mid_turn_and_no_hub_work_run_blocks_it(_isolated):
     from agents.core.session_loops import _loops, run_tick, scan
 
     orch = _LoopOrch([], _isolated)
@@ -418,18 +418,25 @@ async def test_the_watcher_never_fires_mid_turn_or_under_a_goal(_isolated):
     assert await run_tick(orch, "s-loop") == {"ran": False, "why": "busy"}
     assert _loops().LoopManager("s-loop").is_due()                # left due
     orch.turn_holders = lambda: []
+    # Review MINOR (b): a company-mode work run takes no turn in this conversation, so it
+    # does not hold the loop back.
     run = SimpleNamespace(id="r1", barrier=None)
     orch.work_runs = SimpleNamespace(list_runs=lambda **k: [run])
-    from unittest import mock
-
-    import agents.core.goal_commands as goal_commands
-
-    with mock.patch.object(goal_commands, "_running", lambda ledger: [run]), \
-            mock.patch.object(goal_commands, "_paused", lambda r: False):
-        assert await run_tick(orch, "s-loop") == {"ran": False, "why": "goal"}
-    orch.work_runs = None
     rows = await scan(orch)
     assert rows and rows[0]["ran"] is True
+
+
+async def test_a_chat_loop_is_busy_while_its_route_holds_a_turn(_isolated):
+    from agents.core.channels.session import SessionSource, build_session_key
+    from agents.core.session_loops import run_tick
+
+    orch = _LoopOrch([], _isolated, _channel_principal=_owner_judge({"42"}))
+    tg = Principal(channel="telegram", sender="42", admin=True, chat="123")
+    await orch.commands.dispatch("/loop 1m check", orch=orch, principal=tg)
+    _due()
+    base = build_session_key(SessionSource(channel="telegram", sender="42", thread_id="123"))
+    orch.turn_holders = lambda: [{"session_id": base}]
+    assert await run_tick(orch, "s-loop") == {"ran": False, "why": "busy"}
 
 
 # ── /btw fork ────────────────────────────────────────────────────────────────────────
@@ -568,7 +575,7 @@ async def test_a_loop_set_on_telegram_pushes_each_wakeup_to_that_chat(_isolated)
         return True
 
     orch = _LoopOrch(["deploy is green\nLOOP_COMPLETE"], _isolated,
-                     channel_manager=SimpleNamespace(send=send))
+                     channel_manager=SimpleNamespace(send=send), _channel_principal=_owner_judge({"42"}))
     telegram_owner = Principal(channel="telegram", sender="42", admin=True, chat="123")
     await orch.commands.dispatch("/loop 1m check the deploy", orch=orch, principal=telegram_owner)
     _due()
@@ -579,3 +586,233 @@ async def test_a_loop_set_on_telegram_pushes_each_wakeup_to_that_chat(_isolated)
     assert any("Loop finished" in text for _c, text, _k in sent[1:])
     _channel, _channel_name, _session, principal = orch.prompts[0]
     assert principal.channel == "telegram" and principal.chat == "123" and principal.admin
+
+
+# ── review round: owner authority, budgets, migration, plan-mode reads, meter, fork ──
+
+
+def _owner_judge(owners):
+    """A stand-in for Orchestrator._channel_principal: admin only for a current owner id."""
+    def judge(channel, sender, chat_id, chat_type=None):
+        return Principal(channel=channel, sender=sender, admin=str(sender) in owners,
+                         chat=None if chat_id is None else str(chat_id), scope="dm")
+
+    return judge
+
+
+async def test_a_tick_rechecks_the_owner_and_pauses_when_the_chat_is_no_longer_theirs(_isolated):
+    """M1: the route saved at /loop time grants nothing; every tick asks the channel's
+    owner check again, and a revoked owner pauses the loop before anything runs or is sent."""
+    from agents.core.session_loops import _loops, run_tick
+
+    owners = {"111"}
+    sent = []
+
+    async def send(channel, text, **kwargs):
+        sent.append((channel, str(text), kwargs))
+        return True
+
+    orch = _LoopOrch(["inbox summary"], _isolated, channel_manager=SimpleNamespace(send=send),
+                     _channel_principal=_owner_judge(owners))
+    tg = Principal(channel="telegram", sender="111", admin=True, chat="111", scope="dm")
+    await orch.commands.dispatch("/loop 1m summarize my inbox", orch=orch, principal=tg)
+    owners.clear()                                     # the owner identity is revoked
+    _due()
+    result = await run_tick(orch, "s-loop")
+    assert result["why"] == "owner" and "no longer confirmed" in result["reason"]
+    assert orch.prompts == [] and not any("inbox summary" in text for _c, text, _k in sent)
+    state = _loops().LoopManager("s-loop").state
+    assert state.status == "paused" and "owner" in state.paused_reason
+    # A channel without any owner check pauses too (fail closed).
+    plain = _LoopOrch(["x"], _isolated)
+    await plain.commands.dispatch("/loop 1m check", orch=plain, principal=tg)
+    _due()
+    assert (await run_tick(plain, "s-loop"))["why"] == "owner"
+
+
+async def test_loop_is_refused_in_a_group(_isolated):
+    orch = _LoopOrch([], _isolated)
+    group = Principal(channel="telegram", sender="111", admin=True, chat="-100", scope="group")
+    out = await orch.commands.dispatch("/loop 1m check", orch=orch, principal=group)
+    assert "never in a group" in out.reply
+    from agents.core.session_loops import _loops
+
+    assert _loops().LoopManager("s-loop").state is None
+
+
+async def test_resume_after_the_tick_cap_or_the_wall_budget_gets_a_fresh_allotment(_isolated):
+    """M2: /loop resume after the tick cap or the 24 h budget runs ticks again."""
+    import time as _time
+
+    from agents.core.session_loops import _loops, run_tick
+
+    orch = _LoopOrch(["x"] * 10, _isolated)
+    await _set(orch, "/loop 1m check")
+    manager = _due()
+    manager.state.ticks_fired = manager.state.max_ticks
+    manager._save()
+    assert (await run_tick(orch, "s-loop"))["why"] == "kernel"           # the cap pauses it
+    assert "Loop resumed" in (await _set(orch, "/loop resume")).reply
+    _due()
+    result = await run_tick(orch, "s-loop")
+    assert result["ran"] and result["status"] == "active"
+
+    await _set(orch, "/loop 1m check")
+    from agents.core import session_loops
+
+    session_loops._set_budget_since("s-loop", _time.time() - 25 * 3600)
+    _due()
+    assert "wall-time" in (await run_tick(orch, "s-loop"))["reason"]
+    await _set(orch, "/loop resume")
+    _due()
+    assert (await run_tick(orch, "s-loop"))["ran"]
+    assert _loops().LoopManager("s-loop").state.status == "active"
+
+
+async def test_an_explicit_times_above_the_backstop_is_honoured(_isolated):
+    from agents.core.session_loops import _loops
+
+    orch = _LoopOrch([], _isolated)
+    await _set(orch, "/loop 1m check --times 150")
+    state = _loops().LoopManager("s-loop").state
+    assert state.times == 150 and state.max_ticks == 150
+
+
+async def test_loop_and_plan_mode_follow_the_conversation_to_a_new_session_id(_isolated):
+    """MINOR (a): /undo, /new, /reset and a chat's rollover give the conversation a new id;
+    its loop and plan mode move with it."""
+    from agents.core.session_loops import _loops, migrate_session
+
+    orch = _LoopOrch([], _isolated)
+    await _set(orch, "/loop 5m check")
+    _enter("s-loop")
+    moved = migrate_session("s-loop", "s-next")
+    assert moved == {"loop": True, "plan_mode": True}
+    assert _loops().LoopManager("s-next").is_active()
+    assert _loops().LoopManager("s-loop").state is None or \
+        _loops().LoopManager("s-loop").state.status == "cleared"
+    assert plan_mode.default_store().is_active("s-next")
+
+
+async def test_undo_carries_the_loop_and_plan_mode(tmp_path, monkeypatch):
+    from agents.core import session_loops
+    from tests.test_h026_skill_bundles import _hub, _say
+
+    orch, _seen = _hub(tmp_path, monkeypatch)
+    moves = []
+    monkeypatch.setattr(session_loops, "migrate_session", lambda old, new: moves.append((old, new)) or {})
+    await orch.memory.add_turn("s", "user", "hello")
+    await orch.memory.add_turn("s", "assistant", "hi")
+    reply, _ = await _say(orch, "/undo")
+    assert moves and moves[0][0] == "s" and moves[0][1] != "s", reply
+
+
+def test_registered_kinds_are_reads_only_when_listed():
+    """MINOR (d): a registered kind's name is never trusted; checkpoint.restore is not a read."""
+    for kind in ("checkpoint.restore", "checkpoint.maintenance", "kanban.worker", "goal.approve",
+                 "admin.kill_switch", "media.present", "host.control", "terminal.exec"):
+        assert not plan_mode.kind_is_read(kind), kind
+    assert plan_mode.kind_is_read("research")
+    assert plan_mode.kind_is_read("memory.read") and not plan_mode.kind_is_read("memory.write")
+    assert not plan_mode.kind_is_read("search.and.send")
+    _enter()
+    with session_scope("s-plan"):
+        assert _kernel()(Action(kind="checkpoint.restore")).reason.startswith("plan mode")
+
+
+async def test_slash_command_loops_are_not_judged_on_the_commands_output(_isolated, monkeypatch):
+    from agents.core import session_loops
+    from agents.core.session_loops import run_tick
+
+    orch = _LoopOrch(["done\nLOOP_COMPLETE"], _isolated)
+    seen = []
+    real = session_loops._loops().LoopManager.complete_tick
+
+    def spy(self, reply):
+        seen.append(reply)
+        return real(self, reply)
+
+    monkeypatch.setattr(session_loops._loops().LoopManager, "complete_tick", spy)
+    await _set(orch, "/loop 1m /recap")
+    _due()
+    result = await run_tick(orch, "s-loop")
+    assert seen == [""] and result["status"] == "active"
+    assert orch.prompts[0][0] == "/recap"
+
+
+async def test_a_tick_that_raised_counts_and_a_cancelled_tick_does_not_wedge_the_loop(_isolated):
+    import asyncio
+
+    from agents.core.session_loops import _loops, run_tick
+
+    orch = _LoopOrch([], _isolated)
+
+    async def boom(*a, **k):
+        raise RuntimeError("acted, then failed")
+
+    orch.handle_input = boom
+    await _set(orch, "/loop 1m check")
+    _due()
+    assert (await run_tick(orch, "s-loop"))["why"] == "turn_failed"
+    state = _loops().LoopManager("s-loop").state
+    assert state.ticks_fired == 1 and state.awaiting_response is False
+
+    async def hang(*a, **k):
+        await asyncio.sleep(30)
+
+    orch.handle_input = hang
+    _due()
+    task = asyncio.ensure_future(run_tick(orch, "s-loop"))
+    await asyncio.sleep(0.2)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    state = _loops().LoopManager("s-loop").state
+    assert state.ticks_fired == 2 and state.awaiting_response is False
+
+
+async def test_the_meter_measures_per_conversation_and_survives_an_unverified_history():
+    from agents.core.context_meter import MeterUnavailable, breakdown
+    from agents.core.memory.conversation import UnverifiedRewind
+
+    orch = _meter_orch([{"role": "user", "content": "hi"}])
+    orch._context_measured_by_session = {"s-other": (9999, 0)}
+    assert (await breakdown(orch, "s-ctx"))["measured"] is None          # another session's count
+    orch._context_measured_by_session["s-ctx"] = (1234, 1)
+    assert (await breakdown(orch, "s-ctx"))["measured"] == 1234
+
+    class Broken:
+        async def get_history(self, *a, **k):
+            raise UnverifiedRewind("unverified")
+
+    orch.memory = Broken()
+    with pytest.raises(MeterUnavailable):
+        await breakdown(orch, "s-ctx")
+    out = await orch.commands.dispatch("/context", orch=orch, principal=OWNER)
+    assert out.status == "answered" and "could not run" in out.reply
+
+
+async def test_the_btw_fork_budget_uses_the_backends_real_window():
+    from agents.core.llm import auxiliary_text
+
+    class Ollama:
+        async def resolve_context_window(self, model):
+            return 8_192
+
+    router = SimpleNamespace(local_backend=Ollama(), active_model="qwen2.5")
+    small = await auxiliary_text.resolve_btw_fork_budget(router)
+    assert small < auxiliary_text.btw_fork_budget_chars(router)          # 8k, not the 32k family
+    assert small == auxiliary_text.btw_fork_budget_chars(router, window=8_192)
+
+
+async def test_a_failed_plan_turn_saves_nothing_and_a_same_second_name_gets_a_suffix(tmp_path):
+    from agents.core import plan_commands
+
+    _enter()
+    path = plan_commands.plans_dir() / "2026-11-10_120000-same.md"
+    plan_commands.begin_plan_turn("s-plan", str(path))
+    assert await plan_commands.finish_plan_turn("s-plan", "error text", failed=True) is None
+    assert await plan_commands.finish_plan_turn("s-plan", "# later") is None    # mark cleared
+    for expected in (path, path.with_name("2026-11-10_120000-same-2.md")):
+        plan_commands.begin_plan_turn("s-plan", str(path))
+        assert await plan_commands.finish_plan_turn("s-plan", "# plan") == str(expected)

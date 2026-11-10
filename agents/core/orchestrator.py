@@ -2788,6 +2788,10 @@ class Orchestrator:
                         await self.memory.add_turn(sid, turn["role"], turn["content"],
                                                    agent_id=turn.get("agent_id"), tools=turn.get("tools"),
                                                    media=turn.get("media"))   # H586: keep image provenance
+                from .session_loops import migrate_session
+
+                # G2: the conversation's loop and plan mode follow it to the new id.
+                migrate_session(base, sid)
                 if base == self._session_id_default:
                     self._session_id_default = sid
                 if command == "/undo":
@@ -5858,10 +5862,11 @@ class Orchestrator:
         state = _TURN_CHAT_OUTCOMES.get()
         if state is not None and not is_failed_turn_reply(responder_id, synthesized):
             state["persisted"] = True
-        if not is_failed_turn_reply(responder_id, synthesized):
-            from .plan_commands import finish_plan_turn
+        from .plan_commands import finish_plan_turn
 
-            await finish_plan_turn(str(self.session_id or ""), synthesized)   # H668: no-op unless /plan
+        # H668: no-op unless /plan; a failed plan turn clears its mark and saves nothing.
+        await finish_plan_turn(str(self.session_id or ""), synthesized,
+                               failed=is_failed_turn_reply(responder_id, synthesized))
         await self._maybe_micro_compact(
             synthesized, responder_id=responder_id, append_receipt=append_receipt)
         await self._maybe_checkpoint()
@@ -6162,6 +6167,14 @@ class Orchestrator:
         self._context_anchor[agent_id] = (
             int(prompt_tokens), int(self._ctx_turns_at_build),
         )
+        # H412: the context meter's "measured" figure, per conversation (bounded).
+        by_session = self.__dict__.setdefault("_context_measured_by_session", {})
+        sid = str(getattr(self, "session_id", "") or "")
+        if sid:
+            by_session.pop(sid, None)
+            by_session[sid] = (int(prompt_tokens), int(self._ctx_turns_at_build))
+            while len(by_session) > 256:
+                by_session.pop(next(iter(by_session)))
 
     def _usage_anchor(self, turn_count: int):
         """The provider's own size for the last request, if one reported (H673).

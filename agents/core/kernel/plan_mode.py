@@ -180,6 +180,21 @@ class PlanModeStore:
             _audit(audit, "plan_mode.exit", by, session_id)
         return was
 
+    def carry(self, old_session: str, new_session: str) -> bool:
+        """Copy *old_session*'s row to *new_session* (see :func:`migrate`). The old row
+        stays: the old id may still be addressed, and it stays restricted."""
+        with self._lock:
+            try:
+                sessions = self._read()
+            except PlanModeUnreadable:
+                return False          # every session is held already (fail closed)
+            row = sessions.get(old_session)
+            if row is None or new_session in sessions:
+                return False
+            sessions[new_session] = dict(row, carried_from=old_session)
+            self._write(sessions)
+        return True
+
     def note_plan(self, session_id: str, path: str) -> None:
         """Remember a saved plan file on the session's row (hub-owned, not a model write)."""
         with self._lock:
@@ -228,20 +243,61 @@ def current_session() -> str | None:
         return None
 
 
+#: The kernel kinds the Action Kernel registry knows that only read. A registered kind is
+#: a read only if it is listed here: its name is never trusted to say so
+#: (``checkpoint.restore`` starts with "check", and it restores files). ``plugin.egress``
+#: is judged by its method below.
+READ_KINDS = frozenset({"research"})
+_READ_VERBS = frozenset({"read", "list", "get", "search", "fetch", "summarize", "research",
+                         "analyze", "status", "lookup", "review", "monitor", "scan"})
+
+
+def _registered(kind: str) -> bool:
+    from agents.core.kernel.registry import ACTION_REGISTRY
+
+    return any(kind == key or (key.endswith(".*") and kind.startswith(key[:-1]))
+               for key in ACTION_REGISTRY)
+
+
 def kind_is_read(kind: str, payload: Any = None) -> bool:
-    """Whether *kind* only reads. Judged from the kind's own verb, never the payload's
-    claims; ``plugin.egress`` is a read only for a GET or HEAD."""
+    """Whether *kind* only reads, judged from the kind alone, never the payload's claims.
+
+    * ``plugin.egress`` is a read only for a GET or HEAD (the kernel's own egress hook sets
+      the method);
+    * a kind the Action Kernel registry knows is a read only when :data:`READ_KINDS`
+      lists it;
+    * any other kind is a read only when one of its dotted words is exactly a read verb
+      (``memory.read``, ``search.web``) and none of the others is a known effect verb.
+    """
     kind = str(kind or "").strip().lower()
     if not kind:
         return False
     if kind == _EGRESS_KIND:
         method = payload.get("method") if isinstance(payload, dict) else None
         return isinstance(method, str) and method.upper() in _READ_METHODS
-    from agents.core.autonomy.policy import AutonomyPolicy, RiskTier
+    if kind in READ_KINDS:
+        return True
+    if _registered(kind):
+        return False
+    from agents.core.autonomy.policy import _EXTERNAL, _MONEY_OR_IRREVERSIBLE, _REVERSIBLE
 
-    # The classifier's verb table with only the kind: a payload risk_tier, amount or
-    # scoring factor cannot reach it.
-    return AutonomyPolicy()._base_tier({"kind": kind}) == RiskTier.READ_ONLY
+    words = [w for w in re.split(r"[^a-z0-9]+", kind) if w]
+    effects = set(_EXTERNAL) | set(_MONEY_OR_IRREVERSIBLE) | set(_REVERSIBLE) | {"write", "exec", "run"}
+    if any(any(w == e or w.startswith(e) for e in effects) for w in words):
+        return False
+    return any(w in _READ_VERBS for w in words)
+
+
+def migrate(old_session: str, new_session: str, *, store: PlanModeStore | None = None) -> bool:
+    """Carry plan mode to a conversation's new session id (/undo, /new, a channel's idle or
+    daily rollover). Hub-internal and restrict-only: it never takes a session out of plan
+    mode. True when the new session is now in plan mode because the old one was."""
+    store = store or _DEFAULT
+    if not old_session or not new_session or old_session == new_session:
+        return False
+    if not valid_session(old_session) or not valid_session(new_session):
+        return False
+    return store.carry(old_session, new_session)
 
 
 def action_denial(kind: str, payload: Any = None, *, session_id: str | None = None,

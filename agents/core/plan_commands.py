@@ -150,7 +150,7 @@ def begin_plan_turn(session_id: str, path: str) -> None:
         _plan_turn.set(_PlanTurn(str(session_id), str(path)))
 
 
-async def finish_plan_turn(session_id: str, reply: str) -> str | None:
+async def finish_plan_turn(session_id: str, reply: str, *, failed: bool = False) -> str | None:
     """Save the plan turn's reply where the prompt said; the saved path, or None.
 
     Only the turn :func:`begin_plan_turn` marked, only for its own session, only while
@@ -159,6 +159,8 @@ async def finish_plan_turn(session_id: str, reply: str) -> str | None:
     if marked is None or marked.session_id != str(session_id or ""):
         return None
     _plan_turn.set(None)
+    if failed:
+        return None
     from .kernel.plan_mode import default_store
 
     store = default_store()
@@ -178,15 +180,20 @@ async def finish_plan_turn(session_id: str, reply: str) -> str | None:
     def _write() -> str:
         root.mkdir(parents=True, exist_ok=True)
         data = text.encode("utf-8")[:_MAX_PLAN_BYTES]
-        with open(target, "xb") as fh:
-            fh.write(data + b"\n")
-        store.note_plan(marked.session_id, str(target))
-        return str(target)
+        # Two plans in the same second on the same topic: the second gets "-2", "-3", ...
+        for n in range(1, 100):
+            path = target if n == 1 else target.with_name(f"{target.stem}-{n}{target.suffix}")
+            try:
+                with open(path, "xb") as fh:
+                    fh.write(data + b"\n")
+            except FileExistsError:
+                continue
+            store.note_plan(marked.session_id, str(path))
+            return str(path)
+        raise FileExistsError(str(target))
 
     try:
         saved = await asyncio.to_thread(_write)
-    except FileExistsError:
-        return None
     except OSError:
         logger.warning("/plan: the plan file could not be written", exc_info=True)
         return None

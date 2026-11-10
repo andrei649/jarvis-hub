@@ -2930,9 +2930,9 @@
   switch, plan mode, approval mode `off` and the loop's budget pause it, and the heartbeat scheduler
   is the 15 s watcher. `/btw` is now a whole-conversation fork with usage on the parent session.
   `/context`, `/compress`, `GET /sessions/{id}/context` and the HUD Context Meter read the compaction
-  policy itself. Ledger: H668, H460, H578 → equivalent; H669, H412 stay partial (no cache-parity
+  policy itself. Ledger: H668, H578 → equivalent; H460 partial (no loop delivery to Slack/Discord/email, no loops in groups); H669, H412 stay partial (no cache-parity
   fork, prompt.btw, @diff/page refs or acting manual compaction). User docs:
-  `docs/SESSION_COMMANDS.md`. Tests: `tests/test_g2_session_commands.py` (41) and
+  `docs/SESSION_COMMANDS.md`. Tests: `tests/test_g2_session_commands.py` (54; an adversarial review round added the per-tick owner re-check, a fresh allotment on resume, migration with the conversation and an explicit read-kind list) and
   `frontend/src/panels/context-meter.test.tsx` (2).
 
   **UX pass done (2026-11-10): the Integrations panel** (owner request: make the Hermes integration

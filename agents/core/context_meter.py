@@ -38,6 +38,10 @@ GRID_CELLS = 100
 _SYSTEM = {"identity", "host-detected", "environment-hint", "turn-scaffold"}
 
 
+class MeterUnavailable(RuntimeError):
+    """The meter cannot be computed for this conversation; the message says why."""
+
+
 def _estimate(text: str) -> int:
     from .llm.tokenizer import estimate_tokens
 
@@ -122,7 +126,14 @@ async def breakdown(orch: Any, session_id: str, *, agent: str = "jarvis") -> dic
         except Exception:  # noqa: BLE001
             memory_text = ""
     memory = getattr(orch, "memory", None)
-    turns = await memory.get_history(session_id) if memory is not None else []
+    try:
+        turns = await memory.get_history(session_id) if memory is not None else []
+    except Exception as exc:  # noqa: BLE001 — e.g. UnverifiedRewind: the history is not readable
+        from .memory.conversation import UnverifiedRewind
+
+        if isinstance(exc, UnverifiedRewind):
+            raise MeterUnavailable("this conversation's history cannot be verified, so it is not measured") from exc
+        raise
     turns = [t for t in (turns or []) if isinstance(t, dict)]
     history, attachments, images, blocks = _history_rows(turns)
     tokens = {
@@ -148,14 +159,12 @@ async def breakdown(orch: Any, session_id: str, *, agent: str = "jarvis") -> dic
     categories[CATEGORIES.index("history")]["turns"] = len(turns)
     categories[CATEGORIES.index("attachments")]["images"] = images
     categories[CATEGORIES.index("attachments")]["attached_blocks"] = blocks
+    # The provider's own count of this conversation's last request (H673), when one
+    # reported it and no turn has been dropped from under it since.
     measured = None
-    probe = getattr(orch, "_usage_anchor", None)
-    if callable(probe):
-        try:
-            anchor = probe(len(turns))
-            measured = getattr(anchor, "prompt_tokens", None) if anchor is not None else None
-        except Exception:  # noqa: BLE001
-            measured = None
+    row = (getattr(orch, "__dict__", {}).get("_context_measured_by_session") or {}).get(str(session_id))
+    if isinstance(row, tuple) and len(row) == 2 and int(row[1]) <= len(turns):
+        measured = int(row[0])
     return {
         "session_id": session_id,
         "model": model,

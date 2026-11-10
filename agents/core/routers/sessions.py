@@ -392,9 +392,12 @@ async def get_session_context(session_id: str):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    from agents.core.context_meter import breakdown
+    from agents.core.context_meter import MeterUnavailable, breakdown
 
-    return JSONResponse(await breakdown(orch, session_id), headers=_NO_STORE)
+    try:
+        return JSONResponse(await breakdown(orch, session_id), headers=_NO_STORE)
+    except MeterUnavailable as exc:
+        return JSONResponse({"error": str(exc)}, status_code=409, headers=_NO_STORE)
 
 
 @router.post("/sessions/resume", dependencies=[Depends(user_guard)])

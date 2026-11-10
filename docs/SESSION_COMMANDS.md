@@ -25,9 +25,39 @@ commands. `/btw` follows the channel's access list (`commands.user_allowed_comma
 3. When the model answers, Nerva saves the plan as a markdown file in
    `<data>/plans/YYYY-MM-DD_HHMMSS-<topic>.md` and tells you where.
 
-Plan mode stays on for this conversation, also after a restart, until you send `/plan off`.
-Only you can turn it on or off. If the plan-mode state file is ever unreadable, every
-conversation is held in plan mode until you send `/plan off`.
+Plan mode stays on for this conversation, also after a restart, until you send `/plan off`
+(Hermes's plan mode lasts one turn; Nerva keeps it until you leave it). It follows the
+conversation when it gets a new session id (`/undo`, `/new`, `/reset`, a chat's idle or daily
+rollover). Only you can turn it on or off. If the plan-mode state file is ever unreadable,
+every conversation is held in plan mode until you send `/plan off`.
+
+**What plan mode covers, exactly:**
+
+- every tool call the model makes in this conversation: only tools declared `read_only`
+  run (`file_read`, `web_search`, `skills_list`, …). Tools that declare a state change are
+  refused even when they look like reads: `skill_view` records the skill as loaded for the
+  session, `todo` writes the list, `kanban_list` declares a reversible effect. Plan mode
+  trusts what a tool declares, never its name;
+- every action the Action Kernel mediates while a turn of this conversation runs: only
+  `research`, a `plugin.egress` GET or HEAD, and unregistered kinds whose name is a read
+  verb (`memory.read`) pass. A registered kind is a read only when it is listed, so
+  `checkpoint.restore` is not one.
+
+**What it does not cover:**
+
+- your own slash and skill commands (`/remind`, `/memory approve`, a `/kanban` edit, a
+  skill command): they are yours, and they run;
+- writes the hub makes on its own after a turn, such as the background memory review
+  (governed by its own approval setting) and the plan file itself;
+- tasks queued for approval before you sent `/plan`, and sub-agents already running;
+- reading the web: a GET can carry data in its address. That is true outside plan mode
+  too; plan mode does not add or remove that channel.
+
+**Where the plan is saved:** in Nerva's data folder, not in your project, because the model
+cannot write in plan mode and the hub writes the file for it. The model's file tools are
+limited to the folders you shared with it, so it does not read the plan file back on its
+own; the plan is also in the conversation as its reply. Two plans on the same topic in
+the same second get `-2`, `-3` … at the end of the name.
 
 ## /loop — repeat a prompt in this conversation
 
@@ -49,15 +79,27 @@ conversation is held in plan mode until you send `/plan off`.
 - **Stopping:** the loop stops when the model ends an answer with `LOOP_COMPLETE` on its
   own line, when the `--until` condition is met (a local model judges the answer; if it
   cannot, the loop goes on), or after `--times N` runs. After 100 runs without a limit
-  the loop **pauses**; `/loop resume` continues it.
+  the loop **pauses**; `/loop resume` continues it with another 100. A `--times` above 100
+  raises the limit to that number. A loop whose prompt is a slash command (`/loop 10m
+  /recap`) is not judged on the command's output; it runs until `--times`, the limit or
+  `/loop stop`.
 - **Safety:** every wakeup is an ordinary turn. Before it runs it is checked like any
   action: the kill switch, plan mode, approval mode `off` and the loop's budget (24 hours
-  from when you set it, and its run limit) can each stop it. When that happens the loop
-  pauses and says why. The emergency stop (`/pause`) pauses every loop. A wakeup never
-  starts while a turn is running in the same conversation, or while a goal run is active.
-- The loop is saved with the conversation, so it continues after a restart.
-- Wakeup answers appear in the conversation (the HUD chat, `/recap`). On chat channels
-  such as Telegram they are not pushed to you yet.
+  and its run limit, both counted from when you set it or last resumed it) can each stop
+  it. When that happens the loop pauses and says why; `/loop resume` gives it a fresh
+  24 hours. The emergency stop (`/pause`) pauses every loop. A wakeup never starts while a
+  turn is running in the same conversation or chat. (A company-mode goal run takes no turn
+  in a conversation, so it does not hold a loop back.)
+- **Whose authority:** a wakeup runs as you. On a chat channel such as Telegram, whether
+  the chat is still yours is checked again before every wakeup, exactly as for a message
+  you type (the owner ids, the pairing, a running adapter); if it is not, the loop pauses
+  and nothing is sent there. `/loop` is refused in a group.
+- The loop is saved with the conversation, so it continues after a restart, and it moves
+  with the conversation to a new session id (`/undo`, `/new`, `/reset`, a chat's rollover).
+- Wakeup answers appear in the conversation (the HUD chat, `/recap`). On Telegram, ntfy
+  and other chat channels each answer is also sent to the chat the loop was set from.
+  Slack, Discord and email answers stay on their reviewed reply path and are not sent by
+  a loop.
 
 ## /btw — a side question about this conversation
 

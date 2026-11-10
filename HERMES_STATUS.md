@@ -1,8 +1,8 @@
 # Sprint curent: echivalarea celor 697 de capabilități Hermes
 
-**151 / 697 = 21.7% echivalente complet în evaluarea documentată.**
+**150 / 697 = 21.5% echivalente complet în evaluarea documentată.**
 
-Din acestea, **151** au fost reevaluate pe cod în această livrare; **0** păstrează verdictul auditului din 7 septembrie.
+Din acestea, **150** au fost reevaluate pe cod în această livrare; **0** păstrează verdictul auditului din 7 septembrie.
 
 **Acesta este un status inițial conservator, nu o reauditare completă a celor 697.** Verdictele moștenite și cele actualizate sunt vizibile pentru fiecare rând. Procentul de 88% discutat anterior privea altă listă și nu se aplică aici.
 
@@ -10,13 +10,13 @@ Din acestea, **151** au fost reevaluate pe cod în această livrare; **0** păst
 
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
-| Echivalent | 151 | 21.7% |
-| Parțial | 461 | 66.1% |
+| Echivalent | 150 | 21.5% |
+| Parțial | 462 | 66.3% |
 | Lipsă | 53 | 7.6% |
 | Exclus intenționat | 32 | 4.6% |
 | De reverificat | 0 | 0.0% |
 
-**Ținta acceptată în produs:** 665 rânduri; progres 151/665 = **22.7%**. Excluderi active: 32. Readmise explicit din vechiul audit: 75; readmiterea nu acordă credit de implementare.
+**Ținta acceptată în produs:** 665 rânduri; progres 150/665 = **22.6%**. Excluderi active: 32. Readmise explicit din vechiul audit: 75; readmiterea nu acordă credit de implementare.
 
 **Acoperirea reevaluării curente:** 665/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
 
@@ -41,7 +41,7 @@ Fiecare rând aparține unui singur domeniu din [areas.json](docs/hermes/areas.j
 | [providers](docs/HERMES_CAPABILITIES.md#area-providers) — Model providers, routing and fallback | adopt/own | 27 | 6 | 17 | 1 | 3 | 0 | 82 | seed din dovezi |
 | [agent-core](docs/HERMES_CAPABILITIES.md#area-agent-core) — Agent loop, context and sessions | own | 36 | 10 | 24 | 2 | 0 | 0 | 111 | seed din dovezi |
 | [memory](docs/HERMES_CAPABILITIES.md#area-memory) — Memory and recall | own | 27 | 9 | 18 | 0 | 0 | 0 | 69 | seed din dovezi |
-| [automation](docs/HERMES_CAPABILITIES.md#area-automation) — Automation: schedules, goals, delegation, kanban | own | 32 | 7 | 25 | 0 | 0 | 0 | 97 | seed din dovezi |
+| [automation](docs/HERMES_CAPABILITIES.md#area-automation) — Automation: schedules, goals, delegation, kanban | own | 32 | 6 | 26 | 0 | 0 | 0 | 97 | seed din dovezi |
 | [security](docs/HERMES_CAPABILITIES.md#area-security) — Security: approvals, sandbox, secrets, egress | own | 34 | 7 | 25 | 1 | 1 | 0 | 211 | seed din dovezi |
 | [media](docs/HERMES_CAPABILITIES.md#area-media) — Media: images, video, voice, vision | adopt/own | 27 | 7 | 19 | 1 | 0 | 0 | 100 | seed din dovezi |
 | [editor-acp](docs/HERMES_CAPABILITIES.md#area-editor-acp) — Editor agent over ACP | own/adopt | 6 | 0 | 0 | 5 | 1 | 0 | 2 | **subțire**, seed din dovezi |

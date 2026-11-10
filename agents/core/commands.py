@@ -530,7 +530,7 @@ async def _btw(ctx: CommandContext) -> str:
     from agents.core.llm.auxiliary_text import (
         BTW_MAX_TOKENS,
         BTW_QUESTION_CHARS,
-        btw_fork_budget_chars,
+        resolve_btw_fork_budget,
         run_side_fork,
     )
 
@@ -557,7 +557,7 @@ async def _btw(ctx: CommandContext) -> str:
     from agents.core.llm.data_handling import DataHandlingRefused
     from agents.core.llm.job_selection import SelectionError
 
-    budget = btw_fork_budget_chars(router)
+    budget = await resolve_btw_fork_budget(router)
     turns = await memory.get_history(session)
     # Redact each turn's WHOLE content before anything is bounded: cutting first can split
     # a key so that no pattern matches and its prefix survives (the Redactor's own rule).
@@ -655,7 +655,7 @@ async def _context_meter(ctx: CommandContext):
     """H412 — what fills the window (``/context``), and what compaction does (``/compress``).
     Both read the compaction loop's own policy object (``context_meter``); neither changes
     the conversation."""
-    from .context_meter import breakdown, compress_report, render
+    from .context_meter import MeterUnavailable, breakdown, compress_report, render
 
     orch = ctx.orch
     session = getattr(orch, "session_id", None)
@@ -663,7 +663,10 @@ async def _context_meter(ctx: CommandContext):
         return "There is no conversation here to measure yet."
     if not callable(getattr(orch, "_compaction_policy", None)):
         return "The context meter is not available on this hub."
-    meter = await breakdown(orch, str(session))
+    try:
+        meter = await breakdown(orch, str(session))
+    except MeterUnavailable as exc:
+        return f"The context meter could not run: {exc}."
     if ctx.name == "compress":
         return compress_report(meter)
     return render(meter, expand=(ctx.args or "").strip().lower() in {"all", "full", "expand"})

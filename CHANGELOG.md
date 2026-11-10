@@ -13,6 +13,8 @@
   itself, waiting longer while nothing changes. It stops on `--times N`, on `--until <condition>`,
   or when the model says the task is done; after 100 runs it pauses. Each run is checked like
   any action, and the emergency stop, the kill switch, plan mode or approval mode `off` pause it.
+  On Telegram and similar chats each answer is sent to the chat, and before every run Nerva checks
+  again that the chat is still yours; `/loop resume` gives a paused loop a fresh allotment.
 - `/btw` now reads the whole conversation (as much as the local model holds), not only the last
   few messages, and what it uses is counted against the conversation.
 - `/context` shows what fills the model's window (system prompt, tools, skills, memory, history,

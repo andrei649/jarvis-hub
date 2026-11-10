@@ -328,7 +328,33 @@ async def run_oneshot(
     return answer
 
 
-def btw_fork_budget_chars(router) -> int:
+async def resolve_btw_fork_budget(router) -> int:
+    """H669 — ``btw_fork_budget_chars`` against the window the local backend really serves:
+    Ollama's effective ``num_ctx`` (``resolve_context_window``) or a backend's own
+    ``context_window(model)``; the family table only when neither answers."""
+    window = None
+    try:
+        backend = getattr(router, "local_backend", None)
+    except Exception:  # noqa: BLE001 — no local backend: the fork itself will say so
+        backend = None
+    try:
+        model = resolve_auxiliary_model("oneshot", getattr(router, "active_model", None))
+    except Exception:  # noqa: BLE001
+        model = ""
+    try:
+        resolve = getattr(backend, "resolve_context_window", None)
+        if callable(resolve):
+            window = await resolve(model)
+        elif callable(getattr(backend, "context_window", None)):
+            window = backend.context_window(model)
+    except Exception:  # noqa: BLE001 — an unknown window takes the family table
+        window = None
+    if isinstance(window, bool) or not isinstance(window, int) or window <= 0:
+        window = None
+    return btw_fork_budget_chars(router, window=window)
+
+
+def btw_fork_budget_chars(router, *, window: int | None = None) -> int:
     """H669 — how much of the conversation a ``/btw`` fork may replay: the local one-shot
     model's window (``context_compressor.window_for``, the conservative per-family table)
     in characters, less the answer's budget and a margin, capped at ``BTW_FORK_MAX_CHARS``."""
@@ -338,7 +364,7 @@ def btw_fork_budget_chars(router) -> int:
         model = resolve_auxiliary_model("oneshot", getattr(router, "active_model", None))
     except Exception:  # noqa: BLE001 — an unknown model takes the conservative default
         model = ""
-    window_tokens = window_for(model)
+    window_tokens = window_for(model) if window is None else int(window)
     usable = max(0, window_tokens - BTW_MAX_TOKENS - 1_024)
     return max(BTW_SNAPSHOT_CHARS, min(BTW_FORK_MAX_CHARS, usable * 3))
 
