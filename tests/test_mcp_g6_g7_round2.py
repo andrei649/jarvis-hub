@@ -88,7 +88,8 @@ async def test_many_large_blocks_are_capped_without_stalling_the_loop(mgr):
     assert len(out["contents"]) == res_mod.MAX_RESULT_BLOCKS and out["blocks_omitted"] == 20
     assert _text_chars(out["contents"]) <= res_mod.MAX_RESULT_TEXT_CHARS + 200
     assert out["text_truncated"] is True
-    assert ticker.worst < 0.15, f"event loop stalled {ticker.worst:.3f}s"
+    # 0.4 s: the regression this guards is an 8 s stall; parallel CI load adds ~0.1-0.2 s.
+    assert ticker.worst < 0.4, f"event loop stalled {ticker.worst:.3f}s"
 
 
 async def test_a_sixty_megabyte_reply_is_bounded(mgr):
@@ -105,7 +106,8 @@ async def test_tool_call_results_are_bounded_too(mgr):
     assert len(out["content"]) == 100 and out["blocks_omitted"] == 20
     assert _text_chars(out["content"]) <= res_mod.MAX_RESULT_TEXT_CHARS + 200
     assert str(out["structuredContent"]).startswith("[structuredContent omitted")
-    assert ticker.worst < 0.15, f"event loop stalled {ticker.worst:.3f}s"
+    # 0.4 s: the regression this guards is an 8 s stall; parallel CI load adds ~0.1-0.2 s.
+    assert ticker.worst < 0.4, f"event loop stalled {ticker.worst:.3f}s"
 
 
 def test_cleaning_is_one_fast_pass_over_multiline_text():

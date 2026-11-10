@@ -28,7 +28,7 @@ import pytest
 
 from agents.core.channels import delivery_ledger
 from agents.core.channels import telegram as tg
-from agents.core.channels.backfill import BackfillBudget
+from agents.core.channels.backfill import BackfillBudget, is_backlog
 from agents.core.channels.delivery_ledger import ReliabilityStore
 from agents.core.channels.gateway import Gateway
 from agents.core.channels.manager import ChannelManager
@@ -57,6 +57,7 @@ class FakeTelegram:
         self.send_failure: tuple[int, dict] | None = None
         self.answered: list[dict] = []
         self.requests = 0
+        self.page_size = 100
 
     def message(self, text, *, uid=OWNER, chat_id=None, age=0.0):
         update = {"update_id": next(_ids), "message": {
@@ -87,7 +88,7 @@ class FakeTelegram:
             self.queue = [u for u in self.queue if u["update_id"] >= offset]
             if not self.queue and request.url.params.get("timeout") not in (None, "0"):
                 await asyncio.sleep(0.01)
-            return httpx.Response(200, json={"ok": True, "result": list(self.queue)})
+            return httpx.Response(200, json={"ok": True, "result": list(self.queue[:self.page_size])})
         if method == "sendMessage":
             body = json.loads(request.content)
             if self.send_failure is not None:
@@ -149,7 +150,7 @@ async def test_missed_messages_are_processed_once_after_restart_through_full_gat
     # While the hub is down: the owner writes, a stranger writes, an old message from
     # yesterday is still queued, and someone taps an approval button.
     server.queue.append(live)                           # Telegram would resend it unconfirmed
-    server.message("while you were away")
+    server.message("while you were away", age=5)
     server.message("let me in", uid=STRANGER, age=30)
     server.message("seven hours ago", age=7 * 3600)
     server.tap()
@@ -172,7 +173,7 @@ async def test_missed_messages_are_processed_once_after_restart_through_full_gat
     assert "offline" in server.answered[0]["text"]
     counts = second.health_snapshot()["backfill"]
     assert counts == {"processed": 2, "skipped_stale": 1, "skipped_over_budget": 0,
-                      "refused_taps": 1}
+                      "refused_commands": 0, "refused_taps": 1}
 
 
 @pytest.mark.asyncio
@@ -233,13 +234,99 @@ async def test_backfill_off_skips_every_old_message(tmp_path, quick_batches, mon
     assert [t for t, *_ in seen] == ["live now"]
 
 
-def test_budget_plan_keeps_newest_within_window():
+def test_budget_admits_in_order_within_window_and_limit():
     budget = BackfillBudget(window_s=100, limit=2)
     now = 1000.0
-    assert budget.plan([850, 950, 960, 970], now) == [False, False, True, True]
+    assert [budget.admit(t, now) for t in (850, 950, 960, 970)] == [False, True, True, False]
     assert budget.counts() == {"processed": 2, "skipped_stale": 1, "skipped_over_budget": 1,
-                               "refused_taps": 0}
-    assert budget.admit(990, now) is False and budget.skipped_over_budget == 2
+                               "refused_commands": 0, "refused_taps": 0}
+    assert is_backlog(999, 1000.5) and not is_backlog(1000, 1000.9)    # whole seconds
+
+
+@pytest.mark.asyncio
+async def test_the_newest_backfilled_messages_are_kept_across_pages(
+        tmp_path, quick_batches, monkeypatch):
+    monkeypatch.setenv("JARVIS_CHANNEL_BACKFILL_MAX", "3")
+    server = FakeTelegram()
+    server.page_size = 4
+    gateway, seen = _gated(tmp_path)
+    for n in range(10):
+        server.message(f"missed {n}", chat_id=200 + n, age=1000 - n)
+    channel = _telegram(server, gateway.route)
+    await channel.start()
+    try:
+        await _until(lambda: len(seen) == 3)
+        await asyncio.sleep(0.15)
+    finally:
+        await channel.stop()
+    assert sorted(t for t, *_ in seen) == ["missed 7", "missed 8", "missed 9"]
+    assert channel.health_snapshot()["backfill"]["skipped_over_budget"] == 7
+
+
+@pytest.mark.asyncio
+async def test_a_backfilled_command_is_never_run_and_only_a_known_sender_is_told(
+        tmp_path, quick_batches):
+    server = FakeTelegram()
+    gateway, seen = _gated(tmp_path)
+    server.message("/resume", age=3 * 3600)              # typed 3 h ago, before an e-stop
+    server.message("/approve 12", age=60)
+    server.message("/start let-me-in", uid=STRANGER, age=30)
+    channel = _telegram(server, gateway.route)
+    channel.allowed_users = []
+    channel._pairing = gateway.pairing
+    await channel.start()
+    try:
+        await _until(lambda: len(server.offsets) >= 3)
+        server.message("/status", age=-1)                 # live again: a command runs
+        await _until(lambda: len(seen) == 1)
+    finally:
+        await channel.stop()
+    assert [t for t, *_ in seen] == ["/status"]
+    told = [m for m in server.sent if "offline" in m["text"]]
+    assert [m["chat_id"] for m in told] == [OWNER, OWNER]    # the stranger hears nothing
+    assert channel.health_snapshot()["backfill"]["refused_commands"] == 3
+
+
+@pytest.mark.asyncio
+async def test_a_backfilled_message_never_answers_a_pending_prompt(tmp_path, quick_batches):
+    server = FakeTelegram()
+    gateway, seen = _gated(tmp_path)
+    asked = []
+
+    async def pending(text, **kwargs):
+        asked.append(text)
+        return True                                      # would consume it as an answer
+
+    server.message("yes", age=120)
+    channel = _telegram(server, gateway.route)
+    channel.pending_reply_handler = pending
+    await channel.start()
+    try:
+        await _until(lambda: len(seen) == 1)
+    finally:
+        await channel.stop()
+    assert asked == [] and [t for t, *_ in seen] == ["yes"]
+
+
+@pytest.mark.asyncio
+async def test_a_tap_queued_during_an_outage_is_refused(tmp_path, quick_batches, monkeypatch):
+    server = FakeTelegram()
+    gateway, _seen = _gated(tmp_path)
+    channel = _telegram(server, gateway.route)
+
+    async def no_wait(delay):
+        server.tap()                                      # tapped while the API is down
+        await asyncio.sleep(0)
+
+    monkeypatch.setattr(tg, "_backoff_sleep", no_wait)
+    await channel.start()
+    try:
+        await _until(lambda: len(server.offsets) >= 2)
+        server.poll_failures = [(502, {"ok": False})]
+        await _until(lambda: server.answered)
+    finally:
+        await channel.stop()
+    assert "offline" in server.answered[0]["text"]
 
 
 # ── ntfy: since= cursor ──────────────────────────────────────────────────────
@@ -317,19 +404,28 @@ async def test_ntfy_resumes_from_its_cursor_once_and_gated(tmp_path, paired):
 
 
 @pytest.mark.asyncio
-async def test_ntfy_fatal_status_is_on_the_status_surface(tmp_path):
+async def test_ntfy_fatal_status_is_on_the_status_surface(tmp_path, monkeypatch):
+    import agents.core.channels.ntfy as ntfy
     from agents.core.routers import status as status_router
 
     server = FakeNtfy(status=401)
     channel, *_ = _ntfy(tmp_path, server)
+    waits = []
+
+    async def sleep(delay):
+        waits.append(delay)
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(ntfy, "sleep", sleep)
     await channel.start()
     try:
-        await _until(lambda: channel._stream_task.done())
+        await _until(lambda: waits)
+        row = status_router._channel_health(channel)
     finally:
         await channel.stop()
-    assert len(server.params) == 1
-    row = status_router._channel_health(channel)
+    assert len(server.params) == 1 and waits == [600.0]    # no ladder: a slow re-probe
     assert row["state"] == "fatal" and row["fatal"] == "unauthorized"
+    assert 590 <= row["retry_in_s"] <= 600
 
 
 # ── H100: ladder, jitter, reset, fatal ───────────────────────────────────────
@@ -399,17 +495,25 @@ async def test_a_revoked_token_stops_the_channel_and_shows_on_status(
     from agents.core.routers import status as status_router
 
     server = FakeTelegram()
-    server.poll_failures = [(status, {"ok": False, "description": "Unauthorized"})] * 5
+    server.poll_failures = [(status, {"ok": False, "description": "Unauthorized"})] * 2
     channel = _telegram(server, _gated(tmp_path)[0].route)
+    waits, rows = [], []
+
+    async def probe_later(delay):
+        waits.append(delay)
+        rows.extend(status_router._channel_rows(SimpleNamespace(channels={"telegram": channel})))
+        if len(waits) == 2:
+            await asyncio.Event().wait()
+
+    monkeypatch.setattr(tg, "_backoff_sleep", probe_later)
+    monkeypatch.setattr(status_router, "get_gateway", lambda: None)
     await channel.start()
     try:
-        await _until(lambda: channel._poll_task.done())
+        await _until(lambda: len(waits) == 2)
+        server.poll_failures = []
     finally:
         await channel.stop()
-    assert len(server.poll_failures) == 4        # one try, no retry loop
-    monkeypatch.setattr(status_router, "get_gateway", lambda: None)
-    rows = status_router._channel_rows(SimpleNamespace(channels={"telegram": channel}))
-    assert rows[0]["running"] is False
+    assert waits == [600.0, 600.0]               # no ladder: one slow re-probe at a time
     assert rows[0]["health"]["state"] == "fatal"
     assert rows[0]["health"]["fatal"] in {"unauthorized", "not_found"}
     assert "t" not in {v for v in rows[0]["health"].values() if isinstance(v, str)}
@@ -564,3 +668,145 @@ async def test_receipts_route_lists_states_dead_targets_and_health(tmp_path, mon
     cleared = await integrations.channels_dead_target_clear(
         integrations.DeadTargetClearBody(channel="telegram", target="77"))
     assert json.loads(cleared.body) == {"cleared": True}
+
+
+# ── review fixes (G15 adversarial review) ────────────────────────────────────
+
+
+def test_a_container_restart_with_the_same_pid_still_closes_open_rows(tmp_path, monkeypatch):
+    import os
+
+    store = ReliabilityStore(tmp_path / "r.db")
+    row = store.open_delivery("telegram", 1, "x", key="k")
+    row.attempting()
+    monkeypatch.setattr(delivery_ledger, "_BOOT", "after-restart")   # PID 1 again, new boot
+    assert store.recover(alive=lambda pid: pid == os.getpid()) == {"failed": 0, "unknown": 1}
+    assert store.get(row.id)["state"] == "unknown"
+
+
+def test_a_live_other_process_keeps_its_fresh_rows_but_not_stale_ones(tmp_path, monkeypatch):
+    store = ReliabilityStore(tmp_path / "r.db")
+    fresh = store.open_delivery("telegram", 1, "x")
+    stale = store.open_delivery("telegram", 2, "y")
+    with store._conn:
+        store._conn.execute("UPDATE deliveries SET pid=?", (424242,))
+        store._conn.execute("UPDATE deliveries SET updated=updated-7200 WHERE id=?", (stale.id,))
+    monkeypatch.setattr(delivery_ledger, "_BOOT", "other")
+    assert store.recover(alive=lambda pid: True) == {"failed": 1, "unknown": 0}
+    assert store.get(fresh.id)["state"] == "pending"
+    assert store.get(stale.id)["state"] == "failed"
+
+
+def test_the_ledger_keeps_nothing_derived_from_the_text(tmp_path):
+    store = ReliabilityStore(tmp_path / "r.db")
+    store.open_delivery("telegram", 1, "secret words")
+    columns = [r[1] for r in store._conn.execute("PRAGMA table_info(deliveries)")]
+    assert "digest" not in columns
+    tables = {r[0] for r in store._conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert "meta" not in tables
+
+
+def test_the_store_reopens_after_the_data_root_is_purged(tmp_path):
+    first = ReliabilityStore(tmp_path / "purged" / "r.db")
+    delivery_ledger.set_store(first)
+    first.path.unlink()
+    second = delivery_ledger.store()
+    assert second is not first
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text,fatal", [
+    (b"[UNAVAILABLE] Temporary authentication failure.", False),
+    (b"[AUTHENTICATIONFAILED] Invalid credentials (Failure)", True),
+])
+async def test_imap_auth_failures_are_fatal_only_when_permanent(monkeypatch, text, fatal):
+    import imaplib
+
+    from agents.core.channels import email as em
+
+    channel = em.EmailChannel()
+    channel._running = True
+    channel.imap = {"poll_interval": 0}
+    waits = []
+
+    async def boom():
+        raise imaplib.IMAP4.error(text)
+
+    async def sleep(delay):
+        waits.append(delay)
+        channel._running = False
+
+    channel._check_imap = boom
+    monkeypatch.setattr(em.asyncio, "sleep", sleep)
+    await asyncio.wait_for(channel._poll_loop(), 2)
+    assert channel.health.state == ("fatal" if fatal else "retrying")
+    assert waits == [600.0] if fatal else 24 <= waits[0] <= 36
+
+
+@pytest.mark.asyncio
+async def test_a_fatal_channel_is_reported_on_another_channel(tmp_path):
+    server = FakeNtfy()
+    ntfy_channel, *_ = _ntfy(tmp_path, server)
+    ntfy_channel._running = True
+    manager = ChannelManager()
+    manager.register(ntfy_channel)
+    telegram = _telegram(FakeTelegram(), None)
+    manager.register(telegram)
+    posts = []
+    original = server.handle
+
+    async def record(request):
+        if request.method == "POST":
+            posts.append(request.content.decode())
+        return await original(request)
+
+    ntfy_channel.client = httpx.AsyncClient(transport=httpx.MockTransport(record))
+    telegram.health.failed_fatally("unauthorized")
+    telegram.health.failed_fatally("unauthorized")          # once per transition
+    await _until(lambda: posts)
+    await asyncio.sleep(0.05)
+    assert len(posts) == 1 and "telegram" in posts[0] and "unauthorized" in posts[0]
+    ntfy_channel._running = False
+
+
+@pytest.mark.asyncio
+async def test_ntfy_backfilled_command_is_refused_and_replays_are_bounded(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_CHANNEL_BACKFILL_MAX", "1")
+    server = FakeNtfy()
+    first, *_ = _ntfy(tmp_path, server)
+    await first.start()
+    first._taken("old", int(time.time()) - 300)
+    await first.stop()
+    server.publish("c1", "/resume", age=200)
+    server.publish("m1", "first missed", age=100)
+    server.publish("m2", "second missed", age=50)
+    second, _gateway, seen = _ntfy(tmp_path, server)
+    posts = []
+    original = server.handle
+
+    async def record(request):
+        if request.method == "POST":
+            posts.append(request.content.decode())
+        return await original(request)
+
+    second.client = httpx.AsyncClient(transport=httpx.MockTransport(record))
+    await second.start()
+    try:
+        await _until(lambda: seen and posts and second.health.backfill.get("skipped_over_budget"))
+        await asyncio.sleep(0.05)
+        counts = dict(second.health.backfill)
+    finally:
+        await second.stop()
+    assert seen == ["first missed"]                       # budget 1, command never run
+    assert any("offline" in p for p in posts)
+    assert counts["refused_commands"] == 1 and counts["skipped_over_budget"] == 1
+
+
+def test_backfill_variables_take_the_nerva_spelling(monkeypatch):
+    from agents.core.channels.backfill import configured_max, configured_window
+
+    monkeypatch.delenv("JARVIS_CHANNEL_BACKFILL_MAX", raising=False)
+    monkeypatch.delenv("JARVIS_CHANNEL_BACKFILL_WINDOW_S", raising=False)
+    monkeypatch.setenv("NERVA_CHANNEL_BACKFILL_MAX", "7")
+    monkeypatch.setenv("NERVA_CHANNEL_BACKFILL_WINDOW_S", "60")
+    assert configured_max() == 7 and configured_window() == 60

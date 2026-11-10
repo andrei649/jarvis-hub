@@ -7,6 +7,7 @@ Orchestrator keeps a `channels` property that delegates here, so existing
 `orch.channels[...]` access is unchanged.
 """
 
+import asyncio
 import logging
 import re
 import time
@@ -131,9 +132,14 @@ CHANNEL_REPLY_TRANSPORT_CONTRACT = _channel_reply_transport_contract_template()
 class ChannelManager:
     def __init__(self):
         self.channels: dict[str, ChannelAdapter] = {}
+        self._notices: set = set()
 
     def register(self, channel: ChannelAdapter) -> None:
         self.channels[channel.channel_id] = channel
+        health = getattr(channel, "health", None)
+        if health is not None and hasattr(health, "on_fatal"):
+            cid = channel.channel_id
+            health.on_fatal = lambda reason, cid=cid: self._fatal_notice(cid, reason)
         logger.info(f"Channel registered: {channel.channel_id}")
 
     def get(self, channel_id: str):
@@ -160,6 +166,34 @@ class ChannelManager:
 
         for cid, ch in list(self.channels.items()):
             await bounded(ch.stop(), CHANNEL_STOP_BUDGET, f"channel {cid} stop")
+
+    def _fatal_notice(self, channel_id: str, reason: str) -> None:
+        """H100 — a channel went fatal (a refused token): tell the owner on another channel
+        that can still reach them (ntfy, or the owner's Telegram chat), once per transition.
+        Best effort, never awaited by the failing channel."""
+        from .outbound import resolve_destination
+
+        text = (f"Nerva's {channel_id} channel stopped: the service refused its credentials "
+                f"({reason}). Fix them; Nerva looks again every 10 minutes.")
+        for other in ("ntfy", "telegram"):
+            adapter = self.channels.get(other)
+            health = getattr(adapter, "health", None)
+            if (other == channel_id or adapter is None or not getattr(adapter, "_running", False)
+                    or getattr(health, "state", None) == "fatal"):
+                continue
+            kwargs, _why = resolve_destination(self, other)
+            if kwargs is None:
+                continue
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return
+            task = loop.create_task(self.send(other, text, voice=False, plain=True, **kwargs))
+            self._notices.add(task)
+            task.add_done_callback(self._notices.discard)
+            return
+        logger.error("Channel %s is fatal (%s) and no other channel can tell the owner",
+                     channel_id, reason)
 
     async def send(self, channel: str, response, **kwargs) -> bool:
         """Dispatch a generic response on a direct-send channel.
@@ -223,8 +257,10 @@ class ChannelManager:
         except Exception:
             logger.warning("Dead-target registry unavailable", exc_info=True)
         health = getattr(adapter, "health", None)
-        if outcome.fatal and health is not None and hasattr(health, "failed_fatally"):
-            # H100: the platform refused the credential on a send: show it, do not hide it.
+        if (outcome.fatal and health is not None and hasattr(health, "failed_fatally")
+                and getattr(health, "state", None) != "healthy"):
+            # H100: the platform refused the credential on a send of a channel with no
+            # healthy poll proving otherwise (ntfy's publish): show it, do not hide it.
             health.failed_fatally(outcome.fatal)
         return ok
 

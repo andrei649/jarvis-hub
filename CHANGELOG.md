@@ -38,23 +38,32 @@
   [docs/SESSION_COMMANDS.md](docs/SESSION_COMMANDS.md).
 
 **Messages you send while Nerva restarts are no longer lost, and lost replies are no longer silent**
-- What you send on Telegram or ntfy while Nerva is down for an update or a power cut is read
-  when it comes back, once, and goes through the same checks as a live message: a stranger is
-  still held for pairing, a command is still judged. Only the last 6 hours and at most 20
-  messages are caught up (`JARVIS_CHANNEL_BACKFILL_WINDOW_S`, `JARVIS_CHANNEL_BACKFILL_MAX`);
-  older ones are skipped, not replayed. A button you tapped while Nerva was offline is
-  answered "not applied" — tap it again on the card — so an approval is never acted on hours
-  later. A crash no longer makes Nerva answer the same message twice.
+- What you send on Telegram or ntfy while Nerva is down for an update or a power cut, or while
+  its connection is out, is read when it comes back, once, and goes through the same checks as
+  a live message: a stranger is still held for pairing. Only the last 6 hours and at most 20
+  messages are caught up (`JARVIS_CHANNEL_BACKFILL_WINDOW_S`, `JARVIS_CHANNEL_BACKFILL_MAX`, or
+  the `NERVA_` spelling); on Telegram the newest 20 are kept, older ones are skipped.
+- A command you typed while Nerva was offline (`/resume`, `/approve`, `/stop` …) is **not run**
+  when it comes back — an old `/resume` must never undo a newer emergency stop. Nerva tells you
+  "sent while Nerva was offline — send it again". A button you tapped while it was offline is
+  answered "not applied"; tap it again on the card. A caught-up message never answers a
+  question Nerva asked after it came back.
+- Messages are taken at most once: a crash no longer makes Nerva answer the same message twice.
+  The flip side: a message whose answer had not started when Nerva crashed is not re-run (no
+  action is ever replayed) — send it again.
 - Every reply now leaves a receipt: sent, failed, partly sent, or "unknown" when Nerva cannot
   tell whether it arrived (it is then never resent, so you never get it twice). The receipts,
-  without the reply text, are at `GET /api/channels/deliveries`.
+  without the reply text, are at `GET /api/channels/deliveries` (admin token). Approval cards
+  have no receipt yet.
 - A chat that has blocked or removed the bot is remembered and no longer retried on every
   reminder; it is listed with the receipts and clears itself when that chat writes again
   (or with `POST /api/channels/dead-targets/clear`).
 - When a connection drops, Telegram, ntfy and the email inbox now wait 1, 2, 5, 10, 30 then
   60 seconds (a little randomised) instead of retrying every 3 seconds, and start over once
-  the connection has been fine for a minute. A revoked or wrong bot token stops the channel
-  and `/status` says why (`health`: `fatal`, `unauthorized`) instead of retrying forever;
+  the connection has been fine for a minute. A revoked or wrong token stops the retries,
+  `/status` says why (`health`: `fatal`, `unauthorized`), Nerva tells you on your other channel
+  (ntfy, or your Telegram chat), and it looks again every 10 minutes, so a fixed token works
+  without a restart. A temporary sign-in failure of the mail server is retried normally.
   Slack and Discord report their connection the same way.
 
 **Check that a project still builds and passes its tests, and keep the proof**
@@ -337,6 +346,30 @@
 - An independent security review found that the Oracle status, learning stats and local-docs
   status pages answered anyone on the network with personal details. They now ask for the same
   user token as the rest of your data. On the machine itself, with no token set, nothing changes.
+
+**Install MCP servers from a reviewed catalog, and sign in to the ones that need an account**
+- A new Console panel, Interop → **MCP Servers**, lists your MCP servers and a catalog of 66
+  reviewed servers from Hermes Agent (Linear, Notion, Stripe, Sentry, Hugging Face, Context7 and
+  more), with a search. `nerva mcp catalog` lists the same in the terminal.
+- Installing one shows exactly what will run first: the command it starts on your hub, or the
+  address it connects to, the settings it gets, and the names of the secrets it needs. Nothing is
+  installed until you tick "I have read what will run" (in the terminal, `nerva mcp install <name>`
+  asks you), and Nerva installs exactly what you read or nothing. Nothing starts until you press
+  connect. A server name that is taken is never overwritten.
+- Secrets you type for a server are kept encrypted in Nerva's secret store, given only to that
+  server, never written into its settings and never shown again. Removing the server deletes them.
+- Servers that need an account: press **sign in**, approve in your browser, and Nerva keeps the
+  token encrypted, sends it only to that server, renews it before it runs out (and once more if
+  the server refuses it mid-way), and revokes and deletes it when you sign out or remove the
+  server. Each sign-in is written to the audit log.
+- If your browser is on another machine than the hub, sign-in still finishes: the browser comes
+  back to the hub's own address, or `nerva mcp login <server>` on your laptop catches the return
+  and passes it to the hub, or you paste the address your browser ended on into the panel.
+- A vendor can give you an install link (`/v2/console/mcp?install=<name>`); it only opens the
+  install card for you to read. A link cannot set a secret's value, add headers or pick
+  variables that change how a program loads code.
+- The emergency stop, safe mode and administrator-pinned settings stop installs as they stop
+  adding a server by hand. Details: [docs/MCP_CATALOG.md](docs/MCP_CATALOG.md).
 
 **Connected MCP servers can share documents and prompt templates, and stay connected**
 - If an MCP server you added publishes documents ("resources") or prompt templates, Nerva can

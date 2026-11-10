@@ -43,11 +43,17 @@ from ..env_config import truthy
 from ..http_client import PluginEgressError, PluginHTTPClient
 from ..plugin_gate import register_dynamic_domain
 from . import delivery_ledger
-from .backfill import BackfillBudget, configured_window
+from .backfill import (
+    COMMAND_REFUSED,
+    BackfillBudget,
+    configured_window,
+    is_backlog,
+    looks_like_command,
+)
 from .base import ChannelAdapter
 from .descriptor import DIALECT_PLAIN, ChannelDescriptor
 from .pairing import channel_open_acknowledged, pairing_enabled
-from .reconnect import Backoff, classify_exception, classify_status
+from .reconnect import FATAL_REPROBE_S, Backoff, classify_exception, classify_status
 from .render import chunk, render_outbound
 
 logger = logging.getLogger("jarvis.channels.ntfy")
@@ -204,6 +210,7 @@ class NtfyChannel(ChannelAdapter):
         self._since: int | None = None
         self._seen: list[str] = []
         self._started_wall: float | None = None
+        self._cutoff: float | None = None
         self._backfill: BackfillBudget | None = None
         self._reply_binding: contextvars.ContextVar = contextvars.ContextVar("ntfy-reply", default=None)
         register_dynamic_domain("ntfy", url)
@@ -276,6 +283,7 @@ class NtfyChannel(ChannelAdapter):
             if isinstance(seen, list):
                 self._seen = [i for i in seen if isinstance(i, str) and 0 < len(i) <= 200][-_SEEN_IDS:]
         self._started_wall = wall_time()
+        self._cutoff = None
         self._backfill = BackfillBudget()
         self.health.backfill = self._backfill.counts()
 
@@ -347,6 +355,7 @@ class NtfyChannel(ChannelAdapter):
                 return
             started = monotonic()
             kind = "stream_closed"
+            fatal = False
             try:
                 async with contextlib.AsyncExitStack() as stack:
                     # Restrict redaction to opening the subscription. Inbound
@@ -361,16 +370,24 @@ class NtfyChannel(ChannelAdapter):
                                if response.status_code >= 400 else None)
                     if failure is not None and failure.fatal:
                         # H100: a wrong or revoked credential, or a topic that is gone:
-                        # retrying cannot fix it. Stop, and say so on the status surface.
+                        # the ladder cannot fix it. Say so on the status surface and look
+                        # again only every FATAL_REPROBE_S, so a fixed token heals by itself.
                         self.fatal_error = f"http_{response.status_code}"
-                        self.health.failed_fatally(failure.kind)
-                        self._running = False
-                        logger.warning("ntfy subscription stopped: HTTP %s", response.status_code)
-                        return
-                    response.raise_for_status()
-                    self._backoff.success(at=started)
-                    self.health.ok()
-                    await self._consume_stream(response)
+                        self.health.failed_fatally(failure.kind, reprobe_in=FATAL_REPROBE_S)
+                        logger.warning("ntfy subscription refused: HTTP %s; retrying in %.0f min",
+                                       response.status_code, FATAL_REPROBE_S / 60)
+                        fatal = True
+                    else:
+                        response.raise_for_status()
+                        self.fatal_error = None
+                        self._backoff.success(at=started)
+                        self.health.ok()
+                        # H116: what the server replays from before this connection opened
+                        # is a backlog: bounded per connection, commands refused.
+                        self._cutoff = wall_time()
+                        if self._started_wall is not None:
+                            self._backfill = BackfillBudget()
+                        await self._consume_stream(response)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -378,6 +395,9 @@ class NtfyChannel(ChannelAdapter):
                 logger.warning("ntfy stream error: %s", exc.__class__.__name__)
             if not self._running:
                 return
+            if fatal:
+                await sleep(FATAL_REPROBE_S)
+                continue
             delay = self._backoff.failure()
             self.health.retrying(kind, delay)
             await sleep(delay)
@@ -433,7 +453,8 @@ class NtfyChannel(ChannelAdapter):
         while self._dedup and next(iter(self._dedup.values())) <= now - 300:
             self._dedup.popitem(last=False)
         sent_at = event.get("time")
-        sent_at = sent_at if type(sent_at) is int and sent_at > 0 else None
+        # A server clock ahead of ours never makes a message look newer than now.
+        sent_at = min(sent_at, int(wall_time())) if type(sent_at) is int and sent_at > 0 else None
         # H116: an id taken before (this run or the last) that the server sends again
         # with a since= replay is not taken twice.
         if key in self._dedup or (sent_at is not None and key in self._seen):
@@ -442,22 +463,35 @@ class NtfyChannel(ChannelAdapter):
         if len(self._dedup) > 1000:
             self._dedup.popitem(last=False)
         budget = self._backfill
-        if (budget is not None and self._started_wall is not None and sent_at is not None
-                and sent_at < self._started_wall):
-            # H116: sent while Nerva was not listening. Bounded; once admitted it takes
-            # exactly the live path below (pending input, gateway pairing, inbox, approval).
+        backfilled = (budget is not None and self._started_wall is not None
+                      and is_backlog(sent_at, self._cutoff if self._cutoff is not None
+                                     else self._started_wall))
+        if backfilled:
+            # H116: sent while Nerva was not listening. Bounded; a command is never run
+            # from a backfill; a plain message takes the live path below (gateway pairing,
+            # inbox, approval) but never answers a pending prompt.
+            self._taken(key, sent_at)
+            if looks_like_command(text):
+                if budget.fresh(sent_at, wall_time()):
+                    budget.refused_commands += 1
+                    if self._reply_allowed(self.topic, self._context()):
+                        await self.send(COMMAND_REFUSED, plain=True)
+                self.health.backfill = budget.counts()
+                return
             admitted = budget.admit(sent_at, wall_time())
             self.health.backfill = budget.counts()
             if not admitted:
-                self._taken(key, sent_at)
                 return
-        self._taken(key, sent_at)
+        else:
+            self._taken(key, sent_at)
         metadata = {"sender": self.topic, "chat_id": self.topic,
                     "ntfy_topic": self.topic, "ntfy_context": self._context()}
+        if backfilled:
+            metadata["pending_input_eligible"] = False
         if self._events is None:
             await self.receive(text.strip(), **metadata)
             return
-        if callable(self.pending_reply_handler):
+        if callable(self.pending_reply_handler) and not backfilled:
             try:
                 if await self.pending_reply_handler(text.strip(), channel=CHANNEL_ID, **metadata) is True:
                     return

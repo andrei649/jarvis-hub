@@ -213,7 +213,7 @@ async def channels_send_rate_limit():
     return nocache_json(status_snapshot())
 
 
-@router.get("/api/channels/deliveries", dependencies=[Depends(user_guard)])
+@router.get("/api/channels/deliveries", dependencies=[Depends(admin_guard)])
 async def channels_deliveries(limit: int = 50, state: str = ""):
     """H081 — delivery receipts: what happened to each outbound reply (sent, failed,
     partial, unknown, skipped), the counts per state, the chats registered as gone, and

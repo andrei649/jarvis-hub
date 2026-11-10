@@ -13,3 +13,6 @@ the procedure is in `docs/hermes/ADOPT_LANE.md`.
 
 The skill catalog under `skills/` and `optional-skills/` (slice 3) is copied byte-identical,
 with no rewrite; `SKILLS_CATALOG.json` (written by Nerva) indexes every upstream skill folder.
+
+The MCP server catalog under `optional-mcps/` (slice 5) is copied byte-identical, one
+`manifest.yaml` per folder, with no rewrite; its `MANIFEST.json` rows are its index.

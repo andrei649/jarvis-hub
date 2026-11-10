@@ -182,12 +182,25 @@ async def test_oversized_or_invalid_frames_do_not_hide_the_next_valid_event(tmp_
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status", [401, 403, 404])
-async def test_fatal_response_stops_without_retry_or_topic_in_logs(tmp_path, status, caplog):
+async def test_fatal_response_stops_without_retry_or_topic_in_logs(tmp_path, status, caplog,
+                                                                    monkeypatch):
+    import agents.core.channels.ntfy as ntfy
+
     caplog.set_level(logging.INFO, logger="httpx")
     channel, _, _, seen, requests, _ = setup_channel(tmp_path, status=status)
+    waits = []
+
+    async def sleep(delay):
+        # G15: a fatal answer is not retried on the ladder; the channel looks again only
+        # after the slow re-probe interval (so a fixed token heals without a restart).
+        waits.append(delay)
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(ntfy, "sleep", sleep)
     try:
         await channel.start()
-        await until(lambda: channel._stream_task.done())
+        await until(lambda: waits)
+        assert waits == [ntfy.FATAL_REPROBE_S]
         assert seen == [] and len(requests) == 1
         assert channel.fatal_error == f"http_{status}"
         assert all("/home" not in r.getMessage() for r in caplog.records)

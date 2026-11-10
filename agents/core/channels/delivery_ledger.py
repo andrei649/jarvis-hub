@@ -23,11 +23,20 @@ send with the same key is suppressed while an earlier one is sent, in flight or 
 it may try again only after a definite failure, at most ``MAX_ATTEMPTS`` times.
 
 **No message bodies.** A row keeps the channel, the target (the chat id the reply was
-addressed to — the same identity ``channel_inbox`` already keeps), the length, a keyed
-digest for idempotency (HMAC-SHA256 under a per-install random key, so the digest is not a
-dictionary oracle for short replies) and the failure kind. Redelivering a lost reply would
-need its text, so Nerva does not redeliver; it tells the owner instead (``GET
-/api/channels/deliveries``).
+addressed to — the same identity ``channel_inbox`` already keeps), the length, the caller's
+``delivery_key`` if any and the failure kind — nothing derived from the text. Redelivering a
+lost reply would need its text, so Nerva does not redeliver; it tells the owner instead
+(``GET /api/channels/deliveries``, admin).
+
+**Which process left a row open.** Each process has a random boot id. At startup a row in
+``pending``/``attempting`` from another boot is closed when its pid is gone, when its pid is
+this very process (a container restarts the hub as the same PID every time), or when it has
+not moved for ``STALE_OPEN_S``; a row of another live process (a second hub on the same data
+root) is left to that process.
+
+What has a receipt: replies and notices that go through ``ChannelManager.send`` and
+``send_channel_reply``. Approval cards and prompt cards (``send_pending_card``,
+``send_channel_prompt``) and an adapter called directly have none.
 
 **Dead targets.** A chat the platform says is gone for good — Telegram's 403 (bot blocked,
 kicked, user deactivated) or a chat-level "chat not found" — is registered, and later sends
@@ -46,11 +55,8 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
-import hashlib
-import hmac
 import logging
 import os
-import secrets
 import sqlite3
 import threading
 import time
@@ -67,6 +73,8 @@ IDEMPOTENCY_WINDOW_S = 24 * 3600
 RETENTION_S = 7 * 24 * 3600
 MAX_ROWS = 500
 MAX_TARGET = 128
+#: An open row that has not moved for this long belongs to no live send.
+STALE_OPEN_S = 3600
 
 STATE_PENDING = "pending"
 STATE_ATTEMPTING = "attempting"
@@ -235,7 +243,7 @@ class ReliabilityStore:
             self._conn.execute(
                 "CREATE TABLE IF NOT EXISTS deliveries (id TEXT PRIMARY KEY, channel TEXT NOT NULL, "
                 "target TEXT NOT NULL, key TEXT, state TEXT NOT NULL, attempt INTEGER NOT NULL, "
-                "error TEXT, chars INTEGER NOT NULL, digest TEXT NOT NULL, pid INTEGER NOT NULL, "
+                "error TEXT, chars INTEGER NOT NULL, pid INTEGER NOT NULL, "
                 "boot TEXT NOT NULL, created REAL NOT NULL, updated REAL NOT NULL)")
             self._conn.execute("CREATE INDEX IF NOT EXISTS deliveries_key ON deliveries(key)")
             self._conn.execute(
@@ -244,14 +252,6 @@ class ReliabilityStore:
             self._conn.execute(
                 "CREATE TABLE IF NOT EXISTS cursors (name TEXT PRIMARY KEY, value TEXT NOT NULL, "
                 "updated REAL NOT NULL)")
-            self._conn.execute("CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)")
-            row = self._conn.execute("SELECT v FROM meta WHERE k='digest_key'").fetchone()
-            if row is None:
-                key = secrets.token_hex(32)
-                self._conn.execute("INSERT INTO meta (k, v) VALUES ('digest_key', ?)", (key,))
-            else:
-                key = row[0]
-        self._digest_key = bytes.fromhex(key)
         self._dead: set[tuple[str, str]] = {
             (c, t) for c, t in self._conn.execute("SELECT channel, target FROM dead_targets")}
 
@@ -260,10 +260,6 @@ class ReliabilityStore:
             self._conn.close()
 
     # ── deliveries ──
-
-    def digest(self, channel: str, target: str, body: str) -> str:
-        message = "\x1f".join((channel, target, body)).encode("utf-8", "replace")
-        return hmac.new(self._digest_key, message, hashlib.sha256).hexdigest()
 
     def open_delivery(self, channel: str, target: Any, body: Any, *,
                       key: str | None = None, now: float | None = None) -> Delivery:
@@ -300,10 +296,10 @@ class ReliabilityStore:
     def _insert(self, channel, target, key, state, attempt, error, text, now) -> str:
         row_id = uuid.uuid4().hex
         self._conn.execute(
-            "INSERT INTO deliveries (id, channel, target, key, state, attempt, error, chars, digest, "
-            "pid, boot, created, updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO deliveries (id, channel, target, key, state, attempt, error, chars, "
+            "pid, boot, created, updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (row_id, channel, target, key, state, attempt, error, len(text),
-             self.digest(channel, target, text), os.getpid(), _BOOT, now, now))
+             os.getpid(), _BOOT, now, now))
         return row_id
 
     def _set_state(self, row_id: str, state: str, error: str | None = None) -> None:
@@ -325,11 +321,16 @@ class ReliabilityStore:
         counts = {"failed": 0, "unknown": 0}
         with self._lock, self._conn:
             rows = self._conn.execute(
-                "SELECT id, state, pid, boot FROM deliveries WHERE state IN (?, ?)",
+                "SELECT id, state, pid, boot, updated FROM deliveries WHERE state IN (?, ?)",
                 (STATE_PENDING, STATE_ATTEMPTING)).fetchall()
             now = time.time()
-            for row_id, state, pid, boot in rows:
-                if boot == _BOOT or alive(pid):
+            for row_id, state, pid, boot, updated in rows:
+                if boot == _BOOT:
+                    continue
+                # Another boot: dead unless a different, live process still owns it. The
+                # same pid under another boot is this PID reused (PID 1 in a container).
+                if (pid != os.getpid() and alive(pid)
+                        and now - float(updated or 0) < STALE_OPEN_S):
                     continue
                 if state == STATE_PENDING:
                     self._conn.execute("UPDATE deliveries SET state=?, error=?, updated=? WHERE id=?",
@@ -482,6 +483,11 @@ def store() -> ReliabilityStore | None:
     """The process store (``<data>/channel_reliability.db``), or None when it cannot open."""
     global _STORE
     with _STORE_LOCK:
+        if _STORE is not None and not _STORE.path.exists():
+            # The data root was purged under a running hub: start a fresh store.
+            with contextlib.suppress(Exception):
+                _STORE.close()
+            _STORE = None
         if _STORE is None:
             try:
                 _STORE = ReliabilityStore()

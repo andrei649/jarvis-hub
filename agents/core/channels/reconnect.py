@@ -27,6 +27,7 @@ ntfy/adapter.py), generalised; the classifier is Nerva's own.
 
 from __future__ import annotations
 
+import logging
 import secrets
 import time
 from collections.abc import Callable
@@ -40,6 +41,9 @@ JITTER = 0.2
 HEALTHY_AFTER = 60.0
 #: Longest wait a server's retry_after can impose (a bogus huge value must not park us).
 MAX_RETRY_AFTER = 300.0
+
+#: How often a channel stopped by a fatal answer looks again (a fixed token heals by itself).
+FATAL_REPROBE_S = 600.0
 
 #: Status codes that mean "your credential or address is wrong": stop, do not retry.
 FATAL_STATUSES = {401: "unauthorized", 403: "forbidden", 404: "not_found"}
@@ -164,6 +168,9 @@ class ChannelHealth:
     since: float | None = None           # wall clock of the last state change
     last_ok: float | None = None         # wall clock of the last success
     backfill: dict = field(default_factory=dict)
+    #: Called once with the reason when the channel becomes fatal (the manager tells the
+    #: owner on another channel). Never raises into the channel.
+    on_fatal: Callable[[str], None] | None = field(default=None, repr=False, compare=False)
 
     def _move(self, state: str) -> None:
         if state != self.state:
@@ -183,11 +190,21 @@ class ChannelHealth:
         self.failures += 1
         self.next_retry_at = time.time() + max(0.0, float(delay))
 
-    def failed_fatally(self, reason: str) -> None:
+    def failed_fatally(self, reason: str, *, reprobe_in: float | None = None) -> None:
+        """Fatal: retrying on the ladder cannot help. *reprobe_in* is when the channel looks
+        again (a fixed, slow probe, so a fixed token heals without a restart)."""
+        newly = self.state != STATE_FATAL
         self._move(STATE_FATAL)
         self.fatal = str(reason)[:40]
         self.error = self.fatal
-        self.next_retry_at = None
+        self.next_retry_at = None if reprobe_in is None else time.time() + max(0.0, reprobe_in)
+        hook = self.on_fatal
+        if newly and hook is not None:
+            try:
+                hook(self.fatal)
+            except Exception:
+                logging.getLogger("jarvis.channels.reconnect").warning(
+                    "fatal-channel notice failed", exc_info=True)
 
     def starting(self) -> None:
         self.fatal = None
@@ -203,7 +220,7 @@ class ChannelHealth:
 
     def snapshot(self) -> dict:
         retry_in = None
-        if self.state == STATE_RETRYING and self.next_retry_at is not None:
+        if self.state in (STATE_RETRYING, STATE_FATAL) and self.next_retry_at is not None:
             retry_in = max(0, round(self.next_retry_at - time.time()))
         row = {
             "state": self.state,

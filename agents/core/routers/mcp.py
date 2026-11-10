@@ -3,6 +3,11 @@
 Two surfaces:
 - **Admin client management** (`/api/admin/mcp*`): list/add/remove/connect/disconnect the
   MCP *client* servers Jarvis talks out to (over `orch.mcp`).
+- **Catalog and sign-in** (G9: H549, H550, H692): browse the vendored Hermes MCP catalog,
+  preview exactly what an install would run, install it through the same add path (managed
+  gate, safe mode, load set) only with the owner's confirmation of that plan, and sign in to
+  an OAuth-protected HTTP server (``agents/core/mcp/oauth_client.py``); the browser's
+  callback lands on ``/api/oauth/mcp/callback`` (``routers/oauth.py``) or is relayed here.
 - **Server mode** (H10.5) + **OAuth resource server** (H16.1): `/api/mcp/server` status,
   `/.well-known/oauth-protected-resource`, `/api/mcp/token`, and `/api/mcp/server/rpc` (the
   JSON-RPC HTTP transport — disabled by default, with the #294 HF-1 transport-auth gate).
@@ -24,9 +29,9 @@ import sys
 from contextlib import suppress
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import admin_guard
@@ -132,6 +137,9 @@ async def admin_mcp_list():
             "health": _health_of(srv),
             "sampling": _config_of(srv, "sampling"),
             "elicitation": _config_of(srv, "elicitation"),
+            # G9 — how it signs in, where it came from, and which of its secrets are set
+            # (names only; a value never leaves the store).
+            **_g9_row(srv),
         })
     from agents.core import load_set
 
@@ -189,6 +197,12 @@ class MCPServerConfig(BaseModel):
     sampling: Optional[str] = None
     #: H553 — may this server ask the owner for input (always as an approval card).
     elicitation: Optional[bool] = None
+    #: G9 — ``oauth``: an HTTP server that needs a sign-in before it connects.
+    auth: Optional[str] = None
+    #: G9 / H550 — a pre-registered OAuth client for a server without dynamic registration:
+    #: ``client_id``, ``scope`` and ``client_secret`` only. The secret goes to the encrypted
+    #: store (``mcp.secret.<name>.OAUTH_CLIENT_SECRET``); the config keeps a reference.
+    oauth: Optional[dict[str, str]] = None
 
 
 class ElicitationAnswer(BaseModel):
@@ -250,16 +264,25 @@ async def admin_mcp_add(req: MCPServerConfig):
     if refusal is not None:
         return refusal
     from core.mcp.client import TRUST_TIERS, MCPServer, normalize_trust, tool_patterns_over_bounds
+
     # stdio is the only transport MCPServer.connect() actually speaks. Accepting
     # an "sse" config used to register + persist a server that could never
     # connect, so the admin list showed a permanently dead row. Reject it here,
     # before anything is written (DRA-25).
-    transport = (req.transport or "stdio").strip().lower()
-    if transport != "stdio":
+    from core.mcp.http_transport import normalize_transport, validate_mcp_url
+    transport = normalize_transport((req.transport or "stdio").strip().lower())
+    if transport not in ("stdio", "streamable-http"):
         return JSONResponse(
-            {"error": "unsupported_transport", "transport": req.transport, "supported": ["stdio"]},
+            {"error": "unsupported_transport", "transport": req.transport,
+             "supported": ["stdio", "streamable-http"]},
             status_code=400,
         )
+    if transport == "streamable-http":
+        # G9: the client speaks Streamable HTTP (still armed by JARVIS_MCP_HTTP_CLIENT at
+        # connect). The URL is checked here so a bad one is never saved.
+        problem = validate_mcp_url(req.url)
+        if problem:
+            return JSONResponse({"error": "invalid_url", "reason": problem}, status_code=400)
     trust = normalize_trust(getattr(req, "trust", "read-only"))
     if trust is None:
         return JSONResponse(
@@ -283,8 +306,21 @@ async def admin_mcp_add(req: MCPServerConfig):
             {"error": "invalid_sampling", "sampling": req.sampling, "supported": list(SAMPLING_MODES)},
             status_code=400,
         )
+    from agents.core.mcp.catalog import NAME_RE
+    if not isinstance(req.name, str) or not NAME_RE.match(req.name):
+        return JSONResponse({"error": "invalid_name",
+                             "message": "a server name is letters, digits, - and _ (at most 64)"},
+                            status_code=400)
     if req.name in orch.mcp.servers:
         return JSONResponse({"error": f"MCP server '{req.name}' already exists"}, status_code=409)
+    auth = getattr(req, "auth", None)
+    if auth not in (None, "none", "oauth"):
+        return JSONResponse({"error": "invalid_auth", "supported": ["none", "oauth"]}, status_code=400)
+    oauth_pins, oauth_secret = _oauth_overrides(getattr(req, "oauth", None))
+    if oauth_pins is None or (oauth_pins and transport != "streamable-http"):
+        return JSONResponse({"error": "invalid_oauth",
+                             "message": "oauth takes client_id, scope and client_secret, for an HTTP server"},
+                            status_code=400)
     srv = MCPServer(
         name=req.name,
         # Persist the NORMALISED value, not req.transport. The gate above lower-cases
@@ -299,14 +335,47 @@ async def admin_mcp_add(req: MCPServerConfig):
         tools_deny=getattr(req, "tools_deny", None),
         sampling={"mode": sampling},
         elicitation=getattr(req, "elicitation", None),
+        auth=auth if transport == "streamable-http" else None,
+        oauth=oauth_pins or None,
     )
+    if oauth_secret:
+        import asyncio
+
+        from agents.core.mcp.catalog import store_secrets
+        try:
+            await asyncio.to_thread(store_secrets, req.name, {"OAUTH_CLIENT_SECRET": oauth_secret})
+        except Exception:
+            return JSONResponse({"error": "secret_store_unavailable"}, status_code=503)
+    _register_server(orch, srv)
+    return {"ok": True, "server": req.name, "message": f"MCP server '{req.name}' added"}
+
+
+def _oauth_overrides(raw) -> tuple[Optional[dict], Optional[str]]:
+    """``(pins, client_secret)`` from the owner's ``oauth`` block; ``(None, None)`` when it is
+    malformed. The secret is replaced by a reference to the server's stored secret."""
+    if raw is None:
+        return {}, None
+    if not isinstance(raw, dict) or set(raw) - {"client_id", "client_secret", "scope"} or not all(
+            isinstance(v, str) and v.strip() and len(v) <= 2048 and not any(c in v for c in "\r\n\x00")
+            for v in raw.values()):
+        return None, None
+    pins = {k: raw[k].strip() for k in ("client_id", "scope") if k in raw}
+    secret = raw.get("client_secret")
+    if secret:
+        if "client_id" not in pins:
+            return None, None
+        pins["client_secret"] = "${OAUTH_CLIENT_SECRET}"  # nosec B105 - a reference to a stored secret, not a secret
+    return pins, secret
+
+
+def _register_server(orch, srv) -> None:
+    """The one place a new server joins the live manager and the saved list."""
     if callable(getattr(type(orch.mcp), "register", None)):
         orch.mcp.register(srv)          # host services + reconnect policy (H553/H556)
     else:
         orch.mcp.servers[srv.name] = srv
     # Persist to settings DB
     _web()._save_mcp_config()
-    return {"ok": True, "server": req.name, "message": f"MCP server '{req.name}' added"}
 
 
 @router.delete("/api/admin/mcp/{name}", dependencies=[Depends(admin_guard)])
@@ -330,7 +399,9 @@ async def admin_mcp_remove(name: str):
         del orch.mcp.servers[name]
     # Persist to settings DB
     _web()._save_mcp_config()
-    return {"ok": True, "server": name, "message": f"MCP server '{name}' removed"}
+    # G9: its stored secrets go, and its OAuth tokens are revoked and deleted.
+    cleanup = await _forget_credentials(name)
+    return {"ok": True, "server": name, "message": f"MCP server '{name}' removed", **cleanup}
 
 
 @router.post("/api/admin/mcp/{name}/connect", dependencies=[Depends(admin_guard)])
@@ -405,6 +476,401 @@ async def admin_mcp_elicitation_answer(card_id: str, body: ElicitationAnswer):
                   "already_answered": 409}.get(result.get("error"), 400)
         return JSONResponse(result, status_code=status)
     return result
+
+
+# ── G9: the MCP catalog, install, and sign-in (H549, H550, H692) ───────────────
+
+async def _same_origin(request: Request) -> None:
+    """A catalog install or a sign-in starts a third-party program or mints a credential.
+    The admin guard trusts loopback on a default install, so a page the owner visits could
+    otherwise post here: a write must be JSON (which forces the browser's pre-check the CORS
+    allow-list decides) and a request the browser marks cross-site is refused."""
+    if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+        raise HTTPException(status_code=403, detail="this change must come from Nerva's own page")
+    if request.method == "POST":
+        kind = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        if kind != "application/json":
+            raise HTTPException(status_code=415, detail="expected application/json")
+
+
+_WRITE = [Depends(admin_guard), Depends(_same_origin)]
+
+
+def _g9_row(srv) -> dict:
+    from agents.core.mcp import oauth_client
+    from agents.core.mcp.catalog import read_secret
+
+    auth = getattr(srv, "auth", "none")
+    auth = auth if isinstance(auth, str) else "none"
+    names = getattr(srv, "secret_env", None) or []
+    names = list(names) if isinstance(names, (list, tuple)) else []
+    import re as _re
+
+    for refs in (getattr(srv, "secret_headers", None), getattr(srv, "oauth", None)):
+        if isinstance(refs, dict):
+            names += [m for t in refs.values() for m in _re.findall(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", str(t))]
+    origin = getattr(srv, "origin", None)
+    name = getattr(srv, "name", "")
+    transport = getattr(srv, "transport", "")
+    oauth = None
+    if transport == "streamable-http" and isinstance(name, str):
+        oauth = _safe_call(lambda: oauth_client.status(name))
+    return {
+        "auth": auth,
+        "origin": dict(origin) if isinstance(origin, dict) else None,
+        "secrets": [{"name": n, "set": bool(_safe_call(lambda n=n: read_secret(name, n)))}
+                    for n in dict.fromkeys(names)],
+        "oauth": oauth,
+    }
+
+
+async def _forget_credentials(name: str) -> dict:
+    import asyncio
+
+    from agents.core.mcp import oauth_client
+    from agents.core.mcp.catalog import delete_secrets
+
+    out: dict = {}
+    try:
+        out["secrets_removed"] = await asyncio.to_thread(delete_secrets, name)
+    except Exception:
+        logger.warning("MCP server secrets could not be removed (type=store)")
+        out["secrets_removed"] = None
+    if oauth_client._SERVER_RE.match(name or ""):
+        try:
+            result = await oauth_client.sign_out(name, forget=True)
+            out["oauth_revoked"] = result.get("revoked")
+        except Exception as exc:
+            logger.warning("MCP OAuth sign-out on remove failed (type=%s)", type(exc).__name__)
+            out["oauth_revoked"] = None
+    return out
+
+
+def _audit(orch, action: str, why: str, metadata: dict) -> bool:
+    audit = getattr(orch, "intent_log", None)
+    if not callable(getattr(audit, "record", None)):
+        return False
+    try:
+        audit.record(actor="owner", action=action, why=why, cause="mcp.catalog", metadata=metadata)
+        return True
+    except Exception:
+        logger.warning("MCP %s intent projection failed", action, exc_info=True)
+        return False
+
+
+def _estop_refusal():
+    from agents.core import estop
+
+    if estop.is_engaged():
+        return JSONResponse({"error": "estop_engaged",
+                             "message": "the emergency stop is engaged; nothing is installed or signed in"},
+                            status_code=409)
+    return None
+
+
+class CatalogRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    #: A catalog entry's name (``linear``), or, with ``link_config``, the link's server name.
+    name: str = Field(min_length=1, max_length=64)
+    #: Install under another server name (a second account, a name already taken).
+    server_name: Optional[str] = Field(default=None, max_length=64)
+    #: A deep link's ``config=`` payload (base64 JSON; 32 KB cap): not from the catalog.
+    link_config: Optional[str] = Field(default=None, max_length=32 * 1024)
+    #: Non-secret inputs the manifest declares (a server URL to type): part of the plan.
+    inputs: Optional[dict[str, str]] = None
+
+
+class CatalogInstall(CatalogRequest):
+    #: The digest of the plan the owner saw and confirmed (``preview``'s ``digest``).
+    confirm: Optional[str] = Field(default=None, max_length=128)
+    #: The secret values the plan names. Stored encrypted; never echoed, never in the config.
+    secrets: Optional[dict[str, str]] = None
+
+
+def _catalog_error(exc) -> JSONResponse:
+    status = {"not_in_catalog": 404, "not_installable": 409, "catalog_unavailable": 503,
+              "link_too_large": 413}.get(exc.reason, 400)
+    return JSONResponse({"error": exc.reason, "message": exc.message}, status_code=status)
+
+
+def _resolve(body: CatalogRequest):
+    from agents.core.mcp.catalog import resolve_plan
+
+    if body.link_config is not None:
+        return resolve_plan(link_name=body.name, link_config=body.link_config,
+                            server_name=body.server_name, values=body.inputs)
+    return resolve_plan(catalog_name=body.name, server_name=body.server_name, values=body.inputs)
+
+
+@router.get("/api/admin/mcp/catalog", dependencies=[Depends(admin_guard)])
+async def admin_mcp_catalog(q: str = ""):
+    """H549 — the reviewed MCP servers Nerva can install (vendored Hermes manifests, each
+    re-checked against MANIFEST.json), next to the owner's own servers."""
+    import asyncio
+
+    from agents.core.mcp.catalog import CatalogError, load_catalog, search
+
+    try:
+        commit, entries = await asyncio.to_thread(load_catalog)
+    except CatalogError as exc:
+        return _catalog_error(exc)
+    orch = get_orch()
+    servers = getattr(getattr(orch, "mcp", None), "servers", None) or {}
+    installed_urls = {getattr(s, "url", None) for s in servers.values() if getattr(s, "url", None)}
+    rows = []
+    for entry in search(entries, q[:200]):
+        row = entry.summary()
+        row["installed"] = entry.name in servers or (entry.url is not None and entry.url in installed_urls)
+        rows.append(row)
+    counts: dict[str, int] = {}
+    for entry in entries:
+        counts[entry.status] = counts.get(entry.status, 0) + 1
+    return nocache_json({"commit": commit, "entries": rows, "total": len(entries), "counts": counts,
+                         "http_client_enabled": _http_client_enabled()})
+
+
+def _http_client_enabled() -> bool:
+    from agents.core.mcp.http_transport import http_client_enabled
+
+    return http_client_enabled()
+
+
+@router.post("/api/admin/mcp/catalog/preview", dependencies=_WRITE)
+async def admin_mcp_catalog_preview(body: CatalogRequest):
+    """H549 — exactly what an install would write and run, with its digest. Writes nothing.
+    A deep link opens this (``/v2/console/mcp?install=<name>`` or ``?link=…&config=…``)."""
+    import asyncio
+
+    from agents.core.mcp.catalog import CatalogError
+
+    try:
+        plan, _entry = await asyncio.to_thread(_resolve, body)
+    except CatalogError as exc:
+        return _catalog_error(exc)
+    orch = get_orch()
+    servers = getattr(getattr(orch, "mcp", None), "servers", None) or {}
+    plan_out = dict(plan)
+    plan_out["name_taken"] = plan["name"] in servers
+    plan_out["http_client_enabled"] = _http_client_enabled()
+    return nocache_json({"ok": True, "plan": plan_out})
+
+
+@router.post("/api/admin/mcp/catalog/install", dependencies=_WRITE)
+async def admin_mcp_catalog_install(body: CatalogInstall):
+    """H549 — install a catalog entry (or a deep link's server) through the add path.
+
+    Refused unless ``confirm`` is the digest of the plan as it is now (428 with the plan
+    when missing, 409 ``plan_changed`` when it differs), under the e-stop, in safe mode, for
+    a name the load set holds, when the managed configuration pins ``mcp.servers``, and for
+    a name already taken (never overwritten). Secrets go to the encrypted store; the saved
+    config keeps their names. Nothing starts: the owner connects (and signs in) after."""
+    import asyncio
+    import hmac
+
+    from agents.core.mcp.catalog import CatalogError, store_secrets, validate_inputs
+
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        plan, entry = await asyncio.to_thread(_resolve, body)
+    except CatalogError as exc:
+        return _catalog_error(exc)
+    if not body.confirm:
+        return JSONResponse({"error": "confirmation_required",
+                             "message": "show the plan to the owner and send its digest as confirm",
+                             "plan": plan}, status_code=428)
+    if not hmac.compare_digest(str(body.confirm), plan["digest"]):
+        return JSONResponse({"error": "plan_changed",
+                             "message": "what would be installed differs from what was confirmed",
+                             "plan": plan}, status_code=409)
+    if plan["needs"]:
+        return JSONResponse({"error": "missing_input", "needs": plan["needs"]}, status_code=400)
+    refusal = (_estop_refusal() or _safe_mode_refusal() or _held_refusal(plan["name"])
+               or await _managed_refusal())
+    if refusal is not None:
+        return refusal
+    if plan["name"] in orch.mcp.servers:
+        return JSONResponse({"error": "name_taken",
+                             "message": f"an MCP server named '{plan['name']}' exists; it is never "
+                                        "overwritten — choose another server_name"}, status_code=409)
+    try:
+        values = validate_inputs(entry, body.secrets)
+    except CatalogError as exc:
+        return _catalog_error(exc)
+    from core.mcp.client import MCPServer
+
+    origin = {"kind": plan["origin"], "catalog": plan["catalog_name"], "commit": plan["commit"],
+              "manifest_sha256": plan["manifest_sha256"]}
+    srv = MCPServer(
+        name=plan["name"], transport=plan["transport"], command=plan["command"], url=plan["url"],
+        env=plan["env"], trust=plan["trust"], tools_allow=plan["tools_allow"],
+        tools_deny=plan["tools_deny"], sampling={"mode": "off"}, elicitation=False,
+        auth=plan["auth"], secret_env=plan["secret_env"], secret_headers=plan["secret_headers"],
+        oauth=plan["oauth"], origin=origin,
+    )
+    try:
+        stored = await asyncio.to_thread(store_secrets, plan["name"], values)
+    except Exception:
+        logger.warning("MCP install: the secret store refused the server's secrets")
+        return JSONResponse({"error": "secret_store_unavailable"}, status_code=503)
+    _register_server(orch, srv)
+    audited = _audit(orch, "mcp.install",
+                     f"the owner installed the MCP server {plan['name']} "
+                     + (f"from the Hermes catalog @{(plan['commit'] or '')[:8]}" if plan["origin"] == "catalog"
+                        else "from a link (not in the reviewed catalog)"),
+                     {"server": plan["name"], "origin": plan["origin"], "catalog": plan["catalog_name"],
+                      "commit": plan["commit"], "transport": plan["transport"], "command": plan["command"],
+                      "url": plan["url"], "env_names": sorted(plan["env"]), "secret_names": stored,
+                      "digest": plan["digest"]})
+    needs_sign_in = plan["auth"] == "oauth"
+    return {"ok": True, "server": plan["name"], "secrets_stored": stored, "audited": audited,
+            "next": "sign_in" if needs_sign_in else "connect",
+            "message": (f"'{plan['name']}' installed. Sign in, then connect." if needs_sign_in
+                        else f"'{plan['name']}' installed. It starts when you press connect.")}
+
+
+# ── OAuth sign-in for a remote server (H550) and its callback relay (H692) ────
+
+class OAuthStart(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    #: ``hub``: the browser returns to this hub's ``/api/oauth/mcp/callback``. ``loopback``:
+    #: it returns to ``redirect_uri`` on the owner's own machine (a CLI listener, or a
+    #: page whose address the owner pastes back), which relays code and state here.
+    redirect: str = Field(default="hub", pattern=r"^(hub|loopback)$")
+    redirect_uri: Optional[str] = Field(default=None, max_length=200)
+
+
+class OAuthRelay(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    state: str = Field(min_length=8, max_length=200)
+    binding: str = Field(min_length=8, max_length=200)
+    code: Optional[str] = Field(default=None, max_length=4096)
+    error: Optional[str] = Field(default=None, max_length=200)
+    #: RFC 9207: the issuer the authorization response named, when it named one.
+    iss: Optional[str] = Field(default=None, max_length=2048)
+
+
+def _oauth_error(exc) -> JSONResponse:
+    return JSONResponse({"error": exc.reason, "message": exc.message}, status_code=exc.status)
+
+
+def _http_server(orch, name: str):
+    srv = (getattr(getattr(orch, "mcp", None), "servers", None) or {}).get(name)
+    if srv is None:
+        return None, JSONResponse({"error": f"MCP server '{name}' not found"}, status_code=404)
+    if getattr(srv, "transport", "") != "streamable-http":
+        return None, JSONResponse({"error": "not_http_server",
+                                   "message": "sign-in is for a server reached over HTTP"}, status_code=400)
+    return srv, None
+
+
+def _cookie_name(state: str) -> str:
+    import hashlib
+
+    from agents.core.mcp.oauth_client import COOKIE_PREFIX
+
+    return COOKIE_PREFIX + hashlib.sha256(state.encode()).hexdigest()[:16]
+
+
+@router.get("/api/admin/mcp/{name}/oauth", dependencies=[Depends(admin_guard)])
+async def admin_mcp_oauth_status(name: str):
+    """H550 — whether this server holds a token (never the token), until when, from whom."""
+    from agents.core.mcp import oauth_client
+
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    _srv, refusal = _http_server(orch, name)
+    if refusal is not None:
+        return refusal
+    return nocache_json({"server": name, **oauth_client.status(name),
+                         "redirect_pin": oauth_client.redirect_pin(getattr(_srv, "oauth", None))})
+
+
+@router.post("/api/admin/mcp/{name}/oauth/start", dependencies=_WRITE)
+async def admin_mcp_oauth_start(name: str, body: OAuthStart, request: Request):
+    """H550 — begin the sign-in: discovery, client registration, PKCE. Answers the address
+    to open in the browser and a ``binding`` only this caller holds (also set as an
+    HttpOnly cookie on the hub's callback path). Refused under the e-stop."""
+    from agents.core.mcp import oauth_client
+
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    srv, refusal = _http_server(orch, name)
+    if refusal is not None:
+        return refusal
+    hub_base = str(request.base_url).rstrip("/")
+    redirect_uri = (hub_base + oauth_client.HUB_CALLBACK_PATH if body.redirect == "hub"
+                    else (body.redirect_uri or ""))
+    try:
+        started = await oauth_client.start(name, srv.url, redirect_uri=redirect_uri, hub_base=hub_base,
+                                           pins=getattr(srv, "oauth", None) or {})
+    except oauth_client.OAuthError as exc:
+        return _oauth_error(exc)
+    response = nocache_json({"ok": True, "server": name, **started})
+    response.set_cookie(_cookie_name(started["state"]), started["binding"], max_age=oauth_client.FLOW_TTL,
+                        path=oauth_client.HUB_CALLBACK_PATH, httponly=True, samesite="lax",
+                        secure=request.url.scheme == "https")
+    return response
+
+
+@router.post("/api/admin/mcp/{name}/oauth/callback", dependencies=_WRITE)
+async def admin_mcp_oauth_relay(name: str, body: OAuthRelay):
+    """H692 — the relay: code and state captured on the owner's machine (a loopback listener,
+    or the address the browser ended on) handed back with the start's ``binding``. Only the
+    hub redeems; state and binding are checked in constant time, once."""
+    from agents.core.mcp import oauth_client
+
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    _srv, refusal = _http_server(orch, name)
+    if refusal is not None:
+        return refusal
+    try:
+        result = await oauth_client.complete(body.state, body.code or "", body.binding, server=name,
+                                             error=body.error, iss=body.iss)
+    except oauth_client.OAuthError as exc:
+        return _oauth_error(exc)
+    audited = audit_sign_in(orch, result, via="relay")
+    return nocache_json({"ok": True, **result, "audited": audited})
+
+
+def audit_sign_in(orch, result: dict, *, via: str) -> bool:
+    """One intent row per acquired credential (never the token)."""
+    return _audit(orch, "mcp.oauth.sign_in",
+                  f"the owner signed in to the MCP server {result.get('server')} "
+                  f"({result.get('issuer')}) via the {via} callback",
+                  {"server": result.get("server"), "issuer": result.get("issuer"),
+                   "scope": result.get("scope"), "expires_at": result.get("expires_at"),
+                   "refreshable": result.get("refreshable"), "via": via})
+
+
+@router.delete("/api/admin/mcp/{name}/oauth", dependencies=_WRITE)
+async def admin_mcp_oauth_sign_out(name: str):
+    """H550 — sign out: revoke the tokens at the server (best effort) and delete them, and
+    drop a waiting sign-in."""
+    from agents.core.mcp import oauth_client
+
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    srv, refusal = _http_server(orch, name)
+    if refusal is not None:
+        return refusal
+    try:
+        result = await oauth_client.sign_out(name)
+    except oauth_client.OAuthError as exc:
+        return _oauth_error(exc)
+    with suppress(Exception):
+        await srv.close()
+    audited = _audit(orch, "mcp.oauth.sign_out", f"the owner signed out of the MCP server {name}",
+                     {"server": name, "revoked": result.get("revoked")})
+    return nocache_json({"ok": True, "server": name, **result, "audited": audited})
+
+
 
 
 # ── MCP server mode (H10.5) + OAuth resource server (H16.1) ───────

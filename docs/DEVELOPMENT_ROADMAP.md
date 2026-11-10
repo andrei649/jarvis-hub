@@ -197,7 +197,8 @@ The local Kanban CLI/chat/backend integration adds 37 explicitly tracked graphic
 board and task views, attachments, reviews, runs, diagnostics, configuration and other donor
 surfaces still need their HUD/native consumers. Signed-provider installation and credential
 routes also remain on this list. These additions and later wired callers are tracked in the
-current punch list of 49 routes; backend routes and CLI access do not establish graphical parity.
+current punch list of 51 routes (2026-11-10: + the A2A peer outbound route and the MCP elicitation
+answer route, whose HUD forms are still open); backend routes and CLI access do not establish graphical parity.
 A shrinking number is only good news when it shrinks for the right reason — an earlier pass of this
 sprint moved six routes into `MACHINE_FACING` to get the gate green, and an adversarial review
 caught that four of those reasons were false; they are back on the list. DRA-15 and DRA-36 both stay
