@@ -205,6 +205,9 @@ class SkillImporter:
         # H349 — ``"exists"`` when the last _save_skill refused because the folder holds a
         # skill this source did not import (``""`` when it did not).
         self.last_conflict: str = ""
+        # H349 — the folder the last _save_skill created (None when it updated its own
+        # earlier import, or wrote nothing): a new skill, for the usage sidecar.
+        self.last_created: Optional[Path] = None
 
     async def import_from_hermes(self, skill_name: str) -> bool:
         self.last_refusal = []
@@ -418,6 +421,7 @@ class SkillImporter:
     ) -> bool:
         self.last_refusal = []
         self.last_conflict = ""
+        self.last_created = None
         slug = _safe_slug(skill_name)
         if slug is None:
             logger.warning("Rejected skill import: unsafe name %r", skill_name)
@@ -464,7 +468,10 @@ class SkillImporter:
             self.last_conflict = "exists"
             logger.warning("Rejected skill import: the folder %s holds a skill %s did not import", slug, source)
             return False
+        created = not target_dir.exists()
         target_dir.mkdir(parents=True, exist_ok=True)
+        if created:
+            self.last_created = target_dir
 
         # Preserve verified upstream bytes exactly. Generic imports write the text
         # checked above as UTF-8 bytes: text mode would turn '\n' into '\r\n' on Windows.

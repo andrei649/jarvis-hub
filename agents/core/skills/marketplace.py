@@ -168,6 +168,9 @@ class SkillMarketplace:
         self._lock = threading.Lock()
         # H507 — what the last install's code looks like (warn-only; never blocks).
         self.last_install_warnings: list = []
+        # H349 — the folder the last install created (None when it replaced its own
+        # earlier install): a new skill, for the usage sidecar.
+        self.last_created: Optional[Path] = None
         # 0.58 wiring: when a version-history ledger is attached, publish/install/
         # uninstall are recorded so a rollback target can be derived. Opt-in;
         # None → behaviour is byte-identical to before.
@@ -861,7 +864,11 @@ class SkillMarketplace:
                     "source=marketplace\n", encoding="utf-8"
                 )
 
+            self.last_created = None
+            existed = target_dir.exists() or target_dir.is_symlink()
             self._place(package, target_dir, staging)
+            if not existed:
+                self.last_created = target_dir
         finally:
             shutil.rmtree(staging, ignore_errors=True)
 

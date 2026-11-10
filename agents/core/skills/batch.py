@@ -725,6 +725,12 @@ def _reload(loader: Any, targets: list[_Target]) -> None:
                 logger.debug("skill batch: approval prune skipped", exc_info=True)
             continue
         try:
+            if not target.existing:
+                # H349: a created skill's sidecar row starts fresh unless these are the
+                # bytes the row of that name last saw (decided at creation, by the bytes).
+                mark = getattr(loader, "mark_new", None)
+                if callable(mark):
+                    mark(target.live)
             loader._load_skill(target.live, discovery_root=target.live.parent)
         except Exception:
             logger.warning("skill batch: %s could not be reloaded", target.name, exc_info=True)
@@ -750,22 +756,24 @@ def _note_patched(loader: Any, targets: list[_Target]) -> None:
 
 
 def _note_created(loader: Any, targets: list[_Target], actor: str) -> None:
-    """H046 / H349 — every skill a batch created starts a fresh sidecar row: nothing a
-    former holder of the name left (a pin, an agent marker, an origin, counters) is
-    inherited, whoever created it.
+    """H046 / H349 — a skill the agent's batch created is a skill the agent made.
 
-    A ``create`` in a batch the model proposed (applied on the owner's card, ``actor`` the
-    batch's origin) is a skill the agent made, as ``generate_skill`` records one, so the
-    learning journey lists it from the start. Its write origin is the model's skill tool
-    inside a turn (Hermes: a foreground ``skill_manage create`` is user-directed), so the
-    curator never ages it out; only the background review and the learning loop write
-    curated skills. A skill the owner's own batch created is not agent-made."""
+    Every created skill's sidecar row was started when it registered (:func:`_reload`
+    marks the folder new): nothing a former holder of the name left is inherited unless
+    the bytes are the same. A ``create`` in a batch the model proposed (applied on the
+    owner's card, ``actor`` the batch's origin) then gets the sticky agent marker, as
+    ``generate_skill`` sets it, so the learning journey lists it from the start. Its write
+    origin is the model's skill tool inside a turn (Hermes: a foreground ``skill_manage
+    create`` is user-directed), so the curator never ages it out; only the background
+    review and the learning loop write curated skills. A skill the owner's own batch
+    created is not agent-made."""
+    if not str(actor or "").startswith("agent"):
+        return
     note = getattr(loader, "note_new", None)
     if not callable(note):
         return
     from .usage import WRITE_TOOL
 
-    agent = str(actor or "").startswith("agent")
     loaded = getattr(loader, "skills", {}) or {}
     for target in targets:
         if target.existing or target.deleted:
@@ -773,9 +781,9 @@ def _note_created(loader: Any, targets: list[_Target], actor: str) -> None:
         # The sidecar is keyed by the skill's registered name, as generate_skill keys it.
         name = next((n for n, s in loaded.items() if Path(getattr(s, "path", "")) == target.live), target.name)
         try:
-            note(name, agent_created=agent, write_origin=WRITE_TOOL if agent else "")
+            note(name, agent_created=True, write_origin=WRITE_TOOL)
         except Exception:
-            logger.warning("skill batch: the usage row of the new skill %s could not be started", target.name,
+            logger.warning("skill batch: the agent marker of the new skill %s could not be set", target.name,
                            exc_info=True)
 
 

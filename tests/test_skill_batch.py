@@ -827,7 +827,7 @@ def test_the_owner_route_counts_a_patch_per_edited_skill_only_when_it_lands(hub,
     assert "gamma" not in _counted(store)                               # created: not a patch of anything
     gone = client.post("/api/skills/batch", json={"operations": [{"name": "delta", "action": "delete"}]},
                        headers=ADMIN)
-    assert gone.status_code == 200 and gone.json()["applied"] is True and "delta" not in _counted(store)
+    assert gone.status_code == 200 and gone.json()["applied"] is True and store.get("delta") is None
 
     again = client.post("/api/skills/batch", json={"operations": [
         {"name": "alpha", "action": "patch", "old_string": "Done.", "new_string": "Done twice."}]}, headers=ADMIN)

@@ -728,9 +728,9 @@ class SkillLoader:
         # the orchestrator. None → zero behavior change.
         self._usage = None
         # H349: set while discover() walks the roots (origins are recorded once, at its
-        # end), and whether that pass left the owner's folder unread (safe mode).
+        # end); and the folders a creation path just made, until their skill registers.
         self._discovering = False
-        self._owner_unread = False
+        self._new_folders: set[str] = set()
         self._approval_store = approval_store or SkillApprovalStore()
 
     def _generation_kernel_refusal(self, payload: dict, *, title: str) -> str:
@@ -759,11 +759,12 @@ class SkillLoader:
         generation, a batch, a start after an offline install), so no path has to remember
         to record it. The sidecar writes only rows that changed.
 
-        The full sync (no ``names``) also retires the rows of skills that are gone
-        (``SkillUsageStore.reconcile_origins``): a skill whose folder no longer exists is
-        not registered for it, whatever a registry entry left from an earlier pass says.
-        Skills the owner's load set switched off are installed and keep their rows; with
-        the owner's folder left unread (safe mode) nothing unplaced is swept.
+        Only what is seen is reported (second review, B1/B2). A skill is reported by its
+        name, its install record, the fingerprint of its bytes and whether a creation path
+        just made it (:meth:`mark_new`) — never by where its folder is. A skill that is not
+        seen now (its folder moved, missing, unreadable, on a volume that is away) is
+        simply not reported: its row is left exactly as it is, and the sidecar is only
+        told the name is not registered, so it cannot be newly pinned.
 
         Best-effort like the counters: a sidecar that cannot be written leaves loading
         alone, and the row is tried again at the next registration. ``strict`` raises
@@ -781,14 +782,14 @@ class SkillLoader:
             try:
                 folder = Path(skill.path)
                 if not folder.is_dir():
-                    # Removed since it was registered: nothing is installed under the name.
-                    # The full sync retires its row below; a single one does it here.
-                    if not full:
-                        self.forget_usage(name)
+                    # Not there now. That is not a removal: the row stays as it is.
+                    unregister = getattr(store, "unregister", None)
+                    if not full and callable(unregister):
+                        unregister(name)
                     continue
                 origin, source = origin_evidence(skill)
-                observed[name] = (origin, source, str(folder.resolve()),
-                                  getattr(skill, "source_fingerprint", None) or "")
+                observed[name] = (origin, source, self._fingerprint_of(skill, folder),
+                                  self._is_new(folder))
             except Exception:
                 if strict:
                     raise
@@ -796,41 +797,70 @@ class SkillLoader:
         if not observed and not full:
             return
         try:
-            if full:
-                try:
-                    skipped = set(load_set.status("skills")["skipped"])
-                except Exception:
-                    skipped = set()
-                reconcile(observed, full=True, present=skipped, sweep_unplaced=not self._owner_unread)
-            else:
-                reconcile(observed)
+            reconcile(observed, full=full)
         except Exception:
             if strict:
                 raise
             logger.warning("skill origins could not be recorded in the usage sidecar", exc_info=True)
+            return
+        for name in observed:
+            self._new_folders.discard(self._folder_key(Path(self.skills[name].path)))
+
+    @staticmethod
+    def _folder_key(folder: Path) -> str:
+        try:
+            return str(folder.resolve())
+        except OSError:
+            return str(folder)
+
+    def _is_new(self, folder: Path) -> bool:
+        return self._folder_key(folder) in self._new_folders
+
+    @staticmethod
+    def _fingerprint_of(skill: "Skill", folder: Path) -> str:
+        """The fingerprint of the skill's bytes: the one its load took, or — for a skill
+        that loads without one (awaiting review) — computed from the folder now, so its
+        row can be matched to these bytes later (a restore from the archive)."""
+        known = getattr(skill, "source_fingerprint", None)
+        if isinstance(known, str) and known:
+            return known
+        try:
+            return signing.source_snapshot(folder).fingerprint or ""
+        except Exception:
+            logger.debug("no fingerprint for the skill at %s", folder, exc_info=True)
+            return ""
+
+    def mark_new(self, folder) -> None:
+        """H349 — a creation path is about to register the skill it just made in
+        ``folder`` (a generated skill, a batch create, an install into a folder that did
+        not exist). Its row then starts fresh unless the bytes are the ones the row of
+        that name last saw: the one place a row left by an earlier holder of the name is
+        replaced, decided at creation and by the bytes, never by a skill being absent.
+        Kept in this process only, until the skill registers."""
+        self._new_folders.add(self._folder_key(Path(folder)))
 
     def note_new(self, name: str, *, agent_created: bool = False, write_origin: str = "") -> None:
-        """H349 — a skill was just created under the registered ``name``: its sidecar row
-        starts fresh (nothing of an earlier holder of the name is inherited), with the
-        sticky agent marker and who wrote it when the agent made it. A marker that cannot
-        be written is logged: the skill would otherwise read as nobody's and leave the
-        learning journey and the curator without a word."""
-        store = self._usage
-        start = getattr(store, "start", None)
-        if not callable(start):
+        """H349 — the agent made the skill registered as ``name``: set the sticky agent
+        marker and who wrote it on its row (the row itself was started when the skill
+        registered, see :meth:`mark_new`). A marker that cannot be written is logged: the
+        skill would otherwise read as nobody's and leave the learning journey and the
+        curator without a word."""
+        if not agent_created:
+            return
+        mark = getattr(self._usage, "mark_agent_created", None)
+        if not callable(mark):
             return
         try:
-            start(name, agent_created=agent_created, write_origin=write_origin)
+            mark(name, write_origin)
         except Exception:
-            logger.warning("the usage sidecar could not record the new skill %r%s", name,
-                           " as agent-made" if agent_created else "", exc_info=True)
-            return
-        self.sync_origins([name])
+            logger.warning("the usage sidecar could not record the new skill %r as agent-made", name,
+                           exc_info=True)
 
     def forget_usage(self, name: str) -> None:
-        """H349 — the skill registered as ``name`` is gone for good: retire its sidecar row
-        (``SkillUsageStore.forget``), so nothing of it waits for the next skill of that
-        name. Logged when it cannot be written; the next full sync retires it then."""
+        """H349 — an explicit removal for good of the skill registered as ``name`` (a
+        reject from review, an uninstall): its sidecar row goes with it
+        (``SkillUsageStore.forget``). Only removal acts call this; a skill that is merely
+        not seen keeps its row. Logged when it cannot be written."""
         forget = getattr(self._usage, "forget", None)
         if not callable(forget):
             return
@@ -900,7 +930,7 @@ class SkillLoader:
         load_set.begin("skills")
         self._load_lists = load_set.declared("skills")
         folders: set[str] = set()
-        self._discovering, self._owner_unread = True, owner_unread
+        self._discovering = True
         try:
             for root in roots:
                 for skill_dir in sorted(root.iterdir()):
@@ -923,8 +953,8 @@ class SkillLoader:
             # A later single-skill load (sign, approve) reads the lists as they are then.
             self._load_lists = None
             self._discovering = False
-        # H349: one pass over the sidecar — every registered skill's origin, and the rows
-        # of skills that are gone retired.
+        # H349: one pass over the sidecar — every registered skill's origin. Rows of skills
+        # this pass did not see are left as they are.
         self.sync_origins()
         logger.info(f"Skills loaded: {list(self.skills.keys())}")
         return self.skills
@@ -1453,6 +1483,7 @@ def register(skill):
             f"generated={datetime.now(timezone.utc).isoformat()}\n",
             encoding="utf-8",
         )
+        self.mark_new(skill_dir)
         self._load_skill(skill_dir)
         # H20.5 / H349 — provenance: the row starts fresh with the sticky agent marker and
         # who wrote it (``write_origin``: the learning loop and the background review are

@@ -703,6 +703,16 @@ async def sandbox_execute(body: SandboxExecuteBody, request: Request):
     }
 
 
+def _mark_new_install(orch, installer) -> None:
+    """H349 — when the install just made a new skill folder, tell the loader before it
+    registers the skill, so its usage row starts fresh unless these are the bytes the row
+    of that name last saw. An install that updated its own earlier one keeps its row."""
+    created = getattr(installer, "last_created", None)
+    mark = getattr(getattr(orch, "skills", None), "mark_new", None)
+    if created is not None and callable(mark):
+        mark(created)
+
+
 @router.post("/skills/import", dependencies=[Depends(user_guard)])
 async def skills_import(req: Request):
     orch = get_orch()
@@ -722,6 +732,7 @@ async def skills_import(req: Request):
     else:
         ok = await orch.skill_importer.import_from_github(source, skill_name)
     if ok:
+        _mark_new_install(orch, orch.skill_importer)
         orch.skills.discover()
         return {"ok": True, "source": source, "skill": skill_name}
     if getattr(orch.skill_importer, "last_conflict", "") == "exists":
@@ -846,6 +857,7 @@ async def marketplace_install(body: InstallSkillBody):
     try:
         ok = orch.marketplace.install_skill(body.name)
         if ok:
+            _mark_new_install(orch, orch.marketplace)
             orch.skills.discover()
             return {"ok": True, "installed": body.name, **_install_warnings(orch)}
         return JSONResponse({"error": f"Failed to install skill '{body.name}'"}, status_code=500)
@@ -896,6 +908,7 @@ async def marketplace_install_zip(body: InstallZipBody):
         zip_bytes = base64.b64decode(body.zip_base64)
         ok = orch.marketplace.install_from_zip(zip_bytes)
         if ok:
+            _mark_new_install(orch, orch.marketplace)
             orch.skills.discover()
             return {"ok": True, **_install_warnings(orch)}
         return JSONResponse({"error": "Failed to install skill from zip"}, status_code=500)

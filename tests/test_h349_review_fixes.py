@@ -67,44 +67,48 @@ def _generate(hub, task="tidy the meeting notes", **kw):
 
 # ── M1: a row belongs to one skill ───────────────────────────────────────────────────
 
-def test_a_pin_does_not_outlive_a_skill_removed_by_hand(hub):
+def test_a_pin_does_not_pass_to_a_new_skill_after_its_skill_was_removed_by_hand(hub):
     folder = hub.write("gamma")
     hub.boot()
     hub.usage.pin("gamma")
     shutil.rmtree(folder)
-    hub.boot()                                                         # found gone at the start
-    assert _row(hub, "gamma") is None and "gamma" not in hub.on_disk()
+    hub.boot()
+    # Second review: the row is not touched because the skill is not seen (absence is not
+    # a removal). It cannot be pinned, and it is not inherited by a new skill:
+    assert _row(hub, "gamma")["pinned"] is True
     with pytest.raises(usage_mod.PinRefused) as refused:               # a6: nothing installed to pin
         hub.usage.pin("gamma")
     assert refused.value.reason == "not_found"
-    _create(hub, "gamma")                                              # the agent takes the name
+    out = run_batch([{"name": "gamma", "action": "create", "content": _md("gamma", "Use when the agent says so")}],
+                    hub.loader, actor="agent:steve", backup_dir=hub.tmp / "skill-archive")
+    assert out["ok"] is True, out                                      # the agent takes the name
     row = _row(hub, "gamma")
     assert row["pinned"] is False and row["agent_created"] is True
     gone = _delete(hub, "gamma")                                       # and the owner can delete it
     assert gone["ok"] is True, gone
 
 
-def test_a_skill_removed_by_hand_while_the_hub_runs_is_retired_at_the_next_reload(hub):
+def test_a_skill_removed_by_hand_while_the_hub_runs_cannot_be_pinned_and_keeps_its_row(hub):
     folder = hub.write("gamma")
     hub.boot()
     hub.usage.pin("gamma")
+    before = hub.on_disk()
     shutil.rmtree(folder)
     hub.loader.discover()
-    assert _row(hub, "gamma") is None
+    assert hub.on_disk() == before
     with pytest.raises(usage_mod.PinRefused):
         hub.usage.pin("gamma")
-    hub.write("gamma")                                                 # another skill, same name
-    hub.loader.discover()
-    assert (_row(hub, "gamma")["pinned"], _row(hub, "gamma")["origin"]) == (False, "local")
+    assert hub.on_disk() == before
 
 
 def test_a_skill_removed_by_hand_cannot_be_pinned_even_before_a_reload(hub):
     folder = hub.write("gamma")
     hub.boot()
+    before = hub.on_disk()
     shutil.rmtree(folder)                                              # the registry entry is stale now
     reply = hub.client.post(PIN, json={"skill": "gamma", "pinned": True}, headers=ADMIN)
     assert reply.status_code == 404 and reply.json()["reason"] == "not_found", reply.text
-    assert _row(hub, "gamma") is None
+    assert hub.on_disk() == before                                     # refused without touching the row
 
 
 def test_the_known_sources_cover_every_migration_source():
