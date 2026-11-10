@@ -42,6 +42,18 @@
 - Approval cards show the mode a task was asked under. The wording no longer says the
   irreversible tier always asks: in auto, a payment inside your spending caps runs.
 
+**Settings can be spelled `NERVA_…` (#1347)**
+- Every `JARVIS_…` environment variable now also works as `NERVA_…`, which is the preferred
+  spelling; your existing `JARVIS_…` lines keep working unchanged. New installs get a
+  `NERVA_`-spelled `.env`.
+- If the same setting is given under both spellings with different values in one place, Nerva
+  refuses to start and names the setting, instead of guessing which one you meant.
+- Docker, compose, systemd and the Windows service still pin host, port and home as
+  `JARVIS_…`; to change one of those, use that spelling or edit the launcher's line.
+- A `.env` path or credential built from a `${NAME}` that nothing sets now stops the start with
+  a clear message; before, it silently became an empty or wrong value. `nerva doctor` and the
+  token recovery tool still run and tell you what is wrong.
+
 **See where each skill came from, and pin the ones you want kept (#1347)**
 - The Skill Switches panel and `nerva skills list` show each skill's origin (ships with Nerva,
   imported and from where, your own, made by the agent) and how often it was used.

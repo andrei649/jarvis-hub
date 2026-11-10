@@ -21,12 +21,27 @@
   identifier stays `com.jarvis.hub` (existing installs keep their data) and `nerva uninstall --gui`
   looks for both `Nerva` and the pre-rename `Jarvis Hub` bundle names (test added). Test-manual
   PGE-210 / finding 19 closed. Kept on purpose: agent personas, dated/historical docs.
-- [ ] **RB-2 — `NERVA_*` environment prefix (owner decision).** The 2026-07-19 decision kept
-  `JARVIS_*`. An alias is not a rename-only change: `.env` loading is layered and attributed
-  (`env_provenance.py`), four names are process-only, and posture flags are read at import. A
-  half-alias that honoured `NERVA_HARDENED` from the process but ignored it in `.env` would fail
-  open. Needs the owner's go-ahead and its own PR (alias at load, conflict refused at boot,
-  `.env.example` and docs moved, `JARVIS_*` kept as a deprecated spelling).
+- [x] ✅ **RB-2 — `NERVA_*` environment prefix.** Done 2026-11-10 (#1347) under the owner's goal
+  "rebrand it to Nerva": `NERVA_<X>` is accepted (and preferred) wherever `JARVIS_<X>` was, for
+  every hub variable in a measured registry (`agents/core/env_config.py`); `JARVIS_<X>` keeps
+  working. A registered `NERVA_X` is moved onto `JARVIS_X` at package import and for each `.env`
+  layer (`agents/core/env_alias.py`), so child processes, sandboxes and every direct reader see
+  exactly what they saw before; `${NAME}` references in a `.env` resolve under either spelling.
+  Starts that are refused, by name and never by value: one variable under both spellings with
+  different values in one place (exit 78, no service restart, when in the process environment;
+  retried when in a `.env`); a path-typed variable a `.env` builds from a reference nothing sets;
+  a credential a `.env` builds from a reference nothing sets. Repair tools (`token_recover`,
+  `nerva doctor`, `config path|env-path`, `logs`, `completion`) run and report instead.
+  `.env.example` uses the new spellings; launchers that pin `JARVIS_HOST/PORT/HOME` keep those
+  pins and are documented (override under the same spelling, or edit the launcher's line). Built
+  on its own branch and merged only after review: four adversarial security reviews, a fix round
+  after each of the first three (references to `NERVA_` names expanding to nothing and widening
+  roots to `/`; launcher pins; a "new spelling wins" list holding guard limits; refusals that
+  stopped installs working on main; a credential fragment in a message; a tolerant load moving
+  the data root), the fourth clean. Verified against main's real load on 32,000 generated `.env`
+  files (no value difference) and with no secret fragment in any output. Not done: the HUD does
+  not show the deprecation flag; `START.bat` and the Windows service change are untested on
+  Windows; `JARVIS_`-only readers remain in generated curl docs.
 - [ ] **RB-3 — code identifiers and codename (owner).** `JarvisConfig`/`JarvisError`, the
   `jarvis-hub` package/service names (`JarvisHub` Windows service, `jarvis-hub.service`) and the
   GitHub repo name stay until the repo rename in `docs/OWNER_TASKS.md`; renaming service names
