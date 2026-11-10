@@ -297,7 +297,7 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
     assert ("reality-v1:action-provider-selection-kernel-halt", "action:provider.selection") in verification_pairs
     assert ("reality-v1:action-provider-custom_endpoint-owner-receipt-unavailable",
             "action:provider.custom_endpoint") in verification_pairs
-    assert len(verification_pairs) == 129
+    assert len(verification_pairs) == 132  # + the three default-off cloud video providers
     for verification_ref, capability_id in verification_pairs:
         matches = [case for case in combined if case.ref == verification_ref]
         assert len(matches) == 1
