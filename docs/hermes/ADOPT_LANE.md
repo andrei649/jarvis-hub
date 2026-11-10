@@ -289,6 +289,48 @@ network: it builds an inert request and the compat opener refuses it.
   that host would be the way to add it).
 - Tested against a fake transport only. No live call to any of these providers was made.
 
+## Turning an adopted capability on: the Integrations panel
+
+Before more Hermes code is adopted, using what is already here should not need `.env` and a
+restart. The HUD's **Console → Start → Integrations** panel is the owner's surface for it.
+
+- **One list** (`GET /api/admin/integrations`, `agents/core/integrations_catalog.py`): the
+  three adopted search backends and Tavily, the 24 adopted model providers and the native ones
+  that take a key, and a summary of the skills catalog that opens Skills Import. Each entry:
+  kind, origin (`native` / `hermes`), status (`not_set_up` / `key_set` / `active` / `error`),
+  host, host country (only where Nerva's data names one: the `*-cn` profiles), data policy, and
+  whether a price is known.
+- **Keys** (`PUT` / `DELETE /api/admin/integrations/{id}/key`, admin only): stored by
+  `agents/core/integration_keys.py` in the encrypted `SecretStore` (`security/secrets.enc`)
+  under the prefix `integration.key.`, which the secret broker treats as internal (never
+  listed, never injected through a `{{secret:…}}` handle, still redacted). The value is then
+  placed in the hub's process environment under its own name, where a `.env` key lands, so
+  every reader that goes through `env_config.env_str` sees it on its next read: the search
+  adapters' `configured()`, `HermesAdoptedProfile.auth_key`, `provider_probe`. The router
+  holds a built backend, so a key change for Gemini, Anthropic or the selected compatible
+  provider re-runs `HybridRouter.detect()` under the model-switch lock; Tavily's live plugin
+  gets the new key. Nothing needs a restart. Answers carry "set", the source and at most the
+  last four characters; a malformed body is answered without FastAPI's detail.
+- **Precedence: `.env` wins.** A name the environment sets (under either spelling) is refused
+  with 409 `env_managed` and left alone. At start, `apply_stored()` runs after the `.env` load
+  (the lifespan and `PluginManager.build`) and fills only names left unset.
+- **Test** (`POST …/{id}/test`): a model provider is probed with `provider_probe.probe` for that
+  provider only (never `probe_all`; an adopted one through its pinned client); a search backend
+  runs one query through the `websearch` egress client, that backend only, no rescue.
+- **Use** (`POST …/{id}/use`): a model provider goes through `admin._guard_selection`, the
+  same guards, consent rows and refusals as the settings write. An adopted search backend asks
+  the same two acknowledgements and writes a required `search_backend_consent` audit row before
+  `JARVIS_WEB_BACKEND` is stored (same store, `integration.choice.`). The HUD shows one consent
+  card with the facts and one "I understand, use it" that resends exactly the flags the hub
+  named. `DELETE /api/admin/integrations/search-choice` goes back to `auto`.
+- **Limits.** The `nerva` CLI and other processes see a panel key only after their own start
+  (they read the store at `PluginManager.build`). Child processes that inherit the hub's
+  environment see a panel key exactly as they would see the same key from `.env`; the sandbox
+  child environment drops them (`code_env`'s managed names; `TAVILY_API_KEY` is not on that
+  list, as before). Host country is recorded for the mainland-China profiles only. A key name
+  several providers read (`DASHSCOPE_API_KEY`, `HF_TOKEN`) is one key: setting or removing it
+  from one entry changes it for each of them, exactly as in `.env`.
+
 ## Skills (slice 3)
 
 Hermes ships its skills as folders with a `SKILL.md` under `skills/` and `optional-skills/`.

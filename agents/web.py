@@ -474,6 +474,10 @@ async def lifespan(application: FastAPI):
     # them when it is the entry; the first load in a process is the only one.
     from agents.core.env_provenance import load_hub_env
     load_hub_env()
+    # Keys and choices the owner set in the HUD's Integrations panel (encrypted secret
+    # store): applied after the .env files, only where they left a name unset (.env wins).
+    from agents.core.integration_keys import apply_stored as _apply_integration_keys
+    _apply_integration_keys()
     # O26-P0.6 (F6): the fail-closed boot guards (unauthenticated external
     # bind, hardened-profile preconditions) used to run only in serve.py — a
     # raw `python -m uvicorn agents.web:app` start silently skipped them.
@@ -1962,6 +1966,7 @@ from agents.core.routers.mesh import router as _mesh_router  # noqa: E402
 from agents.core.routers.models_llm import router as _models_llm_router  # noqa: E402
 from agents.core.routers.provider_credentials import router as _provider_credentials_router  # noqa: E402
 from agents.core.routers.provider_selection import router as _provider_selection_router  # noqa: E402
+from agents.core.routers.integrations_setup import router as _integrations_setup_router  # noqa: E402
 from agents.core.routers.custom_endpoints import router as _custom_endpoints_router  # noqa: E402
 from agents.core.routers.multimodal import router as _multimodal_router  # noqa: E402
 from agents.core.routers.notes import router as _notes_router  # noqa: E402
@@ -2049,6 +2054,7 @@ app.include_router(_missions_router)
 app.include_router(_models_llm_router)
 app.include_router(_provider_credentials_router)
 app.include_router(_provider_selection_router)
+app.include_router(_integrations_setup_router)   # HUD Integrations panel (keys, test, consented choice)
 app.include_router(_custom_endpoints_router)
 app.include_router(_oauth_router)
 app.include_router(_brain_router)

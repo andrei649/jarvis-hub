@@ -4,6 +4,27 @@
 
 ### What changed for you — 2026-11-09
 
+**Set up search services and cloud model providers from one HUD panel, no `.env` edit, no restart**
+- A new Console panel, Start → **Integrations**, lists everything that needs your setup: the four
+  search services (Tavily, plus Exa, Brave Search and Parallel from Hermes Agent), the cloud model
+  providers that take a key (Gemini, Anthropic, OpenRouter, DeepInfra, xAI, OpenAI, plus the
+  twenty-four from Hermes Agent), and the Hermes skills catalog. Each line says what it is, where
+  it comes from, whether it is set up, active or failing, its address, its country when Nerva
+  knows it, whether its data handling was checked and whether Nerva knows its price.
+- Type a key there and it works right away. Nerva keeps it encrypted in its own secret store,
+  never in the browser or in settings, and never shows it again: only "set" and its last four
+  characters. You can remove it the same way. A key you already have in `.env` keeps working and
+  wins; the panel shows it as "set in .env" and leaves it alone.
+- "Test" tries that one service and tells you in plain words whether the key works. For a
+  model provider it checks only that provider; for a search service it runs one search through
+  Nerva's network rules.
+- "Use" picks the provider or the search service. When a choice needs your say-so (its data
+  handling has not been checked, or Nerva has no price for it), one card shows who receives
+  your conversations or searches, the address, the data policy and the price, and one button,
+  "I understand, use it", records your consent in the audit log, as Settings does. The choice
+  takes effect without a restart.
+- Admins only: a user token cannot read the list or change anything.
+
 **The product says Nerva everywhere you look (#1347)**
 - The HUD top bar, page titles, the installable web app, installers and the desktop app now
   carry the Nerva name. An existing desktop install keeps its data, and uninstall finds the app
