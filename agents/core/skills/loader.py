@@ -383,7 +383,15 @@ def origin_evidence(skill: "Skill") -> tuple[Optional[str], str]:
     ``source_install``) — with the source that record names. ``(None, "")``: no install
     record; whether the agent made it is the usage sidecar's creation-time marker, never
     read off the folder. The record is the one every install path already writes, so an
-    install made while the hub was down is classified the same at the next start."""
+    install made while the hub was down is classified the same at the next start.
+
+    The source is a label from a small vocabulary (review m2), since the record is a file
+    anyone can edit and the label is shown to every user: ``marketplace`` only when the
+    marketplace installer's own marker says exactly that, otherwise what
+    ``usage.clean_source`` accepts (a known install source or a bare repository name) and
+    ``""`` for anything else — never a URL, a path or free text."""
+    from .usage import SOURCE_MARKETPLACE, clean_source
+
     path = Path(skill.path)
     if not getattr(skill, "external", True):
         return "bundled", ""
@@ -393,7 +401,7 @@ def origin_evidence(skill: "Skill") -> tuple[Optional[str], str]:
         for line in marker.decode("utf-8", "replace").splitlines():
             key, _, value = line.partition("=")
             if key.strip() == "source":
-                source = value.strip()
+                source = SOURCE_MARKETPLACE if value.strip() == SOURCE_MARKETPLACE else ""
                 break
         return "import", source
     sidecar = _small_file(path / "manifest.json")
@@ -405,9 +413,9 @@ def origin_evidence(skill: "Skill") -> tuple[Optional[str], str]:
         if isinstance(data, dict):
             install, source = data.get("source_install"), data.get("source")
             if isinstance(install, str) and install.strip():
-                return "import", install
+                return "import", clean_source(install)
             if data.get("imported") is True or source in ("hermes", "openclaw"):
-                return "import", source if isinstance(source, str) else ""
+                return "import", clean_source(source)
     if _shipped_location(path):
         return "bundled", ""
     return None, ""
@@ -719,6 +727,10 @@ class SkillLoader:
         # H20.5 — optional usage-telemetry sidecar (SkillUsageStore); attached by
         # the orchestrator. None → zero behavior change.
         self._usage = None
+        # H349: set while discover() walks the roots (origins are recorded once, at its
+        # end), and whether that pass left the owner's folder unread (safe mode).
+        self._discovering = False
+        self._owner_unread = False
         self._approval_store = approval_store or SkillApprovalStore()
 
     def _generation_kernel_refusal(self, payload: dict, *, title: str) -> str:
@@ -739,33 +751,93 @@ class SkillLoader:
             skill.usage_hook = _hook
         self.sync_origins()
 
-    def sync_origins(self, names=None) -> None:
+    def sync_origins(self, names=None, *, strict: bool = False) -> None:
         """H349 — record in the usage sidecar where each registered skill came from
         (:func:`origin_evidence`): every one, or just ``names``. Called when the sidecar is
-        attached and whenever a skill takes a registry slot, which every install path
-        crosses (import, marketplace, generation, a batch, a start after an offline
-        install), so no path has to remember to record it. The sidecar writes only rows
-        that changed. Best-effort like the counters: a sidecar that cannot be written
-        leaves loading alone, and the row is tried again at the next registration."""
+        attached, at the end of every discovery pass and whenever a skill takes a registry
+        slot outside one, which every install path crosses (import, marketplace,
+        generation, a batch, a start after an offline install), so no path has to remember
+        to record it. The sidecar writes only rows that changed.
+
+        The full sync (no ``names``) also retires the rows of skills that are gone
+        (``SkillUsageStore.reconcile_origins``): a skill whose folder no longer exists is
+        not registered for it, whatever a registry entry left from an earlier pass says.
+        Skills the owner's load set switched off are installed and keep their rows; with
+        the owner's folder left unread (safe mode) nothing unplaced is swept.
+
+        Best-effort like the counters: a sidecar that cannot be written leaves loading
+        alone, and the row is tried again at the next registration. ``strict`` raises
+        instead, for a caller that is about to rely on the row (the pin route)."""
         store = self._usage
         reconcile = getattr(store, "reconcile_origins", None)
         if not callable(reconcile):
             return
+        full = names is None
         observed = {}
-        for name in (list(self.skills) if names is None else names):
+        for name in (list(self.skills) if full else names):
             skill = self.skills.get(name)
             if skill is None:
                 continue
             try:
-                observed[name] = origin_evidence(skill)
+                folder = Path(skill.path)
+                if not folder.is_dir():
+                    # Removed since it was registered: nothing is installed under the name.
+                    # The full sync retires its row below; a single one does it here.
+                    if not full:
+                        self.forget_usage(name)
+                    continue
+                origin, source = origin_evidence(skill)
+                observed[name] = (origin, source, str(folder.resolve()),
+                                  getattr(skill, "source_fingerprint", None) or "")
             except Exception:
+                if strict:
+                    raise
                 logger.warning("the origin of skill %r could not be read", name, exc_info=True)
-        if not observed:
+        if not observed and not full:
             return
         try:
-            reconcile(observed)
+            if full:
+                try:
+                    skipped = set(load_set.status("skills")["skipped"])
+                except Exception:
+                    skipped = set()
+                reconcile(observed, full=True, present=skipped, sweep_unplaced=not self._owner_unread)
+            else:
+                reconcile(observed)
         except Exception:
+            if strict:
+                raise
             logger.warning("skill origins could not be recorded in the usage sidecar", exc_info=True)
+
+    def note_new(self, name: str, *, agent_created: bool = False, write_origin: str = "") -> None:
+        """H349 — a skill was just created under the registered ``name``: its sidecar row
+        starts fresh (nothing of an earlier holder of the name is inherited), with the
+        sticky agent marker and who wrote it when the agent made it. A marker that cannot
+        be written is logged: the skill would otherwise read as nobody's and leave the
+        learning journey and the curator without a word."""
+        store = self._usage
+        start = getattr(store, "start", None)
+        if not callable(start):
+            return
+        try:
+            start(name, agent_created=agent_created, write_origin=write_origin)
+        except Exception:
+            logger.warning("the usage sidecar could not record the new skill %r%s", name,
+                           " as agent-made" if agent_created else "", exc_info=True)
+            return
+        self.sync_origins([name])
+
+    def forget_usage(self, name: str) -> None:
+        """H349 — the skill registered as ``name`` is gone for good: retire its sidecar row
+        (``SkillUsageStore.forget``), so nothing of it waits for the next skill of that
+        name. Logged when it cannot be written; the next full sync retires it then."""
+        forget = getattr(self._usage, "forget", None)
+        if not callable(forget):
+            return
+        try:
+            forget(name)
+        except Exception:
+            logger.warning("the usage row of the removed skill %r could not be retired", name, exc_info=True)
 
     def approval_times(self, paths) -> dict[str, str]:
         """H046 — when the owner last approved each skill folder in ``paths`` (ISO), keyed by
@@ -828,6 +900,7 @@ class SkillLoader:
         load_set.begin("skills")
         self._load_lists = load_set.declared("skills")
         folders: set[str] = set()
+        self._discovering, self._owner_unread = True, owner_unread
         try:
             for root in roots:
                 for skill_dir in sorted(root.iterdir()):
@@ -849,6 +922,10 @@ class SkillLoader:
         finally:
             # A later single-skill load (sign, approve) reads the lists as they are then.
             self._load_lists = None
+            self._discovering = False
+        # H349: one pass over the sidecar — every registered skill's origin, and the rows
+        # of skills that are gone retired.
+        self.sync_origins()
         logger.info(f"Skills loaded: {list(self.skills.keys())}")
         return self.skills
 
@@ -865,8 +942,10 @@ class SkillLoader:
             (logger.warning if same_tree else logger.info)(
                 "Skill name '%s' from %s replaces the one from %s", name, skill.path, previous.path)
         self.skills[name] = skill
-        # H349: the registry slot is the one place every installed skill passes.
-        self.sync_origins([name])
+        # H349: the registry slot is the one place every installed skill passes. A
+        # discovery pass records all of them once, at its end.
+        if not self._discovering:
+            self.sync_origins([name])
 
     def _load_skill(self, path: Path, *, discovery_root: Path | None = None):
         # H32.5: acquired packages are signed for integrity but are NEVER trusted
@@ -1214,6 +1293,7 @@ class SkillLoader:
         solution_steps: list[str],
         command_name: str = None,
         output: str = None,
+        write_origin: str = "learning",
     ) -> Optional[str]:
         """
         Generate a new skill from a successful agent task completion.
@@ -1374,23 +1454,15 @@ def register(skill):
             encoding="utf-8",
         )
         self._load_skill(skill_dir)
-        # H20.5 — provenance: agent-created skills are the only curatable ones.
-        # Record under the REGISTERED name (the manifest title, which is what
-        # loader.skills is keyed by and what the curator iterates), not the
-        # on-disk slug — they differ (`# {slug.title()}` heading).
-        if self._usage is not None:
-            try:
-                registered = next(
-                    (
-                        n
-                        for n, s in self.skills.items()
-                        if Path(getattr(s, "path", "")) == skill_dir
-                    ),
-                    skill_name,
-                )
-                self._usage.note_created(registered, "agent")
-            except Exception:
-                logger.debug("usage provenance note skipped", exc_info=True)
+        # H20.5 / H349 — provenance: the row starts fresh with the sticky agent marker and
+        # who wrote it (``write_origin``: the learning loop and the background review are
+        # curated, a skill the model wrote with its tool inside a turn is not). Recorded
+        # under the REGISTERED name (the manifest title, which is what loader.skills is
+        # keyed by and what the curator iterates), not the on-disk slug — they differ
+        # (`# {slug.title()}` heading).
+        registered = next(
+            (n for n, s in self.skills.items() if Path(getattr(s, "path", "")) == skill_dir), skill_name)
+        self.note_new(registered, agent_created=True, write_origin=write_origin)
         from ..code_guidance import scan_tree
 
         try:
@@ -1608,6 +1680,9 @@ def register(skill):
         shutil.move(str(skill_dir), str(dest))
         for key in [k for k, s in list(self.skills.items()) if Path(getattr(s, "path", "")) == skill_dir]:
             del self.skills[key]
+            # H349: rejected for good (the discard archive is never loaded again), pinned or
+            # not: its sidecar row goes with it.
+            self.forget_usage(key)
         self.revoke_approval(skill_dir)
         logger.info("Pending skill '%s' discarded by the owner (archived to %s)", skill_dir.name, dest)
         return dest

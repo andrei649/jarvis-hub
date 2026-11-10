@@ -46,6 +46,7 @@ point, with line numbers, around the place that failed).
 
 from __future__ import annotations
 
+import contextlib
 import difflib
 import logging
 import os
@@ -425,17 +426,33 @@ def _check_standing(target: _Target, loader: Any, index: int, op: dict) -> None:
     target.standing = {k: standing.get(k) for k in ("signed", "approved")}
 
 
-def _refuse_pinned(target: _Target, loader: Any, index: int, op: dict) -> None:
-    """H349 — a skill the owner pinned is not deleted by a batch, the agent's or the
-    owner's own (Hermes: the pin guards tool-driven deletion; patches still go through).
-    Read from the usage sidecar under its lock, at apply time as well as at the check."""
-    usage = getattr(loader, "_usage", None)
-    pinned = getattr(usage, "is_pinned", None)
-    name = getattr(target.skill, "name", None) or target.name
-    if callable(pinned) and pinned(name):
-        raise BatchError("skill_batch_pinned", f"{target.name!r} is pinned, so it is not deleted: the owner "
-                         "has to unpin it first (nerva skills unpin, or the Skill Switches panel)",
-                         index=index, op=op, hints=["patch it instead, or ask the owner to unpin it"])
+def _usage_name(target: _Target) -> str:
+    """The key of ``target``'s row in the usage sidecar: the skill's registered name."""
+    return getattr(target.skill, "name", None) or target.name
+
+
+def _pinned_error(names: list[str], *, owner: bool, index: int | None = None, op: dict | None = None) -> BatchError:
+    """H349 — the refusal of a delete a pin stops. An agent's batch is told to ask the
+    owner; a caller acting for the owner (the journey's forget) is told to unpin."""
+    listed = ", ".join(repr(n) for n in names)
+    is_are = "is" if len(names) == 1 else "are"
+    if owner:
+        return BatchError("skill_batch_pinned", f"{listed} {is_are} pinned: unpin it first (nerva skills unpin, "
+                          "or the Skill Switches panel)", index=index, op=op, hints=["unpin it, then delete it"])
+    return BatchError("skill_batch_pinned", f"{listed} {is_are} pinned by the owner, so a batch does not delete "
+                      "it; a patch still goes through", index=index, op=op,
+                      hints=["patch it instead, or ask the owner to unpin it (nerva skills unpin, or the Skill "
+                             "Switches panel)"])
+
+
+def _refuse_pinned(target: _Target, loader: Any, index: int, op: dict, *, owner: bool) -> None:
+    """H349 — the early check of a delete against the owner's pin, so a dry run and a
+    proposal are refused before anything is staged (Hermes: the pin guards tool-driven
+    deletion; patches still go through). It is checked again under the sidecar's lock
+    immediately before the swap (:func:`run_batch`), which is the check that counts."""
+    blocks = getattr(getattr(loader, "_usage", None), "pin_blocks", None)
+    if callable(blocks) and blocks(_usage_name(target)):
+        raise _pinned_error([target.name], owner=owner, index=index, op=op)
 
 
 def _stage(target: _Target, batch_id: str) -> None:
@@ -733,19 +750,22 @@ def _note_patched(loader: Any, targets: list[_Target]) -> None:
 
 
 def _note_created(loader: Any, targets: list[_Target], actor: str) -> None:
-    """H046 — a skill the agent's batch created is a skill the agent learned.
+    """H046 / H349 — every skill a batch created starts a fresh sidecar row: nothing a
+    former holder of the name left (a pin, an agent marker, an origin, counters) is
+    inherited, whoever created it.
 
-    ``generate_skill`` records the agent origin when it writes a skill; a ``create`` in a
-    batch the model proposed (applied on the owner's card, ``actor`` the batch's origin)
-    is the same act through Hermes's ``skill_manage create``, so it records the same
-    provenance and the learning journey lists it from the start. A skill the owner's own
-    batch created is not something the agent learned. Best-effort, like the other notes."""
-    if not str(actor or "").startswith("agent"):
-        return
-    usage = getattr(loader, "_usage", None)
-    note = getattr(usage, "note_created", None)
+    A ``create`` in a batch the model proposed (applied on the owner's card, ``actor`` the
+    batch's origin) is a skill the agent made, as ``generate_skill`` records one, so the
+    learning journey lists it from the start. Its write origin is the model's skill tool
+    inside a turn (Hermes: a foreground ``skill_manage create`` is user-directed), so the
+    curator never ages it out; only the background review and the learning loop write
+    curated skills. A skill the owner's own batch created is not agent-made."""
+    note = getattr(loader, "note_new", None)
     if not callable(note):
         return
+    from .usage import WRITE_TOOL
+
+    agent = str(actor or "").startswith("agent")
     loaded = getattr(loader, "skills", {}) or {}
     for target in targets:
         if target.existing or target.deleted:
@@ -753,9 +773,10 @@ def _note_created(loader: Any, targets: list[_Target], actor: str) -> None:
         # The sidecar is keyed by the skill's registered name, as generate_skill keys it.
         name = next((n for n, s in loaded.items() if Path(getattr(s, "path", "")) == target.live), target.name)
         try:
-            note(name, "agent")
+            note(name, agent_created=agent, write_origin=WRITE_TOOL if agent else "")
         except Exception:
-            logger.debug("skill batch: provenance note skipped for %s", target.name, exc_info=True)
+            logger.warning("skill batch: the usage row of the new skill %s could not be started", target.name,
+                           exc_info=True)
 
 
 # ── H330: a delete, what absorbs it, and what still names it ────────────────────────
@@ -1078,7 +1099,8 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
               flagger: Callable[[str], bool] | None = None, may_see: Callable[[str], bool] | None = None,
               actor: str = "owner", holders: Any = None, delete_gate: Callable[[dict], str] | None = None,
               write_gate: Callable[[dict], str] | None = None, allow_bundles: dict[str, str | None] | None = None,
-              exclude_batch: str | None = None) -> dict:
+              exclude_batch: str | None = None, respect_pins: bool | None = None,
+              archive_rows: bool = False) -> dict:
     """Check, stage and (unless ``dry_run``) atomically apply ``operations``. Never raises.
 
     ``expect`` pins each touched skill to the tree fingerprint a reviewer saw (a governed
@@ -1096,7 +1118,19 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
     crosses (default: the live hub's kernel). ``allow_bundles`` (a governed apply) maps
     the bundles the owner saw rewritten to their pins: only those are rewritten, and only
     while they are as the review showed them. ``exclude_batch`` is the batch being
-    applied, never reported as a reference to itself."""
+    applied, never reported as a reference to itself.
+
+    H349 — ``respect_pins``: whether the owner's pin stops a delete. By default it stops
+    every batch but the owner's own (``actor == "owner"``: deleting a pinned skill there is
+    the owner's act); the journey's forget passes True, as Hermes's journey refuses a pinned
+    skill. The pin is checked when the delete is resolved and again, under the lock the pin
+    write takes, immediately before the swap: a pin cannot land between that check and the
+    move. A deleted skill's sidecar row is retired in the same hold: forgotten (a delete is
+    a delete: pin, agent marker, origin and counters go, and a later skill of the name
+    inherits nothing), or with ``archive_rows`` (the journey's forget, which archives) left
+    as a tombstone bound to the removed bytes. A created skill's row starts fresh."""
+    if respect_pins is None:
+        respect_pins = actor != "owner"
     try:
         ops = normalize(operations)
     except BatchError as exc:
@@ -1123,8 +1157,8 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
                     if op["action"] == "create":
                         _generation_allowed(index, op, actor)
                     target = _resolve(op["name"], index, op, loader, targets, root, may_see)
-                    if op["action"] == "delete" and target.existing:
-                        _refuse_pinned(target, loader, index, op)
+                    if op["action"] == "delete" and target.existing and respect_pins:
+                        _refuse_pinned(target, loader, index, op, owner=actor == "owner")
                     if target.stage_root is None:
                         _stage(target, batch_id)
                         if expect is not None and target.existing and expect.get(target.name) != target.before_fp:
@@ -1209,46 +1243,69 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
             except BatchError as exc:
                 return {**exc.payload(), **report}
             staged_fp = {t.name: _fingerprint(t.staged) for t in order if not t.deleted}
-            swapped: list[_Target] = []
-            rewritten: list[tuple[Path, bytes]] = []
-            failure = ""
-            try:
-                for target in order:
-                    _swap(target)
-                    swapped.append(target)
-                for target in order:
-                    _renew(target, loader, staged_fp.get(target.name, ""))
-                _rewrite_bundles(bundle_moves, rewritten)
-            except Exception as exc:
-                failure = f"{type(exc).__name__}: {exc}"
-                logger.warning("skill batch %s: swap failed; rolling back %d skill(s)", batch_id, len(swapped),
-                               exc_info=True)
-                bundles_stuck = _restore_bundles(rewritten)
-                undone, stuck = [], []
-                for target in reversed(swapped):
-                    try:
-                        _unswap(target, loader)
-                        undone.append(target.name)
-                    except Exception:
-                        logger.error("skill batch %s: %s could not be rolled back (old copy at %s)", batch_id,
-                                     target.name, target.old, exc_info=True)
-                        stuck.append(target.name)
-                payload = BatchError("skill_batch_apply_failed", "the batch could not be applied, so every "
-                                     f"touched skill was put back as it was ({failure})",
-                                     hints=["nothing changed; the batch can be sent again"]).payload(
-                                         rolled_back=list(reversed(undone)))
-                if rewritten:
-                    payload["bundles_rolled_back"] = [str(p) for p, _d in rewritten if str(p) not in bundles_stuck]
-                if bundles_stuck:
-                    payload["bundles_not_rolled_back"] = bundles_stuck
-                    payload["detail"] = (f"the batch failed and the bundle file(s) {', '.join(bundles_stuck)} could "
-                                         f"not be put back ({failure})")
-                if stuck:
-                    keep = True
-                    payload["not_rolled_back"] = stuck
-                    payload["detail"] = f"the batch failed and {', '.join(stuck)} could not be put back ({failure})"
-                    return payload        # the staging (with the old copies) is kept for the owner
-                return payload
+            # H349 (review M4): the pin check that counts, and the swap, in one hold of the
+            # sidecar's lock. A pin written before this point is seen here; one asked for
+            # during the swap waits and is then answered against what is installed.
+            removed = [t for t in order if t.deleted and t.existing]
+            hold = getattr(getattr(loader, "_usage", None), "removal", None)
+            with (hold([_usage_name(t) for t in removed], respect_pins=respect_pins) if callable(hold)
+                  else contextlib.nullcontext()) as held:
+                if held is not None and held.blocked:
+                    stopped = [t.name for t in removed if _usage_name(t) in held.blocked]
+                    return {**_pinned_error(stopped, owner=actor == "owner").payload(), **report}
+                swapped: list[_Target] = []
+                rewritten: list[tuple[Path, bytes]] = []
+                failure = ""
+                try:
+                    for target in order:
+                        _swap(target)
+                        swapped.append(target)
+                    for target in order:
+                        _renew(target, loader, staged_fp.get(target.name, ""))
+                    _rewrite_bundles(bundle_moves, rewritten)
+                except Exception as exc:
+                    failure = f"{type(exc).__name__}: {exc}"
+                    logger.warning("skill batch %s: swap failed; rolling back %d skill(s)", batch_id, len(swapped),
+                                   exc_info=True)
+                    bundles_stuck = _restore_bundles(rewritten)
+                    undone, stuck = [], []
+                    for target in reversed(swapped):
+                        try:
+                            _unswap(target, loader)
+                            undone.append(target.name)
+                        except Exception:
+                            logger.error("skill batch %s: %s could not be rolled back (old copy at %s)", batch_id,
+                                         target.name, target.old, exc_info=True)
+                            stuck.append(target.name)
+                    payload = BatchError("skill_batch_apply_failed", "the batch could not be applied, so every "
+                                         f"touched skill was put back as it was ({failure})",
+                                         hints=["nothing changed; the batch can be sent again"]).payload(
+                                             rolled_back=list(reversed(undone)))
+                    if rewritten:
+                        payload["bundles_rolled_back"] = [str(p) for p, _d in rewritten if str(p) not in bundles_stuck]
+                    if bundles_stuck:
+                        payload["bundles_not_rolled_back"] = bundles_stuck
+                        payload["detail"] = (f"the batch failed and the bundle file(s) {', '.join(bundles_stuck)} could "
+                                             f"not be put back ({failure})")
+                    if stuck:
+                        keep = True
+                        payload["not_rolled_back"] = stuck
+                        payload["detail"] = f"the batch failed and {', '.join(stuck)} could not be put back ({failure})"
+                        return payload        # the staging (with the old copies) is kept for the owner
+                    return payload
+                if held is not None:
+                    for target in removed:
+                        try:
+                            if archive_rows:
+                                # A tombstone bound to the bytes that left: only they get the
+                                # row back if the owner moves the backup into the skills folder.
+                                held.retire(_usage_name(target),
+                                            getattr(target.skill, "source_fingerprint", None) or "")
+                            else:
+                                held.forget(_usage_name(target))
+                        except Exception:
+                            logger.warning("skill batch: the usage row of %s could not be retired", target.name,
+                                           exc_info=True)
             backup = None
             if backup_dir is not None and any(t.existing for t in order):
                 backup = Path(backup_dir) / f"{time.strftime('%Y%m%dT%H%M%S')}-{batch_id}"

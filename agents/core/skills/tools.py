@@ -1471,7 +1471,9 @@ def register_skill_tools(
         actor = _actor() or "agent"
         if not patch:
             try:
-                created = target.generate_skill(actor, description.strip(), [s.strip() for s in steps])
+                # H349: written by the model's tool inside a turn, so never auto-curated.
+                created = target.generate_skill(actor, description.strip(), [s.strip() for s in steps],
+                                                write_origin="assistant_tool")
             except Exception:
                 logger.warning("skill_propose: generate_skill failed", exc_info=True)
                 created = None

@@ -831,6 +831,16 @@ class SkillMarketplace:
                 raise SkillDocumentInvalid([Problem(
                     "name", f"{skill_name!r} would replace the folder {target_dir.name!r}, which holds "
                             "another skill: uninstall that one first, or rename this one")])
+            if ((target_dir.exists() or target_dir.is_symlink()) and not self._installed_here(target_dir)
+                    and not self.is_registered(skill_name)):
+                # H349 (review M2): a same-named skill the marketplace neither installed nor
+                # holds a published package of (the owner's own, an agent-made one, an
+                # import) is never swapped out for a package. A folder the owner published
+                # from is the registry's own skill: installing its package there is the
+                # documented restore.
+                raise SkillDocumentInvalid([Problem(
+                    "name", f"{skill_name!r} would replace the folder {target_dir.name!r}, which holds a skill "
+                            "the marketplace did not install or publish: remove or rename that one first")])
 
             # Signature gate: SKILL.sig lives at the package root (manifest dir). The
             # digest is over relative paths, so verifying the staged tree verifies
@@ -871,6 +881,17 @@ class SkillMarketplace:
         # reason is a fixed label.
         logger.info("Installed a marketplace skill package (signature: %s)", reason)
         return True
+
+    @staticmethod
+    def _installed_here(target_dir: Path) -> bool:
+        """Whether ``target_dir`` carries the marker a marketplace install writes."""
+        marker = target_dir / EXTERNAL_SOURCE_MARKER
+        try:
+            if target_dir.is_symlink() or marker.is_symlink() or not marker.is_file():
+                return False
+            return "source=marketplace" in marker.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            return False
 
     @staticmethod
     def _holds_skill(skill_md: Path, name: str) -> bool:

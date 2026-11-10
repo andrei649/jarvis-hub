@@ -12,7 +12,8 @@
    into that turn (the hub does it; this panel only names the command).
    H349 — each skill row also shows what the hub's usage sidecar recorded: where the skill
    came from (shipped, imported and from where, made by the agent, or local with no install
-   record), how often it ran, was viewed and was patched, and the owner's pin. Pin and unpin
+   record; an agent-made skill keeps saying so beside an install record), how often it ran,
+   was viewed and was patched, and the owner's pin. Pin and unpin
    post to the admin-only `POST /api/skills/pin` ({skill, pinned}); a refusal or a failed
    write is shown in the hub's own words and the list is re-read, so the row never shows a
    pin the hub did not store. */
@@ -28,13 +29,19 @@ const ORIGIN_LABEL: Record<string, string> = {
   bundled: 'ships with Nerva', import: 'imported', agent: 'made by the agent', local: 'local · no install record',
 };
 
-/* Where a skill came from, as the hub recorded it; nothing for an origin it never recorded. */
+/* Where a skill came from, as the hub recorded it; nothing for an origin it never recorded.
+   Both facts are shown when both are true: the agent made it (the hub's sticky marker), and
+   its folder carries an install record. A skill the model wrote with its tool inside a turn
+   says so: the curator never ages that one out. */
 export function originLabel(usage: any): string {
   const origin = usage && typeof usage.origin === 'string' ? usage.origin : '';
   const label = ORIGIN_LABEL[origin];
   if (!label) return '';
   const source = origin === 'import' && typeof usage.source === 'string' ? usage.source.trim() : '';
-  return source ? `${label} · ${source}` : label;
+  const from = source ? `${label} · ${source}` : label;
+  if (usage.agent_created !== true) return from;
+  const made = usage.write_origin === 'assistant_tool' ? 'made by the agent in a turn · not curated' : 'made by the agent';
+  return origin === 'agent' ? made : `${made} · ${from}`;
 }
 
 const count = (v: any) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.floor(v) : 0);
@@ -198,9 +205,10 @@ export function SkillSwitchesPanel() {
       <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6, lineHeight: 1.5 }}>
         A switched-off skill stays installed, signed and approved; the model is not told about it and a command
         naming it is refused. Switching back on requires owner approval; the switch changes after the task runs.
-        {' '}A pinned skill is never marked stale or archived by the curator, and a skill batch or the journey's
-        forget refuses to delete it until it is unpinned; it can still be patched, and uninstalling it or
-        rejecting it from review yourself is not blocked. A skill that ships with Nerva has no pin.
+        {' '}A pin stops automation: the curator never marks a pinned skill stale or archives it, and a batch the
+        agent proposed does not delete it (it can still be patched). The journey's forget refuses it too, until
+        it is unpinned. Your own removals are not blocked and take the pin with the skill: your own batch delete,
+        an uninstall, a reject from review. A skill that ships with Nerva has no pin.
         {bundles.length > 0 && ' The owner sends /<bundle> [instruction] in the chat to load a bundle\'s skills into that turn.'}
       </div>
       {msg && <div role="status" style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}

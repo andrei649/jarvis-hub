@@ -227,11 +227,13 @@ class SkillPinBody(BaseModel):
 async def pin_skill(body: SkillPinBody):
     """H349 — pin or unpin one installed skill (Hermes: ``hermes curator pin|unpin``).
 
-    A pinned skill is left alone by the curator's lifecycle pass (never marked stale or
-    archived), and a skill batch and the journey's forget refuse to delete it until it is
-    unpinned; it can still be patched. Uninstalling it or rejecting it from review is the
-    owner's own act and is not blocked. A skill that ships with Nerva is not pinned
-    (409 ``not_pinnable``): nothing ages it out or deletes it.
+    A pin stops automation: the curator's lifecycle pass leaves a pinned skill alone
+    (never marked stale or archived) and a batch the agent proposed does not delete it;
+    it can still be patched. The journey's forget refuses it too, as Hermes's does. The
+    owner's own removals are not blocked — the owner's batch delete, an uninstall, a
+    reject from review — and retire the pin with the skill. A skill that ships with Nerva
+    is not pinned (409 ``not_pinnable``): nothing ages it out or deletes it. Only a skill
+    installed and loaded now can be pinned (404 ``not_found``).
 
     An admin route like the skill switch, applied at once like switching off (a pin only
     narrows what automation may do), and written to the intent log when it changed
@@ -256,7 +258,9 @@ async def pin_skill(body: SkillPinBody):
         if found is not None:
             sync = getattr(orch.skills, "sync_origins", None)
             if callable(sync):
-                sync([name])                      # the row and its origin, as the folder is now
+                # The row and its origin, as the folder is now. Strict: a sidecar that
+                # cannot be written is the 503 below, not "no such skill".
+                sync([name], strict=True)
         elif body.pinned:
             raise PinRefused("not_found", f"no installed skill named {body.skill!r}")
         return usage.pin(name, body.pinned)
@@ -720,6 +724,11 @@ async def skills_import(req: Request):
     if ok:
         orch.skills.discover()
         return {"ok": True, "source": source, "skill": skill_name}
+    if getattr(orch.skill_importer, "last_conflict", "") == "exists":
+        # H349: the folder holds a skill this source did not import; nothing was written.
+        return JSONResponse({"ok": False, "error": f"a skill folder named '{skill_name}' already exists and was "
+                                                    f"not imported from {source}; it was left as it is. Remove or "
+                                                    "rename it first", "reason": "exists"}, status_code=409)
     refusal = getattr(orch.skill_importer, "last_refusal", None)
     if isinstance(refusal, list) and refusal:
         # H350 — found, but its SKILL.md is not valid: say why, never "not found".
@@ -971,6 +980,11 @@ async def marketplace_uninstall(body: UninstallSkillBody):
                     if Path(getattr(s, "path", "")).resolve() == removed_dir]:
             with contextlib.suppress(Exception):
                 del orch.skills.skills[key]
+            # H349: uninstalled for good, pinned or not (the owner's own act): the sidecar
+            # row goes with it, so a later skill of the name inherits nothing.
+            forget = getattr(orch.skills, "forget_usage", None)
+            if callable(forget):
+                forget(key)
         # DRA-54 — drop the owner approval bound to that path immediately, so a
         # re-created (byte-identical) tree at the same path cannot inherit it.
         with contextlib.suppress(Exception):

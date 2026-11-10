@@ -288,7 +288,8 @@ def test_skills_list_carries_usage_counters_and_last_used(monkeypatch, tmp_path)
         "last_patched_at": rec["last_patched_at"],
         # H349: this loader is a stand-in that never registered the skill, so no origin
         # was recorded: the row says "unknown" (it used to claim "bundled" on no evidence).
-        "origin": "unknown", "source": "", "state": "active", "pinned": False, "pinnable": False,
+        "origin": "unknown", "source": "", "agent_created": False, "write_origin": "",
+        "state": "active", "pinned": False, "pinnable": False,
     }
     # `view` is counted by the real skill_view tool: see tests/test_h318_skill_tools.py.
     assert weather["last_used_at"] and weather["last_patched_at"] and weather["last_viewed_at"] is None

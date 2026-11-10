@@ -66,12 +66,20 @@ describe('SkillSwitchesPanel — H349 provenance, counters and the pin', () => {
     expect(screen.queryByLabelText('pin Old Hub Skill')).toBeNull();
     expect(screen.queryByLabelText('pin Unrecorded')).toBeNull();
     expect(screen.getByText(/A skill that ships with Nerva has no pin/)).toBeTruthy();
+    expect(screen.getByText(/Your own removals are not blocked and take the pin with the skill/)).toBeTruthy();
   });
 
   it('labels only what the hub recorded', () => {
     expect(originLabel({ origin: 'import', source: '  marketplace ' })).toBe('imported · marketplace');
     expect(originLabel({ origin: 'local', source: 'ignored' })).toBe('local · no install record');
     expect(originLabel({ origin: 'unknown' })).toBe('');
+    // Both facts when both are true; and a skill the model wrote in a turn says it is not curated.
+    expect(originLabel({ origin: 'agent', agent_created: true, write_origin: 'learning' })).toBe('made by the agent');
+    expect(originLabel({ origin: 'agent', agent_created: true, write_origin: 'assistant_tool' }))
+      .toBe('made by the agent in a turn · not curated');
+    expect(originLabel({ origin: 'import', source: 'hermes', agent_created: true }))
+      .toBe('made by the agent · imported · hermes');
+    expect(originLabel({ origin: 'import', source: 'hermes', agent_created: 'yes' })).toBe('imported · hermes');
     expect(originLabel({ origin: 'made-up' })).toBe('');
     expect(originLabel(null)).toBe('');
     expect(usageCounts(null)).toBeNull();

@@ -416,9 +416,9 @@ def build_parser() -> argparse.ArgumentParser:
         switch.add_argument("--bundle", help="every installed skill of this bundle instead of one skill")
         switch.add_argument("--channel", help="only on this channel (telegram, voice, web, ...)")
         switch.add_argument("--json", action="store_true")
-    # H349 — the owner's pin: the curator leaves a pinned skill alone and a batch or the
-    # journey's forget refuses to delete it.
-    for verb, text in (("pin", "pin a skill: never aged out by the curator, never deleted by a skill "
+    # H349 — the owner's pin: the curator leaves a pinned skill alone, and an agent's batch
+    # and the journey's forget refuse to delete it; the owner's own removals are not blocked.
+    for verb, text in (("pin", "pin a skill: never aged out by the curator, never deleted by an agent's "
                                "batch or the journey's forget (admin)"),
                        ("unpin", "remove a skill's pin (admin)")):
         pin = skills_verbs.add_parser(verb, help=text)
@@ -3163,6 +3163,11 @@ def _skill_origin_suffix(usage: Any) -> str:
         source = usage.get("source")
         if isinstance(source, str) and source:
             text += f" ({_plain(source, 64)})"
+        # Both facts when both are true: agent-made, and an install record in its folder.
+        if usage.get("agent_created") is True and origin != "agent":
+            text += " · agent-made"
+        if usage.get("agent_created") is True and usage.get("write_origin") == "assistant_tool":
+            text += " · made in a turn, not curated"
     if usage.get("pinned") is True:
         text += " · pinned"
     return text
@@ -3185,8 +3190,8 @@ def _skill_pin(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.say(f"{name}: already {'pinned' if wanted else 'not pinned'}")
         return EXIT_OK
     if wanted:
-        ctx.say(f"pinned {name}: the curator leaves it alone, and a skill batch or the journey's forget "
-                "will not delete it")
+        ctx.say(f"pinned {name}: the curator leaves it alone, and neither an agent's batch nor the journey's "
+                "forget deletes it; your own delete, uninstall or reject still removes it")
     else:
         ctx.say(f"unpinned {name}")
     if not reply.get("audited"):

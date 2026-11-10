@@ -426,7 +426,10 @@ def _learned_skills(orch) -> dict:
             if not getattr(skill, "external", True) or _shipped_location(Path(skill.path)):
                 continue
             rec = (usage.get(name) if usage is not None else None) or {}
-            if rec.get("origin") != ORIGIN_AGENT and int(rec.get("use_count") or 0) <= 0:
+            # H349: the sticky agent marker, which an install record beside the skill
+            # does not clear (a row from before the marker carries the ``agent`` origin).
+            agent = rec.get("agent_created") is True or rec.get("origin") == ORIGIN_AGENT
+            if not agent and int(rec.get("use_count") or 0) <= 0:
                 continue
         except Exception:
             logger.debug("journey: skill %s skipped", name, exc_info=True)
@@ -813,7 +816,7 @@ async def _delete_skill(orch, entry_id: str, name: str):
     skill, rec = found
     # H349: the pin is checked first, so a pinned skill still awaiting review is not
     # discarded here either; the owner unpins it, or rejects it in the review itself.
-    if rec.get("pinned"):
+    if rec.get("pinned") is True:
         return JSONResponse({"error": f"{name!r} is pinned: unpin it first", "reason": "skill_pinned"},
                             status_code=409)
     if await asyncio.to_thread(lambda: (Path(skill.path) / "PENDING_REVIEW").exists()):
@@ -822,8 +825,13 @@ async def _delete_skill(orch, entry_id: str, name: str):
     from agents.core.skills.batch import run_batch
     from agents.core.skills.usage import STATE_ARCHIVED
 
+    # H349: the pin is checked again under the sidecar's lock right before the folder
+    # moves, so one that lands after the check above still stops the forget.
     result = await asyncio.to_thread(run_batch, [{"name": name, "action": "delete"}], orch.skills,
-                                     backup_dir=_batch_archive())
+                                     backup_dir=_batch_archive(), respect_pins=True, archive_rows=True)
+    if result.get("reason") == "skill_batch_pinned":
+        return JSONResponse({"error": f"{name!r} is pinned: unpin it first", "reason": "skill_pinned"},
+                            status_code=409)
     if not result.get("ok"):
         return JSONResponse({"error": result.get("detail") or "the skill could not be archived", **result},
                             status_code=422)

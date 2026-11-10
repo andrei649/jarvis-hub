@@ -204,28 +204,29 @@ async def test_a_skill_installed_while_the_hub_was_down_is_recorded_at_the_next_
     hub.boot()
     # `nerva import` writes the skills tree with no hub running: nothing calls the sidecar.
     assert await SkillImporter(skills_dir=str(hub.home))._save_skill(
-        "offline-skill", "acme/skills", skill_md_text=_md("offline-skill"))
+        "offline-skill", "acme-skills", skill_md_text=_md("offline-skill"))
     assert "offline-skill" not in json.dumps(hub.on_disk())
     hub.boot()
     row = hub.on_disk()[hub.named("offline-skill")]
-    assert (row["origin"], row["source"]) == ("import", "acme/skills")
+    assert (row["origin"], row["source"]) == ("import", "acme-skills")      # a bare repository name
 
 
-def test_an_agent_made_skill_keeps_agent_and_an_install_record_wins_over_it(hub):
+def test_an_agent_made_skill_keeps_its_marker_beside_an_install_record(hub):
     hub.boot()
     hub.loader.generate_skill("jarvis", "tidy the meeting notes", ["open the notes", "tidy them"])
     name = next(n for n in hub.loader.skills if "tidy" in n.lower())
     assert hub.listing()[name]["usage"]["origin"] == "agent"
     hub.boot()                                             # a restart re-reads the folders
     assert hub.listing()[name]["usage"]["origin"] == "agent" and hub.usage.curatable(name)
-    # The same name later holds a marketplace package: its record is what the row says, so
-    # the curator never treats an installed package as agent-made.
+    # An install record that appears in its folder is shown, and the agent marker stays:
+    # nothing written into the folder takes the skill out of curation or the journey
+    # (review M2). No install path writes there: see tests/test_h349_review_fixes.py.
     folder = Path(hub.loader.skills[name].path)
     (folder / loader_mod.EXTERNAL_SOURCE_MARKER).write_text("source=marketplace\n", encoding="utf-8")
     hub.loader.discover()
     usage = hub.listing()[name]["usage"]
-    assert (usage["origin"], usage["source"]) == ("import", "marketplace")
-    assert hub.usage.curatable(name) is False
+    assert (usage["origin"], usage["source"], usage["agent_created"]) == ("import", "marketplace", True)
+    assert hub.usage.curatable(name) is True
 
 
 def test_a_row_left_from_before_is_corrected_and_an_unregistered_name_is_not_claimed(hub):
@@ -357,19 +358,19 @@ def test_no_sidecar_is_a_refusal_not_a_silent_ok(hub):
     assert reply.status_code == 503 and hub.on_disk()[hub.named("my-notes")]["pinned"] is False
 
 
-def test_a_pinned_skill_is_not_deleted_by_a_batch_until_it_is_unpinned(hub):
+def test_a_pinned_skill_is_not_deleted_by_an_agents_batch_until_it_is_unpinned(hub):
     folder = hub.write("my-notes")
     hub.boot()
     name = hub.named("my-notes")
     hub.usage.pin(name)
-    for actor in ("agent:jarvis", "owner"):
-        refused = run_batch([{"name": name, "action": "delete"}], hub.loader,
-                            backup_dir=hub.tmp / "skill-archive", actor=actor)
-        assert refused["ok"] is False and refused["reason"] == "skill_batch_pinned", refused
-        assert "unpin" in refused["detail"]
+    refused = run_batch([{"name": name, "action": "delete"}], hub.loader,
+                        backup_dir=hub.tmp / "skill-archive", actor="agent:jarvis")
+    assert refused["ok"] is False and refused["reason"] == "skill_batch_pinned", refused
+    assert "pinned by the owner" in refused["detail"] and "unpin" in " ".join(refused["hints"])
     assert (folder / "SKILL.md").is_file() and name in hub.loader.skills
     hub.usage.pin(name, False)
-    gone = run_batch([{"name": name, "action": "delete"}], hub.loader, backup_dir=hub.tmp / "skill-archive")
+    gone = run_batch([{"name": name, "action": "delete"}], hub.loader, backup_dir=hub.tmp / "skill-archive",
+                     actor="agent:jarvis")
     assert gone["ok"] is True, gone
     assert not folder.exists() and name not in hub.loader.skills
 

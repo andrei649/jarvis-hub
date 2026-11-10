@@ -55,7 +55,7 @@ class _Skills:
     def __init__(self):
         self.made = []
 
-    def generate_skill(self, agent_id, task, steps):
+    def generate_skill(self, agent_id, task, steps, **kw):
         self.made.append(agent_id)
         return f"skill_{len(self.made)}"
 

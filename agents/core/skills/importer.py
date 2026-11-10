@@ -202,6 +202,9 @@ class SkillImporter:
         self.skills_dir.mkdir(parents=True, exist_ok=True)
         # H350 — why the last _save_skill refused its document (empty when it did not).
         self.last_refusal: list = []
+        # H349 — ``"exists"`` when the last _save_skill refused because the folder holds a
+        # skill this source did not import (``""`` when it did not).
+        self.last_conflict: str = ""
 
     async def import_from_hermes(self, skill_name: str) -> bool:
         self.last_refusal = []
@@ -414,6 +417,7 @@ class SkillImporter:
         provenance: Optional[dict[str, str]] = None,
     ) -> bool:
         self.last_refusal = []
+        self.last_conflict = ""
         slug = _safe_slug(skill_name)
         if slug is None:
             logger.warning("Rejected skill import: unsafe name %r", skill_name)
@@ -451,6 +455,15 @@ class SkillImporter:
             logger.warning("Rejected skill import: its SKILL.md is not valid (%s)",
                            "; ".join(str(p) for p in self.last_refusal))
             return False
+        # H349 (review M2) — an import never writes into a skill folder it did not create:
+        # the owner's own skill, an agent-made one or another source's import under the
+        # same slug is left exactly as it is (it used to have its SKILL.md replaced with
+        # no backup). Only this source's own earlier import is updated in place. Checked
+        # before anything is written, so a refusal leaves no partial write.
+        if (target_dir.exists() or target_dir.is_symlink()) and not self._imported_here(target_dir, source):
+            self.last_conflict = "exists"
+            logger.warning("Rejected skill import: the folder %s holds a skill %s did not import", slug, source)
+            return False
         target_dir.mkdir(parents=True, exist_ok=True)
 
         # Preserve verified upstream bytes exactly. Generic imports write the text
@@ -480,6 +493,19 @@ class SkillImporter:
 
         logger.info(f"Imported skill '{skill_name}' from {source} -> {target_dir}")
         return True
+
+    @staticmethod
+    def _imported_here(target_dir: Path, source: str) -> bool:
+        """Whether ``target_dir`` is a plain folder whose ``manifest.json`` says this
+        importer wrote it from ``source`` (the sidecar ``_save_skill`` writes)."""
+        sidecar = target_dir / "manifest.json"
+        if not _is_plain_dir(target_dir) or not _is_plain_file(sidecar):
+            return False
+        try:
+            data = json.loads(sidecar.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        return isinstance(data, dict) and data.get("imported") is True and data.get("source") == source
 
     @staticmethod
     def _synthesize_skill_md(skill_name: str, manifest: dict, source: str) -> str:
