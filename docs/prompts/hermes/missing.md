@@ -1,5 +1,18 @@
 # Hermes parity: build the `missing` rows (ultracode)
 
+> **Inactive 2026-11-04: historical bucket prompt, do not execute.** The active
+> local Hermes campaign follows [the canonical workflow](../../hermes/autonomous-development-objective.md)
+> and [cumulative handoff](../../hermes/CAMPAIGN_HANDOFF.md), verified against the
+> current checkout/SHA. Integrate the current batch first; finish the frozen 697
+> contracts using current bounded queries and concrete impact evidence. No stage,
+> commit, push, merge, deploy, PR update, paid activation or schedule reactivation.
+> The 2026-09-28 branch, bucket, protected-path and stale-citation instructions
+> below are dated receipts, not current authority. Preserve owner-only controls.
+
+<details>
+<summary>2026-09-28 bucket procedure — inactive archive</summary>
+
+
 You are continuing Hermes-parity work on `andrei649/jarvis-hub`. The branch is `claude/cto-session-recovery-qinvkg` and the PR is draft #1207. You have none of the earlier conversation, so everything you need is in this prompt or in the repo. Other sessions are working on the `partial`, `equivalent` and `needs_review` buckets at the same time, on the same branch.
 
 **Your bucket** is every row whose *live* status is `missing`.
@@ -355,3 +368,5 @@ Be honest in the report. Never call a suite passing unless you ran it. Include:
 - mutation kill rates;
 - stale rows you restamped or downgraded;
 - the headline from `hermes_status.py summary`, before → after.
+
+</details>

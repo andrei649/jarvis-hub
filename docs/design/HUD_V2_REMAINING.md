@@ -1,5 +1,54 @@
 # HUD v2 — Remaining work (next PR)
 
+Local candidates, 2026-11-03: H220 adds Usage/Billing estimates, measured
+local/cloud/unknown aggregates, a Command Center link, and current-turn usage
+in the existing shared context strip. Explicit owner field selections remain
+unchanged; fresh defaults expose the context meter. Historical usage without
+route evidence remains unknown, and unpriced cost is not presented as free.
+H696 adds bundled/optional catalog tiers and explicit installation of optional
+repository skills into quarantine. Native aggregate usage and native skill
+installation controls remain gaps; integration acceptance is still pending.
+
+H334 local import update (2026-11-04): Skills Import uses current admin and
+kernel admission, with immutable commit, entry and reference digest fields for
+generic sources. The built-in Hermes selection uses its server-owned pin.
+Grant and queue responses identify a quarantined copy awaiting separate owner
+review. No native install control or live upstream acceptance is implied.
+
+H027 local candidate (2026-11-04): `nerva curator` and the admin `/api/curator`
+domain expose lifecycle inspection, exact reviewed owner requests and recovery.
+The existing action approval inbox decides curator cards; the CLI prepares their
+targets and reports pending until approval actually applies them. There is no
+dedicated curator browser panel or native control. Dry-run requests do not queue
+or mutate. Full H027 integration is still pending; no new capability credit is
+claimed from wiring alone.
+
+SEC-B6 local client/security source (2026-11-03): twelve content-bearing GETs
+now require user access: `/api/oracle/status`, `/agents`, the three
+`/api/eval/datasets` list/runs/compare reads, `/learning/stats`,
+`/api/local-docs`, `/skills/imported`, `/api/arena/leaderboard`,
+`/api/metrics/kernel`, `/api/metrics/capabilities`, and `/sandbox/status`.
+Existing v2 `apiGet`/`useApi` callers send the user token; legacy v1 reads use
+the stored-token fetch wrapper. That wrapper now resolves URL origin and copies
+request options/headers per local attempt, preventing its token injection from
+following protocol-relative external URLs or reused options. The standalone
+`/admin` page does not load that wrapper: its Agents and Oracle status/conflicts
+GETs use the existing admin-token `afetch` helper. Admin credentials satisfy
+user-read guards. This is a read-access change; existing mutation contracts
+remain separate.
+
+The successful public `GET /api/security/kill-switch` is an exact three-field aggregate:
+`{global, any_halted, halted_count}`. Scope names and reasons are available on
+admin-only `GET /api/security/kill-switch/details` as `{global, halted}`. Trust
+and Console distinguish a global halt from scoped halts; the global button
+still acts only on global scope. Missing, failed, and contradictory aggregates
+show unknown and preserve the safe engage direction. Trust also remains
+unknown when a successful POST cannot be verified by a subsequent GET. Mobile
+consumes only the aggregate in a read-only Status row, with the same global,
+scoped, and unknown distinctions. Focused source tests and typechecks support
+these claims; a served browser, credentialed network Hub, and native device
+have not been accepted in this documentation slice.
+
 > What's intentionally **left out** of the P0–P6 build (PR #156 / merged to `main`) and queued for
 > the next pass. **Update 2026‑06‑08: the cutover happened — V2 is the default HUD at `/`** (legacy
 > at `/v1`, override `JARVIS_HUD=v1`); §8 below is done, the rest is the depth punch‑list.
@@ -407,6 +456,14 @@ see `mobile/docs/h1825-briefing-wall.md` and `mobile/docs/h1825-briefing-sources
   ([`OWNER_TASKS.md`](../OWNER_TASKS.md) §GitHub settings).
 
 ## 10. Parity re‑audit — 2026‑06‑10 (backend moved ahead again)
+
+H022 host dependency audit (local, 2026-11-04): `nerva security [audit]` inventories
+the invoking host, then uses admin `POST /api/security/dependencies/audit` for
+kernel-mediated OSV lookup. This CLI contract intentionally has no HUD/native
+inventory panel: those clients run in different environments. Offline, skipped
+and incomplete coverage are reported separately from a completed audit. The
+endpoint is classified as machine-facing in the parity gate; no live OSV or native
+acceptance follows from the repository's synthetic transport tests.
 
 The 2026‑06‑09 backend waves (PR #178/#180) shipped new surfaces **with no HUD controls**, on top of
 the still‑open depth items above. Snapshot: backend ≈299 routes; HUD v2 actively calls ~50, partially

@@ -1,5 +1,13 @@
 # Hermes build queue — the 93 small-effort rows, re-evaluated 2026-09-22
 
+> **Historical planning queue, not the current pick order (2026-11-04).** Follow
+> [the active Hermes workflow](autonomous-development-objective.md) and the
+> [cumulative handoff](CAMPAIGN_HANDOFF.md): integrate the current local batch
+> first, verify checkout/SHA and query the relevant frozen contract. The dated
+> estimates, closure notes and critic links below remain useful evidence; a top
+> row or old “next” instruction does not authorize new work, PR publication or
+> equivalence credit. Current work remains local with no stage or commit.
+
 **Current review, 2026-10-10:** dated closure notes below are historical. The
 first batch repaired H004/H161/H328/H450. The second repairs H413's small title
 model, H689's shared installation identity and H256's corrupt-store consent
@@ -37,7 +45,12 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 
 **Pruned** (2026-09-27): the 45 rows closed so far (H613, H262, H681, H410, H586, H667, H670, H145, H157, H283, H285, H296, H314, H350, H441, H501, H504, H526, H117, H275, H328, H380, H450, H659, H674, H677, H156, H161, H168, H209, H227, H247, H259, H309, H373, H378, H507, H689, H222, H329, H413, H490, H594, H579, H182) left the queue table, and their plans were cut to a one-line stub that keeps the anchor the critic notes link to. Their records are in the ledger.
 
-**How to use it.** Pick from the top (smallest honest estimate first), read the row with `python3 scripts/hermes_status.py show <ID>`, then its plan here **and every critic note it links** — 60 of the 93 plans overlap another plan or rest on a premise the critic corrected, and building two of them separately would collide. Estimates are hours for a careful engineer including tests, not a schedule. A plan is a starting point, not a contract: the requirement in the frozen inventory wins. When a row closes, its ledger entry changes in the same PR and it leaves this page.
+**How to use this archive.** When the active campaign selects a relevant row,
+read its current record with `scripts/hermes_status.py show <ID>`, then its plan
+here and every critic note it links. Sixty of the 93 plans overlap another plan
+or rest on a premise the critic corrected. Estimates are historical careful-
+engineer hours, not a schedule or priority. The frozen contract wins over a
+plan; update the ledger only from current evidence under the active workflow.
 
 **Closed by lot 1** (#1204, 2026-09-23): H691, H661, H344, H583, H368, H242, H503, H313 — each built red-first, adversarially reviewed, fixed and independently verified on the integrated head; their plans left this page with their ledger entries. 85 rows remain.
 

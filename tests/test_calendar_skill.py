@@ -28,7 +28,7 @@ import importlib.util
 
 # Load the skill module directly (skills/ is not a package on sys.path).
 _spec = importlib.util.spec_from_file_location(
-    "calendar_skill_main", repo_root / "skills" / "calendar" / "main.py"
+    "calendar_skill_main", repo_root / "optional-skills" / "calendar" / "main.py"
 )
 cal = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(cal)

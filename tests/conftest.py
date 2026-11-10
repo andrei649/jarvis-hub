@@ -37,6 +37,29 @@ def _launch_pytest_root_cleanup() -> None:
 
 atexit.register(_launch_pytest_root_cleanup)
 
+
+def pytest_runtest_logstart(nodeid, location):
+    """Name the test in flight on the Windows CI lane.
+
+    The lane has hung past 99% with no node id in the quiet xdist log, so a
+    later stall could not be tied to a test. GitHub Actions sets
+    ``GITHUB_ACTIONS``. A stack dump starts only if that test is still running
+    after two minutes, which is past the 90s pytest-timeout.
+    """
+    if os.environ.get("GITHUB_ACTIONS") != "true" or os.name != "nt":
+        return
+    sys.stderr.write(f"WIN-TEST {nodeid}\n")
+    sys.stderr.flush()
+    import faulthandler
+    faulthandler.dump_traceback_later(120, repeat=True, file=sys.stderr)
+
+
+def pytest_runtest_logfinish(nodeid, location):
+    if os.environ.get("GITHUB_ACTIONS") != "true" or os.name != "nt":
+        return
+    import faulthandler
+    faulthandler.cancel_dump_traceback_later()
+
 # Gate network calls BEFORE any agents.web import (set at module level so it's
 # guaranteed to take effect during pytest collection, before fixtures run).
 # This prevents the oracle_bridge watcher and other external pollers from

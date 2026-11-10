@@ -7,7 +7,7 @@ derived latest-activity timestamp to decide active → stale → archived
 transitions; only **agent-created, unpinned** skills are ever curatable.
 
 Pattern adapted from hermes-agent `tools/skill_usage.py` (Nous Research, MIT)
-— see LICENSES/THIRD_PARTY.md — rebuilt on jarvis's JsonStore (single-process
+— see LICENSES/hermes-agent-MIT.txt — rebuilt on jarvis's JsonStore (single-process
 atomic persistence) instead of hermes's cross-process fcntl/msvcrt locking.
 """
 
@@ -130,6 +130,48 @@ class SkillUsageStore(JsonStore):
         with self._lock:
             rec = self._items.get(name)
             return dict(rec) if rec else None
+
+    def restore_record(self, name: str, record: dict | None) -> None:
+        """Restore a curator-captured sidecar row without forging a new origin."""
+        if not isinstance(name, str) or not name or (record is not None and not isinstance(record, dict)):
+            raise ValueError("invalid usage recovery record")
+        with self._lock:
+            previous = self._items.get(name)
+            if record is None:
+                self._items.pop(name, None)
+            else:
+                self._items[name] = dict(record)
+            try:
+                self._save()
+            except Exception:
+                if previous is None:
+                    self._items.pop(name, None)
+                else:
+                    self._items[name] = previous
+                raise
+
+    def reconcile_controls(self, name: str, *, state: str | None = None,
+                           pinned: bool | None = None, expected_origin: str | None = None) -> dict | None:
+        """Restore lifecycle controls while preserving newer activity and provenance."""
+        if state is not None and state not in _VALID_STATES:
+            raise ValueError("invalid usage state")
+        with self._lock:
+            rec = self._items.get(name)
+            if rec is None:
+                return None
+            if expected_origin is not None and rec.get("origin") != expected_origin:
+                raise ValueError("usage origin changed")
+            before = dict(rec)
+            if state is not None:
+                rec["state"] = state
+            if pinned is not None:
+                rec["pinned"] = bool(pinned)
+            try:
+                self._save()
+            except Exception:
+                self._items[name] = before
+                raise
+            return dict(rec)
 
     def list(self) -> dict:
         with self._lock:

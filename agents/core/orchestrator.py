@@ -956,6 +956,7 @@ class Orchestrator:
         self._review_tasks: dict[str, asyncio.Task] = {}
         self._review_notices: dict[str, str] = {}
         self.curator = None             # SkillCurator, built in load_agents
+        self.curator_operations = None  # exact-card owner lifecycle/recovery operations
         # Daily Reflection & Graph Consolidation (H5.15)
         self.reflector: Optional[DailyReflector] = None
         # Proactive Technology Scout (Self-Improvement) — default-off, read-only.
@@ -1249,6 +1250,16 @@ class Orchestrator:
                 get_setting=self.get_setting,
                 run_store=ReflectionRunStore(_dp("learning", "curator_runs.json")),
                 archive_dir=_dp("skills", "archive"),
+            )
+            from .skills.curator_operations import CuratorOperations
+            from .skills import references as skill_references
+            self.curator_operations = CuratorOperations(
+                self.skills, self.skill_usage, self.curator,
+                getattr(self, "action_approvals", None),
+                state_dir=_dp("learning", "curator"),
+                archive_dir=_dp("skills", "archive"),
+                get_setting=self.get_setting,
+                holders=lambda: skill_references.hub_holders(self),
             )
         except Exception:
             logger.warning("learning reviewer init failed", exc_info=True)

@@ -120,6 +120,14 @@ class KillSwitch(JsonStore):
         with self._lock:
             return {"halted": dict(self._halted), "global": GLOBAL in self._halted}
 
+    def public_status(self) -> dict:
+        """Content-free safety state from one locked halt-map snapshot."""
+        with self._lock:
+            count = len(self._halted)
+            return {"global": GLOBAL in self._halted,
+                    "any_halted": count > 0,
+                    "halted_count": count}
+
 
 def authorize(
     broker: CapabilityBroker,

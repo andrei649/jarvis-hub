@@ -15,7 +15,7 @@ function backend() {
     if (url === '/api/health/components') return json({ summary: 'all ok', components: { qdrant: 'ok', neo4j: 'bad' } });
     if (url === '/api/arena/leaderboard') return json({ leaderboard: [{ model: 'gemma', elo: 1500, win_rate: 0.5 }] });
     if (url === '/api/notes') return json({ content: 'hi' });
-    if (url === '/api/security/kill-switch') return json({ halted: {}, global: false });
+    if (url === '/api/security/kill-switch/details') return json({ halted: {}, global: false });
     if (url === '/api/security/governance') return json({ pass: true, overall_score: 1, threshold: 0.9, injection: { score: 1 }, harm: { score: 1 }, owasp: { covered: 10, total: 10, score: 1 } });
     if (url === '/api/local-docs') return json({ available: ['notes'] });
     if (url === '/api/eval/datasets') return json({ datasets: [{ name: 'smoke', latest_version: 2, cases: 12, last_score: 0.92 }] });
@@ -231,12 +231,42 @@ describe('panel flows', () => {
     await env.flush();
     openTool(container, 'Kill-Switch');
     await env.flush();
+    const detailRead = env.window.fetch.mock.calls.find((c) => c[0] === '/api/security/kill-switch/details');
+    expect(detailRead, 'admin detail GET issued').toBeTruthy();
+    expect(detailRead[1].headers['X-Admin-Token']).toBe('adm');
+    expect(env.window.fetch.mock.calls.some((c) => c[0] === '/api/security/kill-switch' && (!c[1] || c[1].method !== 'POST'))).toBe(false);
     expect(container.querySelector('.console-content').textContent).toContain('Operational');
     env.click(toolBtn(container, 'Engage halt'));
     const post = env.window.fetch.mock.calls.find((c) => c[0] === '/api/security/kill-switch' && c[1] && c[1].method === 'POST');
     expect(post, 'POST /api/security/kill-switch issued').toBeTruthy();
     expect(post[1].headers['X-Admin-Token']).toBe('adm');
     expect(JSON.parse(post[1].body).engage).toBe(true);
+  });
+
+  it('Kill-Switch admin detail displays scoped reasons and does not fall back after a 401', async () => {
+    env.cleanup();
+    const fetcher = vi.fn((url) => url === '/api/security/kill-switch/details'
+      ? json({ global: false, halted: { helper: 'owner pause' } }) : json({}));
+    env = loadHud({ files: ['i18n', 'data', 'components', 'console', 'tools'], fetch: fetcher, lang: 'ro' });
+    env.window.localStorage.setItem('hud.admin_token', 'adm');
+    const { container } = overlay();
+    await env.flush();
+    openTool(container, 'Kill-Switch');
+    await env.flush();
+    expect(container.querySelector('.console-content').textContent).toContain('owner pause');
+    expect(fetcher.mock.calls.find((c) => c[0] === '/api/security/kill-switch/details')[1].headers['X-Admin-Token']).toBe('adm');
+
+    env.cleanup();
+    const denied = vi.fn((url) => url === '/api/security/kill-switch/details'
+      ? json({}, { ok: false, status: 401 }) : json({}));
+    env = loadHud({ files: ['i18n', 'data', 'components', 'console', 'tools'], fetch: denied, lang: 'ro' });
+    const rendered = overlay();
+    await env.flush();
+    openTool(rendered.container, 'Kill-Switch');
+    await env.flush();
+    expect(rendered.container.querySelector('.console-content').textContent).toContain('admin token required');
+    expect(rendered.container.querySelector('.console-content').textContent).not.toContain('Operational');
+    expect(denied.mock.calls.some((c) => c[0] === '/api/security/kill-switch')).toBe(false);
   });
 
   it('Trust Scorecard — renders the governance gate result', async () => {
@@ -260,6 +290,35 @@ describe('panel flows', () => {
     const post = env.window.fetch.mock.calls.find((c) => c[0] === '/api/local-docs/index' && c[1] && c[1].method === 'POST');
     expect(post, 'POST /api/local-docs/index issued').toBeTruthy();
     expect(JSON.parse(post[1].body).key).toBe('notes');
+  });
+
+  it('Local Docs read carries the existing user token through the shipped auth wrapper', async () => {
+    env.cleanup();
+    const fetcher = backend();
+    env = loadHud({ files: ['auth', 'i18n', 'data', 'components', 'console', 'tools'], fetch: fetcher, lang: 'ro' });
+    env.window.localStorage.setItem('hud.user_token', 'user-token');
+    const { container } = overlay();
+    await env.flush();
+    openTool(container, 'Local Docs');
+    await env.flush();
+    const read = fetcher.mock.calls.find((c) => c[0] === '/api/local-docs');
+    expect(read).toBeTruthy();
+    expect(read[1].headers.get('X-User-Token')).toBe('user-token');
+    expect(read[1].headers.get('X-Admin-Token')).toBeNull();
+  });
+
+  it('Arena leaderboard read carries the existing v1 user token', async () => {
+    env.cleanup();
+    const fetcher = backend();
+    env = loadHud({ files: ['auth', 'i18n', 'data', 'components', 'console', 'tools'], fetch: fetcher, lang: 'ro' });
+    env.window.localStorage.setItem('hud.user_token', 'user-token');
+    const { container } = overlay();
+    await env.flush();
+    openTool(container, 'Model Arena');
+    await env.flush();
+    const read = fetcher.mock.calls.find((c) => c[0] === '/api/arena/leaderboard');
+    expect(read).toBeTruthy();
+    expect(read[1].headers.get('X-User-Token')).toBe('user-token');
   });
 
   it('Eval Datasets — renders the dataset and Run posts its name', async () => {

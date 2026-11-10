@@ -179,7 +179,9 @@ describe('App demo-to-live provenance', () => {
     ));
 
     render(<App />);
-    await waitFor(() => expect(mocks.loadJarvisData).toHaveBeenCalledWith(true));
+    await waitFor(() => expect(mocks.loadJarvisData).toHaveBeenCalledWith(true, expect.any(Function)));
+    const demoScope = mocks.loadJarvisData.mock.calls.find(([demo]) => demo === true)![1] as () => boolean;
+    expect(demoScope()).toBe(true);
     expect(screen.getByText(/DEMO DATA/)).toBeTruthy();
     expect(document.body.textContent).toContain('Morning Jarvis');
     expect(document.body.textContent).toContain('Raiffeisen quarterly review');
@@ -218,7 +220,10 @@ describe('App demo-to-live provenance', () => {
       demo: false,
     });
 
-    await waitFor(() => expect(mocks.loadJarvisData).toHaveBeenCalledWith(false));
+    await waitFor(() => expect(mocks.loadJarvisData).toHaveBeenCalledWith(false, expect.any(Function)));
+    const liveScope = mocks.loadJarvisData.mock.calls.find(([demo]) => demo === false)![1] as () => boolean;
+    expect(demoScope()).toBe(false);
+    expect(liveScope()).toBe(true);
     await act(async () => { staleDemo.resolve(dataSnapshot('STALE DEMO', true)); });
     expect(document.body.textContent).not.toContain('STALE DEMO');
     expect(document.body.textContent).not.toContain('Morning Jarvis');

@@ -297,7 +297,7 @@ async def draft_agent_description(agent_id: str):
     return nocache_json({"agent_id": agent_id.strip().lower(), "draft": draft})
 
 
-@router.get("/agents")
+@router.get("/agents", dependencies=[Depends(user_guard)])
 async def get_agents():
     orch = get_orch()
     if not orch:
@@ -315,7 +315,7 @@ async def get_agents():
             "skills": skills,
             "description": soul_edit.description_of(agent),   # H156
         }
-    return {"agents": result}
+    return nocache_json({"agents": result})
 
 
 @router.get("/api/agents/history", dependencies=[Depends(user_guard)])

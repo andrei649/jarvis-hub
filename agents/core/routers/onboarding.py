@@ -35,7 +35,7 @@ def _configured_doc_folders() -> dict:
     return folders if isinstance(folders, dict) else {}
 
 
-@router.get("/api/local-docs")
+@router.get("/api/local-docs", dependencies=[Depends(user_guard)])
 async def local_docs_status():
     """Last indexing summary + the configured folder keys (H12.2)."""
     return nocache_json({**_local_docs_last, "available": sorted(_configured_doc_folders())})

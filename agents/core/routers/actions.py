@@ -128,7 +128,7 @@ async def actions_reject_group(group_id: str, req: Request):
 @router.post("/api/actions/{action_id}/decide", dependencies=[Depends(admin_guard)])
 async def actions_decide(action_id: str, req: Request):
     """Approve or reject a single pending action (admin)."""
-    _, q, err = require_component("action_approvals", "action approvals not available")
+    orch, q, err = require_component("action_approvals", "action approvals not available")
     if err is not None:
         return err
     try:
@@ -144,6 +144,24 @@ async def actions_decide(action_id: str, req: Request):
         return JSONResponse({"error": str(exc)}, status_code=400)
     if item is None:
         return JSONResponse({"error": "not found"}, status_code=404)
+    if str(item.get("tool", "")).startswith("skill.curator."):
+        operations = getattr(orch, "curator_operations", None) if orch else None
+        if operations is None:
+            return nocache_json({"ok": False, "action": item,
+                                 "applied": {"ok": False, "reason": "curator_unavailable"}}, 503)
+        from agents.core.skills.curator_authority import curator_authorize
+
+        try:
+            outcome = await asyncio.to_thread(
+                operations.apply_decision, action_id, authorize=curator_authorize(orch)
+            )
+            if not isinstance(outcome, dict) or type(outcome.get("ok")) is not bool:
+                raise ValueError("invalid curator outcome")
+        except Exception:
+            logger.warning("Curator application unavailable; exact approval remains recorded")
+            return nocache_json({"ok": False, "action": {**item, "applied": {
+                "ok": False, "reason": "curator_apply_unavailable"}}}, 503)
+        return nocache_json({"ok": bool(outcome.get("ok")), "action": {**item, "applied": outcome}})
     if item.get("tool") == "skill.batch_proposal":
         # H665 — a decided batch lands now, whole or not at all; only its own card decides it.
         store = getattr(get_orch(), "skill_batches", None)
@@ -171,7 +189,9 @@ async def actions_decide(action_id: str, req: Request):
         curator = getattr(get_orch(), "curator", None)
         if curator is not None and hasattr(curator, "apply_decisions"):
             try:
-                item = {**item, "applied": await asyncio.to_thread(curator.apply_decisions)}
+                operations = getattr(orch, "curator_operations", None) if orch else None
+                apply = operations.apply_proposals if operations is not None else curator.apply_decisions
+                item = {**item, "applied": await asyncio.to_thread(apply)}
             except Exception:
                 logger.warning("skill proposal apply after decision failed", exc_info=True)
     return nocache_json({"ok": True, "action": item})

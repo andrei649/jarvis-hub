@@ -451,11 +451,44 @@ def claim_output(path: Path, workdir: Path, temp_dir: Path, kind: str) -> tuple[
 
 # ── programs ─────────────────────────────────────────────────────────────────────────
 
+def _windows_everyone_write(path: Path) -> bool:
+    """Whether Everyone (S-1-1-0) can write *path*.
+
+    CPython reports ``S_IWOTH`` for every non-readonly Windows file, so ``st_mode``
+    cannot answer this. Write bits are judged one at a time: a DENY for DELETE
+    does not cancel an ALLOW of ``FILE_WRITE_DATA``. A DACL that cannot be read,
+    and a NULL DACL, are treated as writable.
+    """
+    from agents.core.platform_files import everyone_rights
+
+    return "write" in everyone_rights(path)
+
+
+def _posix_permission_bits() -> bool:
+    """``st_mode`` write bits are real on POSIX. On Windows they are the readonly flag."""
+    return os.name != "nt"
+
+
+def _world_writable(path: Path) -> bool:
+    """Whether every user can write *path*. POSIX uses ``S_IWOTH``; Windows uses the DACL."""
+    if not _posix_permission_bits():
+        return _windows_everyone_write(path)
+    try:
+        return bool(os.stat(path).st_mode & stat.S_IWOTH)
+    except OSError:
+        return True
+
+
 def _loose_ancestor(path: Path) -> Path | None:
     """The first directory above *path* that another user could change an entry of: one
     writable by the group or by everyone without the sticky bit (or one that cannot be
-    read). None when there is none."""
+    read). On Windows, POSIX mode bits are not ACLs (every directory looks like
+    ``0o777``), so only an Everyone write ACE counts. None when there is none."""
     for folder in path.parents:
+        if not _posix_permission_bits():
+            if _windows_everyone_write(folder):
+                return folder
+            continue
         try:
             mode = os.stat(folder).st_mode
         except OSError:
@@ -488,7 +521,11 @@ def trusted_program(path: str | os.PathLike, *, executable: bool = True,
         return None, f"{what} is not a regular file"
     if executable and not os.access(exe, os.X_OK):
         return None, f"{what} is not executable"
-    if info.st_mode & stat.S_IWOTH or parent.st_mode & stat.S_IWOTH:
+    if not stat.S_ISDIR(parent.st_mode):
+        return None, f"{what} does not exist"
+    # World-writability is not ``st_mode & S_IWOTH``: on Windows that bit is set
+    # for every non-readonly file, so every program looked world-writable.
+    if _world_writable(exe) or _world_writable(exe.parent):
         return None, f"{what} or its directory is writable by every user"
     loose = _loose_ancestor(exe)
     if loose is not None:

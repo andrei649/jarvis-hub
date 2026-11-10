@@ -18,20 +18,21 @@
 
   function sameOrigin(url) {
     try {
-      if (url.charAt(0) === '/') return true;          // relative → same origin
+      // Resolve first: //host and /\host are cross-origin after URL normalization.
       return new URL(url, window.location.href).origin === window.location.origin;
     } catch (e) { return false; }
   }
 
   function withToken(init) {
+    // A caller may reuse one RequestInit for a later external fetch. Keep both
+    // the options and its Headers caller-owned; each attempt gets fresh copies.
+    var next = Object.assign({}, init);
+    var h = new Headers(init && init.headers || {});
     var tok = '';
     try { tok = localStorage.getItem(KEY) || ''; } catch (e) {}
-    if (!tok) return init;
-    init = init || {};
-    var h = new Headers(init.headers || {});
-    if (!h.has('X-User-Token')) h.set('X-User-Token', tok);
-    init.headers = h;
-    return init;
+    if (tok && !h.has('X-User-Token')) h.set('X-User-Token', tok);
+    next.headers = h;
+    return next;
   }
 
   var prompting = false;
@@ -61,8 +62,8 @@
       if (resp.status === 401 && !(init && init.__authRetry)) {
         var t = promptForToken();
         if (t) {
-          init = init || {};
-          init.__authRetry = true;                      // one retry only
+          // This is a direct nativeFetch retry, so it cannot recurse or prompt
+          // again. Do not mark the caller's options with __authRetry.
           return nativeFetch(input, withToken(init));
         }
       }

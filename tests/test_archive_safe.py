@@ -594,6 +594,7 @@ def test_extract_zip_bytes_reports_the_files_it_wrote_in_archive_order(tmp_path)
 _ARCHIVE_IMPORTS_ALLOWED = {
     "agents/core/archive_safe.py",
     "agents/core/backup.py",                  # writes the backup tar
+    "agents/core/skills/curator_operations.py",  # writes the recovery tar; reads it only via archive_safe
     "agents/core/skills/marketplace.py",      # writes the published skill zip
     "agents/core/routers/artifact_store.py",  # writes a download zip
     "agents/core/media_export.py",            # writes a media bundle zip

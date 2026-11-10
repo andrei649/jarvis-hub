@@ -11,7 +11,8 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, model_validator
+from typing import Annotated
 
 from agents.core.routers._deps import admin_guard, user_guard
 from agents.core.routers._component import component_unavailable, require_component
@@ -23,6 +24,93 @@ logger = logging.getLogger("jarvis.web")
 
 
 router = APIRouter(tags=["security"])
+
+
+class DependencyAuditComponent(BaseModel):
+    """A bounded package identity, never a path, command, credential, or install request."""
+
+    model_config = ConfigDict(extra="forbid")
+    surface: Literal["installed", "extension", "mcp"]
+    name: StrictStr = Field(min_length=1, max_length=128, pattern=r"^@?[A-Za-z0-9._/-]+$")
+    version: StrictStr = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9._+!-]+$")
+    origin: StrictStr = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z0-9._+-]+$")
+    ecosystem: Literal["PyPI", "npm"]
+
+    @model_validator(mode="after")
+    def consistent_ecosystem(self):
+        if self.surface != "mcp" and self.ecosystem != "PyPI":
+            raise ValueError("installed and extension components require PyPI")
+        return self
+
+
+class DependencyAuditError(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    surface: Literal["installed", "extension", "mcp"]
+    reason: StrictStr = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z0-9_:. -]+$")
+    location: StrictStr | None = Field(default=None, max_length=120, pattern=r"^[A-Za-z0-9._+-]+$")
+    server: StrictStr | None = Field(default=None, max_length=120, pattern=r"^[A-Za-z0-9._+-]+$")
+    index: int | None = Field(default=None, ge=0, le=4096)
+    coverage_unavailable: StrictBool = False
+
+
+class DependencyAuditSkip(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    venv: StrictBool = False
+    plugins: StrictBool = False
+    mcp: StrictBool = False
+
+
+class DependencyAuditRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    components: list[DependencyAuditComponent] = Field(max_length=4096)
+    errors: list[DependencyAuditError] = Field(default_factory=list, max_length=4096)
+    fail_on: Literal["low", "moderate", "high", "critical"] = "low"
+    ignore_vuln: list[Annotated[StrictStr, Field(min_length=1, max_length=128,
+                                                   pattern=r"^[A-Za-z0-9._:-]+$")]] = Field(default_factory=list, max_length=64)
+    osv_url: StrictStr = Field(default="https://api.osv.dev", max_length=200)
+    skip: DependencyAuditSkip = Field(default_factory=DependencyAuditSkip)
+
+
+@router.post("/api/security/dependencies/audit", dependencies=[Depends(admin_guard)])
+async def security_dependencies_audit(body: DependencyAuditRequest):
+    """OSV lookup through the hub's real PluginHTTPClient and egress kernel hook."""
+    from agents.core.security import dep_audit
+
+    orch = get_orch()
+    if orch is None:
+        return nocache_json({"error": "governance_unavailable"}, status_code=503)
+    from agents.core.action_origin import current_action_origin
+    from agents.core.kernel import Action, Verdict
+    from agents.core.kernel.binding import make_action_kernel
+
+    if make_action_kernel(orch) is None:
+        return nocache_json({"error": "governance_unavailable"}, status_code=503)
+
+    def authorize_egress(plugin, method, url, host):
+        # Rebind for each OSV page/detail request: a changed policy or engaged
+        # kill-switch applies to the next outbound call in this same audit.
+        kernel = make_action_kernel(orch)
+        if kernel is None:
+            return "governance_unavailable"
+        decision = kernel(Action(kind="plugin.egress", agent=plugin,
+                                 title=f"dependency audit {method} {host}",
+                                 payload={"plugin": plugin, "method": method,
+                                          "host": host, "url": url,
+                                          "risk_tier": 2},  # trusted route: external read
+                                 origin=current_action_origin()))
+        return None if decision.verdict is Verdict.GRANT else (decision.reason or "not_granted")
+    try:
+        client = dep_audit.default_client(body.osv_url, authorize_egress=authorize_egress)
+    except ValueError:
+        return nocache_json({"error": "invalid_osv_url"}, status_code=422)
+    components = [dep_audit.Component(**row.model_dump()) for row in body.components]
+    errors = [row.model_dump(exclude_none=True, exclude_defaults=True) for row in body.errors]
+    report = await asyncio.to_thread(
+        dep_audit.audit, components, client, fail_on=body.fail_on,
+        ignore=body.ignore_vuln, errors=errors, database=body.osv_url,
+        skipped=body.skip.model_dump(),
+    )
+    return nocache_json({"report": report.to_dict(), "human": dep_audit.render(report)})
 
 
 class DataHandlingAck(BaseModel):
@@ -178,7 +266,16 @@ async def capabilities_check(token: str, capability: str):
 
 @router.get("/api/security/kill-switch")
 async def kill_switch_status():
-    """Out-of-band kill-switch status."""
+    """Public content-free out-of-band kill-switch status."""
+    _, kill, err = require_component("kill_switch", "kill-switch not available")
+    if err is not None:
+        return err
+    return nocache_json(kill.public_status())
+
+
+@router.get("/api/security/kill-switch/details", dependencies=[Depends(admin_guard)])
+async def kill_switch_details():
+    """The existing full halt map for authenticated owner diagnostics."""
     _, kill, err = require_component("kill_switch", "kill-switch not available")
     if err is not None:
         return err

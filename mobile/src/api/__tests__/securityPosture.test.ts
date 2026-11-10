@@ -86,7 +86,7 @@ describe('mobile security posture API', () => {
   });
 
   it('fetches kill-switch and loop-breaker status', async () => {
-    mockFetch.mockResolvedValueOnce(jsonResponse({ global: true, halted: { global: { reason: 'owner' } } }));
+    mockFetch.mockResolvedValueOnce(jsonResponse({ global: true, any_halted: true, halted_count: 1, halted: { global: { reason: 'owner' } } }));
     mockFetch.mockResolvedValueOnce(jsonResponse({ tripped: false, threshold: 4, window_seconds: 30 }));
 
     const config = { baseUrl: 'hub.local', token: '', adminToken: '' };
@@ -103,7 +103,7 @@ describe('mobile security posture API', () => {
       'http://hub.local/api/security/loop-breaker',
       expect.objectContaining({ method: 'GET' }),
     );
-    expect(kill.global).toBe(true);
+    expect(kill).toEqual({ global: true, any_halted: true, halted_count: 1 });
     expect(loop.tripped).toBe(false);
   });
 
@@ -129,7 +129,24 @@ describe('mobile security posture API', () => {
       sandbox: { backend: '', isolated: false, docker_available: false, insecure_host_exec: false },
       guardrails: { mode: '' },
     });
-    await expect(fetchSecurityKillSwitch(config)).resolves.toEqual({ global: false, halted: {} });
+    await expect(fetchSecurityKillSwitch(config)).rejects.toThrow(/kill-switch/i);
     await expect(fetchSecurityLoopBreaker(config)).resolves.toEqual({ tripped: false });
+  });
+
+  it('keeps scoped halt status without retaining private scope or reason data', async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse({ global: false, any_halted: true, halted_count: 2,
+      halted: { private_agent: { reason: 'private' } }, reason: 'private', at: 'private' }));
+    await expect(fetchSecurityKillSwitch({ baseUrl: 'hub.local', token: '', adminToken: '' }))
+      .resolves.toEqual({ global: false, any_halted: true, halted_count: 2 });
+  });
+
+  it.each([
+    { global: false, any_halted: false, halted_count: 1 },
+    { global: false, any_halted: true, halted_count: 0 },
+    { global: true, any_halted: false, halted_count: 0 },
+  ])('rejects contradictory public halt state %j', async (state) => {
+    mockFetch.mockResolvedValueOnce(jsonResponse(state));
+    await expect(fetchSecurityKillSwitch({ baseUrl: 'hub.local', token: '', adminToken: '' }))
+      .rejects.toThrow(/kill-switch/i);
   });
 });

@@ -9,6 +9,7 @@ import { FIRST_RUN_DISMISS_KEY } from './onboarding-state';
 import { CONSOLE_PANELS, CONSOLE_PANEL_MAP } from './console-routes';
 import { navigateHud, routeHref } from './hud-routing';
 import { apiGet, apiPost, apiPut, apiPatch, apiDelete, actionFailures, onActionFailure, clearActionFailures } from './api/client';
+import { isKillSwitchState } from './api/actions';
 import { localModelStatus } from './api/live';
 import { OperatorPanel } from './operator-panel';
 import { CoachPanel } from './panels/coach';
@@ -62,6 +63,7 @@ import { QuickbarPanel } from './panels/quickbar';
 import { MemoryConsolidatePanel } from './panels/memory-consolidate';
 import { PermissionsPanel } from './panels/permissions';
 import { DataHandling } from './panels/data-handling';
+import { UsagePanel } from './panels/usage';
 
 import { useApi, arr, mono, asLive, PanelChip, Card, State, Row, Tag, Btn, act, actA, refusalReason, inpS, taS, Json } from './panel-kit';
 
@@ -767,44 +769,41 @@ function SecretsPanel() {
 }
 export function KillSwitchPanel() {
   const { d, e, loading, reload } = useApi('/api/security/kill-switch');
-  // /api/security/kill-switch returns {global: bool, halted: {agent: reason}}. `halted`
-  // is a MAP, not a bool — `d?.halted ?? d?.engaged` returned {} (truthy) and showed a
-  // false "ENGAGED · all agents halted" alarm (2026-07-24 QA finding). Derive it: engaged
-  // iff the global switch is on OR at least one agent is in the halted map.
-  const halted = !!(d?.global || Object.keys(d?.halted || {}).length || d?.engaged);
+  const known = !e && isKillSwitchState(d);
+  const globalHalted = known && d.global;
+  const halted = known && (d.global || d.any_halted);
   // Whether we actually READ the state. Without this, `halted` is false while the
   // status is still in flight or the read failed outright, and the row below
   // rendered a green "ARMED · operational" — telling the operator the safety
   // system is fine on the strength of a request that never came back. For a
   // kill-switch that is the worst possible default.
-  const known = !!d && !e;
   // A halt that silently fails is worse than no button: the operator believes the system
   // is stopped. Always re-read state after the attempt, and say so loudly if it was refused.
   const [actErr, setActErr] = useState('');
   const toggle = () => {
     setActErr('');
-    actA('/api/security/kill-switch', { engage: !halted, scope: 'global', reason: 'hud' },
+    actA('/api/security/kill-switch', { engage: !globalHalted, scope: 'global', reason: 'hud' },
       reload,
       (err) => { setActErr(String(err?.message || err || 'request failed')); reload(); });
   };
-  return <Card title="KILL-SWITCH" live={asLive(d)} onReload={reload}>
+  return <Card title="KILL-SWITCH" live={asLive(known ? d : null)} onReload={reload}>
     <State e={e} loading={loading} n={known ? 1 : 0} />
     <Row><span style={{ color: !known ? 'var(--amber)' : halted ? 'var(--red)' : 'var(--green)' }}>
       {!known ? 'UNKNOWN · could not read kill-switch state'
-        : halted ? 'ENGAGED · all agents halted' : 'ARMED · operational'}</span>
-      {/* The button stays live even when the state is unknown: with `halted` false
-          it sends engage=true, and halting on an unknown state is the safe
-          direction. Only the claim about current state is withheld. H168: halting is
-          one click (a stop never waits for a second one); disengaging lets every agent
-          act again, so it takes the typed phrase. */}
+        : globalHalted ? 'ENGAGED · all agents halted'
+        : halted ? `ENGAGED · ${d.halted_count} scoped halt${d.halted_count === 1 ? '' : 's'} active`
+        : 'ARMED · operational'}</span>
+      {/* Unknown state still offers global engage=true, the safe direction. H168:
+          halting is one click; global disengage keeps its typed confirmation.
+          Scoped halts remain independently active after global disengage. */}
       <span style={{ marginLeft: 'auto' }}>
-        {halted
+        {globalHalted
           ? <ConfirmAction tier={RISK_TIER.EXTERNAL} label="disengage" phrase="DISENGAGE"
-              prompt="type DISENGAGE to let every agent act again:" onConfirm={toggle} />
+              prompt="type DISENGAGE to release the global halt; scoped halts may remain:" onConfirm={toggle} />
           : <ConfirmAction tier={RISK_TIER.READ_ONLY} label="HALT ALL" onConfirm={toggle} />}
       </span></Row>
     {actErr && <Row><span role="alert" style={{ ...mono, color: 'var(--red)' }}>
-      {halted ? 'DISENGAGE' : 'HALT'} REFUSED · {actErr} · the switch did NOT change state
+      {globalHalted ? 'DISENGAGE' : 'HALT'} REFUSED · {actErr} · the switch did NOT change state
     </span></Row>}
   </Card>;
 }
@@ -1204,8 +1203,11 @@ export function SelfImprovementPanel() {
    they share a mechanism they do not. */
 const reviewKey = (kind, id) => `${kind}:${id}`;
 
-function PendingSkillDetail({ name }) {
+function PendingSkillDetail({ name, onReviewed }) {
   const { d, e, loading } = useApi(`/api/skills/pending/${encodeURIComponent(name)}`, true, true);
+  React.useEffect(() => {
+    if (!e && !loading && typeof d?.fingerprint === 'string') onReviewed(name, d.fingerprint);
+  }, [d, e, loading, name, onReviewed]);
   const files = arr(d, 'files');
   const warnings = arr(d, 'warnings');
   return (
@@ -1242,8 +1244,11 @@ export function PendingSkillsPanel() {
   const batches = arr(bats.d, 'batches');
   const [open, setOpen] = useState('');
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  const [reviewed, setReviewed] = useState<Record<string, string>>({});
   const [note, setNote] = useState(null);
-  const reloadAll = () => { reload(); props.reload(); bats.reload(); };
+  const reloadAll = () => { setReviewed({}); reload(); props.reload(); bats.reload(); };
+  const recordReview = React.useCallback((name: string, fingerprint: string) =>
+    setReviewed((prev) => prev[name] === fingerprint ? prev : { ...prev, [name]: fingerprint }), []);
   const toggle = (key) => setPicked((prev) => {
     const next = new Set<string>(prev);
     if (next.has(key)) next.delete(key); else next.add(key);
@@ -1255,7 +1260,14 @@ export function PendingSkillsPanel() {
     .catch((err) => { failed(err); return false; });
   const bulk = (approved) => {
     const of = (kind) => [...picked].filter((k) => k.startsWith(kind + ':')).map((k) => k.slice(kind.length + 1));
-    return apiPost<any>('/api/skills/review/bulk', { approved, skills: of('skill'), proposals: of('proposal'), batches: of('batch') },
+    const skills = of('skill');
+    if (approved && skills.some((name) => !reviewed[name])) {
+      setNote({ bad: true, text: 'review every selected skill before approving it' });
+      return Promise.resolve(false);
+    }
+    return apiPost<any>('/api/skills/review/bulk', { approved, skills,
+      skill_fingerprints: approved ? Object.fromEntries(skills.map((name) => [name, reviewed[name]])) : {},
+      proposals: of('proposal'), batches: of('batch') },
       { admin: true })
       .then((r) => {
         const bad = arr(r, 'results').filter((x) => !x.ok);
@@ -1276,7 +1288,9 @@ export function PendingSkillsPanel() {
       {pending.slice(0, 10).map((s, i) => (
         <React.Fragment key={i}>
           <Row>
-            <Pick k={reviewKey('skill', s.name)} label={s.name} />
+            <input type="checkbox" aria-label={`select ${s.name}`}
+              checked={picked.has(reviewKey('skill', s.name))}
+              onChange={() => toggle(reviewKey('skill', s.name))} />
             <span style={{ ...mono, color: 'var(--accent-light)' }}>{s.name}</span>
             <span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{(s.description || '').slice(0, 40)}</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
@@ -1287,14 +1301,16 @@ export function PendingSkillsPanel() {
               <button
                 className="tool-btn"
                 title="approve — sign and activate this generated skill"
-                onClick={() => actA(`/api/skills/${encodeURIComponent(s.name)}/approve`, {}, reloadAll, failed)}
+                disabled={!reviewed[s.name]}
+                onClick={() => actA(`/api/skills/${encodeURIComponent(s.name)}/approve`,
+                  { expected_fingerprint: reviewed[s.name] }, reloadAll, failed)}
               >✓</button>
               <ConfirmAction tier={RISK_TIER.REVERSIBLE} label="✕" title="discard — reject this generated skill"
                 ariaLabel={`discard ${s.name}`} armedLabel="discard" prompt="moves it out of the skills tree"
                 onConfirm={() => discard(s.name)} />
             </span>
           </Row>
-          {open === reviewKey('skill', s.name) && <PendingSkillDetail name={s.name} />}
+          {open === reviewKey('skill', s.name) && <PendingSkillDetail name={s.name} onReviewed={recordReview} />}
         </React.Fragment>
       ))}
       {proposals.slice(0, 10).map((p) => (
@@ -1864,7 +1880,7 @@ export function SystemMapPanel() {
    panels: the model arena leaderboard (read-only) + the answer-quality gate (read +
    admin set-threshold). Honesty: real ELO/scores; empty-state when no matches yet. */
 export function ArenaPanel() {
-  const { d, e, loading, reload } = useApi('/api/arena/leaderboard');  // open
+  const { d, e, loading, reload } = useApi('/api/arena/leaderboard');  // user: stored candidate labels
   const rows = arr(d, 'leaderboard');
   return (
     <Card title="MODEL ARENA" live={asLive(d)} sub={d ? `${rows.length} models` : null} onReload={reload}>
@@ -2125,15 +2141,7 @@ export function ReviewPanel() {
   </Card>;
 }
 function APMPanel() {
-  const { d, e, loading, reload } = useApi('/api/admin/apm');
-  return <Card title="APM" live={asLive(d)} onReload={reload}>
-    <State e={e} loading={loading} n={d ? 1 : 0} />
-    {d && <div style={{ ...mono, fontSize: 11 }}>
-      <Row><span>runs</span><span style={{ marginLeft: 'auto' }}>{d.runs ?? d.total_runs ?? '—'}</span></Row>
-      <Row><span>tokens</span><span style={{ marginLeft: 'auto' }}>{d.tokens ?? d.total_tokens ?? '—'}</span></Row>
-      <Row><span>cost $</span><span style={{ marginLeft: 'auto' }}>{d.cost ?? d.total_cost ?? '—'}</span></Row>
-    </div>}
-  </Card>;
+  return <UsagePanel />;
 }
 
 /* ── Autonomy ──────────────────────────────────────────── */
@@ -2894,6 +2902,7 @@ function settingsField(it, val, on, suggest?: string[]) {
 }
 export function SettingsPanel() {
   const { d, e, loading, reload } = useApi('/api/admin/settings');
+  const [billingView, setBillingView] = useState(false);
   // H165 — a setting FLAGS.md documents links to its section: its cost, at the toggle.
   const costs = sectionIndex(useApi('/api/help/docs').d, 'flags');
   // H613 — the voices this hub can speak with (Piper models, the command provider).
@@ -2967,7 +2976,12 @@ export function SettingsPanel() {
     }
     setSaved(n); setRefused(why); setSent(queued); setDirty(kept); setRetentionTick((t) => t + 1); reload();
   };
-  return <Card title="SETTINGS DB" live={asLive(d)} sub={Object.keys(cats).length + ' cat'} onReload={reload}>
+  return <>
+    <div role="tablist" aria-label="Settings sections" style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+      <button type="button" role="tab" aria-selected={!billingView} className="tool-btn" onClick={() => setBillingView(false)}>Settings</button>
+      <button type="button" role="tab" aria-selected={billingView} className="tool-btn" onClick={() => setBillingView(true)}>Billing</button>
+    </div>
+    {billingView ? <UsagePanel /> : <Card title="SETTINGS DB" live={asLive(d)} sub={Object.keys(cats).length + ' cat'} onReload={reload}>
     <State e={e} loading={loading} n={Object.keys(cats).length} />
     <SettingsSearch value={query} onChange={setQuery} matches={nMatches} />
     {query.trim() && nMatches === 0 && <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>no setting matches “{query.trim()}”</div>}
@@ -3020,7 +3034,8 @@ export function SettingsPanel() {
     <SettingsTransfer onDone={(cats) => { dropDirty(cats); reload(); }} />
     <ResetAll onDone={() => afterReset(Object.keys(cats))} />
     <UndoReset refresh={resetTick} onDone={(cats) => { dropDirty(cats); reload(); }} />
-  </Card>;
+  </Card>}
+  </>;
 }
 function PromptsPanel() {
   const [agent, setAgent] = useState('jarvis');
@@ -5436,6 +5451,7 @@ export function CommandCenterPanel() {
       sub={d ? `${install.ready ? 'ready' : 'starting'} · ${modelSource}${wizard.complete ? ' · onboarded ✓' : ''}` : null}
       onReload={reload}>
       <State e={e} loading={loading} n={actions.length} />
+      <Row><span>Usage</span><a className="console-link" style={{ marginLeft: 'auto' }} href={routeHref('/v2/console/usage')}>view usage and estimated cost →</a></Row>
       <Row>
         <span style={mono}>install</span>
         <span style={{ marginLeft: 'auto', color: install.ready ? 'var(--green)' : 'var(--amber)' }}>
@@ -5536,6 +5552,7 @@ export function FirstRunGate({ onClose }) {
 
 const PANEL_COMPONENTS = {
   CommandCenterPanel,
+  UsagePanel,
   TodayReceiptPanel,
   ModelSetupPanel,
   DocsPanel,

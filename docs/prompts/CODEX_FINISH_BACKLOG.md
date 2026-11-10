@@ -1,5 +1,18 @@
 # NERVA — CODEX: finish the backlog (one task = one slice = one PR, repeat until empty)
 
+> **Inactive historical launch prompt (2026-11-04): do not paste §A into a new
+> task.** The current campaign's objective is all 697 frozen Hermes contracts,
+> governed by [the canonical local workflow](../hermes/autonomous-development-objective.md)
+> and [cumulative handoff](../hermes/CAMPAIGN_HANDOFF.md). Confirm the actual
+> checkout/SHA, integrate current work first, and use bounded Hermes/BACKLOG
+> queries to select the next complete contract. Interrupt only for a concrete
+> blocking security, correctness or build defect. No stage, commit, push,
+> merge, deploy, PR update, paid activation or schedule reactivation. The
+> dated Lean budget/refill/PR instructions below are preserved as history only.
+
+<details>
+<summary>2026-10-27 Codex backlog procedure — inactive archive</summary>
+
 > The Codex twin of [`LEAN_DRIVER.md`](LEAN_DRIVER.md). Paste §A into a Codex task (cloud or
 > CLI) as many times as it takes; each task delivers one slice and stops. The pick list is
 > [`LEAN_QUEUE.md`](LEAN_QUEUE.md); when its `ai` rows run out, a task refills it from the
@@ -156,3 +169,5 @@ The owner lane: hardware (`DRA-62` benchmarks, `GAP-4` head-to-head), live accou
 `NWS-21`, and `NWS-8`/`NWS-9` until D1–D3 are answered. Each ends as a packet in
 `docs/OWNER_TASKS.md`; the queue's owner rows list them. "Backlog finished" in A.4 means the AI
 lane is empty and every remaining row waits only on you.
+
+</details>
