@@ -90,6 +90,11 @@ def _openrouter_instruction_messages(model: str, messages: list[dict]) -> list[d
     return messages
 
 
+def _adopted_profile(profile) -> bool:
+    from .hermes_profiles import is_adopted_profile
+    return is_adopted_profile(profile)
+
+
 class OpenRouterBackend(LLMBackend):
     """OpenAI-compatible OpenRouter backend (bearer-auth)."""
 
@@ -134,6 +139,15 @@ class OpenRouterBackend(LLMBackend):
             from .providers.native_transport import native_admitted_client
             self.client = native_admitted_client(self.profile, api_key,
                                                  model or self.profile.fallback_models[0])
+        elif _adopted_profile(self.profile):
+            # Adopt lane: a provider run from a vendored Hermes profile dials only its
+            # profile's own host, through the same ledgered client (hermes_profiles).
+            from .hermes_profiles import adopted_client, check_adopted_key, require_adopted_client
+            if base_url.rstrip("/") != str(self.profile.default_base_url or "").rstrip("/"):
+                raise ValueError("adopted provider destination differs from its profile")
+            check_adopted_key(self.profile, api_key)
+            self.client = (require_adopted_client(client, self.profile) if client is not None
+                           else adopted_client(self.profile))
         else:
             self.client = client or llm_async_client(self.profile.id, base_url=base_url,
                                                      timeout=120.0)

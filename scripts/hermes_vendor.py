@@ -99,6 +99,32 @@ REWRITE_RULES: tuple[Rule, ...] = (
          r'^(?P<i>[ \t]*)client\.headers\["x-exa-integration"\] = "hermes-agent"(?P<rest>[ \t]*(?:#.*)?)$',
          r'\g<i>client.headers["x-exa-integration"] = "nerva"\g<rest>',
          "tell Exa the caller is Nerva, not Hermes Agent"),
+    # Slice 2 — model-provider profiles (plugins/model-providers/*) and their shared modules.
+    Rule("providers-base", r"^(?P<i>[ \t]*)from providers\.base import ",
+         r"\g<i>from agents.vendor.hermes.providers.base import ",
+         "the vendored ProviderProfile base"),
+    Rule("providers-registry", r"^(?P<i>[ \t]*)from providers import ",
+         r"\g<i>from agents.vendor.hermes_compat.providers import ",
+         "register_provider fills the compat registry; Nerva's bridge reads it"),
+    Rule("reasoning-effort", r"^(?P<i>[ \t]*)from agent\.reasoning_effort import ",
+         r"\g<i>from agents.vendor.hermes.agent.reasoning_effort import ",
+         "the vendored effort vocabulary (pure)"),
+    Rule("reasoning-effort-module", r"^(?P<i>[ \t]*)from agent import reasoning_effort\b",
+         r"\g<i>from agents.vendor.hermes.agent import reasoning_effort",
+         "the vendored effort vocabulary, imported as a module"),
+    Rule("account-usage", r"^(?P<i>[ \t]*)from agent\.account_usage import ",
+         r"\g<i>from agents.vendor.hermes_compat.account_usage import ",
+         "a type name only; Nerva keeps its own usage accounting"),
+    Rule("hermes-cli-leaf",
+         r"^(?P<i>[ \t]*)from hermes_cli\.(?:version_info|auth|urllib_security|chat_catalog) import ",
+         r"\g<i>from agents.vendor.hermes_compat.hermes_cli import ",
+         "user agent, credential pool, catalog fetch: Nerva-owned or refused"),
+    Rule("threading-locks", r"^(?P<i>[ \t]*)import threading(?P<rest>[ \t]*(?:#.*)?)$",
+         r"\g<i>from agents.vendor.hermes_compat import locks as threading\g<rest>",
+         "locks only; vendored code starts no thread"),
+    Rule("urllib-request", r"^(?P<i>[ \t]*)import urllib\.request(?P<rest>[ \t]*(?:#.*)?)$",
+         r"\g<i>from agents.vendor.hermes_compat import urllib_refused as urllib\g<rest>",
+         "a request object only; opening one is refused (catalog fetches are Nerva's)"),
 )
 
 # ── what a vendored file may contain (an allowlist, applied by pull, status and CI) ────
@@ -109,8 +135,8 @@ SAFE_STDLIB = frozenset({
     "__future__", "abc", "asyncio", "base64", "collections", "collections.abc", "contextlib",
     "copy", "dataclasses", "datetime", "decimal", "difflib", "enum", "fractions", "functools",
     "hashlib", "html", "itertools", "json", "logging", "math", "numbers", "operator", "re",
-    "statistics", "string", "textwrap", "time", "types", "typing", "unicodedata", "uuid",
-    "warnings", "weakref",
+    "statistics", "string", "textwrap", "time", "types", "typing", "unicodedata", "urllib.parse",
+    "uuid", "warnings", "weakref",
 })
 #: Compat modules a vendored file may import (``plugin_ctx`` is not one: a vendored file
 #: never registers itself).
@@ -118,6 +144,8 @@ COMPAT_PACKAGE = "agents.vendor.hermes_compat"
 COMPAT_MODULES = frozenset({
     "httpx", "os_env", "pm", "web_search_provider", "keyless_mcp", "interrupt", "web_tools",
     "sdk", "sdk.exa_py", "sdk.parallel",
+    # slice 2 (model-provider profiles)
+    "providers", "hermes_cli", "locks", "account_usage", "urllib_refused",
 })
 VENDOR_PACKAGE = "agents.vendor.hermes"
 #: Attribute / imported / string names that reach the network, a process or the import
@@ -128,14 +156,26 @@ DENIED_ATTRS = frozenset({
     "create_unix_server", "create_subprocess_exec", "create_subprocess_shell", "sock_connect",
     "sock_sendall", "sock_recv", "getaddrinfo", "subprocess", "import_module", "__import__",
     "__builtins__", "__globals__", "__subclasses__", "__code__", "__loader__", "__spec__",
-    "modules", "streams",
+    "modules", "streams", "urlopen", "urlretrieve", "build_opener", "install_opener",
+    "OpenerDirector",
+    # A module reached through another module's attribute (``logging.os.system``,
+    # ``x.socket``, ``urllib.request.http.client``): never needed by vendored code.
+    "os", "sys", "socket", "ssl", "http", "builtins", "importlib", "ctypes",
+    "system", "popen", "spawnv", "execv", "Thread", "start_new_thread",
 })
+#: Attribute names refused on a module name unless that name is bound to a compat module
+#: (``urllib`` is the compat ``urllib_refused`` after the ``urllib-request`` rule).
+DENIED_SUBMODULES = {"urllib": frozenset({"request", "error", "response", "robotparser"})}
 #: Builtins a vendored file may not call or read.
 DENIED_NAMES = frozenset({"__import__", "exec", "eval", "compile", "open", "__builtins__",
                           "globals", "breakpoint", "input"})
 #: Non-Python files a vendored tree may hold: data only.
 DATA_SUFFIXES = frozenset({".yaml", ".yml", ".json", ".md", ".txt"})
 _LOCAL_FILES = ("__init__.py", "NOTICE.md", "LICENSE", "MANIFEST.json")
+#: Nerva-written package markers for upstream packages whose own ``__init__.py`` is not
+#: adopted (``providers/__init__.py`` is Hermes's plugin loader, ``agent/__init__.py``
+#: preloads a JSON library). Each must be a docstring and nothing else (``status``).
+_LOCAL_PACKAGE_MARKERS = ("agent/__init__.py", "providers/__init__.py")
 
 
 def rewrite(text: str) -> tuple[str, list[str]]:
@@ -175,12 +215,21 @@ def unmapped_imports(text: str, path: str = "x.py") -> list[str]:
     except SyntaxError as exc:
         return [f"unparseable: {exc.msg}"]
     found: list[str] = []
+    compat_bound = {alias.asname or alias.name for node in ast.walk(tree)
+                    if isinstance(node, ast.ImportFrom) and node.level == 0
+                    and node.module == COMPAT_PACKAGE for alias in node.names}
     for node in ast.walk(tree):
         line = getattr(node, "lineno", 0)
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if not _module_allowed(alias.name):
                     found.append(f"line {line}: import {alias.name}")
+                elif ("." in alias.name and alias.asname is None
+                        and not _module_allowed(alias.name.split(".", 1)[0])):
+                    # ``import urllib.parse`` binds ``urllib``, whose ``.request`` is then one
+                    # attribute away: only ``from urllib.parse import …`` is allowed.
+                    found.append(f"line {line}: import {alias.name} (binds {alias.name.split('.', 1)[0]}; "
+                                 f"use from {alias.name} import …)")
                 elif alias.name.startswith(COMPAT_PACKAGE) and "os_env" in alias.name:
                     found.append(f"line {line}: import {alias.name} (os only as `os_env as os`)")
         elif isinstance(node, ast.ImportFrom):
@@ -205,6 +254,10 @@ def unmapped_imports(text: str, path: str = "x.py") -> list[str]:
                     found.append(f"line {line}: from {module} import {alias.name}")
         elif isinstance(node, ast.Attribute) and node.attr in DENIED_ATTRS:
             found.append(f"line {line}: .{node.attr}")
+        elif (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
+                and node.attr in DENIED_SUBMODULES.get(node.value.id, frozenset())
+                and node.value.id not in compat_bound):
+            found.append(f"line {line}: {node.value.id}.{node.attr}")
         elif isinstance(node, ast.Name) and node.id in DENIED_NAMES:
             found.append(f"line {line}: {node.id}")
         elif isinstance(node, ast.Constant) and isinstance(node.value, str) \
@@ -247,6 +300,16 @@ def content_problems(data: bytes, path: str) -> list[str]:
         except UnicodeDecodeError:
             return ["not UTF-8 text"]
     return data_problems(data, path)
+
+
+def _docstring_only(data: bytes) -> bool:
+    """True when a ``.py`` file is a module docstring and nothing else."""
+    try:
+        body = ast.parse(data.decode("utf-8")).body
+    except (SyntaxError, UnicodeDecodeError):
+        return False
+    return all(isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+               and isinstance(node.value.value, str) for node in body) and len(body) <= 1
 
 
 def sha256(data: bytes) -> str:
@@ -369,7 +432,12 @@ def cmd_status(vendor_root: Path, upstream: Path | None, out) -> int:
                 problems += 1
                 continue
         out.write(f"ok      {entry['path']}\n")
-    local = set(manifest.get("local_files", _LOCAL_FILES))
+    local = set(manifest.get("local_files", _LOCAL_FILES)) | set(_LOCAL_PACKAGE_MARKERS)
+    for rel in sorted(r for r in local if r.endswith(".py")):
+        target = vendor_root / rel
+        if target.is_file() and not target.is_symlink() and not _docstring_only(target.read_bytes()):
+            out.write(f"UNSAFE  {rel}  (a Nerva-written package marker holds more than a docstring)\n")
+            problems += 1
     for path in sorted(vendor_root.rglob("*")):
         if "__pycache__" in path.parts:
             continue

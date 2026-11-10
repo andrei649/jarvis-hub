@@ -414,7 +414,7 @@ def test_every_vendored_file_is_inside_the_allowlist():
 
 #: What the (Nerva-written) compat layer may import: no network or process library.
 _COMPAT_ALLOWED = hv.SAFE_STDLIB | {"threading", "contextvars", "concurrent.futures", "importlib",
-                                    "sys", "agents.core.env_config"}
+                                    "importlib.util", "pathlib", "sys", "agents.core.env_config"}
 
 
 def test_no_compat_module_imports_a_network_library():
@@ -457,6 +457,12 @@ ESCAPES = {
     "open": "def f():\n    return open('/etc/passwd').read()\n",
     "plugin_ctx": "from agents.vendor.hermes_compat import plugin_ctx\n",
     "agents.core": "from agents.core.http_client import PluginHTTPClient\n",
+    "import urllib.parse binds urllib": "import urllib.parse\nurllib.request.Request('https://x')\n",
+    "urllib.request.http.client": "from urllib.parse import quote\nimport collections\n"
+                                  "def f(urllib):\n    return urllib.request.http.client\n",
+    "logging.os.system": "import logging\ndef f():\n    return logging.os.system('id')\n",
+    "threading.Thread": "import threading\nthreading.Thread(target=print).start()\n",
+    "x.socket": "import json\ndef f():\n    return json.socket\n",
 }
 
 
@@ -514,7 +520,12 @@ def test_the_rewrite_is_idempotent():
               "    from tools.interrupt import i\n    import tools.web_tools as _wt\n"
               "    import pm\n        from exa_py import Exa  # lazy\n"
               "        import parallel  # lazy\n"
-              '        client.headers["x-exa-integration"] = "hermes-agent"\n')
+              '        client.headers["x-exa-integration"] = "hermes-agent"\n'
+              "from providers.base import ProviderProfile\nfrom providers import register_provider\n"
+              "from agent.reasoning_effort import clamp_effort\nfrom agent import reasoning_effort as re_\n"
+              "    from agent.account_usage import AccountUsageSnapshot\n"
+              "        from hermes_cli.version_info import hermes_user_agent\n"
+              "import threading\n        import urllib.request\n")
     once, applied = hv.rewrite(sample)
     assert len(applied) == len(hv.REWRITE_RULES)
     assert hv.rewrite(once) == (once, [])
@@ -744,3 +755,10 @@ async def test_a_credential_request_never_follows_redirects():
         await asyncio.to_thread(compat_httpx.get, "https://api.exa.ai/",
                                 headers={"X-API-Key": "k"}, follow_redirects=True)
     assert call.requests == 0 and call.failure == "redirect_with_credentials"
+
+
+def test_nerva_package_markers_hold_only_a_docstring():
+    for rel in hv._LOCAL_PACKAGE_MARKERS:
+        assert hv._docstring_only((VENDOR / rel).read_bytes()), rel
+    assert not hv._docstring_only(b'"""doc"""\nimport httpx\n')
+    assert not hv._docstring_only(b'"""doc"""\nfrom agents.core import http_client\n')

@@ -421,6 +421,21 @@ class HybridRouter(LLMRouter):
                     self._cloud_available = True
             except ValueError:
                 logger.error("DeepInfra main route refused: invalid configured authority")
+        from .hermes_provider_table import ADOPTED_MODEL_PROVIDER_IDS
+        if provider_id in ADOPTED_MODEL_PROVIDER_IDS and self._compatible_model:
+            # Adopt lane, slice 2: a provider Nerva runs from a vendored Hermes profile
+            # (hermes_profiles). Off until one of its own keys is set; pinned to its host.
+            from .hermes_profiles import build_backend
+            try:
+                backend = build_backend(provider_id, settings=self._admin_setting)
+            except Exception as exc:  # noqa: BLE001 — a refused route stays off, never another
+                from .hermes_profiles import AdoptedKeyRefused
+                logger.error("Adopted provider %s refused: %s", provider_id,
+                             exc if isinstance(exc, AdoptedKeyRefused) else type(exc).__name__)
+                backend = None
+            if backend is not None:
+                self._compatible_backend = backend
+                self._cloud_available = True
         if provider_id in {"openrouter", "openai-compatible"} and self._compatible_model:
             from dataclasses import replace
 

@@ -97,6 +97,33 @@
 - All three count as paid, Brave included, because a Brave key may be on a paid plan. With
   `NERVA_WEB_PROVIDER_TIER=free` none of them answers.
 
+**Twenty-four more cloud model providers (#1347)**
+- The cloud model slot can now use DeepSeek, Z.AI (GLM), Kimi (Moonshot, global and China),
+  Fireworks AI, Hugging Face, NVIDIA NIM, Ollama Cloud, Nebius Token Factory, Upstage Solar,
+  Novita AI, GMI Cloud, Vercel AI Gateway, Kilo Code, CommandCode, Arcee AI, StepFun, Xiaomi
+  MiMo, and Alibaba Cloud (DashScope global and China, Token Plan global and China, Coding Plan
+  global and China).
+- To turn one on, put its key in `.env` (for example `DEEPSEEK_API_KEY`, `ZAI_API_KEY`,
+  `KIMI_API_KEY`, `FIREWORKS_API_KEY`, `HF_TOKEN`; the full list is in `.env.example`), then
+  choose it in the HUD under Settings → LLM → "Compatible cloud provider" and set the model, or
+  run `nerva config set llm.compatible_provider deepseek` and
+  `nerva config set llm.compatible_model deepseek-v4-pro`. Each stays off until its key is set.
+- The per-provider settings come from Hermes Agent's own provider files, run as-is: the address,
+  the model names, and how each one asks for more or less thinking. The request itself is
+  Nerva's: it goes only to that provider's address, local-network addresses are refused, and it
+  shows in the Network Monitor. With "Cloud reasoning effort" set and reasoning turned on for the
+  compatible provider, Nerva picks the nearest level the model accepts, never a stronger one.
+  A provider whose model cannot turn thinking off says so instead of thinking anyway.
+- How these providers handle your data has not been checked yet, and Nerva has no price for most
+  of their models, so choosing one asks you to acknowledge both, the way a custom endpoint does.
+- For Fireworks, Vercel AI Gateway and Ollama Cloud, Nerva only sends a thinking level for a model
+  you listed in "Compatible effort declarations", since those services cannot say which models
+  reason. Models that only have thinking on or off get it off for "minimal" and "low".
+- A Kimi Code key (it starts with `sk-kimi-`) is refused with a message: it works only on Kimi
+  Code's own address, which this route does not use. Use a Moonshot platform key.
+- "Check keys" only checks the provider you picked from this list, so a key shared between two
+  of them (Alibaba's `DASHSCOPE_API_KEY`) or used elsewhere (`HF_TOKEN`) is never sent to the
+  other one. A provider package you signed yourself with the same name keeps working as before.
 **The optional Hermes runtime moves to a newer Hermes, and future updates are one command**
 - If you installed the optional Hermes runtime (Admin → Hermes Runtime), Nerva now expects the
   Hermes version of 10 November instead of the one from October. Run

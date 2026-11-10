@@ -254,7 +254,11 @@ def test_probe_all_asks_every_cloud_provider_with_a_key(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", KEY)
     hub = _Hub()
     results = asyncio.run(provider_probe.probe_all(client_factory=hub.factory))
-    assert [r["provider"] for r in results] == [p.id for p in provider_probe.cloud_profiles()]
+    # An adopted (Hermes-profile) provider is probed only when selected: its key names are
+    # shared across hosts (tests/test_hermes_model_providers.py).
+    from agents.core.llm.hermes_profiles import is_adopted_profile
+    assert [r["provider"] for r in results] == [
+        p.id for p in provider_probe.cloud_profiles() if not is_adopted_profile(p)]
     assert "ollama" not in {r["provider"] for r in results}
     by = {r["provider"]: r["verdict"] for r in results}
     assert by["gemini"] == "ok" and by["anthropic"] == "not_configured"
