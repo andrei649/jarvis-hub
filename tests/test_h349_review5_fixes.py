@@ -22,6 +22,8 @@ import json
 import shutil
 import sys
 import zipfile
+
+import pytest
 from pathlib import Path
 
 repo_root = Path(__file__).resolve().parent.parent
@@ -232,3 +234,47 @@ def test_the_shelf_read_from_the_file_has_the_same_cap_as_the_shelf_written(tmp_
     SkillUsageStore(path)
     kept = json.loads(path.read_text(encoding="utf-8")).get("shelved", {}).get("mine", [])
     assert len(kept) == SHELF_PER_NAME
+
+
+# ── sixth review ─────────────────────────────────────────────────────────────────────
+
+def test_removing_a_duplicate_does_not_cost_the_owner_the_pin_of_the_skill_still_installed(site):  # noqa: F811
+    """Three folders under one name: the owner's pinned skill, a hand copy of it, and a
+    package installed beside the published source. Uninstalling the COPY leaves an id-less
+    folder of that name installed, so the id-less row — the owner's pin and uses — stays."""
+    source = site.put("a-notes", _md("mine", "OWNER bytes"))
+    site.put("a-notes-old", _md("mine", "OWNER bytes, an old copy"))
+    site.boot()
+    site.usage.pin("mine")
+    site.orch.marketplace.publish_skill("a-notes")
+    assert _install(site, "mine", "PACKAGE other bytes").status_code == 200
+    gone = site.client.post("/api/skills/marketplace/uninstall", json={"name": "a-notes-old"}, headers=ADMIN)
+    assert gone.status_code == 200 and source.exists()
+    shelved = json.loads(site.sidecar.read_text(encoding="utf-8")).get("shelved", {}).get("mine") or []
+    assert [row.get("pinned") for row in shelved] == [True]            # still there, behind the package
+    site.client.post("/api/skills/marketplace/uninstall", json={"name": "mine"}, headers=ADMIN)
+    site.loader.discover()
+    assert site.on_disk()["mine"]["pinned"] is True                    # and back with its folder
+
+
+def test_an_import_that_sits_at_a_shipped_location_still_holds_its_name(site):  # noqa: F811
+    """The exemption is for skills that ship with Nerva. An import the owner made under a
+    shipped folder name (the shipped folder itself gone) carries an install record: it is
+    the owner's install, pinnable, and holds its name against the other root."""
+    if site.layout != "two-root":
+        pytest.skip("the exemption only applies across roots")
+    from agents.core.skills.loader import _BUNDLED_SKILL_MANIFEST, name_holder
+
+    slug = sorted(_BUNDLED_SKILL_MANIFEST)[0]
+    shutil.rmtree(site.app / slug, ignore_errors=True)
+    imported = site.put(slug, _md("daily-notes", "OWNER imported this"), root=site.app)
+    (imported / "manifest.json").write_text(json.dumps({"imported": True, "source": "someone/repo",
+                                                        "install_id": "a" * 32}), encoding="utf-8")
+    assert loader_mod._shipped_location(imported)
+    target = site.own / "daily-notes"
+    assert name_holder("daily-notes", except_dir=target) == imported   # not exempt: it holds its name
+    site.boot()
+    assert _install(site, "daily-notes", "PACKAGE someone else's bytes").status_code == 422
+    out = run_batch([{"name": "daily-notes", "action": "create", "content": _md("daily-notes", "agent")}],
+                    site.loader, actor="agent:steve", create_root=site.own)
+    assert out["ok"] is False and out["reason"] == "skill_batch_exists"

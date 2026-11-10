@@ -457,6 +457,21 @@ def loader_name(folder, source_bytes: bytes | None = None) -> str:
         return ""
 
 
+def _id_less_holder(name: str) -> bool:
+    """Whether an installed folder with no install id (the owner's own, agent-made or a
+    legacy install) still declares ``name``, in any root. An unreadable root counts as yes:
+    a row is never forgotten on what could not be seen."""
+    for root in skill_roots():
+        try:
+            folders = [entry for entry in root.iterdir() if entry.is_dir()]
+        except OSError:
+            return True
+        for folder in folders:
+            if loader_name(folder) == name and not install_id_of(folder):
+                return True
+    return False
+
+
 def name_holder(name: str, *, except_dir=None, extra_roots=(), registry=None) -> Optional[Path]:
     """H349 — the folder of an installed skill that already holds ``name``, other than
     ``except_dir`` (the folder the new skill goes into); None when the name is free.
@@ -490,8 +505,12 @@ def name_holder(name: str, *, except_dir=None, extra_roots=(), registry=None) ->
 
     def _other(folder: Path) -> bool:
         try:
-            if elsewhere and _shipped_location(folder):
-                return False            # a bundled skill does not hold its name against another root
+            # A bundled skill does not hold its name against another root. An import or an
+            # install that sits at a shipped location (it carries an install record) is not
+            # bundled: it holds its name like any other skill (sixth review).
+            if (elsewhere and _shipped_location(folder) and not install_id_of(folder)
+                    and not (folder / "manifest.json").is_file()):
+                return False
             return skip is None or folder.resolve() != skip
         except OSError:
             return True
@@ -1029,9 +1048,11 @@ class SkillLoader:
         so that row is left when one of those is still installed. Says whether another
         holder remains (the caller then re-discovers, so it takes the slot)."""
         other = name_holder(name, registry=self.skills) if name else None
-        # Fifth review (m1): an id-less folder's row also goes when the holder that remains
-        # is an install with its own id — nothing id-less is left for that row to describe.
-        if other is None or install_id or install_id_of(other):
+        # An id-less folder's row also goes when nothing id-less is left for it to describe
+        # (fifth review, m1) — decided over EVERY remaining folder of the name, not the first
+        # holder: another id-less folder may sit behind an install with an id, and forgetting
+        # on the first holder alone cost the owner a pin (sixth review).
+        if other is None or install_id or not _id_less_holder(name):
             self.forget_usage(name, install_id if other is not None else None)
         return other is not None
 
