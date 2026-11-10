@@ -167,7 +167,8 @@ def _audit(orch: Any, action: str, why: str) -> None:
 # ── the watcher ──────────────────────────────────────────────────────────────────────
 
 
-def _session_busy(orch: Any, session_id: str, route: dict | None = None) -> bool:
+def _session_busy(orch: Any, session_id: str, route: dict | None = None, *,
+                  include_session: bool = True) -> bool:
     """A turn holds this conversation: its session, or (for a chat channel) the chat's
     route, whose lease a channel turn takes before it picks the live session."""
     rows = getattr(orch, "turn_holders", None)
@@ -175,7 +176,7 @@ def _session_busy(orch: Any, session_id: str, route: dict | None = None) -> bool
         holders = rows() if callable(rows) else []
     except Exception:  # noqa: BLE001 — cannot tell: treat as busy (leave the tick due)
         return True
-    keys = {session_id}
+    keys = {session_id} if include_session else set()
     base = _route_base(route)
     if base:
         keys.add(base)
@@ -332,8 +333,11 @@ async def _notify(orch: Any, session_id: str, message: str, route: dict | None =
     await _deliver(orch, route or {}, message)
 
 
-async def _pause(orch: Any, session_id: str, manager: Any, reason: str) -> None:
-    route = dict(getattr(manager.state, "route", {}) or {})
+async def _pause(orch: Any, session_id: str, manager: Any, reason: str, *, to_chat: bool = True) -> None:
+    """Pause with the reason: noted in the session (the HUD and /recap show it), audited, and
+    sent to the chat unless *to_chat* is False — a chat whose owner is no longer confirmed
+    is told nothing."""
+    route = dict(getattr(manager.state, "route", {}) or {}) if to_chat else {}
     state = await asyncio.to_thread(manager.pause, reason)
     if state is not None:
         _audit(orch, "loop.paused", f"session {session_id}: {reason}")
@@ -342,7 +346,24 @@ async def _pause(orch: Any, session_id: str, manager: Any, reason: str) -> None:
 
 
 async def run_tick(orch: Any, session_id: str, *, now: float | None = None) -> dict:
-    """One watcher pass for one session's loop. Returns what happened (for tests and logs)."""
+    """One watcher pass for one session's loop. Returns what happened (for tests and logs).
+
+    The whole tick — the wakeup turn, the push to the chat, the --until judge and the
+    bookkeeping — holds the session's turn lease, so a conversation change (/undo, /new,
+    /reset, a rollover) waits for it or skips the session, and never moves a loop whose
+    wakeup is still in flight."""
+    if _session_busy(orch, session_id, None):
+        return {"ran": False, "why": "busy"}
+    lease = getattr(orch, "turn_lease", None)
+    if not callable(lease):
+        return await _run_tick_held(orch, session_id, now=now)
+    async with lease(session_id) as held:
+        if not held:
+            return {"ran": False, "why": "busy"}
+        return await _run_tick_held(orch, session_id, now=now)
+
+
+async def _run_tick_held(orch: Any, session_id: str, *, now: float | None = None) -> dict:
     from agents.core import estop
     from agents.vendor.hermes_compat import goals as compat_goals
 
@@ -357,7 +378,7 @@ async def run_tick(orch: Any, session_id: str, *, now: float | None = None) -> d
     route = dict(getattr(state, "route", {}) or {})
     if not route.get("channel"):
         return {"ran": False, "why": "no_route"}
-    if _session_busy(orch, session_id, route):
+    if _session_busy(orch, session_id, route, include_session=False):    # we hold the session
         return {"ran": False, "why": "busy"}
     compat_goals.set_goal_probe(_goal_probe(orch))
     if await asyncio.to_thread(loops.goal_blocks_loop_tick, session_id):
@@ -368,7 +389,7 @@ async def run_tick(orch: Any, session_id: str, *, now: float | None = None) -> d
         return {"ran": False, "why": "kernel", "reason": reason}
     principal, refused = _tick_principal(orch, route)
     if principal is None:
-        await _pause(orch, session_id, manager, refused)
+        await _pause(orch, session_id, manager, refused, to_chat=False)
         return {"ran": False, "why": "owner", "reason": refused}
     message = await asyncio.to_thread(manager.fire_tick)
     if not message:
@@ -390,16 +411,29 @@ async def run_tick(orch: Any, session_id: str, *, now: float | None = None) -> d
     finally:
         reset_turn_principal(token)
     reply = str(reply or "")
-    delivered = await _deliver(orch, route, reply)
+    from .orchestrator import is_failed_turn_reply
+
+    failed = is_failed_turn_reply(None, reply)
+    delivered = await _deliver(orch, route, reply) if not failed else False
+    _touch_route(orch, route)
     until = str(getattr(manager.state, "until", "") or "")
     # As Hermes: a loop whose prompt is a slash command is not judged on the command's
     # output (no LOOP_COMPLETE, no --until verdict, no digest); the caps still apply.
     command_loop = message.lstrip().startswith("/")
-    evaluated = "" if command_loop else reply
-    if until and not command_loop:
+    # A failed turn's text (a backend-failure reply) is not judged either.
+    evaluated = "" if command_loop or failed else reply
+    if until and evaluated:
         verdict, why = await _judge(orch, until, evaluated)
     else:
         verdict, why = "continue", ""
+    # Re-read the row before completing: if the loop was stopped or moved meanwhile, this
+    # tick's state is not written back over it.
+    fresh = await asyncio.to_thread(loops.load_loop, session_id)
+    if fresh is None or fresh.status != "active" or not fresh.awaiting_response:
+        return {"ran": True, "status": getattr(fresh, "status", None), "stopped": False,
+                "reason": "the loop changed during the wakeup; nothing written back",
+                "message": "", "delivered": delivered}
+    manager._state = fresh
     with compat_goals.judge_scope(until, evaluated, verdict, why):
         result = await asyncio.to_thread(manager.complete_tick, evaluated)
     if result.get("message"):
@@ -408,6 +442,23 @@ async def run_tick(orch: Any, session_id: str, *, now: float | None = None) -> d
         _audit(orch, f"loop.{result.get('status')}", f"session {session_id}: {result.get('reason')}")
     return {"ran": True, "status": result.get("status"), "stopped": bool(result.get("stopped")),
             "reason": result.get("reason"), "message": result.get("message", ""), "delivered": delivered}
+
+
+def _touch_route(orch: Any, route: dict) -> None:
+    """A wakeup is activity on its chat: the chat's route does not idle-roll under a loop
+    that is still talking in it. Only an existing, active route is touched."""
+    base = _route_base(route)
+    if not base:
+        return
+    try:
+        from .channels.session_lifecycle import lifecycle
+
+        service = lifecycle(orch)
+        state = service.store.state(base)
+        if state.active:
+            service.store.touch(base, service.now(), state.channel, state.kind)
+    except Exception:  # noqa: BLE001 — bookkeeping only
+        logger.debug("loop route activity not recorded", exc_info=True)
 
 
 def _release_tick(manager: Any) -> None:
@@ -480,10 +531,13 @@ async def pause_all(reason: str) -> int:
     return count
 
 
-def migrate_session(old_session: str, new_session: str) -> dict:
+def migrate_session(old_session: str, new_session: str, *, channel: str | None = None) -> dict:
     """A conversation moved to a new session id (/undo, /new, /reset, a chat's idle or daily
     rollover): its loop and its plan mode move with it, as Hermes's
-    ``migrate_loop_to_session`` carries a loop across a rotation. Never raises."""
+    ``migrate_loop_to_session`` carries a loop across a rotation. With *channel*, a loop
+    moves only when it was set from that channel (a chat's rollover never takes the HUD's
+    loop). A wakeup still in flight is never moved; its run_tick holds the session lease,
+    and a row moved anyway arrives with no wakeup pending. Never raises."""
     out = {"loop": False, "plan_mode": False}
     if not old_session or not new_session or old_session == new_session:
         return out
@@ -495,8 +549,16 @@ def migrate_session(old_session: str, new_session: str) -> dict:
         logger.warning("plan mode could not follow %s -> %s", old_session, new_session, exc_info=True)
     try:
         loops = _loops()
+        state = loops.load_loop(str(old_session))
+        if state is None or (channel is not None
+                             and str((state.route or {}).get("channel") or "") != str(channel)):
+            return out
         moved = loops.migrate_loop_to_session(str(old_session), str(new_session), reason="session change")
         if moved:
+            carried = loops.LoopManager(str(new_session))
+            if carried.state is not None and carried.state.awaiting_response:
+                carried.state.awaiting_response = False
+                carried._save()
             since = _budget_since(str(old_session))
             if since is not None:
                 _set_budget_since(str(new_session), since)

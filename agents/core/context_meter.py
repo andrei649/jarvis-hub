@@ -130,8 +130,9 @@ async def breakdown(orch: Any, session_id: str, *, agent: str = "jarvis") -> dic
         turns = await memory.get_history(session_id) if memory is not None else []
     except Exception as exc:  # noqa: BLE001 — e.g. UnverifiedRewind: the history is not readable
         from .memory.conversation import UnverifiedRewind
+        from .memory.manager import RewindRefused
 
-        if isinstance(exc, UnverifiedRewind):
+        if isinstance(exc, (UnverifiedRewind, RewindRefused)):
             raise MeterUnavailable("this conversation's history cannot be verified, so it is not measured") from exc
         raise
     turns = [t for t in (turns or []) if isinstance(t, dict)]

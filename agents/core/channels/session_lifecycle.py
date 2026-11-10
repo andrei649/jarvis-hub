@@ -173,11 +173,12 @@ class ChannelSessionLifecycle:
                     self.store.touch(base, now, source.channel, kind)
                     if not (shared and state.generation == 0):
                         self.orch._channel_sessions[base] = selected
-                    if reset and current and selected and current != selected:
+                    if (reset and current and selected and current != selected
+                            and current != self.orch._session_id_default):
                         from ..session_loops import migrate_session
 
                         # G2: the chat's loop and plan mode follow it to its new session.
-                        migrate_session(str(current), str(selected))
+                        migrate_session(str(current), str(selected), channel=source.channel)
                     if explicit:
                         return RESET_ACK
                     try:
@@ -338,7 +339,9 @@ class ChannelSessionLifecycle:
 
                     # G2: the next message opens the next generation; the loop and plan
                     # mode are waiting there for it.
-                    migrate_session(str(previous), generation_key(state.base, state.generation + 1))
+                    if previous != self.orch._session_id_default:
+                        migrate_session(str(previous), generation_key(state.base, state.generation + 1),
+                                        channel=state.channel)
                     self.orch._channel_sessions.pop(state.base, None)
                     rotated += 1
             finally:

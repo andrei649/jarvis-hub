@@ -72,12 +72,12 @@ def test_plan_mode_denies_writes_sends_and_exec_at_the_kernel(kind):
     assert decision.verdict is Verdict.DENY and decision.reason.startswith("plan mode")
 
 
-@pytest.mark.parametrize("kind", ["research", "search.web", "memory.read", "status.check", "list.files"])
-def test_plan_mode_lets_reads_through_to_the_ordinary_gates(kind):
+def test_plan_mode_lets_reads_through_to_the_ordinary_gates():
     _enter()
     with session_scope("s-plan"):
-        decision = _kernel()(Action(kind=kind))
-    assert decision.verdict is Verdict.GRANT
+        assert _kernel()(Action(kind="research")).verdict is Verdict.GRANT
+        egress = _kernel()(Action(kind="plugin.egress", payload={"method": "HEAD"}))
+    assert not egress.reason.startswith("plan mode")
 
 
 def test_a_payload_cannot_make_a_write_a_read_and_egress_reads_only_get():
@@ -713,8 +713,10 @@ def test_registered_kinds_are_reads_only_when_listed():
                  "admin.kill_switch", "media.present", "host.control", "terminal.exec"):
         assert not plan_mode.kind_is_read(kind), kind
     assert plan_mode.kind_is_read("research")
-    assert plan_mode.kind_is_read("memory.read") and not plan_mode.kind_is_read("memory.write")
-    assert not plan_mode.kind_is_read("search.and.send")
+    # Round 2 (N3): an unregistered kind is never a read, whatever verb its name starts with.
+    for kind in ("memory.read", "get.purge", "list.prune", "fetch.upload", "search.and.send",
+                 "status.check"):
+        assert not plan_mode.kind_is_read(kind), kind
     _enter()
     with session_scope("s-plan"):
         assert _kernel()(Action(kind="checkpoint.restore")).reason.startswith("plan mode")
@@ -816,3 +818,150 @@ async def test_a_failed_plan_turn_saves_nothing_and_a_same_second_name_gets_a_su
     for expected in (path, path.with_name("2026-11-10_120000-same-2.md")):
         plan_commands.begin_plan_turn("s-plan", str(path))
         assert await plan_commands.finish_plan_turn("s-plan", "# plan") == str(expected)
+
+
+# ── round 2: the tick and the conversation change, the refused owner, N2, N3, nits ──
+
+
+async def test_a_migration_during_a_wakeup_never_leaves_two_active_loops(_isolated):
+    """N1: a conversation change that lands while a wakeup is in flight moves the loop once;
+    the wakeup's bookkeeping does not resurrect the old row, and the moved row is not
+    left waiting for a reply."""
+    from agents.core.session_loops import _loops, migrate_session, run_tick
+
+    orch = _LoopOrch([], _isolated)
+    await _set(orch, "/loop 1m check")
+    _due()
+
+    async def handle_input(text, channel="voice", agent_override=None, session_id=None):
+        migrate_session("s-loop", "s-new")
+        return "done"
+
+    orch.handle_input = handle_input
+    await run_tick(orch, "s-loop")
+    active = [sid for sid, _ in _loops().list_active_loops()]
+    assert active == ["s-new"]
+    assert _loops().LoopManager("s-new").state.awaiting_response is False
+
+
+async def test_the_whole_wakeup_holds_the_session_lease(_isolated, monkeypatch):
+    """N1: the push to the chat and the judge run under the session's turn lease, so /undo,
+    /new, /reset and a rollover wait for the wakeup or skip the session."""
+    import asyncio
+    from contextlib import asynccontextmanager
+
+    from agents.core import session_loops
+
+    lock = asyncio.Lock()
+    seen = []
+
+    @asynccontextmanager
+    async def turn_lease(key=None):
+        if lock.locked() and key == "s-loop":      # re-entrant for the tick's own turn
+            yield True
+            return
+        async with lock:
+            yield True
+
+    orch = _LoopOrch(["report"], _isolated, turn_lease=turn_lease)
+
+    async def deliver(_orch, route, text):
+        seen.append(("deliver", lock.locked()))
+        return False
+
+    async def judge(_orch, until, reply):
+        seen.append(("judge", lock.locked()))
+        return "continue", ""
+
+    monkeypatch.setattr(session_loops, "_deliver", deliver)
+    monkeypatch.setattr(session_loops, "_judge", judge)
+    await _set(orch, "/loop 1m check --until it is done")
+    _due()
+    assert (await session_loops.run_tick(orch, "s-loop"))["ran"]
+    assert ("deliver", True) in seen and ("judge", True) in seen
+    assert not lock.locked()
+
+
+async def test_a_refused_owner_is_not_told_in_the_chat(_isolated):
+    """R2: the pause notice for an owner who is no longer confirmed is not pushed there."""
+    from agents.core.session_loops import run_tick
+
+    sent = []
+
+    async def send(channel, text, **kwargs):
+        sent.append((channel, str(text)))
+        return True
+
+    owners = {"111"}
+    orch = _LoopOrch(["x"], _isolated, channel_manager=SimpleNamespace(send=send),
+                     _channel_principal=_owner_judge(owners))
+    tg = Principal(channel="telegram", sender="111", admin=True, chat="111", scope="dm")
+    await orch.commands.dispatch("/loop 1m check", orch=orch, principal=tg)
+    owners.clear()
+    _due()
+    assert (await run_tick(orch, "s-loop"))["why"] == "owner"
+    assert sent == []
+    assert any("no longer confirmed" in str(args[2]) for args in orch.written)   # in the session
+
+
+async def test_a_chat_rollover_moves_only_that_chats_loop(_isolated):
+    """N2: with a channel, only a loop set from that channel moves."""
+    from agents.core.session_loops import _loops, migrate_session
+
+    orch = _LoopOrch([], _isolated)
+    await _set(orch, "/loop 5m check")                        # set from the web (HUD)
+    assert migrate_session("s-loop", "s-loop_g1", channel="telegram")["loop"] is False
+    assert _loops().LoopManager("s-loop").is_active()
+    assert migrate_session("s-loop", "s-loop_g1", channel="web")["loop"] is True
+
+
+async def test_the_meter_answers_a_refused_rewind_plainly():
+    from agents.core.context_meter import MeterUnavailable, breakdown
+    from agents.core.memory.manager import RewindRefused
+
+    orch = _meter_orch([])
+
+    class Broken:
+        async def get_history(self, *a, **k):
+            raise RewindRefused("refused")
+
+    orch.memory = Broken()
+    with pytest.raises(MeterUnavailable):
+        await breakdown(orch, "s-ctx")
+
+
+def test_the_btw_budget_never_exceeds_a_known_window():
+    from agents.core.llm import auxiliary_text
+
+    router = SimpleNamespace(local_backend=None, active_model="qwen2.5")
+    tiny = auxiliary_text.btw_fork_budget_chars(router, window=4_096)
+    assert tiny < auxiliary_text.BTW_SNAPSHOT_CHARS and tiny <= (4_096 - 400 - 1_024) * 3
+    assert auxiliary_text.btw_fork_budget_chars(router) >= auxiliary_text.BTW_SNAPSHOT_CHARS
+
+
+async def test_a_failed_wakeup_reply_is_neither_judged_nor_pushed(_isolated, monkeypatch):
+    from agents.core import session_loops
+    from agents.core.llm.base import is_backend_failure_reply
+
+    failure = "⚠️ I can't reach the local LM Studio model right now. Start it and retry."
+    assert is_backend_failure_reply(failure)
+    judged = []
+
+    async def judge(_orch, until, reply):
+        judged.append(reply)
+        return "done", "x"
+
+    monkeypatch.setattr(session_loops, "_judge", judge)
+    orch = _LoopOrch([failure + "\nLOOP_COMPLETE"], _isolated, _channel_principal=_owner_judge({"42"}))
+    sent = []
+
+    async def send(channel, text, **kwargs):
+        sent.append(text)
+        return True
+
+    orch.channel_manager = SimpleNamespace(send=send)
+    tg = Principal(channel="telegram", sender="42", admin=True, chat="42")
+    await orch.commands.dispatch("/loop 1m check --until done", orch=orch, principal=tg)
+    _due()
+    result = await session_loops.run_tick(orch, "s-loop")
+    assert result["status"] == "active" and judged == [] and sent == []

@@ -248,44 +248,20 @@ def current_session() -> str | None:
 #: (``checkpoint.restore`` starts with "check", and it restores files). ``plugin.egress``
 #: is judged by its method below.
 READ_KINDS = frozenset({"research"})
-_READ_VERBS = frozenset({"read", "list", "get", "search", "fetch", "summarize", "research",
-                         "analyze", "status", "lookup", "review", "monitor", "scan"})
-
-
-def _registered(kind: str) -> bool:
-    from agents.core.kernel.registry import ACTION_REGISTRY
-
-    return any(kind == key or (key.endswith(".*") and kind.startswith(key[:-1]))
-               for key in ACTION_REGISTRY)
-
-
 def kind_is_read(kind: str, payload: Any = None) -> bool:
     """Whether *kind* only reads, judged from the kind alone, never the payload's claims.
 
-    * ``plugin.egress`` is a read only for a GET or HEAD (the kernel's own egress hook sets
-      the method);
-    * a kind the Action Kernel registry knows is a read only when :data:`READ_KINDS`
-      lists it;
-    * any other kind is a read only when one of its dotted words is exactly a read verb
-      (``memory.read``, ``search.web``) and none of the others is a known effect verb.
-    """
+    Only :data:`READ_KINDS` and a ``plugin.egress`` GET or HEAD (the kernel's own egress
+    hook sets the method) are reads. Every other kind — registered or not — is not: a
+    name is never trusted to say what an action does (``checkpoint.restore`` starts with
+    "check", ``get.purge`` with "get")."""
     kind = str(kind or "").strip().lower()
     if not kind:
         return False
     if kind == _EGRESS_KIND:
         method = payload.get("method") if isinstance(payload, dict) else None
         return isinstance(method, str) and method.upper() in _READ_METHODS
-    if kind in READ_KINDS:
-        return True
-    if _registered(kind):
-        return False
-    from agents.core.autonomy.policy import _EXTERNAL, _MONEY_OR_IRREVERSIBLE, _REVERSIBLE
-
-    words = [w for w in re.split(r"[^a-z0-9]+", kind) if w]
-    effects = set(_EXTERNAL) | set(_MONEY_OR_IRREVERSIBLE) | set(_REVERSIBLE) | {"write", "exec", "run"}
-    if any(any(w == e or w.startswith(e) for e in effects) for w in words):
-        return False
-    return any(w in _READ_VERBS for w in words)
+    return kind in READ_KINDS
 
 
 def migrate(old_session: str, new_session: str, *, store: PlanModeStore | None = None) -> bool:

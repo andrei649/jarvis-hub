@@ -366,7 +366,10 @@ def btw_fork_budget_chars(router, *, window: int | None = None) -> int:
         model = ""
     window_tokens = window_for(model) if window is None else int(window)
     usable = max(0, window_tokens - BTW_MAX_TOKENS - 1_024)
-    return max(BTW_SNAPSHOT_CHARS, min(BTW_FORK_MAX_CHARS, usable * 3))
+    budget = min(BTW_FORK_MAX_CHARS, usable * 3)
+    # The 12,000-character floor only stands in for an unknown window; a window the
+    # backend reports is never exceeded.
+    return budget if window is not None else max(BTW_SNAPSHOT_CHARS, budget)
 
 
 async def run_side_fork(router, conversation: str, question: str, *, system: str,

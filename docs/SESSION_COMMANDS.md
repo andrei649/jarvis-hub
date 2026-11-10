@@ -39,9 +39,8 @@ every conversation is held in plan mode until you send `/plan off`.
   session, `todo` writes the list, `kanban_list` declares a reversible effect. Plan mode
   trusts what a tool declares, never its name;
 - every action the Action Kernel mediates while a turn of this conversation runs: only
-  `research`, a `plugin.egress` GET or HEAD, and unregistered kinds whose name is a read
-  verb (`memory.read`) pass. A registered kind is a read only when it is listed, so
-  `checkpoint.restore` is not one.
+  `research` and a `plugin.egress` GET or HEAD pass. Every other kind is refused, whatever
+  its name says (`checkpoint.restore` starts with "check" and restores files).
 
 **What it does not cover:**
 
@@ -93,9 +92,13 @@ the same second get `-2`, `-3` … at the end of the name.
 - **Whose authority:** a wakeup runs as you. On a chat channel such as Telegram, whether
   the chat is still yours is checked again before every wakeup, exactly as for a message
   you type (the owner ids, the pairing, a running adapter); if it is not, the loop pauses
-  and nothing is sent there. `/loop` is refused in a group.
+  and nothing is sent there, not even the pause notice (it is in the conversation and the
+  audit log). `/loop` is refused in a group.
 - The loop is saved with the conversation, so it continues after a restart, and it moves
-  with the conversation to a new session id (`/undo`, `/new`, `/reset`, a chat's rollover).
+  with the conversation to a new session id (`/undo`, `/new`, `/reset`, a chat's rollover;
+  a chat's rollover moves only a loop set from that chat). A wakeup holds the conversation
+  for its whole run, so a change waits for it, and a wakeup counts as activity in its chat,
+  so a chat a loop is still talking in does not roll over for being idle.
 - Wakeup answers appear in the conversation (the HUD chat, `/recap`). On Telegram, ntfy
   and other chat channels each answer is also sent to the chat the loop was set from.
   Slack, Discord and email answers stay on their reviewed reply path and are not sent by
