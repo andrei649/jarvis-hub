@@ -70,10 +70,17 @@
       the echo as the on-disk directory name.
 
    9. Hermes is allowlist-pinned to 84 slugs in agents/core/skills/hermes_pin_v1.json
-      (NousResearch/hermes-agent @ v2026.8.27, sha256 per file). NO ROUTE EXPOSES THAT
-      ALLOWLIST, so an import is guess-and-check for the operator. The slugs are backend
-      data and are NOT hardcoded into this client as if they had been fetched — the gap is
-      stated instead.
+      (NousResearch/hermes-agent @ v2026.8.27, sha256 per file). No route exposes THAT
+      allowlist, so a "hermes (pinned)" import is guess-and-check for the operator. The slugs
+      are backend data and are NOT hardcoded into this client as if they had been fetched.
+
+  9b. Adopt lane slice 3: GET /skills/imported also carries `hermes_catalog` — the vendored
+      Hermes catalog (agents/vendor/hermes/SKILLS_CATALOG.json, one row a skill, no file
+      bytes). Its rows are listed here as they arrived; an `installable` row is installed by
+      the same POST /skills/import with source "hermes-catalog" (same DEV_MODE gate, same
+      refusals), an `upstream_only` row carries code and is shown with its code files and no
+      install button, an `excluded` row with its reason. A response without the key (an older
+      hub) shows no catalog section at all — never an empty catalog.
 
   10. There is NO route that sets DEV_MODE, so this panel offers no enable/disable control
       for it. It states the condition and the server-side remedy the backend itself named,
@@ -154,7 +161,7 @@ export function SkillsImportPanel() {
   const [availFrom, setAvailFrom] = useState<{ status: number; kind: 'route' | 'guard' | 'none' } | null>(null);
 
   const [skill, setSkill] = useState('');
-  const [source, setSource] = useState('hermes');  // hermes | openclaw | github
+  const [source, setSource] = useState('hermes');  // hermes | hermes-catalog | openclaw | github
   const [repo, setRepo] = useState('');
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(null);          // {ok:boolean, text:string}
@@ -193,8 +200,12 @@ export function SkillsImportPanel() {
 
   const submit = () => {
     if (!canSubmit) return;
+    importOne(skill, sourceValue);
+  };
+
+  const importOne = (name: string, src: string) => {
     setBusy(true); setNote(null);
-    act(IMPORT_PATH, { skill, source: sourceValue },
+    act(IMPORT_PATH, { skill: name, source: src },
       (r: any) => {
         setBusy(false);
         setNote({ ok: true, text: `imported · skill=${r && r.skill != null ? r.skill : '—'} · source=${r && r.source != null ? r.source : '—'}` });
@@ -214,6 +225,16 @@ export function SkillsImportPanel() {
         }
       });
   };
+
+  /* The vendored Hermes catalog, only when the backend reported one (slice 3). */
+  const catalog: any = loaded && d && typeof d === 'object' && (d as any).hermes_catalog
+    && typeof (d as any).hermes_catalog === 'object' ? (d as any).hermes_catalog : null;
+  const [catKind, setCatKind] = useState('instruction');
+  const [catQ, setCatQ] = useState('');
+  const catRows: any[] = catalog ? arr(catalog, 'skills') : [];
+  const catShown = catRows.filter((r) => r && r.kind === catKind && (!catQ
+    || [r.slug, r.category, r.description].some((v) => String(v || '').toLowerCase().includes(catQ.toLowerCase()))));
+  const CAT_LIMIT = 40;
 
   const availTag = avail === 'enabled' ? null
     : avail === 'unknown' ? 'DEV_MODE unknown — press CHECK'
@@ -326,6 +347,7 @@ export function SkillsImportPanel() {
           style={inpS}
         >
           <option value="hermes">hermes (pinned)</option>
+          <option value="hermes-catalog">hermes catalog (vendored)</option>
           <option value="openclaw">openclaw</option>
           <option value="github">GitHub owner/repo</option>
         </select>
@@ -377,6 +399,13 @@ export function SkillsImportPanel() {
           can fill.
         </Note>
       )}
+      {source === 'hermes-catalog' && (
+        <Note>
+          the vendored Hermes catalog installs offline from the bytes shipped with this hub, checked against
+          their manifest, through the same import gates (name check, provenance). Only instruction skills
+          install; a skill that carries code is refused. The list is below.
+        </Note>
+      )}
       {note && ((note as any).ok
         ? <Good>{(note as any).text}</Good>
         : <Fail>{(note as any).text}</Fail>)}
@@ -393,6 +422,61 @@ export function SkillsImportPanel() {
           digest mismatch and a frontmatter identity mismatch. Which one fired is logged server-side and not sent,
           so it is not guessed here.
         </Note>
+      )}
+
+      {/* ── 4 · THE VENDORED HERMES CATALOG (slice 3) ─────────────────── */}
+      {catalog && (
+        <>
+          <H>HERMES CATALOG · vendored{catalog.commit ? ` @${String(catalog.commit).slice(0, 8)}` : ''}</H>
+          {catalog.available === false
+            ? <Fail>catalog unavailable · {String(catalog.error || 'not reported')}</Fail>
+            : (
+              <>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <select aria-label="catalog kind" value={catKind} onChange={(ev) => setCatKind(ev.target.value)} style={inpS}>
+                    <option value="instruction">installable ({Number((catalog.counts || {}).instruction) || 0})</option>
+                    <option value="upstream_only">carries code ({Number((catalog.counts || {}).upstream_only) || 0})</option>
+                    <option value="excluded">excluded ({Number((catalog.counts || {}).excluded) || 0})</option>
+                  </select>
+                  <input style={{ ...inpS, flex: 1, minWidth: 120 }} aria-label="filter catalog" placeholder="filter"
+                    value={catQ} onChange={(ev) => setCatQ(ev.target.value)} />
+                </div>
+                {catShown.slice(0, CAT_LIMIT).map((r: any) => (
+                  <Row key={`cat-${r.path || r.slug}`}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <span style={{ ...mono, color: 'var(--accent-light)' }}>{String(r.slug || '—')}</span>
+                        {r.category ? <Tag>{String(r.category)}</Tag> : null}
+                        {r.installed_commit ? <Tag c="var(--green)">installed @{String(r.installed_commit).slice(0, 8)}</Tag> : null}
+                        {arr(r, 'required_env').map((k) => <Tag key={`env-${k}`} c="var(--amber)">needs {String(k)}</Tag>)}
+                        {arr(r, 'injection_flags').length ? <Tag c="var(--red)">injection-like text</Tag> : null}
+                      </div>
+                      {r.description ? <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 2 }}>{String(r.description)}</div> : null}
+                      {r.kind === 'upstream_only' && arr(r, 'code_files').length
+                        ? <Note>code it carries: {arr(r, 'code_files').map(String).join(', ')}</Note> : null}
+                      {r.kind === 'excluded' && r.reason ? <Note>excluded: {String(r.reason)}</Note> : null}
+                      {arr(r, 'unmapped_keys').length
+                        ? <Note>kept in its SKILL.md, not read by Nerva: {arr(r, 'unmapped_keys').map(String).join(', ')}</Note> : null}
+                    </div>
+                    {r.installable === true && (
+                      <button className="tool-btn" disabled={avail !== 'enabled' || busy}
+                        aria-label={`install ${r.slug}`}
+                        onClick={() => importOne(String(r.slug), 'hermes-catalog')}>
+                        {r.installed_commit ? 'reinstall' : 'install'}
+                      </button>
+                    )}
+                  </Row>
+                ))}
+                {catShown.length > CAT_LIMIT && <Note>{catShown.length - CAT_LIMIT} more — narrow the filter</Note>}
+                {catShown.length === 0 && <Note>no catalog row matches</Note>}
+                <Note>
+                  installed skills are imports like any other: their text is read as data until you vouch for it, and a
+                  key they declare is offered to the code tool only after that. Install buttons follow the same
+                  availability check as the import above.
+                </Note>
+              </>
+            )}
+        </>
       )}
 
       <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 10, lineHeight: 1.5, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>

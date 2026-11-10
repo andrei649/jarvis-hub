@@ -307,3 +307,61 @@ describe('SkillsImportPanel — imported sidecars and the DEV_MODE-gated import'
     expect(btn('import').disabled).toBe(false);
   });
 });
+
+/* Adopt lane slice 3 — the vendored Hermes catalog carried by GET /skills/imported. */
+const CATALOG = {
+  available: true,
+  source: 'hermes-catalog',
+  repository: 'NousResearch/hermes-agent',
+  commit: '9c0560f8e6856bc14c11bfe6d666df06be14d2de',
+  counts: { instruction: 1, upstream_only: 1, excluded: 0 },
+  skills: [
+    { slug: 'agentmail', category: 'email', kind: 'instruction', installable: true,
+      description: 'Give the agent its own inbox', required_env: ['AGENTMAIL_API_KEY'],
+      unmapped_keys: ['metadata.hermes.homepage'], injection_flags: [], files: 6 },
+    { slug: 'comfyui', category: 'creative', kind: 'upstream_only', installable: false,
+      description: 'Drive ComfyUI', code_files: ['scripts/run.py'], required_env: [], files: 9 },
+  ],
+};
+
+describe('SkillsImportPanel — the vendored Hermes catalog', () => {
+  it('shows no catalog section when the backend reports none', async () => {
+    mockRoutes(() => null, { imported: [] });
+    render(<SkillsImportPanel />);
+    await waitFor(() => expect(screen.getByText(/no imported skills on disk yet/)).toBeTruthy());
+    expect(screen.queryByText(/HERMES CATALOG/)).toBeNull();
+  });
+
+  it('lists installable rows and installs one through POST /skills/import as hermes-catalog', async () => {
+    const fn = mockRoutes((u, method, body) => {
+      if (u === '/skills/import' && method === 'POST' && body && body.skill === '') {
+        return { status: 400, body: { error: 'skill name required' } };
+      }
+      if (u === '/skills/import' && method === 'POST') {
+        return { status: 200, body: { ok: true, source: 'hermes-catalog', skill: 'agentmail' } };
+      }
+      return null;
+    }, { imported: [], hermes_catalog: CATALOG });
+    render(<SkillsImportPanel />);
+    await waitFor(() => expect(screen.getByText('HERMES CATALOG · vendored @9c0560f8')).toBeTruthy());
+    expect(screen.getByText('agentmail')).toBeTruthy();
+    expect(screen.getByText('needs AGENTMAIL_API_KEY')).toBeTruthy();
+    expect(screen.getByText(/not read by Nerva: metadata.hermes.homepage/)).toBeTruthy();
+    // the install button follows the same availability check as the import
+    expect(btn('install agentmail').disabled).toBe(true);
+    await enableImport();
+    fireEvent.click(btn('install agentmail'));
+    await waitFor(() => expect(posts(fn).length).toBe(2));
+    expect(bodyOf(posts(fn)[1])).toEqual({ skill: 'agentmail', source: 'hermes-catalog' });
+  });
+
+  it('shows a skill that carries code with its code files and no install button', async () => {
+    mockRoutes(() => null, { imported: [], hermes_catalog: CATALOG });
+    render(<SkillsImportPanel />);
+    await waitFor(() => expect(screen.getByText(/HERMES CATALOG/)).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('catalog kind'), { target: { value: 'upstream_only' } });
+    expect(screen.getByText('comfyui')).toBeTruthy();
+    expect(screen.getByText(/code it carries: scripts\/run.py/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'install comfyui' })).toBeNull();
+  });
+});

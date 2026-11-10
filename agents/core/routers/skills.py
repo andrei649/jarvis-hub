@@ -23,6 +23,7 @@ from agents.core.routers._component import component_unavailable, require_compon
 from agents.core.web_helpers import error_json, logger
 from agents.core import app_state
 from agents.core.app_state import get_orch
+from agents.core.skills import hermes_catalog
 from agents.core.skills.marketplace import BrokerOnlyInstall
 from agents.core.skills.signing import SkillSourceSnapshotError
 from agents.core.skills.validate import SkillDocumentInvalid
@@ -742,7 +743,18 @@ async def skills_import(req: Request):
     skill_name = body.get("skill", "")
     if not skill_name:
         return JSONResponse({"error": "skill name required"}, status_code=400)
-    if source == "hermes":
+    if source == hermes_catalog.REQUEST_SOURCE:
+        # Adopt lane slice 3: a skill of the vendored Hermes catalog, offline, through the
+        # same _save_skill gates as the pinned import (no network call).
+        try:
+            ok, refused = await hermes_catalog.install(orch.skill_importer, str(skill_name))
+        except OSError:
+            logger.warning("Hermes catalog install could not write its files", exc_info=True)
+            return JSONResponse({"ok": False, "error": "the skill's files could not be written",
+                                 "reason": "write_failed"}, status_code=500)
+        if refused is not None:
+            return _catalog_refusal(skill_name, refused)
+    elif source == "hermes":
         ok = await orch.skill_importer.import_from_hermes(skill_name)
     elif source == "openclaw":
         ok = await orch.skill_importer.import_from_openclaw(skill_name)
@@ -780,7 +792,32 @@ async def skills_imported():
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    return {"imported": orch.skill_importer.list_imported()}
+    imported = orch.skill_importer.list_imported()
+    # Adopt lane slice 3: the vendored Hermes catalog the import above takes as
+    # source "hermes-catalog" (counts, one row a skill, what each needs; no file bytes).
+    return {"imported": imported, "hermes_catalog": hermes_catalog.listing(imported)}
+
+
+def _catalog_refusal(skill_name, refused) -> JSONResponse:
+    """Why the Hermes catalog did not hand a skill to the importer."""
+    if refused.reason == "not_found":
+        return JSONResponse({"ok": False, "error": f"Skill '{skill_name}' not found in the Hermes catalog",
+                             "reason": "not_found"}, status_code=404)
+    if refused.reason == "upstream_only":
+        return JSONResponse({"ok": False, "reason": "upstream_only", "code_files": list(refused.files),
+                             "error": f"the Hermes skill '{skill_name}' carries code, which the catalog does "
+                                      "not install; nothing was written. Code reaches Nerva only as a "
+                                      "marketplace package: an admin install whose code is scanned and is "
+                                      "not run in-process without a keyed signature or the owner's "
+                                      "approval"}, status_code=422)
+    if refused.reason == "excluded":
+        return JSONResponse({"ok": False, "reason": "excluded", "why": refused.detail,
+                             "error": f"the Hermes skill '{skill_name}' is not in the installable catalog "
+                                      f"({refused.detail}); nothing was written"}, status_code=422)
+    logger.warning("Hermes catalog unavailable: %s", refused.detail)
+    return JSONResponse({"ok": False, "reason": "catalog_unavailable",
+                         "error": "the vendored Hermes catalog does not match its manifest; nothing was "
+                                  "written (run scripts/hermes_vendor.py status)"}, status_code=503)
 
 
 # ── Agent Marketplace Endpoints (H5.8) ───────────────────────────

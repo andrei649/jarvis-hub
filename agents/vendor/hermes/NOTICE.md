@@ -10,3 +10,6 @@ to upstream except for the import rewrites the manifest records per file (for ex
 file at Nerva's compat layer (`agents/vendor/hermes_compat/`). The manifest also holds
 each file's upstream and vendored sha256. `scripts/hermes_vendor.py status` checks them;
 the procedure is in `docs/hermes/ADOPT_LANE.md`.
+
+The skill catalog under `skills/` and `optional-skills/` (slice 3) is copied byte-identical,
+with no rewrite; `SKILLS_CATALOG.json` (written by Nerva) indexes every upstream skill folder.

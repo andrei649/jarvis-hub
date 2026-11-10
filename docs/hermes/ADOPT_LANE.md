@@ -16,7 +16,8 @@ files (MIT, NousResearch/hermes-agent) as they are, instead of re-writing them. 
 | `agents/vendor/hermes/` | Vendored files at their upstream paths (`plugins/web/exa/provider.py` …), plus `LICENSE`, `NOTICE.md` (pinned commit) and `MANIFEST.json`. |
 | `agents/vendor/hermes/MANIFEST.json` | Pinned commit, the rewrite rules, and per file: upstream sha256, vendored sha256, the rules applied. |
 | `agents/vendor/hermes_compat/` | The shims vendored code imports. Nerva code, reviewed like any other. |
-| `scripts/hermes_vendor.py` | `status`, `diff`, `pull`. |
+| `agents/vendor/hermes/SKILLS_CATALOG.json` | Slice 3: every upstream skill folder, classified (installable, carries code, excluded). |
+| `scripts/hermes_vendor.py` | `status`, `diff`, `pull`, `catalog`. |
 | `tests/test_hermes_adopt_lane.py` | Behaviour, egress, structure and sync-script tests. |
 
 The first slice (pinned `9c0560f8`) adopts three search providers: **Exa**, **Brave Search
@@ -106,7 +107,8 @@ twice leaves it byte-identical. After a pull:
 - **Yes:** leaf modules whose Hermes imports are few and map onto an existing Nerva control:
   search and extract providers, leaf tools such as `todo` and `clarify` (through a future
   `tools.registry` shim onto the kernel-gated tool server), plugins whose `register(ctx)` uses
-  only `ctx` methods the compat layer offers, and SKILL.md skills (through the skills importer).
+  only `ctx` methods the compat layer offers, and SKILL.md skills (through the skills importer;
+  slice 3, instruction-only skills).
 - **No:** anything that needs a network client, a subprocess, the filesystem or a secret store
   that is not behind a compat shim mapped onto a Nerva control. Also no modules tangled with
   `hermes_state`, `hermes_cli.config`, the gateway or the agent loop (the Run lane covers them
@@ -286,3 +288,109 @@ network: it builds an inert request and the compat opener refuses it.
 - Kimi Code keys are refused rather than routed to `api.kimi.com/coding` (a second pinned id for
   that host would be the way to add it).
 - Tested against a fake transport only. No live call to any of these providers was made.
+
+## Skills (slice 3)
+
+Hermes ships its skills as folders with a `SKILL.md` under `skills/` and `optional-skills/`.
+Slice 3 (same pin, `9c0560f8`) makes that catalog browsable in Nerva and installable through
+Nerva's existing skill import, without a second skills system.
+
+### Design
+
+- **Vendored as data, indexed whole.** `scripts/hermes_vendor.py catalog --upstream <clone>`
+  reads every skill folder of the clone and writes `agents/vendor/hermes/SKILLS_CATALOG.json`
+  (one row a skill: kind, reason, description, category, tags, platforms, declared key names,
+  unmapped frontmatter keys, injection flags, and every file with its sha256). The
+  instruction-only skills are copied byte-identical to their upstream paths
+  (`agents/vendor/hermes/skills/…`, `…/optional-skills/…`) with a `MANIFEST.json` row per file
+  (`upstream_sha256 == vendored_sha256`, `rules_applied: []`). The rewrite rules never touch a
+  catalog file, even one whose code block says `import os`.
+- **Inert until installed.** `agents/vendor/hermes` is not a skill root (`loader.skill_roots()`
+  is the app's `skills/` and the owner's folder), so no vendored skill is discovered, listed to a
+  model or put in a prompt.
+- **Installed through the import path.** The existing `POST /skills/import` takes
+  `{"source": "hermes-catalog", "skill": "<slug>"}` (same user guard, same `DEV_MODE` gate).
+  `agents/core/skills/hermes_catalog.py` re-checks every file of the skill against the index and
+  the manifest (a difference answers 503 `catalog_unavailable` and writes nothing) and hands the
+  bytes to `SkillImporter._save_skill`, the call the pinned Hermes import makes: the SKILL.md
+  validator, the folder check (`exists`, 409), the name-holder check (`name_taken`, 409), the
+  install id and the provenance sidecar. The sidecar says `source: "hermes"` (as the pinned
+  import does), `source_commit`, `source_path`, `content_sha256`, `source_files` and
+  `provenance: "imported from Hermes @9c0560f8"`. Supporting files go through `_save_skill`'s
+  new `extra_files`: each path must be a plain relative data path (`.md`, `.txt`, `.yaml`,
+  `.yml`, `.json`, `LICENSE`; not `SKILL.md`, `manifest.json` or a quarantine/signature record),
+  at most 256 KB, all checked before anything is written, and written before the SKILL.md; an
+  update removes only the files its earlier import recorded. A re-install updates in place.
+- **No more trust than an import.** An installed catalog skill is an external, unsigned,
+  unvouched skill, like any import: `skill_view` serves its text fenced as DATA with a warning,
+  the prompt index and catalog drop a row whose text is injection-flagged, and its
+  `required_env` is declared to the code tool only once the owner vouches for it (keyed
+  signature or approval of these bytes; `tools.declare_skill_environment`). The listing shows a
+  skill's injection flags before install, as the local migration's review card does.
+- **Frontmatter is never rewritten.** The bytes are upstream's, so every Hermes key stays in the
+  file and in `skill_view`. Nerva's loader already maps Hermes's contract (H327: `platforms`,
+  `prerequisites.env_vars`, `required_environment_variables`, `setup.collect_secrets`,
+  `metadata.hermes.*` tags, category, related skills …). The index names the keys Nerva does not
+  read (`unmapped_keys`: `metadata.hermes.homepage` in 17 skills, `metadata.hermes.upstream` in 9,
+  and `when_to_use`, `when_not_to_use`, `category`, `title`, `required_commands`,
+  `metadata.standard`, `metadata.hermes.blueprint`, `metadata.hermes.related_docs` once each)
+  and the key-like names a skill's text mentions without declaring them
+  (`undeclared_env_mentions`, 21 skills). Nerva does not declare those, so no key reaches them.
+- **Owner surface.** `GET /skills/imported` carries a `hermes_catalog` object (counts, one row a
+  skill, `installable`, `code_files` for a skill with code, `installed_commit` once installed).
+  No new route and no OpenAPI change: both bodies were already untyped. The HUD's Skills Import
+  panel shows the catalog with a filter, the keys each skill needs, its flags, and an install
+  button that follows the panel's DEV_MODE check. The CLI has no import verb today, so it has
+  none for the catalog either.
+
+### What is in the catalog (pin `9c0560f8`)
+
+| Kind | Count | What happens |
+|---|---|---|
+| `instruction` | 125 (31 in `skills/`, 94 in `optional-skills/`): 459 files, 3.9 MB | vendored, installable |
+| `upstream_only` | 55 (12 + 43) | listed with their code files; `POST` answers 422 `upstream_only` and writes nothing |
+| `excluded` | 5 (1 + 4) | listed with the reason; `POST` answers 422 `excluded` |
+
+Excluded: `skills/creative/architecture-diagram`, `optional-skills/creative/concept-diagrams` and
+`optional-skills/creative/pretext` carry HTML templates (`files_outside_data_allowlist`: HTML can
+hold script, and the catalog takes plain data only); `optional-skills/mlops/pytorch-fsdp` and
+`optional-skills/mlops/training/unsloth` carry a reference over 256 KB (`file_too_large`). Other
+reasons the builder can give: `symlink`, `nested_skill`, `not_utf8`, `invalid_skill_md`,
+`declared_name_differs_from_folder`, `unsafe_file_path`, `duplicate_slug_of:<path>`,
+`file_not_plain_data`.
+
+**Why skills with code are not installable.** None of Nerva's import paths copies code: the
+pinned and GitHub imports and the local migration write a SKILL.md (the migration quarantines
+it), and the only path that carries code is a marketplace package (`install-zip`, admin: its
+code is scanned with warnings, the signature gate applies when required, and an external
+package's code is not run in-process without a keyed signature or the owner's approval).
+Installing only the SKILL.md of such a skill would give the model instructions that call scripts
+that are not there, so the catalog refuses it and shows which code it carries (`.py` in 41
+skills, `.sh` in 11, `.mjs` in 7, `.js` in 6, and a few `.ts`/`.tsx`, `.ps1` and a `Makefile`).
+Bringing one in is the owner's call, through the marketplace path.
+
+### Refreshing it
+
+```bash
+python scripts/hermes_vendor.py catalog --upstream ~/src/hermes-agent   # classify, re-vendor, prune
+python scripts/hermes_vendor.py status [--upstream ~/src/hermes-agent]  # bytes, index <-> manifest
+pytest tests/test_hermes_skill_catalog.py tests/test_hermes_adopt_lane.py
+```
+
+`catalog` takes the clone's commit (or `--commit`) and moves the manifest's pin with it, as `pull`
+does; update `NOTICE.md` when it moves. A skill that gains a script upstream leaves the vendored
+tree on the next run (its files and rows are pruned). `pull` refuses a catalog path: a skill is
+vendored whole or not at all. `status` reports `CATALOG …` when the index and the manifest
+disagree (a file of an installable skill missing or different, a vendored file that belongs to no
+installable skill, another commit), `DRIFT` for a catalog row with a rewrite, and the usual
+`EDITED`/`EXTRA`/`UNSAFE`. The catalog allowlist admits `.md`, `.txt`, `.yaml`, `.yml`, `.json`
+(parsed as plain data) and `LICENSE` only; no `.py` file may sit under the catalog folders.
+
+### Limits of slice 3
+
+- Installing still needs `DEV_MODE=1`, as every skill import does; the catalog adds no way around it.
+- The older network import (`source: "hermes"`, pin `v2026.8.27`) is unchanged. A catalog install
+  over a folder that import wrote is an update of the same source, in place.
+- Injection flags in the index are computed when the catalog is built; the loader and
+  `skill_view` scan again when a skill loads and is read.
+- About 3.9 MB of upstream Markdown is now in the repository.
