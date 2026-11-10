@@ -19,7 +19,11 @@ from agents.core.secrets import SecretStoreError
 logger = logging.getLogger("jarvis.security.secret_broker")
 
 _HANDLE = re.compile(r"\{\{\s*secret:([A-Za-z0-9_.\-]+)\s*\}\}")
-_INTERNAL_PREFIX = "h034."
+# ``h034.``: the external secret sources' own config and bootstrap tokens.
+# ``integration.``: keys the owner set in the HUD's Integrations panel (integration_keys);
+# they reach their provider through the process environment, never through a handle.
+_INTERNAL_PREFIX = ("h034.", "integration.")
+_REDACT_INTERNAL = ("h034.token.", "integration.key.")
 
 
 class _DictStore:
@@ -129,7 +133,7 @@ class SecretBroker:
             names = list(self._store.names())
         for name in names:
             try:
-                value = (self._store.get(name) if name.startswith("h034.token.")
+                value = (self._store.get(name) if name.startswith(_REDACT_INTERNAL)
                          else self._safe_get(name))
             except SecretStoreError:
                 value = None

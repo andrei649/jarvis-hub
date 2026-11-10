@@ -260,9 +260,20 @@ class SecretStore:
         )
 
     # ── persistence ───────────────────────────────────────────────
+    def _stamp(self):
+        try:
+            st = self.path.stat()
+        except OSError:
+            return None
+        return (st.st_mtime_ns, st.st_size, st.st_ino)
+
     def _load(self) -> dict[str, str]:
-        if self._loaded:
+        # A long-lived store (the secret broker's) sees another instance's write: the
+        # cache is kept only while the file is the one it was read from.
+        stamp = self._stamp()
+        if self._loaded and stamp == getattr(self, "_loaded_stamp", None):
             return self._cache
+        self._loaded_stamp = stamp
         if self.path.exists():
             try:
                 self._cache = json.loads(self.path.read_text(encoding="utf-8"))
@@ -297,6 +308,7 @@ class SecretStore:
             tmp.unlink(missing_ok=True)   # never leave a stray secrets file behind
             raise
         _chmod_600(self.path)
+        self._loaded_stamp = self._stamp()
 
     def _mutate(self, apply) -> bool:
         """Run a read-modify-write against the store under the process-wide lock.

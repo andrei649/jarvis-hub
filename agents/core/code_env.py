@@ -61,6 +61,8 @@ _MANAGED_NAMES = frozenset({
     "GEMINI_API_KEY", "DEEPINFRA_API_KEY", "OPENROUTER_BASE_URL",
     "DEEPINFRA_BASE_URL", "JARVIS_NOUS_INFERENCE_BASE_URL",
     "JARVIS_LM_STUDIO_URL", "JARVIS_OLLAMA_URL", "GITHUB_TOKEN",
+    # Nerva's native search key (the HUD's Integrations panel can set it).
+    "TAVILY_API_KEY",
 }) | ADOPTED_MODEL_PROVIDER_KEYS  # the model providers adopted from Hermes (Adopt lane, slice 2)
 
 # These names either load code, alter the host's controlled child base, or carry
