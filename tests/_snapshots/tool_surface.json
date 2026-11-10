@@ -1770,6 +1770,39 @@
       }
     },
     {
+      "name": "request_secret",
+      "gated": false,
+      "capability_id": "tool:request_secret",
+      "untrusted_output": true,
+      "live_overrides": false,
+      "risk": "read_only",
+      "rollback": {
+        "mode": "none",
+        "description": "It asks the owner to store a secret and waits; the owner's own client writes the secret through the broker route, so the tool itself writes nothing to roll back.",
+        "automatic": false,
+        "handler_ref": null,
+        "limitations": ""
+      },
+      "description": "Ask the owner, in their terminal, to store a missing secret (an API key) by name. Returns its {{secret:NAME}} handle, never the value.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.\\-]{1,128}$"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "search_memory",
       "gated": false,
       "capability_id": "tool:search_memory",

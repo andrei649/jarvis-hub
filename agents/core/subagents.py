@@ -113,7 +113,7 @@ BLOCKED_CAPABILITY_TOOLS: dict[str, tuple[str, ...]] = {
     "memory_write": ("memory",),
     "channel_send": ("speak",),
     "skill_manage": ("skill_propose",),
-    "clarify": ("clarify",),
+    "clarify": ("clarify", "request_secret"),
 }
 BLOCKED_TOOL_PREFIXES: tuple[str, ...] = ("kanban_",)
 

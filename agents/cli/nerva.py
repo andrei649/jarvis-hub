@@ -61,6 +61,9 @@ class Context:
     err: Any = field(default_factory=lambda: sys.stderr)
     inp: Any = field(default_factory=lambda: sys.stdin)
     client_factory: Callable[[Mapping[str, str]], HubClient] = HubClient.from_env
+    #: Reads a secret without echo when a `nerva chat` turn asks for one (H226);
+    #: ``None`` is ``getpass``. Tests inject a reader.
+    secret_reader: Callable[[str], str] | None = None
     _client: HubClient | None = None
 
     def client(self) -> HubClient:
@@ -785,7 +788,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="one scripted turn: send a message, print the reply (scripts, cron, CI)",
         description="One turn in, one answer out. The message is the MESSAGE argument, else "
                     "--file PATH (- reads stdin), else whatever is piped on stdin; a terminal is "
-                    "never read. With -z the answer is the ONLY thing on stdout and every "
+                    "never read for the message. With -z the answer is the ONLY thing on stdout and every "
                     "diagnostic goes to stderr, so the command composes in a pipeline. A turn that "
                     "did not complete — one that queued an approval, was refused, or came back "
                     "empty — prints nothing on stdout and exits non-zero. Exit 0 answered · 1 the "
@@ -799,7 +802,12 @@ def build_parser() -> argparse.ArgumentParser:
                "\n"
                "This verb never auto-approves. If the turn queues an action for approval it\n"
                "stays queued: stdout is empty, the exit code is 1, and stderr names what to\n"
-               "decide with `nerva approvals`.",
+               "decide with `nerva approvals`.\n"
+               "\n"
+               "Run from a terminal (stdin not piped), the turn's questions are asked right\n"
+               "here while it runs: a clarify question, a missing secret (typed without echo,\n"
+               "stored only in the hub's secret store) and, after the turn, each approval card\n"
+               "it queued (accept, reject, defer, or leave it queued). --no-prompts turns this off.",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     chat.add_argument("message", nargs="?",
                       help="the message; omit it to read --file or stdin")
@@ -820,6 +828,9 @@ def build_parser() -> argparse.ArgumentParser:
     selection.add_argument("-c", "--continue", dest="continue_latest", action="store_true",
                            help="use the latest unarchived conversation and print a free recap")
     chat.add_argument("--json", action="store_true")
+    chat.add_argument("--no-prompts", action="store_true",
+                      help="do not answer the turn's questions, secret requests or approvals here, "
+                           "even on a terminal")
     chat.add_argument("--image", action="append", metavar="PATH",
                       help="ask the vision model about this PNG/JPEG/GIF/WebP file (up to 8, 4 MiB "
                            "each); the turn goes to the hub's vision model only, never to an agent")
@@ -5598,8 +5609,18 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
             body["reasoning"] = ns.reasoning
         if selected_session:
             body["session_id"] = selected_session
+        # H226: on a terminal, the turn's clarify and secret prompts are answered here,
+        # mid-turn, through the hub's pending-input routes. A script (piped stdin) is
+        # never read, so nothing changes for it.
+        interactive = (_is_tty(ctx.inp) and not ns.json
+                       and not getattr(ns, "no_prompts", False))
         try:
-            reply = ctx.client().post("/chat", body)
+            if interactive:
+                from .chat_prompts import run_turn
+
+                reply = run_turn(ctx, body, read_secret=ctx.secret_reader)
+            else:
+                reply = ctx.client().post("/chat", body)
         except HubUnavailable:
             finish(EXIT_NO_HUB, status="no_hub", reason="no hub is reachable")
             raise
@@ -5655,6 +5676,10 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
                 for line in _recall_lines(reply):
                     _write_answer(ctx, line, stream=ctx.err)
                 ctx.say(str(raw))
+            if interactive and pending:
+                from .chat_prompts import decide_queued
+
+                decide_queued(ctx, pending)
             status = "queued_for_approval" if queued else "refused" if incomplete else "completed"
             return finish(EXIT_OK, status=status, reason=stop_reason or refusal, pending=pending,
                           completed=not incomplete)
@@ -5662,6 +5687,10 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
         if incomplete:
             reason = stop_reason or refusal or ("the turn queued an action for approval and was not executed"
                                  if queued else "the hub returned an empty answer")
+            if interactive and pending:
+                from .chat_prompts import decide_queued
+
+                decide_queued(ctx, pending)
             if pending:
                 ids = ", ".join(_plain(i, 40) for i in pending)
                 reason = f"{reason} (approval {ids})"

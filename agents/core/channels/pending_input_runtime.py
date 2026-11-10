@@ -1,7 +1,15 @@
 """H067 gateway/model clarification binding, before conversation turn leases.
 
 This runtime supports Telegram, governed Slack/Discord cards, typed ntfy prompts
-and authenticated HTTP questions. CLI/email remain separate work.
+and authenticated HTTP questions. `nerva chat` answers through the HTTP poll binding
+(GET /chat/pending, POST /chat/pending/{id}/answer), the same one the HUD's
+non-streaming turn uses (H226). Email remains separate work.
+
+Secret entry (H226): ``request_secret`` asks the owner of an HTTP poll turn to store
+one named secret. The value never crosses this runtime, the turn or the answer route:
+the owner's client stores it through the admin-guarded secret broker route
+(POST /api/secrets/broker) and then answers the prompt with the marker ``"stored"``,
+which resolves only if the broker really holds the name. No chat channel can carry it.
 Hermes reference59b2aeef6c7a; see licenses/hermes-pending-input-MIT.txt.
 """
 
@@ -9,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import re
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -18,7 +27,7 @@ from ..capability_manifests import RollbackContract
 from ..native_human_wait import native_human_wait_window
 from .clarify_protocol import _normalize_questions
 from .ephemeral import EphemeralReply
-from .pending_input import PendingInputs, parse_clarify, parse_confirmation
+from .pending_input import SECRET_STORED, PendingInputs, parse_clarify, parse_confirmation
 from .pending_input_cards import NativePromptCards
 from .session import SessionSource, build_session_key
 
@@ -32,11 +41,23 @@ class _Binding:
     http_send: object = None
     http_current: object = None
     http_poll: bool = False
+    http_owner: object = None
+
+    def owner_now(self) -> bool:
+        """The turn's credential is still the owner's (re-evaluated, never cached)."""
+        try:
+            return callable(self.http_owner) and self.http_owner() is True
+        except Exception:
+            return False
 
 
 _CURRENT = contextvars.ContextVar("channel_pending_input", default=None)
 ENABLED_SETTING = "channels.pending_inputs_enabled"
 UNAVAILABLE = {"ok": False, "reason": "clarify_context_unavailable"}
+SECRET_UNAVAILABLE = {"ok": False, "reason": "secret_prompt_unavailable_here"}
+#: The secret broker's own handle grammar (``{{secret:NAME}}``), bounded.
+_SECRET_NAME = re.compile(r"[A-Za-z0-9_.\-]{1,128}\Z")
+_RESERVED_SECRET_PREFIXES = ("h034.", "integration.")
 
 
 def _without_recommendation(label):
@@ -88,6 +109,10 @@ class ChannelPendingRuntime:
                     or self._card_generations[prompt.id]
                     is not getattr(adapter, "_pending_callback_generation", None)):
                 return False
+        if prompt.kind == "secret":
+            # Only the owner's own HTTP poll turn (a terminal, or any client that
+            # polls) may be asked for a secret; no chat channel ever carries one.
+            return binding.source.channel == "web" and binding.http_poll and binding.owner_now()
         return (prompt.kind != "confirmation" or self.orch._channel_principal(
             binding.source.channel, binding.source.sender, binding.delivery.get("chat_id")).admin)
 
@@ -172,12 +197,14 @@ class ChannelPendingRuntime:
                 ack = asyncio.get_running_loop().create_future()
                 self._http_acks[prompt.id] = ack
                 while not ack.done():
-                    candidate = self.inputs.pending(prompt.key, "clarify")
+                    candidate = self.inputs.pending(prompt.key, prompt.kind)
                     if (candidate is None or candidate.id != prompt.id
                             or not binding.active or not self._allowed(binding.source)):
                         return False
                     await asyncio.wait({ack}, timeout=0.5)
                 return not ack.cancelled() and ack.result() is True
+            if prompt.kind != "clarify":
+                return False  # The HUD's event stream renders questions only.
             sent = await binding.http_send({
                 "type": "clarify", "id": prompt.id, "question": prompt.question,
                 "choices": list(prompt.choices or ()), "multi_select": prompt.multi_select,
@@ -278,7 +305,7 @@ class ChannelPendingRuntime:
             return False
 
     @contextmanager
-    def bind_http(self, actor, session_id, send, current, *, poll=False):
+    def bind_http(self, actor, session_id, send, current, *, poll=False, owner=None):
         if (not isinstance(actor, str) or len(actor) != 64
                 or not isinstance(session_id, str) or not session_id
                 or (not callable(send) and not (poll is True and send is None))
@@ -286,7 +313,8 @@ class ChannelPendingRuntime:
             raise ValueError("verified HTTP clarification binding required")
         source = SessionSource(channel="web", sender=actor, thread_id=session_id,
                                explicit_session_id=session_id, chat_type="private")
-        binding = _Binding(self, source, {}, http_send=send, http_current=current, http_poll=poll is True)
+        binding = _Binding(self, source, {}, http_send=send, http_current=current, http_poll=poll is True,
+                           http_owner=owner if callable(owner) else None)
         token = _CURRENT.set(binding)
         try:
             yield
@@ -302,13 +330,29 @@ class ChannelPendingRuntime:
                     or (session_id is not None and binding.source.thread_id != session_id)
                     or not binding.active or not self._allowed(binding.source)):
                 continue
-            prompt = self.inputs.pending(pending_key(binding.source), "clarify")
-            if prompt is None or prompt.id != prompt_id:
+            prompt = self._live_prompt(binding, prompt_id)
+            if prompt is None:
+                continue
+            if prompt.kind == "secret":
+                if not self._card_eligible(prompt):
+                    continue
+                questions.append({"id": prompt.id, "session_id": binding.source.thread_id,
+                                  "kind": "secret", "name": prompt.secret_name,
+                                  "question": prompt.question})
                 continue
             questions.append({"id": prompt.id, "session_id": binding.source.thread_id,
+                              "kind": "clarify",
                               "question": prompt.question, "choices": list(prompt.choices or ()),
                               "multi_select": prompt.multi_select})
         return questions[offset:offset + limit], len(questions) > offset + limit
+
+    def _live_prompt(self, binding, prompt_id):
+        """The live prompt *prompt_id* if it is the oldest of its kind on *binding*."""
+        active = self.inputs._active.get(prompt_id)
+        if active is None or active.kind not in {"clarify", "secret"}:
+            return None
+        prompt = self.inputs.pending(pending_key(binding.source), active.kind)
+        return prompt if prompt is not None and prompt.id == prompt_id else None
 
     def acknowledge_http(self, prompt_id, actor):
         """A response's completed send acknowledges this exact live offer."""
@@ -316,25 +360,34 @@ class ChannelPendingRuntime:
         if (binding is None or not binding.http_poll or binding.source.sender != actor
                 or not binding.active or not self._allowed(binding.source)):
             return
-        prompt = self.inputs.pending(pending_key(binding.source), "clarify")
+        prompt = self._live_prompt(binding, prompt_id)
         ack = self._http_acks.get(prompt_id)
-        if prompt is None or prompt.id != prompt_id or ack is None or ack.done():
+        if prompt is None or ack is None or ack.done():
             return
         self._delivered[prompt_id] = binding
         ack.set_result(True)
 
-    def answer_http(self, prompt_id, actor, value, *, other=False, cancel=False):
+    def answer_http(self, prompt_id, actor, value, *, other=False, cancel=False, owner=False):
         binding = self._delivered.get(prompt_id)
         if (binding is None or binding.source.channel != "web"
                 or binding.source.sender != actor):
             return "unavailable"
         key = pending_key(binding.source)
-        prompt = self.inputs.pending(key, "clarify")
-        if prompt is None or prompt.id != prompt_id:
+        prompt = self._live_prompt(binding, prompt_id)
+        if prompt is None:
             return "unavailable"
         if not self._card_eligible(prompt):
             self.inputs.cancel_prompt(prompt.id, key)
             return "unavailable"
+        if prompt.kind == "secret":
+            # The answering request must itself be the owner's, not only the turn's.
+            if owner is not True:
+                return "unavailable"
+            if cancel:
+                return "resolved" if self.inputs.cancel_prompt(prompt.id, key) else "unavailable"
+            if other or value != SECRET_STORED or not self._secret_stored(prompt.secret_name):
+                return "invalid"
+            return "resolved" if self.inputs.resolve(prompt.id, key, SECRET_STORED) else "invalid"
         if cancel:
             return "resolved" if self.inputs.cancel_prompt(prompt.id, key) else "unavailable"
         if other and (not isinstance(value, str) or not value.strip() or len(value) > 16384
@@ -569,6 +622,72 @@ class ChannelPendingRuntime:
                 waiter.cancel()
             await asyncio.gather(waiter, return_exceptions=True)
 
+    def _secret_stored(self, name):
+        broker = getattr(self.orch, "secret_broker", None)
+        has = getattr(broker, "has", None)
+        try:
+            return callable(has) and has(name) is True
+        except Exception:
+            return False
+
+    async def request_secret(self, args):
+        """Ask the owner of this HTTP poll turn to store one named secret (H226).
+
+        Returns the handle only. The value goes from the owner's client to the secret
+        broker route and never reaches the turn, this runtime or the transcript."""
+        if (not isinstance(args, dict) or not isinstance(args.get("name"), str)
+                or not isinstance(args.get("reason", ""), str)):
+            return {"ok": False, "reason": "invalid_secret_args"}
+        name, why = args["name"].strip(), args.get("reason", "").strip()
+        if (not _SECRET_NAME.match(name) or name.startswith(_RESERVED_SECRET_PREFIXES)
+                or len(why) > 1024):
+            return {"ok": False, "reason": "invalid_secret_args"}
+        binding = _CURRENT.get()
+        if (binding is None or binding.runtime is not self or not binding.active
+                or binding.source.channel != "web" or not binding.http_poll
+                or not callable(binding.http_current) or not self._allowed(binding.source)
+                or not binding.owner_now()):
+            return dict(SECRET_UNAVAILABLE)
+        reference = f"{{{{secret:{name}}}}}"
+        if self._secret_stored(name):
+            return {"ok": True, "name": name, "reference": reference, "already_present": True}
+        try:
+            prompt = self.inputs.register_secret(
+                pending_key(binding.source), name,
+                why or f"The current task needs the secret {name}.",
+                timeout_seconds=self.orch.get_setting("agent.clarify_timeout", 3600) or 3600)
+        except (TypeError, ValueError, OverflowError, RuntimeError):
+            return {"ok": False, "reason": "invalid_secret_args"}
+        waiter = asyncio.create_task(self.inputs.wait(prompt), name="http-secret-entry")
+
+        def current():
+            candidate = self.inputs.pending(prompt.key, "secret")
+            return (binding.active and self._allowed(binding.source) and self._card_eligible(prompt)
+                    and self._delivered.get(prompt.id) is binding
+                    and candidate is not None and candidate.id == prompt.id)
+
+        try:
+            if await self._deliver(prompt, binding, prompt.question) is not True:
+                return {"ok": False, "reason": "prompt_delivery_failed"}
+            if not binding.active or not self._card_eligible(prompt):
+                return {"ok": False, "reason": "prompt_binding_lost"}
+            self._delivered[prompt.id] = binding
+            with native_human_wait_window(deadline=prompt.deadline, current=current):
+                while not waiter.done():
+                    if (not binding.active or not self._allowed(binding.source)
+                            or not self._card_eligible(prompt)):
+                        return {"ok": False, "reason": "prompt_binding_lost"}
+                    await asyncio.wait({waiter}, timeout=0.5)
+                answer = await waiter
+            if answer is None or not self._secret_stored(name):
+                return {"ok": False, "reason": "secret_not_provided"}
+            return {"ok": True, "name": name, "reference": reference, "stored": True}
+        finally:
+            self._retire(prompt)
+            if not waiter.done():
+                waiter.cancel()
+            await asyncio.gather(waiter, return_exceptions=True)
+
     def close(self):
         self.closed = True
         for ack in self._http_acks.values():
@@ -642,6 +761,42 @@ def register_clarify_tool(server, orch):
             description=("It sends this conversation's own user one question and waits for the "
                          "answer; it writes no state the owner keeps, so there is nothing to "
                          "roll back."),
+        ),
+    )
+
+    async def request_secret(args):
+        runtime = orch._pending_input_service()
+        return await runtime.request_secret(args) if runtime is not None else dict(SECRET_UNAVAILABLE)
+
+    server.register_tool(
+        "request_secret",
+        request_secret,
+        gated=False,
+        # The result is a name and a handle, never a value; it is still the owner's
+        # answer arriving mid-turn, so it is read as data, like clarify's.
+        untrusted_output=True,
+        parallel_safe=False,
+        description=("Ask the owner, in their terminal, to store a missing secret (an API key) "
+                     "by name. Returns its {{secret:NAME}} handle, never the value."),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "pattern": r"^[A-Za-z0-9_.\-]{1,128}$"},
+                "reason": {"type": "string", "maxLength": 1024},
+            },
+            "required": ["name"],
+            "additionalProperties": False,
+        },
+        capability_id="tool:request_secret",
+        max_result_bytes=4096,
+        # H325 — the tool writes nothing; the owner stores the value through the
+        # admin-guarded broker route, outside the turn.
+        risk="read_only",
+        rollback=RollbackContract(
+            mode="none",
+            description=("It asks the owner to store a secret and waits; the owner's own "
+                         "client writes the secret through the broker route, so the tool "
+                         "itself writes nothing to roll back."),
         ),
     )
     return True

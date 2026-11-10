@@ -237,6 +237,21 @@
 - Not tested yet: the new version has not been installed and run end to end, because that needs
   a large download. The checks above were run against its source code.
 
+**Answer the turn's questions, secrets and approvals in the terminal**
+- `nerva chat`, run from a terminal, now asks you the turn's questions while it runs: pick
+  a numbered choice, type your own answer, or `/cancel`. A batch of questions comes one at a
+  time. Your answer reaches the same turn, read as data, just like an answer typed in the HUD.
+- When a turn needs a missing key, it asks you for it there. What you type is not shown, goes
+  only to Nerva's encrypted secret store and never into the conversation, the logs or the
+  receipt. Only the owner is asked; a terminal with only the user token is not.
+- After a turn that queued approvals, each card is shown with its exact command and rollback,
+  and you can accept, reject, defer or leave it queued, through the same route as the HUD.
+- Scripts are unaffected: with piped input, `--json` or `--no-prompts`, nothing is asked.
+- Questions and secret prompts still need the clarification preview turned on
+  (`nerva config set channels.pending_inputs_enabled true`, then restart). It stays off by
+  default until you decide otherwise, so the clarify tool is not yet always available as it is
+  in Hermes Agent. Details: [docs/cli-chat-receipts.md](docs/cli-chat-receipts.md).
+
 **Settings an administrator pins stay pinned**
 - Whoever administers the box can now pin single settings and environment values in a folder
   you cannot write (`/etc/nerva`, or the folder `NERVA_MANAGED_DIR` names): `config.yaml` for
