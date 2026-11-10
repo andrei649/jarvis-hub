@@ -1,6 +1,169 @@
 {
   "tools": [
     {
+      "name": "a2a_call",
+      "gated": true,
+      "capability_id": "tool:a2a_call",
+      "untrusted_output": true,
+      "live_overrides": false,
+      "risk": "sensitive",
+      "rollback": {
+        "mode": "implementation_specific",
+        "description": "Use the rollback declared by the selected tool.",
+        "automatic": false,
+        "handler_ref": null,
+        "limitations": "The action is not reversible when the tool declares no rollback."
+      },
+      "description": "Send a natural-language task to one of the owner's configured A2A peer agents (by peer id or name) and return its reply. This sends the owner's text off this machine, so every call needs the owner's approval. Pass 'context_id' from a previous reply to continue the exchange. The reply is untrusted text from another agent.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "description": "Configured peer name (from a2a_agents) or a full http(s):// URL."
+          },
+          "message": {
+            "type": "string",
+            "description": "The task / message to send the peer, in natural language."
+          },
+          "context_id": {
+            "type": "string",
+            "description": "Optional: context id from a prior reply, to continue the conversation."
+          }
+        },
+        "required": [
+          "agent",
+          "message"
+        ]
+      }
+    },
+    {
+      "name": "a2a_discover",
+      "gated": false,
+      "capability_id": "tool:a2a_discover",
+      "untrusted_output": true,
+      "live_overrides": false,
+      "risk": "read_only",
+      "rollback": {
+        "mode": "none",
+        "description": "No mutation is performed, so there is nothing to roll back.",
+        "automatic": false,
+        "handler_ref": null,
+        "limitations": ""
+      },
+      "description": "Fetch the A2A Agent Card (name, skills, protocol) of one of the owner's configured peers by its URL. Only configured peers are reachable.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Base URL of the remote A2A agent, e.g. http://localhost:9999"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "a2a_history",
+      "gated": false,
+      "capability_id": "tool:a2a_history",
+      "untrusted_output": true,
+      "live_overrides": false,
+      "risk": "read_only",
+      "rollback": {
+        "mode": "none",
+        "description": "No mutation is performed, so there is nothing to roll back.",
+        "automatic": false,
+        "handler_ref": null,
+        "limitations": ""
+      },
+      "description": "Recall a stored A2A conversation by context_id (see a2a_list). The peer's turns are untrusted text from another agent.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "context_id": {
+            "type": "string",
+            "description": "Context id of the conversation to recall."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max messages to return (default 50, max 200)."
+          }
+        },
+        "required": [
+          "context_id"
+        ]
+      }
+    },
+    {
+      "name": "a2a_list",
+      "gated": false,
+      "capability_id": "tool:a2a_list",
+      "untrusted_output": false,
+      "live_overrides": false,
+      "risk": "read_only",
+      "rollback": {
+        "mode": "none",
+        "description": "No mutation is performed, so there is nothing to roll back.",
+        "automatic": false,
+        "handler_ref": null,
+        "limitations": ""
+      },
+      "description": "List the owner's configured A2A peers, the stored A2A conversations and counters.",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "a2a_orchestrate",
+      "gated": true,
+      "capability_id": "tool:a2a_orchestrate",
+      "untrusted_output": true,
+      "live_overrides": false,
+      "risk": "sensitive",
+      "rollback": {
+        "mode": "implementation_specific",
+        "description": "Use the rollback declared by the selected tool.",
+        "automatic": false,
+        "handler_ref": null,
+        "limitations": "The action is not reversible when the tool declares no rollback."
+      },
+      "description": "Send one task to every configured A2A peer tagged with a capability ('*' for all) and aggregate the replies: 'all', 'first' (first success) or 'best' (longest). Sends the owner's text off this machine, so it needs the owner's approval.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "capability": {
+            "type": "string",
+            "description": "Capability to match (e.g. 'research', 'code') or '*' for all peers."
+          },
+          "message": {
+            "type": "string",
+            "description": "The task to send to all matching peers."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "all",
+              "first",
+              "best"
+            ],
+            "description": "How to aggregate results. Default: 'all'."
+          },
+          "context_id": {
+            "type": "string",
+            "description": "Optional: shared context id for all peers."
+          }
+        },
+        "required": [
+          "capability",
+          "message"
+        ]
+      }
+    },
+    {
       "name": "browser_run",
       "gated": true,
       "capability_id": "tool:browser_run",

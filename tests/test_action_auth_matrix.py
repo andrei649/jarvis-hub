@@ -1141,6 +1141,28 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
             assert code == (503 if enabled and spy._verdict is Verdict.DENY else 202)
         finally:
             rig.q.close()
+    elif kind == "a2a.outbound":
+        import asyncio
+
+        # G14: an approved a2a_call asks the kernel before anything leaves (a fake peer
+        # at the transport; no DNS, no network).
+        import httpx
+
+        from agents.core.a2a import A2ARegistry
+        from agents.core.a2a_outbound import A2AOutbound
+        from agents.core.http_client import PluginHTTPClient
+        from agents.core.resilience import CircuitBreaker
+
+        reg = A2ARegistry(path=str(tmp_path / "a2a.json"))
+        reg.add_peer("peer")
+        reg.set_outbound("peer", "https://peer.example")
+        client = PluginHTTPClient(
+            "a2a", circuit_breaker=CircuitBreaker(key="a2a-matrix"),
+            resolver=lambda host, *, mode: (["93.184.216.34"], None),
+            transport_factory=lambda _t: httpx.MockTransport(lambda _r: httpx.Response(404)))
+        asyncio.run(A2AOutbound(lambda: reg, kernel=lambda: spy, client=lambda: client,
+                                home=tmp_path / "a2a-home").run(
+            "a2a_call", {"agent": "peer", "message": "hi"}))
     else:  # pragma: no cover - a new KERNEL kind needs an exerciser added here
         raise AssertionError(f"no exerciser for kernel-classified kind {kind!r}")
 

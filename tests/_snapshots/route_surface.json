@@ -1,5 +1,6 @@
 [
   "DELETE /api/a2a/peers/{peer_id}",
+  "DELETE /api/a2a/peers/{peer_id}/outbound",
   "DELETE /api/admin/backup/restore",
   "DELETE /api/admin/llm/custom-endpoints/active",
   "DELETE /api/admin/llm/custom-endpoints/{key}",
@@ -745,6 +746,7 @@
   "POST /skills/import",
   "POST /tts",
   "POST /tts/stream",
+  "PUT /api/a2a/peers/{peer_id}/outbound",
   "PUT /api/admin/agents/{agent_id}",
   "PUT /api/admin/agents/{agent_id}/soul",
   "PUT /api/admin/llm/custom-endpoints/{key}",

@@ -15,20 +15,28 @@ fail-closed by design:
 * **Signed Agent Card.** Our advertised identity (name + capabilities) is
   HMAC-signed with an opt-in identity key (``JARVIS_A2A_KEY``) as a tamper-
   evidence marker; unsigned (advisory) when no key is set.
+* **Outbound (G14).** A peer may also carry an ``outbound`` address (URL, LAN flag, auth
+  kind, timeout, capability tags; its bearer token lives in the secret store) so this hub
+  can call it. Calling is ``agents/core/a2a_outbound.py`` (the adopted Hermes client tools,
+  governed); this module only keeps and validates the addresses.
 
 File-backed (JSON under ``memory_logs/a2a.json``), pure-Python, offline-testable.
 """
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import secrets
+import threading
 import time
 from pathlib import Path
 from typing import Any, Optional, Union
+from urllib.parse import urlsplit
 
 from agents.core.automation_contracts import ContractTemplate, contract_denial, predicate
 from agents.core.paths import data_path
@@ -80,6 +88,97 @@ def _a2a_inbound_contract_template() -> ContractTemplate:
 
 
 A2A_INBOUND_CONTRACT = _a2a_inbound_contract_template()
+
+# ── Outbound peer addresses (G14) ────────────────────────────────────────────
+
+DEFAULT_OUTBOUND_TIMEOUT = 60
+MAX_OUTBOUND_TIMEOUT = 90
+#: Where a peer's bearer token lives in the secret store.
+PEER_TOKEN_PREFIX = "a2a.peer."  # nosec B105 - a secret-store name prefix, not a secret
+
+
+def peer_token_name(peer_id: str) -> str:
+    return f"{PEER_TOKEN_PREFIX}{peer_id}"
+
+
+def url_origin(url: str) -> tuple[str, str, int]:
+    """``(scheme, host, port)`` of an http(s) URL, the unit a peer is pinned to."""
+    parsed = urlsplit(url)
+    scheme = (parsed.scheme or "").lower()
+    host = (parsed.hostname or "").lower().rstrip(".")
+    try:
+        port = parsed.port or (443 if scheme == "https" else 80)
+    except ValueError:
+        port = -1
+    return scheme, host, port
+
+
+def is_lan_host(host: str) -> bool:
+    """True for a host a LAN peer may have: ``localhost``, a loopback or an RFC 1918 IPv4
+    literal — exactly what the egress client's ``lan`` mode dials (``security/ssrf.py``)."""
+    from agents.core.security.ssrf import resolve_and_validate
+
+    host = (host or "").lower().rstrip(".").strip("[]")
+    if host == "localhost":
+        return True
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    _ips, error = resolve_and_validate(host, mode="lan")
+    return error is None
+
+
+def validate_outbound_url(url: str, *, allow_lan: bool = False) -> tuple[str, tuple[str, str, int]]:
+    """Check a peer URL the owner typed; return it normalised and its origin.
+
+    * ``https`` for a peer on the internet; ``http`` only for a LAN peer (a token in clear
+      text crosses only the owner's own network).
+    * No user info, query or fragment; a host, and not a cloud metadata name.
+    * A LAN peer (``allow_lan``) must be named by ``localhost``, a loopback or an RFC 1918
+      IPv4 literal: a DNS name that happens to resolve to the LAN is the rebinding case the
+      SSRF guard refuses, so it is refused here too. Without ``allow_lan`` any private,
+      loopback, link-local or reserved literal is refused; a DNS name is resolved and checked
+      in public mode at every request by the egress client.
+    Raises ``ValueError`` with a reason code.
+    """
+    from agents.core.security.ssrf import BLOCKED_HOSTS, resolve_and_validate
+
+    raw = str(url or "").strip()
+    if not raw or len(raw) > 2048:
+        raise ValueError("invalid_url")
+    parsed = urlsplit(raw)
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in {"http", "https"}:
+        raise ValueError("url_scheme_not_allowed")
+    if parsed.username is not None or parsed.password is not None or "@" in parsed.netloc:
+        raise ValueError("url_userinfo_not_allowed")
+    if parsed.query or parsed.fragment:
+        raise ValueError("url_query_not_allowed")
+    scheme, host, port = url_origin(raw)
+    if not host or port <= 0:
+        raise ValueError("invalid_url")
+    if host in BLOCKED_HOSTS:
+        raise ValueError("url_host_blocked")
+    try:
+        literal = ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        literal = None
+    if allow_lan:
+        if not is_lan_host(host):
+            raise ValueError("lan_peer_needs_private_ip_literal")
+    else:
+        if host == "localhost" or host.endswith((".local", ".localhost")):
+            raise ValueError("lan_address_needs_allow_lan")
+        if literal is not None:
+            _ips, error = resolve_and_validate(host.strip("[]"), mode="public")
+            if error:
+                raise ValueError("lan_address_needs_allow_lan")
+        if scheme != "https":
+            raise ValueError("https_required_for_internet_peer")
+    path = parsed.path.rstrip("/")
+    netloc = parsed.netloc.lower()
+    return f"{scheme}://{netloc}{path}", (scheme, host, port)
 
 
 def a2a_enabled() -> bool:
@@ -192,21 +291,91 @@ class A2ARegistry(JsonStore):
             self._save()
         return {"peer_id": peer_id, "name": name or peer_id, "secret": secret}
 
-    def remove_peer(self, peer_id: str) -> bool:
+    def remove_peer(self, peer_id: str, secret_broker: Any = None) -> bool:
         if peer_id in self._peers:
             del self._peers[peer_id]
             with self._lock:
                 self._save()
+            if secret_broker is not None:
+                with contextlib.suppress(Exception):
+                    secret_broker.delete(peer_token_name(peer_id))
             return True
         return False
 
     def list_peers(self) -> list[dict]:
-        """List peers with the secret masked (never re-exposed after creation)."""
-        return [
-            {"peer_id": p["peer_id"], "name": p.get("name", p["peer_id"]),
-             "secret_hint": (p["secret"][:4] + "…"), "added_at": p.get("added_at")}
-            for p in sorted(self._peers.values(), key=lambda r: r.get("added_at", 0), reverse=True)
-        ]
+        """List peers with the secret masked (never re-exposed after creation).
+
+        A peer the owner can also call (G14) carries ``outbound``: its URL, whether it is a
+        LAN peer, the auth kind, timeout, tags and tenant — never its token."""
+        rows = []
+        for p in sorted(self._peers.values(), key=lambda r: r.get("added_at", 0), reverse=True):
+            row = {"peer_id": p["peer_id"], "name": p.get("name", p["peer_id"]),
+                   "secret_hint": (p["secret"][:4] + "…"), "added_at": p.get("added_at")}
+            if isinstance(p.get("outbound"), dict):
+                row["outbound"] = dict(p["outbound"])
+            rows.append(row)
+        return rows
+
+    # ── Outbound (G14: this Nerva calls the peer) ────────────────────────────
+
+    def set_outbound(self, peer_id: str, url: str, *, token: Optional[str] = None,
+                     allow_lan: bool = False, timeout: int = DEFAULT_OUTBOUND_TIMEOUT,
+                     capabilities: Optional[list] = None, tenant: str = "",
+                     secret_broker: Any = None, keep_token: bool = False) -> dict:
+        """Let this Nerva call an existing peer at *url*.
+
+        The URL is checked by :func:`validate_outbound_url` (a LAN address only with
+        ``allow_lan``). A bearer *token* goes to the secret store under
+        :func:`peer_token_name`, never into ``a2a.json``; without a store a token is refused.
+        ``keep_token`` keeps a token stored earlier when none is given."""
+        rec = self._peers.get(peer_id)
+        if rec is None:
+            raise KeyError("unknown peer")
+        url, _origin = validate_outbound_url(url, allow_lan=bool(allow_lan))
+        caps = [str(c).strip()[:64] for c in (capabilities or []) if str(c).strip()][:20]
+        try:
+            timeout = max(5, min(int(timeout), MAX_OUTBOUND_TIMEOUT))
+        except (TypeError, ValueError):
+            raise ValueError("invalid_timeout") from None
+        name = peer_token_name(peer_id)
+        auth = "none"
+        if token:
+            if secret_broker is None:
+                raise ValueError("secret_store_unavailable")
+            secret_broker.put(name, str(token))
+            auth = "bearer"
+        elif keep_token and (rec.get("outbound") or {}).get("auth") == "bearer":
+            auth = "bearer"
+        elif secret_broker is not None:
+            with contextlib.suppress(Exception):
+                secret_broker.delete(name)
+        rec["outbound"] = {"url": url, "allow_lan": bool(allow_lan), "auth": auth,
+                           "timeout": timeout, "capabilities": caps,
+                           "tenant": str(tenant or "")[:128], "updated_at": time.time()}
+        with self._lock:
+            self._save()
+        return {"peer_id": peer_id, "outbound": dict(rec["outbound"])}
+
+    def clear_outbound(self, peer_id: str, secret_broker: Any = None) -> bool:
+        rec = self._peers.get(peer_id)
+        if rec is None or "outbound" not in rec:
+            return False
+        rec.pop("outbound", None)
+        with self._lock:
+            self._save()
+        if secret_broker is not None:
+            with contextlib.suppress(Exception):
+                secret_broker.delete(peer_token_name(peer_id))
+        return True
+
+    def outbound_peers(self) -> list[dict]:
+        """Peers this Nerva may call: ``peer_id``, ``name`` and the ``outbound`` fields."""
+        out = []
+        for p in sorted(self._peers.values(), key=lambda r: r.get("peer_id", "")):
+            ob = p.get("outbound")
+            if isinstance(ob, dict) and ob.get("url"):
+                out.append({"peer_id": p["peer_id"], "name": p.get("name", p["peer_id"]), **ob})
+        return out
 
     def verify_peer(self, peer_id: str, raw_body: Union[bytes, str], signature: str) -> bool:
         """Constant-time HMAC check that *raw_body* came from the allowlisted peer."""
@@ -271,3 +440,16 @@ class A2ARegistry(JsonStore):
                     self._save()
                 return dict(rec)
         raise ValueError(f"task {task_id} not found")
+
+
+_REGISTRY: Optional[A2ARegistry] = None
+_REGISTRY_LOCK = threading.Lock()
+
+
+def get_registry() -> A2ARegistry:
+    """The process's one registry, shared by the A2A routes and the outbound tools."""
+    global _REGISTRY
+    with _REGISTRY_LOCK:
+        if _REGISTRY is None:
+            _REGISTRY = A2ARegistry()
+        return _REGISTRY

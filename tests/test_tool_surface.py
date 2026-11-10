@@ -79,7 +79,8 @@ UPDATE_HINT = ("If the change is intended, run `python tests/test_tool_surface.p
 
 #: Every default-off tool switched on: the snapshot pins every tool a host can register.
 #: A tool that is off on a fresh install is not a tool whose schema may drift.
-ENV = {"JARVIS_FILE_TOOLS": "1", "JARVIS_MEDIA_DIRECTOR": "1", "JARVIS_VIDEO_ANALYSIS": "1"}
+ENV = {"JARVIS_FILE_TOOLS": "1", "JARVIS_MEDIA_DIRECTOR": "1", "JARVIS_VIDEO_ANALYSIS": "1",
+       "JARVIS_A2A_ENABLED": "1"}
 SETTINGS = {"llm.execute_code": True, "channels.pending_inputs_enabled": True, "llm.delegate_task": True}
 #: Host settings that make an already-registered tool offer another description or schema
 #: (H325 review r1). Each is pinned as the rows it changes against the base registry.
@@ -523,6 +524,11 @@ def _register_tool_calls():
     for path in sorted((REPO / "agents").rglob("*.py")):
         rel = path.relative_to(REPO)
         if rel.parts[:2] == ("agents", "web"):
+            continue
+        if rel.parts[:3] == ("agents", "vendor", "hermes"):
+            # Upstream text (Adopt lane): its ``ctx.register_tool`` targets Hermes's own
+            # plugin context and is never called here; Nerva registers the adopted tools
+            # itself (e.g. ``agents/core/a2a_outbound.py``), and those calls are walked.
             continue
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)

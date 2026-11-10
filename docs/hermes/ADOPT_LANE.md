@@ -415,3 +415,110 @@ installable skill, another commit), `DRIFT` for a catalog row with a rewrite, an
 - Injection flags in the index are computed when the catalog is built; the loader and
   `skill_view` scan again when a skill loads and is read.
 - About 3.9 MB of upstream Markdown is now in the repository.
+
+## A2A client tools (slice 4, G14 / H562)
+
+Hermes's A2A client tools let an agent call *other* agents. Slice 4 (same pin, `9c0560f8`)
+runs them as they are: `plugins/platforms/a2a/tools.py` (the five tools), `protocol.py` (wire
+format, transcripts, counters) and `security.py` (outbound redaction, inbound framing, audit).
+The inbound adapter (`adapter.py`) and the package's `__init__.py` (gateway registration, setup
+wizard) are not adopted; Nerva's inbound A2A stays `agents/core/a2a.py`. The two package
+`__init__.py` files under `plugins/platforms/` are Nerva-written docstring markers.
+
+### What the owner gets
+
+`PUT /api/a2a/peers/{peer_id}/outbound` (admin) gives an existing peer an address: `url`,
+optional bearer `token` (stored in the secret store as `a2a.peer.<id>`, never in `a2a.json`,
+never echoed; `keep_token` keeps the stored one), `allow_lan`, `timeout` (5–90 s),
+`capabilities` (tags for fan-out) and `tenant`. `DELETE …/outbound` removes it and its token;
+removing the peer removes the token too. `GET /api/a2a/peers` shows the address, never the
+token. With `JARVIS_A2A_ENABLED=1` the coordinator registers the tools
+(`agents/core/a2a_outbound.py`, `register_a2a_tools`):
+
+| Tool | Gate | What it reaches |
+|---|---|---|
+| `a2a_call` | **gated** (approval card per call) | one configured peer, by id or name, or a URL whose origin is a configured peer's |
+| `a2a_orchestrate` | **gated** | every configured peer with the tag (`*` for all); `all` / `first` / `best` |
+| `a2a_discover` | ungated, read-only | the Agent Card of a configured peer |
+| `a2a_list` | ungated, read-only | local only: peers, transcripts, counters |
+| `a2a_history` | ungated, read-only | local only: one stored transcript |
+
+### How a call is governed
+
+1. **E-stop** (`estop.is_engaged`): no network tool runs.
+2. **Targets**: the peers the call names; anything else is refused before vendored code runs
+   (`peer_not_configured`, `unknown_peer`, `no_peer_with_capability`).
+3. **Approval and kernel**: the two sending tools are gated ToolRPC tools, so the call becomes
+   an approval card (the ToolRPC `tool.rpc` kernel check runs first). When the approved card
+   runs, the runtime asks the kernel for kind `a2a.outbound` (payload: tool, peer ids, message
+   length, argument names; never the text). A DENY (halt, budget, loop) refuses it.
+4. **Egress**: the vendored code runs on its own executor (4 threads, 3 calls at a time, 95 s
+   deadline) with three bindings in its context: the compat `httpx` egress call on
+   `PluginHTTPClient.for_plugin("a2a")`, the A2A scope (`a2a_shared`), and the request guard
+   (compat `urllib`). The `a2a` manifest is RESTRICTED with an empty static allowlist; the
+   configured peers' hosts are set as its runtime domains (`plugin_gate.set_dynamic_domains`)
+   before each call, so a removed peer stops being reachable. SSRF resolution with IP
+   pinning, the breaker, the egress ledger and the kernel's `plugin.egress` hook apply.
+5. **The guard** (per request): the origin (scheme, host, port) must be one of the peers *this
+   call* targets (a peer's card cannot route the message elsewhere: `origin_not_allowed`); a
+   LAN host only for a peer marked LAN; `Authorization` must be a handle
+   `Bearer nerva-a2a-peer:<id>` whose peer has that exact origin, and is then replaced by the
+   stored token (`credential_for_another_origin`, `credential_not_a_handle`,
+   `credential_unavailable`); any other credential header is refused. A refusal latches the
+   call like an egress refusal; the tool answers `egress_refused` with the reason code.
+6. **Redaction**: upstream's `redact_outbound` runs on the message; its `redact_for_egress`
+   is Nerva's (stored secret values, then the secret scanner) and fails closed. Upstream
+   also removes e-mail addresses.
+7. **Taint**: `a2a_call`, `a2a_orchestrate`, `a2a_discover` and `a2a_history` are
+   `untrusted_output`. Each answer goes through upstream's `security.wrap_inbound` (injection
+   markers defanged, labelled as a remote agent's text), carries `tainted: True` and
+   `taint_source: "a2a:<peer ids>"`, and raises the turn's taint
+   (`mark_turn_recall_tainted`).
+
+### LAN peers
+
+A peer on the owner's network is allowed only when the owner sets `allow_lan` **and** names it
+by `localhost`, a loopback or an RFC 1918 IPv4 literal: exactly what the egress client dials in
+its `lan` mode. A DNS name that resolves to the LAN is refused at configuration
+(`lan_peer_needs_private_ip_literal`) and, for a public peer, at every request by the SSRF
+resolver, because a name that resolves privately is the rebinding case. Without `allow_lan` a
+private, loopback, link-local or reserved literal, `localhost` and `.local` names are refused
+(`lan_address_needs_allow_lan`). Link-local and metadata addresses are refused even with it.
+An internet peer must use https; plain http is for a LAN peer only, so a token in clear text
+crosses only the owner's network.
+
+### Compat and rule additions
+
+Rules can now be **path-scoped** (`Rule.paths`; recorded in the manifest as `paths`): these
+three apply only under `plugins/platforms/a2a/`, so `import urllib.request` anywhere else is
+still the refused `urllib_refused`.
+
+| Upstream line | Rule | Becomes |
+|---|---|---|
+| `import urllib.request` / `.error` / `.parse` | `a2a-urllib` | `hermes_compat.urllib`: `request.Request`/`urlopen`, `error.URLError`/`HTTPError`, `parse` (stdlib). `urlopen` asks the bound guard, then sends through the compat `httpx`; nothing bound refuses; no redirects; answers over 1 MB refused |
+| `from gateway.platforms._shared`, `hermes_constants`, `hermes_cli.config`, `agent.proxy_bypass`, `agent.secret_scope`, `agent.redact`, `pathlib import …` | `a2a-shared` | `hermes_compat.a2a_shared`: peers as `a2a_agents` with credential handles, home under `<data>/a2a_hermes`, Nerva redaction, no secret read by name, `Path` as an annotation only |
+| `from concurrent.futures import …` | `a2a-futures` | `hermes_compat.futures`: fan-out on one shared 4-thread pool, each task in a copy of the call's context |
+
+Allowlist changes: `hmac` and `ipaddress` joined `SAFE_STDLIB`. `urllib`, `a2a_shared` and
+`futures` are compat modules a vendored file may import only under the a2a package
+(`PATH_SCOPED_COMPAT`). `urlopen` stays denied except as `<name>.request.urlopen` where
+`<name>` is bound to the governed compat `urllib`. A string that is a key or value of a dict
+display, or that a value is compared with (`scheme in ("http", "https")`), is data, not a
+`getattr` name, and is no longer checked against the denied names. The vendored tree's
+`ctx.register_tool` call is upstream's own plugin registration and is never called; the tool
+surface walk skips the vendor tree (Nerva's own registration is walked).
+
+### Limits of slice 4
+
+- Tested against a fake peer at the transport only; no live A2A peer was called.
+- `a2a_discover` and `a2a_call` by URL reach only configured peers; Hermes also lets them reach
+  any URL. That is deliberately narrower.
+- A gated call's reply reaches the owner through the approved task's result, not back into
+  the turn that asked; the turn sees `approval_required`.
+- Upstream's transcripts and audit lines (`<data>/a2a_hermes/a2a_conversations/*.jsonl`,
+  `a2a_audit.jsonl`) have no retention cap.
+- Streaming (`SendStreamingMessage`) and push notifications are not used by the client tools
+  and are not adopted. The kernel's `a2a.outbound` is asked only when `JARVIS_ACTION_KERNEL`
+  is on; with it off the approval card and the e-stop are the gates.
+- Three upstream bandit findings in the vendored files (two `try/except/pass`, one B104 on a
+  blocklist literal) are recorded in `.bandit-baseline.json`.

@@ -60,16 +60,28 @@ class Rule:
     pattern: str
     replacement: str
     why: str
+    #: Upstream path prefixes the rule applies to; empty means every vendored file. A
+    #: scoped rule is how one upstream import gets a different compat module in one
+    #: adopted plugin (the governed ``urllib`` of the A2A client) and stays refused
+    #: everywhere else.
+    paths: tuple[str, ...] = ()
 
     def compiled(self) -> re.Pattern[str]:
         return re.compile(self.pattern, re.MULTILINE)
 
+    def applies_to(self, path: str | None) -> bool:
+        return not self.paths or (path is not None and path.startswith(self.paths))
+
 
 # Line-anchored, order matters (the specific keyless_mcp rule runs before the general
-# ``plugins.web.`` one). No replacement matches any pattern (the import rules all produce
+# ``plugins.web.`` one, and the A2A-scoped ``urllib`` rule before the general refused one).
+# No replacement matches any pattern (the import rules all produce
 # ``from agents.`` / ``import agents.``; the one value rule produces a value its pattern does
 # not match), so applying the rules twice changes nothing (idempotent). Each rule rewrites a
 # line in place: line numbers are preserved, so upstream diffs stay readable.
+#: The adopted A2A client package (slice 4); the only place the governed ``urllib`` exists.
+A2A_PATH = "plugins/platforms/a2a/"
+
 REWRITE_RULES: tuple[Rule, ...] = (
     Rule("httpx", r"^(?P<i>[ \t]*)import httpx(?P<rest>[ \t]*(?:#.*)?)$",
          r"\g<i>from agents.vendor.hermes_compat import httpx\g<rest>",
@@ -128,6 +140,23 @@ REWRITE_RULES: tuple[Rule, ...] = (
     Rule("threading-locks", r"^(?P<i>[ \t]*)import threading(?P<rest>[ \t]*(?:#.*)?)$",
          r"\g<i>from agents.vendor.hermes_compat import locks as threading\g<rest>",
          "locks only; vendored code starts no thread"),
+    # Slice 4 — the A2A client tools (plugins/platforms/a2a/{tools,protocol,security}.py).
+    Rule("a2a-urllib",
+         r"^(?P<i>[ \t]*)import urllib\.(?:request|error|parse)(?P<rest>[ \t]*(?:#.*)?)$",
+         r"\g<i>from agents.vendor.hermes_compat import urllib\g<rest>",
+         "the governed urllib: every urlopen goes through the compat httpx to the PluginHTTPClient "
+         "bound for one A2A call, behind the owner's per-peer origin and credential guard",
+         paths=(A2A_PATH,)),
+    Rule("a2a-shared",
+         r"^(?P<i>[ \t]*)from (?:gateway\.platforms\._shared|hermes_constants|hermes_cli\.config"
+         r"|agent\.proxy_bypass|agent\.secret_scope|agent\.redact|pathlib) import ",
+         r"\g<i>from agents.vendor.hermes_compat.a2a_shared import ",
+         "peers, credential handles, home directory and redaction come from the Nerva A2A scope",
+         paths=(A2A_PATH,)),
+    Rule("a2a-futures", r"^(?P<i>[ \t]*)from concurrent\.futures import ",
+         r"\g<i>from agents.vendor.hermes_compat.futures import ",
+         "fan-out runs on a small shared Nerva pool that carries the call's egress binding",
+         paths=(A2A_PATH,)),
     Rule("urllib-request", r"^(?P<i>[ \t]*)import urllib\.request(?P<rest>[ \t]*(?:#.*)?)$",
          r"\g<i>from agents.vendor.hermes_compat import urllib_refused as urllib\g<rest>",
          "a request object only; opening one is refused (catalog fetches are Nerva's)"),
@@ -143,6 +172,8 @@ SAFE_STDLIB = frozenset({
     "hashlib", "html", "itertools", "json", "logging", "math", "numbers", "operator", "re",
     "statistics", "string", "textwrap", "time", "types", "typing", "unicodedata", "urllib.parse",
     "uuid", "warnings", "weakref",
+    # slice 4 (A2A): pure computation
+    "hmac", "ipaddress",
 })
 #: Compat modules a vendored file may import (``plugin_ctx`` is not one: a vendored file
 #: never registers itself).
@@ -152,7 +183,15 @@ COMPAT_MODULES = frozenset({
     "sdk", "sdk.exa_py", "sdk.parallel",
     # slice 2 (model-provider profiles)
     "providers", "hermes_cli", "locks", "account_usage", "urllib_refused",
+    # slice 4 (A2A client tools)
+    "urllib", "a2a_shared", "futures",
 })
+#: Compat modules only some vendored paths may import: the governed ``urllib`` can open a
+#: request (through the egress binding of one A2A call), so no other adopted file may
+#: name it, even by hand.
+PATH_SCOPED_COMPAT: dict[str, tuple[str, ...]] = {
+    "urllib": (A2A_PATH,), "a2a_shared": (A2A_PATH,), "futures": (A2A_PATH,),
+}
 VENDOR_PACKAGE = "agents.vendor.hermes"
 #: Attribute / imported / string names that reach the network, a process or the import
 #: machinery from an allowed module (``asyncio.open_connection``, ``getattr(x, "...")``).
@@ -172,6 +211,9 @@ DENIED_ATTRS = frozenset({
 #: Attribute names refused on a module name unless that name is bound to a compat module
 #: (``urllib`` is the compat ``urllib_refused`` after the ``urllib-request`` rule).
 DENIED_SUBMODULES = {"urllib": frozenset({"request", "error", "response", "robotparser"})}
+#: The one denied attribute a compat module makes safe: ``<name>.request.urlopen`` where
+#: ``<name>`` is bound to this compat module (the governed ``urllib``).
+GOVERNED_URLOPEN_MODULE = "urllib"
 #: Builtins a vendored file may not call or read.
 DENIED_NAMES = frozenset({"__import__", "exec", "eval", "compile", "open", "__builtins__",
                           "globals", "breakpoint", "input"})
@@ -188,13 +230,19 @@ CATALOG_NAMES = frozenset({"LICENSE"})
 #: Nerva-written package markers for upstream packages whose own ``__init__.py`` is not
 #: adopted (``providers/__init__.py`` is Hermes's plugin loader, ``agent/__init__.py``
 #: preloads a JSON library). Each must be a docstring and nothing else (``status``).
-_LOCAL_PACKAGE_MARKERS = ("agent/__init__.py", "providers/__init__.py")
+_LOCAL_PACKAGE_MARKERS = ("agent/__init__.py", "providers/__init__.py",
+                          # slice 4: upstream's a2a ``__init__`` is the gateway plugin loader
+                          "plugins/platforms/__init__.py", "plugins/platforms/a2a/__init__.py")
 
 
-def rewrite(text: str) -> tuple[str, list[str]]:
-    """``(rewritten text, ids of the rules that changed something)``."""
+def rewrite(text: str, path: str | None = None) -> tuple[str, list[str]]:
+    """``(rewritten text, ids of the rules that changed something)``. *path* is the
+    upstream path; a rule scoped to other paths (or any scoped rule, with no path) is
+    skipped."""
     applied: list[str] = []
     for rule in REWRITE_RULES:
+        if not rule.applies_to(path):
+            continue
         new, count = rule.compiled().subn(rule.replacement, text)
         if count:
             applied.append(rule.id)
@@ -228,9 +276,31 @@ def unmapped_imports(text: str, path: str = "x.py") -> list[str]:
     except SyntaxError as exc:
         return [f"unparseable: {exc.msg}"]
     found: list[str] = []
-    compat_bound = {alias.asname or alias.name for node in ast.walk(tree)
+    compat_names = {alias.asname or alias.name: alias.name for node in ast.walk(tree)
                     if isinstance(node, ast.ImportFrom) and node.level == 0
                     and node.module == COMPAT_PACKAGE for alias in node.names}
+    compat_bound = set(compat_names)
+
+    def scoped_out(compat: str) -> bool:
+        scope = PATH_SCOPED_COMPAT.get(compat)
+        return scope is not None and not path.startswith(scope)
+
+    def governed_urlopen(node: ast.Attribute) -> bool:
+        base = node.value
+        return (node.attr == "urlopen" and isinstance(base, ast.Attribute) and base.attr == "request"
+                and isinstance(base.value, ast.Name)
+                and compat_names.get(base.value.id) == GOVERNED_URLOPEN_MODULE)
+
+    # A string that is a key or value of a dict display is wire data (an A2A card's
+    # ``{"type": "http"}``), not a name handed to ``getattr``; it is not checked as one.
+    # The same holds for a string a value is compared with (``scheme in ("http", "https")``).
+    dict_data = {id(item) for node in ast.walk(tree) if isinstance(node, ast.Dict)
+                 for item in (*node.keys, *node.values) if isinstance(item, ast.Constant)}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Compare):
+            for side in node.comparators:
+                items = side.elts if isinstance(side, (ast.Tuple, ast.List, ast.Set)) else [side]
+                dict_data.update(id(item) for item in items if isinstance(item, ast.Constant))
     for node in ast.walk(tree):
         line = getattr(node, "lineno", 0)
         if isinstance(node, ast.Import):
@@ -258,15 +328,22 @@ def unmapped_imports(text: str, path: str = "x.py") -> list[str]:
                 for alias in node.names:
                     if alias.name not in COMPAT_MODULES:
                         found.append(f"line {line}: from {module} import {alias.name}")
+                    elif scoped_out(alias.name):
+                        found.append(f"line {line}: from {module} import {alias.name} "
+                                     f"(only under {', '.join(PATH_SCOPED_COMPAT[alias.name])})")
                     elif alias.name == "os_env" and alias.asname not in (None, "os"):
                         found.append(f"line {line}: os_env imported as {alias.asname}")
             elif not _module_allowed(module):
                 found.append(f"line {line}: from {module or '.'} import ...")
+            elif module.startswith(COMPAT_PACKAGE + ".") and \
+                    scoped_out(module[len(COMPAT_PACKAGE) + 1:].split(".", 1)[0]):
+                found.append(f"line {line}: from {module} import ... (path-scoped compat module)")
             for alias in node.names:
                 if alias.name in DENIED_ATTRS or alias.name == "*":
                     found.append(f"line {line}: from {module} import {alias.name}")
         elif isinstance(node, ast.Attribute) and node.attr in DENIED_ATTRS:
-            found.append(f"line {line}: .{node.attr}")
+            if not governed_urlopen(node):
+                found.append(f"line {line}: .{node.attr}")
         elif (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
                 and node.attr in DENIED_SUBMODULES.get(node.value.id, frozenset())
                 and node.value.id not in compat_bound):
@@ -274,7 +351,7 @@ def unmapped_imports(text: str, path: str = "x.py") -> list[str]:
         elif isinstance(node, ast.Name) and node.id in DENIED_NAMES:
             found.append(f"line {line}: {node.id}")
         elif isinstance(node, ast.Constant) and isinstance(node.value, str) \
-                and node.value in DENIED_ATTRS:
+                and node.value in DENIED_ATTRS and id(node) not in dict_data:
             found.append(f"line {line}: {node.value!r}")
     return found
 
@@ -352,7 +429,8 @@ def sha256(data: bytes) -> str:
 
 
 def rules_record() -> list[dict]:
-    return [{"id": r.id, "pattern": r.pattern, "replacement": r.replacement, "why": r.why}
+    return [{"id": r.id, "pattern": r.pattern, "replacement": r.replacement, "why": r.why,
+             **({"paths": list(r.paths)} if r.paths else {})}
             for r in REWRITE_RULES]
 
 
@@ -437,7 +515,7 @@ def cmd_status(vendor_root: Path, upstream: Path | None, out) -> int:
             out.write(f"DRIFT   {entry['path']}  (a catalog file is vendored byte-identical, never rewritten)\n")
             problems += 1
             continue
-        again = data.decode("utf-8") if catalog else rewrite(data.decode("utf-8"))[0]
+        again = data.decode("utf-8") if catalog else rewrite(data.decode("utf-8"), entry["path"])[0]
         if again.encode("utf-8") != data:
             out.write(f"DRIFT   {entry['path']}  (rewrite is not a no-op on the vendored text)\n")
             problems += 1
@@ -467,7 +545,7 @@ def cmd_status(vendor_root: Path, upstream: Path | None, out) -> int:
                 problems += 1
                 continue
             redone, redone_rules = ((raw.decode("utf-8"), []) if catalog
-                                    else rewrite(raw.decode("utf-8")))
+                                    else rewrite(raw.decode("utf-8"), entry["path"]))
             if redone.encode("utf-8") != data or redone_rules != applied:
                 out.write(f"DRIFT   {entry['path']}  (rewritten upstream != vendored)\n")
                 problems += 1
@@ -513,7 +591,7 @@ def cmd_diff(vendor_root: Path, upstream: Path, paths: list[str], out) -> int:
             continue
         new_text = src.read_text(encoding="utf-8")
         if not is_catalog_path(rel):
-            new_text, _ = rewrite(new_text)
+            new_text, _ = rewrite(new_text, rel)
         target = vendor_root / rel
         old_text = target.read_text(encoding="utf-8") if target.exists() else ""
         if new_text == old_text:
@@ -554,7 +632,7 @@ def cmd_pull(vendor_root: Path, upstream: Path, paths: list[str], *, commit: str
             return 2
         raw = src.read_bytes()
         try:
-            text, applied = rewrite(raw.decode("utf-8"))
+            text, applied = rewrite(raw.decode("utf-8"), rel)
         except UnicodeDecodeError:
             out.write(f"refused {rel}: not UTF-8 text\n")
             return 2

@@ -56,6 +56,9 @@ _NEEDS: dict[str, list[str]] = {
     "postiz": ["POSTIZ_API_KEY"],
     "revenuecat": ["REVENUECAT_API_KEY"],
     "osint_enrich": ["JARVIS_OSINT_ENRICH=1 (default-off OSINT enrichment egress flag)"],
+    # G14: the outbound A2A tools reach only peers the owner gave an address.
+    "a2a": ["JARVIS_A2A_ENABLED=1",
+            "a peer with an outbound address (PUT /api/a2a/peers/{peer_id}/outbound)"],
 }
 
 

@@ -24,7 +24,7 @@ ID-urile H001–H697 sunt poziții în inventarul înghețat, validate prin hash
 | [media](#area-media) — Media: images, video, voice, vision | adopt/own | 27 | 7 | 19 | 1 | 0 | 0 | 100 | seed din dovezi |
 | [editor-acp](#area-editor-acp) — Editor agent over ACP | own/adopt | 6 | 0 | 0 | 5 | 1 | 0 | 2 | **subțire**, seed din dovezi |
 | [mcp](#area-mcp) — MCP client and server | own/run | 13 | 2 | 5 | 6 | 0 | 0 | 7 | **subțire**, seed din dovezi |
-| [agent-interop](#area-agent-interop) — OpenAI-compatible API and agent-to-agent (A2A) | own/adopt | 5 | 0 | 2 | 2 | 1 | 0 | 1 | **subțire**, seed din dovezi |
+| [agent-interop](#area-agent-interop) — OpenAI-compatible API and agent-to-agent (A2A) | own/adopt | 5 | 0 | 3 | 1 | 1 | 0 | 2 | **subțire**, seed din dovezi |
 | [extensions](#area-extensions) — Extensions, hooks and deployment packaging | own/adopt | 9 | 1 | 6 | 0 | 2 | 0 | 13 | seed din dovezi |
 | [feature-pages](#area-feature-pages) — Upstream feature pages (cross-cutting) | own/adopt/run | 48 | 4 | 35 | 6 | 3 | 0 | 168 | seed din dovezi |
 | [user-journeys](#area-user-journeys) — User journeys from the rest of the docs (cross-cutting) | own | 33 | 3 | 25 | 2 | 3 | 0 | 62 | seed din dovezi |
@@ -756,13 +756,13 @@ Lane: own/run. Suită: 7 intrări (**subțire**, seed din dovezi); 5/13 rânduri
 
 ## agent-interop — OpenAI-compatible API and agent-to-agent (A2A)
 
-Lane: own/adopt. Suită: 1 intrări (**subțire**, seed din dovezi); 1/4 rânduri reevaluate citează un test din suită.
+Lane: own/adopt. Suită: 2 intrări (**subțire**, seed din dovezi); 2/4 rânduri reevaluate citează un test din suită.
 
 | ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
 |---|---|---|---|---|---|
 | <a id="h560"></a>H560 | Point any OpenAI-compatible app at Nerva as its backend | copy | Lipsă | Reevaluat | - POST /v1/chat/completions: system flattening, history, fingerprint-derived session id, SSE streaming with a tool-progress event, idempotency keys, 502 agent_incomplete - POST /v1/responses with server-side storage, previous_response_id chaining, named conversations, typed streaming events - GET and DELETE /v1/responses/{id} - GET /v1/models with a stable virtual model and route aliases - GET /api/model/options - governance: taint at the boundary, mandatory bearer key, default-off flag, loopback bind [d1](../agents/core/routers/analytics.py) [d2](../agents/core/client_protocol.py) [d3](../tests/test_client_protocol.py) |
 | <a id="h561"></a>H561 | Accept work from another agent over the open A2A protocol | update | Parțial | Reevaluat | - The A2A v1.0 JSON-RPC surface (SendMessage, SendStreamingMessage, GetTask, ListTasks, CancelTask, SubscribeToTask, push-config methods) - Task states including INPUT_REQUIRED, streaming SSE, signed push webhooks - Agent Card at the standard /.well-known/agent-card.json path with skills - Executing an approved task in a live session and returning the result to the peer [d1](../agents/core/routers/a2a.py) [d2](../agents/core/a2a.py) |
-| <a id="h562"></a>H562 | Call other agents as tools and fan work out to peers | copy | Lipsă | Reevaluat | - a2a_discover (fetch and summarise a remote Agent Card) - a2a_call (task to a named peer or URL, returning the context id) - a2a_list and a2a_history (persisted transcript by context id) - a2a_orchestrate (fan-out by capability tag, all/first/best) - a peer registry with url, bearer auth, timeout and tags - egress through plugin.egress with per-peer allowlist and credential redaction [d1](../agents/core/a2a.py) [d2](../agents/core/routers/a2a.py) |
+| <a id="h562"></a>H562 | Call other agents as tools and fan work out to peers | copy | Parțial | Reevaluat | - the approved reply returned into the turn that asked (today: approval_required, then a2a_history) - an owner policy that lets a trusted peer run without a card per call (kernel ACT for a2a.outbound) - raw-URL calls to an unconfigured agent: deliberately not offered (owner decision if wanted) - a live interop run against a real A2A peer [d1](../agents/core/a2a.py) [d2](../agents/core/a2a_outbound.py) [d3](../agents/core/routers/a2a.py) |
 | <a id="h563"></a>H563 | Harden the A2A channel against a hostile or runaway peer | update | Parțial | Reevaluat | - Inbound injection defanging and an untrusted-provenance banner, for when peer text reaches a model - Outbound credential redaction - Per-identity rate limiting and an anti-loop turn cap - Bind-host safety rule and a trusted-peer allow-list separate from authentication - A dedicated append-only A2A audit line per exchange [d1](../agents/core/a2a.py) [d2](../agents/core/routers/a2a.py) |
 | <a id="h565"></a>H565 | Let third-party apps ride the owner's authenticated model subscription | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
 
