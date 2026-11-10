@@ -273,15 +273,15 @@ def configure_logging() -> None:
 def main() -> None:
     apply_safe_mode_switch()
     configure_logging()
-    from agents.core.env_alias import CONFIG_REFUSED_EXIT, ConfigurationRefused
+    from agents.core.env_alias import ConfigurationRefused
 
     try:
         asyncio.run(run())
     except ConfigurationRefused as refused:
-        # RB-2: the configuration contradicts itself. Starting again cannot help, so this
-        # leaves with the status the supervisor does not respawn on.
+        # RB-2: the refusal's own status — 78 (the supervisor does not respawn on it) for one
+        # variable under both spellings in the process environment, 1 for a .env refusal.
         print(refused, file=sys.stderr)
-        raise SystemExit(CONFIG_REFUSED_EXIT) from None
+        raise SystemExit(refused.exit_status) from None
 
 
 if __name__ == "__main__":

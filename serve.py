@@ -153,7 +153,21 @@ def apply_staged_restore():
     return result
 
 
-apply_staged_restore()
+def _leave_refused(refused) -> None:
+    """RB-2: a refused configuration ends the start with the status the refusal carries —
+    78 for one variable under both spellings in the process environment (no restart can
+    cure it, and the service units do not restart on it), the ordinary failure status for
+    a refusal that comes from a .env file (the service manager tries again)."""
+    print(refused, file=sys.stderr)
+    raise SystemExit(refused.exit_status) from None
+
+
+try:
+    apply_staged_restore()
+except SystemExit as _stopped:      # its load of the .env files refuses as main()'s does
+    if not hasattr(_stopped, "exit_status"):
+        raise
+    _leave_refused(_stopped)
 
 # O26-P0.6 (F6): the boot guards moved to agents/core/boot_guards.py so the
 # raw-uvicorn entry (`python -m uvicorn agents.web:app`) enforces the same
@@ -521,12 +535,9 @@ def run_server(server) -> None:
 
 
 if __name__ == "__main__":
-    from agents.core.env_alias import CONFIG_REFUSED_EXIT, ConfigurationRefused
+    from agents.core.env_alias import ConfigurationRefused
 
     try:
         main()
     except ConfigurationRefused as refused:
-        # RB-2: the configuration contradicts itself. Starting again cannot help: leave with
-        # the status the service units do not restart on (and nothing else maps to it).
-        print(refused, file=sys.stderr)
-        raise SystemExit(CONFIG_REFUSED_EXIT) from None
+        _leave_refused(refused)

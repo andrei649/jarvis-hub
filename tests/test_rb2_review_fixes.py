@@ -140,13 +140,14 @@ def test_the_load_and_every_prediction_use_one_function(clean, tmp_path):
     assert "load_dotenv" not in load_source and "layer_values(" in load_source
     for function in (ep.after_repo_layer, ep.hub_value, ep.derive_alias):
         source = inspect.getsource(function)
-        assert "layer_values(" in source or "_layer_fold(" in source
+        assert "layer_values(" in source or "_layer_fold(" in source or "_folded_value(" in source
     assert "layer_values(" in inspect.getsource(ep._layer_fold)
+    assert "_layer_fold(" in inspect.getsource(ep._folded_value)
     values = ep.layer_values((("NERVA_HOME", "/x"), ("A", "${JARVIS_HOME}/a"), ("B", "${NERVA_NOPE}/b"),
                               ("C", None), ("D", "${C}-${NERVA_HOME:-z}")), {"PATH": "/bin"})
     assert values.values == {"NERVA_HOME": "/x", "A": "/x/a", "B": "/b", "D": "-/x"}
-    assert {key: [(ref.name, ref.state, ref.leading) for ref in refs] for key, refs in values.empty.items()} == {
-        "B": [("NERVA_NOPE", ep.UNSET, True)], "D": [("C", ep.BLANK, False)]}
+    assert {key: [(ref.name, ref.state) for ref in refs] for key, refs in values.empty.items()} == {
+        "B": [("NERVA_NOPE", ep.UNSET)], "D": [("C", ep.BLANK)]}
 
 
 def test_every_hub_variable_that_names_a_path_is_on_the_list():
@@ -242,7 +243,7 @@ def test_the_supervisor_stops_on_a_refused_configuration_instead_of_respawning(t
                       "NERVA_ADMIN_TOKEN": "one-token-aa11bb", "JARVIS_ADMIN_TOKEN": "another-token-cc22dd"})
     out = subprocess.run([sys.executable, "scripts/runtime_supervisor.py"], cwd=ROOT, env=env,
                          capture_output=True, text=True, timeout=120)
-    assert out.returncode == 78, (out.returncode, out.stderr[-1500:])
+    assert out.returncode == 78, (out.returncode, out.stderr[-1500:])      # a PROCESS pair: permanent
     assert out.stderr.count("Refusing to start: NERVA_ADMIN_TOKEN / JARVIS_ADMIN_TOKEN") == 1     # once
     assert "not respawning" in out.stderr
     assert "one-token-aa11bb" not in out.stdout + out.stderr and "another-token-cc22dd" not in out.stdout + out.stderr

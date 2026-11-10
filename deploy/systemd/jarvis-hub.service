@@ -54,9 +54,9 @@ EnvironmentFile=-/etc/jarvis-hub/jarvis.env
 
 # Restart policy — survive a crash, back off so a crash-loop doesn't thrash.
 Restart=on-failure
-# 78 = the hub refused its configuration (one variable under both the NERVA_ and the
-# JARVIS_ spelling with different values, or a path/credential in .env built from a
-# ${...} reference that nothing sets): restarting cannot help, so do not loop on it.
+# 78 = one variable is set under both the NERVA_ and the JARVIS_ spelling, with different
+# values, in this unit's environment (Environment= / EnvironmentFile): restarting cannot
+# help, so do not loop on it. (A refusal that comes from a .env file exits 1 and is retried.)
 RestartPreventExitStatus=78
 RestartSec=5
 

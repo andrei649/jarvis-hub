@@ -77,6 +77,7 @@ from typing import NamedTuple
 
 from .env_config import (
     DEPRECATED_PREFIX,
+    HUB_ENV_SUFFIXES,
     PREFERRED_PREFIX,
     env_str,
     other_spelling,
@@ -98,9 +99,17 @@ CONFIG_REFUSED_EXIT = 78
 
 
 class ConfigurationRefused(SystemExit):
-    """The configuration contradicts itself (or names the filesystem root): the process
-    must not start. A ``SystemExit`` whose text is the refusal, as every boot guard
-    raises; a launcher that supervises the process turns it into ``CONFIG_REFUSED_EXIT``."""
+    """The configuration is refused: the process must not start. A ``SystemExit`` whose
+    text is the refusal, as every boot guard raises. ``exit_status`` is what an entry
+    point leaves with: ``CONFIG_REFUSED_EXIT`` only when *permanent* — one variable under
+    both spellings in the PROCESS environment, a launcher's or an operator's mistake no
+    restart can cure. A refusal that comes from a ``.env`` file is an ordinary failure
+    (1): the file may have been caught mid-save, or name a variable this service does not
+    have yet, and the service manager should try again with its usual backoff."""
+
+    def __init__(self, message: str, *, permanent: bool = False) -> None:
+        super().__init__(message)
+        self.exit_status = CONFIG_REFUSED_EXIT if permanent else 1
 
 
 def canonical(name: str) -> str:
@@ -287,7 +296,7 @@ def refuse_conflicts(environ: Mapping[str, str] | None = None, *,
     Names the variable, never a value."""
     names = conflicts(environ)
     if names:
-        raise ConfigurationRefused(conflict_message(names, where))
+        raise ConfigurationRefused(conflict_message(names, where), permanent=where == PROCESS_ENVIRONMENT)
 
 
 #: ``<X>`` of the hub variables whose value names a directory or a file (one path, or a
@@ -301,6 +310,31 @@ PATH_TYPED = frozenset({
     "EVAL_STORE", "LOG_FILE", "RUNTIME_LOG", "RUNTIME_STATE", "SUBAGENT_SPAWN_LOG",
     "CA_BUNDLE", "WASM_PYTHON", "TERMINAL_SSH_KNOWN_HOSTS",
 })
+#: ``<X>`` of the hub variables whose VALUE is a credential — reviewed, by name. This is
+#: what the load refuses when a ``.env`` builds it from a ``${...}`` that nothing sets.
+#: (``env_provenance.masked`` is a wider substring test, right for hiding a value on a
+#: screen and wrong for a refusal: it also matches a token budget, a flag and a path.
+#: ``tests/test_rb2_review3_fixes.py`` makes every name it matches be classified here.)
+CREDENTIALS = frozenset({
+    "ADMIN_TOKEN", "USER_TOKEN", "AUDIT_KEY", "SECRET_KEY", "TOKEN_KEY", "BACKUP_KEY", "E2E_SYNC_KEY",
+    "SKILL_SIGNING_KEY", "A2A_KEY", "HERMES_BRIDGE_TOKEN", "H30_HA_TOKEN", "H31_FRIGATE_TOKEN",
+})
+#: Masked by name, and not a credential: an integer, a flag, a ``{{secret:…}}`` handle, a
+#: directory, a public OAuth client id.
+NOT_CREDENTIALS = frozenset({"BUDGET_MAX_TOKENS", "PASSIVE_CAPTURE", "HA_TOKEN_REF", "KEY_DIR", "NOUS_CLIENT_ID"})
+
+
+def credential(name: str) -> bool:
+    """Whether the hub variable *name* (either spelling) holds a credential: one of
+    ``CREDENTIALS``, or a key of a run-time family (``JARVIS_ROLE_<NAME>_KEY``,
+    ``JARVIS_VLM_KEY``)."""
+    key = canonical(name)
+    if other_spelling(key) is None:
+        return False
+    suffix = key[len(DEPRECATED_PREFIX):]
+    return suffix in CREDENTIALS or (suffix not in HUB_ENV_SUFFIXES and suffix.endswith("_KEY"))
+
+
 _DRIVE_ROOT = re.compile(r"[A-Za-z]:[\\/]*\Z")
 
 
@@ -353,9 +387,9 @@ def supplied_name(name: str, environ: Mapping[str, str] | None = None) -> str:
 
 
 __all__ = [
-    "CONFIG_REFUSED_EXIT", "ConfigurationRefused", "DEPRECATED_PREFIX", "Fold", "HANDOFF", "MARKER",
+    "CONFIG_REFUSED_EXIT", "CREDENTIALS", "ConfigurationRefused", "DEPRECATED_PREFIX", "Fold", "HANDOFF", "MARKER",
     "PATH_TYPED", "PREFERRED_PREFIX", "PRIVATE_NAMES", "PROCESS_ENVIRONMENT", "canonical", "conflict_message",
-    "conflicts", "fold", "hand_over", "lookup", "normalize", "normalize_process_env", "normalized", "path_typed",
+    "conflicts", "credential", "fold", "hand_over", "lookup", "normalize", "normalize_process_env", "normalized", "path_typed",
     "preferred_name", "preferred_supplied", "refuse_conflicts", "root_path_warning", "root_paths",
     "spelling_info", "supplied_name",
 ]

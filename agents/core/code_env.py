@@ -99,7 +99,8 @@ def _passable_name(name: object) -> bool:
 
 
 #: NERVA_* variables that are credentials although their names do not say so.
-_NERVA_CREDENTIALS = frozenset({"NERVA_WORKSPACE_SETUP_CODE", "NERVA_WORKSPACE_JOB_NONCE"})
+_NERVA_CREDENTIALS = frozenset({"NERVA_WORKSPACE_SETUP_CODE", "NERVA_WORKSPACE_JOB_NONCE",
+                                "NERVA_WS_SESSION", "NERVA_WS_ADMIN_SESSION"})
 
 
 def _refused_nerva_name(upper: str) -> bool:

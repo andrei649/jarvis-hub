@@ -1743,9 +1743,7 @@ file or compose file needs no change. This page and the code keep the `JARVIS_` 
   or one `.env` file) **to different values: the hub refuses to start** and names the
   variable (never a value). This holds for *every* hub variable — there is none for
   which one spelling "wins". Equal values are fine; an empty one yields to the other.
-  The coordinator, the `nerva` command and the stdio MCP bridge apply the same rule;
-  the runtime supervisor stops (exit status 78) instead of respawning a coordinator
-  that refused.
+  The coordinator, the `nerva` command and the stdio MCP bridge apply the same rule.
 - **Naming a variable works under either spelling too:** `--token-env NERVA_USER_TOKEN`,
   `NERVA_MCP_STDIO_ALLOWED_ENV=NERVA_HOME,NERVA_PROFILE` (the child receives
   `JARVIS_HOME` / `JARVIS_PROFILE`, exactly what the old spelling passes) and a
@@ -1753,33 +1751,42 @@ file or compose file needs no change. This page and the code keep the `JARVIS_` 
 - **References in a `.env`.** `${NAME}` and `${NAME:-default}` resolve under either
   spelling of a hub variable, from the environment first and the file's earlier lines
   second, in every layer, and (as python-dotenv always did) in every value, quoted or
-  not. For a `JARVIS_`-only file the values are exactly what they were, with three
+  not. For a `JARVIS_`-only file the values are exactly what they were, with two
   exceptions — things python-dotenv did silently that nobody meant, which now stop the
   start and name the variable (never a value):
   1. a **path-typed** variable built from a reference that nothing sets
      (`JARVIS_LOG_FILE=${LOGDIR}/hub.log` with no `LOGDIR` used to become `/hub.log`);
-  2. a path-typed variable that **opens with a reference that is set but empty**, a `/`
-     following (`JARVIS_FILE_ROOTS=${DATA}/` with `DATA=` used to become `/`);
-  3. a hub **credential** whose value contains a reference that nothing sets (part of
-     the token was dropped). If the `${` is part of the secret itself, set that variable
-     in the process environment, or write its dollar sign as `${LITERAL_DOLLAR:-$}`.
+  2. a hub **credential** (the reviewed list `env_alias.CREDENTIALS`: the admin and user
+     tokens, the audit, secret, token, backup, sync, signing and A2A keys, the bridge
+     and integration tokens, and the `ROLE_*_KEY` / `VLM_KEY` family) whose value contains
+     a reference that nothing sets (part of the token was dropped). If the `${` is part
+     of the secret itself, set that variable in the process environment, or write its
+     dollar sign as `${LITERAL_DOLLAR:-$}`.
 
-  Everything else starts as before: a reference that is defined and blank (`HA_URL=`
-  then `JARVIS_HA_URL=${HA_URL}`, a feature switched off), an address, allowlist or flag
-  built from an unset reference (one warning names the variable), and any reference with
-  a `:-default`. A path **written out** as the filesystem root (`JARVIS_FILE_ROOTS=/`)
+  Everything else starts as before: a reference that is **defined** and blank, whatever
+  it builds (`HA_URL=` then `JARVIS_HA_URL=${HA_URL}`, a feature switched off; `PREFIX=`
+  then `JARVIS_LOG_FILE=${PREFIX}/var/log/hub.log`, an optional prefix), an address,
+  allowlist, number or flag built from an unset reference (one warning names the
+  variable), and any reference with a `:-default`. A path **written out** as the filesystem root (`JARVIS_FILE_ROOTS=/`)
   also starts, with one `[SECURITY]` line naming the variable; `nerva doctor` warns.
   The path-typed variables, by name: `HOME`, `USER_HOME`, `MEMORY_DIR`, `APP_ROOT`,
   `FILE_ROOTS`, `TERMINAL_LOCAL_ROOTS`, `MEDIA_ROOTS`, `KEY_DIR`, `EXEC_TEMP_DIR`,
   `FORGET_ARCHIVE_DIR`, `PLAYWRIGHT_DOWNLOAD_DIR`, `DRIVE_AI_DEST`, `EVAL_STORE`,
   `LOG_FILE`, `RUNTIME_LOG`, `RUNTIME_STATE`, `SUBAGENT_SPAWN_LOG`, `CA_BUNDLE`,
   `WASM_PYTHON`, `TERMINAL_SSH_KNOWN_HOSTS`.
-- **A refused start is exit status 78**, from `serve.py` and from the coordinator, and
+- **Exit status.** One variable under both spellings in the **process environment** is
+  exit status 78 from `serve.py` and from the coordinator: no restart can cure it, so
   both systemd units and the Windows service are told not to restart on it
-  (`RestartPreventExitStatus=78`, `AppExit 78 Exit`). The tools that repair a broken
-  configuration are never refused: `scripts/token_recover.py`, `nerva doctor`,
-  `nerva config …`, `nerva support`, `nerva logs`, `nerva uninstall` and
-  `nerva completion` run and report what the hub will refuse.
+  (`RestartPreventExitStatus=78`, `AppExit 78 Exit`) and the runtime supervisor does not
+  respawn. A refusal that comes from a **`.env` file** (both spellings in the file, or
+  one of the two lines above) is the ordinary failure status: the file may have been
+  caught mid-save, or name a variable this service gets later, so the service manager
+  tries again with its usual backoff. `scripts/token_recover.py` is never refused (it
+  loads what is there and reports what the hub will refuse), and neither are the
+  read-only diagnostics `nerva doctor`, `nerva completion`, `nerva logs`,
+  `nerva config path` and `nerva config env-path`. Every other `nerva` verb — anything
+  that writes a setting, deletes, uploads or talks to a hub with a token — refuses on a
+  conflicting pair, naming the variable.
 - **Seeing it.** `nerva doctor` (`config_sources`) marks each key still supplied under
   the old spelling, fails on a conflict or a reference to nothing, and warns on a path
   set to the filesystem root; `/api/admin/env/sources`

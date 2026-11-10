@@ -60,6 +60,7 @@ def clean(monkeypatch):
             monkeypatch.delenv(key)
     monkeypatch.setattr(ep, "_PROBLEMS", [])
     monkeypatch.setattr(ep, "_ROOTS_WARNED", set())
+    monkeypatch.setattr(ep, "_HUB_LOADED", ep._HUB_LOADED)
     yield monkeypatch
     for key in set(os.environ) - set(saved):
         os.environ.pop(key, None)
@@ -134,9 +135,11 @@ def test_a_literal_root_is_announced_once_by_name_and_never_by_value(clean, tmp_
     assert "JARVIS_FILE_ROOTS" in loud[0] and "process environment" in loud[0]
     assert "NERVA_KEY_DIR" in loud[1] and "repo .env" in loud[1]
     assert "MEDIA_ROOTS" not in "".join(loud) and "TERMINAL_LOCAL_ROOTS" not in "".join(loud)   # no list parsing
-    boot_guards.assert_parseable_posture_flags()
-    console = capsys.readouterr().out
-    assert "[SECURITY] JARVIS_FILE_ROOTS, JARVIS_KEY_DIR are set to the filesystem root" in console
+    with caplog.at_level(logging.WARNING):
+        boot_guards.assert_parseable_posture_flags()                     # the guards say nothing again
+        boot_guards.assert_parseable_posture_flags()
+    assert len([record for record in caplog.records if "filesystem root" in record.getMessage()]) == 2
+    assert "filesystem root" not in "".join(capsys.readouterr())
     assert env_alias.root_paths({"JARVIS_FILE_ROOTS": "/tmp;/", "JARVIS_MEDIA_ROOTS": "/a:/", "JARVIS_PORT": "/",
                                  "JARVIS_FILE_TOOLS": "/"}) == []
     assert not hasattr(env_alias, "unsafe_paths") and "_LIST_SEPARATORS" not in vars(env_alias)
@@ -155,7 +158,7 @@ def test_the_doctor_warns_on_a_literal_root_and_does_not_fail(tmp_path):
 
 # ── BLOCKER 2: the table, decided from the record of the expansion ─────────────────
 
-BOOTS, WARNS = "boots", "boots with a warning"
+BOOTS, WARNS, ROOT_WARNED = "boots", "boots with a warning", "boots, announced as a root"
 TABLE = [
     # the feature-off idiom: defined, and blank
     ("HA_URL=\nHA_TOKEN=\n{p}_HA_URL=${{HA_URL}}\n{p}_H30_HA_TOKEN=${{HA_TOKEN}}\n", BOOTS, None),
@@ -180,10 +183,17 @@ TABLE = [
     ("{p}_FILE_ROOTS=/srv/data,${{EXTRA_ROOT}}/\n", ep.PATH_UNSET, "FILE_ROOTS"),
     ("{p}_KEY_DIR=/etc/${{TYPO}}/keys\n", ep.PATH_UNSET, "KEY_DIR"),
     ("{p}_FILE_ROOTS=${{DATA}}/.\n", ep.PATH_UNSET, "FILE_ROOTS"),                       # not from the final string
-    ("DATA=\n{p}_FILE_ROOTS=${{DATA}}/\n", ep.PATH_ROOTED, "FILE_ROOTS"),
-    ("DATA=\n{p}_KEY_DIR=${{DATA}}/keys\n", ep.PATH_ROOTED, "KEY_DIR"),
-    ("DATA=\n{p}_MEDIA_ROOTS=${{DATA}}//./\n", ep.PATH_ROOTED, "MEDIA_ROOTS"),
-    ("{p}_USER_HOME=\n{p}_TERMINAL_LOCAL_ROOTS=${{{p}_USER_HOME}}/\n", ep.PATH_ROOTED, "TERMINAL_LOCAL_ROOTS"),
+    # a reference that is DEFINED and blank is the operator's stated value: it boots, whatever it builds
+    ("PREFIX=\n{p}_LOG_FILE=${{PREFIX}}/var/log/hub.log\n", BOOTS, None),             # the optional prefix
+    ("DATA=\n{p}_KEY_DIR=${{DATA}}/keys\n", BOOTS, None),
+    ("DATA=\n{p}_FILE_ROOTS=${{DATA}}/\n", ROOT_WARNED, "FILE_ROOTS"),                 # … and a root is announced
+    ("DATA=\n{p}_MEDIA_ROOTS=${{DATA}}//./\n", ROOT_WARNED, "MEDIA_ROOTS"),
+    ("{p}_USER_HOME=\n{p}_TERMINAL_LOCAL_ROOTS=${{{p}_USER_HOME}}/\n", ROOT_WARNED, "TERMINAL_LOCAL_ROOTS"),
+    # masked by name, and not credentials: an integer, a flag, a secret handle (main's value, a warning)
+    ("{p}_BUDGET_MAX_TOKENS=${{BUDGET}}\n", WARNS, "BUDGET_MAX_TOKENS"),
+    ("{p}_PASSIVE_CAPTURE=${{CAPTURE}}\n", WARNS, "PASSIVE_CAPTURE"),
+    ("{p}_HA_TOKEN_REF={{{{secret:${{HA_SECRET_NAME}}}}}}\n", WARNS, "HA_TOKEN_REF"),
+    ("{p}_NOUS_CLIENT_ID=${{CLIENT}}\n", WARNS, "NOUS_CLIENT_ID"),
     ("{p}_ADMIN_TOKEN=abc${{NOT_SET_ANYWHERE}}def\n", ep.CREDENTIAL_UNSET, "ADMIN_TOKEN"),
     ("{p}_AUDIT_KEY='k1${{x}}k2'\n", ep.CREDENTIAL_UNSET, "AUDIT_KEY"),
     ("{p}_ROLE_VISION_KEY=${{VISION_KEY}}\n", ep.CREDENTIAL_UNSET, "ROLE_VISION_KEY"),
@@ -197,7 +207,7 @@ def test_the_reference_table(clean, tmp_path, caplog, spelling, template, outcom
     repo = _write(tmp_path / ".env", text)
     main_gives = _dotenv_adds(text.replace("NERVA_", "JARVIS_"), dict(os.environ))
     predicted = ep.derive_alias(repo, None, dict(os.environ))[2]
-    if outcome in (BOOTS, WARNS):
+    if outcome in (BOOTS, WARNS, ROOT_WARNED):
         with caplog.at_level(logging.INFO):
             ep.load_layered_env(repo, None)
         assert ep.problems() == [] and predicted == {}
@@ -206,6 +216,8 @@ def test_the_reference_table(clean, tmp_path, caplog, spelling, template, outcom
         warnings = [record.getMessage() for record in caplog.records if record.levelno == logging.WARNING]
         if outcome == WARNS:
             assert len(warnings) == 1 and f"{spelling}_{suffix}" in warnings[0] and "nothing sets" in warnings[0]
+        elif outcome == ROOT_WARNED:
+            assert len(warnings) == 1 and warnings[0].startswith(f"[SECURITY] {spelling}_{suffix} is set to the")
         else:
             assert warnings == []
         return
@@ -232,9 +244,8 @@ def test_the_refusals_cannot_be_tripped_by_a_literal_or_dodged_by_a_spelling_of_
         with pytest.raises(env_alias.ConfigurationRefused):
             ep.load_layered_env(repo, None)
         repo = _write(tmp_path / "b.env", f"EMPTY=\nJARVIS_FILE_ROOTS=${{EMPTY}}{tail}\n")
-        if tail.startswith(("/", "\\")):
-            with pytest.raises(env_alias.ConfigurationRefused):
-                ep.load_layered_env(repo, None)
+        ep.load_layered_env(repo, None)                  # defined and blank: the operator's value, as on main
+        assert os.environ.pop("JARVIS_FILE_ROOTS") == tail
     values = ep.layer_values((("E", ""), ("JARVIS_FILE_ROOTS", "/"), ("JARVIS_KEY_DIR", "${E:-}/"),
                               ("JARVIS_LOG_FILE", "/a/${E}/b")), {})
     verdict = ep.judge(values, env_alias.fold(values.values))
@@ -347,7 +358,6 @@ def test_a_whole_start_with_adversarial_secrets_prints_no_piece_of_them(tmp_path
 
 REFUSING = {
     "a path built from an unset reference": ({}, "JARVIS_LOG_FILE=${LOGDIR}/hub.log\n", "JARVIS_LOG_FILE"),
-    "a path that opens with an empty reference": ({}, "DATA=\nJARVIS_FILE_ROOTS=${DATA}/\n", "JARVIS_FILE_ROOTS"),
     "a credential with an unset reference": ({}, "JARVIS_ADMIN_TOKEN='ab${x}cd'\n", "JARVIS_ADMIN_TOKEN"),
     "both spellings in a file": ({}, "NERVA_HARDENED=1\nJARVIS_HARDENED=0\n", "JARVIS_HARDENED"),
     "both spellings in the process": ({"NERVA_PORT": "9001", "JARVIS_PORT": "9002"}, "PROV_OK=1\n", "JARVIS_PORT"),
@@ -355,7 +365,7 @@ REFUSING = {
 
 
 @pytest.mark.parametrize("label", sorted(REFUSING))
-def test_the_hub_refuses_with_78_and_every_repair_tool_still_runs(tmp_path, label):
+def test_the_hub_refuses_and_every_repair_tool_still_runs(tmp_path, label):
     extra, dotenv, variable = REFUSING[label]
     home = tmp_path / "home"
     _write(home / ".env", dotenv)
@@ -365,8 +375,9 @@ def test_the_hub_refuses_with_78_and_every_repair_tool_still_runs(tmp_path, labe
         return subprocess.run([sys.executable, *argv], cwd=ROOT, env=env, capture_output=True, text=True,
                               timeout=240)
 
-    hub = run("serve.py")                                   # the hub itself: refused, by name, exit 78
-    assert hub.returncode == env_alias.CONFIG_REFUSED_EXIT == 78, (hub.returncode, hub.stderr[-800:])
+    hub = run("serve.py")                                   # the hub itself: refused, by name
+    # 78 (no restart) only for a pair in the PROCESS environment; a .env refusal is retried
+    assert hub.returncode == (78 if "process" in label else 1), (hub.returncode, hub.stderr[-800:])
     assert "Refusing to start" in hub.stderr and variable in hub.stderr
     recover = run("scripts/token_recover.py", "list")       # the tool that gets an owner back in
     assert recover.returncode == 0, recover.stderr[-800:]
@@ -407,9 +418,9 @@ def test_exit_78_means_a_refused_configuration_and_nothing_else():
         text = path.read_text(encoding="utf-8", errors="replace")
         if re.search(r"CONFIG_REFUSED_EXIT|SystemExit\(78\)|sys\.exit\(78\)|_exit\(78\)", text):
             users.append(path.relative_to(ROOT).as_posix())
-    assert users == ["agents/core/env_alias.py", "scripts/coordinator.py", "scripts/runtime_supervisor.py", "serve.py"]
+    assert users == ["agents/core/env_alias.py", "scripts/runtime_supervisor.py"]
     main_block = (ROOT / "serve.py").read_text(encoding="utf-8").split('if __name__ == "__main__":')[-1]
-    assert "except ConfigurationRefused" in main_block and "SystemExit(CONFIG_REFUSED_EXIT)" in main_block
+    assert "except ConfigurationRefused" in main_block and "_leave_refused(refused)" in main_block
     for unit in ("deploy/systemd/jarvis-hub.service", "deploy/systemd/jarvis-runtime.service"):
         assert re.search(r"^RestartPreventExitStatus=78$", (ROOT / unit).read_text(encoding="utf-8"), re.M), unit
     assert "AppExit 78 Exit" in (ROOT / "deploy/windows/install-service.ps1").read_text(encoding="utf-8")

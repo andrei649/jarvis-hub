@@ -1052,7 +1052,6 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
         # hub refuses these too (python-dotenv silently dropped that part of the value).
         status = FAIL
         why = {ep.PATH_UNSET: "a path built from a reference nothing sets",
-               ep.PATH_ROOTED: "a path that opens with an empty reference",
                ep.CREDENTIAL_UNSET: "a credential with a reference nothing sets"}
         named = "; ".join(f"{name} in the {ep.LABELS.get(layer, layer)} ({why.get(kind, kind)})"
                           for layer, found in sorted(refused.items()) for name, kind in sorted(found.items()))
