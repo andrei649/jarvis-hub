@@ -2965,6 +2965,37 @@
   Left: the Settings → LLM provider select and `JARVIS_WEB_BACKEND` docs still exist beside the panel
   (not removed); the `nerva` CLI has no `integrations` verb yet; no live call to any provider was made.
 
+  **G1 — operator-pinned (managed) configuration (2026-11-10, wave 1, H249 = H267 = H629):** an
+  administrator pins settings (`<dir>/config.yaml`, leaf by leaf) and environment values (`<dir>/.env`,
+  applied last with override and authoritative inside the process through `env_config`) in
+  `NERVA_MANAGED_DIR` (process environment only) or `/etc/nerva`, with `profiles/<name>/` on top for a
+  profile; `.managed` / `NERVA_MANAGED=<manager>` is managed mode (every write refused, naming the command
+  to run instead). New `agents/core/managed_scope.py`; every settings reader applies the pin (over the
+  product posture); every writer refuses it naming the file (settings PUT 409 + audit, `put_category`,
+  import/reset/undo strip and report `managed`, `nerva config set|unset|edit|migrate` exit 1, the
+  approval-mode writer, the skill-switch, appearance and training-consent writers); `check_env_write` is
+  the environment writers' gate. Fail closed: an unreadable managed file refuses every write and stops the
+  hub's load. HUD Settings shows pinned rows read-only; `nerva config managed` lists the pins. Ledger:
+  H249, H267, H629 → equivalent (151/697); `tests/test_g1_managed_scope.py` (35) joins the config, env and
+  user-journeys suites. After the merge with the Integrations panel: its key PUT/DELETE, `use` (search
+  backend and model provider) and search-choice reset answer 409 `managed` (audited), `integration_keys`
+  refuses pinned names itself, `apply_stored()` never fills a pinned name, and the panel shows a pinned key
+  or choice as "managed by your administrator", read-only (`tests/test_g1_managed_integrations.py`, 6; one
+  vitest). A2A outbound writes its own peer registry and the secret broker, not settings or env: not
+  gated. **Adversarial review (2026-11-10): 2 MAJOR + 1 security fixed** — the local model switch and MCP
+  add/remove no longer change the live hub before a refused save; the managed folder must be root-owned
+  and not group/world-writable (Windows default: Administrators/SYSTEM only); minors: an invalid pin is a
+  problem (writes and boot refused), folder/managed mode/expansion environment captured at load, views
+  show a pinned `${NAME}` as written, `ManagedRefused` is no OSError (global 409 + audit), bundle writers
+  judge every key first, managed mode covers custom endpoints / provider selection / credentials, chat
+  `/approvals` names the file (`tests/test_g1_managed_review.py`, 18). Runtime state (MCP connect,
+  elicitation answers, sampling spend, `/plan` and `/loop`) is not configuration. **Round 2 (2026-11-10):** the suite
+  runs on a non-root CI runner (test-only owner trust, the real root-only check kept by a test), the
+  Windows owner check uses ctypes (no pywin32), untrusted files are never applied, a pin made invalid at
+  run time keeps the last valid one, a self-restart hands on the process environment only, undeclared
+  pins warn, provider packages are refused in managed mode. Follow-ups: chat `/approvals` (commands.py) answers a pinned mode with its generic "did not become
+  effective" line; environment pins take effect at the next hub start.
+
 ## Darwin feature absorption — 2026-09-09
 
 - [x] **DW-1 — truthful read-only memory neighborhood.** Live Memory mode uses the

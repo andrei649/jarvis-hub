@@ -54,6 +54,10 @@ async def _call(request, method, *args):
 
     from .models_llm import _provider_install_worker
 
+    if method in {'put_credential', 'delete_credential'}:
+        from agents.core.managed_scope import check_llm_write
+
+        check_llm_write(selection=False)         # G1: refused in managed mode
     try:
         if method in {'put_credential', 'delete_credential'}:
             from agents.core.llm.providers import lifecycle_gates

@@ -463,7 +463,10 @@ def _spawn_successor():
 
     flags = (getattr(subprocess, "CREATE_NEW_CONSOLE", 0x00000010)
              | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200))
-    env = {**os.environ, RESTART_PREDECESSOR_ENV: str(os.getpid())}
+    from agents.core.env_provenance import successor_environ
+
+    # G1 review A4: the next hub gets the process environment, not what this one loaded
+    env = {**successor_environ(os.environ), RESTART_PREDECESSOR_ENV: str(os.getpid())}
     _hand_over_spellings(env)
     return subprocess.Popen(_successor_argv(), env=env, cwd=os.getcwd(),  # nosec B603
                             close_fds=True, creationflags=flags)
@@ -524,9 +527,15 @@ def run_server(server) -> None:
             print(f"Could not start the next hub ({exc}): start Nerva again yourself — the "
                   f"staged restore is applied at that start", file=sys.stderr)
         return                                # this process exits; the successor waits for it
+    # The new image keeps systemd's watchdog fed from its first lines (sd_notify).
+    from agents.core.env_provenance import successor_environ
     from agents.core.sd_notify import RESTART_ENV
 
-    # The new image keeps systemd's watchdog fed from its first lines (sd_notify).
+    # G1 review A4: the new image gets the process environment, not the .env values, managed
+    # pins and panel keys this one loaded (it loads them again, each in its own layer)
+    keep = successor_environ(os.environ)
+    for name in [name for name in os.environ if name not in keep]:
+        os.environ.pop(name, None)
     os.environ.update({RESTART_ENV: "1"})
     _hand_over_spellings(os.environ)
     _close_on_exec_all()

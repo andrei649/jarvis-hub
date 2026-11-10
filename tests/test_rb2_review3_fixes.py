@@ -126,8 +126,8 @@ def test_every_masked_hub_variable_is_classified_as_a_credential_or_not():
         "decide whether a .env that builds it from an unset ${...} must refuse to start.")
     assert matched == env_alias.CREDENTIALS | env_alias.NOT_CREDENTIALS            # nothing stale
     assert not env_alias.CREDENTIALS & env_alias.NOT_CREDENTIALS
-    assert {"BUDGET_MAX_TOKENS", "PASSIVE_CAPTURE", "HA_TOKEN_REF", "KEY_DIR",
-                                         "NOUS_CLIENT_ID", "MCP_SAMPLING_DAILY_TOKENS"} == env_alias.NOT_CREDENTIALS
+    assert {"BUDGET_MAX_TOKENS", "PASSIVE_CAPTURE", "HA_TOKEN_REF", "KEY_DIR", "MCP_SAMPLING_DAILY_TOKENS",
+                                         "NOUS_CLIENT_ID"} == env_alias.NOT_CREDENTIALS
     for name in ("JARVIS_ADMIN_TOKEN", "NERVA_USER_TOKEN", "JARVIS_AUDIT_KEY", "NERVA_ROLE_VISION_KEY",
                  "JARVIS_ROLE_VIDEO_FALLBACK_2_KEY", "NERVA_VLM_KEY"):
         assert env_alias.credential(name), name

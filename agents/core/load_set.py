@@ -158,6 +158,11 @@ def persist_plugin(plugin_id: str, enabled: bool) -> list[str]:
         writes[CATEGORY]["plugins_only"] = ",".join([*only, plugin_id])
     if switch:
         writes["plugins"] = {plugin_id: bool(enabled)}
+    from .managed_scope import check_setting_write
+
+    for category, values in writes.items():          # G1 — all judged before any is written
+        for key, value in values.items():
+            check_setting_write(category, key, value)
     changed: list[str] = []
     for category, values in writes.items():
         if not values:

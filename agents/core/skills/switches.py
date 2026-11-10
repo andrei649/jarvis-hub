@@ -191,7 +191,9 @@ def state_from_connection(conn) -> dict:
             json.loads(row["opts"])
         if set(raw) != {GLOBAL_KEY, CHANNEL_KEY}:
             raise ValueError("missing skill switch row")
-        names, channels = raw[GLOBAL_KEY], raw[CHANNEL_KEY]
+        from agents.core.settings_db import _pinned  # G1: an administrator's pin applies last
+
+        names, channels = _pinned(CATEGORY, GLOBAL_KEY, raw[GLOBAL_KEY]), _pinned(CATEGORY, CHANNEL_KEY, raw[CHANNEL_KEY])
         if (not isinstance(names, list) or len(names) > MAX_NAMES
                 or clean_names(names) != names or not isinstance(channels, dict)
                 or len(channels) > MAX_CHANNELS or clean_channel_map(channels) != channels):

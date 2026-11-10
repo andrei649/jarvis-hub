@@ -1927,8 +1927,11 @@ file or compose file needs no change. This page and the code keep the `JARVIS_` 
 - **Layers are unchanged.** Process environment, then the repo `.env`, then the
   data-home `.env`: the first layer to set a variable wins, whichever spelling each
   used. A `.env` value never overrides a process value, and the names a `.env` cannot
-  set (`JARVIS_HOME`, `JARVIS_APP_ROOT`, `JARVIS_MEMORY_DIR`, `JARVIS_PROFILE`) cannot
-  be set there as `NERVA_<X>` either.
+  set (`JARVIS_HOME`, `JARVIS_APP_ROOT`, `JARVIS_MEMORY_DIR`, `JARVIS_PROFILE`,
+  `JARVIS_MANAGED_DIR`) cannot be set there as `NERVA_<X>` either. One layer sits above
+  all three: the administrator's managed `.env` (`NERVA_MANAGED_DIR`, default
+  `/etc/nerva`), applied last with override — see "Settings an administrator pins" in
+  `docs/INSTALL.md`.
 - **One rule when both spellings are set in the same place** (the process environment,
   or one `.env` file) **to different values: the hub refuses to start** and names the
   variable (never a value). This holds for *every* hub variable — there is none for

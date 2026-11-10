@@ -309,6 +309,7 @@ PATH_TYPED = frozenset({
     "KEY_DIR", "EXEC_TEMP_DIR", "FORGET_ARCHIVE_DIR", "PLAYWRIGHT_DOWNLOAD_DIR", "DRIVE_AI_DEST",
     "EVAL_STORE", "LOG_FILE", "RUNTIME_LOG", "RUNTIME_STATE", "SUBAGENT_SPAWN_LOG",
     "CA_BUNDLE", "WASM_PYTHON", "TERMINAL_SSH_KNOWN_HOSTS",
+    "MANAGED_DIR",                                                      # where the administrator's pins live (G1)
 })
 #: ``<X>`` of the hub variables whose VALUE is a credential — reviewed, by name. This is
 #: what the load refuses when a ``.env`` builds it from a ``${...}`` that nothing sets.
@@ -322,7 +323,7 @@ CREDENTIALS = frozenset({
 #: Masked by name, and not a credential: an integer, a flag, a ``{{secret:…}}`` handle, a
 #: directory, a public OAuth client id.
 NOT_CREDENTIALS = frozenset({"BUDGET_MAX_TOKENS", "PASSIVE_CAPTURE", "HA_TOKEN_REF", "KEY_DIR", "NOUS_CLIENT_ID",
-                             "MCP_SAMPLING_DAILY_TOKENS"})  # a daily token allowance, not a secret
+                             "MCP_SAMPLING_DAILY_TOKENS"})      # a token budget, not a token
 
 
 def credential(name: str) -> bool:

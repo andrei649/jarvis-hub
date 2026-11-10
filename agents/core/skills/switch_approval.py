@@ -76,6 +76,10 @@ def revision() -> int:
 
 
 def _write_state(conn, state: dict) -> None:
+    from agents.core.managed_scope import check_setting_write
+
+    for key in (switches.GLOBAL_KEY, switches.CHANNEL_KEY):      # G1: a pinned switch is refused
+        check_setting_write(switches.CATEGORY, key, state[key])
     for key in (switches.GLOBAL_KEY, switches.CHANNEL_KEY):
         result = conn.execute(
             "UPDATE settings SET value=? WHERE category=? AND key=?",
