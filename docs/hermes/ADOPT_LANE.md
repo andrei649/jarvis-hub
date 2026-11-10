@@ -504,19 +504,25 @@ token. With `JARVIS_A2A_ENABLED=1` the coordinator registers the tools
 
 | Tool | Gate | What it reaches |
 |---|---|---|
-| `a2a_call` | **gated** (approval card per call) | one configured peer, by id or name, or a URL whose origin is a configured peer's |
+| `a2a_call` | **gated** (approval card per call) | one configured peer, by id, name or its exact configured URL |
 | `a2a_orchestrate` | **gated** | every configured peer with the tag (`*` for all); `all` / `first` / `best` |
-| `a2a_discover` | ungated, read-only | the Agent Card of a configured peer |
-| `a2a_list` | ungated, read-only | local only: peers, transcripts, counters |
-| `a2a_history` | ungated, read-only | local only: one stored transcript |
+| `a2a_discover` | ungated, read-only | the Agent Card at a configured peer's stored address (`url` = peer id, name or exact configured URL); only the two well-known card paths are requested |
+| `a2a_list` | ungated, read-only, untrusted output | local only: peers, transcripts (`<peer>__<context id>`), counters |
+| `a2a_history` | ungated, read-only, untrusted output | local only: one stored transcript, by its `<peer>__<context id>` name |
 
 ### How a call is governed
 
-1. **E-stop** (`estop.is_engaged`): no network tool runs.
-2. **Targets**: the peers the call names; anything else is refused before vendored code runs
-   (`peer_not_configured`, `unknown_peer`, `no_peer_with_capability`).
+1. **E-stop** (`estop.is_engaged`): no network tool starts, and the guard reads it again at
+   every request, so a running fan-out stops at its next request.
+2. **Targets** (`A2AOutbound.resolve`): a peer reference is resolved before vendored code runs:
+   `a2a_call`'s `agent` becomes the peer id, `a2a_discover`'s `url` becomes the stored URL, so
+   no text the model writes becomes part of a request path or query. Anything else is refused
+   (`peer_not_configured`, `unknown_peer`, `ambiguous_peer`, `no_peer_with_capability`).
 3. **Approval and kernel**: the two sending tools are gated ToolRPC tools, so the call becomes
-   an approval card (the ToolRPC `tool.rpc` kernel check runs first). When the approved card
+   an approval card (the ToolRPC `tool.rpc` kernel check runs first). Their preflight adds
+   `recipients` (id and URL of every peer, `*` expanded at the card) to the arguments the
+   card shows; the approved run resolves again and is refused (`recipients_changed`) if any
+   peer or URL differs. When the approved card
    runs, the runtime asks the kernel for kind `a2a.outbound` (payload: tool, peer ids, message
    length, argument names; never the text). A DENY (halt, budget, loop) refuses it.
 4. **Egress**: the vendored code runs on its own executor (4 threads, 3 calls at a time, 95 s
@@ -531,16 +537,30 @@ token. With `JARVIS_A2A_ENABLED=1` the coordinator registers the tools
    LAN host only for a peer marked LAN; `Authorization` must be a handle
    `Bearer nerva-a2a-peer:<id>` whose peer has that exact origin, and is then replaced by the
    stored token (`credential_for_another_origin`, `credential_not_a_handle`,
-   `credential_unavailable`); any other credential header is refused. A refusal latches the
-   call like an egress refusal; the tool answers `egress_refused` with the reason code.
+   `credential_unavailable`); any other credential header is refused; a query or fragment is
+   refused; a GET may only be the peer's `/.well-known/agent-card.json` or `agent.json` under
+   its configured path (`path_not_allowed`). The guard names the peer for the transcript
+   (below). A refusal latches the call like an egress refusal and the tool answers
+   `egress_refused` with the reason code. In a fan-out each peer's task has its own sub-call
+   (`httpx.bind_child`), so a refusal fails that peer only and is listed under `refused`.
 6. **Redaction**: upstream's `redact_outbound` runs on the message; its `redact_for_egress`
    is Nerva's (stored secret values, then the secret scanner) and fails closed. Upstream
-   also removes e-mail addresses.
-7. **Taint**: `a2a_call`, `a2a_orchestrate`, `a2a_discover` and `a2a_history` are
-   `untrusted_output`. Each answer goes through upstream's `security.wrap_inbound` (injection
-   markers defanged, labelled as a remote agent's text), carries `tainted: True` and
-   `taint_source: "a2a:<peer ids>"`, and raises the turn's taint
-   (`mark_turn_recall_tainted`).
+   also removes e-mail addresses. Every line written to a transcript or the audit file is
+   redacted the same way (a peer echoing a token keeps it off disk), and so is the answer.
+7. **Taint**: every tool where peer text can appear is `untrusted_output`
+   (`a2a_call`, `a2a_orchestrate`, `a2a_discover`, `a2a_history`, `a2a_list`). A reply goes
+   through upstream's `security.wrap_inbound` (injection markers defanged, labelled as a
+   remote agent's text); an error line or a listing is Nerva's own text with peer fragments,
+   so it is defanged (`filter_inbound`) but not framed as a reply. Every answer carries
+   `tainted: True` and `taint_source: "a2a:<peer ids>"` and raises the turn's taint. An
+   approved call runs outside the turn that asked; a later turn reads its reply through
+   `a2a_history`, which the tool loop fences and taints as declared untrusted output.
+8. **Transcripts**: vendored code gets a confined home (`a2a_shared.ConfinedPath`): one plain
+   name per step, no `..`, no leaving the home, append (redacted) or read only, `*.jsonl`
+   globs only. A transcript is named `<peer>__<context id>` with the peer the guard last
+   named, so a peer's `contextId` can never write into another peer's transcript. A file over
+   256 KB rotates to `<name>.old`; at most 200 transcripts are kept (oldest removed). The
+   `<data>/a2a_hermes` folder is part of the memory forget (`data_purge.PURGE_MEMORY_DIRS`).
 
 ### LAN peers
 
@@ -567,23 +587,25 @@ still the refused `urllib_refused`.
 | `from concurrent.futures import …` | `a2a-futures` | `hermes_compat.futures`: fan-out on one shared 4-thread pool, each task in a copy of the call's context |
 
 Allowlist changes: `hmac` and `ipaddress` joined `SAFE_STDLIB`. `urllib`, `a2a_shared` and
-`futures` are compat modules a vendored file may import only under the a2a package
-(`PATH_SCOPED_COMPAT`). `urlopen` stays denied except as `<name>.request.urlopen` where
-`<name>` is bound to the governed compat `urllib`. A string that is a key or value of a dict
-display, or that a value is compared with (`scheme in ("http", "https")`), is data, not a
-`getattr` name, and is no longer checked against the denied names. The vendored tree's
+`futures`, and the vendored a2a package itself, may be imported only under the a2a package
+(`PATH_SCOPED_COMPAT`, `A2A_PACKAGE`), in every import form (`import x.y as z`, `from x import
+y`, `from x.y import z`). A name starting with `_` is never imported from, or read off, a
+compat module. `urlopen` stays denied except as `<name>.request.urlopen` where `<name>` is
+bound to the governed compat `urllib`. Only in the a2a package, and only for the exact strings
+in `WIRE_DATA_STRINGS` (`"http"`), a dict-display key/value or a compared-with constant is wire
+data and not a denied name; every other denied string stays refused everywhere. The vendored tree's
 `ctx.register_tool` call is upstream's own plugin registration and is never called; the tool
 surface walk skips the vendor tree (Nerva's own registration is walked).
 
 ### Limits of slice 4
 
 - Tested against a fake peer at the transport only; no live A2A peer was called.
-- `a2a_discover` and `a2a_call` by URL reach only configured peers; Hermes also lets them reach
-  any URL. That is deliberately narrower.
+- `a2a_discover` and `a2a_call` take a configured peer (id, name or exact URL) only; Hermes
+  also lets them reach any URL. That is deliberately narrower.
+- `a2a_history` takes the `<peer>__<context id>` name `a2a_list` shows, not the bare context id
+  `a2a_call` prints.
 - A gated call's reply reaches the owner through the approved task's result, not back into
   the turn that asked; the turn sees `approval_required`.
-- Upstream's transcripts and audit lines (`<data>/a2a_hermes/a2a_conversations/*.jsonl`,
-  `a2a_audit.jsonl`) have no retention cap.
 - Streaming (`SendStreamingMessage`) and push notifications are not used by the client tools
   and are not adopted. The kernel's `a2a.outbound` is asked only when `JARVIS_ACTION_KERNEL`
   is on; with it off the approval card and the e-stop are the gates.

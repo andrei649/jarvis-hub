@@ -188,8 +188,6 @@ NON_CODE_NAMES = {
                        "(agents/core/autonomy/jobs_health.py)",
     "last_run_max_instances": "a jobs doctor code composed at run time: \"last_run_\" + the run's status "
                               "(agents/core/autonomy/jobs_health.py)",
-    "http_403": "one value of the provider failure composed as f\"http_{status}\" "
-                "(agents/core/plugins/web_providers.py)",
     "evil_key": "a made-up settings key the test manual sends to show an out-of-spec key is skipped",
     # H325 review r6: what the guides and manual-test books added to CLAIM_DOCS write that
     # is not code. Fields composed at run time:

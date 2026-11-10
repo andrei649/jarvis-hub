@@ -654,7 +654,7 @@ table, the snapshot, or a tool named in these docs drifts from the registry.
 | `a2a_call` | gated | sensitive | implementation_specific | untrusted | static | `tool:a2a_call` |
 | `a2a_discover` | ungated | read_only | none | untrusted | static | `tool:a2a_discover` |
 | `a2a_history` | ungated | read_only | none | untrusted | static | `tool:a2a_history` |
-| `a2a_list` | ungated | read_only | none | trusted | static | `tool:a2a_list` |
+| `a2a_list` | ungated | read_only | none | untrusted | static | `tool:a2a_list` |
 | `a2a_orchestrate` | gated | sensitive | implementation_specific | untrusted | static | `tool:a2a_orchestrate` |
 | `browser_run` | gated | sensitive | implementation_specific | untrusted | static | `tool:browser_run` |
 | `canvas_point` | ungated | reversible | cancel | trusted | static | `tool:canvas_point` |

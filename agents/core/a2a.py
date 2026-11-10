@@ -107,7 +107,7 @@ def url_origin(url: str) -> tuple[str, str, int]:
     scheme = (parsed.scheme or "").lower()
     host = (parsed.hostname or "").lower().rstrip(".")
     try:
-        port = parsed.port or (443 if scheme == "https" else 80)
+        port = parsed.port if parsed.port is not None else (443 if scheme == "https" else 80)
     except ValueError:
         port = -1
     return scheme, host, port
@@ -145,7 +145,7 @@ def validate_outbound_url(url: str, *, allow_lan: bool = False) -> tuple[str, tu
     from agents.core.security.ssrf import BLOCKED_HOSTS, resolve_and_validate
 
     raw = str(url or "").strip()
-    if not raw or len(raw) > 2048:
+    if not raw or len(raw) > 2048 or "\\" in raw or any(ord(c) < 33 for c in raw):
         raise ValueError("invalid_url")
     parsed = urlsplit(raw)
     scheme = (parsed.scheme or "").lower()

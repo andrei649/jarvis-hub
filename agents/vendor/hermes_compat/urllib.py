@@ -23,14 +23,14 @@ the vendored code made of it. Messages carry a status code or a reason code only
 
 from __future__ import annotations
 
-import contextlib
-import contextvars
+import contextlib as _contextlib
+import contextvars as _contextvars
 import urllib.parse as parse
 from collections.abc import Callable, Iterator
-from types import SimpleNamespace
+from types import SimpleNamespace as _SimpleNamespace
 from typing import Any
 
-from agents.vendor.hermes_compat import httpx
+from agents.vendor.hermes_compat import httpx as _httpx
 
 #: The most a peer's answer may hold (bytes). A card or a reply is small; more is refused.
 MAX_RESPONSE_BYTES = 1_000_000
@@ -119,11 +119,11 @@ class _Response:
         self.close()
 
 
-_GUARD: contextvars.ContextVar[Guard | None] = contextvars.ContextVar(
+_GUARD: _contextvars.ContextVar[Guard | None] = _contextvars.ContextVar(
     "hermes_compat_urllib_guard", default=None)
 
 
-@contextlib.contextmanager
+@_contextlib.contextmanager
 def bound_guard(guard: Guard) -> Iterator[Guard]:
     token = _GUARD.set(guard)
     try:
@@ -133,7 +133,7 @@ def bound_guard(guard: Guard) -> Iterator[Guard]:
 
 
 def _latch(reason: str) -> None:
-    call = httpx.current_call()
+    call = _httpx.current_call()
     if call is not None and not call.policy_block:
         call.policy_block = reason
 
@@ -149,7 +149,7 @@ def urlopen(req: Request | str, data: bytes | None = None, timeout: Any = None, 
     if guard is None:
         _latch("no_guard")
         raise URLError("egress_blocked")
-    call = httpx.current_call()
+    call = _httpx.current_call()
     if call is not None and call.policy_block:
         raise URLError("egress_blocked")
     try:
@@ -161,12 +161,12 @@ def urlopen(req: Request | str, data: bytes | None = None, timeout: Any = None, 
         _latch("guard_error")
         raise URLError("egress_blocked") from None
     try:
-        resp = httpx.request(method, url, headers=headers, content=req.data, timeout=timeout)
-    except httpx.EgressRefused:
+        resp = _httpx.request(method, url, headers=headers, content=req.data, timeout=timeout)
+    except _httpx.EgressRefused:
         raise URLError("egress_blocked") from None
-    except httpx.TimeoutException:
+    except _httpx.TimeoutException:
         raise URLError("timeout") from None
-    except httpx.HTTPError as exc:
+    except _httpx.HTTPError as exc:
         raise URLError(str(exc) or "request_failed") from None
     if len(resp.content) > MAX_RESPONSE_BYTES:
         if call is not None:
@@ -177,9 +177,9 @@ def urlopen(req: Request | str, data: bytes | None = None, timeout: Any = None, 
     return _Response(url, resp.status_code, resp.content, resp.headers)
 
 
-request = SimpleNamespace(Request=Request, urlopen=urlopen)
-error = SimpleNamespace(URLError=URLError, HTTPError=HTTPError)
-response = SimpleNamespace()
+request = _SimpleNamespace(Request=Request, urlopen=urlopen)
+error = _SimpleNamespace(URLError=URLError, HTTPError=HTTPError)
+response = _SimpleNamespace()
 
 __all__ = ["GuardRefused", "HTTPError", "MAX_RESPONSE_BYTES", "Request", "URLError",
            "bound_guard", "error", "parse", "request", "response", "urlopen"]

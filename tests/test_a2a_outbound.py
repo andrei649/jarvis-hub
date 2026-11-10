@@ -155,7 +155,8 @@ def test_a_call_reaches_the_configured_peer_through_egress_only(registry, broker
     assert peers.requests[-1].headers["authorization"] == f"Bearer {ALPHA_TOKEN}"
     assert {(r["plugin"], r["host"], r["allowed"]) for r in ledger} == {("a2a", "alpha.example", True)}
     # Upstream's transcript and audit live under the Nerva home, never under ~/.hermes.
-    assert (tmp_path / "home" / "a2a_conversations" / "ctx-1.jsonl").exists()
+    # …filed under the peer that answered, so no peer can write another peer's transcript.
+    assert (tmp_path / "home" / "a2a_conversations" / "alpha__ctx-1.jsonl").exists()
 
 
 def test_an_unconfigured_host_is_refused_before_any_request(registry, broker, peers, tmp_path):
@@ -255,8 +256,9 @@ def test_a_peer_key_goes_only_to_that_peer(registry, broker, peers, tmp_path):
         {"protocolBinding": "JSONRPC", "url": "https://beta.example/a2a"}]}
     out = run(_outbound(registry, broker, peers, tmp_path).run(
         "a2a_orchestrate", {"capability": "research", "message": "hi", "mode": "all"}))
-    assert out["reason"] == "egress_refused"
-    assert out["detail"] == "credential_for_another_origin"
+    # alpha's task is refused at the guard; beta still answers (per-peer results).
+    assert out["refused"] == ["credential_for_another_origin"]
+    assert "hello from beta.example" in out["text"]
     for request in peers.requests:
         auth = request.headers.get("authorization", "")
         host = request.headers.get("host")
@@ -285,9 +287,9 @@ def test_a_raw_bearer_value_is_refused(registry, broker, peers, tmp_path):
     out = ao.A2AOutbound(lambda: registry, secret_broker=lambda: broker)
     guard = out._guard(registry.outbound_peers(), registry.outbound_peers())
     with pytest.raises(compat_urllib.GuardRefused, match="credential_not_a_handle"):
-        guard("GET", "https://alpha.example/x", {"Authorization": f"Bearer {ALPHA_TOKEN}"})
+        guard("POST", "https://alpha.example/rpc", {"Authorization": f"Bearer {ALPHA_TOKEN}"})
     with pytest.raises(compat_urllib.GuardRefused, match="credential_header_not_allowed"):
-        guard("GET", "https://alpha.example/x", {"X-Api-Key": "k"})
+        guard("POST", "https://alpha.example/rpc", {"X-Api-Key": "k"})
 
 
 # ── taint ────────────────────────────────────────────────────────────────────
@@ -403,8 +405,9 @@ def test_history_and_list_stay_local(registry, broker, peers, tmp_path):
     run(outbound.run("a2a_call", {"agent": "alpha", "message": "hi"}))
     before = len(peers.requests)
     listed = run(outbound.run("a2a_list", {}))
-    assert "alpha: https://alpha.example" in listed["text"] and "ctx-1" in listed["text"]
-    history = run(outbound.run("a2a_history", {"context_id": "ctx-1"}))
+    assert "alpha: https://alpha.example" in listed["text"] and "alpha__ctx-1" in listed["text"]
+    assert listed["tainted"] is True          # transcript names are chosen by peers
+    history = run(outbound.run("a2a_history", {"context_id": "alpha__ctx-1"}))
     assert history["tainted"] is True and "hello from alpha.example" in history["text"]
     assert len(peers.requests) == before
 
@@ -475,3 +478,210 @@ def test_the_owner_sets_and_clears_an_outbound_address_through_the_admin_route(m
     assert ALPHA_TOKEN not in json.dumps(listed)
     assert client.delete("/api/a2a/peers/alpha/outbound", headers=admin).json() == {"ok": True}
     assert not store.has("a2a.peer.alpha") and reg.outbound_peers() == []
+
+
+# ── review of aa14448: the two MAJORs and the MINORs, each pinned ─────────────
+
+def test_discover_cannot_carry_model_text_in_the_path_or_query(registry, broker, peers, tmp_path):
+    outbound = _outbound(registry, broker, peers, tmp_path)
+    leak = "https://alpha.example/leak/OWNER-PRIVATE-DATA?ssn=123-45-6789"
+    assert run(outbound.run("a2a_discover", {"url": leak}))["reason"] == "peer_not_configured"
+    assert peers.requests == []
+    out = run(outbound.run("a2a_discover", {"url": "alpha"}))      # by peer id
+    assert out["tool"] == "a2a_discover"
+    paths = {r.url.path for r in peers.requests}
+    assert paths <= {"/.well-known/agent-card.json", "/.well-known/agent.json"}
+    assert all(not r.url.query for r in peers.requests)
+
+
+def test_the_guard_allows_only_the_card_paths_for_a_get(registry, broker):
+    outbound = ao.A2AOutbound(lambda: registry, secret_broker=lambda: broker)
+    peers_ = registry.outbound_peers()
+    guard = outbound._guard(peers_, peers_)
+    guard("GET", "https://beta.example/a2a/.well-known/agent-card.json", {})
+    for method, url, reason in (
+            ("GET", "https://beta.example/a2a/leak/DATA", "path_not_allowed"),
+            ("GET", "https://alpha.example/.well-known/agent.json?ssn=1", "query_not_allowed"),
+            ("POST", "https://alpha.example/rpc?x=1", "query_not_allowed"),
+            ("GET", "https://evil.example/.well-known/agent.json", "origin_not_allowed")):
+        with pytest.raises(compat_urllib.GuardRefused, match=reason):
+            guard(method, url, {})
+
+
+@pytest.mark.parametrize("source", [
+    'import logging\nW = {"k": "os", "s": "system"}\ngetattr(getattr(logging, W["k"]), W["s"])("id")\n',
+    'import logging\nfor n in dir(logging):\n    if n in ("os",):\n        getattr(logging, n)\n',
+    'import logging\nk = {"a": "__builtins__"}\ngetattr(logging, k["a"])\n',
+    'import logging\nif "x" == "subprocess":\n    pass\n',
+])
+@pytest.mark.parametrize("path", ["plugins/platforms/a2a/tools.py", "plugins/web/x/provider.py"])
+def test_denied_names_stay_denied_in_dicts_and_comparisons(source, path):
+    assert hv.unmapped_imports(source, path)
+
+
+def test_only_the_wire_data_strings_are_exempt_and_only_in_the_a2a_package():
+    card = 'd = {"type": "http"}\nok = "https" in ("http", "https")\n'
+    assert hv.unmapped_imports(card, "plugins/platforms/a2a/protocol.py") == []
+    assert hv.unmapped_imports(card, "plugins/web/x/provider.py")
+
+
+@pytest.mark.parametrize(("source", "path"), [
+    ("import agents.vendor.hermes_compat.urllib as u\n", "plugins/web/x/provider.py"),
+    ("from agents.vendor.hermes_compat.urllib import request\n", "plugins/web/x/provider.py"),
+    ("from agents.vendor.hermes.plugins.platforms.a2a import tools\n", "plugins/web/x/provider.py"),
+    ("from agents.vendor.hermes.plugins.platforms import a2a\n", "plugins/web/x/provider.py"),
+    ("from agents.vendor.hermes_compat.a2a_shared import _RealPath\n", "plugins/platforms/a2a/x.py"),
+    ("from agents.vendor.hermes_compat.futures import _POOL\n", "plugins/platforms/a2a/x.py"),
+    ("from agents.vendor.hermes_compat import urllib\nurllib._httpx.request('GET', 'x')\n",
+     "plugins/platforms/a2a/x.py"),
+])
+def test_scoped_and_private_compat_names_are_refused(source, path):
+    assert hv.unmapped_imports(source, path)
+
+
+def test_the_home_vendored_code_gets_is_confined(tmp_path):
+    from agents.vendor.hermes_compat import a2a_shared
+
+    scope = a2a_shared.A2AScope(home=tmp_path / "home", redact=lambda t: t)
+    (tmp_path / "secret.txt").write_text("s", encoding="utf-8")
+    with a2a_shared.bound_scope(scope):
+        home = a2a_shared.get_hermes_home()
+        with pytest.raises(PermissionError):
+            _ = home.parent
+        for bad in ("..", "../secret.txt", "a/b", ".hidden", "a\\b"):
+            with pytest.raises(PermissionError):
+                _ = home / bad
+        with pytest.raises(PermissionError):
+            (home / "x.jsonl").open("w")
+        with pytest.raises(PermissionError):
+            home.glob("**/*")
+
+
+def test_a_call_by_name_reaches_the_peer_and_the_card_names_the_recipients(registry, broker, peers, tmp_path):
+    outbound = _outbound(registry, broker, peers, tmp_path)
+    args, _targets = outbound.resolve("a2a_call", {"agent": "Alpha", "message": "hi"})
+    assert args["agent"] == "alpha"
+    assert args["recipients"] == [{"peer_id": "alpha", "url": "https://alpha.example"}]
+    out = run(outbound.run("a2a_call", {"agent": "Alpha", "message": "hi"}))
+    assert out["ok"] is True and peers.requests[-1].headers["authorization"] == f"Bearer {ALPHA_TOKEN}"
+    args, _targets = outbound.resolve("a2a_orchestrate", {"capability": "*", "message": "hi"})
+    assert [r["peer_id"] for r in args["recipients"]] == ["alpha", "beta"]
+
+
+def test_the_approved_run_is_refused_when_the_recipients_changed(registry, broker, peers, tmp_path):
+    from types import SimpleNamespace
+
+    from agents.core.tool_rpc import ToolRPCServer
+
+    queued = []
+    server = ToolRPCServer(enqueue=lambda actor, kind, title, **kw: queued.append(kw["payload"]) or 9)
+    ao.register_a2a_tools(server, _outbound(registry, broker, peers, tmp_path), enabled=True)
+
+    async def go():
+        await server.handle({"tool": "a2a_orchestrate", "args": {"capability": "*", "message": "hi"}})
+        payload = queued[0]
+        assert [r["peer_id"] for r in payload["args"]["recipients"]] == ["alpha", "beta"]
+        registry.set_outbound("beta", "https://other.example", secret_broker=broker)   # URL moved
+        return await server.execute(SimpleNamespace(agent="jarvis", payload=payload))
+
+    result = run(go())
+    assert result["status"] == "failed" and result["reason"] == "recipients_changed"
+    assert peers.requests == []
+
+
+def test_a_peer_cannot_write_into_another_peers_transcript(registry, broker, tmp_path):
+    peers = FakePeers()                       # both peers answer with contextId "ctx-1"
+    outbound = _outbound(registry, broker, peers, tmp_path)
+    run(outbound.run("a2a_call", {"agent": "alpha", "message": "to alpha"}))
+    run(outbound.run("a2a_call", {"agent": "beta", "message": "to beta"}))
+    folder = tmp_path / "home" / "a2a_conversations"
+    names = {p.name for p in folder.glob("*.jsonl")}
+    assert {"alpha__ctx-1.jsonl", "beta__ctx-1.jsonl"} <= names
+    assert all(n.startswith(("alpha__", "beta__")) for n in names)
+    assert "beta.example" not in (folder / "alpha__ctx-1.jsonl").read_text(encoding="utf-8")
+
+
+def test_an_echoed_token_is_redacted_in_the_reply_and_on_disk(registry, broker, peers, tmp_path):
+    peers.replies["alpha.example"] = f"your header was Bearer {ALPHA_TOKEN}"
+    out = run(_outbound(registry, broker, peers, tmp_path).run(
+        "a2a_call", {"agent": "alpha", "message": "hi"}))
+    disk = "".join(p.read_text(encoding="utf-8")
+                   for p in (tmp_path / "home").rglob("*.jsonl"))
+    assert ALPHA_TOKEN not in out["text"] and ALPHA_TOKEN not in disk
+    assert "your header was" in disk          # the reply itself is kept, only the token is not
+
+
+def test_transcripts_rotate_and_are_capped(tmp_path, monkeypatch):
+    from agents.vendor.hermes_compat import a2a_shared
+
+    monkeypatch.setattr(a2a_shared, "MAX_FILE_BYTES", 100)
+    monkeypatch.setattr(a2a_shared, "MAX_CONVERSATIONS", 3)
+    scope = a2a_shared.A2AScope(home=tmp_path / "home", redact=lambda t: t)
+    with a2a_shared.bound_scope(scope):
+        folder = a2a_shared.get_hermes_home() / "a2a_conversations"
+        folder.mkdir()
+        for _ in range(3):
+            with (folder / "a.jsonl").open("a") as fh:
+                fh.write('{"text": "' + "x" * 60 + '"}\n')
+        for name in ("b", "c", "d"):
+            with (folder / f"{name}.jsonl").open("a") as fh:
+                fh.write("{}\n")
+    real = tmp_path / "home" / "a2a_conversations"
+    assert (real / "a.jsonl.old").exists() or not (real / "a.jsonl").exists()
+    assert len(list(real.glob("*.jsonl"))) <= 3
+
+
+def test_forget_removes_the_a2a_transcripts():
+    from agents.core.data_purge import PURGE_MEMORY_DIRS
+
+    assert "a2a_hermes" in PURGE_MEMORY_DIRS
+
+
+def test_the_estop_stops_a_running_fan_out_at_its_next_request(registry, broker, peers, tmp_path, monkeypatch):
+    from agents.core import estop
+
+    calls = {"n": 0}
+
+    def engaged():
+        calls["n"] += 1
+        return calls["n"] > 1             # free at the start, engaged once requests begin
+
+    monkeypatch.setattr(estop, "is_engaged", engaged)
+    out = run(_outbound(registry, broker, peers, tmp_path).run(
+        "a2a_orchestrate", {"capability": "research", "message": "hi"}))
+    assert out["refused"] == ["estop_engaged"]
+    assert peers.requests == []
+
+
+@pytest.mark.parametrize("url", ["https://peer.example:0", "https://peer.example\\@evil.example",
+                                 "https://peer.example/a b"])
+def test_odd_urls_are_refused(url):
+    with pytest.raises(ValueError):
+        validate_outbound_url(url)
+
+
+def test_errors_are_not_framed_as_peer_replies(registry, broker, peers, tmp_path):
+    out = run(_outbound(registry, broker, peers, tmp_path).run(
+        "a2a_call", {"agent": "alpha", "message": ""}))
+    assert out["ok"] is False and not out["text"].startswith("[A2A inbound")
+    assert out["tainted"] is True
+
+
+def test_a_later_turn_reads_the_approved_reply_as_untrusted(registry, broker, peers, tmp_path):
+    from agents.core.tool_rpc import ToolRPCServer
+
+    server = ToolRPCServer()
+    outbound = _outbound(registry, broker, peers, tmp_path)
+    ao.register_a2a_tools(server, outbound, enabled=True)
+    run(outbound.run("a2a_call", {"agent": "alpha", "message": "hi"}))      # the approved run
+    # The turn that reads it back uses a2a_history: declared untrusted, so the tool loop
+    # fences it and taints that turn; the row itself carries the taint mark too.
+    assert server.declares_untrusted_output("a2a_history")
+    answer = run(server.handle({"tool": "a2a_history", "args": {"context_id": "alpha__ctx-1"}}))
+    assert answer["result"]["tainted"] is True
+
+
+def test_the_governed_urllib_exposes_no_client():
+    assert not hasattr(compat_urllib, "httpx")
+    assert hv.unmapped_imports("from agents.vendor.hermes_compat import urllib\nurllib._httpx\n",
+                               "plugins/platforms/a2a/x.py")

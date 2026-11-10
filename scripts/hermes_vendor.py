@@ -189,6 +189,10 @@ COMPAT_MODULES = frozenset({
 #: Compat modules only some vendored paths may import: the governed ``urllib`` can open a
 #: request (through the egress binding of one A2A call), so no other adopted file may
 #: name it, even by hand.
+#: The adopted A2A package as a module name: only files under it may import it.
+A2A_PACKAGE = "agents.vendor.hermes.plugins.platforms.a2a"
+#: Denied-name strings that are wire data in the A2A package (see ``unmapped_imports``).
+WIRE_DATA_STRINGS = frozenset({"http"})
 PATH_SCOPED_COMPAT: dict[str, tuple[str, ...]] = {
     "urllib": (A2A_PATH,), "a2a_shared": (A2A_PATH,), "futures": (A2A_PATH,),
 }
@@ -291,16 +295,28 @@ def unmapped_imports(text: str, path: str = "x.py") -> list[str]:
                 and isinstance(base.value, ast.Name)
                 and compat_names.get(base.value.id) == GOVERNED_URLOPEN_MODULE)
 
-    # A string that is a key or value of a dict display is wire data (an A2A card's
-    # ``{"type": "http"}``), not a name handed to ``getattr``; it is not checked as one.
-    # The same holds for a string a value is compared with (``scheme in ("http", "https")``).
-    dict_data = {id(item) for node in ast.walk(tree) if isinstance(node, ast.Dict)
-                 for item in (*node.keys, *node.values) if isinstance(item, ast.Constant)}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Compare):
-            for side in node.comparators:
-                items = side.elts if isinstance(side, (ast.Tuple, ast.List, ast.Set)) else [side]
-                dict_data.update(id(item) for item in items if isinstance(item, ast.Constant))
+    def scoped_module(module: str) -> bool:
+        """A path-scoped compat module or the adopted A2A package, named outside its path."""
+        if module.startswith(COMPAT_PACKAGE + "."):
+            return scoped_out(module[len(COMPAT_PACKAGE) + 1:].split(".", 1)[0])
+        return ((module == A2A_PACKAGE or module.startswith(A2A_PACKAGE + "."))
+                and not path.startswith(A2A_PATH))
+
+    # Under the A2A package only, the exact strings in WIRE_DATA_STRINGS are wire data where
+    # they are a dict display's key or value (a card's ``{"type": "http"}``) or what a value
+    # is compared with (``scheme in ("http", "https")``), not a name handed to ``getattr``.
+    # Every other denied string, and every one outside the package, is still refused.
+    dict_data: set[int] = set()
+    if path.startswith(A2A_PATH):
+        for node in ast.walk(tree):
+            items: list = []
+            if isinstance(node, ast.Dict):
+                items = [*node.keys, *node.values]
+            elif isinstance(node, ast.Compare):
+                for side in node.comparators:
+                    items += side.elts if isinstance(side, (ast.Tuple, ast.List, ast.Set)) else [side]
+            dict_data.update(id(item) for item in items if isinstance(item, ast.Constant)
+                             and item.value in WIRE_DATA_STRINGS)
     for node in ast.walk(tree):
         line = getattr(node, "lineno", 0)
         if isinstance(node, ast.Import):
@@ -315,6 +331,8 @@ def unmapped_imports(text: str, path: str = "x.py") -> list[str]:
                                  f"use from {alias.name} import …)")
                 elif alias.name.startswith(COMPAT_PACKAGE) and "os_env" in alias.name:
                     found.append(f"line {line}: import {alias.name} (os only as `os_env as os`)")
+                elif scoped_module(alias.name):
+                    found.append(f"line {line}: import {alias.name} (path-scoped module)")
         elif isinstance(node, ast.ImportFrom):
             if node.level:
                 target = _relative_target(path, node.level, node.module)
@@ -335,12 +353,18 @@ def unmapped_imports(text: str, path: str = "x.py") -> list[str]:
                         found.append(f"line {line}: os_env imported as {alias.asname}")
             elif not _module_allowed(module):
                 found.append(f"line {line}: from {module or '.'} import ...")
-            elif module.startswith(COMPAT_PACKAGE + ".") and \
-                    scoped_out(module[len(COMPAT_PACKAGE) + 1:].split(".", 1)[0]):
-                found.append(f"line {line}: from {module} import ... (path-scoped compat module)")
+            elif scoped_module(module):
+                found.append(f"line {line}: from {module} import ... (path-scoped module)")
             for alias in node.names:
                 if alias.name in DENIED_ATTRS or alias.name == "*":
                     found.append(f"line {line}: from {module} import {alias.name}")
+                elif module.startswith(COMPAT_PACKAGE) and alias.name.startswith("_"):
+                    found.append(f"line {line}: from {module} import {alias.name} (private)")
+                elif node.level == 0 and scoped_module(f"{module}.{alias.name}"):
+                    found.append(f"line {line}: from {module} import {alias.name} (path-scoped module)")
+        elif (isinstance(node, ast.Attribute) and node.attr.startswith("_")
+                and isinstance(node.value, ast.Name) and node.value.id in compat_bound):
+            found.append(f"line {line}: {node.value.id}.{node.attr} (private compat name)")
         elif isinstance(node, ast.Attribute) and node.attr in DENIED_ATTRS:
             if not governed_urlopen(node):
                 found.append(f"line {line}: .{node.attr}")
