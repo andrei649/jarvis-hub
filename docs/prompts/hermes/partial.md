@@ -1,5 +1,19 @@
 # Hermes parity: close the PARTIAL rows (ultracode)
 
+> **Evidence model changed on 2026-11-10 — this section overrides the rest of this prompt.**
+> Owner decision 3 (`docs/decisions/2026-11-10-hermes-integration-by-feature.md`) retired hash-pinned
+> evidence. `docs/hermes/assessment.json` is schema 3: `evidence` is a list of repository paths, no
+> `sha256`; `path:line` citations are prose and are not screened. There is no `stale_evidence` basis and no
+> restamp: a merge that moves or edits code changes no row, and `scripts/hermes_restamp.py` is retired.
+> Every row belongs to one feature area in `docs/hermes/areas.json`, whose acceptance suite (pytest files
+> or node ids) keeps its `equivalent` rows honest. If a suite fails, that area's equivalent rows show
+> `needs_review` with basis `suite_failed` until the suite is green again or the rows are re-read.
+> Wherever the text below says pin, restamp, drift, stale_evidence or evidence hash, apply this instead:
+> - after your change run `python3.12 scripts/hermes_status.py verify --area <id>` for the areas you
+>   touched (or read CI's `verify --junit` step), then `write && check`;
+> - when you make a row `equivalent`, add the test that proves it to its area's `suite`;
+> - if you move or rename a test file a suite names, update `areas.json` in the same change.
+
 You are working in `andrei649/jarvis-hub` on branch `claude/cto-session-recovery-qinvkg` (draft PR #1207). Your job is to move rows whose **live** status is `partial` to `equivalent`. A row becomes equivalent only when every open item is built and verified. When you cannot get a row that far, rewrite its `remaining` so it is shorter and exact.
 
 You cannot see any earlier conversation. Every number in this prompt dates from 2026-09-28 and is only for orientation. Compute everything from the live repo.
@@ -173,30 +187,10 @@ A row that stays partial gets a precise `remaining` that lists each open item wi
 - Verify every `path:line` citation by content. The checker only confirms that the first cited line exists and is not blank.
 - A citation to a pinned file that does not resolve is fatal: every `hermes_status.py` command exits 2. Run `check` after every ledger edit.
 
-**Drift.** Do this after each of your changes and before the next merge from origin. List the rows your edit made stale:
-
-```bash
-python3.12 - "$(cat "$S/snap_sha")" <<'PY'
-import sys, subprocess; sys.path.insert(0, "scripts")
-import hermes_status as hs
-changed = set(subprocess.run(["git", "diff", "--name-only", sys.argv[1]],
-                             capture_output=True, text=True, check=True).stdout.split())
-ledger, data = hs.load()
-for r in hs.assess(ledger, data):
-    if r["basis"] != "stale_evidence": continue
-    hit = [e["path"] for e in r["evidence"] if e["path"] in changed and not (
-        (hs.REPO / e["path"]).is_file() and hs.file_digest(hs.REPO / e["path"]) == e["sha256"])]
-    if hit: print(r["id"], *hit)
-PY
-```
-
-Cross-check the result against a diff of the current `needs_review` list with `$S/stale_before.txt`. Each listed row may be in any bucket, equivalent included. You own it, so for each one:
-
-1. **Find the pinned version.** For each evidence path, find the version whose digest equals the pinned `sha256`. Usually `git show HEAD:<path>` (before your edit) matches. Otherwise walk `git log --format=%H -- <path>` and hash `git show <sha>:<path>` after decoding UTF-8 and normalizing `\r\n` and `\r` to `\n`. The matching version can be older than the last restamp base (lesson from the 2026-09-28 recovery). If no version matches, re-review the row from scratch.
-2. **Map citations.** Map each cited line by content from that version to the current file.
-3. **Re-read the claim.** Then restamp the hashes and line numbers, rewrite the entry, or downgrade it honestly.
-
-Leave rows that were already stale, or that a merge from origin made stale, to their authors or to the needs_review pass. Before restamping a row, fetch and check that another session has not already done it. Never refresh a hash without re-reviewing the row.
+**Suites.** After each of your changes, run `python3.12 scripts/hermes_status.py verify --area <id>`
+for the areas whose suites cover what you touched. Moving code re-opens nothing; a red suite demotes that
+area's `equivalent` rows to `needs_review` (`suite_failed`). Fix the regression or re-read the rows and
+downgrade them honestly in the same change. Never remove a failing entry from a suite to make it pass.
 
 ## 5. Records (in the same commit as the code)
 

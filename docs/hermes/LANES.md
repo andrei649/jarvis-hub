@@ -31,11 +31,13 @@ H507 H513 H518 H523 H579 H586 H594 H670 H674 H677 H681 H687.
 
 - **One writer per row.** Take a row only if this page gives it to your lane. To move a row,
   say so on #1249 and edit this page in the same change.
-- **Pin drift.** A build change can drift other rows' evidence pins. The build PR's body lists
-  every source file it changed. Check that list before re-reading a stale row whose pins sit
-  in those files; re-read it after the build PR merges instead.
-- **Restamp only after a re-read.** `scripts/hermes_restamp.py stamp` checks consistency, not
-  that anyone read the code. Re-read the row, then stamp what you read.
+- **No pin drift (since 2026-11-10).** Evidence is no longer hash-pinned: a build change that
+  moves or edits cited files re-opens nothing. What can re-open rows is a failing area
+  acceptance suite (`docs/hermes/areas.json`, `python3 scripts/hermes_status.py verify`), and
+  then only that area's `equivalent` rows. If a build change moves a test file that a suite
+  names, update `areas.json` in the same PR. `hermes_restamp.py` is retired.
+- **Re-read before you change a verdict.** A status change is a re-read of the row against the
+  code, written into `assessment.json` with its summary, remaining work and evidence paths.
 - **Shared files.** Both lanes write `docs/hermes/assessment.json` and the generated reports.
   Merge by review id, keep `scope_reopenings` byte-identical, and regenerate the reports with
   `python3 scripts/hermes_status.py write` and `python3.12 scripts/status_sync.py` rather than

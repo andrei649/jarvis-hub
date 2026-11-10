@@ -1,5 +1,19 @@
 # Hermes parity: build the `missing` rows (ultracode)
 
+> **Evidence model changed on 2026-11-10 — this section overrides the rest of this prompt.**
+> Owner decision 3 (`docs/decisions/2026-11-10-hermes-integration-by-feature.md`) retired hash-pinned
+> evidence. `docs/hermes/assessment.json` is schema 3: `evidence` is a list of repository paths, no
+> `sha256`; `path:line` citations are prose and are not screened. There is no `stale_evidence` basis and no
+> restamp: a merge that moves or edits code changes no row, and `scripts/hermes_restamp.py` is retired.
+> Every row belongs to one feature area in `docs/hermes/areas.json`, whose acceptance suite (pytest files
+> or node ids) keeps its `equivalent` rows honest. If a suite fails, that area's equivalent rows show
+> `needs_review` with basis `suite_failed` until the suite is green again or the rows are re-read.
+> Wherever the text below says pin, restamp, drift, stale_evidence or evidence hash, apply this instead:
+> - after your change run `python3.12 scripts/hermes_status.py verify --area <id>` for the areas you
+>   touched (or read CI's `verify --junit` step), then `write && check`;
+> - when you make a row `equivalent`, add the test that proves it to its area's `suite`;
+> - if you move or rename a test file a suite names, update `areas.json` in the same change.
+
 You are continuing Hermes-parity work on `andrei649/jarvis-hub`. The branch is `claude/cto-session-recovery-qinvkg` and the PR is draft #1207. You have none of the earlier conversation, so everything you need is in this prompt or in the repo. Other sessions are working on the `partial`, `equivalent` and `needs_review` buckets at the same time, on the same branch.
 
 **Your bucket** is every row whose *live* status is `missing`.
@@ -234,41 +248,19 @@ Each agent returns JSON with these fields:
 
 **Equivalent** requires all of the following:
 - `remaining == ""`;
-- at least one pinned source file under `agents/`, `frontend/src/`, `mobile/src/` or `desktop/`, with no `/test/` in its path;
-- at least one pinned test file (`tests/…`);
+- at least one cited source file under `agents/`, `frontend/src/`, `mobile/src/` or `desktop/`, with no `/test/` in its path;
+- at least one cited test file (`tests/…`), and that test added to the area's suite in `docs/hermes/areas.json`;
 - every accepted part shipped, including the entry point and the governance tier.
 
 Otherwise, use **partial**, and make `remaining` name exactly what is left. Never leave it whitespace-only; the checker would accept that, but it is dishonest. Use **missing** only if no part of the contract exists.
 
-**Citations**
-- Content-verify every `path:line` citation by reading the line. The checker only confirms that the first cited line of a pinned file is in range and not blank.
-- A pinned-file citation that does not resolve is **fatal**: every `hermes_status.py` command then fails with exit 2.
+**Citations.** Content-verify every `path:line` citation by reading the line. Citations are prose
+pointers; nothing pins or screens them, so they are only as good as your reading.
 
-**Stale rows.** When your change drifts pinned evidence, the affected rows show `basis == "stale_evidence"`.
-- Rows in `stale_before`, and rows drifted only by other sessions' commits, are not yours.
-- A row is yours if a drifted file is one your commits changed (`git diff --name-only origin/claude/cto-session-recovery-qinvkg HEAD`).
-- Re-read each of your rows against the new code, then either restamp it or downgrade it honestly. Keep `row_sha256`, update the evidence hashes, and re-verify every claim and citation in `summary` and `remaining`.
-- Map every old citation by content from the file version that the pinned digest actually matches. That version may be *older* than the last restamp base, which was the lesson of the 2026-09-28 recovery.
-- Find the version with this script:
-  ```bash
-  python3.12 - "<path>" "<pinned sha256>" <<'EOF'
-  import hashlib, subprocess, sys
-  path, want = sys.argv[1], sys.argv[2]
-  shas = subprocess.run(["git", "log", "--all", "--format=%H", "--", path],
-                        capture_output=True, text=True, check=True).stdout.split()
-  for sha in shas:
-      blob = subprocess.run(["git", "show", f"{sha}:{path}"], capture_output=True)
-      if blob.returncode:
-          continue
-      text = blob.stdout.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
-      if hashlib.sha256(text.encode("utf-8")).hexdigest() == want:
-          print(sha)
-          break
-  else:
-      print("no committed version matches")
-  EOF
-  ```
-- Never restamp a hash without re-reading the row.
+**Suites, not stale rows.** Your change re-opens no row by moving code. Before you push, run
+`python3.12 scripts/hermes_status.py verify --area <id>` for every area whose suite covers code you
+touched; a red suite demotes that area's equivalent rows (`suite_failed`). Fix the code or the test, or
+re-read and downgrade the rows honestly; never drop a failing entry from a suite to turn it green.
 
 ## 5. Records (same commit as the code)
 
