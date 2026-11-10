@@ -17,11 +17,11 @@ Sources: `tests/_snapshots/route_surface.json` + `tests/_snapshots/route_auth.js
 
 | Tier | Routes | Guard | Sweep meaning |
 |---|---|---|---|
-| `user` | 304 | `user_guard` (`X-User-Token`) | 403 when `JARVIS_USER_TOKEN` is unset, 401 when set but missing/wrong |
+| `user` | 305 | `user_guard` (`X-User-Token`) | 403 when `JARVIS_USER_TOKEN` is unset, 401 when set but missing/wrong |
 | `admin` | 317 | `admin_guard` (`X-Admin-Token`) | must reject a user token as well as no token |
 | `ws_user` | 40 | `ws_user_guard` (cookie `nerva_ws_session`, `X-CSRF-Token` on writes) | Nerva Workspace: **401** `auth_required` without a session, **403** `csrf_failed` for a write without the token; a hub token opens nothing here |
 | `ws_admin` | 18 | `ws_admin_guard` (a workspace admin's session) | must reject a member's or approver's session with **403** `forbidden` |
-| `open` | 80 | none by design | must expose nothing tier-gated — the highest-value leak hunt in this chapter |
+| `open` | 79 | none by design | must expose nothing tier-gated — the highest-value leak hunt in this chapter |
 
 > ⚠️ **The localhost trap — read before you sweep.** Tokenless requests from the box itself are allowed **by design** (`agents/web.py` `_admin_guard`). So a sweep run on the server host proves *routing*, not *authorization*: everything will answer 200 and you will learn nothing about the guards. Every tier assertion in 14.1 must be re-run 🌐 **from a second device on the LAN** (the owner's phone works). A sweep run only on localhost must be recorded as **partial — localhost bypass**, never as a passing auth test. The `ws_user`/`ws_admin` tiers have no localhost bypass: a workspace session is required from every address, so those rows test authorization even on the server host.
 
@@ -1453,7 +1453,7 @@ EOF
 |----|--------|------|------|-------|--------|
 | API-741 | `GET` | `/skills` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/skills` | **200** — or a documented 4xx/503 whose body says honestly why |
 | API-742 | `POST` | `/skills/import` | `user` | mutating — needs a body; exercise it in §08 | **401/403** with no token · state actually changes only on a valid call |
-| API-743 | `GET` | `/skills/imported` | `open` | `curl -sS -o /dev/null -w "%{http_code}\n" $B/skills/imported` | **200** — or a documented 4xx/503 whose body says honestly why |
+| API-743 | `GET` | `/skills/imported` | `user` | `curl -sS -H "X-User-Token: $JARVIS_USER_TOKEN" -o /dev/null -w "%{http_code}\n" $B/skills/imported` | **200** — or a documented 4xx/503 whose body says honestly why |
 
 ## 14.3.status `status` — 1 routes · behaviour owned by §01
 
@@ -1521,14 +1521,14 @@ EOF
 | Pass | Routes | Needs | Records |
 |---|---|---|---|
 | A — existence & honesty | 296 read routes | booted server | one line per non-200 |
-| B — tier enforcement | ≥20 sampled + all 80 `open` | 🌐 second device | expected vs actual code per route |
+| B — tier enforcement | ≥20 sampled + all 79 `open` | 🌐 second device | expected vs actual code per route |
 | C — payload leak hunt | every `user`/`open` collection route | booted server | body excerpt per suspected leak |
 | Mutating routes | 403 | see the §-pointer per group | exercised by owning section, not here |
 | **Total enumerated** | **759** | — | — |
 
 ## Open gaps found while writing
 
-- The `open` tier is the largest unaudited attack surface in the sweep (80 routes). Pass C is the only thing standing between it and a tier leak; budget real time for it rather than treating it as a formality.
+- The `open` tier is the largest unaudited attack surface in the sweep (79 routes). Pass C is the only thing standing between it and a tier leak; budget real time for it rather than treating it as a formality.
 - Templated read routes (`{id}` paths) are skipped by the Pass-A driver because they need a live id. They are covered by their owning sections — but that means a broken templated route can only be caught there, so do not treat a green Pass A as full read coverage.
 - Mutating routes are deliberately not fired here. A sweep that POSTs blindly across 403 routes would mutate the owner's real state — the opposite of a safe manual.
 

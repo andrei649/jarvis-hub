@@ -383,7 +383,7 @@
   "GET /sessions/{session_id}/todo": "user",
   "GET /sessions/{session_id}/trajectories": "admin",
   "GET /skills": "user",
-  "GET /skills/imported": "open",
+  "GET /skills/imported": "user",
   "GET /status": "open",
   "GET /sw-v2.js": "open",
   "GET /sw.js": "open",

@@ -1,5 +1,5 @@
 // @ts-nocheck
-/* SKILLS IMPORT panel — GET /skills/imported (unguarded) + POST /skills/import (user tier,
+/* SKILLS IMPORT panel — GET /skills/imported (user tier) + POST /skills/import (user tier,
    DEV_MODE-gated). fetch is mocked, like src/panels/marketplace-admin.test.tsx.
 
    The traps this file exists to pin:

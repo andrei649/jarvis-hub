@@ -120,7 +120,6 @@ PUBLIC_READS = {
     "GET /api/memory/eval/corpus",       # owned synthetic corpus, not user memory
     "GET /api/voice/capabilities",
     "GET /api/voice/wyoming",
-    "GET /skills/imported",
     "GET /sandbox/status",
     "GET /plugins",                      # config presence booleans, never key values
     "GET /agents",                       # roster + aggregate stats + skill names

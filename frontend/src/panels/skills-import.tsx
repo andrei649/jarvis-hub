@@ -12,9 +12,9 @@
 
    What the two handlers actually do, and what this panel is therefore forbidden to imply:
 
-   1. GET /skills/imported carries NO Depends() guard at all (contrast POST /skills/import,
-      which carries Depends(user_guard)). So it is read with useApi(path) — not admin,
-      not user-flagged. Its ONLY refusal is 503 {"error":"not initialized"} (skills.py:160).
+   1. GET /skills/imported carries Depends(user_guard), like POST /skills/import (the
+      manifests hold local source paths, so it was guarded on 2026-11-10). It is read with
+      useApi(path), which sends the user token — not admin. Besides 401/403 its refusal is 503 {"error":"not initialized"} (skills.py:160).
       apiGet throws BEFORE reading the body (client.ts:106-110), so the backend's literal
       "not initialized" never reaches this panel — only the message "GET /skills/imported
       -> 503". The status is therefore read off that message and the panel says
@@ -82,7 +82,7 @@
   11. Import performs OUTBOUND calls to raw.githubusercontent.com and api.github.com
       (importer.py:217, 302, 552) — stated once, plainly, in a privacy-conscious HUD.
 
-   The read is unguarded; the write is USER tier (act → never actA). */
+   The read and the write are both USER tier (act → never actA). */
 import React, { useState } from 'react';
 import { useApi, arr, mono, asLive, Card, State, Row, Tag, Btn, act, inpS, Json } from '../panel-kit';
 
@@ -136,7 +136,7 @@ const Amber = ({ children }) => (
 );
 
 export function SkillsImportPanel() {
-  /* Unguarded read (skills.py:157 has no Depends). Not admin. */
+  /* User-tier read (Depends(user_guard)). Not admin. */
   const { d, e, loading, reload } = useApi(IMPORTED_PATH);
   const loaded = !!d && !e;
   const rows: any[] = loaded ? arr(d, 'imported') : [];
@@ -396,7 +396,7 @@ export function SkillsImportPanel() {
       )}
 
       <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 10, lineHeight: 1.5, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
-        GET {IMPORTED_PATH} is <b>unguarded</b> and reads skills/&lt;slug&gt;/manifest.json sidecars ·
+        GET {IMPORTED_PATH} is <b>user tier</b> and reads skills/&lt;slug&gt;/manifest.json sidecars ·
         POST {IMPORT_PATH} is <b>user tier</b> (X-User-Token, not admin) and DEV_MODE-gated · a real import makes
         outbound requests to raw.githubusercontent.com and api.github.com. Marketplace registry rows, review status
         and rollback are a different store and live in the SKILLS MARKETPLACE panels.

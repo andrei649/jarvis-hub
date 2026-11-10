@@ -660,7 +660,7 @@ async def skills_import(req: Request):
     return JSONResponse({"ok": False, "error": f"Skill '{skill_name}' not found in {source}"}, status_code=404)
 
 
-@router.get("/skills/imported")
+@router.get("/skills/imported", dependencies=[Depends(user_guard)])   # manifests carry local source paths
 async def skills_imported():
     orch = get_orch()
     if not orch:
