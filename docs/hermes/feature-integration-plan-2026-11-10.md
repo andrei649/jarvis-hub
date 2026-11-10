@@ -56,6 +56,15 @@ re-derived. Every adopted tool still crosses the kernel like a native one. Herme
 skills use the SKILL.md format that Nerva's skills loader reads, so they need an import pass
 rather than a port.
 
+> **Correction (later the same day, `docs/hermes/missing-rows-plan-2026-11-10.md`).** The sidecar bridge
+> exposes only Hermes's `/api/ws` JSON-RPC; its REST, PTY and plugin-HTTP routes are refused by design.
+> So the Run lane does **not** reach the messaging platforms, the OpenAI-compatible API server, `hermes mcp
+> serve`, ACP, or the desktop/TUI apps. Those areas belong in Own (or Adopt where a module is small).
+> What the sidecar does reach: `/btw`, `/loop`, the context breakdown, clarify and secret prompts, its own
+> MCP catalog and OAuth, rooms and peers, and a few others. The table above overstates Run accordingly.
+> The same plan also found that 55 of the 64 buildable `missing` rows were never re-assessed after
+> 2026-09-07 and several are already partly built, so a no-code re-assessment pass comes before building.
+
 ### Run: make the sidecar a product feature
 
 - Bump the runtime pin to current upstream and automate the bump: download, verify, diff the
