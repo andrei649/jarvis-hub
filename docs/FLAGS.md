@@ -1402,6 +1402,33 @@ already running: stop one with `POST /api/subagents/{id}/stop`.
 **Rollback:** set `llm.delegate_task` off (it applies at once); the routes, the pause and the
 timeout stay.
 
+### `autonomy.subagent_worktrees`, `autonomy.subagent_stall_seconds`, `autonomy.worktree_auto_reclaim` (+ `autonomy.worktree_reclaim_max_age_hours`) — G18
+
+**`autonomy.subagent_worktrees`** (default **off**, read at each spawn). On: a delegated child
+spawned while `llm.project_dir` is a git repository inside the file roots works in
+`<repo>/.worktrees/<spawn>` on `sub/<spawn>`, branched from HEAD, and its file tools resolve
+only inside that tree. Creating it is refused (and the spawn fails `worktree_unavailable`,
+the child never runs unisolated) under the emergency stop, in plan mode, for a repository
+whose git config could make git run a program, and — Action Kernel on — without a
+`file.write` grant. An unchanged tree is removed when the child ends (untracked scratch
+archived to `<data>/worktrees/archive`); a changed one is kept and its branch and changed
+files are returned to the parent. Off: children share the project folder as before. The
+read-only `/review` reviewer never gets a tree.
+
+**`autonomy.subagent_stall_seconds`** (default 120, whole seconds 10..3600). A running
+sub-agent with no activity (no tool event, no steer) this long is marked `stalled` on its
+record, its durable row and its transcript. It is a warning: the time limit stops it.
+
+**`autonomy.worktree_auto_reclaim`** (default **off**; forced off in safe mode). On: at most
+once an hour the autonomy tick reclaims the project's worktrees older than
+**`autonomy.worktree_reclaim_max_age_hours`** (default 72, 1..8760) that are clean, pushed,
+unlocked, not on a protected branch and not in use — the same rule as `/worktree prune
+--apply`. It is skipped while the approval mode is `off`, under the emergency stop, and —
+Action Kernel on — without a `file.write` grant.
+
+**Rollback:** turn the switches off; kept trees stay where they are (`/worktree list`), and
+archives stay under `<data>/worktrees/archive`.
+
 ### `llm.execute_code_sessions` (+ `llm.execute_code_image`, `llm.execute_code_max_kernels`, `llm.execute_code_idle_ttl`)
 
 **Execution context (H595):** `llm.execute_code_mode` accepts `project`

@@ -624,6 +624,7 @@ class AutonomyCoordinator:
                             self._orch.get_setting("autonomy.interrupt_budget", 4)
                         )
                 max_tier = None
+                await self._maybe_reclaim_worktrees()      # G18 (H474): at most hourly, off by default
                 if self._orch.get_setting("autonomy.night_shift", False):
                     start = int(self._orch.get_setting("autonomy.night_start", 23) or 23)
                     end = int(self._orch.get_setting("autonomy.night_end", 6) or 6)
@@ -2603,8 +2604,21 @@ class AutonomyCoordinator:
                 child_timeout=self._subagent_timeout,
                 halt_probe=self._subagent_halt,
                 tool_registry=self._registered_tool_names,
+                # G18 — durable delegation rows on the autonomy queue (H401), a child's
+                # own worktree (H402), the read-only reviewer's tools (H404) and the
+                # stall monitor's threshold.
+                store=lambda: getattr(self._orch, "autonomy_queue", None),
+                worktree_provider=self._subagent_worktree,
+                read_only_probe=self._tool_is_read_only,
+                stall_seconds=lambda: self._orch.get_setting("autonomy.subagent_stall_seconds", 120),
             ),
         )
+        self._g18_kernel = _action_kernel
+        try:
+            # H401: children a previous boot left running died with it: reported once, never re-run.
+            self._orch.subagents.recover()
+        except Exception:
+            logger.warning("sub-agent recovery at start failed", exc_info=True)
 
         # Domain routers may register late-bound host handlers (for example the
         # default-off House Brain after owner configuration is available). Keep
@@ -2666,6 +2680,63 @@ class AutonomyCoordinator:
         if switch is not None and switch.is_halted():
             return "kill_switch_halted"
         return None
+
+    def _subagent_worktree(self, spawn_id):
+        """G18 (H402) — a delegated child's own worktree, or None. Blocking; the
+        manager calls it on a worker thread.
+
+        Off unless ``autonomy.subagent_worktrees`` is on, and None when no project folder
+        (``llm.project_dir``) is set or it is not a repository: there is nothing to
+        isolate. A project outside the owner's file roots, a repository whose config could
+        make the version-control tool run a program, the emergency stop, plan mode on the
+        delegating session, or (kernel on) anything but a ``file.write`` grant raises
+        ``WorktreeRefused``: the spawn fails rather than run unisolated."""
+        from pathlib import Path
+
+        from . import worktrees
+        from .file_tools import FileScope
+
+        if self._orch.get_setting("autonomy.subagent_worktrees", False) is not True:
+            return None
+        raw = self._orch.get_setting("llm.project_dir", "")
+        if not isinstance(raw, str) or not raw.strip() or not Path(raw).expanduser().is_dir():
+            return None
+        top = worktrees.repo_root(Path(raw).expanduser())
+        if top is None:
+            return None
+        repo = worktrees.main_repo(top) or top
+        if FileScope.from_env().root_for(repo.resolve()) is None:
+            raise worktrees.WorktreeRefused("the project is outside the owner's file roots")
+        from .kernel.plan_mode import current_session
+
+        refusal = worktrees.write_refusal(
+            session_id=current_session(), authorizer=getattr(self, "_g18_kernel", None),
+            title="Create a worktree for a sub-agent",
+            payload={"path": str(repo / worktrees.TREES_DIR), "operation": "worktree_add"})
+        if refusal is not None:
+            raise worktrees.WorktreeRefused(refusal)
+        return worktrees.create_child_tree(repo, spawn_id)
+
+    def _tool_is_read_only(self, name):
+        """G18 (H404) — whether a registered tool declared itself read-only and ungated
+        (ToolRPC's own declaration; an undeclared tool is not read-only)."""
+        server = getattr(self._orch, "tool_rpc", None)
+        if server is None:
+            return False
+        spec = getattr(server, "_tools", {}).get(name)
+        if not spec or spec.get("gated"):
+            return False
+        effect = server.declared_effect(name)
+        return bool(effect) and effect[0] == "read_only"
+
+    async def _maybe_reclaim_worktrees(self):
+        """H474 — the opportunistic worktree reclaim on the tick (off by default)."""
+        try:
+            from .worktree_commands import opportunistic_reclaim
+
+            await opportunistic_reclaim(self._orch, authorizer=getattr(self, "_g18_kernel", None))
+        except Exception:
+            logger.warning("worktree reclaim failed", exc_info=True)
 
     def _registered_tool_names(self, agent=""):
         """The tools a sub-agent of *agent* would be offered now: the registered rows

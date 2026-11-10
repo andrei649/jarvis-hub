@@ -603,6 +603,13 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="autonomy", key="max_subagent_spawns_per_boot", value=50, label="Max sub-agent spawns per boot (0 = unbounded)", kind="number"),
     # H400: one sub-agent's wall clock; past it the child is cancelled and its spawn fails.
     dict(category="autonomy", key="subagent_timeout_seconds", value=300, label="Sub-agent time limit (5–3600 s)", kind="number"),
+    # G18: a running sub-agent with no activity this long is marked stalled (H401); each
+    # delegated child gets its own git worktree of the project (H402); the tick reclaims
+    # clean, pushed worktrees older than the age below (H474).
+    dict(category="autonomy", key="subagent_stall_seconds", value=120, label="Sub-agent stall warning after (10–3600 s)", kind="number"),
+    dict(category="autonomy", key="subagent_worktrees", value=False, label="Give each sub-agent its own git worktree of the project", kind="toggle"),
+    dict(category="autonomy", key="worktree_auto_reclaim", value=False, label="Reclaim clean, pushed git worktrees automatically", kind="toggle"),
+    dict(category="autonomy", key="worktree_reclaim_max_age_hours", value=72, label="Reclaim worktrees older than (1–8760 h)", kind="number"),
     # H681: the model a delegated sub-agent runs on when its spawn names none (empty =
     # the agent's own route), and the provider that serves it (empty = the routed one).
     dict(category="autonomy", key="subagent_model", value="", label="Sub-agent model (empty = the agent's own)", kind="text"),
@@ -1303,6 +1310,10 @@ def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
         return f"{key}: expected an integer between 0 (unbounded) and 86400 seconds"
     if key == "subagent_timeout_seconds" and (type(value) is not int or not 5 <= value <= 3600):
         return f"{key}: expected an integer between 5 and 3600 seconds"
+    if key == "subagent_stall_seconds" and (type(value) is not int or not 10 <= value <= 3600):
+        return f"{key}: expected an integer between 10 and 3600 seconds"
+    if key == "worktree_reclaim_max_age_hours" and (type(value) is not int or not 1 <= value <= 8760):
+        return f"{key}: expected an integer between 1 and 8760 hours"
     if key == "task_max_seconds" and (type(value) is not int or not 1 <= value <= 86_400):
         return f"{key}: expected an integer between 1 and 86400 seconds"
     if key == "sandbox_temp_dir":

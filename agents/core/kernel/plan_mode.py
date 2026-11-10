@@ -40,6 +40,7 @@ import re
 import tempfile
 import threading
 import time
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -276,10 +277,37 @@ def migrate(old_session: str, new_session: str, *, store: PlanModeStore | None =
     return store.carry(old_session, new_session)
 
 
+# G18 (H404) — the same floor for one context rather than one session: the /review
+# reviewer sub-agent runs inside ``read_only_floor``, so every action it plans and every
+# tool it calls is judged as plan mode judges them, whatever session it is in. It is a
+# context variable: it reaches the reviewer's own tasks and tool threads (each copies the
+# context it was started from) and nothing else. Restriction only, like plan mode.
+READ_ONLY_PREFIX = "read-only reviewer"
+_READ_ONLY_FLOOR: ContextVar[str | None] = ContextVar("nerva_read_only_floor", default=None)
+
+
+@contextlib.contextmanager
+def read_only_floor(label: str = "review"):
+    """Let only reads run in this context (the reviewer's run)."""
+    token = _READ_ONLY_FLOOR.set(str(label or "review")[:40])
+    try:
+        yield
+    finally:
+        _READ_ONLY_FLOOR.reset(token)
+
+
+def read_only_floor_active() -> str | None:
+    """The floor's label when the code in flight is inside :func:`read_only_floor`."""
+    return _READ_ONLY_FLOOR.get()
+
+
 def action_denial(kind: str, payload: Any = None, *, session_id: str | None = None,
                   store: PlanModeStore | None = None) -> str | None:
     """The kernel's plan-mode floor: a denial reason for a non-read *kind* while the
-    session is in plan mode, else None. Never a grant."""
+    session is in plan mode (or the code runs under :func:`read_only_floor`), else None.
+    Never a grant."""
+    if _READ_ONLY_FLOOR.get() is not None and not kind_is_read(kind, payload):
+        return f"{READ_ONLY_PREFIX}: only reads run in a review ({kind})"
     session = session_id if session_id is not None else current_session()
     if not session or not (store or _DEFAULT).is_active(session):
         return None
@@ -291,7 +319,10 @@ def action_denial(kind: str, payload: Any = None, *, session_id: str | None = No
 def tool_denial(name: str, *, gated: bool, risk: str | None, session_id: str | None = None,
                 store: PlanModeStore | None = None) -> str | None:
     """The tool front door's plan-mode floor: a gated tool, or one that did not declare
-    itself ``read_only``, is refused while the session is in plan mode."""
+    itself ``read_only``, is refused while the session is in plan mode (or the code runs
+    under :func:`read_only_floor`)."""
+    if _READ_ONLY_FLOOR.get() is not None and (gated or risk != "read_only"):
+        return f"{READ_ONLY_PREFIX}: only read-only tools run in a review ({name})"
     session = session_id if session_id is not None else current_session()
     if not session or not (store or _DEFAULT).is_active(session):
         return None

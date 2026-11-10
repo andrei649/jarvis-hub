@@ -163,7 +163,27 @@ class _WorkerFileTools(FileTools):
         return super()._spill_file(raw_path)
 
 
+class _TreeFileTools(FileTools):
+    """G18: file tools confined to one git worktree — a delegated child's own tree
+    (H402) or the tree an owner's session moved into with ``/worktree new`` (H474).
+    The tree must also lie inside the owner's file roots: it only ever narrows."""
+
+    def __init__(self, base: FileTools, tree: Path):
+        owner = base.scope
+        if owner.root_for(tree) is None:
+            raise FileScopeError("outside_scope")
+        super().__init__(FileScope([tree]), snapshots=base.snapshots, max_bytes=base.max_bytes,
+                         authorizer=base._authorizer, audit=base._audit, agent=base.agent,
+                         spill_dirs=base._spill_dirs)
+        self._documents = base._documents
+
+
 def file_tools_for_workspace(base: FileTools) -> FileTools:
     """Select a fresh scoped handler without mutating the shared instance/history."""
     binding = current_workspace()
-    return _WorkerFileTools(base, binding) if binding is not None else base
+    if binding is not None:
+        return _WorkerFileTools(base, binding)
+    from agents.core.worktrees import bound_tree
+
+    tree = bound_tree()
+    return _TreeFileTools(base, tree) if tree is not None else base

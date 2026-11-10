@@ -223,6 +223,10 @@ _NUMBERS_NOT_FORCED = {
     "system.poll_interval", "system.log_max_mb", "system.log_backups", "system.battery_defer_percent",
     "system.startup_warmup_timeout_seconds", "system.autonomy_tick", "autonomy.running_ttl_seconds",
     "autonomy.task_max_seconds",
+    # G18: when a running sub-agent is flagged stalled (a warning, it stops nothing), and
+    # how old a clean, pushed worktree must be before the tick may reclaim it (a larger
+    # value keeps trees longer); the reclaim itself, autonomy.worktree_auto_reclaim, is forced.
+    "autonomy.subagent_stall_seconds", "autonomy.worktree_reclaim_max_age_hours",
     "autonomy.night_start", "autonomy.night_end", "autonomy.calendar_lead_time",
     "autonomy.tech_scout_interval_hours", "ambient.generation", "ambient.quiet_hours_start",
     "ambient.quiet_hours_end",

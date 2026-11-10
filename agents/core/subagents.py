@@ -78,6 +78,7 @@ import os
 import re
 import threading
 import time
+import uuid
 from collections.abc import Iterable
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -764,6 +765,156 @@ def _compact_for_log(rec: dict, limit: int = 2000) -> dict:
     return out
 
 
+# ── G18 (H401): live transcripts, tool trace, timeout dumps ─────────────────────
+
+#: How often a running child's durable row is touched, and how long a child may go
+#: without any activity (a tool event, a steer) before it is marked stalled.
+HEARTBEAT_SECONDS = 10.0
+DEFAULT_STALL_SECONDS = 120.0
+STALL_MIN_SECONDS = 10.0
+STALL_MAX_SECONDS = 3600.0
+#: A transcript's bounds: events kept on disk, bytes on disk, events kept for a dump.
+TRANSCRIPT_MAX_EVENTS = 2000
+TRANSCRIPT_MAX_BYTES = 2_000_000
+TRANSCRIPT_RECENT = 40
+TRANSCRIPT_TEXT_CHARS = 2000
+DUMP_STACK_FRAMES = 25
+#: Transcripts and dumps kept on disk (the newest; pruned at each start).
+STATE_FILES_KEPT = 500
+
+_TRACE: ContextVar[Optional["Transcript"]] = ContextVar("nerva_subagent_trace", default=None)
+
+
+class Transcript:
+    """One child's live transcript: an append-only JSONL file the owner can tail.
+
+    What goes in is bounded and never a tool's arguments or result: the start (goal,
+    agent, tool count, worktree), the tool loop's own events for this child (tool name,
+    status, call id, sizes and timings as ``observability.tool_events`` already bounds
+    them — the ``tool_trace``), steer messages, a stall, and the end (status, error,
+    an output preview). Past :data:`TRANSCRIPT_MAX_EVENTS` events or
+    :data:`TRANSCRIPT_MAX_BYTES` bytes one ``truncated`` marker is written and the rest
+    is dropped. Writes never raise into the child."""
+
+    def __init__(self, path: Optional[Path], on_activity: Optional[Callable[[float], None]] = None) -> None:
+        self.path = Path(path) if path is not None else None
+        self._lock = threading.Lock()
+        self._count = 0
+        self._bytes = 0
+        self._truncated = False
+        self.recent: list[dict] = []
+        self.tool_calls = 0
+        self._on_activity = on_activity
+
+    def append(self, kind: str, **fields: Any) -> None:
+        now = time.time()
+        row = {"seq": 0, "at": round(now, 3), "type": str(kind)[:40]}
+        for key, value in list(fields.items())[:16]:
+            if isinstance(value, str):
+                value = value[:TRANSCRIPT_TEXT_CHARS]
+            elif not (value is None or isinstance(value, (bool, int, float))):
+                try:
+                    value = json.loads(json.dumps(value, default=str))
+                except (TypeError, ValueError):
+                    value = type(value).__name__
+            row[str(key)[:40]] = value
+        try:
+            with self._lock:
+                self._count += 1
+                row["seq"] = self._count
+                self.recent.append(row)
+                del self.recent[:-TRANSCRIPT_RECENT]
+                if kind == "tool" and row.get("event") in {"tool_result", "tool_failed"}:
+                    self.tool_calls += 1
+                if self.path is None or self._truncated:
+                    pass
+                else:
+                    line = json.dumps(row, ensure_ascii=False, sort_keys=True, default=str) + "\n"
+                    if self._count > TRANSCRIPT_MAX_EVENTS or self._bytes + len(line) > TRANSCRIPT_MAX_BYTES:
+                        self._truncated = True
+                        line = json.dumps({"seq": self._count, "at": row["at"], "type": "truncated"}) + "\n"
+                    self.path.parent.mkdir(parents=True, exist_ok=True)
+                    with self.path.open("a", encoding="utf-8") as stream:
+                        stream.write(line)
+                    self._bytes += len(line)
+        except Exception:  # noqa: BLE001 — observability never breaks the child
+            logger.debug("sub-agent transcript write failed", exc_info=True)
+        if self._on_activity is not None:
+            with contextlib.suppress(Exception):
+                self._on_activity(now)
+
+
+def trace_tool_event(row: Any) -> None:
+    """Called by ``observability.tool_events`` for every tool-loop event: when the code
+    in flight belongs to a sub-agent, the (already bounded) event joins its transcript."""
+    transcript = _TRACE.get()
+    if transcript is None or not isinstance(row, dict):
+        return
+    transcript.append("tool", **{k: v for k, v in row.items() if k not in {"at", "seq"}})
+
+
+def read_transcript(path: Path, *, after: int = 0, limit: int = 200) -> list[dict]:
+    """Events of a transcript file with ``seq`` > *after* (at most *limit*)."""
+    bound = max(1, min(int(limit or 1), 1000))
+    out: list[dict] = []
+    try:
+        with Path(path).open("r", encoding="utf-8") as stream:
+            for line in stream:
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(row, dict) and int(row.get("seq") or 0) > after:
+                    out.append(row)
+                    if len(out) >= bound:
+                        break
+    except FileNotFoundError:
+        return []
+    return out
+
+
+def _parent_session() -> Optional[str]:
+    """The conversation the spawn is made from (its results are delivered back to it)."""
+    try:
+        from .kernel.plan_mode import current_session
+
+        return current_session()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _worktree_view(report: Optional[dict]) -> Optional[dict]:
+    """What the parent is told about a child's tree: its branch, whether it was kept, the
+    commits and files it changed, and the stale-file reminder (H401) when it changed any."""
+    if not isinstance(report, dict):
+        return None
+    view = {key: report[key] for key in ("branch", "path", "kept", "reason", "commits",
+                                          "changed_files", "changed_files_total", "archive")
+            if key in report}
+    if report.get("changed_files"):
+        view["stale_files_notice"] = (
+            "The sub-agent changed these files on its own branch. Any copy of them you read "
+            "earlier is stale: re-read them (or review the branch) before relying on or editing them.")
+    return view
+
+
+def _stack_of(task: Optional[asyncio.Future]) -> list[str]:
+    """Where a hung child's coroutine waits (file:line function), outermost first: the
+    task's coroutine and every coroutine it is awaiting, down to the innermost."""
+    get_coro = getattr(task, "get_coro", None)
+    coro = get_coro() if callable(get_coro) else None
+    frames: list[str] = []
+    with contextlib.suppress(Exception):
+        while coro is not None and len(frames) < DUMP_STACK_FRAMES:
+            frame = getattr(coro, "cr_frame", None) or getattr(coro, "gi_frame", None)
+            if frame is None:
+                break
+            code = frame.f_code
+            frames.append(f"{code.co_filename}:{frame.f_lineno} {code.co_name}")
+            coro = getattr(coro, "cr_await", None) or getattr(coro, "gi_yieldfrom", None)
+    return frames
+
+
 class SubAgentManager:
     """Gated, isolated, concurrent, steerable sub-agent spawning."""
 
@@ -782,8 +933,32 @@ class SubAgentManager:
                  child_timeout: Any = DEFAULT_CHILD_TIMEOUT_SECONDS,
                  halt_probe: Optional[Callable[[], Optional[str]]] = None,
                  pause_path: Optional[Path] = None,
-                 tool_registry: Optional[Callable[[], Iterable[str]]] = None) -> None:
+                 tool_registry: Optional[Callable[[], Iterable[str]]] = None,
+                 store: Any = None,
+                 worktree_provider: Optional[Callable[[str], Any]] = None,
+                 read_only_probe: Optional[Callable[[str], bool]] = None,
+                 stall_seconds: Any = DEFAULT_STALL_SECONDS,
+                 heartbeat_seconds: float = HEARTBEAT_SECONDS,
+                 state_dir: Optional[Path] = None) -> None:
         self._runner = runner or NullRunner()
+        # G18 (H401) — the durable delegation rows (the autonomy queue in prod: a
+        # ``TaskQueue`` or a reader returning one), this boot's id, the per-child live
+        # transcripts and timeout dumps under ``state_dir``, and the stall monitor.
+        self._store = store
+        self.boot_id = uuid.uuid4().hex[:16]
+        self._state_dir = Path(state_dir) if state_dir is not None else None
+        self._stall_seconds = stall_seconds
+        self.heartbeat_seconds = max(0.05, float(heartbeat_seconds))
+        self._background: set = set()
+        self._transcripts: dict[str, Transcript] = {}
+        # G18 (H402) — a child's own git worktree (``autonomy.subagent_worktrees`` in
+        # prod): called on a worker thread with the spawn id, it answers a
+        # ``worktrees.ChildTree`` or None (no isolation for this child), or raises
+        # ``WorktreeRefused`` (the spawn then fails, never runs unisolated).
+        self._worktree_provider = worktree_provider
+        # G18 (H404) — which registered tools only read (ToolRPC's declared effect in
+        # prod); a read-only child (the /review reviewer) is given those and no others.
+        self._read_only_probe = read_only_probe
         # H400 — the spawn gate. `halt_probe` answers why no new child may start (the
         # emergency stop by default; prod adds the kill switch), `pause_path` is the
         # owner's pause sentinel, and `_gate_lock` is held by every admission and by the
@@ -1031,8 +1206,17 @@ class SubAgentManager:
                     output_schema: Optional[dict] = None, *, model: Optional[str] = None,
                     provider: Optional[str] = None, overrides: Optional[dict] = None,
                     tools: Optional[Iterable[str]] = None, context: Optional[str] = None,
-                    answer_schema: Optional[dict] = None, focused: bool = False) -> dict:
+                    answer_schema: Optional[dict] = None, focused: bool = False,
+                    read_only: bool = False, kind: str = "delegate", background: bool = False,
+                    _admitted: Optional[asyncio.Future] = None) -> dict:
         """Spawn an isolated sub-agent for `task` — the one place a child starts.
+
+        G18: every spawn has a durable row (``delegation_id``), a live transcript and a
+        stall monitor; one past its timeout leaves a diagnostic dump. With the worktree
+        provider on, it runs confined to its own git worktree (H402). `read_only`
+        (H404, the /review reviewer) gives it only the tools that declared themselves
+        read-only and runs it under the kernel's read-only floor. `background` marks a
+        spawn whose result nobody waits for: it is delivered once, later, by a claim.
 
         Refused while new spawns are stopped (the emergency stop, the kill switch, the
         owner's pause: ``estop_engaged`` / ``kill_switch_halted`` / ``spawn_paused``, or
@@ -1094,6 +1278,8 @@ class SubAgentManager:
                 return {"ok": False, "reason": "turn_spawn_cap",
                         "spawned": self._turn_spawns[turn], "cap": cap}
             allowed = self._child_tools(tools, agent)
+            if read_only:
+                allowed = self._read_only_tools(allowed)
             if self.budget is not None and not self.budget.consume():
                 return {"ok": False, "reason": "spawn_budget_exhausted",
                         "used": self.budget.used, "max_total": self.budget.max_total}
@@ -1102,14 +1288,21 @@ class SubAgentManager:
             self._counter += 1
             spawn_id = f"sub-{parent}-{self._counter}"
             session_id = f"session::{spawn_id}"   # isolated session
+            delegation_id = uuid.uuid4().hex[:20]
+            now = time.time()
             rec = {"id": spawn_id, "parent": parent, "agent": agent or "sub",
                    "task": task, "session_id": session_id, "status": "running",
-                   "created_at": time.time(), "finished_at": None, "result": None,
+                   "created_at": now, "finished_at": None, "result": None,
                    "blocked": sorted(self.blocked), "output_schema": output_schema,
                    "steers": [], "steerable": self._runner_takes_steer,
                    "stop_reason": None, "cost": None, "selection": selection,
                    "tools": sorted(allowed) if allowed is not None else None,
-                   "timeout_seconds": timeout}
+                   "timeout_seconds": timeout,
+                   # G18
+                   "delegation_id": delegation_id, "kind": str(kind or "delegate")[:20],
+                   "read_only": bool(read_only), "background": bool(background),
+                   "parent_session": _parent_session(), "activity_at": now, "stalled": False,
+                   "worktree": None, "transcript": None}
             self._spawns[spawn_id] = rec
             chan = SteerChannel(spawn_id)
             self._channels[spawn_id] = chan
@@ -1121,13 +1314,38 @@ class SubAgentManager:
         # record left running.
         child: Optional[asyncio.Future] = None
         before: Optional[dict] = None
+        monitor: Optional[asyncio.Future] = None
         try:
             before = _cost_totals(self._safe_probe())
+            transcript = self._open_transcript(rec)
+            tree = None
+            if not read_only and self._worktree_provider is not None:
+                try:
+                    tree = await asyncio.to_thread(self._worktree_provider, spawn_id)
+                except Exception as exc:  # noqa: BLE001 — refused isolation never runs unisolated
+                    detail = str(exc)[:DETAIL_MAX] or type(exc).__name__
+                    self._set_status(rec, "failed")
+                    rec["result"] = {"error": "worktree_unavailable", "detail": detail}
+                    transcript.append("end", status="failed", error="worktree_unavailable", detail=detail)
+                if tree is not None:
+                    rec["worktree"] = tree.to_dict() if hasattr(tree, "to_dict") else dict(tree)
+            await self._durable_start(rec, task)
+            if rec["status"] != "running":
+                self._finish(rec, before, None)
+                return await self._answer(rec, selection, child)
+            transcript.append("start", goal=task, agent=rec["agent"], read_only=bool(read_only),
+                              tools=len(allowed) if allowed is not None else None,
+                              worktree=(rec["worktree"] or {}).get("path"), background=bool(background))
+            if _admitted is not None and not _admitted.done():
+                _admitted.set_result(rec)
             child = asyncio.ensure_future(
                 self._run(prompt, session_id, agent or "sub", chan, selection, ov, spawn_id, allowed,
                       {"spawn_id": spawn_id, "parent": parent, "turn": caller_turn,
-                       "goal": task[:DELEGATION_GOAL_CHARS * 4]}))
+                       "goal": task[:DELEGATION_GOAL_CHARS * 4]},
+                      isolation={"tree": (rec["worktree"] or {}).get("path"), "read_only": bool(read_only),
+                                 "transcript": transcript}))
             self._tasks[spawn_id] = child
+            monitor = asyncio.ensure_future(self._monitor(rec, transcript))
             try:
                 finished, _pending = await asyncio.wait({child}, timeout=timeout)
             except asyncio.CancelledError:
@@ -1136,12 +1354,18 @@ class SubAgentManager:
                 rec["stop_reason"] = rec.get("stop_reason") or "parent_cancelled"
                 await self._end_cancelled(rec, child, chan, before, final="stopped",
                                           result={"error": "stopped", "reason": rec["stop_reason"]})
+                self._settle_later(rec, child, monitor)
                 raise
             if not finished:
                 # The wall clock ran out: cancel the child's work, not just the wait for it.
                 rec["stop_reason"] = "timeout"
                 payload = {"error": "timeout", "timeout_seconds": timeout,
                            "detail": f"the sub-agent did not finish within {timeout:g} s and was cancelled"}
+                # G18 (H401): what the hung child was doing, written before it is cancelled.
+                dump = await self._timeout_dump(rec, child, transcript)
+                if dump is not None:
+                    payload["dump"] = dump
+                    rec["dump"] = dump
                 if not await self._end_cancelled(rec, child, chan, before, final="failed", result=payload):
                     logger.warning("sub-agent %s timed out and has not ended yet; its slot stays taken",
                                    spawn_id)
@@ -1161,20 +1385,279 @@ class SubAgentManager:
             # A child still unwinding is closed by the callback _end_cancelled attached.
             if rec.get("finished_at") is None and (child is None or child.done()):
                 self._close_on_error(rec, child, before)
+            self._settle_later(rec, child, monitor)
             raise
         except Exception:  # noqa: BLE001 — the slot must never be stranded
             logger.warning("sub-agent %s: the spawn failed after its slot was taken", spawn_id,
                            exc_info=True)
             self._close_on_error(rec, child, before)
+        if monitor is not None:
+            monitor.cancel()
         if rec["status"] in TERMINAL_STATUSES:      # a child still unwinding is logged when it ends
             await self._persist(rec)
-        out = {"ok": rec["status"] == "done", "id": spawn_id,
-               "session_id": session_id, "status": rec["status"],
-               "result": rec["result"], "cost": rec["cost"], "selection": selection}
+            await self._settle(rec, child)
+        return await self._answer(rec, selection, child)
+
+    async def _answer(self, rec: dict, selection: Optional[dict], child: Optional[asyncio.Future]) -> dict:
+        out = {"ok": rec["status"] == "done", "id": rec["id"],
+               "session_id": rec["session_id"], "status": rec["status"],
+               "result": rec["result"], "cost": rec["cost"], "selection": selection,
+               "delegation_id": rec.get("delegation_id")}
+        if rec.get("worktree"):
+            out["worktree"] = rec["worktree"]
         if "overrides_applied" in rec:
             out["overrides_applied"] = rec["overrides_applied"]
             out["overrides_ignored"] = rec["overrides_ignored"]
         return out
+
+    # ── G18: durability, the stall monitor, worktrees, transcripts ───────────
+    def stall_seconds(self) -> float:
+        """How long a running child may show no activity before it is marked stalled:
+        the configured value clamped into 10..3600 s; unreadable is the shipped 120 s."""
+        raw = self._stall_seconds
+        if callable(raw):
+            try:
+                raw = raw()
+            except Exception:
+                return DEFAULT_STALL_SECONDS
+        if isinstance(raw, bool):
+            return DEFAULT_STALL_SECONDS
+        try:
+            value = float(raw)
+        except (TypeError, ValueError, OverflowError):
+            return DEFAULT_STALL_SECONDS
+        if value != value or value <= 0 or value == float("inf"):
+            return DEFAULT_STALL_SECONDS
+        return min(max(STALL_MIN_SECONDS, value), STALL_MAX_SECONDS)
+
+    def _get_store(self) -> Any:
+        store = self._store
+        if store is None:
+            return None
+        if hasattr(store, "delegation_start"):
+            return store
+        if callable(store):
+            try:
+                found = store()
+            except Exception:
+                return None
+            return found if hasattr(found, "delegation_start") else None
+        return None
+
+    async def _store_call(self, name: str, *args: Any, **kwargs: Any) -> Any:
+        store = self._get_store()
+        method = getattr(store, name, None) if store is not None else None
+        if not callable(method):
+            return None
+        try:
+            return await asyncio.to_thread(method, *args, **kwargs)
+        except Exception:  # noqa: BLE001 — logged; the child's own outcome stands
+            logger.warning("sub-agent delegation store: %s failed", name, exc_info=True)
+            return None
+
+    def state_dir(self) -> Path:
+        if self._state_dir is None:
+            from .paths import data_path
+
+            self._state_dir = data_path("subagents")
+        return self._state_dir
+
+    def transcript_path(self, rec: dict) -> Path:
+        return self.state_dir() / "transcripts" / f"{rec['delegation_id']}.jsonl"
+
+    def _open_transcript(self, rec: dict) -> Transcript:
+        def activity(ts: float) -> None:
+            rec["activity_at"] = ts
+            if rec.get("stalled"):
+                rec["stalled"] = False
+        path = self.transcript_path(rec)
+        transcript = Transcript(path, on_activity=activity)
+        rec["transcript"] = str(path)
+        self._transcripts[rec["id"]] = transcript
+        return transcript
+
+    def transcript(self, spawn_id: str, *, after: int = 0, limit: int = 200) -> Optional[dict]:
+        """A child's live transcript (H401): ``{"id", "status", "events", "next"}``, read
+        from its file — a running child's as far as it has got. None when unknown here;
+        a past boot's child is found through its durable row."""
+        rec = self._spawns.get(spawn_id)
+        path: Optional[str] = rec.get("transcript") if rec else None
+        status = rec.get("status") if rec else None
+        if path is None:
+            row = None
+            store = self._get_store()
+            if store is not None:
+                with contextlib.suppress(Exception):
+                    row = store.delegation_by_spawn(spawn_id) or store.delegation_get(spawn_id)
+            if not row or not row.get("transcript_path"):
+                return None
+            path, status = row["transcript_path"], row.get("status")
+        events = read_transcript(Path(path), after=after, limit=limit)
+        return {"id": spawn_id, "status": status, "events": events,
+                "next": events[-1]["seq"] if events else after}
+
+    async def _durable_start(self, rec: dict, task: str) -> None:
+        await self._store_call("delegation_start", {
+            "delegation_id": rec["delegation_id"], "spawn_id": rec["id"], "boot_id": self.boot_id,
+            "kind": rec["kind"], "parent": rec["parent"], "agent": rec["agent"],
+            "parent_session": rec.get("parent_session"), "child_session": rec["session_id"],
+            "goal": task, "background": rec["background"], "created_at": rec["created_at"],
+            "worktree": rec.get("worktree"), "transcript_path": rec.get("transcript")})
+
+    async def _monitor(self, rec: dict, transcript: Transcript) -> None:
+        """Heartbeat the durable row and mark a child that has shown no activity for
+        :meth:`stall_seconds` as ``stalled`` (it is not stopped: its timeout does that)."""
+        while rec["status"] in ("running", "stopping"):
+            await asyncio.sleep(self.heartbeat_seconds)
+            now = time.time()
+            activity = float(rec.get("activity_at") or rec["created_at"])
+            stalled_at = None
+            if not rec.get("stalled") and now - activity > self.stall_seconds():
+                rec["stalled"] = True
+                rec["stalled_at"] = stalled_at = now
+                logger.warning("sub-agent %s shows no activity for %.0f s: stalled", rec["id"], now - activity)
+                on_activity, transcript._on_activity = transcript._on_activity, None
+                transcript.append("stalled", idle_seconds=round(now - activity, 1))
+                transcript._on_activity = on_activity
+            await self._store_call("delegation_touch", rec["delegation_id"], heartbeat_at=now,
+                                   activity_at=activity, stalled_at=stalled_at)
+
+    async def _timeout_dump(self, rec: dict, child: asyncio.Future, transcript: Transcript) -> Optional[str]:
+        """Write what a timed-out child was doing — where its coroutine waits, its last
+        transcript events, its steers and tool-thread count — before it is cancelled."""
+        body = {"delegation_id": rec["delegation_id"], "spawn_id": rec["id"], "goal": rec["task"][:2000],
+                "timeout_seconds": rec.get("timeout_seconds"), "started_at": rec["created_at"],
+                "dumped_at": time.time(), "stack": _stack_of(child),
+                "recent_events": list(transcript.recent), "tool_calls": transcript.tool_calls,
+                "steers": list(rec.get("steers") or [])[-10:],
+                "threads_running": sum(1 for f in self._threads.get(rec["id"], set()) if not f.done()),
+                "worktree": (rec.get("worktree") or {}).get("path")}
+        path = self.state_dir() / "dumps" / f"{rec['delegation_id']}.json"
+
+        def write() -> None:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(body, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+
+        try:
+            await asyncio.to_thread(write)
+        except Exception:  # noqa: BLE001
+            logger.warning("sub-agent %s: timeout dump not written", rec["id"], exc_info=True)
+            return None
+        transcript.append("timeout_dump", path=str(path))
+        return str(path)
+
+    def _settle_later(self, rec: dict, child: Optional[asyncio.Future],
+                      monitor: Optional[asyncio.Future]) -> None:
+        if monitor is not None:
+            monitor.cancel()
+        try:
+            task = asyncio.ensure_future(self._settle(rec, child))
+        except RuntimeError:
+            return
+        self._settling.add(task)
+        task.add_done_callback(self._settling.discard)
+
+    async def _settle(self, rec: dict, child: Optional[asyncio.Future]) -> None:
+        """Once per spawn, after it ends: close the transcript, reclaim or keep its
+        worktree (the kept branch is the reviewable artefact; its changed files are the
+        stale-file reminder), and close the durable row — delivered in line unless the
+        spawn ran in the background."""
+        if rec.get("settled") or rec["status"] not in TERMINAL_STATUSES:
+            return
+        rec["settled"] = True
+        transcript = self._transcripts.pop(rec["id"], None)
+        tree = rec.get("worktree")
+        if tree and tree.get("path") and self._worktree_provider is not None:
+            if child is not None and not child.done() or rec.get("threads_running"):
+                rec["worktree"] = {**tree, "kept": True, "reason": "child_still_running"}
+            else:
+                from . import worktrees
+
+                try:
+                    report = await asyncio.to_thread(worktrees.finish_child_tree, worktrees.ChildTree(
+                        repo=tree["repo"], path=tree["path"], branch=tree["branch"], base=tree["base"]))
+                except Exception as exc:  # noqa: BLE001
+                    report = {**tree, "kept": True, "reason": f"finish_failed: {type(exc).__name__}"}
+                rec["worktree"] = {**tree, **report}
+            if isinstance(rec.get("result"), dict):
+                rec["result"] = {**rec["result"], "worktree": _worktree_view(rec["worktree"])}
+        result = rec.get("result")
+        if transcript is not None:
+            preview = result.get("output") if isinstance(result, dict) else None
+            transcript.append("end", status=rec["status"],
+                              error=result.get("error") if isinstance(result, dict) else None,
+                              output=preview if isinstance(preview, str) else None)
+        await self._store_call("delegation_finish", rec["delegation_id"], rec["status"], result,
+                               worktree=rec.get("worktree"), dump_path=rec.get("dump"),
+                               delivered_to=None if rec.get("background") else "inline")
+
+    def _read_only_tools(self, allowed: Optional[frozenset]) -> frozenset:
+        """The tools of *allowed* that declared themselves read-only; none without a probe."""
+        if not allowed or self._read_only_probe is None:
+            return frozenset()
+        kept = set()
+        for name in allowed:
+            try:
+                read_only = self._read_only_probe(name) is True
+            except Exception:  # noqa: BLE001 — an unreadable tool is not read-only
+                read_only = False
+            if read_only:
+                kept.add(name)
+        return frozenset(kept)
+
+    def recover(self) -> list[dict]:
+        """At start (blocking): close every durable row a previous boot left running as
+        ``lost`` — its process died with the hub; it is reported, never re-run."""
+        self._prune_state()
+        store = self._get_store()
+        if store is None:
+            return []
+        try:
+            lost = store.delegation_recover(self.boot_id)
+        except Exception:  # noqa: BLE001
+            logger.warning("sub-agent recovery failed", exc_info=True)
+            return []
+        if lost:
+            logger.warning("%d sub-agent(s) were running when the hub stopped; reported as lost", len(lost))
+        return lost
+
+    def _prune_state(self, keep: int = STATE_FILES_KEPT) -> None:
+        """Keep the newest *keep* transcripts and dumps; older files are removed (they
+        are observability, not the record: the durable row and the audit log are)."""
+        for folder in ("transcripts", "dumps"):
+            directory = self.state_dir() / folder
+            try:
+                files = sorted((p for p in directory.iterdir() if p.is_file() and not p.is_symlink()),
+                               key=lambda p: p.stat().st_mtime, reverse=True)
+            except OSError:
+                continue
+            for stale in files[keep:]:
+                with contextlib.suppress(OSError):
+                    stale.unlink()
+
+    async def claim_completions(self, consumer: str, *, parent_session: Optional[str] = None,
+                                limit: int = 20) -> list[dict]:
+        """Finished results nobody has received yet, each handed to exactly one consumer."""
+        rows = await self._store_call("delegation_claim", consumer, parent_session=parent_session, limit=limit)
+        return list(rows or [])
+
+    async def spawn_background(self, task: str, **kwargs: Any) -> dict:
+        """Start a child and answer as soon as it is admitted (H401 background fan-out):
+        ``{"ok": True, "id", "delegation_id", "status": "running", "background": True}``,
+        or the refusal. Its result is delivered once, later, by :meth:`claim_completions`."""
+        loop = asyncio.get_running_loop()
+        admitted: asyncio.Future = loop.create_future()
+        runner = asyncio.ensure_future(self.spawn(task, background=True, _admitted=admitted, **kwargs))
+        self._background.add(runner)
+        runner.add_done_callback(self._background.discard)
+        await asyncio.wait({admitted, runner}, return_when=asyncio.FIRST_COMPLETED)
+        if admitted.done():
+            rec = admitted.result()
+            return {"ok": True, "id": rec["id"], "delegation_id": rec["delegation_id"],
+                    "session_id": rec["session_id"], "status": "running", "background": True}
+        admitted.cancel()
+        out = runner.result()
+        return {**out, "background": True} if isinstance(out, dict) else out
 
     @staticmethod
     def _mark_unchecked(rec: dict) -> None:
@@ -1293,10 +1776,12 @@ class SubAgentManager:
                 close(fut)
                 try:
                     task = asyncio.ensure_future(self._persist(rec))
+                    settle = asyncio.ensure_future(self._settle(rec, child))
                 except RuntimeError:
                     return
-                self._settling.add(task)
-                task.add_done_callback(self._settling.discard)
+                for pending in (task, settle):
+                    self._settling.add(pending)
+                    pending.add_done_callback(self._settling.discard)
 
             child.add_done_callback(later)
         if recancelled:
@@ -1306,7 +1791,7 @@ class SubAgentManager:
     async def _run(self, task: str, session_id: str, agent: str, chan: SteerChannel,
                    selection: Optional[dict] = None, ov: Any = None,
                    spawn_id: Optional[str] = None, tools: Optional[frozenset] = None,
-                   delegation: Optional[dict] = None):
+                   delegation: Optional[dict] = None, isolation: Optional[dict] = None):
         from .llm.job_selection import selection_scope
         from .llm.request_context import request_overrides_scope
 
@@ -1324,10 +1809,26 @@ class SubAgentManager:
         marker = _CURRENT_SPAWN.set(spawn_id)
         delegated = _CURRENT_DELEGATION.set(dict(delegation) if delegation else None)
         sink = bind_sync_thread_sink(self._threads.setdefault(spawn_id, set()) if spawn_id else None)
+        isolation = isolation or {}
+        trace = _TRACE.set(isolation.get("transcript"))
         try:
-            with selection_scope(pins), request_overrides_scope(ov):
+            with contextlib.ExitStack() as stack:
+                # G18 (H402): a child with its own worktree has its file tools confined
+                # to it (and the tree is held in use, so no reclaim takes it meanwhile).
+                if isolation.get("tree"):
+                    from .worktrees import tree_scope
+
+                    stack.enter_context(tree_scope(isolation["tree"]))
+                # G18 (H404): the reviewer runs under the kernel's read-only floor.
+                if isolation.get("read_only"):
+                    from .kernel.plan_mode import read_only_floor
+
+                    stack.enter_context(read_only_floor("review"))
+                stack.enter_context(selection_scope(pins))
+                stack.enter_context(request_overrides_scope(ov))
                 return await self._runner(task, session_id, agent, **kwargs)
         finally:
+            _TRACE.reset(trace)
             reset_sync_thread_sink(sink)
             _CURRENT_DELEGATION.reset(delegated)
             _CURRENT_SPAWN.reset(marker)
@@ -1335,7 +1836,7 @@ class SubAgentManager:
     # ── batch (H681) ─────────────────────────────────────────────
     async def spawn_batch(self, tasks: Any, parent: str = "", *,
                           tools: Optional[Iterable[str]] = None, model_authored: bool = False,
-                          queue: bool = True) -> dict:
+                          queue: bool = True, background: bool = False) -> dict:
         """Run up to ``BATCH_MAX`` children, at most as many at once as there are free
         slots, and report each. Every item is validated before any runs: its shape, its
         schemas and its selection. A batch a model wrote (``model_authored``: the
@@ -1390,7 +1891,7 @@ class SubAgentManager:
         if refusal is not None:
             return refusal
         free = self.max_concurrent - self._active
-        if not queue and len(tasks) > free:
+        if (background or not queue) and len(tasks) > free:
             return {"ok": False, "reason": "concurrency_cap", "active": self._active,
                     "cap": self.max_concurrent, "requested": len(tasks)}
         gate = asyncio.Semaphore(max(1, free))
@@ -1403,6 +1904,22 @@ class SubAgentManager:
                                         tools=tools, context=item.get("context"),
                                         answer_schema=item.get("answer_schema"), focused=model_authored)
 
+        if background:
+            # G18 (H401): every child is admitted now and runs on; nobody waits. Each
+            # result is delivered exactly once, later (claim_completions).
+            started = []
+            for item in tasks:
+                started.append(await self.spawn_background(
+                    item["task"], agent=str(item.get("agent") or ""), parent=parent,
+                    output_schema=item.get("output_schema"), model=item.get("model"),
+                    provider=item.get("provider"), overrides=item.get("overrides"), tools=tools,
+                    context=item.get("context"), answer_schema=item.get("answer_schema"),
+                    focused=model_authored))
+            dispatched = sum(1 for c in started if c.get("status") == "running")
+            return {"ok": dispatched == len(started), "background": True, "children": started,
+                    "summary": {"total": len(started), "dispatched": dispatched,
+                                "failed": sum(1 for c in started if c.get("status") in ("failed", "stopped")),
+                                "refused": sum(1 for c in started if "status" not in c)}}
         children = list(await asyncio.gather(*(one(item) for item in tasks)))
         summary = {"total": len(children),
                    "done": sum(1 for c in children if c.get("status") == "done"),
@@ -1551,6 +2068,9 @@ class SubAgentManager:
         except ValueError as e:
             return {"ok": False, "reason": "invalid_steer", "detail": str(e), "id": spawn_id}
         rec["steers"].append(msg.to_dict())
+        transcript = self._transcripts.get(spawn_id)
+        if transcript is not None:
+            transcript.append("steer", origin=origin, text=msg.text)
         chan = self._channels.get(spawn_id)
         delivered = chan is not None and self._runner_takes_steer
         if chan is not None:
@@ -1647,5 +2167,6 @@ __all__ = [
     "SUBAGENT_PROVIDER_SETTING", "SteerChannel", "SteerMessage", "SubAgentManager",
     "SubAgentProviderError", "blocked_tool_names", "build_child_prompt", "child_tool_allowlist",
     "current_delegation", "current_spawn_id", "delegation_label", "extract_json_candidate", "goal_problem", "read_pause", "schema_problem",
+    "DEFAULT_STALL_SECONDS", "Transcript", "read_transcript", "trace_tool_event",
     "validate_output", "write_pause",
 ]

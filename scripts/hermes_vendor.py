@@ -87,6 +87,8 @@ VERIFY_PATH = "agent/verify/"
 VIDEO_PATHS = ("agent/video_gen_provider.py", "agent/video_gen_registry.py", "plugins/video_gen/")
 #: The one vendored file that may call the compat registry's ``export`` (on itself).
 REGISTRY_EXPORT_PATH = "agent/video_gen_registry.py"
+#: G18: the adopted /review prompt engine.
+REVIEW_PATH = "agent/review_engine.py"
 #: The adopted xAI video plugin (its private event loop's sleep is governed).
 XAI_VIDEO_PATH = "plugins/video_gen/xai/"
 
@@ -223,6 +225,16 @@ REWRITE_RULES: tuple[Rule, ...] = (
          r"\g<i>from agents.vendor.hermes_compat import video_asyncio as asyncio\g<rest>",
          "the xAI poll's sleep wakes when the approved task is cancelled or out of time",
          paths=(XAI_VIDEO_PATH,)),
+    # G18 — the /review reviewer's prompt (agent/review_engine.py). Nerva uses its pure
+    # functions (the snapshot, the goal and the briefing text); the dispatch is Nerva's.
+    Rule("review-config", r"^(?P<i>[ \t]*)from hermes_cli\.config import ",
+         r"\g<i>from agents.vendor.hermes_compat.review_shared import ",
+         "no auxiliary.review section: the reviewer runs on Nerva's sub-agent model setting",
+         paths=(REVIEW_PATH,)),
+    Rule("review-delegate", r"^(?P<i>[ \t]*)from tools\.delegate_tool import ",
+         r"\g<i>from agents.vendor.hermes_compat.review_shared import ",
+         "upstream's dispatch is refused: Nerva's /review spawns the read-only reviewer itself",
+         paths=(REVIEW_PATH,)),
     Rule("video-registry-export", r"^(?P<i>[ \t]*)_registry\.export\(globals\(\)\)(?P<rest>[ \t]*(?:#.*)?)$",
          r"\g<i>_registry.export(__name__)\g<rest>",
          "the registry binds its API by module name; globals() stays a denied name",
@@ -258,6 +270,8 @@ COMPAT_MODULES = frozenset({
     "verify_fs",
     # G19 (video generation)
     "video_shared", "video_media", "video_clock", "video_openai", "video_asyncio",
+    # G18 (the /review prompt engine)
+    "review_shared",
 })
 #: Compat modules only some vendored paths may import: the governed ``urllib`` can open a
 #: request (through the egress binding of one A2A call), so no other adopted file may
@@ -271,6 +285,7 @@ PATH_SCOPED_COMPAT: dict[str, tuple[str, ...]] = {
     "verify_fs": (VERIFY_PATH,),
     "video_shared": VIDEO_PATHS, "video_media": VIDEO_PATHS, "video_clock": VIDEO_PATHS,
     "video_openai": VIDEO_PATHS, "video_asyncio": (XAI_VIDEO_PATH,),
+    "review_shared": (REVIEW_PATH,),
 }
 #: Underscore names a compat module exports on purpose, because the upstream code imports
 #: them by that name (G2: ``hermes_cli/loops.py`` takes SessionDB access from

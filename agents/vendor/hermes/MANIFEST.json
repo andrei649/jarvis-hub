@@ -15,6 +15,16 @@
       "vendored_sha256": "050b8d56b474f24aaa0a63e542554f0382ffc49431ba769133157f617e5a8c6f"
     },
     {
+      "path": "agent/review_engine.py",
+      "rules_applied": [
+        "review-config",
+        "review-delegate"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "8e3eeea256e063d7cbd014f1272bd07c87d148d0da670ba1967826ce06bedfb2",
+      "vendored_sha256": "571da26c58194aafc31e0f2f6abd91c764a3a0a682c3dc0b19aa693fa752d5e3"
+    },
+    {
       "path": "agent/verify/environment.py",
       "rules_applied": [
         "verify-fs",
@@ -4096,6 +4106,24 @@
       "pattern": "^(?P<i>[ \\t]*)import asyncio(?P<rest>[ \\t]*(?:#.*)?)$",
       "replacement": "\\g<i>from agents.vendor.hermes_compat import video_asyncio as asyncio\\g<rest>",
       "why": "the xAI poll's sleep wakes when the approved task is cancelled or out of time"
+    },
+    {
+      "id": "review-config",
+      "paths": [
+        "agent/review_engine.py"
+      ],
+      "pattern": "^(?P<i>[ \\t]*)from hermes_cli\\.config import ",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat.review_shared import ",
+      "why": "no auxiliary.review section: the reviewer runs on Nerva's sub-agent model setting"
+    },
+    {
+      "id": "review-delegate",
+      "paths": [
+        "agent/review_engine.py"
+      ],
+      "pattern": "^(?P<i>[ \\t]*)from tools\\.delegate_tool import ",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat.review_shared import ",
+      "why": "upstream's dispatch is refused: Nerva's /review spawns the read-only reviewer itself"
     },
     {
       "id": "video-registry-export",
