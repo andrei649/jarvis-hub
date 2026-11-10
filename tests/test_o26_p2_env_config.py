@@ -308,6 +308,11 @@ def _raw_env_read_sites():
         rel = path.relative_to(repo_root).as_posix()
         if rel in _EXEMPT:
             continue
+        # Vendored Hermes files cannot read the real environment: their `os` is the
+        # per-provider allowlist shim (agents/vendor/hermes_compat/os_env.py), and
+        # tests/test_hermes_adopt_lane.py refuses any other form of `os` in that tree.
+        if rel.startswith("agents/vendor/hermes/"):
+            continue
         for n, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
             if _RAW_ENV_READ.search(line):
                 sites.append(f"{rel}:{n}")
