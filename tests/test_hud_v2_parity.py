@@ -625,6 +625,12 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
+    # H562 (A2A outbound): peers get an address and token through the admin API; no HUD
+    # panel yet (ADOPT_LANE.md slice 4, remaining).
+    "/api/a2a/peers/{peer_id}/outbound",
+    # H553 (MCP elicitation): the card shows in the approval inbox, but there is no HUD form
+    # to type an answer yet (ledger row H553, remaining).
+    "/api/admin/mcp/elicitations/{card_id}/answer",
     # H361: installation, credential and selection APIs have no HUD controls.
     # Guarded physical sends do not establish graphical or native parity.
     "/api/admin/llm/provider-credentials",
