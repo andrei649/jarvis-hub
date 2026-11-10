@@ -5368,22 +5368,28 @@ class TaskQueue:
             self._conn.commit()
             return cursor.rowcount == 1
 
-    def delegation_recover(self, boot_id: str, *, now: float | None = None) -> list[dict]:
-        """At start: every row another boot left ``running`` is a child whose process
-        died. It is closed ``lost`` (never re-run: what it did is unknown) so its owner is
+    def delegation_recover(self, boot_id: str, *, now: float | None = None,
+                           stale_seconds: float | None = None) -> list[dict]:
+        """Every row another boot left ``running`` whose heartbeat is older than
+        *stale_seconds* is a child whose process died (a live process heartbeats every
+        few seconds, so a second hub on the same database is never mistaken for a dead
+        one). It is closed ``lost`` (never re-run: what it did is unknown) so its owner is
         told once, like any finished child. Returns the rows closed."""
         ts = float(now if now is not None else time.time())
+        stale = DELEGATION_STALE_SECONDS if stale_seconds is None else float(stale_seconds)
+        cutoff = ts - max(0.0, stale)
         result = json.dumps({"error": "lost", "detail": "the hub stopped before this sub-agent "
                              "finished; it was not resumed and what it did is unknown"})
         with self._lock:
             self._conn.execute("BEGIN IMMEDIATE")
             try:
                 rows = self._conn.execute(
-                    "SELECT * FROM subagent_delegations WHERE status='running' AND boot_id!=?",
-                    (str(boot_id),)).fetchall()
+                    "SELECT * FROM subagent_delegations WHERE status='running' AND boot_id!=? "
+                    "AND COALESCE(heartbeat_at, created_at) < ?", (str(boot_id), cutoff)).fetchall()
                 self._conn.execute(
                     "UPDATE subagent_delegations SET status='lost', finished_at=?, result_json=? "
-                    "WHERE status='running' AND boot_id!=?", (ts, result, str(boot_id)))
+                    "WHERE status='running' AND boot_id!=? AND COALESCE(heartbeat_at, created_at) < ?",
+                    (ts, result, str(boot_id), cutoff))
                 self._conn.commit()
             except Exception:
                 self._conn.rollback()
@@ -5632,6 +5638,9 @@ DELEGATION_TERMINAL = frozenset({"done", "failed", "stopped"})
 DELEGATION_GOAL_MAX = 2000
 #: The most of one child's result a row keeps (the parent's view is cut further).
 DELEGATION_RESULT_MAX = 256_000
+#: A running row whose heartbeat is older than this belongs to a process that died
+#: (the manager heartbeats every 10 s).
+DELEGATION_STALE_SECONDS = 90.0
 
 
 def _opt_text(value: object, limit: int) -> str | None:

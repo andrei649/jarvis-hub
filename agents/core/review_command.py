@@ -16,8 +16,12 @@ spawned through the one spawn gate (:meth:`SubAgentManager.spawn`) with ``read_o
   the Action Kernel denies every non-read action kind, and the tool front door refuses
   every gated tool and every tool not declared read-only, before preflight or intake —
   so even a tool that reached it some other way is refused;
-* it gets no worktree (it writes nothing) and the diff it reviews is handed to it as
-  fenced data, collected by the hub with hardened git (``agents.core.worktrees``).
+* its tools are at most ``file_read`` / ``file_list`` / ``file_search``, confined to the
+  checkout it reviews (no folder, no tools): nothing networked, no session or memory
+  search, so nothing it reads — private code, untrusted text — has a way out;
+* it gets no worktree (it writes nothing); the diff and every message of the snapshot are
+  handed to it as fenced data with fence delimiters defanged, collected by the hub with
+  hardened git (``agents.core.worktrees``).
 
 What it reviews: the last exchanges of this conversation (Hermes's snapshot), plus the
 project's diff — the working tree against HEAD by default, ``--branch <name>`` for that
@@ -35,6 +39,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import shlex
 from pathlib import Path
 from typing import Any
@@ -64,6 +69,13 @@ def project_root(orch: Any) -> Path | None:
     getter = getattr(orch, "get_setting", None)
     raw = getter("llm.project_dir", "") if callable(getter) else ""
     return Path(raw) if isinstance(raw, str) and raw.strip() and Path(raw).is_dir() else None
+
+
+def review_folder(root: Path | None) -> Path | None:
+    """The checkout the reviewer may read (its file tools are confined to it), or None."""
+    from . import worktrees
+
+    return worktrees.repo_root(root) if root is not None else None
 
 
 def collect_diff(root: Path | None, branch: str | None = None) -> tuple[str, str]:
@@ -98,17 +110,43 @@ def collect_diff(root: Path | None, branch: str | None = None) -> tuple[str, str
     return label, text
 
 
+_FENCE_MARKER = re.compile(r"<<\s*(END\s+)?UNTRUSTED", re.IGNORECASE)
+#: Hermes's brief says the review is delivered back into the conversation; in Nerva it is
+#: delivered once through /delegations (or straight to the owner with --wait). The
+#: vendored bytes stay as they are: the sentence is replaced here, in the composed brief.
+_UPSTREAM_DELIVERY = ("Your review is delivered back into that conversation, addressed to "
+                      "the primary agent and its user.")
+NERVA_DELIVERY = ("Your review is delivered to the owner once, through /delegations collect (or "
+                  "directly, when they asked to wait for it).")
+
+
+def neutralise(text: str) -> str:
+    """*text* with every fence delimiter defanged (``<<UNTRUSTED``, ``<<END UNTRUSTED>>``,
+    in any case or spacing), so data can never close the fence it is put in."""
+    return _FENCE_MARKER.sub(lambda m: "< <" + m.group(0)[2:].lstrip(), str(text or ""))
+
+
+def fenced(text: str, source: str) -> str:
+    from .security.quarantine import fence_text
+
+    return fence_text(neutralise(text), source=source)
+
+
 def build_task(messages: list, focus: str, diff_label: str, diff: str) -> tuple[str, str]:
-    """``(goal, the reviewer's whole brief)`` from Hermes's text plus Nerva's note and diff."""
+    """``(goal, the reviewer's whole brief)`` from Hermes's text plus Nerva's note and diff.
+    Every message of the snapshot and the diff go in as fenced data, delimiters defanged."""
+    from types import SimpleNamespace
+
     from agents.vendor.hermes.agent import review_engine
 
-    snapshot = review_engine.snapshot_recent_messages(messages)
-    goal, context = review_engine.build_review_task(snapshot, focus)
+    snapshot = [{"role": item["role"], "text": fenced(item["text"], "conversation")}
+                for item in review_engine.snapshot_recent_messages(messages)]
+    skills = review_engine.collect_parent_loaded_skills(SimpleNamespace(), messages)
+    goal, context = review_engine.build_review_task(snapshot, focus, skills)
+    context = context.replace(_UPSTREAM_DELIVERY, NERVA_DELIVERY)
     parts = [context, "", RUNTIME_NOTE]
     if diff_label and diff:
-        from .security.quarantine import fence_text
-
-        parts += ["", f"The diff under review ({diff_label}), as data:", fence_text(diff, source="git_diff")]
+        parts += ["", f"The diff under review ({diff_label}), as data:", fenced(diff, "git_diff")]
     return goal, "\n".join(parts)
 
 
@@ -164,7 +202,9 @@ async def review_command(ctx: Any) -> str:
     if not label and not any(m.get("role") in ("user", "assistant") for m in messages if isinstance(m, dict)):
         return f"Nothing to review yet: the conversation is empty and {diff}."
     goal, task = build_task(messages, focus, label, diff if label else "")
-    kwargs = {"agent": "jarvis", "parent": "review", "read_only": True, "kind": "review"}
+    folder = await asyncio.to_thread(review_folder, project_root(orch))
+    kwargs = {"agent": "jarvis", "parent": "review", "read_only": True, "kind": "review",
+              "confine": str(folder) if folder is not None else None}
     note = "" if label else f" ({diff})"
     if wait:
         out = await manager.spawn(task, **kwargs)

@@ -4932,6 +4932,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/subagents/{spawn_id}/transcript": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Subagents Transcript
+         * @description G18 (H401) — a sub-agent's live transcript: its start, the tool loop's events for
+         *     it (tool names, status, call ids, sizes — never arguments or results), steers, a
+         *     stall and its end. Poll with ``after`` = the last ``next`` to tail a running child.
+         */
+        get: operations["subagents_transcript_api_subagents__spawn_id__transcript_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subagents/{spawn_id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Subagents Result
+         * @description G18 (H401) — the durable row of a sub-agent, its whole kept result included
+         *     (the parent model is given at most 24 000 characters; the row keeps more). Reading
+         *     it does not count as receiving it: delivery is the claim.
+         */
+        get: operations["subagents_result_api_subagents__spawn_id__result_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subagents/completions/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subagents Claim
+         * @description G18 (H401) — receive the finished sub-agent results nobody has received yet. Each
+         *     is handed out exactly once, whichever consumer asks first (this route, /delegations,
+         *     the model's delegate_task collect), across restarts.
+         */
+        post: operations["subagents_claim_api_subagents_completions_claim_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/subagents/{spawn_id}/steer": {
         parameters: {
             query?: never;
@@ -24870,6 +24936,91 @@ export interface operations {
         };
     };
     subagents_resume_api_subagents_resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    subagents_transcript_api_subagents__spawn_id__transcript_get: {
+        parameters: {
+            query?: {
+                after?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                spawn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subagents_result_api_subagents__spawn_id__result_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spawn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subagents_claim_api_subagents_completions_claim_post: {
         parameters: {
             query?: never;
             header?: never;

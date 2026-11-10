@@ -129,13 +129,19 @@ def workspace_scope(cwd: Path, *, still_current: Callable[[], bool],
     _admitted_cwd(context, cwd)
     info = cwd.stat(follow_symlinks=False)
     binding = WorkspaceBinding(context, cwd, project_root, still_current, (info.st_dev, info.st_ino))
+    from agents.core import worktrees
+
     with _LIFECYCLE_LOCK:
         binding.check()
         token = _CURRENT.set(binding)
         _LIVE_BINDINGS.add(binding)
+    # G18: the card's tree is in use while it runs, so an owner prune or the tick reclaim
+    # keeps it (they also keep every wt/ tree, which the board reclaims itself).
+    worktrees.acquire(cwd)
     try:
         yield binding
     finally:
+        worktrees.release(cwd)
         with _LIFECYCLE_LOCK:
             binding.closed = True
             _LIVE_BINDINGS.discard(binding)

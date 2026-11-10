@@ -3005,6 +3005,14 @@
   tools only + the kernel's `read_only_floor`). Ledger: H404 → equivalent; H402, H474, H401 partial
   (child terminal cwd not bound to the tree; no fetch / CLI `-w` / per-tree checkpoints; background
   results are collected, not injected into the parent turn). Tests: `tests/test_g18_worktrees_delegation.py` (29).
+  Adversarial review round (same day): the reviewer could keep `web_extract`/`session_search` (declared
+  read-only) — now an allowlist of `file_read`/`file_list`/`file_search` on the reviewed checkout, and the
+  floor refuses every other tool and every kernel action, egress GETs included; diff and snapshot fences
+  defanged; spawn ids carry the boot id (no tree/branch/record reuse after a restart); symlinked
+  `.worktrees` refused; trees with git-ignored files kept; kanban `wt/` trees never pruned and leased while
+  a card runs; child trees leased from creation; recovery only past a stale heartbeat (also on the tick);
+  transcript/result/claim routes admin-only; the tick reclaim stops on the kill switch and spawn pause.
+  Tests now 37.
 
   **UX pass done (2026-11-10): the Integrations panel** (owner request: make the Hermes integration
   coherent before adopting more). Console → Start → Integrations lists the 4 search backends (Tavily +

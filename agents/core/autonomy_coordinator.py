@@ -2724,13 +2724,20 @@ class AutonomyCoordinator:
         if server is None:
             return False
         spec = getattr(server, "_tools", {}).get(name)
-        if not spec or spec.get("gated"):
+        if not spec or spec.get("gated") or spec.get("untrusted_output"):
             return False
         effect = server.declared_effect(name)
         return bool(effect) and effect[0] == "read_only"
 
     async def _maybe_reclaim_worktrees(self):
-        """H474 — the opportunistic worktree reclaim on the tick (off by default)."""
+        """H474 — the opportunistic worktree reclaim on the tick (off by default); and
+        H401 — close delegation rows another process left running with a stale heartbeat."""
+        manager = getattr(self._orch, "subagents", None)
+        if manager is not None:
+            try:
+                await asyncio.to_thread(manager.recover)
+            except Exception:
+                logger.warning("sub-agent recovery on the tick failed", exc_info=True)
         try:
             from .worktree_commands import opportunistic_reclaim
 

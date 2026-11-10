@@ -854,5 +854,10 @@ kernel's `read_only_floor`. Hermes's reviewer is a full-privilege child; Nerva's
 
 Both rules and the compat module are path-scoped to `agent/review_engine.py` (`REVIEW_PATH`).
 Acceptance: `tests/test_g18_worktrees_delegation.py` (the reviewer's tools, the read-only floor,
-the brief, the refused dispatch). Limit: upstream's `collect_parent_loaded_skills` is not used
-(Nerva's skills ledger is not the parent's `skill_view` history).
+the brief, the refused dispatch). Nerva also calls `collect_parent_loaded_skills` over the
+conversation's messages, fences every snapshot message and the diff with fence delimiters
+defanged, and replaces upstream's "delivered back into that conversation" sentence in the
+composed brief with Nerva's (delivered once through `/delegations collect`); the vendored bytes
+are unchanged. The reviewer's tools are at most `file_read` / `file_list` / `file_search`,
+confined to the checkout under review; the floor refuses every other tool (web, A2A, session
+search) and every Action Kernel action, an egress GET included.

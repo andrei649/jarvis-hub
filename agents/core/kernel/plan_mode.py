@@ -284,15 +284,20 @@ def migrate(old_session: str, new_session: str, *, store: PlanModeStore | None =
 # context it was started from) and nothing else. Restriction only, like plan mode.
 READ_ONLY_PREFIX = "read-only reviewer"
 _READ_ONLY_FLOOR: ContextVar[str | None] = ContextVar("nerva_read_only_floor", default=None)
+_READ_ONLY_TOOLS: ContextVar[frozenset] = ContextVar("nerva_read_only_tools", default=frozenset())
 
 
 @contextlib.contextmanager
-def read_only_floor(label: str = "review"):
-    """Let only reads run in this context (the reviewer's run)."""
+def read_only_floor(label: str = "review", *, allowed: frozenset | set | None = None):
+    """Let only the *allowed* read-only tools run in this context (the reviewer's run),
+    and no Action Kernel action of any kind — not even an egress GET, which plan mode
+    counts as a read: a reviewer holds private code, so no request may leave."""
     token = _READ_ONLY_FLOOR.set(str(label or "review")[:40])
+    tools = _READ_ONLY_TOOLS.set(frozenset(allowed or ()))
     try:
         yield
     finally:
+        _READ_ONLY_TOOLS.reset(tools)
         _READ_ONLY_FLOOR.reset(token)
 
 
@@ -306,8 +311,8 @@ def action_denial(kind: str, payload: Any = None, *, session_id: str | None = No
     """The kernel's plan-mode floor: a denial reason for a non-read *kind* while the
     session is in plan mode (or the code runs under :func:`read_only_floor`), else None.
     Never a grant."""
-    if _READ_ONLY_FLOOR.get() is not None and not kind_is_read(kind, payload):
-        return f"{READ_ONLY_PREFIX}: only reads run in a review ({kind})"
+    if _READ_ONLY_FLOOR.get() is not None:
+        return f"{READ_ONLY_PREFIX}: no action runs in a review ({kind})"
     session = session_id if session_id is not None else current_session()
     if not session or not (store or _DEFAULT).is_active(session):
         return None
@@ -321,8 +326,9 @@ def tool_denial(name: str, *, gated: bool, risk: str | None, session_id: str | N
     """The tool front door's plan-mode floor: a gated tool, or one that did not declare
     itself ``read_only``, is refused while the session is in plan mode (or the code runs
     under :func:`read_only_floor`)."""
-    if _READ_ONLY_FLOOR.get() is not None and (gated or risk != "read_only"):
-        return f"{READ_ONLY_PREFIX}: only read-only tools run in a review ({name})"
+    if _READ_ONLY_FLOOR.get() is not None and (gated or risk != "read_only"
+                                               or name not in _READ_ONLY_TOOLS.get()):
+        return f"{READ_ONLY_PREFIX}: only the reviewer's file reads run in a review ({name})"
     session = session_id if session_id is not None else current_session()
     if not session or not (store or _DEFAULT).is_active(session):
         return None

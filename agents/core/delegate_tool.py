@@ -381,7 +381,7 @@ def _row_view(row: Mapping[str, Any]) -> dict:
     """One durable delegation row as the parent model reads it (same shape as a child)."""
     status = str(row.get("status") or "failed")
     child = {"id": row.get("spawn_id"), "status": status, "ok": status == "done",
-             "result": row.get("result")}
+             "result": row.get("result"), "delegation_id": row.get("delegation_id")}
     view = _child_view(child, str(row.get("goal") or ""))
     view["delegation_id"] = row.get("delegation_id")
     return view
@@ -413,8 +413,9 @@ def _child_view(child: Mapping[str, Any], goal: str) -> dict:
             if len(text) > OUTPUT_MAX_CHARS:
                 view["output_truncated"] = True
                 # H401 (summary spill): the whole answer is kept on the durable row.
-                if child.get("id"):
-                    view["full_output"] = f"GET /api/subagents/{child['id']}/result"
+                ref = child.get("delegation_id") or child.get("id")
+                if ref:
+                    view["full_output"] = f"GET /api/subagents/{ref}/result"
         if "structured" in result:
             view["schema_valid"] = True
             try:

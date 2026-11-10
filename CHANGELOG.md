@@ -7,7 +7,8 @@
 **Worktrees, background helpers that survive a restart, and an independent reviewer**
 - `/review` starts a second-opinion reviewer on what this conversation produced and on the
   project's uncommitted changes (`/review --branch <name>` reviews a branch). The reviewer can
-  only read: anything that would write, send or run is refused, even in plan mode it works.
+  only read the project's files: anything that would write, search the web, reach the network or
+  run is refused, so nothing it reads can leave the box. It works in plan mode too.
   It runs in the background; `/review --wait` waits for the findings instead.
 - Helpers the assistant hands work to can now run in the background
   ("do these three in the background"). Each result reaches you exactly once, also after a

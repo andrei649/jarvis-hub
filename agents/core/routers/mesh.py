@@ -389,7 +389,7 @@ def _steer_status(result: dict) -> int:
     return 422
 
 
-@router.get("/api/subagents/{spawn_id}/transcript", dependencies=[Depends(user_guard)])
+@router.get("/api/subagents/{spawn_id}/transcript", dependencies=[Depends(admin_guard)])
 async def subagents_transcript(spawn_id: str, after: int = 0, limit: int = 200):
     """G18 (H401) — a sub-agent's live transcript: its start, the tool loop's events for
     it (tool names, status, call ids, sizes — never arguments or results), steers, a
@@ -403,7 +403,7 @@ async def subagents_transcript(spawn_id: str, after: int = 0, limit: int = 200):
     return nocache_json(found)
 
 
-@router.get("/api/subagents/{spawn_id}/result", dependencies=[Depends(user_guard)])
+@router.get("/api/subagents/{spawn_id}/result", dependencies=[Depends(admin_guard)])
 async def subagents_result(spawn_id: str):
     """G18 (H401) — the durable row of a sub-agent, its whole kept result included
     (the parent model is given at most 24 000 characters; the row keeps more). Reading
@@ -412,13 +412,16 @@ async def subagents_result(spawn_id: str):
     queue = getattr(orch, "autonomy_queue", None) if orch else None
     if queue is None or not hasattr(queue, "delegation_by_spawn"):
         return nocache_json({"error": "delegation record unavailable"}, status_code=503)
-    row = await asyncio.to_thread(queue.delegation_by_spawn, spawn_id)
+    # A delegation id (what the parent is pointed at) first, then a spawn id.
+    row = await asyncio.to_thread(queue.delegation_get, spawn_id)
+    if row is None:
+        row = await asyncio.to_thread(queue.delegation_by_spawn, spawn_id)
     if row is None:
         return nocache_json({"ok": False, "reason": "unknown_spawn", "id": spawn_id}, status_code=404)
     return nocache_json(row)
 
 
-@router.post("/api/subagents/completions/claim", dependencies=[Depends(user_guard)])
+@router.post("/api/subagents/completions/claim", dependencies=[Depends(admin_guard)])
 async def subagents_claim():
     """G18 (H401) — receive the finished sub-agent results nobody has received yet. Each
     is handed out exactly once, whichever consumer asks first (this route, /delegations,

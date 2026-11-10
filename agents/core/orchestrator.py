@@ -542,11 +542,13 @@ async def _begin_project_context(orch) -> None:
     else:
         # G18 (H474): a session moved into its own worktree (/worktree new) reads the
         # project from there, and its file tools resolve inside it, for this turn.
+        from .file_tools import FileScope
+
         record = await asyncio.to_thread(worktrees.session_tree_or_none, session)
         tree = worktrees.apply_session_tree(record)
-        if tree is not None:
-            from .file_tools import FileScope
-
+        if tree is not None and FileScope.from_env().root_for(tree) is None:
+            tree = worktrees.apply_session_tree(None)    # a tree outside the file roots binds nothing
+        if tree is not None and on:
             workdir, scope = str(tree), FileScope([tree])
     state = await asyncio.to_thread(project_context.build_turn, session, setting=lambda _k, _d: on,
                                     scope=scope, workdir=workdir)

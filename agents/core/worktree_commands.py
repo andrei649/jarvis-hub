@@ -209,6 +209,16 @@ async def opportunistic_reclaim(orch: Any, *, authorizer: Any = None, now: float
     getter = getattr(orch, "get_setting", None)
     if not callable(getter) or getter("autonomy.worktree_auto_reclaim", False) is not True:
         return None
+    switch = getattr(orch, "kill_switch", None)
+    try:
+        if switch is not None and switch.is_halted():
+            return None
+        from .subagents import default_pause_path, read_pause
+
+        if read_pause(default_pause_path()) is not None:      # the owner paused machine work
+            return None
+    except Exception:  # noqa: BLE001 — a state that cannot be read counts as stopped
+        return None
     ts = time.time() if now is None else now
     if not force and ts - _last_reclaim < RECLAIM_INTERVAL_SECONDS:
         return None

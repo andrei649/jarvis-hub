@@ -68,6 +68,8 @@ TREES_DIR = ".worktrees"
 PROTECTED_BRANCHES = ("main", "master", "trunk", "develop", "dev", "release/*", "production", "prod")
 #: Branch prefixes Nerva generates; only these are deleted after a tree is removed.
 GENERATED_PREFIXES = ("wt/", "sub/", "nerva/")
+#: Kanban card trees: never classified removable here (the board reclaims its own).
+KANBAN_PREFIX = "wt/"
 #: The most untracked scratch archived from one tree; past it the tree is kept.
 ARCHIVE_MAX_BYTES = 64 * 1024 * 1024
 ARCHIVE_MAX_FILES = 5000
@@ -201,7 +203,7 @@ def require_plain(repo: Path | str) -> None:
 
 
 def check_branch(branch: str) -> None:
-    if (not isinstance(branch, str) or not branch or len(branch) > 200 or branch.startswith(("-", "/"))
+    if (not isinstance(branch, str) or not branch or len(branch) > 240 or branch.startswith(("-", "/"))
             or branch.endswith(("/", ".lock")) or any(p in {"", ".", ".."} for p in branch.split("/"))):
         raise ValueError("invalid worktree branch")
     try:
@@ -301,10 +303,12 @@ def create(repo: Path | str, path: Path | str, branch: str, *, base: str = "HEAD
         check_branch(base)
     if path.exists() or path.is_symlink():
         raise ValueError("worktree target is occupied")
+    _require_inside(repo, path)
     exists = run_git(repo, "show-ref", "--verify", "--quiet", f"refs/heads/{branch}").returncode == 0
     args = (("worktree", "add", str(path), branch) if exists
             else ("worktree", "add", "-b", branch, str(path), base))
     path.parent.mkdir(parents=True, exist_ok=True)
+    _require_inside(repo, path)                  # again, now that the parent exists
     if path.parent == repo / TREES_DIR:
         _exclude_trees_dir(repo)
     result = run_git(repo, *args, mutate=True)
@@ -312,6 +316,21 @@ def create(repo: Path | str, path: Path | str, branch: str, *, base: str = "HEAD
         raise RuntimeError(f"git worktree add failed: {result.stdout.strip()[:300]}")
     head = git_out(path, "rev-parse", "HEAD")
     return Tree(path=str(path.resolve()), branch=branch, head=head)
+
+
+def _require_inside(repo: Path, path: Path) -> None:
+    """A tree is made only inside its repository, through no symlink: a committed
+    ``.worktrees`` link (or any linked parent) pointing elsewhere is refused."""
+    root = Path(repo).resolve()
+    current = Path(path)
+    while current != current.parent and current != Path(repo):
+        if current.is_symlink():
+            raise WorktreeRefused("a worktree path goes through a symbolic link; refused")
+        current = current.parent
+    parent = Path(path).parent
+    resolved = (parent.resolve() if parent.exists() else Path(os.path.normpath(parent))) / Path(path).name
+    if root not in resolved.parents:
+        raise WorktreeRefused("a worktree must lie inside its repository; refused")
 
 
 def _exclude_trees_dir(repo: Path) -> None:
@@ -338,17 +357,18 @@ def tree_state(path: Path | str, *, base: str | None = None) -> dict[str, Any]:
     remote: that the trunk does not hold). With *base* (a child's starting commit) it
     counts the commits made since that base instead."""
     path = Path(path)
-    status = run_git(path, "status", "--porcelain=v1", "-z", "--untracked-files=all",
+    status = run_git(path, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching",
                      "--ignore-submodules=all", "--no-renames")
     if status.returncode:
         raise RuntimeError("git status failed")
     tracked: list[str] = []
     untracked: list[str] = []
+    ignored: list[str] = []
     for entry in status.stdout.split("\0"):
         if len(entry) < 4:
             continue
         code, name = entry[:2], entry[3:]
-        (untracked if code == "??" else tracked).append(name)
+        (untracked if code == "??" else ignored if code == "!!" else tracked).append(name)
     if base:
         count = git_out(path, "rev-list", "--count", f"{base}..HEAD")
     else:
@@ -364,7 +384,7 @@ def tree_state(path: Path | str, *, base: str | None = None) -> dict[str, Any]:
         unpushed = int(count) if count is not None else -1
     except ValueError:
         unpushed = -1
-    return {"tracked_changes": tracked, "untracked": untracked, "unpushed": unpushed}
+    return {"tracked_changes": tracked, "untracked": untracked, "ignored": ignored, "unpushed": unpushed}
 
 
 def _size(path: Path) -> tuple[int, bool]:
@@ -416,6 +436,9 @@ def classify(repo: Path | str, tree: Tree, *, now: float | None = None, min_age_
         return verdict("keep", "protected_branch")
     if tree.branch is None:
         return verdict("keep", "detached_head")
+    if tree.branch.startswith(KANBAN_PREFIX):
+        # A kanban card's tree: the board's own cleanup decides, after the card ends.
+        return verdict("keep", "kanban_managed")
     try:
         state = tree_state(path, base=base)
     except (OSError, RuntimeError, subprocess.SubprocessError):
@@ -423,8 +446,12 @@ def classify(repo: Path | str, tree: Tree, *, now: float | None = None, min_age_
     row["tracked_changes"] = len(state["tracked_changes"])
     row["untracked"] = len(state["untracked"])
     row["unpushed"] = state["unpushed"]
+    row["ignored"] = len(state["ignored"])
     if state["tracked_changes"]:
         return verdict("keep", "uncommitted_changes")
+    if state["ignored"]:
+        # git's own removal deletes ignored files; scratch is never deleted, so keep it.
+        return verdict("keep", "ignored_files")
     if state["unpushed"] != 0:
         return verdict("keep", "unpushed_commits" if state["unpushed"] > 0 else "push_state_unknown")
     if row["age_seconds"] is not None and row["age_seconds"] < min_age_seconds:
@@ -559,18 +586,29 @@ def in_use_paths() -> set[str]:
     return held
 
 
-@contextlib.contextmanager
-def lease(path: Path | str) -> Iterator[None]:
+def acquire(path: Path | str) -> None:
+    """Hold *path* in use (a reclaim keeps it) until :func:`release`."""
     key = str(Path(path).resolve())
     with _LEASE_LOCK:
         _LEASES[key] = _LEASES.get(key, 0) + 1
-    try:
-        yield
-    finally:
-        with _LEASE_LOCK:
+
+
+def release(path: Path | str) -> None:
+    key = str(Path(path).resolve())
+    with _LEASE_LOCK:
+        if key in _LEASES:
             _LEASES[key] -= 1
             if _LEASES[key] <= 0:
                 del _LEASES[key]
+
+
+@contextlib.contextmanager
+def lease(path: Path | str) -> Iterator[None]:
+    acquire(path)
+    try:
+        yield
+    finally:
+        release(path)
 
 
 def bound_tree() -> Path | None:
@@ -736,6 +774,7 @@ def create_child_tree(project: Path | str, spawn_id: str) -> ChildTree:
         raise WorktreeRefused("the repository has no commit to branch from")
     name = child_tree_name(spawn_id)
     tree = create(repo, repo / TREES_DIR / name, f"sub/{name}", base=base)
+    acquire(tree.path)        # in use from the moment it exists; finish_child_tree releases it
     return ChildTree(repo=str(repo), path=tree.path, branch=f"sub/{name}", base=base)
 
 
@@ -744,6 +783,7 @@ def finish_child_tree(child: ChildTree, *, archive_to: Path | None = None) -> di
     its base; scratch archived), else keep it and report the branch, commits and changed
     files — the reviewable artefact."""
     repo, path = Path(child.repo), Path(child.path)
+    release(child.path)
     report: dict[str, Any] = {"path": child.path, "branch": child.branch, "base": child.base[:12]}
     try:
         state = tree_state(path, base=child.base)
@@ -755,6 +795,9 @@ def finish_child_tree(child: ChildTree, *, archive_to: Path | None = None) -> di
     files = sorted({*changed.splitlines(), *state["tracked_changes"], *state["untracked"]})
     report.update(commits=state["unpushed"], changed_files=files[:50],
                   changed_files_total=len(files))
+    if state["ignored"]:
+        report.update(kept=True, reason="ignored_files")
+        return report
     if state["tracked_changes"] or state["unpushed"] != 0:
         report.update(kept=True, reason="has_changes")
         return report

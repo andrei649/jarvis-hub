@@ -765,6 +765,12 @@ def _compact_for_log(rec: dict, limit: int = 2000) -> dict:
     return out
 
 
+# G18 (H404) — the only tools a read-only reviewer may be given: reads of files in the
+# folder it reviews. Everything networked (web, A2A, MCP), and every search over the
+# owner's sessions or memory, is out: the reviewer reads private code and untrusted text,
+# so it must have no channel that could carry either out.
+REVIEWER_TOOLS = frozenset({"file_read", "file_list", "file_search"})
+
 # ── G18 (H401): live transcripts, tool trace, timeout dumps ─────────────────────
 
 #: How often a running child's durable row is touched, and how long a child may go
@@ -950,6 +956,7 @@ class SubAgentManager:
         self._stall_seconds = stall_seconds
         self.heartbeat_seconds = max(0.05, float(heartbeat_seconds))
         self._background: set = set()
+        self._pruned = False
         self._transcripts: dict[str, Transcript] = {}
         # G18 (H402) — a child's own git worktree (``autonomy.subagent_worktrees`` in
         # prod): called on a worker thread with the spawn id, it answers a
@@ -1208,6 +1215,7 @@ class SubAgentManager:
                     tools: Optional[Iterable[str]] = None, context: Optional[str] = None,
                     answer_schema: Optional[dict] = None, focused: bool = False,
                     read_only: bool = False, kind: str = "delegate", background: bool = False,
+                    confine: Optional[str] = None,
                     _admitted: Optional[asyncio.Future] = None) -> dict:
         """Spawn an isolated sub-agent for `task` — the one place a child starts.
 
@@ -1279,14 +1287,19 @@ class SubAgentManager:
                         "spawned": self._turn_spawns[turn], "cap": cap}
             allowed = self._child_tools(tools, agent)
             if read_only:
-                allowed = self._read_only_tools(allowed)
+                # G18 review: the reviewer reads files in the folder it reviews and
+                # nothing else — no network, no session or memory search — so nothing it
+                # read can leave the box. Without a folder to confine it to, no tools.
+                allowed = (self._read_only_tools(allowed) & REVIEWER_TOOLS) if confine else frozenset()
             if self.budget is not None and not self.budget.consume():
                 return {"ok": False, "reason": "spawn_budget_exhausted",
                         "used": self.budget.used, "max_total": self.budget.max_total}
             if turn is not None:
                 self._note_turn_spawn(turn)
             self._counter += 1
-            spawn_id = f"sub-{parent}-{self._counter}"
+            # The boot id makes a spawn id unique across restarts: a counter alone would
+            # repeat, and a repeated id would reuse an old child's tree, branch and record.
+            spawn_id = f"sub-{parent}-{self._counter}-{self.boot_id[:6]}"
             session_id = f"session::{spawn_id}"   # isolated session
             delegation_id = uuid.uuid4().hex[:20]
             now = time.time()
@@ -1342,8 +1355,8 @@ class SubAgentManager:
                 self._run(prompt, session_id, agent or "sub", chan, selection, ov, spawn_id, allowed,
                       {"spawn_id": spawn_id, "parent": parent, "turn": caller_turn,
                        "goal": task[:DELEGATION_GOAL_CHARS * 4]},
-                      isolation={"tree": (rec["worktree"] or {}).get("path"), "read_only": bool(read_only),
-                                 "transcript": transcript}))
+                      isolation={"tree": (rec["worktree"] or {}).get("path") or (confine if read_only else None),
+                                 "read_only": bool(read_only), "tools": allowed, "transcript": transcript}))
             self._tasks[spawn_id] = child
             monitor = asyncio.ensure_future(self._monitor(rec, transcript))
             try:
@@ -1488,7 +1501,7 @@ class SubAgentManager:
             store = self._get_store()
             if store is not None:
                 with contextlib.suppress(Exception):
-                    row = store.delegation_by_spawn(spawn_id) or store.delegation_get(spawn_id)
+                    row = store.delegation_get(spawn_id) or store.delegation_by_spawn(spawn_id)
             if not row or not row.get("transcript_path"):
                 return None
             path, status = row["transcript_path"], row.get("status")
@@ -1605,20 +1618,25 @@ class SubAgentManager:
                 kept.add(name)
         return frozenset(kept)
 
-    def recover(self) -> list[dict]:
-        """At start (blocking): close every durable row a previous boot left running as
-        ``lost`` — its process died with the hub; it is reported, never re-run."""
-        self._prune_state()
+    def recover(self, *, now: Optional[float] = None) -> list[dict]:
+        """At start and on every autonomy tick (blocking): close as ``lost`` each durable
+        row another boot left running whose heartbeat has gone stale — its process died;
+        it is reported once, never re-run. A live second process keeps heartbeating and is
+        left alone."""
+        if not self._pruned:
+            self._pruned = True
+            self._prune_state()
         store = self._get_store()
         if store is None:
             return []
         try:
-            lost = store.delegation_recover(self.boot_id)
+            kwargs = {"now": now} if now is not None else {}
+            lost = store.delegation_recover(self.boot_id, **kwargs)
         except Exception:  # noqa: BLE001
             logger.warning("sub-agent recovery failed", exc_info=True)
             return []
         if lost:
-            logger.warning("%d sub-agent(s) were running when the hub stopped; reported as lost", len(lost))
+            logger.warning("%d sub-agent(s) stopped with their process; reported as lost", len(lost))
         return lost
 
     def _prune_state(self, keep: int = STATE_FILES_KEPT) -> None:
@@ -1823,7 +1841,7 @@ class SubAgentManager:
                 if isolation.get("read_only"):
                     from .kernel.plan_mode import read_only_floor
 
-                    stack.enter_context(read_only_floor("review"))
+                    stack.enter_context(read_only_floor("review", allowed=isolation.get("tools") or frozenset()))
                 stack.enter_context(selection_scope(pins))
                 stack.enter_context(request_overrides_scope(ov))
                 return await self._runner(task, session_id, agent, **kwargs)
