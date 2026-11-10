@@ -71,6 +71,9 @@ Write-Host "Installing service '$ServiceName' → $python $serve"
 
 # Operability env (H23.11). Loopback default; off-loopback needs a token / the
 # explicit insecure-bind opt-in or serve.py refuses to boot (fail-closed).
+# RB-2: these four are pinned under the JARVIS_ spelling (change them with this script's
+# parameters). NERVA_<X> for one of them elsewhere in the service environment is one
+# variable set twice, and the hub refuses to start.
 & $nssm set $ServiceName AppEnvironmentExtra `
     "JARVIS_HOST=$BindHost" `
     "JARVIS_PORT=$Port" `
@@ -87,6 +90,9 @@ Write-Host "Installing service '$ServiceName' → $python $serve"
 # successor), so Default stays Restart; a clean exit (0) is a stop and stays stopped.
 & $nssm set $ServiceName AppExit Default Restart
 & $nssm set $ServiceName AppExit 0 Exit
+# RB-2: 78 = one variable under both the NERVA_ and the JARVIS_ spelling in the service
+# environment (serve.py): restarting cannot help.
+& $nssm set $ServiceName AppExit 78 Exit
 & $nssm set $ServiceName AppRestartDelay 5000
 
 Write-Host "Starting '$ServiceName'…"

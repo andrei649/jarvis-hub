@@ -32,11 +32,15 @@ services:
         COPY . .
         CMD ["python", "serve.py"]
     network_mode: host
+    # RB-2: these three are pinned here, under the JARVIS_ spelling. In compose `environment:`
+    # beats `env_file:`, so a line in .env does NOT change them: to change one, edit it here.
+    # NERVA_<X> for one of them in .env is one variable set twice, and the hub refuses to start.
+    # The HUD is not pinned: v2 is the default, NERVA_HUD=v1 or JARVIS_HUD=v1 in .env selects
+    # the legacy one.
     environment:
       JARVIS_HOST: "127.0.0.1"
       JARVIS_PORT: "8080"
       JARVIS_HOME: /data
-      JARVIS_HUD: v2
     env_file:
       - path: .env
         required: false

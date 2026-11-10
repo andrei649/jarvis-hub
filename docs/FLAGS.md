@@ -1718,3 +1718,111 @@ run `/status` and the rest of the user tier keeps `/help` and `/whoami` only unt
 lists more. The behaviour from before this setting is
 `{"*": {"dm": ["btw", "jobs", "recap", "sessions", "status", "voice"], "group": ["btw", "jobs", "recap", "sessions", "status", "voice"]}}`;
 owner commands stay the owner's either way.
+
+## Variable names — `NERVA_<X>` and `JARVIS_<X>` are one variable (RB-2)
+
+The product is Nerva; `jarvis-hub` is the engine's codename. Every hub variable on this
+page named `JARVIS_<X>` is also read as **`NERVA_<X>`, the preferred spelling**.
+`JARVIS_<X>` is the **deprecated** spelling and keeps working: an existing `.env`, unit
+file or compose file needs no change. This page and the code keep the `JARVIS_` names;
+`.env.example` uses `NERVA_`. Variables that were always `NERVA_*` (`NERVA_WORKSPACE*`,
+`NERVA_PUBLIC_PROFILE`, `NERVA_HUB_URL`, …) have one spelling and are untouched.
+
+- **Same variable, same effect.** `NERVA_HARDENED=1` hardens exactly as
+  `JARVIS_HARDENED=1` does, from the process environment or from any `.env` file; a
+  typo in `NERVA_CHANNEL_OPEN` is refused by the same parse check. The hub folds a
+  `NERVA_<X>` onto `JARVIS_<X>` when it starts and as each `.env` file loads
+  (`agents/core/env_alias.py`), so child processes, sandboxes and
+  `/api/admin/env` see `JARVIS_<X>`, as before.
+- **Layers are unchanged.** Process environment, then the repo `.env`, then the
+  data-home `.env`: the first layer to set a variable wins, whichever spelling each
+  used. A `.env` value never overrides a process value, and the names a `.env` cannot
+  set (`JARVIS_HOME`, `JARVIS_APP_ROOT`, `JARVIS_MEMORY_DIR`, `JARVIS_PROFILE`) cannot
+  be set there as `NERVA_<X>` either.
+- **One rule when both spellings are set in the same place** (the process environment,
+  or one `.env` file) **to different values: the hub refuses to start** and names the
+  variable (never a value). This holds for *every* hub variable — there is none for
+  which one spelling "wins". Equal values are fine; an empty one yields to the other.
+  The coordinator, the `nerva` command and the stdio MCP bridge apply the same rule.
+- **Naming a variable works under either spelling too:** `--token-env NERVA_USER_TOKEN`,
+  `NERVA_MCP_STDIO_ALLOWED_ENV=NERVA_HOME,NERVA_PROFILE` (the child receives
+  `JARVIS_HOME` / `JARVIS_PROFILE`, exactly what the old spelling passes) and a
+  `${NERVA_HA_URL}` / `${env:NERVA_HA_URL}` reference in a setting.
+- **References in a `.env`.** `${NAME}` and `${NAME:-default}` resolve under either
+  spelling of a hub variable, from the environment first and the file's earlier lines
+  second, in every layer, and (as python-dotenv always did) in every value, quoted or
+  not. For a `JARVIS_`-only file the values are exactly what they were, with two
+  exceptions — things python-dotenv did silently that nobody meant, which now stop the
+  start and name the variable (never a value):
+  1. a **path-typed** variable built from a reference that nothing sets
+     (`JARVIS_LOG_FILE=${LOGDIR}/hub.log` with no `LOGDIR` used to become `/hub.log`);
+  2. a hub **credential** (the reviewed list `env_alias.CREDENTIALS`: the admin and user
+     tokens, the audit, secret, token, backup, sync, signing and A2A keys, the bridge
+     and integration tokens, and the `ROLE_*_KEY` / `VLM_KEY` family) whose value contains
+     a reference that nothing sets (part of the token was dropped). If the `${` is part
+     of the secret itself, set that variable in the process environment, or write its
+     dollar sign as `${LITERAL_DOLLAR:-$}`.
+
+  Everything else starts as before: a reference that is **defined** and blank, whatever
+  it builds (`HA_URL=` then `JARVIS_HA_URL=${HA_URL}`, a feature switched off; `PREFIX=`
+  then `JARVIS_LOG_FILE=${PREFIX}/var/log/hub.log`, an optional prefix), an address,
+  allowlist, number or flag built from an unset reference (one warning names the
+  variable), and any reference with a `:-default`. A path **written out** as the filesystem root (`JARVIS_FILE_ROOTS=/`)
+  also starts, with one `[SECURITY]` line naming the variable; `nerva doctor` warns.
+  The path-typed variables, by name: `HOME`, `USER_HOME`, `MEMORY_DIR`, `APP_ROOT`,
+  `FILE_ROOTS`, `TERMINAL_LOCAL_ROOTS`, `MEDIA_ROOTS`, `KEY_DIR`, `EXEC_TEMP_DIR`,
+  `FORGET_ARCHIVE_DIR`, `PLAYWRIGHT_DOWNLOAD_DIR`, `DRIVE_AI_DEST`, `EVAL_STORE`,
+  `LOG_FILE`, `RUNTIME_LOG`, `RUNTIME_STATE`, `SUBAGENT_SPAWN_LOG`, `CA_BUNDLE`,
+  `WASM_PYTHON`, `TERMINAL_SSH_KNOWN_HOSTS`.
+- **Exit status.** One variable under both spellings in the **process environment** is
+  exit status 78 from `serve.py` and from the coordinator: no restart can cure it, so
+  both systemd units and the Windows service are told not to restart on it
+  (`RestartPreventExitStatus=78`, `AppExit 78 Exit`) and the runtime supervisor does not
+  respawn. A refusal that comes from a **`.env` file** (both spellings in the file, or
+  one of the two lines above) is the ordinary failure status: the file may have been
+  caught mid-save, or name a variable this service gets later, so the service manager
+  tries again with its usual backoff. `scripts/token_recover.py` is never refused (it
+  loads what is there and reports what the hub will refuse), and neither are the
+  read-only diagnostics `nerva doctor`, `nerva completion`, `nerva logs`,
+  `nerva config path` and `nerva config env-path`. Every other `nerva` verb — anything
+  that writes a setting, deletes, uploads or talks to a hub with a token — refuses on a
+  conflicting pair, naming the variable.
+- **Seeing it.** `nerva doctor` (`config_sources`) marks each key still supplied under
+  the old spelling, fails on a conflict or a reference to nothing, and warns on a path
+  set to the filesystem root; `/api/admin/env/sources`
+  reports `spelling`, `preferred` and `deprecated` per hub variable.
+
+### Variables a launcher pins — override these as `JARVIS_<X>`
+
+A launcher that sets a variable itself puts it in the process environment under the
+`JARVIS_` spelling. If you then set `NERVA_<X>` for the same variable in that environment
+(`docker run -e`, a compose `environment:` or `env_file:`, a systemd `EnvironmentFile`),
+the hub sees one variable with two values and refuses to start; the message says that
+one of the two may be the launcher's. **Override a pinned variable under the spelling
+the launcher uses, or change the launcher's own line.** How to override depends on the
+launcher: with `docker run`, `-e JARVIS_PORT=…` replaces the image's value; in a systemd
+`EnvironmentFile`, a `JARVIS_PORT=…` line replaces the unit's `Environment=` value; under
+**compose, `environment:` beats `env_file:`, so a line in `.env` changes nothing — edit
+the compose file's own line.**
+
+| Launcher | Pins (always) |
+|---|---|
+| `Dockerfile` | `JARVIS_HOST`, `JARVIS_PORT`, `JARVIS_HOME` |
+| `docker-compose.yml` (hub) | `JARVIS_HOST`, `JARVIS_PORT`, `JARVIS_HOME` |
+| `docker-compose.yml` (runtime) | `JARVIS_HOME` |
+| `docker-compose.quickstart.yml` | `JARVIS_HOST`, `JARVIS_PORT`, `JARVIS_HOME` |
+| `deploy/systemd/jarvis-hub.service` | `JARVIS_HOST`, `JARVIS_PORT`, `JARVIS_SHUTDOWN_TIMEOUT`, `JARVIS_HOME` |
+| `deploy/systemd/jarvis-runtime.service` | `JARVIS_HOME`, `JARVIS_RUNTIME_LOG`, `JARVIS_RUNTIME_STATE` |
+| `deploy/windows/install-service.ps1` | `JARVIS_HOST`, `JARVIS_PORT`, `JARVIS_SHUTDOWN_TIMEOUT`, `JARVIS_HOME` (script parameters) |
+
+`start.sh` and `START.bat` only *default* a variable when it is not set
+(`JARVIS_HUD=v2`, `JARVIS_SIGNAL_LAYER_MODE=replay`), and they look at both spellings
+first, so a `NERVA_HUD` or `NERVA_SIGNAL_LAYER_MODE` of yours is never turned into a
+conflict. Two pins were removed because they only restated the code's default
+(`JARVIS_HUD=v2` in the image and the quickstart compose file, `JARVIS_LOG_LEVEL=info`
+in the hub unit): those two can be set under either spelling everywhere.
+
+Names that stay `JARVIS_`-only because nothing in the hub reads them through the alias:
+`JARVIS_WORLDVIEW` (a comment in the systemd env template; no code reads it) and the
+`$JARVIS_ADMIN_TOKEN` / `$JARVIS_USER_TOKEN` shell variables in the generated API sweep
+snippets (`scripts/gen_api_sweep.py`, text for a human to paste).

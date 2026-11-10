@@ -29,6 +29,8 @@ WorkingDirectory=/opt/jarvis-hub
 ExecStart=/opt/jarvis-hub/.venv/bin/python scripts/runtime_supervisor.py
 # ─────────────────────────────────────────────────────────────────────────────
 
+# RB-2: pinned under the JARVIS_ spelling; override one with a JARVIS_<X> line in the env file
+# (NERVA_<X> beside a pin is one variable set twice: the coordinator refuses, exit 78).
 Environment=JARVIS_HOME=/var/lib/jarvis-hub
 Environment=JARVIS_RUNTIME_LOG=/var/lib/jarvis-hub/logs/runtime.jsonl
 Environment=JARVIS_RUNTIME_STATE=/var/lib/jarvis-hub/logs/runtime_state.json
@@ -36,6 +38,10 @@ EnvironmentFile=-/etc/jarvis-hub/jarvis.env
 
 # Restart policy — defense-in-depth over the in-process respawn loop.
 Restart=on-failure
+# 78 = one variable is set under both the NERVA_ and the JARVIS_ spelling, with different
+# values, in this unit's environment (Environment= / EnvironmentFile): restarting cannot
+# help, so do not loop on it. (A refusal that comes from a .env file exits 1 and is retried.)
+RestartPreventExitStatus=78
 RestartSec=5
 
 KillSignal=SIGTERM

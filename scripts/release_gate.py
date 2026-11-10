@@ -18,6 +18,12 @@ import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
+try:  # RB-2: NERVA_<X> is the preferred spelling of JARVIS_<X>; importing the core folds it in
+    if str(REPO) not in sys.path:
+        sys.path.insert(0, str(REPO))
+    import agents.core  # noqa: F401,E402
+except Exception:  # noqa: BLE001  # nosec B110 - the script still runs on the JARVIS_ names
+    pass
 SNAPSHOT_GUARD_TESTS = [
     "tests/test_route_parity_guard.py",
     "tests/test_openapi_parity_guard.py",

@@ -149,6 +149,13 @@ def without_refs(value: Any) -> Any:
     return _walk(value, lambda text: _REF.sub("", text))
 
 
+def _canonical(name: str) -> str:
+    """The name the hub's environment holds for a variable a setting names (RB-2)."""
+    from .env_alias import canonical
+
+    return canonical(name)
+
+
 def refusal(name: str, *, credential_setting: bool) -> str | None:
     """Why a setting may not name the variable *name*, by its name alone (None: it may).
     The hub's own credentials, nowhere; another credential, only in a credential setting."""
@@ -172,6 +179,7 @@ def references(value: Any, environ: Mapping[str, str] | None = None, *,
     for text in _strings(value):
         for match in _REF.finditer(text):
             source, name = _parse(match.group(1))
+            name = _canonical(name) if name else name      # RB-2: either spelling, one variable
             if source not in (ENV, BARE) or not name or name in known:
                 continue
             known.add(name)
@@ -262,6 +270,8 @@ def _expand_text(text: str, setting: str, env: Mapping[str, str], *, quiet: bool
     def one(match: re.Match) -> str:
         source, name = _parse(match.group(1))
         if source in (ENV, BARE):
+            # RB-2: ${NERVA_<X>} names the JARVIS_<X> the hub's environment holds
+            name = _canonical(name) if name else name
             reason = refuse(name, env.get(name)) if refuse is not None and name else None
             if reason:
                 if not quiet:

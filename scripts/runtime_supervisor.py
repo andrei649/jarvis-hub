@@ -77,6 +77,7 @@ def apply_safe_mode_switch(argv=None) -> bool:
     when the app package cannot be imported."""
     if SAFE_MODE_SWITCH in (sys.argv[1:] if argv is None else argv):
         os.environ.update({"JARVIS_SAFE_MODE": "1"})   # a write, not a read of the environment
+        os.environ.pop("NERVA_SAFE_MODE", None)        # RB-2: the switch wins over either spelling
         return True
     return False
 
@@ -130,6 +131,12 @@ def _child_env() -> dict[str, str]:
     found = os.environ.get("JARVIS_RUNTIME_LOG") or _file_run_log()
     if found:
         env["JARVIS_RUNTIME_LOG"] = found
+    try:        # RB-2: the coordinator keeps this process's note of which names were spelled NERVA_
+        from agents.core.env_alias import hand_over
+
+        hand_over(env)
+    except Exception:  # noqa: BLE001  # nosec B110 - display-only; the app package may not import
+        pass
     return env
 
 
@@ -139,8 +146,28 @@ def _spawn() -> subprocess.Popen:
     return subprocess.Popen([sys.executable, _COORDINATOR], env=_child_env())  # noqa: S603  # nosec B603
 
 
+#: The coordinator's exit status for a configuration it refuses (sysexits' EX_CONFIG;
+#: ``agents.core.env_alias.CONFIG_REFUSED_EXIT``, inlined so this file stays importable
+#: without the app package — a test pins the two equal).
+CONFIG_REFUSED_EXIT = 78
+
+
+def _accept_nerva_spellings() -> None:
+    """RB-2: ``NERVA_<X>`` is the preferred spelling of ``JARVIS_<X>``. Importing the hub's
+    core package folds it into this environment, which the coordinator inherits. When
+    the app package cannot be imported this supervisor still runs, on the ``JARVIS_``
+    names only (the coordinator it starts will not import either)."""
+    try:
+        if str(_REPO_ROOT) not in sys.path:
+            sys.path.insert(0, str(_REPO_ROOT))
+        import agents.core  # noqa: F401
+    except Exception:  # noqa: BLE001  # nosec B110 - documented fallback, nothing to report
+        pass
+
+
 def main() -> int:
     apply_safe_mode_switch()
+    _accept_nerva_spellings()
     starting_delay = float(os.environ.get("JARVIS_RUNTIME_RESPAWN_DELAY", "1.0"))
     backoff = starting_delay
     stopping = False
@@ -164,6 +191,16 @@ def main() -> int:
                 _append_supervisor_event("stopped", pid=child.pid, exit_code=exit_code)
                 return 0
             uptime = time.monotonic() - started_at
+            if exit_code == CONFIG_REFUSED_EXIT:
+                # RB-2: the coordinator refused its configuration (one variable set under
+                # both spellings, a path at the filesystem root) and said why on stderr.
+                # That is not a crash: respawning repeats the refusal forever. Stop, once,
+                # with the same status, so the service manager does not restart it either.
+                _append_supervisor_event("config_refused", pid=child.pid, exit_code=exit_code)
+                print("runtime supervisor: the coordinator refused its configuration (see its message "
+                      "above); not respawning. Fix the configuration and start the service again.",
+                      file=sys.stderr)
+                return CONFIG_REFUSED_EXIT
             if exit_code == RESTORE_YIELD_EXIT and uptime >= YIELD_MIN_UPTIME_SECONDS:
                 _append_supervisor_event("child_exited", pid=child.pid, exit_code=exit_code,
                                          restore_yield=True)

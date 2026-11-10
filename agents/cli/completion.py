@@ -11,7 +11,7 @@
   exist on disk (``<install root>-profiles/<name>``, the H689 layout ``agents.core.paths``
   resolves) plus ``default``. The shell lists the directory itself at completion time:
   completing never runs ``nerva``, and a profile created later appears without
-  regenerating the script. ``$JARVIS_HOME``/``$JARVIS_MEMORY_DIR`` are honoured at
+  regenerating the script. ``$JARVIS_HOME``/``$JARVIS_MEMORY_DIR`` (and their ``NERVA_`` spellings) are honoured at
   completion time as ``install_root`` honours them; otherwise the root resolved when the
   script was generated is used.
 
@@ -165,7 +165,10 @@ def _bash(parser: argparse.ArgumentParser, base: str) -> str:
             f"{arms}) true ;; *) false ;; esac; then",
             '        [[ "$cur" == "=" ]] && cur=""',
             f"        local base={shlex.quote(base)} re={shlex.quote(PROFILE_RE)} d",
-            '        if [[ -n "${JARVIS_HOME:-}" ]]; then base="$JARVIS_HOME"',
+            # RB-2: NERVA_<X> is the preferred spelling of JARVIS_<X>; the shell reads both
+            '        if [[ -n "${NERVA_HOME:-}" ]]; then base="$NERVA_HOME"',
+            '        elif [[ -n "${JARVIS_HOME:-}" ]]; then base="$JARVIS_HOME"',
+            '        elif [[ -n "${NERVA_MEMORY_DIR:-}" ]]; then base="$NERVA_MEMORY_DIR"',
             '        elif [[ -n "${JARVIS_MEMORY_DIR:-}" ]]; then base="$JARVIS_MEMORY_DIR"; fi',
             '        base="${base/#\\~/$HOME}"',
             '        while [[ "$base" == */ && "$base" != / ]]; do base="${base%/}"; done',
@@ -266,7 +269,10 @@ def _zsh(parser: argparse.ArgumentParser, base: str) -> str:
             "    if (( CURRENT - o == 3 )) && case \"${words[o+2]}\" in "
             f"{arms}) true ;; *) false ;; esac; then",
             f"        local base={shlex.quote(base)} re={shlex.quote(PROFILE_RE)}",
-            '        if [[ -n "${JARVIS_HOME:-}" ]]; then base="$JARVIS_HOME"',
+            # RB-2: NERVA_<X> is the preferred spelling of JARVIS_<X>; the shell reads both
+            '        if [[ -n "${NERVA_HOME:-}" ]]; then base="$NERVA_HOME"',
+            '        elif [[ -n "${JARVIS_HOME:-}" ]]; then base="$JARVIS_HOME"',
+            '        elif [[ -n "${NERVA_MEMORY_DIR:-}" ]]; then base="$NERVA_MEMORY_DIR"',
             '        elif [[ -n "${JARVIS_MEMORY_DIR:-}" ]]; then base="$JARVIS_MEMORY_DIR"; fi',
             '        base="${base/#\\~/$HOME}"',
             '        while [[ "$base" == */ && "$base" != / ]]; do base="${base%/}"; done',
@@ -375,8 +381,13 @@ def _fish(parser: argparse.ArgumentParser, base: str) -> str:
             "end",
             "function __nerva_profiles",
             f"    set -l base {quote(base)}",
-            '    if test -n "$JARVIS_HOME"',
+            # RB-2: NERVA_<X> is the preferred spelling of JARVIS_<X>; the shell reads both
+            '    if test -n "$NERVA_HOME"',
+            "        set base $NERVA_HOME",
+            '    else if test -n "$JARVIS_HOME"',
             "        set base $JARVIS_HOME",
+            '    else if test -n "$NERVA_MEMORY_DIR"',
+            "        set base $NERVA_MEMORY_DIR",
             '    else if test -n "$JARVIS_MEMORY_DIR"',
             "        set base $JARVIS_MEMORY_DIR",
             "    end",

@@ -13,6 +13,18 @@ Both wire the H23.11 operability knobs (`JARVIS_HOST` / `JARVIS_PORT` /
 `JARVIS_SHUTDOWN_TIMEOUT` / `JARVIS_HOME`) and expose the health probes
 `GET /healthz` (liveness) and `GET /readyz` (readiness) for an external monitor.
 
+**Spelling of the pinned variables (RB-2).** `NERVA_<X>` is the preferred spelling of every
+`JARVIS_<X>` variable, but both launchers *pin* the knobs above (and the runtime unit pins
+`JARVIS_RUNTIME_LOG` / `JARVIS_RUNTIME_STATE`) under the `JARVIS_` spelling. Override a
+pinned variable under that same spelling — in `jarvis.env`, or with the PowerShell
+script's parameters. `NERVA_HOST` beside the unit's `JARVIS_HOST` is one variable set
+twice with two values: the hub refuses to start and names it. That is exit status 78
+from the hub and from the runtime supervisor, and neither unit (nor the NSSM service:
+`AppExit 78 Exit`) restarts on it. (A refusal that comes from a `.env` file exits 1 and
+is retried as usual: the file may have been caught mid-save.) Every variable the launcher
+does not pin can be written either way. The full list is in
+[`docs/FLAGS.md`](../docs/FLAGS.md#variable-names--nerva_x-and-jarvis_x-are-one-variable-rb-2).
+
 For supported OS / Python / runtime versions and the upgrade/deprecation contract,
 see [`docs/COMPATIBILITY.md`](../docs/COMPATIBILITY.md).
 

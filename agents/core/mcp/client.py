@@ -64,7 +64,8 @@ from agents.core.automation_contracts import (
     one_of,
     predicate,
 )
-from agents.core.env_config import env_flag, env_list
+from agents.core.env_alias import canonical
+from agents.core.env_config import env_flag, env_list, resolve_spellings
 from agents.core.mcp.http_transport import (
     HTTP_CLIENT_FLAG,
     SUPPORTED_TRANSPORTS,
@@ -209,7 +210,9 @@ def stdio_env_extra_allowed(raw: object = _NO_RAW) -> frozenset[str]:
     i.e. the allow-list alone.
     """
     parts = env_list(STDIO_ENV_ALLOW_FLAG) if raw is _NO_RAW else str(raw or "").split(",")
-    return frozenset(part.strip().upper() for part in parts if part.strip())
+    # RB-2: a hub variable the owner names as NERVA_<X> is the JARVIS_<X> the hub's
+    # environment holds, so the child receives exactly what the old spelling passes.
+    return frozenset(canonical(part.strip().upper()) for part in parts if part.strip())
 
 
 #: Config files that hold exactly what the env baseline withholds. ``plugin_manager.build``
@@ -267,14 +270,15 @@ def stdio_env_baseline(
     extra_allowed = (
         stdio_env_extra_allowed()
         if environ is None
-        else stdio_env_extra_allowed(source.get(STDIO_ENV_ALLOW_FLAG))
+        else stdio_env_extra_allowed(resolve_spellings(source, STDIO_ENV_ALLOW_FLAG)[0])
     )
     baseline: dict[str, str] = {}
     for key, value in source.items():
         name = str(key)
         upper = name.upper()
-        if upper in extra_allowed:
-            baseline[name] = str(value)
+        if canonical(upper) in extra_allowed:
+            # under the name the hub reads (RB-2), whichever spelling this mapping holds
+            baseline[name if canonical(upper) == upper else canonical(upper)] = str(value)
             continue
         if upper not in STDIO_ENV_ALLOWLIST or _SECRET_LIKE.search(name):
             continue

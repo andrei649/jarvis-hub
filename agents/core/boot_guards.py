@@ -35,6 +35,17 @@ is uvicorn's CLI — ``--forwarded-allow-ips`` on its command line
 uvicorn some other way (``uvicorn.run(app, forwarded_allow_ips=...)`` from a script,
 a gunicorn worker class) passes its value out of the app's sight; ``serve.py``
 switches the layer off.
+
+RB-2 — every ``JARVIS_<X>`` named here is also accepted as ``NERVA_<X>`` (the preferred
+spelling). The process environment and each ``.env`` layer are folded onto the
+``JARVIS_`` name before these guards run (``env_alias``), so a typo in
+``NERVA_CHANNEL_OPEN`` is refused by the same parse check, and the guards that take a
+mapping of the caller's own read it under either spelling (``_get``). A variable set
+under both spellings with different values is refused first, by name
+(``env_alias.refuse_conflicts``). A path-typed variable written out as the filesystem root
+is not refused: it gets one ``[SECURITY]`` line naming it. (A path a ``.env`` builds from a
+``${...}`` reference that nothing sets is refused where the file is loaded,
+``env_provenance.judge``.)
 """
 
 from __future__ import annotations
@@ -65,9 +76,16 @@ _PARSE_CRITICAL_BOOL_FLAGS = (
 )
 
 
+def _get(env: Mapping[str, str], name: str):
+    """*name* from a caller's mapping under either spelling (RB-2, the one pair rule)."""
+    from agents.core.env_config import resolve_spellings
+
+    return resolve_spellings(env, name)[0]
+
+
 def _env_set(*names: str) -> Callable[[Mapping[str, str]], bool]:
     """A channel is configured when every one of *names* is non-empty after strip."""
-    return lambda env: all(str(env.get(n, "") or "").strip() for n in names)
+    return lambda env: all(str(_get(env, n) or "").strip() for n in names)
 
 
 def _json_object_set(name: str) -> Callable[[Mapping[str, str]], bool]:
@@ -77,7 +95,7 @@ def _json_object_set(name: str) -> Callable[[Mapping[str, str]], bool]:
     nothing in the app, so there is nothing to guard.
     """
     def _configured(env: Mapping[str, str]) -> bool:
-        raw = str(env.get(name, "") or "").strip()
+        raw = str(_get(env, name) or "").strip()
         if not raw:
             return False
         try:
@@ -131,8 +149,8 @@ def assert_safe_bind(host: str) -> None:
     """
     if host.strip().lower() in _LOOPBACK_HOSTS:
         return
-    has_token = bool(os.environ.get("JARVIS_USER_TOKEN", "").strip()
-                     or os.environ.get("JARVIS_ADMIN_TOKEN", "").strip())
+    has_token = bool((_get(os.environ, "JARVIS_USER_TOKEN") or "").strip()
+                     or (_get(os.environ, "JARVIS_ADMIN_TOKEN") or "").strip())
     from agents.core.env_config import env_flag
     ack = env_flag("JARVIS_ALLOW_INSECURE_BIND")
     if has_token or ack:
@@ -172,13 +190,22 @@ def _bool_flag_malformed(env: Mapping[str, str], name: str) -> bool:
     """
     from agents.core.env_config import is_recognized_bool
 
-    raw = env.get(name)
+    raw = _get(env, name)
     return raw is not None and str(raw).strip() != "" and not is_recognized_bool(raw)
 
 
 def _unparseable_bool_flags(env: Mapping[str, str], names: tuple[str, ...]) -> None:
     """Raise the shared refusal for every flag in *names* that is set but unparseable."""
-    bad = [name for name in names if _bool_flag_malformed(env, name)]
+    from agents.core.env_alias import supplied_name
+    from agents.core.env_config import resolve_spellings
+
+    def spelled(name: str) -> str:
+        # named as the operator spelled it (RB-2), so the line to fix can be found: the
+        # NERVA_ key itself in a caller's mapping, else what the fold recorded
+        used = resolve_spellings(env, name)[1] or name
+        return used if used != name else supplied_name(name, env)
+
+    bad = [spelled(name) for name in names if _bool_flag_malformed(env, name)]
     if bad:
         raise SystemExit(
             "Refusing to start: unparseable value for " + ", ".join(bad) + ".\n"
@@ -209,6 +236,14 @@ def assert_parseable_posture_flags(environ: Mapping[str, str] | None = None) -> 
     ``os.environ`` by its own helper. (Hermes absorption 5b)
     """
     env = os.environ if environ is None else environ
+    # RB-2 — before any flag is parsed: one variable set under both spellings, differently.
+    from agents.core.env_alias import refuse_conflicts, root_paths
+    from agents.core.env_provenance import warn_root_paths
+
+    refuse_conflicts(env)
+    # A path the operator wrote out as the filesystem root boots, as it always did — and
+    # says so, by name and once per variable (the load has usually said it already).
+    warn_root_paths(root_paths(env), "the environment the hub starts with")
     _unparseable_bool_flags(env, _PARSE_CRITICAL_BOOL_FLAGS)
     # Same rule, non-boolean flag: JARVIS_TASK_MEDIATION selects the B7 tamper-evidence
     # posture (off|hold|enforce) and its default, `off`, is the UNPROTECTED position — so
@@ -246,7 +281,7 @@ def _front_door_flags(env: Mapping[str, str]) -> tuple[bool, bool]:
     from agents.core.channels.pairing import CHANNEL_OPEN_ENV, PAIRING_ENV
     from agents.core.env_config import truthy
 
-    return truthy(env.get(PAIRING_ENV), True), truthy(env.get(CHANNEL_OPEN_ENV), False)
+    return truthy(_get(env, PAIRING_ENV), True), truthy(_get(env, CHANNEL_OPEN_ENV), False)
 
 
 def assert_guarded_channels(environ: Mapping[str, str] | None = None) -> None:
@@ -306,6 +341,13 @@ def assert_front_door(environ: Mapping[str, str] | None = None) -> None:
     sees them. (Hermes absorption 5b)
     """
     env = os.environ if environ is None else environ
+    from agents.core.env_alias import normalized, refuse_conflicts
+
+    refuse_conflicts(env)                      # RB-2: both spellings, different values
+    if environ is not None:
+        # a mapping of the caller's own may still spell a variable NERVA_<X>: the checks
+        # below read the JARVIS_ name, so they are given the folded copy
+        env = normalized(env)
     _unparseable_bool_flags(env, _FRONT_DOOR_FLAGS)
     # The two network-edge lists live in ``.env`` too (that is where .env.example
     # puts them), so a caller's mapping is parse-checked for them as well.
@@ -352,7 +394,7 @@ def enforce_boot_posture() -> None:
     # (H691): it rewrites the client address before the app ever consults it.
     assert_server_proxy_layer_within_trust()
     assert_parseable_allowed_hosts()
-    assert_safe_bind(os.environ.get("JARVIS_HOST", "127.0.0.1"))
+    assert_safe_bind(_get(os.environ, "JARVIS_HOST") or "127.0.0.1")
     # The front door (Hermes absorption 5b): a configured inbound channel must be
     # guarded. The .env files are loaded before this runs, so a token there counts.
     assert_guarded_channels()

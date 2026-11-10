@@ -64,6 +64,7 @@ def apply_safe_mode_switch(argv=None) -> bool:
     coordinator would still run them (review-H275 F3)."""
     if SAFE_MODE_SWITCH in (sys.argv[1:] if argv is None else argv):
         os.environ.update({"JARVIS_SAFE_MODE": "1"})   # a write, not a read of the environment
+        os.environ.pop("NERVA_SAFE_MODE", None)        # RB-2: the switch wins over either spelling
         return True
     return False
 
@@ -272,7 +273,15 @@ def configure_logging() -> None:
 def main() -> None:
     apply_safe_mode_switch()
     configure_logging()
-    asyncio.run(run())
+    from agents.core.env_alias import ConfigurationRefused
+
+    try:
+        asyncio.run(run())
+    except ConfigurationRefused as refused:
+        # RB-2: the refusal's own status — 78 (the supervisor does not respawn on it) for one
+        # variable under both spellings in the process environment, 1 for a .env refusal.
+        print(refused, file=sys.stderr)
+        raise SystemExit(refused.exit_status) from None
 
 
 if __name__ == "__main__":

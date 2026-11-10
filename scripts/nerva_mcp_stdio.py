@@ -167,7 +167,16 @@ def main(argv: list[str] | None = None) -> int:
     if reason:
         logger.error("unusable hub URL (%s)", reason)
         return 2
-    token = os.environ.get(args.token_env, "")
+    # RB-2: NERVA_<X> is the preferred spelling of JARVIS_<X>. One variable set under both,
+    # differently, is refused here as everywhere; and the variable --token-env names is
+    # read under either spelling (the fold has moved it to its JARVIS_ name).
+    from agents.core import env_alias
+
+    disagreeing = env_alias.conflicts()
+    if disagreeing:
+        logger.error("%s", env_alias.conflict_message(disagreeing))
+        return 2
+    token = env_alias.lookup(os.environ, args.token_env) or ""
     if not token:
         logger.warning(
             "no token in $%s — the hub accepts unauthenticated MCP only from localhost "

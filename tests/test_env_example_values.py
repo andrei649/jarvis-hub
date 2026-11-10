@@ -23,5 +23,6 @@ def test_no_value_in_the_example_is_a_comment():
 
 def test_an_empty_example_value_stays_empty():
     values = dotenv_values(REPO / ".env.example")
-    for key in ("JARVIS_FORGET_ARCHIVE_DIR", "JARVIS_DRIVE_AI_REMOTE", "JARVIS_BACKUP_MAX_BYTES"):
+    # RB-2: the example spells every hub variable NERVA_<X> (JARVIS_<X> still works)
+    for key in ("NERVA_FORGET_ARCHIVE_DIR", "NERVA_DRIVE_AI_REMOTE", "NERVA_BACKUP_MAX_BYTES"):
         assert values[key] == ""
