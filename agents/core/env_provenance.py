@@ -95,6 +95,9 @@ READ_BEFORE_LOAD = frozenset({
     "JARVIS_RATE_LIMIT", "JARVIS_CORS_ORIGINS", "JARVIS_CSP", "JARVIS_DISABLE_CSP",
     "JARVIS_AUTO_DEEP", "JARVIS_ANALYTICS_MAX_EVENTS",
     "NEO4J_URL", "NEO4J_USER", "NEO4J_PASSWORD", "JARVIS_LOG_REDACTION",
+    # G1 — where the administrator's managed layer is, and managed mode: fixed from the
+    # process environment before any .env file is read (managed_scope.capture)
+    "JARVIS_MANAGED_DIR", "JARVIS_MANAGED",
 })
 # What locates the hub's own files. A file cannot move them: the stores opened while the
 # hub was imported would stay under one root and the rest would follow the file, so a .env
@@ -866,8 +869,12 @@ def load_hub_env(*, refuse: bool = True) -> dict[str, dict]:
     Log redaction is imported first, so its switch stays the boot environment's."""
     global _HUB_LOADED
     if _HUB_LOADED is None:
+        # G1 — the managed folder, managed mode and the environment a pinned ${NAME} may
+        # expand from are fixed now, from the process environment, before any .env is read.
+        from . import managed_scope
         from .security import log_redaction  # noqa: F401  (snapshots JARVIS_LOG_REDACTION)
 
+        managed_scope.capture()
         # H689b — a profile's hub reads its own root's .env and neither shared file: its
         # credentials (provider keys, bot tokens, the admin token) are the profile's.
         profile_env = profile_env_file()
@@ -931,6 +938,7 @@ def _apply_managed(*, refuse: bool = True) -> dict[str, str]:
         _FILES[MANAGED] = {"path": str(path), "kind": "file" if present else "absent",
                            "present": present, "read": present}
     pin_environment(applied)
+    managed_scope.capture_process_env()        # what a pinned ${NAME} may expand from
     return applied
 
 

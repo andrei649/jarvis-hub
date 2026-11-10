@@ -175,8 +175,8 @@ the owner's. The files live outside the data root, in a folder the owner cannot 
 
 | Where | What |
 |---|---|
-| `NERVA_MANAGED_DIR` (or `JARVIS_MANAGED_DIR`), else `/etc/nerva` (Windows: `%PROGRAMDATA%\Nerva`) | the managed folder. Only the process environment can name it (a `systemd` unit, `docker run -e`); a value in a `.env` file is ignored on purpose. |
-| `config.yaml` | settings pins, `category: {key: value}`, the names `nerva config list` prints. Below a JSON setting's key you can pin single leaves: `llm: {operating_guidance: {enabled: false}}` pins `enabled` and leaves the rest of that setting editable. `${NAME}` / `${env:NAME}` in a value is read from the process environment and the managed `.env` only. |
+| `NERVA_MANAGED_DIR` (or `JARVIS_MANAGED_DIR`), else `/etc/nerva` (Windows: `%PROGRAMDATA%\Nerva`) | the managed folder. Only the process environment can name it (a `systemd` unit, `docker run -e`); a value in a `.env` file is ignored on purpose, and the hub fixes the folder (and managed mode) when it starts, so a later change inside the running process moves neither. On Linux and macOS the folder and every file in it must be owned by root and not writable by group or others, or the hub treats the managed configuration as unreadable (below). On Windows the default folder counts only when Administrators or SYSTEM own it (any local user could create it); otherwise it is ignored with a warning, so name the folder with `NERVA_MANAGED_DIR`. |
+| `config.yaml` | settings pins, `category: {key: value}`, the names `nerva config list` prints. Below a JSON setting's key you can pin single leaves: `llm: {operating_guidance: {enabled: false}}` pins `enabled` and leaves the rest of that setting editable. `${NAME}` / `${env:NAME}` in a value is read from the process environment the hub started with and the managed `.env` only (never a `.env` file or a key set later in the Integrations panel); Settings shows the reference, not its value. A pin its declaration refuses, or a name no setting declares, is treated like an unreadable file. |
 | `.env` | environment pins, `KEY=VALUE` (either spelling, `NERVA_X` or `JARVIS_X`), taken literally. They are applied last and beat the shell, the repo `.env` and the data-home `.env`; a later change to the process environment does not change what Nerva reads. Names that place the hub's own files (`JARVIS_HOME`, `JARVIS_PROFILE`, …) cannot be pinned. |
 | `.managed` | optional managed mode: every configuration write is refused, and its first line says how to change the configuration instead (for example `sudo nixos-rebuild switch`). |
 | `profiles/<name>/` | the same three files for one profile (`JARVIS_PROFILE=<name>`), applied on top of the shared ones. |
@@ -195,14 +195,20 @@ what is pinned and from which file (environment names only, never a value); the 
 keys card and `GET /api/admin/env/sources` name the managed layer. A write that would change
 a pin is refused, naming the file: the settings save answers 409, `nerva config set|unset`
 exits 1 with "… is managed by your administrator (/etc/nerva/config.yaml) and cannot be
-changed", the approval-mode switch is refused, and the refusal is in the audit log. An
-import, a reset and an undo leave pinned settings out and list them under `managed`.
+changed", the approval-mode switch (also `/approvals` in chat), the local model switch, MCP
+server add and remove (`mcp.servers`) and the Integrations panel are refused, and every refusal
+is in the audit log. An import, a reset and an undo leave pinned settings out and list them
+under `managed`. Managed mode also refuses custom endpoints, signed provider selection and
+provider credentials. Runtime state is not configuration and stays the owner's: connecting or
+disconnecting an MCP server, answering an MCP elicitation, MCP sampling budgets as they are
+spent, and a session's `/plan` and `/loop` state.
 
 Fail closed: if a managed file exists but cannot be read or parsed (or `NERVA_MANAGED_DIR`
 names a folder that is not there), every configuration write is refused until it is fixed,
 and the hub refuses to start rather than run unpinned. `nerva config managed` exits 1 and
-names the file. Settings pins take effect at once; environment pins at the next start of
-the hub. Safe mode still applies its stricter limits on top of a pin.
+names the file. Settings pins are read on every settings read (runtime consumers pick them
+up within 30 s, as with any settings change); environment pins at the next start of the hub.
+Safe mode still applies its stricter limits on top of a pin.
 
 ## After the install
 

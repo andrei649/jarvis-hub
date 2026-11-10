@@ -35,6 +35,7 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictBool, StrictStr
 
 from agents.core.app_state import get_orch
+from agents.core.managed_scope import ManagedRefused
 from agents.core.web_helpers import nocache_json
 
 from ._deps import admin_guard
@@ -243,7 +244,7 @@ async def integration_key_put(body: KeyBody, entry_id: str = Path(pattern=ENTRY_
                                 keep_owners=body.same_key)
     except integration_keys.EnvManaged:
         return _env_managed(name)
-    except PermissionError as exc:                # G1: the managed layer changed under this write
+    except ManagedRefused as exc:                 # G1: the managed layer changed under this write
         return await _managed_refused(exc)
     except ValueError:
         return nocache_json({"error": "invalid_key"}, status_code=422)
@@ -299,7 +300,7 @@ async def integration_key_delete(entry_id: str = Path(pattern=ENTRY_PATTERN)):
         try:
             out = await asyncio.to_thread(integration_keys.release_key, name, entry.id,
                                           allowed=integrations_catalog.managed_keys())
-        except PermissionError as exc:            # G1
+        except ManagedRefused as exc:             # G1
             return await _managed_refused(exc)
         (removed if out["removed"] else kept).append(name)
         if out["env"]:
@@ -485,7 +486,7 @@ async def _use_search(entry, body: UseBody):
         await asyncio.to_thread(integration_keys.set_choice, integrations_catalog.WEB_BACKEND, entry.name)
     except integration_keys.EnvManaged:
         return _env_managed(integrations_catalog.WEB_BACKEND)
-    except PermissionError as exc:                # G1
+    except ManagedRefused as exc:                 # G1
         return await _managed_refused(exc)
     if not guards:
         await _audit(f"integrations: {integrations_catalog.WEB_BACKEND} → {entry.name}", "search_backend_chosen")
@@ -530,6 +531,10 @@ async def _use_model(entry, body: UseBody):
         if admin._is_managed_refusal(exc):
             return await _managed_refused(exc)
         return admin._selection_write_refusal(exc)
+    from agents.core.settings_db import managed_setting_names
+
+    pinned = set(managed_setting_names("llm"))      # G1: the pinned values themselves are in force
+    skipped = [key for key in skipped if f"llm.{key}" not in pinned]
     if skipped:
         return nocache_json({"error": "not_stored", "skipped": skipped}, status_code=409)
     await admin._audit_settings_change("llm", list(values), values)
@@ -566,7 +571,7 @@ async def integration_search_auto():
         await asyncio.to_thread(integration_keys.set_choice, integrations_catalog.WEB_BACKEND, "")
     except integration_keys.EnvManaged:
         return _env_managed(integrations_catalog.WEB_BACKEND)
-    except PermissionError as exc:                # G1
+    except ManagedRefused as exc:                 # G1
         return await _managed_refused(exc)
     await _audit(f"integrations: {integrations_catalog.WEB_BACKEND} → auto", "search_backend_chosen")
     return nocache_json({"ok": True, "applied": "now"})

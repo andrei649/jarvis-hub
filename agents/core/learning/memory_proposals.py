@@ -139,6 +139,11 @@ def set_write_approval(enabled: bool, *, audit: Any, actor: str = "owner") -> di
 
     if not isinstance(enabled, bool):
         raise ValueError("enabled must be true or false")
+    from agents.core.managed_scope import check_setting_write
+
+    # G1 — refused before anything is recorded: the intent log never says "switched off"
+    # for a change the administrator's pin then refuses
+    check_setting_write(SETTING_CATEGORY, SETTING_KEY, enabled)
     found, value = read_setting(SETTING_CATEGORY, SETTING_KEY)
     was = found and value is not False
     metadata = {"enabled": enabled, "was": was}

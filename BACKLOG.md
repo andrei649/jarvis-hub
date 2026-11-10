@@ -2982,7 +2982,14 @@
   refuses pinned names itself, `apply_stored()` never fills a pinned name, and the panel shows a pinned key
   or choice as "managed by your administrator", read-only (`tests/test_g1_managed_integrations.py`, 6; one
   vitest). A2A outbound writes its own peer registry and the secret broker, not settings or env: not
-  gated. Follow-ups: chat `/approvals` (commands.py) answers a pinned mode with its generic "did not become
+  gated. **Adversarial review (2026-11-10): 2 MAJOR + 1 security fixed** — the local model switch and MCP
+  add/remove no longer change the live hub before a refused save; the managed folder must be root-owned
+  and not group/world-writable (Windows default: Administrators/SYSTEM only); minors: an invalid pin is a
+  problem (writes and boot refused), folder/managed mode/expansion environment captured at load, views
+  show a pinned `${NAME}` as written, `ManagedRefused` is no OSError (global 409 + audit), bundle writers
+  judge every key first, managed mode covers custom endpoints / provider selection / credentials, chat
+  `/approvals` names the file (`tests/test_g1_managed_review.py`, 18). Runtime state (MCP connect,
+  elicitation answers, sampling spend, `/plan` and `/loop`) is not configuration. Follow-ups: chat `/approvals` (commands.py) answers a pinned mode with its generic "did not become
   effective" line; environment pins take effect at the next hub start.
 
 ## Darwin feature absorption — 2026-09-09

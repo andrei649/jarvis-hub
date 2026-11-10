@@ -158,13 +158,18 @@ def test_the_job_tool_policy_and_owner_binding_see_pins(managed):
     assert settings_db.read_telegram_owner_binding()["autonomy.owner_chat_id"] == "42"
 
 
-def test_an_invalid_pin_is_reported_and_not_applied_but_still_refuses_writes(managed):
+def test_an_invalid_pin_is_a_problem_that_refuses_every_write(managed):
+    """Review m1: not a silent fallback — the problem is listed, every write is refused
+    (the hub's load refuses too, tests/test_g1_managed_review.py), and the value a reader
+    gets is never the invalid one."""
     settings_db.ensure_initialized()
     _pin(managed, "llm:\n  cloud_fallback: sometimes\n")
     row = next(r for r in settings_db.get_category("llm") if r["key"] == "cloud_fallback")
     assert row["value"] == "on-demand" and row["managed"]["invalid"]
-    with pytest.raises(managed_scope.ManagedRefused):
-        settings_db.put_category("llm", {"cloud_fallback": "always"})
+    assert any("cloud_fallback" in p for p in managed_scope.describe()["problems"])
+    with pytest.raises(managed_scope.ManagedRefused) as refused:
+        settings_db.put_category("llm", {"backend_type": "ollama"})          # not even this one
+    assert "cannot be read" in str(refused.value) or "refused by its declaration" in str(refused.value)
 
 
 # ── settings: every writer refuses ──────────────────────────────────────────

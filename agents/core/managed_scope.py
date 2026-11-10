@@ -45,6 +45,7 @@ import json
 import logging
 import os
 import re
+import sys
 import threading
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -69,9 +70,11 @@ ANY = object()
 _REFERENCE = re.compile(r"\$\{(?:env:)?([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
-class ManagedRefused(PermissionError):
+class ManagedRefused(Exception):
     """A configuration write the managed layer refuses. ``names`` are the settings or
-    variables refused, ``source`` the managed file that pins them."""
+    variables refused, ``source`` the managed file that pins them. Deliberately not an
+    ``OSError``/``PermissionError``: a route that answers a storage error with 503 must not
+    swallow it; the hub maps it to 409 everywhere (``agents/web.py`` exception handler)."""
 
     def __init__(self, message: str, *, names=(), source: str | None = None) -> None:
         super().__init__(message)
@@ -119,13 +122,104 @@ def _system_default(environ: Mapping[str, str]) -> Path:
     return POSIX_DEFAULT
 
 
+#: What the hub's load saw in the process environment (``capture``): the managed folder,
+#: managed mode and the process environment a pinned ``${NAME}`` may expand from. Once
+#: captured, a later in-process write to ``os.environ`` moves none of them.
+_CAPTURED: dict[str, Any] | None = None
+
+
+#: The names that locate the managed layer, read from the process environment before any
+#: ``.env`` file (env_provenance.READ_BEFORE_LOAD lists the hub's own).
+_HUB_LOCATION = ("JARVIS_MANAGED_DIR", "JARVIS_MANAGED", "JARVIS_PROFILE")
+LOCATION_NAMES = (*_HUB_LOCATION, *("NERVA" + name[len("JARVIS"):] for name in _HUB_LOCATION), "PROGRAMDATA")
+
+
+def capture(environ: Mapping[str, str] | None = None, *, force: bool = False) -> None:
+    """Record where the managed layer is, and whether managed mode is on, as the process
+    environment says before any ``.env`` file is read (``load_hub_env`` calls this first).
+    Under pytest only with *force*: a load in one test must not fix the managed folder for
+    every later test in the process. The process environment a pinned ``${NAME}`` may
+    expand from is recorded after the load (:func:`capture_process_env`)."""
+    global _CAPTURED
+    # "under pytest" from the loaded modules, not the environment: the hub's start reads no
+    # variable of its own before the .env files are loaded (H273 review)
+    if "_pytest" in sys.modules and not force:
+        return
+    env = os.environ if environ is None else environ
+    location = {}
+    for name in LOCATION_NAMES:
+        value = env.get(name)
+        if value is not None:
+            location[name] = value
+    _CAPTURED = {"location": location, "env": None}
+
+
+def capture_process_env(environ: Mapping[str, str] | None = None, *, force: bool = False) -> None:
+    """After the hub's load: the values the process environment itself supplied (no ``.env``
+    layer, nothing placed later by the Integrations panel), what a pinned ``${NAME}`` may
+    expand from. *environ* (tests) is taken whole."""
+    if _CAPTURED is None:
+        if not force:
+            return
+        capture(force=True)
+    if environ is not None:
+        _CAPTURED["env"] = dict(environ)
+        return
+    from . import env_provenance as ep
+
+    table = ep.provenance()
+    _CAPTURED["env"] = {key: value for key, value in os.environ.items()
+                        if table.get(key, {}).get("layer") == ep.PROCESS}
+
+
+def reset_capture() -> None:
+    """Forget the captured environment (tests)."""
+    global _CAPTURED
+    _CAPTURED = None
+
+
+def _source_env(environ: Mapping[str, str] | None) -> Mapping[str, str]:
+    """The environment the managed layer is located from: *environ* when given, else what
+    the hub's load captured, else (no load in this process, as in the CLI) ``os.environ``."""
+    if environ is not None:
+        return environ
+    if _CAPTURED is not None:
+        return _CAPTURED["location"]
+    return os.environ
+
+
+_WARNED: set[str] = set()
+
+
+def _warn_once(message: str) -> None:
+    if message not in _WARNED:
+        _WARNED.add(message)
+        logger.warning("%s", message)
+
+
+def _windows_admin_owned(path: Path) -> bool:
+    """True when *path* is owned by Administrators or SYSTEM (pywin32), False when it is
+    not or when that cannot be established."""
+    try:
+        import win32security  # type: ignore[import-not-found]
+
+        sd = win32security.GetFileSecurity(str(path), win32security.OWNER_SECURITY_INFORMATION)
+        owner = win32security.ConvertSidToStringSid(sd.GetSecurityDescriptorOwner())
+    except Exception:  # noqa: BLE001 — unknown owner: not trusted
+        return False
+    return owner in ("S-1-5-32-544", "S-1-5-18")
+
+
 def managed_dir(environ: Mapping[str, str] | None = None) -> tuple[Path | None, bool]:
     """``(directory, named explicitly)``. An explicit ``NERVA_MANAGED_DIR`` is returned
     whether or not it exists (a missing one fails closed in :func:`scope`); the system
-    location only when it is a directory, and never under pytest."""
+    location only when it is a directory, and never under pytest. On Windows the default
+    ``%PROGRAMDATA%\\Nerva`` (``PROGRAMDATA`` from the process environment) counts only
+    when Administrators or SYSTEM own it: any local user may create that folder, so one
+    they own is ignored with a warning (name the folder with ``NERVA_MANAGED_DIR``)."""
     from .env_config import resolve_spellings
 
-    env = os.environ if environ is None else environ
+    env = _source_env(environ)
     raw = (resolve_spellings(env, DIR_ENV)[0] or "").strip()
     if raw:
         return Path(raw).expanduser(), True
@@ -133,9 +227,32 @@ def managed_dir(environ: Mapping[str, str] | None = None) -> tuple[Path | None, 
         return None, False
     default = _system_default(env)
     try:
-        return (default, False) if default.is_dir() else (None, False)
+        present = default.is_dir()
     except OSError:
         return default, False          # there, but not even stat-able: read it and fail closed
+    if present and os.name == "nt" and not _windows_admin_owned(default):
+        _warn_once(f"managed configuration: {default} is not owned by Administrators or SYSTEM and is "
+                   "ignored; set NERVA_MANAGED_DIR to a folder only administrators can write")
+        return None, False
+    return (default, False) if present else (None, False)
+
+
+def _ownership_problem(path: Path) -> str | None:
+    """POSIX: a managed folder or file the owner could rewrite is no pin at all. Refused
+    unless root owns it and neither its group nor others may write it."""
+    if os.name == "nt":
+        return None
+    try:
+        st = path.stat()
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        return f"{path}: {type(exc).__name__}: {exc.strerror or exc}"
+    if st.st_uid != 0:
+        return f"{path}: not owned by root (uid {st.st_uid}); an administrator's pins must be root-owned"
+    if st.st_mode & 0o022:
+        return f"{path}: writable by its group or by others (mode {st.st_mode & 0o777:o})"
+    return None
 
 
 def _profile(environ: Mapping[str, str]) -> str | None:
@@ -277,7 +394,7 @@ def _env_lock(environ: Mapping[str, str]) -> tuple[str | None, str | None]:
 
 def scope(environ: Mapping[str, str] | None = None) -> Scope:
     """The managed layer for *environ* (default: this process), read now."""
-    env = os.environ if environ is None else environ
+    env = _source_env(environ)
     directory, explicit = managed_dir(env)
     if directory is None:
         lock, lock_source = _env_lock(env)
@@ -292,6 +409,10 @@ def scope(environ: Mapping[str, str] | None = None) -> Scope:
         problems.append(f"{directory}: {exc}")
     if not present and not problems:
         problems.append(f"{directory}: named by NERVA_MANAGED_DIR but not a directory")
+    if present:
+        owned = _ownership_problem(directory)
+        if owned:
+            problems.append(owned)
     places = [("shared", directory)]
     if profile:
         places.append((f"profile {profile}", directory / PROFILES_DIR / profile))
@@ -304,6 +425,10 @@ def scope(environ: Mapping[str, str] | None = None) -> Scope:
         for name, parse in ((CONFIG_FILE, _parse_config), (ENV_FILE, _parse_env), (MARKER_FILE, _parse_marker)):
             path = folder / name
             state, parsed, error = _read(path, parse) if present else ("absent", None, None)
+            if state == "read" and not error:
+                error = _ownership_problem(path)
+                if error:
+                    state = "untrusted"
             files.append({"path": str(path), "kind": name, "scope": where, "state": state,
                           **({"error": error} if error else {})})
             if error:
@@ -324,24 +449,66 @@ def scope(environ: Mapping[str, str] | None = None) -> Scope:
                 lock, lock_source = parsed, str(path)
     if lock is None:
         lock, lock_source = _env_lock(env)
+    problems.extend(_schema_problems(settings, setting_sources, pinned_env))
     return Scope(directory=directory, explicit=explicit, profile=profile, files=tuple(files),
                  settings=settings, setting_sources=setting_sources, env=pinned_env, env_sources=env_sources,
                  lock=lock, lock_source=lock_source, problems=tuple(problems))
 
 
+_SCHEMA_MEMO: dict[str, list[str]] = {}
+
+
+def _schema_problems(settings: dict, sources: dict, pinned_env: dict) -> list[str]:
+    """A pin its declaration refuses (or a name no setting declares) is a problem, not a
+    silent fallback to the owner's value: writes are refused and the hub does not start."""
+    if not settings:
+        return []
+    try:
+        memo_key = json.dumps(settings, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        memo_key = repr(settings)
+    hit = _SCHEMA_MEMO.get(memo_key)
+    if hit is not None:
+        return list(hit)
+    from . import settings_db
+
+    base = dict(_CAPTURED["env"] if _CAPTURED is not None and _CAPTURED["env"] is not None else os.environ)
+    base.update(pinned_env)
+    out: list[str] = []
+    for category, values in settings.items():
+        for key, value in values.items():
+            source = sources.get((category, key), "")
+            spec = settings_db._SPEC.get((category, key))
+            if spec is None:
+                out.append(f"{source}: {category}.{key} is not a declared setting")
+                continue
+            whole = _merge(copy.deepcopy(spec.get("value")), expand(value, base))
+            errors = settings_db.validate_category(category, {key: whole}, references=False)
+            if errors:
+                out.append(f"{source}: {category}.{key} is refused by its declaration: {'; '.join(errors)}")
+    _SCHEMA_MEMO.clear()
+    _SCHEMA_MEMO[memo_key] = out
+    return list(out)
+
+
 # ── reading a pinned value ───────────────────────────────────────────────────
 
 def process_environ() -> dict[str, str]:
-    """What a managed ``${NAME}`` may expand to: the process environment without the
-    values a ``.env`` file supplied (env_provenance's record of this process's load),
-    then the managed ``.env`` on top."""
-    from . import env_provenance as ep
+    """What a managed ``${NAME}`` may expand to: the process environment the hub's load
+    captured before any ``.env`` file was read (``capture``), so neither a ``.env`` value
+    nor one placed in ``os.environ`` later (the Integrations panel's keys) can supply it;
+    then the managed ``.env`` on top. With no load in this process: ``os.environ`` without
+    the ``.env`` layers env_provenance recorded."""
+    if _CAPTURED is not None and _CAPTURED["env"] is not None:
+        env = dict(_CAPTURED["env"])
+    else:
+        from . import env_provenance as ep
 
-    env = dict(os.environ)
-    if ep.files():                                   # a load ran in this process
-        for key, row in ep.provenance().items():
-            if row["layer"] in (ep.REPO_ENV, ep.USER_ENV):
-                env.pop(key, None)
+        env = dict(os.environ)
+        if ep.files():                               # a load ran in this process
+            for key, row in ep.provenance().items():
+                if row["layer"] in (ep.REPO_ENV, ep.USER_ENV):
+                    env.pop(key, None)
     env.update(scope().env)
     return env
 
@@ -599,3 +766,40 @@ __all__ = [
     "managed_dir", "overlay", "pinned_setting_names", "process_environ", "same", "scope", "setting_pin",
     "split_setting_write", "strip_settings",
 ]
+
+
+def audit_refusal(exc: ManagedRefused, where: str) -> bool:
+    """Write the ``settings_managed_refused`` audit row for a refusal (names and the
+    managed file, never a value). True when written."""
+    try:
+        import time
+
+        from .app_state import get_orch
+        from .security.types import SecurityEvent, SecurityEventType
+
+        orch = get_orch()
+        audit = getattr(orch, "audit", None) if orch else None
+        if audit is None:
+            return False
+        audit.log(SecurityEvent(event_type=SecurityEventType.SETTINGS_CHANGE, timestamp=time.time(),
+                                content_preview=f"{where}: write refused: {exc.names} {exc}"[:500],
+                                action_taken="settings_managed_refused"))
+        return True
+    except Exception:  # noqa: BLE001 — the refusal stands either way
+        logger.warning("managed configuration: a refusal could not be audited")
+        return False
+
+
+#: The model choice the provider-selection and custom-endpoint routes move.
+SELECTION_SETTINGS = (("llm", "compatible_provider"), ("llm", "compatible_model"))
+
+
+def check_llm_write(*, selection: bool) -> None:
+    """For the routes that change the model setup outside the settings store (custom
+    endpoints, signed provider selection, provider credentials): refused in managed mode
+    or while the managed configuration cannot be read; a route that moves the model
+    choice (*selection*) also when the administrator pinned it."""
+    current = check_writable()
+    if selection:
+        for category, key in SELECTION_SETTINGS:
+            check_setting_write(category, key, ANY, current=current)

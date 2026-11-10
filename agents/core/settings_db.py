@@ -921,6 +921,12 @@ def _mark_managed(category: str, row: dict, current) -> dict:
     if pin is None:
         return row
     value, errors = _pinned_value(category, row["key"], row["value"], pin)
+    settings = getattr(current, "settings", None) or {}
+    raw = settings.get(category, {}).get(row["key"])
+    if raw is not None and _managed()._has_reference(raw) and not errors:
+        # a view shows a pinned ${NAME} as written, never its value from the administrator's
+        # environment (as a stored ${env:...} is shown, H255); readers get the expansion
+        value = _managed().overlay(row["value"], raw)
     row["value"] = value
     row["managed"] = {"source": pin[1],
                       "leaves": [".".join(str(p) for p in path) for path in _managed().leaves(pin[0]) if path]}
@@ -1518,9 +1524,9 @@ def interpolated(groups: dict[str, list[dict]]) -> dict[str, list[dict]]:
     load this way; a view never does."""
     def used(cat: str, row: dict) -> dict:
         value = _interpolated(cat, str(row.get("key", "")), row.get("value"))
-        if "managed" in row and value is not row.get("value"):
-            # G1 — expanded for use, then the pin again: a reference the owner's .env
-            # supplies never reaches a pinned leaf
+        if "managed" in row:
+            # G1 — for use, the pin again (expanded from the process environment only): a
+            # reference the owner's .env supplies never reaches a pinned leaf
             value = _pinned(cat, str(row.get("key", "")), value)
         return row if value is row.get("value") else {**row, "value": value}
 

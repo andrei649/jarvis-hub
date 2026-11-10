@@ -252,8 +252,9 @@
   Each refusal is in the audit log.
 - A `.managed` file in that folder turns on managed mode: every change is refused and the
   message says how to change the configuration instead (for example a NixOS rebuild).
-- If a managed file is broken or unreadable, Nerva refuses every change and will not start,
-  rather than quietly drop the pins. How to set it up: "Settings an administrator pins" in
+- If a managed file is broken or unreadable, pins a value its setting does not accept, or could
+  be rewritten by someone other than root (on Windows: other than Administrators), Nerva refuses
+  every change and will not start, rather than quietly drop the pins. How to set it up: "Settings an administrator pins" in
   `docs/INSTALL.md`.
 
 **Three status pages now need your user token (#1347)**

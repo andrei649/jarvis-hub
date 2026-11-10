@@ -92,3 +92,11 @@ def test_managed_mode_refuses_every_panel_write(hub, pinned):  # noqa: F811
     _write(pinned, ".managed", "sudo nixos-rebuild switch\n")
     _refused(hub.client.put(f"{BASE}/search.exa/key", json={"value": KEY}, headers=ADMIN), pinned, ".managed")
     assert "sudo nixos-rebuild switch" in hub.client.delete(f"{BASE}/search-choice", headers=ADMIN).json()["detail"]
+
+
+def test_use_with_exactly_the_pinned_values_succeeds(hub, pinned):  # noqa: F811
+    _write(pinned, "config.yaml", "llm:\n  compatible_provider: deepseek\n  compatible_model: deepseek-v4-pro\n")
+    hub.client.put(f"{BASE}/model.deepseek/key", json={"value": MODEL_KEY}, headers=ADMIN)
+    response = hub.client.post(f"{BASE}/model.deepseek/use", headers=ADMIN, json={
+        "model": "deepseek-v4-pro", "acknowledge_training": True, "confirm_expensive": True})
+    assert response.status_code == 200, response.text

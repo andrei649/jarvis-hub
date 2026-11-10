@@ -1754,6 +1754,7 @@ def _write_setting(settings: Any, name: str, category: str, key: str, value: Any
     from agents.core.llm import selection_guards as guards
     from agents.core.llm.provider_selection import SelectionConflict
     from agents.core.llm.providers.selection_gates import SelectionBusy, SelectionUnavailable
+    from agents.core.managed_scope import ManagedRefused
 
     try:
         pair_state = (settings.compatible_pair_state()
@@ -1793,7 +1794,7 @@ def _write_setting(settings: Any, name: str, category: str, key: str, value: Any
             settings.put_category(category, {key: value})
     except (SelectionConflict, SelectionBusy, SelectionUnavailable):
         return [f'{name}: compatible provider/model changed or busy — not changed, retry']
-    except PermissionError as exc:          # G1: the managed layer moved under this write
+    except ManagedRefused as exc:           # G1: the managed layer moved under this write
         return [f"{name}: {exc}"]
     except sqlite3.OperationalError as exc:
         return [f"{name}: {_busy(exc)}"]
