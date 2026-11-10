@@ -171,6 +171,23 @@
 - Not tested yet: the new version has not been installed and run end to end, because that needs
   a large download. The checks above were run against its source code.
 
+**Settings an administrator pins stay pinned**
+- Whoever administers the box can now pin single settings and environment values in a folder
+  you cannot write (`/etc/nerva`, or the folder `NERVA_MANAGED_DIR` names): `config.yaml` for
+  settings, `.env` for environment values. Everything they did not pin stays yours to change.
+- A pinned value is what Nerva uses, over your own value, the product posture and your `.env`
+  files. Settings shows it with "🔒 managed by your administrator" and no edit box,
+  `nerva config list` marks it, and `nerva config managed` lists what is pinned and from which
+  file (never an environment value).
+- Changing a pinned value is refused and says which file pins it: the Settings save, the
+  approval-mode switch, `nerva config set`, `unset` and `edit`. Import, reset and undo skip the
+  pinned settings and list them. Each refusal is in the audit log.
+- A `.managed` file in that folder turns on managed mode: every change is refused and the
+  message says how to change the configuration instead (for example a NixOS rebuild).
+- If a managed file is broken or unreadable, Nerva refuses every change and will not start,
+  rather than quietly drop the pins. How to set it up: "Settings an administrator pins" in
+  `docs/INSTALL.md`.
+
 **Three status pages now need your user token (#1347)**
 - An independent security review found that the Oracle status, learning stats and local-docs
   status pages answered anyone on the network with personal details. They now ask for the same

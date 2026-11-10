@@ -2907,6 +2907,22 @@
   (running), a UX pass (one Integrations panel, keys in the HUD, one consent card), then the waves in
   `docs/hermes/missing-rows-plan-2026-11-10.md`.
 
+  **G1 — operator-pinned (managed) configuration (2026-11-10, wave 1, H249 = H267 = H629):** an
+  administrator pins settings (`<dir>/config.yaml`, leaf by leaf) and environment values (`<dir>/.env`,
+  applied last with override and authoritative inside the process through `env_config`) in
+  `NERVA_MANAGED_DIR` (process environment only) or `/etc/nerva`, with `profiles/<name>/` on top for a
+  profile; `.managed` / `NERVA_MANAGED=<manager>` is managed mode (every write refused, naming the command
+  to run instead). New `agents/core/managed_scope.py`; every settings reader applies the pin (over the
+  product posture); every writer refuses it naming the file (settings PUT 409 + audit, `put_category`,
+  import/reset/undo strip and report `managed`, `nerva config set|unset|edit|migrate` exit 1, the
+  approval-mode writer, the skill-switch, appearance and training-consent writers); `check_env_write` is
+  the environment writers' gate. Fail closed: an unreadable managed file refuses every write and stops the
+  hub's load. HUD Settings shows pinned rows read-only; `nerva config managed` lists the pins. Ledger:
+  H249, H267, H629 → equivalent (151/697); `tests/test_g1_managed_scope.py` (35) joins the config, env and
+  user-journeys suites. Follow-ups: the Integrations panel's key writer (other branch) must call
+  `managed_scope.check_env_write` before it merges; chat `/approvals` (commands.py) answers a pinned mode
+  with its generic "did not become effective" line; environment pins take effect at the next hub start.
+
 ## Darwin feature absorption — 2026-09-09
 
 - [x] **DW-1 — truthful read-only memory neighborhood.** Live Memory mode uses the

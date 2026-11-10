@@ -79,8 +79,15 @@ def apply_to_runtime_settings(flat: dict[str, Any]) -> dict[str, Any]:
     effective = dict(flat)
     name = selected_name(effective)
     effective["product.posture"] = name
+    try:                    # G1 — a setting an administrator pinned is applied last, over the posture
+        from .settings_db import managed_setting_names
+
+        pinned = frozenset(managed_setting_names())
+    except Exception:  # noqa: BLE001
+        pinned = frozenset()
     for key, value in POSTURES[name].get("applies", {}).items():
-        effective[key] = value
+        if key not in pinned:
+            effective[key] = value
     return effective
 
 

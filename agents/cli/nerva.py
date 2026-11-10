@@ -281,6 +281,10 @@ def build_parser() -> argparse.ArgumentParser:
         "migrate", help="write this build's new defaults and retired-model replacements into an existing store")
     config_migrate.add_argument("--dry-run", action="store_true", help="print what would change; change nothing")
     config_migrate.add_argument("--json", action="store_true")
+    # G1 (H249/H267/H629) — what an administrator pinned, and whether writes are refused.
+    config_managed = config_verbs.add_parser(
+        "managed", help="the settings and environment values your administrator pinned (names, never a value)")
+    config_managed.add_argument("--json", action="store_true")
 
     approvals = verbs.add_parser("approvals", help="the approval queue (admin)")
     approvals_verbs = approvals.add_subparsers(dest="action", required=True, metavar="action")
@@ -1613,7 +1617,8 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
                 source = f", {row['source']}" if row.get("source") else ""
                 overlay = (f"; in effect: {json.dumps(row['in_effect'])} by {row['overlay']}"
                            if row.get("overlay") else "")
-                ctx.say(f"{cat}.{row['key']} = {shown}  ({row.get('kind', '?')}{source}{overlay})")
+                managed = _managed_note(row)
+                ctx.say(f"{cat}.{row['key']} = {shown}  ({row.get('kind', '?')}{source}{overlay}{managed})")
         return EXIT_OK
     if ns.action == "get":
         from agents.core import settings_path
@@ -1650,6 +1655,13 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.err.write(f"{ns.name} is changed only in {settings.ROUTE_ONLY[(category, key)]}{hint}\n")
             return EXIT_FAILED
         kind = str(spec.get("kind", "text"))
+        if not path:
+            # G1 — Hermes's `config set|unset` on a pinned key: refused whatever the value
+            # (a path below a json setting is judged by the pinned leaves it would change)
+            refusal = _managed_refusal(ns.name, category, key)
+            if refusal:
+                ctx.err.write(refusal + "\n")
+                return EXIT_FAILED
         try:
             if path:
                 # H688 — inside a json value: the rest of the name is a path, the new whole
@@ -1694,6 +1706,8 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
         return _config_env_path(ns, ctx)
     if ns.action == "migrate":
         return _config_migrate(ns, ctx, settings)
+    if ns.action == "managed":
+        return _config_managed(ns, ctx)
     if ns.action == "check":
         problems: list[str] = []
         for cat, rows in settings.get_all().items():
@@ -1724,6 +1738,10 @@ def _write_setting(settings: Any, name: str, category: str, key: str, value: Any
     passed its schema: the retention approval (H262), the selection guards (H378), the
     write, and the approval lowering a narrowing implies. Returns the lines that explain
     a refusal (nothing written), or ``[]`` once the value is stored."""
+    # G1 — a value an administrator pinned is refused before any guard or approval sees it.
+    refusal = _managed_refusal(name, category, key, value)
+    if refusal:
+        return [refusal]
     # H262 — a value that makes retention delete deeper than a human approved waits for
     # the approval queue, which is the hub's: refused here (the approval is read, read-only).
     from agents.core import retention
@@ -1775,6 +1793,8 @@ def _write_setting(settings: Any, name: str, category: str, key: str, value: Any
             settings.put_category(category, {key: value})
     except (SelectionConflict, SelectionBusy, SelectionUnavailable):
         return [f'{name}: compatible provider/model changed or busy — not changed, retry']
+    except PermissionError as exc:          # G1: the managed layer moved under this write
+        return [f"{name}: {exc}"]
     except sqlite3.OperationalError as exc:
         return [f"{name}: {_busy(exc)}"]
     if approval_key:
@@ -1787,6 +1807,70 @@ def _write_setting(settings: Any, name: str, category: str, key: str, value: Any
         # so deepening again later needs a new approval (never raised here).
         retention.lower_approval_offline()
     return []
+
+
+def _managed_note(row: Mapping[str, Any]) -> str:
+    """G1 — ``; managed by your administrator (file)`` for a pinned row, else ``""``."""
+    managed = row.get("managed")
+    if not isinstance(managed, Mapping):
+        return ""
+    leaves = managed.get("leaves") or []
+    where = f" at {', '.join(str(leaf) for leaf in leaves)}" if leaves else ""
+    invalid = "; the pinned value is invalid and not applied" if managed.get("invalid") else ""
+    return f"; managed by your administrator{where} ({managed.get('source')}){invalid}"
+
+
+def _managed_refusal(name: str, category: str, key: str, value: Any = None) -> str:
+    """G1 — the line that refuses a write the managed layer forbids (audited), or ``""``.
+    Without *value* the write is refused whenever the key is pinned (``config unset``)."""
+    from agents.core import managed_scope
+
+    try:
+        managed_scope.check_setting_write(category, key, managed_scope.ANY if value is None else value)
+    except managed_scope.ManagedRefused as exc:
+        from agents.core.autonomy.mode import SimpleAudit, _audit
+
+        _audit(SimpleAudit(_audit_log()), f"settings.{category}.{key} write refused: {exc} (via cli)",
+               "settings_managed_refused")
+        return f"{name}: {exc}"
+    return ""
+
+
+def _config_managed(ns: argparse.Namespace, ctx: Context) -> int:
+    """``nerva config managed`` — the administrator's managed layer: where it is read
+    from, each file's state, the pinned settings and environment names (never a value),
+    the managed-mode marker and whether writes are refused. Exit 1 when a managed file
+    cannot be read (every write is refused until it is fixed)."""
+    from agents.core import managed_scope
+
+    info = managed_scope.describe()        # the environment the settings writers judge by
+    if ns.json:
+        ctx.dump(info)
+        return EXIT_FAILED if info["problems"] else EXIT_OK
+    if info["directory"] is None:
+        ctx.say("no managed configuration: nothing is pinned by an administrator "
+                "(NERVA_MANAGED_DIR is not set and /etc/nerva does not exist)")
+        return EXIT_OK
+    how = "the managed-directory variable" if info["explicit"] else "the system location"
+    ctx.say(f"managed directory: {info['directory']}  ({how}"
+            + (f", profile {info['profile']}" if info["profile"] else "") + ")")
+    for row in info["files"]:
+        if row["state"] == "absent":
+            continue
+        error = f" — {row['error']}" if row.get("error") else ""
+        ctx.say(f"  {row['scope']:<10} {row['path']}  {row['state']}{error}")
+    for row in info["settings"]:
+        leaves = f" (leaves: {', '.join(row['leaves'])})" if row["leaves"] else ""
+        ctx.say(f"  setting  {row['name']}{leaves}  ← {row['source']}")
+    for row in info["env"]:
+        ctx.say(f"  env      {row['name']}  ← {row['source']}")
+    if info["lock"]:
+        ctx.say(f"managed mode: every configuration write is refused — {info['lock']['instruction']}"
+                f" ({info['lock']['source']})")
+    for problem in info["problems"]:
+        ctx.err.write(f"cannot read the managed configuration: {problem}\n")
+    ctx.say(f"writes: {info['writes']}")
+    return EXIT_FAILED if info["problems"] else EXIT_OK
 
 
 def _busy(exc: sqlite3.Error) -> str:
@@ -1866,6 +1950,8 @@ def _edit_document(settings: Any) -> tuple[str, dict[str, Mapping[str, Any]]]:
                 lines.append(f"# {name}: nothing declares it — read it with `nerva config get {name}`")
             elif (cat, row["key"]) in settings.ROUTE_ONLY:
                 lines.append(f"# {name}: changed only in {settings.ROUTE_ONLY[(cat, row['key'])]}")
+            elif row.get("managed"):          # G1
+                lines.append(f"# {name}: {_managed_note(row).lstrip('; ')} — it cannot be changed here")
             elif _is_secret(row):
                 lines.append(f"# {name}: a secret — change it with `nerva config set {name} VALUE`")
             else:
@@ -2044,6 +2130,14 @@ def _config_env_path(ns: argparse.Namespace, ctx: Context) -> int:
                   "read": not profile and home_env is not None,
                   "note": shared_note or (None if home_env is not None else
                                           "no JARVIS_USER_HOME; the packaged app uses ~/Documents/Nerva/.env")})
+    # G1 — the administrator's managed .env, applied last, over every file above
+    from agents.core import managed_scope
+
+    managed_root = managed_scope.managed_dir(environ)[0]
+    if managed_root is not None:
+        files.append({"layer": ep.MANAGED, "label": "managed .env", "path": str(managed_root / managed_scope.ENV_FILE),
+                      "present": (managed_root / managed_scope.ENV_FILE).exists(), "read": True,
+                      "note": "pinned by your administrator, applied last over every other layer"})
     example = app_root() / ".env.example"
     store = root / "security" / "secrets.enc"
     disabled = bool(dotenv_disabled(environ))
@@ -2086,8 +2180,14 @@ def _config_migrate(ns: argparse.Namespace, ctx: Context, settings: Any) -> int:
     listed one per line; ``--dry-run`` lists it and writes nothing. A boot does the same
     seeding silently; this is the same work read first, plus the retired-model rewrite on
     every model setting (agents/core/settings_migrate.py)."""
-    from agents.core import settings_migrate
+    from agents.core import managed_scope, settings_migrate
 
+    if not ns.dry_run:
+        try:            # G1 — managed mode, or an unreadable managed file: nothing is written
+            managed_scope.check_writable()
+        except managed_scope.ManagedRefused as exc:
+            ctx.err.write(f"config migrate: {exc}\n")
+            return EXIT_FAILED
     store = Path(settings.DB_PATH)
     try:
         return _config_migrate_run(ns, ctx, settings, settings_migrate, store)

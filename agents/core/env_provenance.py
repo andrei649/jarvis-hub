@@ -70,11 +70,14 @@ from .env_config import dotenv_disabled  # python-dotenv's own switch and spelli
 logger = logging.getLogger("nerva.env")
 
 PROCESS, REPO_ENV, USER_ENV, RUNTIME = "process", "repo_env", "user_env", "runtime"
+#: G1 — the administrator's pinned ``.env`` (``managed_scope``), applied last, over all three.
+MANAGED = "managed"
 LABELS = {
     PROCESS: "process environment",
     REPO_ENV: "repo .env",
     USER_ENV: "data-home .env",
     RUNTIME: "set while running",
+    MANAGED: "managed by your administrator",
 }
 
 # The hub loads its .env files before anything else it starts (``load_hub_env``: serve.py
@@ -96,7 +99,10 @@ READ_BEFORE_LOAD = frozenset({
 # What locates the hub's own files. A file cannot move them: the stores opened while the
 # hub was imported would stay under one root and the rest would follow the file, so a .env
 # value is recorded, with the note, and never put in the environment.
-FROM_PROCESS_ONLY = frozenset({"JARVIS_APP_ROOT", "JARVIS_HOME", "JARVIS_MEMORY_DIR", "JARVIS_PROFILE"})
+FROM_PROCESS_ONLY = frozenset({"JARVIS_APP_ROOT", "JARVIS_HOME", "JARVIS_MEMORY_DIR", "JARVIS_PROFILE",
+                               # G1 — where the administrator's pins live: a .env the owner
+                               # edits must never be able to point it somewhere else
+                               "JARVIS_MANAGED_DIR"})
 # A name a file may set that the hub also reads before any file can: the file's value
 # reaches only what runs after the load.
 SPLIT_NOTES = {
@@ -871,9 +877,61 @@ def load_hub_env(*, refuse: bool = True) -> dict[str, dict]:
         else:
             _HUB_LOADED = load_layered_env(None, profile_env, **tolerant)
             _FILES[REPO_ENV] = {"path": None, "kind": PROFILE_NOT_READ, "present": False, "read": False}
+        _apply_managed(refuse=refuse)
     elif refuse and _PROBLEMS:
         raise env_alias.ConfigurationRefused(_PROBLEMS[0]["message"], permanent=_PROBLEMS[0]["layer"] == PROCESS)
     return _HUB_LOADED
+
+
+#: The kind of ``problems()`` row a managed file that cannot be read records.
+MANAGED_UNREADABLE = "managed_unreadable"
+
+
+def _apply_managed(*, refuse: bool = True) -> dict[str, str]:
+    """G1 — the administrator's pinned environment (``managed_scope``), applied LAST with
+    override: it beats the process environment and both ``.env`` files, and the layer it
+    replaced is recorded as shadowed. The pins are also installed in ``env_config``, so a
+    later write to ``os.environ`` does not change what the hub's readers see. A name that
+    locates the hub's files (``FROM_PROCESS_ONLY``) is never applied. A managed file that
+    cannot be read stops the load (fail closed: a hub never starts unpinned); a tolerant
+    load records the problem and applies what parsed last. Returns the pins applied."""
+    from . import managed_scope
+    from .env_config import pin_environment
+
+    try:
+        pins = managed_scope.env_pins(strict=True)
+    except managed_scope.ManagedUnreadable as exc:
+        row = {"kind": MANAGED_UNREADABLE, "layer": MANAGED, "names": [], "message": str(exc)}
+        if row not in _PROBLEMS:
+            _PROBLEMS.append(row)
+        if refuse:
+            raise env_alias.ConfigurationRefused(str(exc), permanent=False) from exc
+        pins = managed_scope.env_pins(strict=False)
+    current = managed_scope.scope()
+    applied: dict[str, str] = {}
+    for name, value in pins.items():
+        if name in FROM_PROCESS_ONLY:
+            logger.warning("%s is pinned in the managed .env, but it locates the hub's own files: set it in "
+                           "the process environment (the pin is not applied)", name)
+            continue
+        preferred = env_alias.preferred_name(name)
+        if preferred and preferred != name:
+            os.environ.pop(preferred, None)
+        os.environ.update({name: value})
+        prior = _TABLE.get(name)
+        shadowed = ([prior["layer"], *prior["shadowed"]]
+                    if prior is not None and prior["layer"] != MANAGED else [])
+        _TABLE[name] = {"layer": MANAGED, "shadowed": shadowed}
+        _LOADED[name] = (MANAGED, _digest(value))
+        _NOT_SET.discard(name)
+        applied[name] = value
+    if current.directory is not None:
+        path = current.directory / managed_scope.ENV_FILE
+        present = is_file_or_fifo(path)
+        _FILES[MANAGED] = {"path": str(path), "kind": "file" if present else "absent",
+                           "present": present, "read": present}
+    pin_environment(applied)
+    return applied
 
 
 def hub_value(key: str, environ: Mapping[str, str] | None = None) -> str | None:
@@ -885,6 +943,12 @@ def hub_value(key: str, environ: Mapping[str, str] | None = None) -> str | None:
     the process environment's (review-H273f m3). None when no layer sets it."""
     key = env_alias.canonical(key)                                   # RB-2: either spelling
     env = env_alias.normalized(os.environ if environ is None else environ)
+    if key not in FROM_PROCESS_ONLY:                                 # G1: a pin wins over every layer
+        from . import managed_scope
+
+        pinned = managed_scope.env_pins(env, strict=False).get(key)
+        if pinned is not None:
+            return pinned
     if key in env:
         return env[key]
     try:
@@ -929,6 +993,9 @@ def spelling(key: str, environ: Mapping[str, str] | None = None) -> dict:
 
 def note_for(key: str, layer: str) -> str:
     """Why a row's layer is not the whole story, or ""."""
+    if layer == MANAGED and key in READ_BEFORE_LOAD:
+        return ("the hub reads it before its configuration is loaded: the pinned value reaches what "
+                "reads it later; set it in the process environment as well")
     if layer not in (REPO_ENV, USER_ENV):
         return ""
     if key in FROM_PROCESS_ONLY:
@@ -960,7 +1027,7 @@ def provenance(environ: Mapping[str, str] | None = None) -> dict[str, dict]:
 
 
 __all__ = [
-    "FROM_PROCESS_ONLY", "HUB_PREFIXES", "LABELS", "SECRET_HINTS", "PROCESS_ONLY_NOTE", "PROCESS", "READ_AGAIN_AFTER_LOAD", "READ_BEFORE_LOAD", "REPO_ENV",
+    "FROM_PROCESS_ONLY", "HUB_PREFIXES", "LABELS", "MANAGED", "MANAGED_UNREADABLE", "SECRET_HINTS", "PROCESS_ONLY_NOTE", "PROCESS", "READ_AGAIN_AFTER_LOAD", "READ_BEFORE_LOAD", "REPO_ENV",
     "REPO_ENV_FILE", "RUNTIME", "SPLIT_NOTES", "OPTIONAL_SPLIT_NOTES", "USER_ENV", "after_repo_layer", "derive", "derive_alias", "dotenv_disabled",
     "env_file_keys", "files", "hub_credential", "hub_values", "is_fifo", "is_file_or_fifo", "layer_values", "load_hub_env",
     "judge", "load_layered_env", "masked", "note_for", "problems", "profile_env_file", "provenance", "raw_values",

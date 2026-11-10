@@ -873,6 +873,79 @@ def value_source(category: str, key: str, value, raw=None) -> str:
 _NO_OVERLAY = object()
 
 
+# ── G1 (H249/H267/H629): operator-pinned (managed) settings ──────────────
+# An administrator's ``<managed dir>/config.yaml`` pins settings leaf by leaf
+# (agents/core/managed_scope.py). Every reader here sees the pinned value, applied last
+# (over the stored row and the product posture); every writer refuses to change one
+# (``put_category``) or leaves it out of a bulk write and says so (import, reset, undo).
+
+
+def _managed():
+    from agents.core import managed_scope
+
+    return managed_scope
+
+
+def _pin_for(category: str, key: str, current=None):
+    """``(value a reader sees, source, problems)`` inputs for one setting, or None when
+    nothing pins it. Never raises: a reader must not fail on the managed layer."""
+    try:
+        return _managed().setting_pin(category, key, current)
+    except Exception:  # noqa: BLE001
+        logger.warning("managed settings: could not read the pin for %s.%s", _logsafe(category), _logsafe(key),
+                       exc_info=True)
+        return None
+
+
+def _pinned_value(category: str, key: str, value: Any, pin) -> tuple[Any, list[str]]:
+    """*value* with *pin* applied, and why the pin is not applied (a pinned value its
+    declaration refuses is reported, never handed to the hub)."""
+    merged = _managed().overlay(value, pin[0])
+    errors = validate_category(category, {key: merged}, references=False) if (category, key) in _SPEC else []
+    return (value, errors) if errors else (merged, [])
+
+
+def _pinned(category: str, key: str, value: Any) -> Any:
+    """*value* as a reader sees it: the administrator's pin, if any, applied over it."""
+    pin = _pin_for(category, key)
+    if pin is None:
+        return value
+    return _pinned_value(category, key, value, pin)[0]
+
+
+def _mark_managed(category: str, row: dict, current) -> dict:
+    """A view's row of a pinned setting: the value in effect and ``managed`` (the file
+    that pins it, the pinned leaves below the key, and ``invalid`` when its declaration
+    refuses the pinned value, which is then not applied)."""
+    pin = _pin_for(category, row["key"], current)
+    if pin is None:
+        return row
+    value, errors = _pinned_value(category, row["key"], row["value"], pin)
+    row["value"] = value
+    row["managed"] = {"source": pin[1],
+                      "leaves": [".".join(str(p) for p in path) for path in _managed().leaves(pin[0]) if path]}
+    if errors:
+        row["managed"]["invalid"] = errors
+    return row
+
+
+def _managed_scope_now():
+    try:
+        return _managed().scope()
+    except Exception:  # noqa: BLE001
+        logger.warning("managed settings: the managed scope could not be read", exc_info=True)
+        return None
+
+
+def managed_setting_names(cat: str | None = None) -> list[str]:
+    """The pinned settings, as ``category.key`` (every category when *cat* is None)."""
+    current = _managed_scope_now()
+    if current is None:
+        return []
+    return [name for name in _managed().pinned_setting_names(current)
+            if cat is None or name.split(".", 1)[0] == cat]
+
+
 def _posture_overlay(stored) -> tuple[str, dict]:
     """The selected product posture and the settings it forces while selected (the
     runtime applies them over the stored rows: product_posture.apply_to_runtime_settings).
@@ -901,7 +974,7 @@ def _mark_overlay(category: str, row: dict, posture: tuple[str, dict]) -> dict:
         row["written_by"] = ROUTE_ONLY[(category, row["key"])]
     name, applies = posture
     forced = applies.get(f"{category}.{row['key']}", _NO_OVERLAY)
-    if forced is not _NO_OVERLAY:
+    if forced is not _NO_OVERLAY and "managed" not in row:      # G1: a pin beats the posture
         row["in_effect"] = forced
         row["overlay"] = f"product.posture:{name}"
     return row
@@ -928,20 +1001,21 @@ def get_all() -> dict[str, list[dict]]:
     groups: dict[str, list[dict]] = {}
     posture = _posture_overlay(next((r["value"] for r in rows
                                      if r["category"] == "product" and r["key"] == "posture"), None))
+    current = _managed_scope_now()
     for r in rows:
         cat = r["category"]
         if cat not in groups:
             groups[cat] = []
         raw = json.loads(r["value"])
         value = _decrypt_if_secret(raw)
-        groups[cat].append(_mark_overlay(cat, _with_env_refs(cat, {
+        groups[cat].append(_mark_overlay(cat, _mark_managed(cat, _with_env_refs(cat, {
             "key": r["key"],
             "value": value,
             "label": r["label"],
             "kind": r["kind"],
             "opts": json.loads(r["opts"]),
             "source": value_source(cat, r["key"], value, raw),
-        }), posture))
+        }), current), posture))
     return groups
 
 def get_value(category: str, key: str, default=None):
@@ -958,15 +1032,16 @@ def get_value(category: str, key: str, default=None):
         finally:
             conn.close()
         if row is None:
-            return default
+            return _pinned(category, key, default)
         raw = json.loads(row["value"])
         _last_good_values.setdefault(_db_path_key(), {})[(category, key)] = raw
         # H255 — a value is read for use: its ${env:…} references expanded, the row unchanged.
-        return _interpolated(category, key, _decrypt_if_secret(raw))
+        # G1 — an administrator's pin applied last.
+        return _pinned(category, key, _interpolated(category, key, _decrypt_if_secret(raw)))
     except SettingsUnreadable as exc:
-        return _recover_value(category, key, exc)
+        return _pinned(category, key, _recover_value(category, key, exc))
     except (OSError, sqlite3.Error, ValueError, TypeError) as exc:
-        return _recover_value(category, key, exc)
+        return _pinned(category, key, _recover_value(category, key, exc))
 
 
 def read_setting(category: str, key: str) -> tuple[bool, Any]:
@@ -987,13 +1062,15 @@ def read_setting(category: str, key: str) -> tuple[bool, Any]:
         report_unreadable(DB_PATH, exc)
         raise SettingsUnreadable(f"{type(exc).__name__}: {exc}") from exc
     if row is None:
-        return False, None
+        pin = _pin_for(category, key)                    # G1: a pinned setting is found
+        return (False, None) if pin is None else (True, _pinned(category, key, None))
     try:
         value = _decrypt_if_secret(json.loads(row["value"]))
     except Exception as exc:
         report_unreadable(DB_PATH, exc)
         raise SettingsUnreadable(f"{type(exc).__name__}: {exc}") from exc
-    return True, _interpolated(category, key, value)   # H255: read for use, references expanded
+    # H255: read for use, references expanded; G1: an administrator's pin applied last
+    return True, _pinned(category, key, _interpolated(category, key, value))
 
 
 def read_job_tool_policy() -> dict[str, Any]:
@@ -1016,6 +1093,9 @@ def read_job_tool_policy() -> dict[str, Any]:
             values = dict(defaults)
             for _category, key, raw in rows:
                 values[key] = json.loads(raw)
+            for category, key in (("llm", "platform_toolsets"), ("agents", "disabled_toolsets"),
+                                  ("autonomy", "allow_agent_scheduling")):
+                values[key] = _pinned(category, key, values[key])       # G1
             from .job_toolsets import validate_policy_setting
 
             validate_policy_setting('platform_toolsets', values['platform_toolsets'])
@@ -1046,10 +1126,14 @@ def read_telegram_owner_binding() -> dict[str, Any]:
             ).fetchall()
         finally:
             conn.close()
-        return {f"autonomy.{key}": json.loads(value) for key, value in rows}
+        binding = {f"autonomy.{key}": json.loads(value) for key, value in rows}
     except Exception as exc:
         report_unreadable(DB_PATH, exc)
         raise SettingsUnreadable(f"{type(exc).__name__}: {exc}") from exc
+    for key in ("owner_chat_id", "owner_user_ids"):                       # G1
+        if _pin_for("autonomy", key) is not None:
+            binding[f"autonomy.{key}"] = _pinned("autonomy", key, binding.get(f"autonomy.{key}"))
+    return binding
 
 
 _change_listeners: list = []
@@ -1089,17 +1173,18 @@ def get_category(cat: str) -> list[dict]:
     conn.close()
     out = []
     posture = _posture_overlay(stored["value"] if stored is not None else None)
+    current = _managed_scope_now()
     for r in rows:
         raw = json.loads(r["value"])
         value = _decrypt_if_secret(raw)
-        out.append(_mark_overlay(cat, _with_env_refs(cat, {
+        out.append(_mark_overlay(cat, _mark_managed(cat, _with_env_refs(cat, {
             "key": r["key"],
             "value": value,
             "label": r["label"],
             "kind": r["kind"],
             "opts": json.loads(r["opts"]),
             "source": value_source(cat, r["key"], value, raw),
-        }), posture))
+        }), current), posture))
     return out
 
 
@@ -1433,6 +1518,10 @@ def interpolated(groups: dict[str, list[dict]]) -> dict[str, list[dict]]:
     load this way; a view never does."""
     def used(cat: str, row: dict) -> dict:
         value = _interpolated(cat, str(row.get("key", "")), row.get("value"))
+        if "managed" in row and value is not row.get("value"):
+            # G1 — expanded for use, then the pin again: a reference the owner's .env
+            # supplies never reaches a pinned leaf
+            value = _pinned(cat, str(row.get("key", "")), value)
         return row if value is row.get("value") else {**row, "value": value}
 
     return {cat: [used(cat, row) for row in rows] for cat, rows in groups.items()}
@@ -1622,8 +1711,16 @@ def compatible_pair_state() -> tuple[int, str, str]:
 
 def put_category(cat: str, data: dict[str, Any], *,
                  expected_pair_revision: int | None = None) -> tuple[int, list[str]]:
+    """Write *data* into *cat*: ``(how many rows were written, the keys left out)``.
+
+    G1 — a key an administrator pinned is refused (``managed_scope.ManagedRefused``,
+    nothing written) when the value would change a pinned leaf, and left out (named in
+    the second list) when it keeps them; every key is refused while the managed
+    configuration cannot be read or the managed-mode marker is present."""
+    data, managed = _managed().split_setting_write(cat, data)
     with _selection_write_gate({cat: data}):
-        return _put_category_fenced(cat, data, expected_pair_revision=expected_pair_revision)
+        updated, skipped = _put_category_fenced(cat, data, expected_pair_revision=expected_pair_revision)
+    return updated, [*skipped, *managed]
 
 
 def _put_category_fenced(cat: str, data: dict[str, Any], *,
@@ -1869,6 +1966,8 @@ def describe_changes(changes: dict[str, dict[str, Any]]) -> list[dict[str, Any]]
 
 def apply_import(changes: dict[str, dict[str, Any]], *,
                  expected_pair_revision: int | None = None) -> int:
+    # G1 — a bulk write leaves every pinned setting out (``strip_managed`` names them first)
+    changes, _managed_left = _managed().strip_settings(changes)
     with _selection_write_gate(changes):
         return _apply_import_fenced(changes, expected_pair_revision=expected_pair_revision)
 
@@ -1932,11 +2031,13 @@ def _reset_specs(cat: str | None, extra_kept: frozenset[str] = frozenset()) -> l
     delete deeper than approved). None for a category nothing declares."""
     if cat is not None and not any(spec["category"] == cat for spec in DEFAULTS):
         return None
+    pinned = frozenset(managed_setting_names(cat))      # G1: a reset leaves a pin alone
     return [spec for spec in DEFAULTS
             if (cat is None or spec["category"] == cat)
             and not is_secret_setting(spec["category"], spec["key"])
             and (spec["category"], spec["key"]) not in ROUTE_ONLY
-            and f"{spec['category']}.{spec['key']}" not in extra_kept]
+            and f"{spec['category']}.{spec['key']}" not in extra_kept
+            and f"{spec['category']}.{spec['key']}" not in pinned]
 
 
 def plan_reset(cat: str | None, extra_kept: frozenset[str] = frozenset()) -> dict[str, dict[str, Any]] | None:
@@ -1996,6 +2097,7 @@ def _reset_settings_fenced(cat: str | None,
     plan = plan_reset(cat, extra_kept)
     if plan is None:
         return None
+    plan = _managed().strip_settings(plan)[0]       # G1: refuses while the managed layer is unreadable
     if not plan:
         return {}, None
     _require_readable_store()
@@ -2061,6 +2163,10 @@ def _undo_last_reset_fenced(gate: Callable[[dict[str, dict[str, Any]]], list[str
     those names}``, the reset still undoable."""
     _ensure_init()
     _require_readable_store()
+    managed = _managed()
+    current = managed.check_writable()               # G1: fail closed, or managed mode
+    pinned = {name: current.setting_sources.get(tuple(name.split(".", 1)), "")
+              for name in managed.pinned_setting_names(current)}
     conn = get_conn()
     try:
         with conn:
@@ -2077,6 +2183,9 @@ def _undo_last_reset_fenced(gate: Callable[[dict[str, dict[str, Any]]], list[str
                     name = f"{cat}.{key}"
                     if (cat, key) not in _SPEC:
                         skipped.append({"setting": name, "reason": "no longer declared"})
+                    elif name in pinned:
+                        skipped.append({"setting": name,
+                                        "reason": f"{managed.ADMINISTRATOR} ({pinned[name]})"})
                     elif (cat, key) in ROUTE_ONLY:        # only its own route writes it (H613)
                         skipped.append({"setting": name, "reason": f"changed only in {ROUTE_ONLY[(cat, key)]}"})
                     elif not _same_value(stored.get((cat, key)), after.get(cat, {}).get(key)):

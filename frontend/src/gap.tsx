@@ -3030,14 +3030,22 @@ export function SettingsPanel() {
               )}
               {/* H259: a setting that differs from its declared default says so, and ↺ stages the
                   default for the next save (a secret carries no default, so never). */}
-              {!it.written_by && 'default' in it && JSON.stringify(valOf(cat, it)) !== JSON.stringify(it.default) && <>
+              {!it.written_by && !it.managed && 'default' in it && JSON.stringify(valOf(cat, it)) !== JSON.stringify(it.default) && <>
                 <span title={`default: ${shownSetting(it.default)}`} style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--amber)' }}>changed</span>
                 <button className="tool-btn" style={{ padding: '0 5px', fontSize: 9.5 }} title={`default: ${shownSetting(it.default)}`}
                   aria-label={`put ${cat}.${it.key} back to its default`} onClick={() => setVal(cat, it.key, it.default)}>↺</button>
               </>}
               {/* review-H329 F1: a setting only its own route writes (the skill switches) is
                   shown, with where to change it; the hub refuses it in a settings save. */}
-              {it.written_by
+              {/* G1: a setting the administrator pinned shows its value and the file that pins
+                  it, never an edit box; the hub refuses a write that would change it. */}
+              {it.managed
+                ? <span data-testid="managed-setting" style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                    <span style={{ ...mono, fontSize: 11 }}>{shownSetting(it.value)}</span>
+                    <span style={{ display: 'block', fontSize: 9.5, color: 'var(--ink-2)' }}
+                      title={it.managed.source}>🔒 managed by your administrator{it.managed.leaves && it.managed.leaves.length ? ` (${it.managed.leaves.join(', ')})` : ''}</span>
+                  </span>
+                : it.written_by
                 ? <span style={{ marginLeft: 'auto', textAlign: 'right' }}>
                     <span style={{ ...mono, fontSize: 11 }}>{shownSetting(it.value)}</span>
                     <span style={{ display: 'block', fontSize: 9.5, color: 'var(--ink-2)' }}>change it in {it.written_by}</span>

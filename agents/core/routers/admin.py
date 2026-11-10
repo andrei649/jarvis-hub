@@ -177,6 +177,21 @@ async def _audit_settings_change(category: str, keys: list, values: dict | None 
     await _audit_row(preview, "settings_update", category)
 
 
+async def _managed_refusal(exc: Exception, category: str) -> JSONResponse:
+    """G1 — a write the managed layer refused: 409 naming the settings and the file that
+    pins them (or why no write may happen at all), audited by name."""
+    payload = exc.payload()
+    await _audit_row(f"settings.{category} write refused: {payload['managed']} {payload['detail']}",
+                     "settings_managed_refused", category)
+    return nocache_json(payload, status_code=409)
+
+
+def _is_managed_refusal(exc: Exception) -> bool:
+    from agents.core.managed_scope import ManagedRefused
+
+    return isinstance(exc, ManagedRefused)
+
+
 def _selection_write_refusal(exc: Exception) -> JSONResponse:
     from agents.core.llm.provider_selection import SelectionConflict
     from agents.core.llm.providers.selection_gates import SelectionBusy, SelectionUnavailable
@@ -262,6 +277,14 @@ async def admin_put_category(category: str, body: AdminPutBody):
     errors = validate_category(category, body.values) + route_only_problems(category, body.values)
     if errors:
         return JSONResponse({"error": "invalid settings", "details": errors}, status_code=422)
+    # G1 — a setting an administrator pinned is refused before any guard or approval sees
+    # it; one sent with its pinned value is left out and named (``managed``).
+    from agents.core import managed_scope
+
+    try:
+        body.values, managed = await asyncio.to_thread(managed_scope.split_setting_write, category, body.values)
+    except managed_scope.ManagedRefused as exc:
+        return await _managed_refusal(exc, category)
     try:
         pair_state = await _pair_snapshot({category: body.values})
     except Exception as exc:
@@ -297,6 +320,8 @@ async def admin_put_category(category: str, body: AdminPutBody):
             expected_pair_revision=pair_state[0] if pair_state else None)
                             if values else (0, []))
     except Exception as exc:
+        if _is_managed_refusal(exc):
+            return await _managed_refusal(exc, category)
         return _selection_write_refusal(exc)
     changed = [k for k in values if k not in skipped]
     if changed:
@@ -304,8 +329,11 @@ async def admin_put_category(category: str, body: AdminPutBody):
         if retention.retention_part({category: {k: values[k] for k in changed}}):
             await _lower_approval()
     resp = {"updated": updated, "category": category}
+    skipped = [k for k in skipped if k not in managed]
     if skipped:
         resp["skipped"] = skipped
+    if managed:
+        resp["managed"] = managed
     if guarded:
         resp["guards"] = [f.as_dict() for f in guarded]
     if pending is not None:
@@ -426,6 +454,13 @@ async def admin_import_settings(request: Request):
     changes, errors = await asyncio.to_thread(settings_db.plan_import, doc)
     if errors:
         return nocache_json({"error": "invalid settings", "details": errors}, status_code=422)
+    # G1 — a bulk write leaves every pinned setting out and names it (Hermes save_config)
+    from agents.core import managed_scope
+
+    try:
+        changes, managed = await asyncio.to_thread(managed_scope.strip_settings, changes)
+    except managed_scope.ManagedRefused as exc:
+        return await _managed_refusal(exc, "import")
     preview = await asyncio.to_thread(settings_db.describe_changes, changes)
     # H262 — a document that makes retention delete deeper than approved is refused whole.
     gated = (await _retention_gate(changes))[0]
@@ -433,7 +468,7 @@ async def admin_import_settings(request: Request):
         choices = sg.choices_from_changes(changes, settings_db.get_value)
         return nocache_json({"dry_run": True, "count": len(preview), "changes": preview,
                              "guards": [f.as_dict() for f in sg.evaluate(choices)],
-                             "retention_needs_approval": gated})
+                             "retention_needs_approval": gated, "managed": managed})
     if gated:
         return _retention_refusal(gated)
     try:
@@ -450,6 +485,8 @@ async def admin_import_settings(request: Request):
             settings_db.apply_import, changes,
             expected_pair_revision=pair_state[0] if pair_state else None) if changes else 0)
     except Exception as exc:
+        if _is_managed_refusal(exc):
+            return await _managed_refusal(exc, "import")
         return _selection_write_refusal(exc)
     if written:
         await _lower_approval()
@@ -457,7 +494,7 @@ async def admin_import_settings(request: Request):
         shown = " ".join(filter(None, (_audited_values(cat, changes[cat]) for cat in sorted(changes))))
         await _audit_row(f"settings imported: {written} setting(s): {names}" + (f" · {shown}" if shown else ""),
                          "settings_import", "import")
-    return nocache_json({"ok": True, "updated": written, "changes": preview})
+    return nocache_json({"ok": True, "updated": written, "changes": preview, "managed": managed})
 
 
 async def _dry_run_asked(request: Request) -> bool | JSONResponse:
@@ -498,10 +535,13 @@ async def admin_reset_category(category: str, request: Request):
         return nocache_json({"dry_run": True, "category": category,
                              "changes": await asyncio.to_thread(settings_db.describe_changes, plan),
                              "kept": settings_db.reset_kept(category), "retention_kept": sorted(held),
-                             "overridden": settings_db.posture_overridden(category)})
+                             "overridden": settings_db.posture_overridden(category),
+                             "managed": settings_db.managed_setting_names(category)})
     try:
         done = await _drain_settings_write(settings_db.reset_settings, category, held)
     except Exception as exc:
+        if _is_managed_refusal(exc):
+            return await _managed_refusal(exc, category)
         return _selection_write_refusal(exc)
     if done is None:
         return nocache_json({"error": f"unknown category: {safe_reflect(category)}"}, status_code=404)
@@ -511,7 +551,8 @@ async def admin_reset_category(category: str, request: Request):
         await _audit_row(f"settings.{category} reset to defaults: {moved}", "settings_reset", category)
     return nocache_json({"ok": True, "category": category, "reset": moved, "undo": done[1],
                          "kept": settings_db.reset_kept(category), "retention_kept": sorted(held),
-                         "overridden": settings_db.posture_overridden(category)})
+                         "overridden": settings_db.posture_overridden(category),
+                         "managed": settings_db.managed_setting_names(category)})
 
 
 @router.post("/api/admin/settings/reseed", dependencies=[Depends(admin_guard)])
@@ -534,10 +575,13 @@ async def admin_reseed(request: Request):
     if dry_run:
         plan = await asyncio.to_thread(settings_db.plan_reset, None, held)
         return nocache_json({"dry_run": True, "changes": await asyncio.to_thread(settings_db.describe_changes, plan),
-                             "kept": kept, "retention_kept": sorted(held), "overridden": forced})
+                             "kept": kept, "retention_kept": sorted(held), "overridden": forced,
+                             "managed": settings_db.managed_setting_names()})
     try:
         moved, snap = await _drain_settings_write(settings_db.reset_settings, None, held)
     except Exception as exc:
+        if _is_managed_refusal(exc):
+            return await _managed_refusal(exc, "all")
         return _selection_write_refusal(exc)
     names = [f"{cat}.{key}" for cat in sorted(moved) for key in sorted(moved[cat])]
     if names:
@@ -545,7 +589,8 @@ async def admin_reseed(request: Request):
         await _audit_row(f"settings reset to defaults in every category: {len(names)} setting(s): {names}",
                          "settings_reseed", "all")
     return nocache_json({"ok": True, "message": "Settings reseeded from defaults", "reset": names,
-                         "undo": snap, "kept": kept, "retention_kept": sorted(held), "overridden": forced})
+                         "undo": snap, "kept": kept, "retention_kept": sorted(held), "overridden": forced,
+                         "managed": settings_db.managed_setting_names()})
 
 
 @router.post("/api/admin/settings/undo", dependencies=[Depends(admin_guard)])
@@ -566,6 +611,8 @@ async def admin_undo_reset(request: Request):
             settings_db.undo_last_reset,
             lambda restore: retention.needs_approval(restore, stored, approved))
     except Exception as exc:
+        if _is_managed_refusal(exc):
+            return await _managed_refusal(exc, "undo")
         return _selection_write_refusal(exc)
     if undone is None:
         return nocache_json({"error": "nothing to undo"}, status_code=404)
@@ -706,7 +753,15 @@ async def admin_env_sources():
             "user_env": {"path": str(home_env) if home_env else None,
                          "present": bool(home_env and env_provenance.is_file_or_fifo(home_env)), "read": False},
         }
-    return nocache_json({"sources": rows, "files": files})
+    # G1 — the administrator's managed layer: where, which files, the pinned names (never a
+    # value) and whether writes are refused.
+    from agents.core import managed_scope
+
+    try:
+        managed = managed_scope.describe()
+    except Exception:  # noqa: BLE001 — a view: say it could not be read
+        managed = {"active": False, "problems": ["the managed configuration could not be described"]}
+    return nocache_json({"sources": rows, "files": files, "managed": managed})
 
 
 def _redact_audit_details(details: object) -> object:

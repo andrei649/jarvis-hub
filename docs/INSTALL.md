@@ -144,6 +144,7 @@ python scripts/nerva.py config unset llm.tool_loop_max_iterations   # back to it
 python scripts/nerva.py config edit            # every editable setting in $VISUAL/$EDITOR; only changed values are written, each validated like `config set`
 python scripts/nerva.py config path            # the profile, data root and settings.db these verbs use
 python scripts/nerva.py config env-path        # the .env files and secret store the hub reads (names only, never values)
+python scripts/nerva.py config managed         # what your administrator pinned and from which file (see "Settings an administrator pins")
 python scripts/nerva.py config set plugins.tuya_secret '${env:TUYA_SECRET}'   # H255: name a variable from the hub's .env/environment instead of storing its value; expanded when read, the reference is what stays stored (an unset one stays as written and is warned about in the log). A credential variable (a name /api/admin/env masks) may be named only by a credential setting, and the hub's own (JARVIS_ADMIN_TOKEN, JARVIS_SECRET_KEY, …) by none
 python scripts/nerva.py config migrate --dry-run   # what this build would write into an older store: new defaults, retired-model replacements (drop --dry-run to apply)
 python scripts/nerva.py approvals list         # the approval queue (needs JARVIS_ADMIN_TOKEN)
@@ -164,6 +165,44 @@ verbs (`doctor`, `config`, `logs`, `kernel explain`) read the same data root as 
 (`JARVIS_HOME`) and never need it running. Exit codes: 0 ok · 1 the verb failed · 3 no hub
 reachable · 4 a credential is required. In chat, `/help`, `/status`, `/sessions`, `/jobs`, and
 for the owner `/pause`, `/stop`, `/resume` and `/remind <when> | <message>`, work on every channel.
+
+## Settings an administrator pins (managed configuration)
+
+On a box the owner does not administer alone (a design-partner install, a family hub, a
+NixOS or Ansible deployment), an administrator can pin individual settings and environment
+values that nobody can change from the HUD, the `nerva` CLI or chat. Everything else stays
+the owner's. The files live outside the data root, in a folder the owner cannot write:
+
+| Where | What |
+|---|---|
+| `NERVA_MANAGED_DIR` (or `JARVIS_MANAGED_DIR`), else `/etc/nerva` (Windows: `%PROGRAMDATA%\Nerva`) | the managed folder. Only the process environment can name it (a `systemd` unit, `docker run -e`); a value in a `.env` file is ignored on purpose. |
+| `config.yaml` | settings pins, `category: {key: value}`, the names `nerva config list` prints. Below a JSON setting's key you can pin single leaves: `llm: {operating_guidance: {enabled: false}}` pins `enabled` and leaves the rest of that setting editable. `${NAME}` / `${env:NAME}` in a value is read from the process environment and the managed `.env` only. |
+| `.env` | environment pins, `KEY=VALUE` (either spelling, `NERVA_X` or `JARVIS_X`), taken literally. They are applied last and beat the shell, the repo `.env` and the data-home `.env`; a later change to the process environment does not change what Nerva reads. Names that place the hub's own files (`JARVIS_HOME`, `JARVIS_PROFILE`, …) cannot be pinned. |
+| `.managed` | optional managed mode: every configuration write is refused, and its first line says how to change the configuration instead (for example `sudo nixos-rebuild switch`). |
+| `profiles/<name>/` | the same three files for one profile (`JARVIS_PROFILE=<name>`), applied on top of the shared ones. |
+
+```yaml
+# /etc/nerva/config.yaml — owned by root, mode 0644
+llm:
+  cloud_fallback: never        # this box never falls back to a cloud model
+autonomy:
+  mode: ask                    # side effects always wait for approval
+```
+
+What the owner sees: the HUD's Settings shows a pinned value with "🔒 managed by your
+administrator" and no edit box; `nerva config list` marks it; `nerva config managed` lists
+what is pinned and from which file (environment names only, never a value); the HUD's API
+keys card and `GET /api/admin/env/sources` name the managed layer. A write that would change
+a pin is refused, naming the file: the settings save answers 409, `nerva config set|unset`
+exits 1 with "… is managed by your administrator (/etc/nerva/config.yaml) and cannot be
+changed", the approval-mode switch is refused, and the refusal is in the audit log. An
+import, a reset and an undo leave pinned settings out and list them under `managed`.
+
+Fail closed: if a managed file exists but cannot be read or parsed (or `NERVA_MANAGED_DIR`
+names a folder that is not there), every configuration write is refused until it is fixed,
+and the hub refuses to start rather than run unpinned. `nerva config managed` exits 1 and
+names the file. Settings pins take effect at once; environment pins at the next start of
+the hub. Safe mode still applies its stricter limits on top of a pin.
 
 ## After the install
 

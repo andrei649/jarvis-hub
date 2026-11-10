@@ -45,6 +45,15 @@ The rules here:
   it at process start and after each ``.env`` layer, and refuses the boot when the
   two disagree (this module never raises, so it cannot; there is no "wins").
 
+- **Administrator pins win (G1, managed scope).** ``managed_scope`` installs the
+  environment values an administrator pinned (``<managed dir>/.env``) with
+  :func:`pin_environment` when the hub loads its configuration. From then on every
+  getter here answers the pinned value whatever ``os.environ`` holds, so neither a
+  ``.env`` file, a shell export nor an in-process write to ``os.environ`` can override
+  a pin (Hermes v1 enforced its pins on disk only). The mapping is this module's one
+  piece of state, empty until a pin is installed; with no managed scope a read costs
+  one truthiness check more than before.
+
 What does NOT belong here: the settings-DB plane (``settings_db.get_value``
 is live-updatable /admin state with its own precedence at each call site),
 composition/override logic (JARVIS_HARDENED forcing strict egress or
@@ -158,12 +167,39 @@ def resolve_spellings(environ, name: str) -> tuple[str | None, str | None]:
     return old, legacy
 
 
+#: G1 — the environment values an administrator pinned (canonical ``JARVIS_`` names for
+#: a hub variable), installed by ``managed_scope`` at the hub's load. Empty: nothing pinned.
+_PINNED: dict[str, str] = {}
+
+
+def pin_environment(mapping) -> None:
+    """Install the administrator's pinned environment (G1): from now on :func:`_read`
+    answers these values first, under either spelling. Replaces any earlier pins."""
+    pinned = {}
+    for name, value in dict(mapping or {}).items():
+        if isinstance(name, str) and isinstance(value, str):
+            pinned[other_spelling(name) if name.startswith(PREFERRED_PREFIX) and other_spelling(name) else name] = value
+    _PINNED.clear()
+    _PINNED.update(pinned)
+
+
+def pinned_environment() -> dict[str, str]:
+    """A copy of the pinned environment (names and values; never log it)."""
+    return dict(_PINNED)
+
+
 def _read(name: str) -> str | None:
     """The process environment's value for *name*, under either spelling, at call time
     (``resolve_spellings``' rule, written out for the hot path). One dictionary lookup
     decides whether *name* has a second spelling; a name without one costs a single
     ``os.environ`` read, as before RB-2, and a hub variable costs two — no string is
-    built either way."""
+    built either way. G1: a value an administrator pinned answers first."""
+    if _PINNED:
+        pinned = _PINNED.get(name)
+        if pinned is None and name.startswith(PREFERRED_PREFIX):
+            pinned = _PINNED.get(other_spelling(name) or name)
+        if pinned is not None:
+            return pinned
     other = _OTHER.get(name)
     if other is None:
         if not name.startswith(_BOTH_PREFIXES):
@@ -350,7 +386,7 @@ HUB_ENV_SUFFIXES = frozenset({
     "LATEST_CI_COMMIT", "LLM_WARMUP", "LMSTUDIO_CHAT_CONTROL", "LMSTUDIO_CONTROL", "LM_STUDIO_URL",
     "LOCAL_IMAGE_BACKENDS", "LOCAL_IMAGE_DEFAULT_BACKEND", "LOCAL_IMAGE_GENERATION",
     "LOCAL_IMAGE_PROVIDERS", "LOG_BACKUPS", "LOG_FILE", "LOG_LEVEL", "LOG_MAX_MB", "LOG_REDACTION",
-    "MACHINE_ID", "MCP_HTTP_CLIENT", "MCP_MUTATING_TOOLS", "MCP_ROUTE_TOOLS",
+    "MACHINE_ID", "MANAGED", "MANAGED_DIR", "MCP_HTTP_CLIENT", "MCP_MUTATING_TOOLS", "MCP_ROUTE_TOOLS",
     "MCP_STDIO_ALLOWED_ENV", "MCP_STDIO_ENV_BASELINE", "MEDIA_CATALOG", "MEDIA_DIRECTOR",
     "MEDIA_DRIVERS", "MEDIA_PRESENCE_ROOM", "MEDIA_ROOTS", "MEDIA_URL_ALLOWLIST", "MEMORY_DIR",
     "MIC_MUTED", "MODEL_INFO", "MODEL_MANAGER", "MODEL_PULL", "NOUS_ANTHROPIC_WIRE",
