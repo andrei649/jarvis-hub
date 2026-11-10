@@ -7023,6 +7023,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/oauth/mcp/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mcp Oauth Callback
+         * @description G9 / H550, H692 — where the browser returns after signing in to an MCP server.
+         *
+         *     No admin token rides a browser redirect, so the owner is recognised by the binding the
+         *     start set as an HttpOnly cookie on this path (``SameSite=Lax``: sent on this top-level
+         *     return, not on a cross-site sub-request). State and binding are checked in constant time,
+         *     once, before anything is redeemed. The page never redirects: it says what happened.
+         */
+        get: operations["mcp_oauth_callback_api_oauth_mcp_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/oauth/auth-url": {
         parameters: {
             query?: never;
@@ -9812,6 +9837,143 @@ export interface paths {
          *     declines; a card nobody answers is cancelled when it times out.
          */
         post: operations["admin_mcp_elicitation_answer_api_admin_mcp_elicitations__card_id__answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/mcp/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Mcp Catalog
+         * @description H549 — the reviewed MCP servers Nerva can install (vendored Hermes manifests, each
+         *     re-checked against MANIFEST.json), next to the owner's own servers.
+         */
+        get: operations["admin_mcp_catalog_api_admin_mcp_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/mcp/catalog/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Mcp Catalog Preview
+         * @description H549 — exactly what an install would write and run, with its digest. Writes nothing.
+         *     A deep link opens this (``/v2/console/mcp?install=<name>`` or ``?link=…&config=…``).
+         */
+        post: operations["admin_mcp_catalog_preview_api_admin_mcp_catalog_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/mcp/catalog/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Mcp Catalog Install
+         * @description H549 — install a catalog entry (or a deep link's server) through the add path.
+         *
+         *     Refused unless ``confirm`` is the digest of the plan as it is now (428 with the plan
+         *     when missing, 409 ``plan_changed`` when it differs), under the e-stop, in safe mode, for
+         *     a name the load set holds, when the managed configuration pins ``mcp.servers``, and for
+         *     a name already taken (never overwritten). Secrets go to the encrypted store; the saved
+         *     config keeps their names. Nothing starts: the owner connects (and signs in) after.
+         */
+        post: operations["admin_mcp_catalog_install_api_admin_mcp_catalog_install_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/mcp/{name}/oauth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Mcp Oauth Status
+         * @description H550 — whether this server holds a token (never the token), until when, from whom.
+         */
+        get: operations["admin_mcp_oauth_status_api_admin_mcp__name__oauth_get"];
+        put?: never;
+        post?: never;
+        /**
+         * Admin Mcp Oauth Sign Out
+         * @description H550 — sign out: revoke the tokens at the server (best effort) and delete them, and
+         *     drop a waiting sign-in.
+         */
+        delete: operations["admin_mcp_oauth_sign_out_api_admin_mcp__name__oauth_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/mcp/{name}/oauth/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Mcp Oauth Start
+         * @description H550 — begin the sign-in: discovery, client registration, PKCE. Answers the address
+         *     to open in the browser and a ``binding`` only this caller holds (also set as an
+         *     HttpOnly cookie on the hub's callback path). Refused under the e-stop.
+         */
+        post: operations["admin_mcp_oauth_start_api_admin_mcp__name__oauth_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/mcp/{name}/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Mcp Oauth Relay
+         * @description H692 — the relay: code and state captured on the owner's machine (a loopback listener,
+         *     or the address the browser ended on) handed back with the start's ``binding``. Only the
+         *     hub redeems; state and binding are checked in constant time, once.
+         */
+        post: operations["admin_mcp_oauth_relay_api_admin_mcp__name__oauth_callback_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -14689,6 +14851,25 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** CatalogInstall */
+        CatalogInstall: {
+            /** Name */
+            name: string;
+            /** Server Name */
+            server_name?: string | null;
+            /** Link Config */
+            link_config?: string | null;
+            /** Inputs */
+            inputs?: {
+                [key: string]: string;
+            } | null;
+            /** Confirm */
+            confirm?: string | null;
+            /** Secrets */
+            secrets?: {
+                [key: string]: string;
+            } | null;
+        };
         /** CatalogInstallBody */
         CatalogInstallBody: {
             /** Skill */
@@ -14703,6 +14884,19 @@ export interface components {
              * @default false
              */
             force: boolean;
+        };
+        /** CatalogRequest */
+        CatalogRequest: {
+            /** Name */
+            name: string;
+            /** Server Name */
+            server_name?: string | null;
+            /** Link Config */
+            link_config?: string | null;
+            /** Inputs */
+            inputs?: {
+                [key: string]: string;
+            } | null;
         };
         /** ChannelReplyBody */
         ChannelReplyBody: {
@@ -15594,6 +15788,12 @@ export interface components {
             sampling?: string | null;
             /** Elicitation */
             elicitation?: boolean | null;
+            /** Auth */
+            auth?: string | null;
+            /** Oauth */
+            oauth?: {
+                [key: string]: string;
+            } | null;
         };
         /** MapBody */
         MapBody: {
@@ -15859,6 +16059,29 @@ export interface components {
              * @default
              */
             state: string;
+        };
+        /** OAuthRelay */
+        OAuthRelay: {
+            /** State */
+            state: string;
+            /** Binding */
+            binding: string;
+            /** Code */
+            code?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Iss */
+            iss?: string | null;
+        };
+        /** OAuthStart */
+        OAuthStart: {
+            /**
+             * Redirect
+             * @default hub
+             */
+            redirect: string;
+            /** Redirect Uri */
+            redirect_uri?: string | null;
         };
         /** OperatorPlanBody */
         OperatorPlanBody: {
@@ -28744,6 +28967,40 @@ export interface operations {
             };
         };
     };
+    mcp_oauth_callback_api_oauth_mcp_callback_get: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+                error?: string;
+                iss?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     oauth_auth_url_api_oauth_auth_url_get: {
         parameters: {
             query?: {
@@ -32458,6 +32715,235 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ElicitationAnswer"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_mcp_catalog_api_admin_mcp_catalog_get: {
+        parameters: {
+            query?: {
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_mcp_catalog_preview_api_admin_mcp_catalog_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CatalogRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_mcp_catalog_install_api_admin_mcp_catalog_install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CatalogInstall"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_mcp_oauth_status_api_admin_mcp__name__oauth_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_mcp_oauth_sign_out_api_admin_mcp__name__oauth_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_mcp_oauth_start_api_admin_mcp__name__oauth_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthStart"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_mcp_oauth_relay_api_admin_mcp__name__oauth_callback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthRelay"];
             };
         };
         responses: {

@@ -21,7 +21,7 @@ singleton remains.
 import asyncio
 import html
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -132,6 +132,44 @@ async def oauth_callback_redirect(code: str = "", state: str = "", error: str = 
     if ok:
         return HTMLResponse(_CALLBACK_PAGE.format(f"{html.escape(detail)} is connected. You can close this tab."))
     return HTMLResponse(_CALLBACK_PAGE.format(f"Sign-in failed: {html.escape(detail)}."), status_code=400)
+
+
+@router.get("/api/oauth/mcp/callback", response_class=HTMLResponse)
+async def mcp_oauth_callback(request: Request, code: str = "", state: str = "", error: str = "",
+                             iss: str | None = None):
+    """G9 / H550, H692 — where the browser returns after signing in to an MCP server.
+
+    No admin token rides a browser redirect, so the owner is recognised by the binding the
+    start set as an HttpOnly cookie on this path (``SameSite=Lax``: sent on this top-level
+    return, not on a cross-site sub-request). State and binding are checked in constant time,
+    once, before anything is redeemed. The page never redirects: it says what happened."""
+    from agents.core.mcp import oauth_client
+    from agents.core.routers.mcp import _cookie_name, audit_sign_in
+
+    state = (state or "")[:200]
+    cookie = _cookie_name(state) if state else ""
+    binding = request.cookies.get(cookie, "") if cookie else ""
+    if not state:
+        return HTMLResponse(_CALLBACK_PAGE.format("Sign-in was not completed. You can close this tab."),
+                            status_code=400)
+    try:
+        result = await oauth_client.complete(state, (code or "")[:4096], binding, error=error or None,
+                                             iss=iss[:2048] if iss is not None else None)
+    except oauth_client.OAuthError as exc:
+        page = {
+            "binding_mismatch": "This sign-in was not started from this browser. Finish it from the "
+                                "Nerva window that started it (paste the address there), or start again.",
+            "authorization_denied": "Sign-in was not approved. You can close this tab.",
+        }.get(exc.reason, f"Sign-in failed: {exc.message}.")
+        response = HTMLResponse(_CALLBACK_PAGE.format(html.escape(page)), status_code=exc.status)
+    else:
+        audit_sign_in(get_orch(), result, via="hub")
+        response = HTMLResponse(_CALLBACK_PAGE.format(
+            f"Signed in to {html.escape(result['server'])}. Return to Nerva and press connect. "
+            "You can close this tab."))
+    if cookie:
+        response.delete_cookie(cookie, path=oauth_client.HUB_CALLBACK_PATH)
+    return response
 
 
 @router.get("/api/oauth/auth-url")

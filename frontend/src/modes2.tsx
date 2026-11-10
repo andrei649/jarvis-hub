@@ -336,7 +336,8 @@ function InteropMode({ t }){
               <span className={'io-status '+a.status}>{a.status}</span>
             </div>
           ))}</Section>
-          <SubH style={{marginTop:16}}>MCP SERVERS</SubH>
+          {/* G9 — install from the catalog, sign in, connect: the console's MCP panel. */}
+          <SubH style={{marginTop:16}}>MCP SERVERS <a href={appUrl('/v2/console/mcp')} aria-label="manage MCP servers" style={{marginLeft:8,fontSize:10}}>manage →</a></SubH>
           <Section off={off.mcp} n={N.mcp.length}>{N.mcp.map((m,i)=>(
             <div className="io-row" key={i}>
               <span className={'sdot '+(m.status==='up'?'active':m.status==='degraded'?'busy':'err')}></span>

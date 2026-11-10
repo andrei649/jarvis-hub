@@ -205,6 +205,36 @@ def _probe_oauth_callback(client, monkeypatch, tmp_path):
     return denied, allowed
 
 
+def _probe_mcp_oauth_callback(client, monkeypatch, tmp_path):
+    """G9 / H692: a waiting MCP sign-in redeemed with its binding cookie vs without it."""
+    from agents.core.mcp import oauth_client as oc
+    from agents.core.routers.mcp import _cookie_name
+
+    class _NoNet:
+        async def close(self):
+            return None
+
+    async def token(client_, url, data, auth=None):
+        return 200, {"access_token": "a", "token_type": "Bearer"}  # nosec
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(oc, "HTTP_FACTORY", lambda server: _NoNet())
+    monkeypatch.setattr(oc, "_post_form", token)
+    oc.reset_for_tests()
+    flow = oc.Flow(state="s" * 40, binding="b" * 40, verifier="v" * 50, server="probe",
+                   server_url="https://mcp.example.test/mcp", redirect_uri="http://127.0.0.1/api/oauth/mcp/callback",
+                   relay=False, token_endpoint="https://auth.example.test/token", issuer="https://auth.example.test",
+                   revocation_endpoint=None, client_id="cid", client_secret=None, auth_method="none",
+                   resource="https://mcp.example.test/mcp", scope=None)
+    oc._FLOWS[flow.state] = flow
+    denied = client.get(f"/api/oauth/mcp/callback?code=c&state={flow.state}")
+    client.cookies.set(_cookie_name(flow.state), flow.binding, path=oc.HUB_CALLBACK_PATH)
+    allowed = client.get(f"/api/oauth/mcp/callback?code=c&state={flow.state}")
+    client.cookies.clear()
+    oc.reset_for_tests()
+    return denied, allowed
+
+
 def _real_widgets(monkeypatch, tmp_path):
     from agents.core.routers import secrets
     from agents.core.widget import WidgetStore
@@ -295,6 +325,7 @@ HTTP_PROBES = {
     "POST /api/a2a/task": (_probe_a2a, {401}),
     "POST /api/mcp/server/rpc": (_probe_mcp_rpc, {401}),
     "POST /api/oauth/callback": (_probe_oauth_callback, {400}),
+    "GET /api/oauth/mcp/callback": (_probe_mcp_oauth_callback, {403}),
     "POST /api/widget/{token}/message": (_probe_widget_message, {404}),
     "GET /api/widget/{token}": (_probe_widget_snippet, {404}),
     "GET /api/widget/{token}/config": (_probe_widget_config, {404}),

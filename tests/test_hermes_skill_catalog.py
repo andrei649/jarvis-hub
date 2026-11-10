@@ -87,7 +87,7 @@ def test_the_catalog_bytes_match_the_manifest_and_the_index():
     assert index["commit"] == manifest["upstream"]["commit"] == COMMIT
     assert index["format"] == hermes_catalog.INDEX_FORMAT
     assert hv.CATALOG_INDEX in manifest["local_files"]
-    rows = {f["path"]: f for f in manifest["files"] if hv.is_catalog_path(f["path"])}
+    rows = {f["path"]: f for f in manifest["files"] if hv.is_skill_catalog_path(f["path"])}
     counts = {"instruction": 0, "upstream_only": 0, "excluded": 0}
     owned = set()
     for skill in index["skills"]:

@@ -17,7 +17,8 @@ files (MIT, NousResearch/hermes-agent) as they are, instead of re-writing them. 
 | `agents/vendor/hermes/MANIFEST.json` | Pinned commit, the rewrite rules, and per file: upstream sha256, vendored sha256, the rules applied. |
 | `agents/vendor/hermes_compat/` | The shims vendored code imports. Nerva code, reviewed like any other. |
 | `agents/vendor/hermes/SKILLS_CATALOG.json` | Slice 3: every upstream skill folder, classified (installable, carries code, excluded). |
-| `scripts/hermes_vendor.py` | `status`, `diff`, `pull`, `catalog`. |
+| `agents/vendor/hermes/optional-mcps/` | Slice 5: the 66 reviewed MCP server manifests, data only, one `MANIFEST.json` row each. |
+| `scripts/hermes_vendor.py` | `status`, `diff`, `pull`, `catalog`, `mcp-catalog`. |
 | `tests/test_hermes_adopt_lane.py` | Behaviour, egress, structure and sync-script tests. |
 
 The first slice (pinned `9c0560f8`) adopts three search providers: **Exa**, **Brave Search
@@ -614,6 +615,60 @@ surface walk skips the vendor tree (Nerva's own registration is walked).
 - Three upstream bandit findings in the vendored files (two `try/except/pass`, one B104 on a
   blocklist literal) are recorded in `.bandit-baseline.json`.
 
+## MCP server catalog (slice 5, G9 / H549)
+
+Hermes ships a directory of reviewed MCP server manifests, `optional-mcps/<name>/manifest.yaml`
+("presence in this directory = approval"). Slice 5 (same pin, `9c0560f8`) adopts it as **data**,
+the way slice 3 adopts the skills catalog; Hermes's reader (`hermes_cli/mcp_catalog.py`) and its
+OAuth manager (`tools/mcp_oauth*.py`) are references only (they import `hermes_constants`,
+`hermes_cli.config`, `subprocess` and the MCP SDK). Owner guide: [`docs/MCP_CATALOG.md`](../MCP_CATALOG.md).
+
+- **Vendoring.** `scripts/hermes_vendor.py mcp-catalog --upstream <clone>` copies each manifest
+  byte-identical to `agents/vendor/hermes/optional-mcps/<name>/manifest.yaml` with a
+  `MANIFEST.json` row (`upstream_sha256 == vendored_sha256`, `rules_applied: []`). A folder that
+  holds anything but `manifest.yaml`, a symlink, a manifest that is not plain YAML, or a clone at
+  another commit than the pin is refused and nothing is written; a manifest gone upstream is
+  pruned. The manifest rows are the index (no separate index file). `optional-mcps/` joined
+  `CATALOG_ROOTS` (byte-identical, never rewritten, `pull` refuses it) as `MCP_CATALOG_ROOT`;
+  `content_problems` admits exactly `optional-mcps/<name>/manifest.yaml` there, so
+  `tests/test_hermes_adopt_lane.py`'s allowlist walk covers it. The skills-index checks use
+  `SKILL_CATALOG_ROOTS` only.
+- **Reading.** `agents/core/mcp/catalog.py` lists every file against its row on each read
+  (`tampered` when the bytes differ or the row is missing), then validates with Nerva's own
+  reader: `manifest_version` 1 (`future_manifest` above), name, `transport` (`stdio` command +
+  args + static env, or `http` URL, or `url: "${NAME}"` typed by the owner from a declared
+  non-secret input), `auth` (`none` / `oauth` / `api_key` with Hermes's `MCP_<NAME>_API_KEY`
+  naming contract; `auth.oauth` pins `client_id`, `client_secret`, `scope`, `redirect_*`),
+  `tools.default_enabled` / `default_excluded`, `suggest`, `post_install`. `install:` (git clone +
+  bootstrap commands), `${INSTALL_DIR}` and a third-party `auth.provider` are `unsupported`:
+  Nerva does not run bootstrap steps. Environment names that steer an interpreter are refused.
+- **Installing** is the admin add path (`agents/core/routers/mcp.py`) with a plan the owner
+  confirms by digest, secrets in the secret store (`mcp.secret.<server>.<NAME>`, internal to the
+  broker), nothing started until connect. Remote servers sign in through
+  `agents/core/mcp/oauth_client.py` (discovery, DCR, PKCE, tokens in the secret store, refresh,
+  revocation), with the hub callback, a loopback relay (`nerva mcp login`) or a pasted address
+  (H550, H692).
+
+### What is in it (pin `9c0560f8`)
+
+66 manifests, all `transport: http` (vendor-hosted): 56 `auth: oauth` (n8n's URL is typed at
+install), 10 `auth: none`. None is `stdio`, so none spawns a process here; the stdio path is
+exercised by install links and tests. All 66 read as `ok`.
+
+### Refreshing it
+
+```bash
+python scripts/hermes_vendor.py mcp-catalog --upstream ~/src/hermes-agent
+python scripts/hermes_vendor.py status [--upstream ~/src/hermes-agent]
+pytest tests/test_mcp_g9_catalog_oauth.py tests/test_hermes_adopt_lane.py tests/test_hermes_skill_catalog.py
+```
+
+### Limits of slice 5
+
+- No probe and tool checklist after install; no `nerva://` scheme registered with the OS (links
+  are HUD addresses); `suggest` is listed, not used for chat suggestions.
+- OAuth: no CIMD client identity, no pinned first-login ports, no token-endpoint user agent.
+- Tested against a fake authorization server and a fake MCP server; no live sign-in was made.
 ## Project verification recipes (slice 5, G5 / H023, H405, H406)
 
 Hermes's `hermes verify` detects how a project is built, tested and started and keeps a
