@@ -500,8 +500,12 @@ class SkillImporter:
         from .loader import loader_name, name_holder
 
         final_bytes = skill_md_bytes if skill_md_bytes is not None else skill_md_text.encode("utf-8")
-        holder = name_holder(loader_name(target_dir, final_bytes), except_dir=target_dir,
-                             extra_roots=[self.skills_dir])
+        new_name = loader_name(target_dir, final_bytes)
+        # Fifth review: an update that keeps the name its folder already registers under
+        # takes nobody's name, so it is never refused over another holder.
+        keeps_name = target_dir.is_dir() and loader_name(target_dir) == new_name
+        holder = None if keeps_name else name_holder(new_name, except_dir=target_dir,
+                                                     extra_roots=[self.skills_dir])
         if holder is not None:
             self.last_conflict = "name_taken"
             _OUTCOME.set(ImportOutcome(False, "name_taken"))

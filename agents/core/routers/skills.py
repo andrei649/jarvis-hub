@@ -251,7 +251,9 @@ async def pin_skill(body: SkillPinBody):
         return unavailable
     if getattr(orch, "skills", None) is None or not callable(getattr(usage, "pin", None)):
         return component_unavailable("the skill usage sidecar is not available, so nothing was pinned")
-    found = switches.find(orch.skills.skills.values(), body.skill)
+    # The exact registry name first (``spotify`` and ``Spotify`` are two skills), then the
+    # case-insensitive name-or-folder match the switches use.
+    found = orch.skills.skills.get(body.skill) or switches.find(orch.skills.skills.values(), body.skill)
     # An unpin also reaches a pinned skill that is no longer loaded, by its exact name.
     name = found.name if found is not None else body.skill
 

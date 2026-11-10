@@ -458,8 +458,14 @@ def loader_name(folder, source_bytes: bytes | None = None) -> str:
 
 
 def name_holder(name: str, *, except_dir=None, extra_roots=(), registry=None) -> Optional[Path]:
-    """H349 — the folder of an installed skill that already holds ``name`` (ignoring
-    case), other than ``except_dir``; None when the name is free.
+    """H349 — the folder of an installed skill that already holds ``name``, other than
+    ``except_dir`` (the folder the new skill goes into); None when the name is free.
+
+    Names are compared exactly, as the registry keys them: ``spotify`` and ``Spotify`` are
+    two names to the loader, so they are two names here (fifth review). And a skill that
+    ships with Nerva is not a holder for a folder that goes into another root: a skill of
+    the owner's named like a bundled one is by design (``discover()`` loads the owner's
+    folder after the app root so that it wins the name).
 
     THE holder check, asked by every path that creates a skill before it writes anything
     (an import, a marketplace install, the local migration, a batch create, generation):
@@ -473,16 +479,19 @@ def name_holder(name: str, *, except_dir=None, extra_roots=(), registry=None) ->
       (:func:`loader_name`), so a skill that is installed but not loaded — the owner's
       load set, safe mode, a failed load — counts too, whichever root it lives in.
     """
-    wanted = name.strip().casefold() if isinstance(name, str) else ""
+    wanted = name.strip() if isinstance(name, str) else ""
     if not wanted:
         return None
     try:
         skip = Path(except_dir).resolve() if except_dir is not None else None
+        elsewhere = skip is not None and skip.parent != SKILLS_DIR.resolve()
     except OSError:
-        skip = None
+        skip, elsewhere = None, False
 
     def _other(folder: Path) -> bool:
         try:
+            if elsewhere and _shipped_location(folder):
+                return False            # a bundled skill does not hold its name against another root
             return skip is None or folder.resolve() != skip
         except OSError:
             return True
@@ -492,7 +501,7 @@ def name_holder(name: str, *, except_dir=None, extra_roots=(), registry=None) ->
         registry = getattr(live, "skills", None)
     for held, skill in list((registry or {}).items()):
         folder = Path(getattr(skill, "path", "") or "")
-        if str(held).casefold() == wanted and _other(folder) and folder.is_dir():
+        if str(held) == wanted and _other(folder) and folder.is_dir():
             return folder
     seen: set[str] = set()
     for base in [*skill_roots(), *[Path(r) for r in extra_roots]]:
@@ -512,7 +521,7 @@ def name_holder(name: str, *, except_dir=None, extra_roots=(), registry=None) ->
                     continue
             except OSError:
                 continue
-            if loader_name(folder).casefold() == wanted:
+            if loader_name(folder) == wanted:
                 return folder
     return None
 
@@ -1020,7 +1029,9 @@ class SkillLoader:
         so that row is left when one of those is still installed. Says whether another
         holder remains (the caller then re-discovers, so it takes the slot)."""
         other = name_holder(name, registry=self.skills) if name else None
-        if other is None or install_id:
+        # Fifth review (m1): an id-less folder's row also goes when the holder that remains
+        # is an install with its own id — nothing id-less is left for that row to describe.
+        if other is None or install_id or install_id_of(other):
             self.forget_usage(name, install_id if other is not None else None)
         return other is not None
 

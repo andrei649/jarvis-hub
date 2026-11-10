@@ -417,14 +417,14 @@ class SkillUsageStore(JsonStore):
                 damaged += 1
                 continue
             kept = []
-            for rec in rows[:SHELF_PER_NAME * 4]:
+            for rec in rows[-SHELF_PER_NAME:]:          # the cap _put_on_shelf keeps to
                 if not isinstance(rec, dict):
                     damaged += 1
                     continue
                 rec = dict(rec)
                 damaged += 1 if _repair(rec) else 0
                 kept.append(rec)
-            damaged += 1 if len(rows) > SHELF_PER_NAME * 4 else 0
+            damaged += 1 if len(rows) > SHELF_PER_NAME else 0
             if kept:
                 out[str(name)] = kept
         return out, damaged
@@ -550,6 +550,7 @@ class SkillUsageStore(JsonStore):
                 ORIGIN_AGENT if agent_created is True else ORIGIN_UNKNOWN)
             self._items[key] = rec
             self._commit(before)
+            self._pending.pop(key, None)        # that removal was of the earlier skill, not this one
             if registered:
                 self._registered.add(key)
             return dict(rec)
@@ -584,6 +585,7 @@ class SkillUsageStore(JsonStore):
                 self._put_on_shelf(key, old)        # another install's row: kept, not overwritten
             self._items[key] = rec
             self._commit(before)
+            self._pending.pop(key, None)        # that removal was of the earlier skill, not this one
             return before
 
     def put_back(self, rows: dict) -> None:

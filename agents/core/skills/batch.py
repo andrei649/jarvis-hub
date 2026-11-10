@@ -1320,7 +1320,8 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
                     # and its record is made when the loader next registers it.
                     settled = []
                     warnings.append("the usage sidecar could not be written: the new skill's usage record "
-                                    "(counters, origin) will be made when it is next loaded")
+                                    "could not be started. If an earlier skill left a row under this name "
+                                    "(its counters, pin or agent marker), the new skill takes that row over")
                 swapped: list[_Target] = []
                 rewritten: list[tuple[Path, bytes]] = []
                 failure = ""

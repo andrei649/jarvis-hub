@@ -845,7 +845,11 @@ class SkillMarketplace:
             # Fourth review: asked of every root the loader discovers and of what is loaded,
             # with the package named by the loader's own parse of its SKILL.md.
             registers_as = loader_name(target_dir, skill_md_bytes) or skill_name
-            holder = name_holder(registers_as, except_dir=target_dir, extra_roots=[self.skills_dir])
+            # Fifth review: an update that keeps the name its folder already registers under
+            # takes nobody's name, so it is never refused over another holder.
+            keeps_name = target_dir.is_dir() and loader_name(target_dir) == registers_as
+            holder = None if keeps_name else name_holder(registers_as, except_dir=target_dir,
+                                                         extra_roots=[self.skills_dir])
             if holder is not None and not (self.is_registered(skill_name) and self._is_ours(holder)):
                 # H349 (third review, B1): the package declares the name of a skill installed
                 # from another folder. The loader lets a later folder take a name, so it
