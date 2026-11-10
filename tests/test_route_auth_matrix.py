@@ -299,6 +299,10 @@ IN_HANDLER_TIER_SITES = {
         "tests/test_h309_pointer.py::test_a_tip_through_the_http_route_is_marked_unless_the_owner_sent_it",),
     "agents/core/routers/actions.py:actions_request": (
         "tests/test_h487_approval_groups.py::test_owner_http_producer_and_optional_projection_with_legacy_complete_actions",),
+    # H226: a secret prompt is offered to, and answered by, the owner only.
+    "agents/core/routers/chat_pending.py:http_owner": (
+        "tests/test_h226_cli_governance_prompts.py::test_non_owner_turn_is_never_asked_for_a_secret",
+        "tests/test_h226_cli_governance_prompts.py::test_secret_prompt_answer_requires_owner_and_a_stored_value"),
     "agents/core/routers/commands.py:command_catalog": (
         "tests/test_commands_catalog.py::test_user_catalog_contains_only_commands_visible_to_that_chat_principal",),
     "agents/core/routers/skills.py:_request_principal": (_INH + "test_sandbox_principal_follows_the_credential",),

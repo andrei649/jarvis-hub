@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import hmac
 import http.server
 import json
 import threading
@@ -152,10 +153,13 @@ def _install(ns, ctx, client) -> int:
 
 
 class _OneShot(http.server.BaseHTTPRequestHandler):
-    """Receives one browser return on loopback; keeps only ``code``, ``state`` and ``error``."""
+    """Receives one browser return on loopback; keeps only ``code``, ``state``, ``error`` and
+    ``iss``. A request without the expected state (a probe, a stale tab, another site's page
+    pointing at the port) is answered 400 and ignored: it does not end the login."""
 
     result: dict = {}
     done = threading.Event()
+    expected = ""
 
     def do_GET(self):  # noqa: N802 - http.server API
         parts = urlsplit(self.path)
@@ -163,7 +167,12 @@ class _OneShot(http.server.BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
             return
-        query = {k: v[0] for k, v in parse_qs(parts.query).items() if k in ("code", "state", "error")}
+        query = {k: v[0] for k, v in parse_qs(parts.query).items() if k in ("code", "state", "error", "iss")}
+        expected = type(self).expected
+        if not expected or not hmac.compare_digest(query.get("state", "").encode(), expected.encode()):
+            self.send_response(400)
+            self.end_headers()
+            return
         type(self).result = query
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -179,25 +188,51 @@ class _OneShot(http.server.BaseHTTPRequestHandler):
 def _login(ns, ctx, client) -> int:
     from .nerva import EXIT_FAILED, EXIT_OK
 
-    handler = type("OneShot", (_OneShot,), {"result": {}, "done": threading.Event()})
-    try:
-        server = http.server.HTTPServer(("127.0.0.1", int(ns.port or 0)), handler)
-    except OSError as exc:
-        ctx.err.write(f"cannot listen on 127.0.0.1:{ns.port}: {exc.strerror or exc}\n")
+    handler = type("OneShot", (_OneShot,), {"result": {}, "done": threading.Event(), "expected": ""})
+    path = f"/api/admin/mcp/{quote(ns.server, safe='')}/oauth"
+    status = client.get(path)
+    status = status if isinstance(status, dict) else {}
+    pin = status.get("redirect_pin")
+    host, wanted = "127.0.0.1", int(ns.port or 0)
+    if isinstance(pin, str) and pin:
+        # The vendor accepts exactly this address (localhost and 127.0.0.1 differ to it).
+        parts = urlsplit(pin)
+        host, wanted = parts.hostname or "127.0.0.1", int(parts.port or 0)
+    elif not wanted:
+        # Reuse the port the registered client already accepts, so no new registration.
+        for known in status.get("loopback_redirects") or []:
+            parts = urlsplit(str(known))
+            if parts.port and parts.path == "/callback":
+                host, wanted = parts.hostname or "127.0.0.1", parts.port
+                break
+    server, reason = None, ""
+    for port_try in dict.fromkeys([wanted, 0] if not pin else [wanted]):
+        try:
+            server = http.server.HTTPServer(("127.0.0.1", port_try), handler)
+            break
+        except OSError as exc:
+            reason = exc.strerror or str(exc)
+    if server is None:
+        ctx.err.write(f"cannot listen on 127.0.0.1:{wanted}: {reason}\n")
         return EXIT_FAILED
     server.timeout = 1
     port = server.server_address[1]
-    redirect = f"http://127.0.0.1:{port}/callback"
+    if port != wanted:
+        host = "127.0.0.1"
+    redirect = f"http://{host}:{port}/callback"
     try:
         start = client.post(f"/api/admin/mcp/{quote(ns.server, safe='')}/oauth/start",
                             {"redirect": "loopback", "redirect_uri": redirect})
         if not isinstance(start, dict) or not start.get("authorization_url"):
             ctx.err.write("unexpected reply from the hub: no sign-in address\n")
             return EXIT_FAILED
-        ctx.say(f"Sign in to '{_clean(ns.server, 64)}' at {_clean(start.get('as_host'), 120)}.")
+        handler.expected = str(start.get("state") or "")
+        ctx.say(f"Sign in to '{_clean(ns.server, 64)}': your browser opens "
+                f"{_clean(start.get('authorize_host') or start.get('as_host'), 120)} "
+                f"(authorization server {_clean(start.get('as_host'), 120)}).")
         ctx.say(f"Its token will be sent only to {_clean(start.get('server_origin'), 120)}.")
         ctx.say("Open this address in the browser on this machine:")
-        ctx.say(str(start["authorization_url"]))
+        ctx.say(_clean(start["authorization_url"], 4096))
         if not ns.no_browser:
             with suppress(Exception):  # the address is printed above
                 webbrowser.open(start["authorization_url"])
@@ -211,7 +246,8 @@ def _login(ns, ctx, client) -> int:
     got = handler.result
     body = {"state": got.get("state", ""), "binding": start["binding"],
             **({"code": got["code"]} if got.get("code") else {}),
-            **({"error": got["error"][:200]} if got.get("error") else {})}
+            **({"error": got["error"][:200]} if got.get("error") else {}),
+            **({"iss": got["iss"][:2048]} if got.get("iss") else {})}
     done = client.post(f"/api/admin/mcp/{quote(ns.server, safe='')}/oauth/callback", body)
     if not isinstance(done, dict) or not done.get("ok"):
         ctx.err.write("the hub did not confirm the sign-in\n")

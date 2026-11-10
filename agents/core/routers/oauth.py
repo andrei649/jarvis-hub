@@ -135,7 +135,8 @@ async def oauth_callback_redirect(code: str = "", state: str = "", error: str = 
 
 
 @router.get("/api/oauth/mcp/callback", response_class=HTMLResponse)
-async def mcp_oauth_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+async def mcp_oauth_callback(request: Request, code: str = "", state: str = "", error: str = "",
+                             iss: str | None = None):
     """G9 / H550, H692 — where the browser returns after signing in to an MCP server.
 
     No admin token rides a browser redirect, so the owner is recognised by the binding the
@@ -152,7 +153,8 @@ async def mcp_oauth_callback(request: Request, code: str = "", state: str = "", 
         return HTMLResponse(_CALLBACK_PAGE.format("Sign-in was not completed. You can close this tab."),
                             status_code=400)
     try:
-        result = await oauth_client.complete(state, (code or "")[:4096], binding, error=error or None)
+        result = await oauth_client.complete(state, (code or "")[:4096], binding, error=error or None,
+                                             iss=iss[:2048] if iss is not None else None)
     except oauth_client.OAuthError as exc:
         page = {
             "binding_mismatch": "This sign-in was not started from this browser. Finish it from the "

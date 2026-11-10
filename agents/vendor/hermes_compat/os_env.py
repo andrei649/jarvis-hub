@@ -1,4 +1,4 @@
-"""The ``os`` name vendored code sees (rewrite rule ``os-env``): ``getenv`` only.
+"""The ``os`` name vendored code sees (rewrite rule ``os-env``): ``getenv`` and ``environ.get``.
 
 Reads go through ``agents.core.env_config.env_str`` at call time, and only for the names in
 :data:`ALLOWED` for the provider the adapter is running (``provider_scope``): documented,
@@ -21,3 +21,18 @@ def getenv(name: str, default: str | None = None) -> str | None:
         return default
     value = env_str(name, "")
     return value if value else default
+
+
+class _Environ:
+    """``os.environ`` reduced to ``get`` under the same allowlist as :func:`getenv` (G19:
+    the FAL video plugin asks environ for ``FAL_VIDEO_MODEL``, which is not allowed,
+    so it reads as unset and the family the owner approved is the one used)."""
+
+    def get(self, name: str, default: str | None = None) -> str | None:
+        return getenv(name, default)
+
+    def __repr__(self) -> str:
+        return "<os.environ (compat, allowlisted get only)>"
+
+
+environ = _Environ()

@@ -106,9 +106,11 @@ class FakeWorld:
                 meta["registration_endpoint"] = f"{AS}/register"
             if self.methods is not None:
                 meta["code_challenge_methods_supported"] = self.methods
+            meta.update(getattr(self, "meta_overrides", {}))
             return httpx.Response(200, json=meta)
         if path == "/register":
             body = json.loads(request.content)
+            self.registrations = getattr(self, "registrations", 0) + 1
             assert body["token_endpoint_auth_method"] == "none"
             self.registered_redirects = body["redirect_uris"]
             return httpx.Response(201, json={"client_id": "cid-1"})
@@ -183,7 +185,7 @@ def hub(monkeypatch, world):
     monkeypatch.setattr(web, "orch", orch)
     saved = []
     monkeypatch.setattr(web, "_save_mcp_config", lambda: saved.append(orch.mcp.to_config()))
-    client = TestClient(web.app, base_url="http://hub.local")
+    client = TestClient(web.app, base_url="https://hub.local")
     return SimpleNamespace(orch=orch, client=client, saved=saved, world=world)
 
 
@@ -386,7 +388,7 @@ def _sign_in(hub, name="remote"):
 def test_full_oauth_flow_with_pkce_refresh_and_revocation(hub):
     _add_http(hub)
     body, page = _sign_in(hub)
-    assert body["redirect_uri"] == "http://hub.local/api/oauth/mcp/callback"
+    assert body["redirect_uri"] == "https://hub.local/api/oauth/mcp/callback"
     assert body["server_origin"] == "https://mcp.example.test:443" and body["as_host"] == "auth.example.test"
     assert hub.world.registered_redirects == [body["redirect_uri"]]
     assert page.status_code == 200 and "Signed in to remote" in page.text
@@ -414,7 +416,7 @@ def test_full_oauth_flow_with_pkce_refresh_and_revocation(hub):
     out = hub.client.delete("/api/admin/mcp/remote/oauth", headers=_HDR)
     assert out.status_code == 200 and out.json()["revoked"] is True
     assert set(hub.world.revoked) == {"rt-2", "at-2"}
-    assert not [n for n in store.names() if n.startswith("mcp.oauth.remote.")]
+    assert [n for n in store.names() if n.startswith("mcp.oauth.remote.")] == ["mcp.oauth.remote.issuer_pin"]
 
 
 def test_a_token_refused_mid_session_is_refreshed_once_and_the_call_retried(hub):
@@ -451,7 +453,7 @@ def test_state_mismatch_foreign_binding_and_replay_are_refused(hub):
     bad_state = hub.client.get(f"/api/oauth/mcp/callback?code={code}&state=forged-state-value")
     assert bad_state.status_code == 400 and not oc.has_tokens("remote")
     # A browser without the start's cookie (another person's browser): refused, flow kept.
-    foreign = TestClient(web.app, base_url="http://hub.local")
+    foreign = TestClient(web.app, base_url="https://hub.local")
     stranger = foreign.get(f"/api/oauth/mcp/callback?code={code}&state={state}")
     assert stranger.status_code == 403 and not oc.has_tokens("remote") and oc.pending("remote")
     relay_wrong = hub.client.post("/api/admin/mcp/remote/oauth/callback",
@@ -687,3 +689,173 @@ def test_cli_login_relays_only_code_and_state(hub):
     assert "Signed in to 'remote'" in out and oc.has_tokens("remote")
     relay = [c for c in fake.calls if c[1].endswith("/oauth/callback")][0][2]
     assert set(relay) == {"state", "binding", "code"}
+
+
+# ── review fixes: SSRF via metadata, mix-up, issuer pin, pinned redirects ────
+
+def test_a_public_servers_metadata_cannot_point_at_local_addresses(hub, world):
+    world.meta_overrides = {"registration_endpoint": "http://127.0.0.1:8080/api/ops/estop/resume",
+                            "revocation_endpoint": "http://127.0.0.1:8080/api/admin/memory/clear"}
+    _add_http(hub)
+    r = hub.client.post("/api/admin/mcp/remote/oauth/start", json={"redirect": "hub"}, headers=_HDR)
+    assert r.status_code == 400 and r.json()["error"] == "insecure_endpoint"
+    assert not [q for q in world.requests if "127.0.0.1" in q.headers.get("host", "")]
+
+
+@pytest.mark.parametrize("url, server, hub_origin, ok", [
+    ("http://127.0.0.1:9000/token", "https://mcp.example.test/mcp", None, False),   # public server → local AS
+    ("http://192.168.1.5/token", "https://mcp.example.test/mcp", None, False),
+    ("http://127.0.0.1:9000/token", "http://127.0.0.1:9000/mcp", None, True),       # same local host
+    ("http://localhost:9000/token", "http://127.0.0.1:9000/mcp", None, True),
+    ("http://127.0.0.1:8080/token", "http://127.0.0.1:9000/mcp", "https://hub.local:8080", False),  # hub port
+    ("https://hub.local/token", "https://mcp.example.test/mcp", "https://hub.local", False),        # hub itself
+    ("http://auth.example.test/token", "https://mcp.example.test/mcp", None, False),                # not https
+    ("https://auth.example.test/to\x1b[2Jken", "https://mcp.example.test/mcp", None, False),       # control chars
+    ("https://auth.example.test/token", "https://mcp.example.test/mcp", None, True),
+])
+def test_endpoint_policy(url, server, hub_origin, ok):
+    assert (oc.endpoint_problem(url, server_url=server, hub_origin=hub_origin) is None) is ok
+
+
+def test_endpoints_must_belong_to_the_issuer(hub, world):
+    world.meta_overrides = {"authorization_endpoint": "https://github.com/login/oauth/authorize"}
+    _add_http(hub)
+    r = hub.client.post("/api/admin/mcp/remote/oauth/start", json={"redirect": "hub"}, headers=_HDR)
+    assert r.json()["error"] == "endpoint_not_on_issuer"
+    assert not [q for q in world.requests if q.url.path in ("/register", "/token")]
+    assert oc._on_issuer("https://login.example.co.uk/a", "https://auth.example.co.uk")
+    assert not oc._on_issuer("https://evil.co.uk/a", "https://auth.example.co.uk")
+
+
+def test_rfc9207_issuer_in_the_response(hub, world):
+    world.meta_overrides = {"authorization_response_iss_parameter_supported": True}
+    _add_http(hub)
+    start = hub.client.post("/api/admin/mcp/remote/oauth/start", json={"redirect": "hub"}, headers=_HDR).json()
+    assert start["authorize_host"] == "auth.example.test"
+    code, state = world.authorize(start["authorization_url"])
+    wrong = hub.client.post("/api/admin/mcp/remote/oauth/callback", json={
+        "state": state, "code": code, "binding": start["binding"], "iss": "https://github.com"}, headers=_HDR)
+    assert wrong.json()["error"] == "issuer_mismatch" and not oc.has_tokens("remote")
+    assert not [q for q in world.requests if q.url.path == "/token"]
+    start = hub.client.post("/api/admin/mcp/remote/oauth/start", json={"redirect": "hub"}, headers=_HDR).json()
+    code, state = world.authorize(start["authorization_url"])
+    missing = hub.client.post("/api/admin/mcp/remote/oauth/callback", json={
+        "state": state, "code": code, "binding": start["binding"]}, headers=_HDR)
+    assert missing.json()["error"] == "issuer_missing"
+    start = hub.client.post("/api/admin/mcp/remote/oauth/start", json={"redirect": "hub"}, headers=_HDR).json()
+    code, state = world.authorize(start["authorization_url"])
+    page = hub.client.get(f"/api/oauth/mcp/callback?code={code}&state={state}&iss={AS}")
+    assert page.status_code == 200 and oc.has_tokens("remote")
+
+
+def test_plain_http_hub_callback_only_on_loopback(hub):
+    _add_http(hub)
+    plain = TestClient(web.app, base_url="http://192.168.1.5:8080")
+    r = plain.post("/api/admin/mcp/remote/oauth/start", json={"redirect": "hub"}, headers=_HDR)
+    assert r.status_code == 400 and r.json()["error"] == "insecure_redirect"
+    local = TestClient(web.app, base_url="http://127.0.0.1:8080")
+    assert local.post("/api/admin/mcp/remote/oauth/start", json={"redirect": "hub"}, headers=_HDR).status_code == 200
+
+
+def test_revocation_is_skipped_under_estop_but_tokens_go(hub, world, monkeypatch):
+    from agents.core import estop
+
+    _add_http(hub)
+    _sign_in(hub)
+    monkeypatch.setattr(estop, "is_engaged", lambda: True)
+    r = hub.client.delete("/api/admin/mcp/remote", headers=_HDR)
+    assert r.status_code == 200 and r.json()["oauth_revoked"] == "skipped_estop"
+    assert world.revoked == [] and not oc.has_tokens("remote")
+
+
+def test_the_first_issuer_is_pinned(hub, world):
+    _add_http(hub)
+    _sign_in(hub)
+    assert hub.client.delete("/api/admin/mcp/remote/oauth", headers=_HDR).status_code == 200
+    assert cat._store().get("mcp.oauth.remote.issuer_pin") == AS       # kept past sign-out
+    cat._store().set("mcp.oauth.remote.issuer_pin", "https://other.example.test")
+    r = hub.client.post("/api/admin/mcp/remote/oauth/start", json={"redirect": "hub"}, headers=_HDR)
+    assert r.json()["error"] == "issuer_changed"
+    assert hub.client.delete("/api/admin/mcp/remote", headers=_HDR).status_code == 200
+    assert cat._store().get("mcp.oauth.remote.issuer_pin") is None     # removal forgets it
+
+
+def test_one_dynamic_client_per_server(hub, world):
+    _add_http(hub)
+    for _ in range(2):
+        _sign_in(hub)
+    start = hub.client.post("/api/admin/mcp/remote/oauth/start",
+                            json={"redirect": "loopback", "redirect_uri": "http://127.0.0.1:47123/callback"},
+                            headers=_HDR).json()
+    assert world.registrations == 2 and set(world.registered_redirects) == {
+        "https://hub.local/api/oauth/mcp/callback", "http://127.0.0.1:47123/callback"}
+    status = hub.client.get("/api/admin/mcp/remote/oauth", headers=_HDR).json()
+    assert status["loopback_redirects"] == ["http://127.0.0.1:47123/callback"] and start["state"]
+
+
+def test_asana_installs_with_its_client_id_and_pinned_redirect(hub, world):
+    world.registration = False
+    plan = hub.client.post("/api/admin/mcp/catalog/preview",
+                           json={"name": "asana", "inputs": {"ASANA_CLIENT_ID": "cid-1"}}, headers=_HDR).json()["plan"]
+    assert plan["oauth"]["client_id"] == "cid-1" and plan["oauth"]["client_secret"] == "${ASANA_CLIENT_SECRET}"
+    assert "hermes" not in plan["post_install"].lower() and "nerva mcp login asana" in plan["post_install"]
+    r = hub.client.post("/api/admin/mcp/catalog/install", json={
+        "name": "asana", "inputs": {"ASANA_CLIENT_ID": "cid-1"}, "confirm": plan["digest"],
+        "secrets": {"ASANA_CLIENT_SECRET": "cs-asana"}}, headers=_HDR)
+    assert r.status_code == 200, r.text
+    saved = json.dumps(hub.saved[-1])
+    assert "cid-1" in saved and "cs-asana" not in saved
+    srv = hub.orch.mcp.servers["asana"]
+    srv.url = MCP_URL                        # point the installed server at the fake world
+    status = hub.client.get("/api/admin/mcp/asana/oauth", headers=_HDR).json()
+    assert status["redirect_pin"] == "http://localhost:27890/callback"
+    hubbed = hub.client.post("/api/admin/mcp/asana/oauth/start", json={"redirect": "hub"}, headers=_HDR)
+    assert hubbed.json()["error"] == "redirect_pinned"
+    start = hub.client.post("/api/admin/mcp/asana/oauth/start", json={
+        "redirect": "loopback", "redirect_uri": "http://localhost:27890/callback"}, headers=_HDR)
+    assert start.status_code == 200, start.text
+    code, state = world.authorize(start.json()["authorization_url"])
+    ok = hub.client.post("/api/admin/mcp/asana/oauth/callback",
+                         json={"state": state, "code": code, "binding": start.json()["binding"]}, headers=_HDR)
+    assert ok.status_code == 200 and b"client_secret=cs-asana" in [
+        q for q in world.requests if q.url.path == "/token"][-1].content
+
+
+def test_cli_listener_ignores_a_request_without_the_state(hub):
+    import threading
+    import urllib.error
+    import urllib.request
+
+    _add_http(hub)
+    codes = []
+
+    def browser(start):
+        code, state = hub.world.authorize(start["authorization_url"])
+        redirect = start["redirect_uri"]
+
+        def go():
+            time.sleep(0.2)
+            try:
+                urllib.request.urlopen(f"{redirect}?code=evil&state=forged", timeout=5)  # nosec B310
+            except urllib.error.HTTPError as exc:
+                codes.append(exc.code)
+            urllib.request.urlopen(f"{redirect}?code={code}&state={state}", timeout=5).read()  # nosec B310
+
+        threading.Thread(target=go, daemon=True).start()
+
+    code, out, err = _cli(_Hub(hub.client, on_start=browser), ["mcp", "login", "remote", "--no-browser"])
+    assert code == 0, err
+    assert codes == [400] and oc.has_tokens("remote")
+
+
+def test_review_nits():
+    with pytest.raises(cat.CatalogError):
+        cat.parse_link_config("p", _link({"command": "npx", "env": {"npm_config_registry": "https://x"}}))
+    with pytest.raises(cat.CatalogError):
+        cat.parse_link_config("p", _link({"command": "npx", "env": {"GIT_SSH_COMMAND": "x"}}))
+    assert "nerva mcp login linear" in cat.for_nerva("run `hermes mcp login linear`")
+
+
+def test_server_names_have_no_dots(hub):
+    r = hub.client.post("/api/admin/mcp", json={"name": "a.b", "transport": "stdio", "command": "x"}, headers=_HDR)
+    assert r.status_code == 400 and r.json()["error"] == "invalid_name"

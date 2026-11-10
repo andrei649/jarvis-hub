@@ -87,8 +87,10 @@ def _mime_hint(data):
         return 'image/webp' if data[8:12] == b'WEBP' else 'audio/wav'
     if len(data) >= 4 and data[0] == 255 and data[1] & 0xe0 == 0xe0:
         return 'audio/mpeg'
-    if len(data) >= 16 and data[4:8] == b'ftyp' and data[8:12] in {b'isom', b'iso2', b'mp41', b'mp42', b'avc1', b'M4V '}:
+    if len(data) >= 16 and data[4:8] == b'ftyp' and data[8:12] in {b'isom', b'iso2', b'iso5', b'iso6', b'mp41', b'mp42', b'avc1', b'M4V '}:
         return 'video/mp4'
+    if len(data) >= 16 and data[4:8] == b'ftyp' and data[8:12] == b'qt  ':
+        return 'video/quicktime'
     if data.startswith(b'\x1a\x45\xdf\xa3') and b'webm' in data:
         return 'video/webm'
     raise ValueError('unsupported_media')

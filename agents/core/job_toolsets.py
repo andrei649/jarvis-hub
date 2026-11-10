@@ -96,7 +96,7 @@ def resolve_job_policy(options, server, settings=None):
                 raise ValueError('enabled_toolsets contains an unavailable toolset')
             offered.update(members)
     removed = {name for group in saved['disabled_toolsets'] for name in CATALOG[group]}
-    removed.update({'messaging', 'clarify'})
+    removed.update({'messaging', 'clarify', 'request_secret'})
     if not saved['allow_agent_scheduling']:
         removed.add('cronjob')
     return JobToolPolicy(source, frozenset(offered - removed), frozenset(offered & removed))

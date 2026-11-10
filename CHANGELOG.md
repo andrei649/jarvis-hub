@@ -4,6 +4,21 @@
 
 ### What changed for you — 2026-11-09
 
+**Make videos (FAL, xAI Grok Imagine or DeepInfra)**
+- Nerva can now make a short video from a prompt, animate an image it generated, follow
+  reference images (xAI), and edit or extend a video it made with xAI. Ask in chat; you get
+  one approval card that names the provider, the model, the seconds and the most it can cost.
+  Nothing is sent until you approve, and nothing at all while the emergency stop is on or the
+  conversation is in plan mode.
+- Turn it on in Integrations: filter "video", save the provider's key, press "use for videos"
+  and confirm the consent card. "turn video off" turns it off again.
+- The cost on the card comes from verified list prices only; a model or setting Nerva has no
+  verified price for is refused instead of guessed. If the provider later reports a higher
+  price, you are told and the daily spend counts the real amount.
+- The finished video (MP4, QuickTime or WebM, up to 16 MiB) appears in the media gallery. A video that
+  stops after the provider got the request is never sent again on its own, so you are never
+  billed twice. How it works: `docs/video-generation.md`.
+
 **Plan first, repeat on a cadence, see what fills the window**
 - `/plan <task>` puts the conversation in plan mode: only reads run, nothing is written, sent
   or executed, and the model writes a step-by-step plan that Nerva saves as a markdown file.
@@ -21,6 +36,26 @@
   attachments) as a grid and a table; the HUD has the same meter (Console → Context Meter).
   `/compress` tells you what compaction will do on the next turn. Details:
   [docs/SESSION_COMMANDS.md](docs/SESSION_COMMANDS.md).
+**Check that a project still builds and passes its tests, and keep the proof**
+- `/verify` tells you how a project in your file roots is built and tested: its test, lint and
+  build commands and its run recipe (Node, Python, Go, Rust, Maven, Gradle, Make, docker
+  compose), detected by Hermes Agent's own code. `/verify save` writes the recipe to the
+  project's `.hermes/environment.json`, which you can edit; it then wins over detection.
+- `/verify run` runs the build and test commands one by one. Each is an ordinary terminal
+  command: you approve it, your approval mode and the command denylist apply, and nothing is
+  queued while the emergency stop is on or the conversation is in plan mode. Nerva does not
+  start the app itself.
+- Every finished test, lint or build run of a project, yours or the model's, is kept in an
+  evidence ledger that cannot be back-dated (`/verify ledger` checks it). Any change to the
+  project's files makes earlier results stale, and a run of one test file never counts as the
+  whole suite.
+- `/verify on-stop on` (off by default): when the model is about to say it is done after code
+  in this conversation changed and nothing has passed since, it is asked once to run the
+  project's check first, and told that a check still waiting for you has not passed.
+- When the model works on code in a project, it now gets a short coding brief and a snapshot of
+  the repository (branch, ahead/behind, changed files, last commits, the project's commands).
+  Git is only run on a repository whose config cannot make it run a program; otherwise the
+  snapshot says so and leaves the git part out. `/verify coding off` turns it off.
 **Set up search services and cloud model providers from one HUD panel, no `.env` edit, no restart**
 - A new Console panel, Start → **Integrations**, lists everything that needs your setup: the four
   search services (Tavily, plus Exa, Brave Search and Parallel from Hermes Agent), the cloud model
@@ -236,6 +271,26 @@
   changed. Nerva refuses all Hermes actions until someone has reviewed the new ones.
 - Not tested yet: the new version has not been installed and run end to end, because that needs
   a large download. The checks above were run against its source code.
+
+**Answer the turn's questions, secrets and approvals in the terminal**
+- `nerva chat`, run from a terminal, now asks you the turn's questions while it runs: pick
+  a numbered choice, type your own answer, or `/cancel`. A batch of questions comes one at a
+  time. Your answer reaches the same turn, read as data, just like an answer typed in the HUD.
+- When a turn needs a missing key, it asks you for it there. What you type is not shown, goes
+  only to Nerva's encrypted secret store and never into the conversation, the logs or the
+  receipt. Only the owner is asked; a terminal with only the user token is not. A turn can ask
+  only for a key a skill you installed declares, never for one of Nerva's own keys, and not at
+  all once it has read a web page or other outside content. What the turn writes is shown behind
+  a `│` bar, so it cannot pass itself off as a Nerva prompt, and an answer that looks like a key
+  is never sent as an ordinary answer. Storing a secret is refused while your administrator
+  manages the configuration.
+- After a turn that queued approvals, each card is shown with its exact command and rollback,
+  and you can accept, reject, defer or leave it queued, through the same route as the HUD.
+- Scripts are unaffected: with piped input, `--json` or `--no-prompts`, nothing is asked.
+- Questions and secret prompts still need the clarification preview turned on
+  (`nerva config set channels.pending_inputs_enabled true`, then restart). It stays off by
+  default until you decide otherwise, so the clarify tool is not yet always available as it is
+  in Hermes Agent. Details: [docs/cli-chat-receipts.md](docs/cli-chat-receipts.md).
 
 **Settings an administrator pins stay pinned**
 - Whoever administers the box can now pin single settings and environment values in a folder

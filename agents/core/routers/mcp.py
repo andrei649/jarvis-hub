@@ -306,6 +306,11 @@ async def admin_mcp_add(req: MCPServerConfig):
             {"error": "invalid_sampling", "sampling": req.sampling, "supported": list(SAMPLING_MODES)},
             status_code=400,
         )
+    from agents.core.mcp.catalog import NAME_RE
+    if not isinstance(req.name, str) or not NAME_RE.match(req.name):
+        return JSONResponse({"error": "invalid_name",
+                             "message": "a server name is letters, digits, - and _ (at most 64)"},
+                            status_code=400)
     if req.name in orch.mcp.servers:
         return JSONResponse({"error": f"MCP server '{req.name}' already exists"}, status_code=409)
     auth = getattr(req, "auth", None)
@@ -316,14 +321,6 @@ async def admin_mcp_add(req: MCPServerConfig):
         return JSONResponse({"error": "invalid_oauth",
                              "message": "oauth takes client_id, scope and client_secret, for an HTTP server"},
                             status_code=400)
-    if oauth_secret:
-        import asyncio
-
-        from agents.core.mcp.catalog import store_secrets
-        try:
-            await asyncio.to_thread(store_secrets, req.name, {"OAUTH_CLIENT_SECRET": oauth_secret})
-        except Exception:
-            return JSONResponse({"error": "secret_store_unavailable"}, status_code=503)
     srv = MCPServer(
         name=req.name,
         # Persist the NORMALISED value, not req.transport. The gate above lower-cases
@@ -341,6 +338,14 @@ async def admin_mcp_add(req: MCPServerConfig):
         auth=auth if transport == "streamable-http" else None,
         oauth=oauth_pins or None,
     )
+    if oauth_secret:
+        import asyncio
+
+        from agents.core.mcp.catalog import store_secrets
+        try:
+            await asyncio.to_thread(store_secrets, req.name, {"OAUTH_CLIENT_SECRET": oauth_secret})
+        except Exception:
+            return JSONResponse({"error": "secret_store_unavailable"}, status_code=503)
     _register_server(orch, srv)
     return {"ok": True, "server": req.name, "message": f"MCP server '{req.name}' added"}
 
@@ -359,7 +364,7 @@ def _oauth_overrides(raw) -> tuple[Optional[dict], Optional[str]]:
     if secret:
         if "client_id" not in pins:
             return None, None
-        pins["client_secret"] = "${OAUTH_CLIENT_SECRET}"
+        pins["client_secret"] = "${OAUTH_CLIENT_SECRET}"  # nosec B105 - a reference to a stored secret, not a secret
     return pins, secret
 
 
@@ -533,7 +538,7 @@ async def _forget_credentials(name: str) -> dict:
         out["secrets_removed"] = None
     if oauth_client._SERVER_RE.match(name or ""):
         try:
-            result = await oauth_client.sign_out(name)
+            result = await oauth_client.sign_out(name, forget=True)
             out["oauth_revoked"] = result.get("revoked")
         except Exception as exc:
             logger.warning("MCP OAuth sign-out on remove failed (type=%s)", type(exc).__name__)
@@ -742,6 +747,8 @@ class OAuthRelay(BaseModel):
     binding: str = Field(min_length=8, max_length=200)
     code: Optional[str] = Field(default=None, max_length=4096)
     error: Optional[str] = Field(default=None, max_length=200)
+    #: RFC 9207: the issuer the authorization response named, when it named one.
+    iss: Optional[str] = Field(default=None, max_length=2048)
 
 
 def _oauth_error(exc) -> JSONResponse:
@@ -777,7 +784,8 @@ async def admin_mcp_oauth_status(name: str):
     _srv, refusal = _http_server(orch, name)
     if refusal is not None:
         return refusal
-    return nocache_json({"server": name, **oauth_client.status(name)})
+    return nocache_json({"server": name, **oauth_client.status(name),
+                         "redirect_pin": oauth_client.redirect_pin(getattr(_srv, "oauth", None))})
 
 
 @router.post("/api/admin/mcp/{name}/oauth/start", dependencies=_WRITE)
@@ -823,7 +831,7 @@ async def admin_mcp_oauth_relay(name: str, body: OAuthRelay):
         return refusal
     try:
         result = await oauth_client.complete(body.state, body.code or "", body.binding, server=name,
-                                             error=body.error)
+                                             error=body.error, iss=body.iss)
     except oauth_client.OAuthError as exc:
         return _oauth_error(exc)
     audited = audit_sign_in(orch, result, via="relay")

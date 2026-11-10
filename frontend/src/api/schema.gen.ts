@@ -6841,6 +6841,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/integrations/video-choice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Integration Video Off
+         * @description Turn video generation off: no provider is chosen any more.
+         */
+        delete: operations["integration_video_off_api_admin_integrations_video_choice_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/integrations/search-choice": {
         parameters: {
             query?: never;
@@ -15701,6 +15721,10 @@ export interface components {
             elicitation?: boolean | null;
             /** Auth */
             auth?: string | null;
+            /** Oauth */
+            oauth?: {
+                [key: string]: string;
+            } | null;
         };
         /** MapBody */
         MapBody: {
@@ -15977,6 +16001,8 @@ export interface components {
             code?: string | null;
             /** Error */
             error?: string | null;
+            /** Iss */
+            iss?: string | null;
         };
         /** OAuthStart */
         OAuthStart: {
@@ -28427,6 +28453,26 @@ export interface operations {
             };
         };
     };
+    integration_video_off_api_admin_integrations_video_choice_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     integration_search_auto_api_admin_integrations_search_choice_delete: {
         parameters: {
             query?: never;
@@ -28858,6 +28904,7 @@ export interface operations {
                 code?: string;
                 state?: string;
                 error?: string;
+                iss?: string | null;
             };
             header?: never;
             path?: never;

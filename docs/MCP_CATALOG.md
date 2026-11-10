@@ -89,7 +89,20 @@ For a remote server that requires it (`auth: oauth`), press **sign in** (or `ner
   tokens at the server (RFC 7009, best effort) and delete them.
 - **Audit.** Each sign-in writes `mcp.oauth.sign_in` to the intent log (server, issuer, scope,
   expiry, how it came back); sign-out writes `mcp.oauth.sign_out`. Never a token.
-- **E-stop.** Engaged, it refuses starting a sign-in, redeeming a callback and refreshing.
+- **E-stop.** Engaged, it refuses starting a sign-in, redeeming a callback and refreshing; sign-out
+  and remove then delete the tokens without contacting the server (`revoked: "skipped_estop"`).
+- **Where requests may go.** Every OAuth endpoint must be https, or a loopback/private address
+  only when the MCP server itself is on that same host; never the hub's own address or a loopback
+  address on the hub's port. So a public server cannot point registration, token or revocation
+  requests at your hub's admin API.
+- **Mix-up defence.** The authorization, token, registration and revocation endpoints must be on
+  the issuer's own host or registrable domain; an `iss` in the response (RFC 9207) must name that
+  issuer and is required when the server says it sends one. The first issuer a server signed in
+  at is remembered (past sign-out); a different one is refused until you remove and re-add the
+  server. The HUD and CLI show the host your browser is sent to.
+- **Vendors without registration.** A manifest's client id (Asana's `ASANA_CLIENT_ID`, typed at
+  install) is kept with the server; its exact return address (`http://localhost:27890/callback`)
+  is required, so such a server signs in through `nerva mcp login` only.
 
 ### When the browser is not on the hub's machine (H692)
 
@@ -97,7 +110,8 @@ The browser has to come back somewhere after you approve. Three ways, none of wh
 but you finish your sign-in:
 
 1. **Back to the hub** (the HUD's default): the redirect is the hub's own address as your browser
-   reached it, `…/api/oauth/mcp/callback`. A redirect carries no admin token, so the start also set
+   reached it, `…/api/oauth/mcp/callback` (https, or plain http only on loopback: a code must not
+   cross the network in clear text). A redirect carries no admin token, so the start also set
    an HttpOnly cookie on that path holding a random **binding**; the hub redeems the code only
    with the waiting state and that binding, compared in constant time, once. A browser without
    the cookie gets "this sign-in was not started from this browser" and the sign-in keeps waiting.

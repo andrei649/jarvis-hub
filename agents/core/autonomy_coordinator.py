@@ -955,6 +955,8 @@ class AutonomyCoordinator:
             preflight=image_dispatcher.preflight, trusted_execution=True,
             gated_intake=image_dispatcher.intake,
         )
+        from .creative.video_generation import register_video_tool  # G19 (H516)
+        register_video_tool(server, lambda: getattr(self._orch, "cloud_videos", None), _APPROVED_TASK.get)
         from .browser_runtime import (
             BrowserRuntime, INPUT_SCHEMA as BROWSER_RUN_SCHEMA, local_browser_ready,
         )
@@ -1299,6 +1301,15 @@ class AutonomyCoordinator:
 
             if approved_task_id is not None and args.get("cwd"):
                 await asyncio.to_thread(project_context.note_terminal, approved_task_id, result, args["cwd"])
+            if approved_task_id is not None and args.get("cwd"):
+                # G5 — a finished verify command is evidence (passive; never changes the result).
+                from .verify import evidence as verify_evidence
+
+                try:
+                    await asyncio.to_thread(verify_evidence.record_terminal, approved_task_id, args, result,
+                                            audit=getattr(self._orch, "intent_log", None))
+                except Exception:
+                    logger.warning("verify evidence not recorded", exc_info=True)
             return result
 
         def _terminal_intake(actor, args):
@@ -1365,8 +1376,10 @@ class AutonomyCoordinator:
                                               and getattr(self._orch, 'autonomy', None) is worker),
                 )
             from . import project_context
+            from .verify import evidence as verify_evidence
 
             project_context.note_task(task_id)
+            verify_evidence.note_task(task_id)   # G5: its result counts for this session
             return task_id
 
         async def _terminal_review(actor, args, task_id):
@@ -1641,6 +1654,9 @@ class AutonomyCoordinator:
                                                payload=payload, risk_tier=3,
                                                autonomy_level='ask', origin='generated')
             child_adapter.bind(child, task_id)
+            from .verify import evidence as verify_evidence   # G5: the edit counts for this session
+
+            verify_evidence.note_task(task_id)
             return task_id
 
         register_file_tools(server, file_tools, mutation_intake=_file_mutation_intake)
@@ -2229,6 +2245,8 @@ class AutonomyCoordinator:
         self._wire_url_monitor(executor)
         self._wire_cloud_image(executor)
         self._wire_kanban_network(executor)
+        from .creative.video_generation import wire_cloud_video  # G19 (H516): outermost plugin.egress
+        wire_cloud_video(self._orch, executor)
         for kw in ("research", "search", "monitor", "scan", "lookup", "check"):
             executor.register(kw, _research)
         for kw in ("summarize", "analyze", "review", "draft", "plan", "prepare"):

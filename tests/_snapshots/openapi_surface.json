@@ -3,6 +3,7 @@
   "DELETE /api/a2a/peers/{peer_id}/outbound": "a2a_clear_peer_outbound_api_a2a_peers__peer_id__outbound_delete",
   "DELETE /api/admin/backup/restore": "backup_restore_cancel_api_admin_backup_restore_delete",
   "DELETE /api/admin/integrations/search-choice": "integration_search_auto_api_admin_integrations_search_choice_delete",
+  "DELETE /api/admin/integrations/video-choice": "integration_video_off_api_admin_integrations_video_choice_delete",
   "DELETE /api/admin/integrations/{entry_id}/key": "integration_key_delete_api_admin_integrations__entry_id__key_delete",
   "DELETE /api/admin/llm/custom-endpoints/active": "clear_custom_api_admin_llm_custom_endpoints_active_delete",
   "DELETE /api/admin/llm/custom-endpoints/{key}": "delete_custom_api_admin_llm_custom_endpoints__key__delete",

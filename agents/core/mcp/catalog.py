@@ -59,7 +59,17 @@ _REFUSED_ENV = frozenset({
     "PATH", "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH",
     "PYTHONPATH", "PYTHONSTARTUP", "PYTHONHOME", "NODE_OPTIONS", "NODE_PATH", "BASH_ENV", "ENV",
     "PERL5OPT", "RUBYOPT", "JAVA_TOOL_OPTIONS", "HOME",
+    "PYTHONWARNINGS", "PIP_INDEX_URL", "PIP_EXTRA_INDEX_URL", "UV_INDEX_URL", "UV_EXTRA_INDEX_URL",
+    "LD_AUDIT", "GCONV_PATH", "PERL5LIB", "RUBYLIB", "GIT_SSH_COMMAND", "GIT_SSH", "GIT_EXEC_PATH",
+    "NPM_CONFIG_REGISTRY", "BUN_INSTALL", "DENO_DIR",
 })
+#: Name prefixes refused the same way (``npm_config_*`` points npm at another registry or script).
+_REFUSED_ENV_PREFIXES = ("NPM_CONFIG_", "LD_", "DYLD_")
+
+
+def _env_refused(name: str) -> bool:
+    upper = name.upper()
+    return upper in _REFUSED_ENV or upper.startswith(_REFUSED_ENV_PREFIXES)
 
 STATUS_OK = "ok"
 STATUS_FUTURE = "future_manifest"
@@ -247,11 +257,24 @@ def _env_spec(raw: Any) -> SecretSpec:
     if not isinstance(raw, dict):
         raise CatalogError(STATUS_INVALID, "auth.env entries must be mappings")
     name = str(raw.get("name") or "")
-    if not ENV_NAME_RE.match(name) or name.upper() in _REFUSED_ENV:
+    if not ENV_NAME_RE.match(name) or _env_refused(name):
         raise CatalogError(STATUS_INVALID, f"auth.env name {name!r} is not allowed")
     return SecretSpec(name=name, prompt=str(raw.get("prompt") or name)[:200],
                       required=bool(raw.get("required", True)), secret=bool(raw.get("secret", True)),
                       default=str(raw.get("default") or ""))
+
+
+def for_nerva(text: str) -> str:
+    """Hermes's install notes read for Nerva (the vendored bytes are unchanged): its commands and
+    product name become Nerva's."""
+    text = re.sub(r"`?hermes mcp login ([A-Za-z0-9_-]+)`?", r"`nerva mcp login \1`", text)
+    text = re.sub(r"`?hermes mcp configure ([A-Za-z0-9_-]+)`?", "the MCP Servers panel (trust and tool filter)", text)
+    text = re.sub(r"`?/reload-mcp`?", "connect", text)
+    text = text.replace("config.yaml", "Nerva's server settings").replace("~/.hermes/.env", "Nerva's secret store")
+    text = text.replace("the profile's .env", "Nerva's secret store")
+    text = re.sub(r"restart (your|the) Hermes session", "press connect", text)
+    text = re.sub(r"\bHermes Agent\b|\bHermes\b", "Nerva", text)
+    return text
 
 
 def api_key_name(server: str) -> str:
@@ -283,7 +306,7 @@ def parse_manifest(data: bytes, rel: str = "manifest.yaml") -> Entry:
     t_type = transport.get("type")
     entry = Entry(name=name, path=rel, description=" ".join(str(raw.get("description") or "").split())[:400],
                   source=str(raw.get("source") or ""),
-                  post_install=str(raw.get("post_install") or "").strip()[:2000])
+                  post_install=for_nerva(str(raw.get("post_install") or "").strip()[:2000]))
     slug = raw.get("connector_slug")
     if slug is not None and (not isinstance(slug, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", slug)):
         raise CatalogError(STATUS_INVALID, "connector_slug must be a slug")
@@ -313,7 +336,7 @@ def parse_manifest(data: bytes, rel: str = "manifest.yaml") -> Entry:
         entry.transport, entry.command, entry.args = "stdio", command.strip(), [str(a) for a in args]
         env = _mapping(transport.get("env"), "transport.env")
         for key, value in env.items():
-            if not isinstance(key, str) or not ENV_NAME_RE.match(key) or key.upper() in _REFUSED_ENV \
+            if not isinstance(key, str) or not ENV_NAME_RE.match(key) or _env_refused(key) \
                     or not isinstance(value, str):
                 raise CatalogError(STATUS_INVALID, f"transport.env {key!r} is not allowed")
         entry.env = dict(env)
@@ -405,7 +428,7 @@ def parse_link_config(name: str, config_b64: str) -> Entry:
     if not isinstance(env, dict):
         raise CatalogError("invalid_link", "env must be an object")
     for key in env:
-        if not isinstance(key, str) or not ENV_NAME_RE.match(key) or key.upper() in _REFUSED_ENV:
+        if not isinstance(key, str) or not ENV_NAME_RE.match(key) or _env_refused(key):
             raise CatalogError("invalid_link", f"env name {key!r} is not allowed")
         entry.inputs.append(SecretSpec(name=key, prompt=key, required=True, secret=True))
     if entry.transport == "streamable-http" and entry.inputs:
@@ -477,7 +500,10 @@ def build_plan(entry: Entry, *, server_name: str | None = None, origin: str = "c
         "secret_env": secret_env,
         "secret_headers": secret_headers,
         "auth": entry.auth,
-        "oauth": {k: entry.oauth[k] for k in sorted(entry.oauth)},
+        # Non-secret references are filled with the owner's values (they are part of what
+        # runs: Asana's client id); secret references stay ``${NAME}`` and are read from the
+        # store at sign-in.
+        "oauth": {k: _fill_plain(entry.oauth[k], plain) for k in sorted(entry.oauth)},
         "trust": "read-only",
         "tools_allow": entry.tools_allow,
         "tools_deny": entry.tools_deny,
@@ -490,6 +516,12 @@ def build_plan(entry: Entry, *, server_name: str | None = None, origin: str = "c
                         else f"connect to the URL you type for {entry.url_input}")
     plan["digest"] = plan_digest(plan)
     return plan
+
+
+def _fill_plain(value, plain: dict[str, str]):
+    if not isinstance(value, str):
+        return value
+    return _ENV_REF_RE.sub(lambda m: plain[m.group(1)] if plain.get(m.group(1)) else m.group(0), value)
 
 
 def plan_digest(plan: dict) -> str:
@@ -575,7 +607,8 @@ def delete_secrets(server: str) -> int:
     prefix = f"{SECRET_PREFIX}{server}."
     removed = 0
     for name in list(store.names()):
-        if name.startswith(prefix) and store.delete(name):
+        # Exactly this server's names: ``<prefix><NAME>`` with no further dot.
+        if name.startswith(prefix) and ENV_NAME_RE.match(name[len(prefix):]) and store.delete(name):
             removed += 1
     return removed
 

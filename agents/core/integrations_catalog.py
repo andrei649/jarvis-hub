@@ -10,6 +10,9 @@ panel. This module lists them in one place, as data the panel renders:
 * **model** — the native cloud providers that take a key (Gemini, Anthropic, OpenRouter,
   DeepInfra, xAI, OpenAI Responses) and the 24 adopted from Hermes
   (``hermes_provider_table``);
+* **video** — the video providers adopted from Hermes (FAL, xAI Grok Imagine, DeepInfra;
+  ``creative.video_providers``, G19): a key, then a consented choice
+  (``JARVIS_VIDEO_PROVIDER``); each video is still one approval card with its cost;
 * **skills** — the vendored Hermes skills catalog, as a summary that points at the Skills
   Import panel (installing stays there).
 
@@ -33,6 +36,8 @@ logger = logging.getLogger("jarvis.integrations_catalog")
 KIND_SEARCH = "search"
 KIND_MODEL = "model"
 KIND_SKILLS = "skills"
+KIND_VIDEO = "video"
+VIDEO_CHOICE = "JARVIS_VIDEO_PROVIDER"
 ORIGIN_NATIVE = "native"
 ORIGIN_HERMES = "hermes"
 WEB_BACKEND = "JARVIS_WEB_BACKEND"
@@ -152,8 +157,29 @@ def model_entries() -> list[Entry]:
     return out
 
 
+def video_entries() -> list[Entry]:
+    """The adopted Hermes video providers (G19): a key, then the owner's consented choice."""
+    from agents.core.creative import video_providers as vp
+
+    out = []
+    for name, row in vp.PROVIDERS.items():
+        # Only the models Nerva has a verified price for are offered (others are refused).
+        models = tuple({"fal": vp.FAL_PRICES, "xai": vp.XAI_PRICES,
+                        "deepinfra": vp.DEEPINFRA_PRICES}[name])
+        out.append(Entry(
+            id=entry_id(KIND_VIDEO, name), kind=KIND_VIDEO, name=name, display_name=row.display,
+            origin=ORIGIN_HERMES, keys=(row.key,), host=row.host, host_country=None,
+            data_policy="unknown",
+            data_policy_note="how this provider handles your video prompts and images has not been verified",
+            price_known="some",
+            price_note=(f"paid per second of video; Nerva knows the verified list price of {len(models)} "
+                        "model(s) and refuses the others. Every video's approval card shows its upper-bound cost"),
+            selectable=True, models=models))
+    return out
+
+
 def entries() -> list[Entry]:
-    return search_entries() + model_entries()
+    return search_entries() + model_entries() + video_entries()
 
 
 def find(eid: str) -> Entry | None:
@@ -245,6 +271,8 @@ def _status(entry: Entry, key: dict, selected: str, primary: str) -> str:
         return "error"
     if entry.kind == KIND_SEARCH:
         return "active" if primary == entry.name else "key_set"
+    if entry.kind == KIND_VIDEO:
+        return "active" if _video_choice() == entry.name else "key_set"
     if entry.kind == KIND_MODEL:
         try:
             from agents.core.llm import provider_probe
@@ -259,10 +287,25 @@ def _status(entry: Entry, key: dict, selected: str, primary: str) -> str:
     return "key_set"
 
 
+def _video_choice() -> str:
+    from agents.core.creative import video_providers as vp
+
+    return vp.chosen()
+
+
+def _receives(kind: str) -> str:
+    if kind == KIND_SEARCH:
+        return "your search queries"
+    if kind == KIND_VIDEO:
+        return "your video prompts and the images you ask it to animate"
+    return "your conversations (the prompts and replies of the turns it answers)"
+
+
 def as_dict(entry: Entry, *, selected: str, backend: str, primary: str,
             by_name: dict[str, list[str]] | None = None) -> dict:
     key = _key_state(entry, by_name)
-    choice_env = integration_keys.env_owned(WEB_BACKEND) if entry.kind == KIND_SEARCH else False
+    choice_env = (integration_keys.env_owned(WEB_BACKEND) if entry.kind == KIND_SEARCH
+                  else integration_keys.env_owned(VIDEO_CHOICE) if entry.kind == KIND_VIDEO else False)
     primary_shared = [eid for eid in (by_name or readers()).get(key["primary"], []) if eid != entry.id]
     return {
         "id": entry.id, "kind": entry.kind, "name": entry.name, "display_name": entry.display_name,
@@ -276,10 +319,10 @@ def as_dict(entry: Entry, *, selected: str, backend: str, primary: str,
         "facts": {"host": entry.host, "host_country": entry.host_country,
                   "data_policy": entry.data_policy, "data_policy_note": entry.data_policy_note,
                   "price_known": entry.price_known, "price_note": entry.price_note,
-                  "receives": ("your search queries" if entry.kind == KIND_SEARCH
-                               else "your conversations (the prompts and replies of the turns it answers)")},
+                  "receives": _receives(entry.kind)},
         "selectable": entry.selectable,
         "selected": ((backend == entry.name) if entry.kind == KIND_SEARCH
+                     else (_video_choice() == entry.name) if entry.kind == KIND_VIDEO
                      else (selected == entry.name if entry.selectable else (key["set"] and key["own"]))),
         "choice_editable": not choice_env,
         "models": list(entry.models),
@@ -317,8 +360,11 @@ def listing() -> dict:
                                          else "env" if integration_keys.env_owned(WEB_BACKEND)
                                          else ("hub" if integration_keys.placed_here(WEB_BACKEND) else None))},
             "model": {"selected": selected},
+            "video": {"provider": _video_choice() or None,
+                      "choice_source": ("env" if integration_keys.env_owned(VIDEO_CHOICE)
+                                        else ("hub" if integration_keys.placed_here(VIDEO_CHOICE) else None))},
             "precedence": "env"}
 
 
-__all__ = ["KIND_MODEL", "KIND_SEARCH", "KIND_SKILLS", "LAST_TEST", "SEARCH_ROWS", "WEB_BACKEND",
-           "entries", "find", "listing", "managed_keys", "skills_summary"]
+__all__ = ["KIND_MODEL", "KIND_SEARCH", "KIND_SKILLS", "KIND_VIDEO", "LAST_TEST", "SEARCH_ROWS",
+           "VIDEO_CHOICE", "WEB_BACKEND", "entries", "video_entries", "find", "listing", "managed_keys", "skills_summary"]

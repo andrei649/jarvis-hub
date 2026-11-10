@@ -154,8 +154,9 @@ function SignIn({ name, oauth, onChanged }: { name: string; oauth: any; onChange
     try { url = new URL(pasted.trim()); } catch { setMsg('paste the whole address from the browser'); return; }
     const state = url.searchParams.get('state') || ''; const code = url.searchParams.get('code') || '';
     const error = url.searchParams.get('error') || '';
+    const iss = url.searchParams.get('iss');
     apiPost(`/api/admin/mcp/${encodeURIComponent(name)}/oauth/callback`,
-      { state, binding: start.binding, ...(code ? { code } : {}), ...(error ? { error } : {}) }, { admin: true })
+      { state, binding: start.binding, ...(code ? { code } : {}), ...(error ? { error } : {}), ...(iss !== null ? { iss } : {}) }, { admin: true })
       .then(() => { setStart(null); setPasted(''); setMsg('signed in · press connect'); onChanged(); })
       .catch((err: any) => setMsg(`not signed in · ${fail(err)}`));
   };
@@ -182,7 +183,7 @@ function SignIn({ name, oauth, onChanged }: { name: string; oauth: any; onChange
         : <button className="tool-btn" onClick={begin}>sign in</button>}
       {start && (
         <div style={{ marginTop: 4 }}>
-          Sign in at <span style={mono}>{start.as_host}</span> (<a href={start.authorization_url} target="_blank" rel="noopener noreferrer">open</a>). The token is sent only to <span style={mono}>{start.server_origin}</span>.
+          Your browser opens <span style={mono}>{start.authorize_host || start.as_host}</span> (authorization server <span style={mono}>{start.as_host}</span>) (<a href={start.authorization_url} target="_blank" rel="noopener noreferrer">open</a>). The token is sent only to <span style={mono}>{start.server_origin}</span>.
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
             <label htmlFor={`paste-${name}`}>Browser could not reach the hub? Paste the address it ended on</label>
             <input id={`paste-${name}`} value={pasted} onChange={(ev) => setPasted(ev.target.value)} style={{ ...inpS, minWidth: 200 }} />

@@ -30,7 +30,7 @@ type KeyState = { names: string[]; name: string; primary?: string; set: boolean;
 type Facts = { host: string; host_country: string | null; data_policy: string; data_policy_note: string;
   price_known: 'yes' | 'some' | 'no'; price_note: string; receives: string };
 export type Integration = {
-  id: string; kind: 'search' | 'model'; name: string; display_name: string; origin: 'native' | 'hermes';
+  id: string; kind: 'search' | 'model' | 'video'; name: string; display_name: string; origin: 'native' | 'hermes';
   status: 'not_set_up' | 'key_set' | 'shared' | 'active' | 'error'; key: KeyState; facts: Facts;
   selectable: boolean; selected: boolean; choice_editable: boolean; models: string[];
   last_test?: { ok: boolean; message: string } | null;
@@ -143,7 +143,8 @@ function IntegrationDetail({ item, onChanged }: { item: Integration; onChanged: 
       .then((r: any) => {
         const refusal = guardRefusal({ status: r?.error === 'selection_guard' ? 409 : 200, body: r });
         if (refusal) { setConsent({ refusal, forKey: false }); return; }
-        setMsg(item.kind === 'search' ? 'searches use it now' : `in use now · ${model}`);
+        setMsg(item.kind === 'search' ? 'searches use it now' : item.kind === 'video'
+          ? 'videos use it now · each video still asks your approval with its cost' : `in use now · ${model}`);
         onChanged();
       })
       .catch((err: any) => setMsg(`not chosen · ${refusalReason(err, String(err?.status || 'error'))}`))
@@ -208,13 +209,14 @@ function IntegrationDetail({ item, onChanged }: { item: Integration; onChanged: 
           </>
         )}
         {(item.selectable || item.kind === 'search') && (
-          <button className="tool-btn" disabled={busy || !item.key.set || (item.kind === 'search' && !item.choice_editable)
+          <button className="tool-btn" disabled={busy || !item.key.set || ((item.kind === 'search' || item.kind === 'video') && !item.choice_editable)
             || (item.kind === 'model' && !model.trim())} onClick={() => use()}>
-            {item.kind === 'search' ? 'use for searches' : 'use this provider'}
+            {item.kind === 'search' ? 'use for searches' : item.kind === 'video' ? 'use for videos' : 'use this provider'}
           </button>
         )}
         {!item.selectable && item.kind === 'model' && <span style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>used as soon as its key is set</span>}
         {item.kind === 'search' && !item.choice_editable && <span style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>the search choice is set in .env (JARVIS_WEB_BACKEND)</span>}
+        {item.kind === 'video' && !item.choice_editable && <span style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>the video choice is set in .env (JARVIS_VIDEO_PROVIDER)</span>}
       </div>
       {testMsg && <div role="status" style={{ fontSize: 10.5, marginTop: 4 }}>{testMsg}</div>}
       {msg && <div role="status" style={{ fontSize: 10.5, marginTop: 4, color: msg.startsWith('not ') ? 'var(--amber)' : 'var(--ink-2)' }}>{msg}</div>}
@@ -226,22 +228,26 @@ function IntegrationDetail({ item, onChanged }: { item: Integration; onChanged: 
   );
 }
 
-const KINDS = [['all', 'all'], ['search', 'search'], ['model', 'models']] as const;
+const KINDS = [['all', 'all'], ['search', 'search'], ['model', 'models'], ['video', 'video']] as const;
 
 export function IntegrationsPanel() {
   const { d, e, reload } = useApi(INTEGRATIONS_PATH, true, true);
-  const [kind, setKind] = useState<'all' | 'search' | 'model'>('all');
+  const [kind, setKind] = useState<'all' | 'search' | 'model' | 'video'>('all');
   const [q, setQ] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const rows: Integration[] = Array.isArray((d as any)?.integrations) ? (d as any).integrations : [];
   const skills = (d as any)?.skills;
   const search = (d as any)?.search;
+  const video = (d as any)?.video;
   const shown = useMemo(() => rows.filter((r) => (kind === 'all' || r.kind === kind)
     && (!q.trim() || `${r.display_name} ${r.name} ${r.facts.host}`.toLowerCase().includes(q.trim().toLowerCase()))), [rows, kind, q]);
   const counts = rows.reduce((acc: Record<string, number>, r) => { acc[r.status] = (acc[r.status] || 0) + 1; return acc; }, {});
   const auto = () => apiDelete('/api/admin/integrations/search-choice', { admin: true })
     .then(() => { setNote('searches choose automatically again'); reload(); })
+    .catch((err: any) => setNote(`not changed · ${refusalReason(err, String(err?.status || 'error'))}`));
+  const videoOff = () => apiDelete('/api/admin/integrations/video-choice', { admin: true })
+    .then(() => { setNote('video generation is off'); reload(); })
     .catch((err: any) => setNote(`not changed · ${refusalReason(err, String(err?.status || 'error'))}`));
 
   return (
@@ -257,6 +263,13 @@ export function IntegrationsPanel() {
           {search.choice_source === 'env' ? ' (set in .env)' : search.choice_source === 'managed' ? ' (🔒 managed by your administrator)' : null}
           {search.choice_source === 'hub' && <button className="tool-btn" style={{ marginLeft: 6 }} onClick={() => void auto()}>choose automatically</button>}
           {note && <span role="status" style={{ marginLeft: 6, color: 'var(--ink-2)' }}>{note}</span>}
+        </div>
+      )}
+      {video && (
+        <div style={{ fontSize: 11, marginBottom: 6 }}>
+          Videos use <b>{video.provider || 'nothing (off)'}</b>
+          {video.choice_source === 'env' ? ' (set in .env)' : null}
+          {video.choice_source === 'hub' && <button className="tool-btn" style={{ marginLeft: 6 }} onClick={() => void videoOff()}>turn video off</button>}
         </div>
       )}
       {skills && (

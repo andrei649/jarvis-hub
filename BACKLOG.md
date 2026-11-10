@@ -2561,6 +2561,9 @@
 - 2026-11-10 Hermes G6+G7 adversarial review fixed (same branch): the owner's disconnect/remove now holds against the supervisor (only the owner marks a server wanted; connect re-checks wanted, e-stop and both kill-switch scopes under a per-server lock; remove closes in every state); elicitation and ask-sampling wait inside the native human-wait window, and a call that ends first withdraws the card, tells the server `cancel` and answers a late owner `too_late`; elicitation is off by default per server, 3 cards/min and 2 server requests per call, every card string through `card_safe`; utility responses cleaned of zero-width/bidi/TAG/ANSI with dirty identifiers withheld; stdio line limit 72 MiB and HTTP content replies 72 MiB (1.5 MB / 3 MB tested), an over-limit line drops the connection cleanly; stderr drained in chunks; flapping trips the breaker; cache extensions allowlisted, quota 500 files / 256 MiB / 7 days, cache files tainted for `file_read`; sampling budget documented as in-memory. H552 stays equivalent, H556/H553 partial. +21 tests (`tests/test_mcp_g6_g7_review.py`, in the `mcp` area suite). Remaining: HUD form for elicitation answers, HTTP server requests, H556 schema cache/watchdog/reaper/lock.
 - 2026-11-10 Hermes G6+G7 second review fixed: one MCP result keeps at most 100 blocks and 2M characters (resources, prompts and tool calls), cut before cleaning; cleaning is one regex pass and large results are cleaned, scanned and bounded on a worker thread (a 12 MB reply: no loop stall over 150 ms; a 60 MB reply still holds the interpreter ~0.25 s while JSON is parsed); stdio reads 1 MiB lines while idle (a flooding idle server is dropped), 16 MiB during calls, 72 MiB only during content reads, at most 2 at once hub-wide; a flapping server parks; MCP cards may hold a turn open 15 minutes in all and open cards count against the rate; an answer crossing a cancellation is delivered; cache folders carry a name hash. +11 tests (`tests/test_mcp_g6_g7_round2.py`, in the `mcp` area suite). H552 equivalent, H556/H553 partial.
 - 2026-11-10 Hermes G9 — MCP install catalog and client OAuth (`docs/hermes/missing-rows-plan-2026-11-10.md` G9; guide `docs/MCP_CATALOG.md`, Adopt lane slice 5 in `docs/hermes/ADOPT_LANE.md`): Hermes's 66 reviewed `optional-mcps` manifests vendored byte-identical as data (`scripts/hermes_vendor.py mcp-catalog`, MANIFEST rows, re-checked on every read in `agents/core/mcp/catalog.py`); `GET /api/admin/mcp/catalog`, `POST …/catalog/preview` (the exact command or endpoint, env, secret names, digest) and `POST …/catalog/install` (only with the confirmed digest; safe mode, load set, managed gate, e-stop, never overwrites a name; secrets in the encrypted store as `mcp.secret.<server>.<NAME>`, internal to the broker; nothing starts until connect; `mcp.install` intent row); deep link `/v2/console/mcp?install=<name>` or `?link=&config=` (inert, 32 KB, env values dropped, headers refused); OAuth for remote servers in `agents/core/mcp/oauth_client.py` (RFC 9728/8414 discovery, DCR or pinned client, PKCE, tokens in the secret store sent only to the server origin, refresh before expiry and once after a mid-session 401, revocation on sign-out/remove, `mcp.oauth.sign_in` intent row, e-stop refusals); callback relay: hub callback `GET /api/oauth/mcp/callback` bound by an HttpOnly cookie, `nerva mcp login` one-shot loopback listener, HUD paste; admin add now accepts `streamable-http` (+ `auth: oauth`, `oauth` client overrides). HUD: Console → Interop → **MCP Servers**; CLI: `nerva mcp catalog|install|login`. **H549 → partial** (no post-install probe/tool checklist, no OS `nerva://` scheme, `suggest` unused), **H550 → partial** (no CIMD, no pinned first-login ports, no client-name/auth-method/user-agent overrides), **H692 → equivalent**. Headline 154 → 155/697. Tests: `tests/test_mcp_g9_catalog_oauth.py` (36, fake authorization server + fake MCP server over MockTransport; added to the `mcp` and `upstream-delta` area suites), `frontend/src/panels/mcp.test.tsx` (5), one in-handler guard probe; no live sign-in was made.
+- 2026-11-10 Hermes G9 adversarial review fixed (same branch): OAuth endpoints must be https, or local only when the MCP server is on that host, never the hub's own address (a public server could aim revocation at `/api/ops/estop/resume`); every endpoint on the issuer's host/registrable domain and RFC 9207 `iss` checked (mix-up); the first issuer pinned past sign-out; revocation skipped under the e-stop; plain-http hub callback only on loopback; HUD/CLI show the host the browser opens; Asana-style client ids kept from install and exact redirect pins honoured by `nerva mcp login`; the CLI listener ignores requests without the state; one dynamic client per server; more refused env names; dotless server names; Hermes install notes read for Nerva. +20 tests in `tests/test_mcp_g9_catalog_oauth.py` (56). H549/H550 partial, H692 equivalent.
+- 2026-11-10 Hermes G4 — clarify tool + terminal governance prompts (`docs/hermes/missing-rows-plan-2026-11-10.md` G4): `nerva chat` on a terminal answers the turn's clarify questions mid-turn (single and batch, `/cancel`, own answer) through the existing HTTP poll binding (`GET /chat/pending`, `POST /chat/pending/{id}/answer`), so the answer reaches the same turn fenced and tainted like a HUD answer; a new `request_secret` tool (registered with clarify, same preview setting, untrusted output, blocked for children and jobs) asks the owner of an HTTP poll turn for a missing key, read with `getpass` and stored only through `POST /api/secrets/broker`, the prompt resolving to the marker `stored` only once the broker holds the name (owner-only on offer and answer; never over a chat channel or the HUD stream); after the turn, each approval card it queued is shown with command and rollback and decided through the admin decision route (no batch accept). Scripts (piped stdin, `--json`, `--no-prompts`) are never asked. **H226 stays partial** (an approval decision's audit record still says `admin`, not the terminal surface); **H316 stays partial** (the owner has not turned `channels.pending_inputs_enabled` on by default, so clarify is not "always available"; voice still has no binding). Hermes `tools/clarify_tool.py` not adopted: its normalisation is already vendored in `clarify_protocol.py`. +21 tests (`tests/test_h226_cli_governance_prompts.py`, in the `tui` and `tools` area suites).
+- 2026-11-10 Hermes G4 adversarial review fixed (same branch): `request_secret` is refused in a turn with an untrusted origin or one that read untrusted content, accepts only an upper-case key an owner-vouched skill declares (passing the code-environment rules), so no system broker name (house, camera, peer, connector keys) or provider/hub credential can be asked for; a key held in the store or a vault source is not re-asked and answers like a stored one (no existence oracle); a managed key or managed mode refuses first. `POST /api/secrets/broker` validates name and value and refuses in managed mode or for a managed key, audited. On the terminal every model-written line sits behind a fixed `│` gutter with control, bidi and zero-width characters removed; the secret prompt shows only the validated name in Nerva's wording; a key-shaped clarify answer is never sent; approval cards and `nerva approvals list` are card-safe and show payload, origin/taint, approval mode and consent; refused polling and long waits are shown; `-z` receipts name what was decided. H226 remaining restored (approvals and confirm/sudo are decided after the turn, not while it blocks; the decision audit does not name the terminal). +17 tests (38 in the file).
 
 - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
   owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.
@@ -2899,6 +2902,27 @@
   forget; e-stop re-read per request; per-peer fan-out refusals; confined home; path-scoped and
   private compat names refused in every import form. Tests: `tests/test_a2a_outbound.py` (65).
   Guide: `docs/hermes/ADOPT_LANE.md` → slice 4.
+  **Adopt lane — G19 video generation (2026-11-10):** Hermes's `VideoGenProvider` ABC, registry and
+  the FAL / xAI Grok Imagine / DeepInfra plugins vendored (8 path-scoped rules, compat
+  `video_shared` / `video_media` / `video_clock` / `video_openai`, compat `httpx.AsyncClient` +
+  capped `download`, `os_env.environ.get`); OpenRouter video not adopted (needs Hermes's runtime
+  credential resolver). Nerva tool `video_generate` (gated): one `plugin.egress` approval card per
+  video with an upper-bound cost as `amount`, the cloud-image governance (consented choice + key,
+  kernel, enforced mediation, e-stop, no replay, live check per request), per-provider manifests
+  (`cloud-video-{fal,xai,deepinfra}`), 2-thread executor, 15-min deadline, cancellable polling,
+  16 MiB capped download, MP4/WebM check, media-catalog `video` artifact. Integrations panel:
+  `video.*` entries, consent card, `DELETE /api/admin/integrations/video-choice`.
+  H516 missing → partial (xAI server-side storage off, no DeepInfra catalog, no live call,
+  `video_pipeline` render step not wired). Tests: `tests/test_hermes_video_generation.py` (22) +
+  1 HUD test. Guides: `docs/video-generation.md`, `docs/hermes/ADOPT_LANE.md` → "Video generation".
+  Adversarial review fixed: card cost from verified list prices only (per FAL family, modality,
+  resolution, audio; xAI per model/resolution; two DeepInfra models), unpriced ones refused
+  (`price_unverified`); a provider-reported cost above the estimate warns and is charged to the
+  spend; xAI edit priced on the source's real length + input-video charge; exactly one POST, to the
+  approved URL; video manifests ship disabled, open only for the chosen provider; registry
+  `export` only into the video registry (vendor allowlist too); DeepInfra CDN/data-URI delivery
+  recovered via the API host; `iso5`/`iso6`/`qt` brands; xAI poll sleep cancellable; video choice
+  routes gated by managed configuration; env ratchet back to 107. Video tests now 48.
   **Run lane, slice 1 (2026-11-10):** the governed Hermes sidecar moves from `0808ed8` to `9c0560f8`
   and the move is now a script: `scripts/hermes_runtime.py bump --commit <sha>`
   (`scripts/hermes_runtime_bump.py`) re-verifies the current pin, downloads and verifies the new
@@ -2938,6 +2962,30 @@
   fork, prompt.btw, @diff/page refs or acting manual compaction). User docs:
   `docs/SESSION_COMMANDS.md`. Tests: `tests/test_g2_session_commands.py` (62; two adversarial review rounds added the per-tick owner re-check, a fresh allotment on resume, migration with the conversation and an explicit read-kind list) and
   `frontend/src/panels/context-meter.test.tsx` (2).
+  **G5 — project verification + coding posture (2026-11-10):** Hermes's `agent/verify/recipes.py`
+  and `environment.py` adopted behind two rules scoped to `agent/verify/` (`verify-fs`: a path
+  confined to one bound project root, secret paths absent, 256 KiB reads, writes only to the
+  manifest; `verify-siblings`); upstream's process runner not adopted. New `agents/core/verify/`:
+  project facts + recipe, a runner whose every command is a `terminal_run` through the tool front
+  door (approval card, approval mode, target policy, hardline, `terminal.exec`, kernel; refused under
+  the e-stop and in plan mode before anything is queued), an evidence ledger (hash-chained rows
+  anchored in the intent log; fed by the coordinator's terminal result hook and applied
+  `file_write`/`file_delete`), verify-on-stop in the tool loop (off by default, one nudge a turn,
+  two per edit generation, held answer as fallback), and the coding posture (brief, single-editor
+  edit-format line, a session-pinned fenced git snapshot). Adversarial review round (same day): the
+  first snapshot still let a repository run code (filter subsection case, `config.worktree`,
+  `log.showSignature` + `gpg.program`, partial-clone lazy fetch over `core.sshCommand`); git now
+  runs only when the repository's config holds allowlisted plain keys, with `-c` overrides and
+  `GIT_NO_LAZY_FETCH` as a second layer, one deadline and a streamed output cap. Also fixed:
+  manifest text sanitised and fenced in the snapshot and the nudge; an oversized coding block can
+  no longer drop all guidance; evidence needs a full run and an unchanged file fingerprint (no
+  targeted or weak runs, outside edits seen); every ledger row must be anchored and a cut tail is
+  seen; `/verify save` never follows a link or a hard link (`ConfinedFS`, `O_NOFOLLOW`); the
+  switches obey managed mode.
+  Owner surface: `/verify [status|detect|save|run|ledger|on-stop|coding]`. Ledger: H023, H405, H406
+  stay **partial** (no app boot/readiness poll; no `pre_verify` hook; no patch editor to steer
+  toward, no focus-mode collapse). Guide: `docs/hermes/ADOPT_LANE.md` → slice 5; user docs:
+  `docs/SESSION_COMMANDS.md` → /verify. Tests: `tests/test_g5_project_verify.py` (64 cases after the review round).
 
   **UX pass done (2026-11-10): the Integrations panel** (owner request: make the Hermes integration
   coherent before adopting more). Console → Start → Integrations lists the 4 search backends (Tavily +
