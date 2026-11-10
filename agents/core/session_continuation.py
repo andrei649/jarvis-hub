@@ -406,6 +406,11 @@ def _load_locked(orch, sid):
         instance, legacy = history_identity(orch.checkpoints._conn, sid)
         head = rewind_head(orch.checkpoints._conn, sid)
         origin = status_locked(orch.checkpoints._conn, sid)
+        # H443: whether this history came from elsewhere (a continuation's seed, an import),
+        # as opposed to the conversation's own snapshot reloaded after a restart.
+        lineage = any(orch.checkpoints._conn.execute(
+            f"SELECT 1 FROM {table} WHERE session_id=?", (sid,)).fetchone() is not None  # nosec B608 - fixed table names
+            for table in ("session_continuations", "session_imports"))
     if head is not None and head[0] != instance:
         raise ContinuationRefused("history_identity_changed")
     if sid in conversation.sessions:
@@ -496,7 +501,7 @@ def _load_locked(orch, sid):
         restored.append(turn)
     conversation.invalidate_active_images(sid)
     guard = getattr(conversation, "load_guard", None)
-    if callable(guard):
+    if callable(guard) and (origin.tainted or lineage):
         # H443: a history loaded whole from elsewhere was not watched turn by turn.
         guard(sid)
     conversation.sessions[sid] = restored

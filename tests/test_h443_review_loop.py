@@ -694,7 +694,8 @@ async def test_the_real_turn_entry_marks_the_session_even_with_the_review_switch
     for method in (Orchestrator.handle_input, Orchestrator.handle_input_stream):
         source = inspect.getsource(method)
         assert source.index("read_untrusted = _turn_is_untrusted()") < source.index(
-            "reset_action_origin(origin_token)") < source.index("_note_turn_taint(self, session_id)")
+            "reset_action_origin(origin_token)") < source.index("_note_turn_taint(self, session_id, taint_reason)")
+        assert source.index("taint_reason = _turn_taint_reason()") < source.index("reset_action_origin(origin_token)")
     # Before the reply is stored, and at the start before the message is.
     seam = inspect.getsource(Orchestrator._complete_llm_turn)
     assert seam.index("_note_turn_taint(self, self.session_id)") < seam.index("self.memory.add_turn(")

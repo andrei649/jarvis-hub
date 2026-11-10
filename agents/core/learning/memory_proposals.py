@@ -295,16 +295,27 @@ def _turn_time(value: Any) -> float | None:
 
 class MemoryProposalStore(JsonStore):
     """The ledger of held memory writes and of the conversations watched clean from their
-    first turn."""
+    first turn.
+
+    Two files: the ledger itself (proposals, the clean list; small, rewritten whole) and,
+    beside it, the reasons journal (``<ledger>.reasons.jsonl``): one appended line per
+    recorded or dropped revocation reason, numbered, compacted once it is mostly stale.
+    A new channel conversation's reason costs one line, never a rewrite of every reason.
+    Every in-memory copy-and-swap of the clean list or the reasons happens under
+    ``_swap_lock``, which is never held across a disk write."""
 
     def __init__(self, path: str | Path | None = None, *, now: Callable[[], float] = time.time) -> None:
         self._now = now
         self._apply_lock = threading.Lock()
         self._card_lock = threading.Lock()
+        self._swap_lock = threading.Lock()
+        self._journal_lock = threading.Lock()
         self._items: dict[str, dict] = {}
         self._clean: dict[str, float] = {}
-        #: Why each revoked session is off the clean list: ``{sid: {"reason", "at"}}``.
+        #: Why each revoked session is off the clean list: ``{sid: {"reason", "at", "seq"}}``.
         self._revoked: dict[str, dict] = {}
+        self._seq = 0
+        self._journal_lines = 0
         #: Held writes refused because :data:`MAX_PENDING` were already waiting.
         self._dropped = 0
         #: The clean list as an admission is saving it (shown only once it is on disk),
@@ -315,10 +326,13 @@ class MemoryProposalStore(JsonStore):
 
     # ── persistence ──────────────────────────────────────────────────────────
 
+    @property
+    def journal_path(self) -> Path | None:
+        return self.path.with_name(f"{self.path.name}.reasons.jsonl") if self.path is not None else None
+
     def _serialize(self):
         clean = self._saving_clean if self._saving_clean is not None else self._clean
-        return {"proposals": self._items, "clean_sessions": clean, "dropped_at_cap": self._dropped,
-                "revoked_sessions": self._revoked}
+        return {"proposals": self._items, "clean_sessions": clean, "dropped_at_cap": self._dropped}
 
     def _deserialize(self, raw) -> None:
         raw = raw if isinstance(raw, dict) else {}
@@ -334,18 +348,29 @@ class MemoryProposalStore(JsonStore):
         self._clean = ({str(k): float(v) for k, v in clean.items()
                         if isinstance(v, (int, float)) and not isinstance(v, bool)}
                        if isinstance(clean, dict) else {})
-        revoked = raw.get("revoked_sessions")
+        # An earlier ledger kept the reasons inline: read them, the journal follows.
         self._revoked = {}
+        revoked = raw.get("revoked_sessions")
         for key, rec in (revoked.items() if isinstance(revoked, dict) else []):
-            reason = rec.get("reason") if isinstance(rec, dict) else None
-            at = rec.get("at") if isinstance(rec, dict) else None
-            if not isinstance(at, (int, float)) or isinstance(at, bool):
-                at = 0.0
-            # A damaged reason is the stricter one: known unclean, cause unknown.
-            self._revoked[str(key)] = {"reason": reason if reason in REVOKE_REASONS else "undecidable",
-                                       "at": float(at)}
-            # A session revoked is never clean, whatever the file says.
-            self._clean.pop(str(key), None)
+            self._apply_line({"s": str(key), "r": rec.get("reason") if isinstance(rec, dict) else None,
+                              "t": rec.get("at") if isinstance(rec, dict) else None, "n": 0})
+
+    def _apply_line(self, line: dict) -> None:
+        sid = line.get("s")
+        if not isinstance(sid, str) or not sid:
+            return
+        seq = line.get("n") if type(line.get("n")) is int else 0
+        self._seq = max(self._seq, seq)
+        if line.get("d"):
+            self._revoked.pop(sid, None)
+            return
+        reason = line.get("r")
+        at = line.get("t")
+        if not isinstance(at, (int, float)) or isinstance(at, bool):
+            at = 0.0
+        # A damaged reason is the stricter one: known unclean, cause unknown.
+        self._revoked[sid] = {"reason": reason if reason in REVOKE_REASONS else "undecidable",
+                              "at": float(at), "seq": seq}
 
     def _load(self) -> None:
         import json
@@ -353,23 +378,119 @@ class MemoryProposalStore(JsonStore):
         if self.path is None or not self.path.exists():
             # No ledger: nothing is held and no conversation is known to be clean.
             self._deserialize({})
-            return
-        try:
-            raw = json.loads(self.path.read_text(encoding="utf-8"))
-            if not isinstance(raw, dict) or not isinstance(raw.get("proposals"), dict) \
-                    or not isinstance(raw.get("clean_sessions"), dict):
-                raise ValueError("not a memory proposal ledger")
-        except Exception:
-            aside = self.path.with_name(f"{self.path.name}.unreadable-{int(self._now())}")
-            logger.warning("memory proposals: %s cannot be read; moved to %s and an empty ledger started "
-                           "(no earlier conversation is treated as clean)", self.path, aside.name, exc_info=True)
+        else:
             try:
-                self.path.replace(aside)
-            except OSError:
-                logger.warning("memory proposals: the unreadable ledger could not be moved aside", exc_info=True)
-            self._deserialize({})
+                raw = json.loads(self.path.read_text(encoding="utf-8"))
+                if not isinstance(raw, dict) or not isinstance(raw.get("proposals"), dict) \
+                        or not isinstance(raw.get("clean_sessions"), dict):
+                    raise ValueError("not a memory proposal ledger")
+            except Exception:
+                aside = self.path.with_name(f"{self.path.name}.unreadable-{int(self._now())}")
+                logger.warning("memory proposals: %s cannot be read; moved to %s and an empty ledger started "
+                               "(no earlier conversation is treated as clean)", self.path, aside.name,
+                               exc_info=True)
+                try:
+                    self.path.replace(aside)
+                except OSError:
+                    logger.warning("memory proposals: the unreadable ledger could not be moved aside",
+                                   exc_info=True)
+                raw = {}
+            self._deserialize(raw)
+        self._load_journal()
+        self._trim_revoked()
+        # A session with a reason is never clean, whatever the ledger says.
+        for sid in self._revoked:
+            self._clean.pop(sid, None)
+
+    def _load_journal(self) -> None:
+        import json
+
+        journal = self.journal_path
+        if journal is None or not journal.exists():
             return
-        self._deserialize(raw)
+        lines: list[dict] = []
+        try:
+            with open(journal, encoding="utf-8") as fh:
+                for raw_line in fh:
+                    try:
+                        line = json.loads(raw_line)
+                    except ValueError:
+                        continue   # a torn last line (a write cut short): skipped
+                    if isinstance(line, dict):
+                        lines.append(line)
+        except OSError:
+            logger.warning("memory proposals: the reasons journal cannot be read; recorded reasons are "
+                           "not known (sessions read as never seen)", exc_info=True)
+            return
+        lines.sort(key=lambda line: line.get("n") if type(line.get("n")) is int else 0)
+        for line in lines:
+            self._apply_line(line)
+        self._journal_lines = len(lines)
+
+    def _append_journal(self, line: dict) -> None:
+        """Append one numbered line to the reasons journal, flushed to disk. Blocking."""
+        import json
+        import os
+
+        journal = self.journal_path
+        if journal is None:
+            return
+        data = (json.dumps(line, separators=(",", ":")) + "\n").encode("utf-8")
+        with self._journal_lock:
+            fd = os.open(journal, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+            try:
+                os.write(fd, data)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            self._journal_lines += 1
+            if self._journal_lines > 2 * len(self._revoked) + 1024:
+                self._compact_journal_locked()
+
+    def _compact_journal_locked(self) -> None:
+        """Rewrite the journal as the reasons stand (tmp, fsync, replace). Journal lock held."""
+        import json
+        import os
+
+        journal = self.journal_path
+        with self._swap_lock:
+            snapshot = dict(self._revoked)
+            seq = self._seq
+        tmp = journal.with_name(journal.name + ".tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            for sid, rec in snapshot.items():
+                os.write(fd, (json.dumps({"s": sid, "r": rec["reason"], "t": rec["at"], "n": seq},
+                                         separators=(",", ":")) + "\n").encode("utf-8"))
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.replace(tmp, journal)
+        self._journal_lines = len(snapshot)
+
+    def compact(self) -> None:
+        """Rewrite the reasons journal as it stands. Blocking."""
+        if self.journal_path is None:
+            return
+        with self._journal_lock:
+            self._compact_journal_locked()
+
+    def _trim_revoked(self, keep: str | None = None) -> None:
+        """Past :data:`MAX_REVOKED_SESSIONS`, drop the records whose loss costs least —
+        unproven ones, then channel conversations (whose id the hub's own evidence still
+        names: ``ch_…``), then the oldest — down to 95% of the cap, so the sort runs once
+        per many new records. A dropped record reads as never seen."""
+        revoked = self._revoked
+        if len(revoked) <= MAX_REVOKED_SESSIONS:
+            return
+        target = MAX_REVOKED_SESSIONS - MAX_REVOKED_SESSIONS // 20
+        order = sorted(revoked, key=lambda key: (revoked[key]["reason"] != RECALLED_UNPROVEN,
+                                                 not key.startswith("ch_"), revoked[key]["at"]))
+        for key in order:
+            if len(revoked) <= target:
+                break
+            if key != keep:
+                revoked.pop(key, None)
 
     # ── the conversations watched clean from their first turn ────────────────
 
@@ -384,38 +505,43 @@ class MemoryProposalStore(JsonStore):
         with self._lock:
             if sid in self._clean:
                 return False
-            if self.revoked_reason(sid) == "foreign_import":
+            before = self._revoked.get(sid)
+            if before is not None and before.get("reason") == "foreign_import":
                 # A continuation or an import looks empty until its seed loads: it stays
                 # off the list.
                 return False
             # Saved first, shown after: a reader (which takes no lock, see is_clean) never
-            # sees an admission the ledger does not hold.
-            candidate = {**self._clean, sid: self._now()}
-            while len(candidate) > MAX_CLEAN_SESSIONS:
-                candidate.pop(min(candidate, key=candidate.__getitem__))
-            current, self._saving_clean = self._clean, candidate
-            # An empty conversation starts over: the reason recorded for it before goes.
-            before = self._revoked
-            if sid in before:
-                self._revoked = {key: value for key, value in before.items() if key != sid}
+            # sees an admission the ledger does not hold. (A reason still in the journal
+            # keeps it off the list after a restart until the drop below is written.)
+            with self._swap_lock:
+                candidate = {**self._clean, sid: self._now()}
+                while len(candidate) > MAX_CLEAN_SESSIONS:
+                    candidate.pop(min(candidate, key=candidate.__getitem__))
+                self._saving_clean = candidate
             try:
                 self._save()
-            except BaseException:
-                if sid in before and sid not in self._revoked:
-                    self._revoked = {**self._revoked, sid: before[sid]}
-                raise
             finally:
                 self._saving_clean = None
-            if sid in self._revoking or sid in self._revoked:
-                # A revocation of this session ran while this was saving: it wins, and
-                # saves next (it is waiting for this lock, or flushes).
-                return False
-            if self._clean is current:
-                self._clean = candidate
-            else:
-                # Another session was revoked meanwhile (its save is next): keep that.
-                self._clean = {**self._clean, sid: candidate[sid]}
-            return True
+            with self._swap_lock:
+                if sid in self._revoking or self._revoked.get(sid) is not before:
+                    # A revocation of this session ran while this was saving: it wins.
+                    return False
+                # The candidate as saved, less any session revoked meanwhile.
+                self._clean = {key: value for key, value in candidate.items()
+                               if key == sid or key in self._clean}
+                drop = None
+                if before is not None:
+                    # An empty conversation starts over: the reason recorded for it goes.
+                    self._revoked.pop(sid, None)
+                    self._seq += 1
+                    drop = {"s": sid, "d": 1, "n": self._seq}
+        if drop is not None:
+            try:
+                self._append_journal(drop)
+            except OSError:
+                logger.warning("memory proposals: a dropped reason could not be written; the conversation "
+                               "reads as not clean after a restart", exc_info=True)
+        return True
 
     def _reason_changes(self, sid: str, reason: str) -> bool:
         """Whether recording *reason* for *sid* changes what is recorded: a first reason,
@@ -425,21 +551,29 @@ class MemoryProposalStore(JsonStore):
             return True
         return current.get("reason") == RECALLED_UNPROVEN and reason != RECALLED_UNPROVEN
 
-    def _record_reason(self, sid: str, reason: str) -> bool:
-        """Record *reason* for *sid* in memory (lock-free swap); True when it changed."""
+    def _record_reason_swapped(self, sid: str, reason: str) -> dict | None:
+        """Record *reason* for *sid* in memory; the journal line to write, or None when
+        nothing changed. Caller holds ``_swap_lock``."""
         if not self._reason_changes(sid, reason):
-            return False
-        revoked = {key: value for key, value in self._revoked.items() if key != sid}
-        revoked[sid] = {"reason": reason, "at": self._now()}
-        if len(revoked) > MAX_REVOKED_SESSIONS:
-            # Unproven records go first, oldest first; a dropped record reads as never seen.
-            order = sorted(revoked, key=lambda key: (revoked[key]["reason"] != RECALLED_UNPROVEN,
-                                                     revoked[key]["at"]))
-            for key in order[:len(revoked) - MAX_REVOKED_SESSIONS]:
-                if key != sid:
-                    revoked.pop(key, None)
-        self._revoked = revoked
-        return True
+            return None
+        self._seq += 1
+        rec = {"reason": reason, "at": self._now(), "seq": self._seq}
+        # In place: a reader's single lookup is safe without the lock; every writer and
+        # every iteration (the journal's compaction) holds it.
+        self._revoked[sid] = rec
+        self._trim_revoked(keep=sid)
+        return {"s": sid, "r": reason, "t": rec["at"], "n": rec["seq"]}
+
+    def _take_off(self, sid: str, reason: str) -> tuple[bool, dict | None]:
+        """Off the clean list and *reason* recorded, in memory, at once: (was it on the
+        list or being admitted, the journal line to write)."""
+        with self._swap_lock:
+            saving = self._saving_clean
+            was_clean = sid in self._clean or (saving is not None and sid in saving)
+            if was_clean:
+                self._revoking.add(sid)
+                self._clean = {key: value for key, value in self._clean.items() if key != sid}
+            return was_clean, self._record_reason_swapped(sid, reason)
 
     def needs_revoke(self, session_id: str, reason: str) -> bool:
         """Whether :meth:`revoke` with *reason* would change anything (no lock, no save):
@@ -453,8 +587,7 @@ class MemoryProposalStore(JsonStore):
                 or self._reason_changes(sid, reason))
 
     def flush(self) -> None:
-        """Save the ledger as it stands (a revocation made in memory only:
-        :meth:`forget_clean`). Blocking."""
+        """Save the ledger as it stands. Blocking."""
         with self._lock:
             self._save()
 
@@ -483,52 +616,49 @@ class MemoryProposalStore(JsonStore):
         """Take *session_id* off the clean list and record why (*reason*, one of
         :data:`REVOKE_REASONS`; anything else is ``undecidable``). A session that was never
         on the list is recorded too: its reason decides whether reading it taints a
-        turn's actions. Saved before it returns; True when anything changed. A revocation
-        that cannot be saved raises and still holds in this process (the stricter side),
-        and is written with the ledger's next save."""
+        turn's actions. Shown at once (the stricter side), then written: the reason as one
+        journal line, the ledger only when the session was on the clean list. True when
+        anything changed. A write that fails raises; the revocation still holds in this
+        process."""
         sid = str(session_id or "")
         if not sid:
             return False
         reason = reason if reason in REVOKE_REASONS else "undecidable"
-        saving = self._saving_clean
-        if sid not in self._clean and not (saving is not None and sid in saving):
-            if not self._reason_changes(sid, reason):
-                return False
-            with self._lock:
-                if not self._record_reason(sid, reason):
-                    return False
-                self._save()
-                return True
-        # Shown first (the stricter side holds at once, with no lock a turn would wait
-        # on), saved after. An admission of the same session that is being saved right
-        # now is told not to show itself.
-        self._revoking.add(sid)
-        self._clean = {key: value for key, value in self._clean.items() if key != sid}
-        self._record_reason(sid, reason)
+        was_clean, line = self._take_off(sid, reason)
         try:
-            with self._lock:
-                if sid in self._clean:
-                    self._clean = {key: value for key, value in self._clean.items() if key != sid}
-                self._record_reason(sid, reason)
-                self._save()
-                return True
+            if line is not None:
+                self._append_journal(line)
+            if was_clean:
+                with self._lock:
+                    self._save()
         finally:
-            self._revoking.discard(sid)
+            if was_clean:
+                with self._swap_lock:
+                    self._revoking.discard(sid)
+        return was_clean or line is not None
 
-    def forget_clean(self, session_id: str, reason: str = "foreign_import") -> bool:
-        """Take *session_id* off the clean list in memory only, recording *reason*; True
-        when that changed anything. The next save writes it (:meth:`flush`)."""
+    def forget_clean(self, session_id: str, reason: str = "foreign_import") -> tuple[bool, dict | None]:
+        """Take *session_id* off the clean list and record *reason*, in memory only (no
+        disk write: the caller may be on the event loop). Returns ``(was_clean, line)``;
+        :meth:`write_forgotten` writes them."""
         sid = str(session_id or "")
         if not sid:
-            return False
+            return False, None
         reason = reason if reason in REVOKE_REASONS else "undecidable"
-        self._revoking.add(sid)
+        return self._take_off(sid, reason)
+
+    def write_forgotten(self, session_id: str, was_clean: bool, line: dict | None) -> None:
+        """Write what :meth:`forget_clean` changed. Blocking: run it off the event loop."""
         try:
-            was_clean = sid in self._clean
-            self._clean = {key: value for key, value in self._clean.items() if key != sid}
-            return self._record_reason(sid, reason) or was_clean
+            if line is not None:
+                self._append_journal(line)
+            if was_clean:
+                with self._lock:
+                    self._save()
         finally:
-            self._revoking.discard(sid)
+            if was_clean:
+                with self._swap_lock:
+                    self._revoking.discard(str(session_id or ""))
 
     def is_clean(self, session_id: str) -> bool:
         """Read on the event loop at every turn: one dict lookup, no lock (a save in
@@ -821,13 +951,15 @@ class MemoryProposalStore(JsonStore):
         them (a conversation is admitted again only once it is empty). The store's file is
         left to the forget's own sweep, after its backup. Blocking (the queue's save):
         callers run it off the event loop."""
-        self._clean = {}
+        with self._swap_lock:
+            self._clean = {}
         with self._apply_lock, self._lock:
             count = len(self._items)
             cards = [rec.get("card") for rec in self._items.values()
                      if rec.get("status") in (STATUS_PENDING, STATUS_APPLYING) and rec.get("card")]
             self._items = {}
-            self._clean = {}
+            with self._swap_lock:
+                self._clean = {}
         for card in cards:
             item = _card(queue, card)
             if item is not None and item.get("status") == "pending":

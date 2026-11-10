@@ -249,11 +249,18 @@ class ChannelSessionLifecycle:
                         if not new_held:
                             return TURN_BUSY_REPLY
                         new_actual = await self._new_memory_session(new_key, prior_route=False)
-                        for turn in turns[:last_user]:
-                            await self.orch.memory.add_turn(
-                                new_actual, turn["role"], turn["content"],
-                                agent_id=turn.get("agent_id"), tools=turn.get("tools"),
-                                media=turn.get("media"))   # H586: keep image provenance
+                        from ..memory.manager import untrusted_embeddings
+
+                        # H443: the copy stands as its source does (``/undo`` on the HUD too).
+                        inherit = getattr(self.orch, "inherit_conversation_standing", None)
+                        unclean = (await inherit(actual, new_actual)
+                                   if callable(inherit) and turns[:last_user] else False)
+                        with untrusted_embeddings(unclean):
+                            for turn in turns[:last_user]:
+                                await self.orch.memory.add_turn(
+                                    new_actual, turn["role"], turn["content"],
+                                    agent_id=turn.get("agent_id"), tools=turn.get("tools"),
+                                    media=turn.get("media"))   # H586: keep image provenance
                         self.store.rotate(base, self.now(), source.channel, kind)
                         self.orch._channel_sessions[base] = new_actual
                         return "Removed the last exchange. Earlier conversation is preserved."

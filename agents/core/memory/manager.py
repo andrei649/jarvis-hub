@@ -12,6 +12,8 @@ import os
 import secrets
 import time
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Optional
 
@@ -28,6 +30,21 @@ logger = logging.getLogger("jarvis.memory")
 
 class RewindRefused(RuntimeError):
     """The prepared conversation tail no longer has the same durable authority."""
+
+
+#: H443 — set around a copy of a conversation known to be unclean (``/undo``): every turn
+#: the copy embeds carries the taint mark, as the source's would.
+_EMBED_UNTRUSTED: ContextVar[bool] = ContextVar("nerva_h443_embed_untrusted", default=False)
+
+
+@contextmanager
+def untrusted_embeddings(on: bool = True):
+    """Mark every turn embedded inside the block as untrusted (when *on*)."""
+    token = _EMBED_UNTRUSTED.set(bool(on) or _EMBED_UNTRUSTED.get())
+    try:
+        yield
+    finally:
+        _EMBED_UNTRUSTED.reset(token)
 
 
 def _turn_untrusted() -> bool:
@@ -358,7 +375,7 @@ class MemoryManager:
                 metadata.update({"channel": channel, "origin": origin})
                 if role == "user" and origin == INBOUND_ACTION_ORIGIN:
                     metadata = taint.mark(metadata, source=f"inbound:{channel}")
-            if not taint.is_tainted(metadata) and _turn_untrusted():
+            if not taint.is_tainted(metadata) and (_EMBED_UNTRUSTED.get() or _turn_untrusted()):
                 # H443: whatever an untrusted turn (a channel's, a guest's, one that read
                 # web text, a flagged recall or a file) puts here — its reply included —
                 # is not the owner's word, and says so when it is recalled later.

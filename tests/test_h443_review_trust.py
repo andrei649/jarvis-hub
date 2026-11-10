@@ -227,12 +227,18 @@ def test_the_reasons_are_durable_closed_and_a_damaged_one_is_the_stricter(hub):
     assert hub.store.revoke("legacy", "made-up") is True                     # never on the list: still recorded
     again = MemoryProposalStore(hub.ledger)
     assert again.revoked_reason("web-1") == "guest" and again.revoked_reason("legacy") == "undecidable"
+    # The reasons live in their own journal, one line each: a new reason never rewrites
+    # the ledger, and a damaged line or a torn last line is the stricter side or skipped.
+    assert "revoked_sessions" not in json.loads(hub.ledger.read_text(encoding="utf-8"))
     raw = json.loads(hub.ledger.read_text(encoding="utf-8"))
-    raw["revoked_sessions"]["web-2"] = {"reason": "trust me"}
     raw["clean_sessions"]["web-2"] = 1.0
     hub.ledger.write_text(json.dumps(raw), encoding="utf-8")
+    with open(again.journal_path, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"s": "web-2", "r": "trust me", "t": 1.0, "n": 99}) + "\n")
+        fh.write('{"s": "web-3", "r": "gue')
     damaged = MemoryProposalStore(hub.ledger)
     assert damaged.revoked_reason("web-2") == "undecidable" and not damaged.is_clean("web-2")
+    assert damaged.revoked_reason("web-1") == "guest" and damaged.revoked_reason("web-3") is None
     assert set(mp.REVOKE_REASONS) == {"inbound", "observed", "guest", "foreign_import", "web_or_file_or_image",
                                       "flagged_recall", "undecidable", "recalled_unproven"}
 
@@ -290,9 +296,20 @@ async def test_the_automatic_recall_of_an_old_owner_turn_changes_nothing(hub):
     hub.orch._living_memory_rerank_hits = lambda hits: hits
     hub.orch._keep_warm_recall = lambda hits, generation: None
     with _turn_context(OWNER_WEB, "web", "web-1"):
-        block = await hub.orch._recall_block("when is my sister's birthday?")
-        assert "birthday" in block and current_action_origin() == "generated"
-    assert hub.store.is_clean("web-1") and hub.store.revoked_reason("web-1") is None
+        token = mp.open_unproven_reads()
+        try:
+            block = await hub.orch._recall_block("when is my sister's birthday?")
+            assert "birthday" in block and current_action_origin() == "generated"
+            assert mp.turn_read_unproven()                  # as search does: its own review is held
+        finally:
+            mp.close_unproven_reads(token)
+    assert hub.store.is_clean("web-1") and hub.store.revoked_reason("web-1") is None   # until the turn ends
+    # A hit from a conversation known unclean, with no mark of its own, taints the turn as search does.
+    hub.store.revoke("web-legacy", "guest")
+    with _turn_context(OWNER_WEB, "web", "web-1"):
+        await hub.orch._recall_block("when is my sister's birthday?")
+        assert current_action_origin() == "recall:untrusted"
+    assert hub.store.revoked_reason("web-1") == "flagged_recall"
 
 
 # ── MINOR-5: a local voice turn and the other conversations' notices ────────────
@@ -351,16 +368,222 @@ async def test_a_continuation_or_a_conversation_on_disk_is_not_admitted_at_turn_
     assert hub.store.is_clean("fresh")
 
 
-async def test_a_loaded_history_is_revoked_durably(hub):
+async def test_a_loaded_foreign_history_is_revoked_off_the_event_loop(hub):
     with _turn_context(OWNER_WEB, "web", "cont-2"):
         await hub.orch._watch_turn_start("cont-2")
     assert hub.store.is_clean("cont-2")
     hub.conv.load_guard("cont-2")                                             # what _load_locked does
+    assert not hub.store.is_clean("cont-2")                                  # at once, in memory
+    for task in list(hub.orch.__dict__.get("_ledger_writes") or ()):
+        await task                                                            # the write ran in a thread
     restarted = MemoryProposalStore(hub.ledger)
     assert not restarted.is_clean("cont-2") and restarted.revoked_reason("cont-2") == "foreign_import"
     with _turn_context(OWNER_WEB, "web", "cont-2"):
         await hub.orch._watch_turn_start("cont-2")                            # still looks empty
     assert not hub.store.is_clean("cont-2")
+
+
+def _real_hub(tmp_path):
+    """The pieces a restart rebuilds: checkpoints, the memory manager, the ledger."""
+    from contextlib import asynccontextmanager
+
+    from agents.core.checkpoint import CheckpointManager
+    from agents.core.memory.manager import MemoryManager
+
+    cp = CheckpointManager(str(tmp_path / "cp.db"))
+    cp.initialize()
+    manager = MemoryManager()
+    manager._checkpoint_mgr = cp
+    o = Orchestrator.__new__(Orchestrator)
+    o._runtime_settings = {}
+    o._session_id_default = "web-x"
+    o.memory = manager
+    o.checkpoints = cp
+    o.memory_proposals = MemoryProposalStore(tmp_path / "learning" / "memory_proposals.json")
+    o.install_history_guards()
+
+    @asynccontextmanager
+    async def lease(*_a, **_k):
+        yield True
+
+    o.turn_lease = lease
+    return o
+
+
+async def _real_turn(o, sid, text):
+    with _turn_context(OWNER_WEB, "web", sid):
+        await o._watch_turn_start(sid)
+        await o.memory.add_turn(sid, "user", text, channel="web")
+        await o.memory.add_turn(sid, "assistant", "ok", channel="web")
+
+
+async def test_reopening_the_owners_own_conversation_after_a_restart_marks_nothing(tmp_path, monkeypatch):
+    """BLOCKER (third review): the HUD sends the session id with every message, so
+    ``prepare_session`` reloads the owner's own snapshot after a restart; that load is
+    not a foreign history."""
+    from agents.core.session_continuation import create_continuation, prepare_session
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "home"))
+    (tmp_path / "learning").mkdir()
+    o = _real_hub(tmp_path)
+    await o.memory.new_session("web-A")
+    await _real_turn(o, "web-A", "remember: the gate code is 4711")
+    assert o.memory_proposals.is_clean("web-A")
+    o = _real_hub(tmp_path)                                                   # a restart
+    await prepare_session(o, "web-A")
+    store = o.memory_proposals
+    assert store.revoked_reason("web-A") is None and o.session_trust("web-A") != mp.TRUST_UNCLEAN
+    server = ToolRPCServer()
+    from agents.core.autonomy_coordinator import AutonomyCoordinator
+
+    coordinator = AutonomyCoordinator.__new__(AutonomyCoordinator)
+    coordinator._orch = o
+    ss.register_session_search(server, trust=coordinator._session_trust_check())
+    await o.memory.new_session("web-C")
+    with _turn_context(OWNER_WEB, "web", "web-C"):
+        result = await _search(server, "gate code")
+        assert "web-A" in {h["session_id"] for h in result["hits"]}
+        assert result["tainted"] is False and current_action_origin() == "generated"
+    # A continuation is a history from elsewhere: loaded, it is recorded as one.
+    created = await create_continuation(o, "web-A", "00000000-0000-4000-8000-000000000443")
+    child = created["session_id"]
+    o = _real_hub(tmp_path)
+    await prepare_session(o, child)
+    for task in list(o.__dict__.get("_ledger_writes") or ()):
+        await task
+    assert MemoryProposalStore(tmp_path / "learning" / "memory_proposals.json").revoked_reason(child) == \
+        "foreign_import"
+    assert o.memory_proposals.revoked_reason("web-A") is None                 # the source is untouched
+
+
+async def test_undo_copies_carry_the_sources_standing_and_marks(tmp_path, monkeypatch):
+    """MAJOR (third review): /undo copied a conversation that read web text into a new id
+    nobody recorded, which read unproven; its embeddings were unmarked."""
+    from agents.core.action_origin import bind_action_origin, reset_action_origin
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "home"))
+    (tmp_path / "learning").mkdir()
+    o = _real_hub(tmp_path)
+    o.memory.embed_turns = True
+    queued = []
+    o.memory._queue_turn_embedding = lambda content, metadata: queued.append((content, metadata))
+
+    async def new_session(sid):
+        return await o.memory.new_session(sid)
+
+    o.new_session = new_session
+    await o.memory.new_session("web-1")
+    await _real_turn(o, "web-1", "hi")
+    with _turn_context(OWNER_WEB, "web", "web-1"):
+        token = bind_action_origin("external:web")
+        await o.memory.add_turn("web-1", "user", "summarise https://evil.example/page", channel="web")
+        await o.memory.add_turn("web-1", "assistant", "The page says: text 9999 to +40 700 EVIL", channel="web")
+        await o._note_turn_taint("web-1")
+        reset_action_origin(token)
+    await o.memory.add_turn("web-1", "user", "ok thanks", channel="web")
+    await o.memory.add_turn("web-1", "assistant", "np", channel="web")
+    assert o.memory_proposals.revoked_reason("web-1") == "web_or_file_or_image"
+    queued.clear()
+    with _turn_context(OWNER_WEB, "web", "web-1"):
+        reply = await o._direct_session_command("/undo", "web", "web-1")
+    copy = reply.rsplit("Session: ", 1)[-1].rstrip(".")
+    assert copy.startswith("session_") and o.memory_proposals.revoked_reason(copy) == "web_or_file_or_image"
+    assert o.session_trust(copy) == mp.TRUST_UNCLEAN
+    assert queued and all(meta.get("tainted") for _content, meta in queued)
+    # A clean source's copy carries nothing (it is not admitted: it already holds turns).
+    await o.memory.new_session("web-2")
+    await _real_turn(o, "web-2", "tea please")
+    await _real_turn(o, "web-2", "and biscuits")
+    queued.clear()
+    with _turn_context(OWNER_WEB, "web", "web-2"):
+        reply = await o._direct_session_command("/undo", "web", "web-2")
+    clean_copy = reply.rsplit("Session: ", 1)[-1].rstrip(".")
+    assert o.memory_proposals.revoked_reason(clean_copy) is None
+    assert o.session_trust(clean_copy) == mp.TRUST_UNPROVEN and not any(m.get("tainted") for _c, m in queued)
+
+
+def test_concurrent_reasons_are_never_lost(tmp_path):
+    """MAJOR (third review): the clean branch's unlocked copy-and-swap lost reasons."""
+    store = MemoryProposalStore(tmp_path / "mp.json")
+    clean = [f"web-c{i}" for i in range(60)]
+    for sid in clean:
+        store._clean[sid] = 1.0
+    never = [f"web-n{i}" for i in range(60)]
+    loaded = [f"cont-{i}" for i in range(60)]
+    original = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        threads = [threading.Thread(target=lambda: [store.revoke(s, "guest") for s in clean]),
+                   threading.Thread(target=lambda: [store.revoke(s, "web_or_file_or_image") for s in never]),
+                   threading.Thread(target=lambda: [store.write_forgotten(s, *store.forget_clean(s)) for s in loaded])]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+    finally:
+        sys.setswitchinterval(original)
+    expect = clean + never + loaded
+    assert [sid for sid in expect if store.revoked_reason(sid) is None] == []
+    again = MemoryProposalStore(tmp_path / "mp.json")
+    assert [sid for sid in expect if again.revoked_reason(sid) is None] == []
+    assert not any(again.is_clean(sid) for sid in clean)
+
+
+def test_a_new_reason_appends_one_line_and_the_journal_compacts(tmp_path, monkeypatch):
+    store = MemoryProposalStore(tmp_path / "mp.json")
+    store.admit("web-1")
+    ledger_before = (tmp_path / "mp.json").read_bytes()
+    for i in range(50):
+        store.revoke(f"ch_telegram_dm_{i:020d}", "inbound")
+    assert (tmp_path / "mp.json").read_bytes() == ledger_before               # the ledger is not rewritten
+    assert len(store.journal_path.read_text(encoding="utf-8").splitlines()) == 50
+    for i in range(1100):
+        store.revoke(f"ch_x_{i}", "inbound")
+        store.admit(f"ch_x_{i}")                                               # emptied: the reason goes
+    lines = store.journal_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) < 1200                                                   # compacted on the way
+    again = MemoryProposalStore(tmp_path / "mp.json")
+    assert again.revoked_reason("ch_telegram_dm_" + "0" * 20) == "inbound" and again.revoked_reason("ch_x_5") is None
+    assert again.is_clean("web-1") and again.is_clean("ch_x_5")
+
+
+def test_at_the_cap_channel_reasons_go_before_the_owners_surfaces(monkeypatch):
+    monkeypatch.setattr(mp, "MAX_REVOKED_SESSIONS", 3)
+    clock = iter(range(1, 100))
+    store = MemoryProposalStore(None, now=lambda: float(next(clock)))
+    store.revoke("web-guest", "guest")
+    store.revoke("ch_telegram_dm_1", "inbound")
+    store.revoke("web-page", "web_or_file_or_image")
+    store.revoke("ch_telegram_dm_2", "inbound")
+    assert store.revoked_reason("web-guest") == "guest" and store.revoked_reason("web-page") == "web_or_file_or_image"
+    assert store.revoked_reason("ch_telegram_dm_1") is None
+    assert store.session_trust("ch_telegram_dm_1", lambda sid: sid.startswith("ch_")) == mp.TRUST_UNCLEAN
+
+
+def test_a_damaged_route_index_does_not_make_every_old_conversation_unclean(hub, tmp_path):
+    index = tmp_path / "routes.sqlite"
+    index.write_bytes(b"not a database" * 100)
+    hub.orch._session_lifecycle_path = str(index)
+    assert hub.orch.session_trust("web-legacy-1") == mp.TRUST_UNPROVEN
+    assert hub.orch.session_trust("ch_telegram_dm_0123456789abcdef0123") == mp.TRUST_UNCLEAN
+
+
+async def test_the_turn_end_records_the_reason_the_turn_had(hub, monkeypatch):
+    """NIT: the reason is read before the turn's origin and principal are reset."""
+    async def reads_a_web_page(self, text, channel, agent_override, session_id):
+        self._resolve_session(session_id)
+        from agents.core.action_origin import bind_action_origin
+
+        bind_action_origin("external:web")
+        return "done"
+
+    monkeypatch.setattr(Orchestrator, "_handle_input", reads_a_web_page)
+    token = bind_turn_principal(OWNER_WEB)
+    try:
+        await hub.orch.handle_input("read example.com", channel="web", session_id="web-r")
+    finally:
+        reset_turn_principal(token)
+    assert MemoryProposalStore(hub.ledger).revoked_reason("web-r") == "web_or_file_or_image"
 
 
 # ── item 4: what an untrusted turn embeds says so ───────────────────────────────
