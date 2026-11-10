@@ -3596,6 +3596,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills/catalog/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Catalog Install
+         * @description H336 — the owner installs or repairs one skill of the vendored Hermes catalog
+         *     (Hermes: ``hermes skills install official/<category>/<skill>``, ``repair-official``).
+         *
+         *     An admin route with no DEV_MODE gate, for this catalog only: its skills are pinned to one
+         *     upstream commit, byte-verified against MANIFEST.json before every write, and carry
+         *     instructions and plain data only. ``POST /skills/import`` (every other source, and this
+         *     one for a user token) keeps its DEV_MODE gate. ``skill`` is a slug, ``<category>/<skill>``,
+         *     the upstream path or ``official/<category>/<skill>``. A skill a catalog install already
+         *     wrote, or ``repair: true``, is repaired: deleted files are restored from the vendored
+         *     bytes, an edited file refuses the repair (409 ``local_edits``) unless ``force``, which
+         *     keeps a copy first. A write is recorded in the intent log as ``skill.install`` or
+         *     ``skill.repair``.
+         */
+        post: operations["catalog_install_api_skills_catalog_install_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/skills/marketplace": {
         parameters: {
             query?: never;
@@ -14376,6 +14407,21 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** CatalogInstallBody */
+        CatalogInstallBody: {
+            /** Skill */
+            skill: string;
+            /**
+             * Repair
+             * @default false
+             */
+            repair: boolean;
+            /**
+             * Force
+             * @default false
+             */
+            force: boolean;
+        };
         /** ChannelReplyBody */
         ChannelReplyBody: {
             /** Text */
@@ -22402,6 +22448,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    catalog_install_api_skills_catalog_install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CatalogInstallBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

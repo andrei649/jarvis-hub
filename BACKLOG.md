@@ -2866,6 +2866,18 @@
   carries `hermes_catalog` (no new route, no OpenAPI change); the Skills Import panel lists and
   installs it. Unmapped frontmatter keys and undeclared key mentions are shown, never dropped.
   No ledger row moves (decision 1 open). Guide: `docs/hermes/ADOPT_LANE.md` → "Skills (slice 3)".
+  **H336 follow-up (2026-11-10): the catalog as an owner action.** `POST /api/skills/catalog/install`
+  (admin guard, no DEV_MODE; catalog only: pinned, byte-verified, instruction-only) installs by slug,
+  `category/skill` or `official/category/skill`, and with `repair` restores an installed catalog
+  skill from the vendored bytes: deleted files back, edited files refused (409 `local_edits`) unless
+  `force` (copies kept under `<data>/skills/catalog-repair-backups/`), `intact` when nothing differs,
+  a folder the catalog did not write never touched (409 `not_from_catalog`). Intent log rows
+  `skill.install` / `skill.repair`. `POST /skills/import` unchanged (DEV_MODE, every source). HUD
+  catalog buttons use the owner route (install, repair, forced repair); `nerva skills catalog
+  [--search|--category|--kind|--limit ≤100]` browses (says when truncated) and `nerva skills catalog
+  install|repair [--force]` call the route. Catalog page: `docs/SKILLS_CATALOG.md`. Still open on
+  H336: installing the 55 skills that carry code (needs a scanned, approved package path).
+  Tests: `tests/test_h336_catalog_owner_install.py` (14), panel vitest (+1).
   **Run lane, slice 1 (2026-11-10):** the governed Hermes sidecar moves from `0808ed8` to `9c0560f8`
   and the move is now a script: `scripts/hermes_runtime.py bump --commit <sha>`
   (`scripts/hermes_runtime_bump.py`) re-verifies the current pin, downloads and verifies the new

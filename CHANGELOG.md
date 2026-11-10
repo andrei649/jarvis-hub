@@ -140,6 +140,21 @@
   installed from the catalog. Five more are left out because they carry web pages or files too
   large to read.
 - A skill whose name is already used by one of yours is refused, as with any import.
+
+**Install and repair catalog skills yourself, no DEV_MODE needed**
+- As the owner you can now install a skill from the Hermes catalog without turning on
+  `DEV_MODE`: the panel's install button, or `nerva skills catalog install email/agentmail`.
+  This only applies to the catalog, whose files are pinned and checked before every install;
+  every other skill import still needs `DEV_MODE=1`, and a user token cannot install.
+- `nerva skills catalog` lists the catalog from the terminal (`--search`, `--category`,
+  `--kind`), at most 100 rows at a time, and tells you when it left some out.
+- If an installed catalog skill loses a file, `nerva skills catalog repair <skill>` (or the
+  panel's repair button) puts it back. If you edited one of its files, repair stops and tells
+  you which; `--force` (or "replace my edits") replaces them and keeps a copy of your version.
+  A skill the catalog did not install is never touched.
+- Installs and repairs are recorded in the intent log. Skills that come with scripts still
+  cannot be installed from the catalog. The full list by category is in
+  `docs/SKILLS_CATALOG.md`.
 **The optional Hermes runtime moves to a newer Hermes, and future updates are one command**
 - If you installed the optional Hermes runtime (Admin → Hermes Runtime), Nerva now expects the
   Hermes version of 10 November instead of the one from October. Run

@@ -332,27 +332,59 @@ describe('SkillsImportPanel — the vendored Hermes catalog', () => {
     expect(screen.queryByText(/HERMES CATALOG/)).toBeNull();
   });
 
-  it('lists installable rows and installs one through POST /skills/import as hermes-catalog', async () => {
-    const fn = mockRoutes((u, method, body) => {
-      if (u === '/skills/import' && method === 'POST' && body && body.skill === '') {
-        return { status: 400, body: { error: 'skill name required' } };
-      }
-      if (u === '/skills/import' && method === 'POST') {
-        return { status: 200, body: { ok: true, source: 'hermes-catalog', skill: 'agentmail' } };
+  it('installs a catalog row through the owner route, without the DEV_MODE check', async () => {
+    const fn = mockRoutes((u, method) => {
+      if (u === '/api/skills/catalog/install' && method === 'POST') {
+        return { status: 200, body: { ok: true, action: 'install', status: 'installed', skill: 'agentmail',
+          changed: true, audited: true } };
       }
       return null;
     }, { imported: [], hermes_catalog: CATALOG });
+    localStorage.setItem('hud.admin_token', 'owner-token');
     render(<SkillsImportPanel />);
     await waitFor(() => expect(screen.getByText('HERMES CATALOG · vendored @9c0560f8')).toBeTruthy());
     expect(screen.getByText('agentmail')).toBeTruthy();
     expect(screen.getByText('needs AGENTMAIL_API_KEY')).toBeTruthy();
     expect(screen.getByText(/not read by Nerva: metadata.hermes.homepage/)).toBeTruthy();
-    // the install button follows the same availability check as the import
-    expect(btn('install agentmail').disabled).toBe(true);
-    await enableImport();
+    // the owner's install does not wait for the DEV_MODE probe
+    expect(btn('install agentmail').disabled).toBe(false);
     fireEvent.click(btn('install agentmail'));
-    await waitFor(() => expect(posts(fn).length).toBe(2));
-    expect(bodyOf(posts(fn)[1])).toEqual({ skill: 'agentmail', source: 'hermes-catalog' });
+    await waitFor(() => expect(posts(fn).length).toBe(1));
+    expect(String(posts(fn)[0][0])).toBe('/api/skills/catalog/install');
+    expect(bodyOf(posts(fn)[0])).toEqual({ skill: 'agentmail', repair: false, force: false });
+    // sent with the admin token header, not the user token alone
+    const headers = posts(fn)[0][1].headers || {};
+    expect(Object.keys(headers).map((k) => k.toLowerCase())).toContain('x-admin-token');
+    await waitFor(() => expect(screen.getByText(/installed · agentmail · installed/)).toBeTruthy());
+    // no POST /skills/import probe was made
+    expect(posts(fn).some((c) => String(c[0]) === '/skills/import')).toBe(false);
+  });
+
+  it('repairs an installed row and offers a forced repair over local edits', async () => {
+    const installed = { ...CATALOG, skills: [{ ...CATALOG.skills[0], installed_commit: CATALOG.commit }, CATALOG.skills[1]] };
+    let calls = 0;
+    const fn = mockRoutes((u, method, body) => {
+      if (u === '/api/skills/catalog/install' && method === 'POST') {
+        calls += 1;
+        if (!body.force) {
+          return { status: 409, body: { ok: false, reason: 'local_edits', files: ['SKILL.md'],
+            error: "the installed files of 'agentmail' were edited; nothing was written" } };
+        }
+        return { status: 200, body: { ok: true, action: 'repair', status: 'repaired', skill: 'agentmail',
+          restored: [], replaced: ['SKILL.md'], changed: true, audited: true } };
+      }
+      return null;
+    }, { imported: [], hermes_catalog: installed });
+    render(<SkillsImportPanel />);
+    await waitFor(() => expect(screen.getByText('installed @9c0560f8')).toBeTruthy());
+    expect(screen.queryByRole('button', { name: 'install agentmail' })).toBeNull();
+    fireEvent.click(btn('repair agentmail'));
+    await waitFor(() => expect(screen.getByText(/HTTP 409 · the installed files of 'agentmail' were edited/)).toBeTruthy());
+    expect(bodyOf(posts(fn)[0])).toEqual({ skill: 'agentmail', repair: true, force: false });
+    fireEvent.click(btn('force repair agentmail'));
+    await waitFor(() => expect(calls).toBe(2));
+    expect(bodyOf(posts(fn)[1])).toEqual({ skill: 'agentmail', repair: true, force: true });
+    await waitFor(() => expect(screen.getByText(/replaced SKILL.md \(a copy was kept\)/)).toBeTruthy());
   });
 
   it('shows a skill that carries code with its code files and no install button', async () => {

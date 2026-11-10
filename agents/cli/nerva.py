@@ -455,6 +455,28 @@ def build_parser() -> argparse.ArgumentParser:
     bundle_verbs.add_parser(
         "reload", help="re-read the bundle files and report what changed (admin)").add_argument(
         "--json", action="store_true")
+    # H336 — Hermes's optional-skills catalog, vendored inert: browse, install, repair.
+    catalog = skills_verbs.add_parser(
+        "catalog", help="the vendored Hermes skill catalog: with no action, browse it (at most 100 rows, "
+                        "like `hermes skills browse`); install or repair one skill (admin)")
+    catalog.add_argument("--search", "-q", default="", help="text in the slug, name, category, description or tags")
+    catalog.add_argument("--category", "-c", default="", help="only this category (mlops, creative, ...)")
+    catalog.add_argument("--kind", choices=("instruction", "upstream_only", "excluded"), default="",
+                         help="instruction (installable), upstream_only (carries code) or excluded")
+    catalog.add_argument("--limit", "-n", type=int, default=100, help="at most this many rows (1-100)")
+    catalog.add_argument("--json", action="store_true")
+    catalog_verbs = catalog.add_subparsers(dest="catalog_action", required=False, metavar="action")
+    catalog_install = catalog_verbs.add_parser(
+        "install", help="install one instruction skill from the catalog; works without DEV_MODE (admin)")
+    catalog_install.add_argument("skill", help="<category>/<skill>, official/<category>/<skill> or the slug")
+    catalog_install.add_argument("--json", action="store_true")
+    catalog_repair = catalog_verbs.add_parser(
+        "repair", help="restore an installed catalog skill's deleted or edited files from the vendored "
+                       "bytes (admin)")
+    catalog_repair.add_argument("skill", help="<category>/<skill> or the slug")
+    catalog_repair.add_argument("--force", "-f", action="store_true",
+                                help="also replace files you edited (a copy of each is kept on the hub)")
+    catalog_repair.add_argument("--json", action="store_true")
     # H354 — the owner's trigger for one skill's reality-harness case.
     verify = skills_verbs.add_parser(
         "verify", help="run the reality harness's case for one loaded skill on the hub, now (admin)")
@@ -3004,7 +3026,8 @@ def cmd_skills(ns: argparse.Namespace, ctx: Context) -> int:
     H354 — ``nerva skills verify``: run one skill's reality-harness case on the hub.
     H026 — ``nerva skills bundles list|show|create|delete|reload``: named skill bundles.
     H349 — ``nerva skills pin | unpin``: the owner's pin, and where each skill came from
-    in ``nerva skills list``."""
+    in ``nerva skills list``.
+    H336 — ``nerva skills catalog [install|repair]``: the vendored Hermes skill catalog."""
     if ns.action in ("list", "off", "on", "config"):
         return _skill_switches(ns, ctx)
     if ns.action in ("pin", "unpin"):
@@ -3013,6 +3036,8 @@ def cmd_skills(ns: argparse.Namespace, ctx: Context) -> int:
         return _skill_verify(ns, ctx)
     if ns.action == "bundles":
         return _skill_bundles(ns, ctx)
+    if ns.action == "catalog":
+        return _skill_catalog(ns, ctx)
     from agents.core.skills.validate import (
         MAX_SKILL_MD_BYTES,
         Problem,
@@ -3219,6 +3244,101 @@ def _skill_verify(ns: argparse.Namespace, ctx: Context) -> int:
     when = f", verified at {reply['verified_at']}" if reply.get("verified_at") else ""
     ctx.say(f"  record {record.get('state', '?')}{when}; the verdict lives until the hub's next boot")
     return EXIT_OK if passed else EXIT_FAILED
+
+
+_CATALOG_INSTALL_PATH = "/api/skills/catalog/install"
+
+
+def _skill_catalog(ns: argparse.Namespace, ctx: Context) -> int:
+    """H336 — ``nerva skills catalog``: Hermes's ``skills browse --source official`` (the
+    catalog rows of ``GET /skills/imported``, filtered here and capped at 100 like Hermes),
+    ``install`` and ``repair`` (``POST /api/skills/catalog/install``, admin, no DEV_MODE: the
+    vendored catalog is pinned, byte-verified and instruction-only). A skill that carries
+    code is listed with its code files and refused by the hub."""
+    from agents.core.skills import hermes_catalog
+
+    action = getattr(ns, "catalog_action", None)
+    if action in ("install", "repair"):
+        body = {"skill": ns.skill, "repair": action == "repair", "force": bool(getattr(ns, "force", False))}
+        try:
+            reply = ctx.client().post(_CATALOG_INSTALL_PATH, body)
+        except HubError as exc:
+            if exc.status == 409 and "edited" in str(exc.reason):
+                ctx.err.write(f"{_plain(exc.reason, 400)}\nrerun with --force to replace them; a copy of each "
+                              "edited file is kept on the hub\n")
+                return EXIT_FAILED
+            raise
+        if not isinstance(reply, Mapping) or reply.get("ok") is not True:
+            ctx.err.write("unexpected reply from the hub: the install was not confirmed\n")
+            return EXIT_FAILED
+        if ns.json:
+            ctx.dump(reply)
+            return EXIT_OK
+        name, commit = _plain(reply.get("skill"), 80), _plain(str(reply.get("commit") or "")[:8], 8)
+        status = reply.get("status")
+        if status == "intact":
+            ctx.say(f"{name}: intact — every file matches the catalog @{commit}; nothing was written")
+            return EXIT_OK
+        if reply.get("action") == "install":
+            ctx.say(f"installed {name} from the Hermes catalog @{commit} ({_plain(reply.get('path'), 160)})")
+            ctx.say("  it is an imported skill: its text is read as data until you vouch for it")
+        else:
+            ctx.say(f"{'updated' if status == 'updated' else 'repaired'} {name} from the Hermes catalog @{commit}")
+            for key, word in (("restored", "restored"), ("replaced", "replaced your edit of"),
+                              ("backed_up", "kept a copy of")):
+                for rel in reply.get(key) or []:
+                    ctx.say(f"  {word} {_plain(rel, 200)}")
+            if reply.get("backup_dir"):
+                ctx.say(f"  copies in {_plain(reply.get('backup_dir'), 300, keep_tail=True)}")
+        if not reply.get("audited"):
+            ctx.say("note: the intent log could not record this change")
+        return EXIT_OK
+    if not 1 <= ns.limit <= hermes_catalog.BROWSE_LIMIT:
+        ctx.err.write(f"--limit takes 1 to {hermes_catalog.BROWSE_LIMIT}\n")
+        return EXIT_USAGE
+    reply = ctx.client().get("/skills/imported")
+    catalog = reply.get("hermes_catalog") if isinstance(reply, Mapping) else None
+    if not isinstance(catalog, Mapping):
+        ctx.err.write("this hub reports no Hermes catalog\n")
+        return EXIT_FAILED
+    if catalog.get("available") is False:
+        ctx.err.write(f"the Hermes catalog is unavailable on the hub: {_plain(catalog.get('error'), 300)}\n")
+        return EXIT_FAILED
+    rows = catalog.get("skills") if isinstance(catalog.get("skills"), list) else []
+    shown, matched = hermes_catalog.browse(rows, search=ns.search, category=ns.category, kind=ns.kind,
+                                           limit=ns.limit)
+    if ns.json:
+        ctx.dump({"commit": catalog.get("commit"), "counts": catalog.get("counts"), "matched": matched,
+                  "shown": len(shown), "truncated": matched > len(shown), "skills": shown})
+        return EXIT_OK
+    counts = catalog.get("counts") if isinstance(catalog.get("counts"), Mapping) else {}
+    ctx.say(f"Hermes catalog @{_plain(str(catalog.get('commit') or '')[:8], 8)}: "
+            f"{_count_value(counts.get('instruction')) or 0} installable, "
+            f"{_count_value(counts.get('upstream_only')) or 0} carry code, "
+            f"{_count_value(counts.get('excluded')) or 0} excluded")
+    for row in shown:
+        kind = row.get("kind")
+        mark = ("installed" if row.get("installed_commit") else "install") if kind == "instruction" \
+            else ("code" if kind == "upstream_only" else "excluded")
+        where = f"{row.get('category')}/{row.get('slug')}" if row.get("category") else row.get("slug")
+        line = f"  {mark:<9} {_plain(where, 70):<40} {_plain(row.get('description'), 90)}"
+        ctx.say(line.rstrip())
+        needs = [str(k) for k in row.get("required_env") or []]
+        if needs:
+            ctx.say(f"            needs {_plain(', '.join(needs), 160)}")
+        if kind == "upstream_only" and row.get("code_files"):
+            ctx.say(f"            carries code: {_plain(', '.join(map(str, row['code_files'])), 160)}")
+        if row.get("injection_flags"):
+            ctx.say("            its text looks like an instruction to a model (flagged)")
+    if not shown:
+        ctx.say("no catalog skill matches")
+    elif matched > len(shown):
+        ctx.say(f"showing {len(shown)} of {matched} — narrow with --search/--category, or raise --limit "
+                f"(at most {hermes_catalog.BROWSE_LIMIT})")
+    else:
+        ctx.say(f"{matched} shown")
+    ctx.say("install one: nerva skills catalog install <category>/<skill>")
+    return EXIT_OK
 
 
 _BUNDLES_PATH = "/api/skills/bundles"

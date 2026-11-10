@@ -648,6 +648,7 @@
   "POST /api/skills/batch",
   "POST /api/skills/bundles",
   "POST /api/skills/bundles/reload",
+  "POST /api/skills/catalog/install",
   "POST /api/skills/marketplace/install",
   "POST /api/skills/marketplace/install-zip",
   "POST /api/skills/marketplace/publish",
