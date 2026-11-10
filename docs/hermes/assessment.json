@@ -2,8 +2,8 @@
   "schema_version": 2,
   "inventory_count": 697,
   "inventory_sha256": "7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686",
-  "base_sha": "477a22fc45e4b9eb387c21245c6672557c11a019",
-  "assessed_at": "2026-11-10T17:10:46Z",
+  "base_sha": "7e263d5933731255ea297f324e7905368a400aa6",
+  "assessed_at": "2026-11-10T17:33:57Z",
   "reviews": [
     {
       "id": "H001",
@@ -1218,6 +1218,31 @@
         {
           "path": "tests/test_skills_api.py",
           "sha256": "96d54df2566ba7632c91fd240e4e5c4e5d1ccb7e0c24102bae060e6d3d0c735d"
+        }
+      ]
+    },
+    {
+      "id": "H025",
+      "row_sha256": "f2e3bee4ba6171d4952d125001323486aca566df33b66dfd57845a5ca2963498",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nerva has none of the three Hermes verbs as such, but it does deliver one piece of `skills diff`. For a skill installed from the vendored Hermes catalog (H336), agents/core/skills/hermes_catalog.py:522-549 (`file_state`) compares each installed file against the sha256 recorded at install and reports it as missing, edited or intact. `repair` (agents/core/skills/hermes_catalog.py:574-626) uses that report: it refuses with `local_edits` and names the edited files (:610), and `--force` keeps a copy of each edited file before it restores the stock bytes. The owner reaches it through `nerva skills catalog repair` (agents/cli/nerva.py:473-479). tests/test_h336_catalog_owner_install.py:152 checks the refusal that names the edited file, the forced repair and the kept copy. There are no taps. The marketplace is still one local registry (agents/core/skills/marketplace.py:1-3, `list_skills` at :451). Nothing exports or imports a portable snapshot of the installed skill set.",
+      "remaining": "- `skills tap add|list|remove`: register extra GitHub skill sources. Adding one must queue at the irreversible tier with the source URL in the approval payload\n- `skills snapshot export|import`: a portable file of the installed skill set; import replays each install under the per-skill owner floor\n- `skills diff`: show the actual content diff of a locally edited stock skill against stock. Today only the names of edited files are reported, and only for catalog-installed skills, not repo-bundled ones",
+      "evidence": [
+        {
+          "path": "agents/core/skills/hermes_catalog.py",
+          "sha256": "17b5d792770feac03cb550de9ae273e7e337cdd2b8672f2e21f1dc776d03a3a1"
+        },
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "5d608bd62f99163ff5798447378ad30e9a476f57452670373a5a4e2c4784d98b"
+        },
+        {
+          "path": "agents/core/skills/marketplace.py",
+          "sha256": "a2eab2eca3979e412646894f78e4798fdbda8e0d758b48dcaf2330b0bfc5ef29"
+        },
+        {
+          "path": "tests/test_h336_catalog_owner_install.py",
+          "sha256": "a3035171dcc8873e30490d260a1400f86e678c6394a18011fc55664f74c90512"
         }
       ]
     },
@@ -2984,6 +3009,51 @@
       ]
     },
     {
+      "id": "H070",
+      "row_sha256": "10f0fc7e26fc9a7f5246fcd78a61b8989c66367c0ed1bf2312804f52af9eecfe",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): The inbound side is largely delivered on Telegram; the outbound MEDIA side is not. Inbound: the poll loop no longer drops a message that has no text. `classify(msg)` recognises the attachment from Telegram's envelope field (agents/core/channels/telegram.py:1020-1022; agents/core/channels/inbound_media.py:144). Photos and voice notes are readable kinds (inbound_media.py:70). Photos are pre-analysed into fenced text by a proven-local VLM, and voice notes are transcribed (telegram.py:1693-1720; agents/core/channels/media_reader.py). Kinds Nerva cannot read get an honest placeholder line (`describe`/`turn_text`, inbound_media.py:200, :225). Downloads are capped against the actual stream (telegram.py:1666-1691), at 8 MiB for images (media_reader.py:75, :214) and for audio (agents/core/channels/inbound_voice.py:56, :153). Outbound: the only file egress is the scheduled-reminder path. It takes 1-8 opaque artifact-store IDs, never paths, and only to the bound Telegram owner (agents/core/autonomy/jobs_media.py:22-40). Each send is audited, rate-limited and sent through `send_media` (jobs_media.py:331-351; telegram.py:574-591, which checks the ID shape, size and sniffed MIME). Tests: tests/test_telegram_inbound_media.py, tests/test_inbound_media_read.py, tests/test_inbound_voice_read.py, tests/test_jobs_media.py.",
+      "remaining": "- A configurable `max_inbound_media_bytes`. The 8 MiB caps are constants\n- A native-attach image mode beside pre-analysis\n- Document context notes and reading of documents, video and stickers, including a vision caption for a sticker, cached once\n- Agent-emitted `MEDIA:` directives in replies, auto-appended tags for files the turn produced, per-conversation dedup of files already delivered, delivery after the streamed text, and repair of `computer_use_<uuid>` paths\n- A delivery-path allowlist (`gateway.strict` + `media_delivery_allow_dirs` + `trust_recent_files`) for local files in an outbound chat message, crossing the kernel as egress. Only scheduled artifact-ID media exists today\n- The same on channels other than Telegram",
+      "evidence": [
+        {
+          "path": "agents/core/channels/telegram.py",
+          "sha256": "e29dd656860b41e5992a0431e816dc389e362812fe387e4ae2bbf47e7d83065a"
+        },
+        {
+          "path": "agents/core/channels/inbound_media.py",
+          "sha256": "4678036fa5986574dc6743471d3a7ca8c70b79050afdf7d35cf49852e826f6f7"
+        },
+        {
+          "path": "agents/core/channels/media_reader.py",
+          "sha256": "2f861fd5afa984b9929c74e8deca63826583b5fc6aa94b7af4b9618915f806fc"
+        },
+        {
+          "path": "agents/core/channels/inbound_voice.py",
+          "sha256": "764596b31a303f88a8973e3a4a1bec361a599433a3448a3ae57404604a52a094"
+        },
+        {
+          "path": "agents/core/autonomy/jobs_media.py",
+          "sha256": "550941d36d074d566a4aeae0d952a02496b349998ab4bd83bab9cf099a714366"
+        },
+        {
+          "path": "tests/test_telegram_inbound_media.py",
+          "sha256": "96b7b500d4fd5285dcf995f4648e785aed98bf6da2111839562e699fede4635f"
+        },
+        {
+          "path": "tests/test_inbound_media_read.py",
+          "sha256": "6147c7a5d6529ccfcc9b873806707bcacb9577a8eb0ad740504f7c326ea18f6c"
+        },
+        {
+          "path": "tests/test_inbound_voice_read.py",
+          "sha256": "f9e43a035061d287dcf63fe138b2be085a99c2b5827841221119239be8a349dd"
+        },
+        {
+          "path": "tests/test_jobs_media.py",
+          "sha256": "946acc102a4e55d469694cfdd9bff5a76c645e3347349477a15d7cc68b27af3c"
+        }
+      ]
+    },
+    {
       "id": "H071",
       "row_sha256": "81d218221e09a9f699c79e7e344245e0a742d8eb19d721de2e1ab147ddf93516",
       "status": "partial",
@@ -3696,6 +3766,64 @@
       ]
     },
     {
+      "id": "H080",
+      "row_sha256": "5042afaaf690bd22570b2991f198e0e7a9e40d412d2dee3524f1d3ac7471fff9",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nerva has delivered the observation half of a general lifecycle event hook system, and nothing on the veto or rewrite side. agents/core/extensions/events.py:1-27 defines a watch-only bus. Signed, consented, sandboxed extensions declare events (agents/core/extensions/manifest.py:16-17) and receive allowlisted payloads (events.py:45-52). The bus never blocks and has no return channel (`emit`, events.py:197). These events are emitted: `command.completed` after every slash command (agents/core/commands.py:247-249), `session.started`/`session.ended` (agents/core/orchestrator.py:7223-7224), `tool.completed` (agents/core/observability/tool_events.py:145) and the H485 smart-approval events. Tests: tests/test_extension_events.py:76-162 (allowlist, refusal of unknown events, non-blocking delivery, delivery across threads).",
+      "remaining": "- An observation point *before* each recognised slash command (`pre_command`). Only `command.completed` exists\n- `command:<name>` deny / mark-handled / rewrite. Under Nerva's governance a plugin may propose and the kernel decides, audited through plugin_gate\n- `pre_gateway_dispatch` drop/rewrite of inbound messages, kernel-decided and audited. A hook must never be able to admit an unauthorized sender\n- Normalised platform reaction events emitted to the hook registry\n- Gateway and agent lifecycle points beyond the four events plus the smart-approval events",
+      "evidence": [
+        {
+          "path": "agents/core/extensions/events.py",
+          "sha256": "a83cb60144156741c9f32aad13937ec35593ddf63625be737952badaeec5658c"
+        },
+        {
+          "path": "agents/core/extensions/manifest.py",
+          "sha256": "2913ef39451e538cdc1548423e5186ef22608e6e69570756d821ce1638439620"
+        },
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "4f94ea2899ec9d031f3a78f35118a5936c826d35a40d1361ea120ebf639c899d"
+        },
+        {
+          "path": "agents/core/orchestrator.py",
+          "sha256": "29d90c257976246ed0a2b2a028e6bd688d3e024729bd0f8eb499cae3e0b76cd9"
+        },
+        {
+          "path": "agents/core/observability/tool_events.py",
+          "sha256": "29f9ddd76548f7472c5d12db8aa2e76f44f4feaf593d852f49bcd2db6df9de45"
+        },
+        {
+          "path": "tests/test_extension_events.py",
+          "sha256": "d9f9e4c181ba37a2a1b5ca42e4684ae64b82fa2072a17b546290702225df2841"
+        }
+      ]
+    },
+    {
+      "id": "H081",
+      "row_sha256": "faacac6968c46e1a05dedf3093676108904ce75671aebdb267d3c0e54429864d",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Only scheduled media reminders have a durable, honest delivery record; ordinary replies do not. agents/core/autonomy/jobs_media.py:64-68 creates `job_media_receipts`. A receipt moves through `prepared`/`held` (:273-282), `sending` and `sent`/`partial`/`failed`/`unknown` (:296-315, :331-358). A send interrupted by a restart or a re-bind is marked `unknown` and is never replayed automatically: the job is paused with an explicit reason until the owner reviews the channel and resumes it (:137-142, :236-254). Old receipts are pruned to 200 per job (:287-290). Tests: tests/test_jobs_media.py:121 (timeout becomes unknown and cannot replay after restart), :157 (partial send is durable, no automatic retry), :366 (held delivery survives a recreated runner and is sent once). Ordinary chat replies have no ledger: the orchestrator still ignores the bool that `ChannelManager.send` returns (agents/core/orchestrator.py:2198, :2277; agents/core/channels/manager.py:129-151).",
+      "remaining": "- A durable ledger row for every outbound final response, with pending, attempting and delivered/failed checkpoints and owner-pid liveness\n- Startup claim and redelivery of rows whose owning process died, labelled as a possible duplicate (`♻️ Recovered reply …`). Redelivery replays the stored message and never re-runs an action\n- Replay after reconnect restricted to an allowlist of transient failures (`send_path_degraded`)\n- Bounds: MAX_ATTEMPTS=3, 24 h freshness, 7-day retention, 500 rows\n- A dead-target registry for whole-chat forbidden/not-found that heals itself on the next success and skips thread-level not-found",
+      "evidence": [
+        {
+          "path": "agents/core/autonomy/jobs_media.py",
+          "sha256": "550941d36d074d566a4aeae0d952a02496b349998ab4bd83bab9cf099a714366"
+        },
+        {
+          "path": "agents/core/orchestrator.py",
+          "sha256": "29d90c257976246ed0a2b2a028e6bd688d3e024729bd0f8eb499cae3e0b76cd9"
+        },
+        {
+          "path": "agents/core/channels/manager.py",
+          "sha256": "3fa2030f7ac6af4bd1201cbdf6a9f2c34110558c58e00172dcefa812f3e91ce0"
+        },
+        {
+          "path": "tests/test_jobs_media.py",
+          "sha256": "946acc102a4e55d469694cfdd9bff5a76c645e3347349477a15d7cc68b27af3c"
+        }
+      ]
+    },
+    {
       "id": "H082",
       "row_sha256": "b4a3902316775ce00d973d5bba72bd4380ea99b19fe9958ff49cf04035355dc9",
       "status": "partial",
@@ -4107,6 +4235,31 @@
       ]
     },
     {
+      "id": "H098",
+      "row_sha256": "4d2838a7b8bd3c48d73092323013fdd3eabbea0c4171e69b50730b6e48a5dc32",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): SMS is not a channel. agents/core/channels/ has no SMS adapter, and nothing validates an inbound Twilio signature. One outbound sender exists: agents/core/plugins/sms_alerts.py:35-56 posts To/From/Body to the Twilio Messages API. It is constructed in agents/core/plugin_manager.py:322 and has a manifest at agents/core/plugin_gate.py:248-256, but no code path calls `send_alert`. It does not cross the kernel or an approval tier, and with no credentials it returns a mock result. This is scaffolding, not delivered behaviour. The governed Twilio surface is still voice calls only (agents/core/autonomy/call_broker.py).",
+      "remaining": "- An SMS channel adapter: outbound through Twilio REST behind a kernel kind at the irreversible tier, queued for approval\n- An inbound signed webhook with full HMAC-SHA1 validation, including the port-variant retry, and empty-TwiML responses\n- A 65,536-byte body cap enforced twice, echo-drop when From is the bot's own number, `redact_phone` in logs, pii_safe, max_message_length 1600 through the shared plain-text renderer, and a session per number",
+      "evidence": [
+        {
+          "path": "agents/core/plugins/sms_alerts.py",
+          "sha256": "53c39f6f0ac474ad9e973775b5bcccdd41a4820ed24b6186257d6c8913837f1f"
+        },
+        {
+          "path": "agents/core/plugin_manager.py",
+          "sha256": "159bd82084ac8cd12553672fd42c0b0a0c39501348b14f4f9215566d61bdc798"
+        },
+        {
+          "path": "agents/core/plugin_gate.py",
+          "sha256": "54a2417101b6b33f83d98beac2477cb406c5e2dd229c76b0646d75ea56d16fc4"
+        },
+        {
+          "path": "agents/core/autonomy/call_broker.py",
+          "sha256": "1e4794c5b549741d8e61ae7afdcbec81f106cd872f37d835a1bf15f35e154eca"
+        }
+      ]
+    },
+    {
       "id": "H099",
       "row_sha256": "00de40ec393428ca550f8abcbebc5e6d94d56ca25d95ffa5a62bd84ebe53ae57",
       "status": "equivalent",
@@ -4224,6 +4377,31 @@
         {
           "path": "agents/web.py",
           "sha256": "6c7311c0ee49991c2d91348996fc5464f4605032e0b4e07011f95904f7486005"
+        }
+      ]
+    },
+    {
+      "id": "H100",
+      "row_sha256": "3c8b040d1f0d6fc77ea2846dbeb1cc64d7f63181c7f5efff1762076cc46cf15a",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Only the ntfy channel has a reconnect ladder; Telegram is unchanged. agents/core/channels/ntfy.py:275-309 (`_run_stream`) adapts Hermes's stream backoff. It steps through the ladder (2, 5, 10, 30, 60) s (:94) and resets after a connection that stayed healthy 60 s (:306-309). HTTP 401/403/404 is classified as fatal and stops the stream with `fatal_error` set instead of retrying (:192, :293-297). Tests: tests/test_ntfy_inbound.py:185-196 (fatal response stops without retry) and :199 (backoff reset and dedup across connections). Slack relies on the SDK's own Socket Mode reconnect monitor (agents/core/channels/slack.py:60-79). The Telegram poll loop still logs any exception and sleeps a flat 3 s (agents/core/channels/telegram.py:895-909).",
+      "remaining": "- Telegram: `deleteWebhook` before polling, polling generations with a progress verifier, a polling heartbeat that detects CLOSE-WAIT sockets, a probe for pending updates against a wedged consumer, a stall watchdog, a 409-Conflict recovery ladder, a network-error reconnect ladder, connection-pool drains, transport error classifiers, a held-inbound queue redispatched after reconnect, send-time reconnect wait with adapter replacement, and a wall-clock deadline helper\n- Liveness watchdogs owned by Nerva for the Discord gateway WebSocket and Slack Socket Mode\n- Fatal and retryable error state surfaced on the adapter descriptor and the status/heartbeat surface. ntfy's `fatal_error` is read by nothing outside the channel",
+      "evidence": [
+        {
+          "path": "agents/core/channels/ntfy.py",
+          "sha256": "c23e0718bf2d1367868cf1c99e5f11c763e9548bb62baa5ee0bb4e9db120f37f"
+        },
+        {
+          "path": "agents/core/channels/slack.py",
+          "sha256": "3b8d0cdd394586055bc49ef9d21681c138d321ae26d02ff6266f163441df7f2b"
+        },
+        {
+          "path": "agents/core/channels/telegram.py",
+          "sha256": "e29dd656860b41e5992a0431e816dc389e362812fe387e4ae2bbf47e7d83065a"
+        },
+        {
+          "path": "tests/test_ntfy_inbound.py",
+          "sha256": "ac0c7fb9cecc3aaf390b3ad732056632a8a8c1a6965cd8e0625bb2929f70fb1f"
         }
       ]
     },
@@ -4609,6 +4787,27 @@
         {
           "path": "tests/test_jobs_routes.py",
           "sha256": "f33df132b247e9458d19bb195972edf11564fae6b8025a3716e7258d5c9f3195"
+        }
+      ]
+    },
+    {
+      "id": "H116",
+      "row_sha256": "38fd61e4da029109c76e505e00c2562f1f7f8566b3205c8f075fe0b2242587a5",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nothing catches up on what was missed while offline. The Telegram offset is still in memory only: it starts at 0 (agents/core/channels/telegram.py:308) and advances per update (:890). Messages queued while the process was down come back only because Telegram's server keeps them. The ntfy stream subscribes with `poll=false` and no `since=` cursor (agents/core/channels/ntfy.py:287-292). Slack deduplicates live events in memory (agents/core/channels/slack.py:141, :324-335) but never fetches history. Discord has no backfill.",
+      "remaining": "- Discord history and missed-message backfill on reconnect\n- Slack thread rehydration with per-thread watermarks\n- Matrix history fetch with a startup grace filter for clock skew\n- Telegram's held-inbound queue redispatched after a reconnect, and a persisted offset\n- An ntfy `since=` cursor\n- Every backfilled message re-entering the full gateway path (taint, pairing, gating), with no replay of an action the owner already declined",
+      "evidence": [
+        {
+          "path": "agents/core/channels/telegram.py",
+          "sha256": "e29dd656860b41e5992a0431e816dc389e362812fe387e4ae2bbf47e7d83065a"
+        },
+        {
+          "path": "agents/core/channels/ntfy.py",
+          "sha256": "c23e0718bf2d1367868cf1c99e5f11c763e9548bb62baa5ee0bb4e9db120f37f"
+        },
+        {
+          "path": "agents/core/channels/slack.py",
+          "sha256": "3b8d0cdd394586055bc49ef9d21681c138d321ae26d02ff6266f163441df7f2b"
         }
       ]
     },
@@ -5732,6 +5931,23 @@
       ]
     },
     {
+      "id": "H142",
+      "row_sha256": "aa88835ad68fc3a149b9e905c188e642651e1a6723f6b39169b260fdaf0bf8c0",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): There is still no host file manager. No router serves `/api/files*` or a listing, upload, mkdir, download or delete over host paths. The only file-shaped routes are the encrypted blob vault (agents/core/routers/vault.py:81-132), workspace documents (agents/core/routers/workspace_documents.py:82) and the artifact store, and none of them browses the filesystem.",
+      "remaining": "- A browse route with server-canonicalised paths and `..` navigation, under a policy of a locked versus browsable root\n- A credential denylist (`.env`, `auth.json`, `credentials`, `config.yaml`, `mcp-tokens/`, `pairing/`) applied to listing and read\n- Chunked multipart upload with a drop zone, mkdir, download and delete, with writes crossing `file.write` (KERNEL, snapshot/rollback)\n- The HUD panel",
+      "evidence": [
+        {
+          "path": "agents/core/routers/vault.py",
+          "sha256": "b51e4d2f9e750d4657f51927a6a8ad7b8e0da7ca270b46a816b667f6f8f90eac"
+        },
+        {
+          "path": "agents/core/routers/workspace_documents.py",
+          "sha256": "e71cc66ec68c59688af28850037b09f974cbf0145df86671f5f1640d84685cbf"
+        }
+      ]
+    },
+    {
       "id": "H143",
       "row_sha256": "ac83d7530b02a1ad3db48351401707c36108668cd8aca77d6feca4b35f53f2ee",
       "status": "partial",
@@ -6119,6 +6335,35 @@
         {
           "path": "tests/test_mcp_admin.py",
           "sha256": "21031150acccdb69eb4873940a6a6a23f3014a78551224bc4e438dd97dffd56a"
+        }
+      ]
+    },
+    {
+      "id": "H151",
+      "row_sha256": "59b6e3661bb0ed03a39b992fbca9274903c473eea7d5e2070866b0375bfac66a",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Only the owner-pairing half of Telegram onboarding exists. `POST /api/channels/pairing/link` (agents/core/routers/pairing.py:149-179, admin) mints a single-use, expiring `t.me/<bot>?start=<token>` deeplink. The HUD PairingPanel offers it as \"pair a phone\", shows it once and can revoke it (frontend/src/gap.tsx:683-687, :724-737). Tests: frontend/src/test/pairing-deeplink.test.tsx:44-107 and tests/test_channel_pairing.py. Channel credentials are still environment-only: `TELEGRAM_BOT_TOKEN` is read from the environment at boot (agents/web.py:572-596). No UI card or route configures, enables or tests a channel.",
+      "remaining": "- One card per platform with a live state badge and a summary\n- An enable switch that has an effect, admin-tier and audited\n- A Test probe per channel\n- A CONFIGURE modal with client-side field validation that writes credentials to the vault / secret broker, not plaintext `.env`\n- A rendered QR for Telegram (today it is a text link) and WhatsApp QR onboarding\n- Restart banners when a change needs a restart",
+      "evidence": [
+        {
+          "path": "agents/core/routers/pairing.py",
+          "sha256": "9dfa528a4811a772d594a9020f5a62c500c9fe35eec58d6406ef8cf1c4cf8a84"
+        },
+        {
+          "path": "frontend/src/gap.tsx",
+          "sha256": "d5864e4d4f08555182b7fcdcb25d2953fab7ca0920e5ec59c6814d0ab0664185"
+        },
+        {
+          "path": "frontend/src/test/pairing-deeplink.test.tsx",
+          "sha256": "aec9bdceed5a4ee000dfc566d57b030806303b67f9564a89076d9532ae615481"
+        },
+        {
+          "path": "tests/test_channel_pairing.py",
+          "sha256": "01bb1fc2fb6f72a2b7754f884dd782033677d889d9c35acda8c1a6c3d9ad2244"
+        },
+        {
+          "path": "agents/web.py",
+          "sha256": "6c7311c0ee49991c2d91348996fc5464f4605032e0b4e07011f95904f7486005"
         }
       ]
     },
@@ -6555,6 +6800,27 @@
       ]
     },
     {
+      "id": "H160",
+      "row_sha256": "f466074e7447e0ae89f99e26083d9fe1ed7c1cba00d1f2e8099a166a7dea3b43",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): There is no restart or update action for the running system. agents/core/routers/ops.py still offers probes and the e-stop halt. The only restart executor restarts allowlisted external services (`restart_service`, agents/core/autonomy_coordinator.py:2240-2245, using agents/core/autonomy/remediation.py:135), not the hub. No route, UI button, polled action-status endpoint or streaming log for restart or update was found in agents/ or frontend/src.",
+      "remaining": "- A restart action, grantable under `host.control`\n- An update action at the approval-queue floor, with a backup taken first\n- A system-action runner that POSTs, then polls the status and log\n- A streaming log panel on the Sessions and System pages\n- A `can_update` gate and toasts",
+      "evidence": [
+        {
+          "path": "agents/core/routers/ops.py",
+          "sha256": "525a1fe516e8c5307d3505fd891fd53fd418c5e57a2b76a57248a74ad19aa722"
+        },
+        {
+          "path": "agents/core/autonomy_coordinator.py",
+          "sha256": "a1bc215e1d8bef7a93cc4375116f5cb79f7109a404a78adeb4f84cf192af5ae0"
+        },
+        {
+          "path": "agents/core/autonomy/remediation.py",
+          "sha256": "ae198848ada07b88538b133efe8aa868f707223d70c13f08b2f1b71d61cb9157"
+        }
+      ]
+    },
+    {
       "id": "H161",
       "row_sha256": "cba246e73094c29eaedfeffdcb991f13b3ab54162a1d9af6291893d87116112f",
       "status": "equivalent",
@@ -6876,6 +7142,19 @@
       ]
     },
     {
+      "id": "H171",
+      "row_sha256": "15e3b2dce34fc8aa7f5f0e5cce7188b1430f56f95e3b4747a65fdeaf7d725a77",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): The desktop shell still starts no backend. desktop/src-tauri/src/main.rs:200-311 builds the two webviews on http://127.0.0.1:8080 and a tray menu. Nothing resolves, spawns, records ownership of, reaps or probes a backend process. The backend is still started by start.sh or scripts/bootstrap.py.",
+      "remaining": "- A resolution ladder, spawn with a nonce and ownership record, and a cross-platform process start marker\n- A claim policy that degrades and never kills a healthy backend, and never kills a backend the shell does not own\n- Orphan reap on boot\n- A readiness probe and a WebSocket handshake probe\n- A per-profile backend pool with LRU eviction and an idle reaper",
+      "evidence": [
+        {
+          "path": "desktop/src-tauri/src/main.rs",
+          "sha256": "d2692d946279300b7c3d7e2c4c50509fa9518ecf898d5d85e83c21f6613cfeb4"
+        }
+      ]
+    },
+    {
       "id": "H172",
       "row_sha256": "6718bc852b8a7fd7c6c7f42b4b6d4f0aa6702314a73b86ebb5b733c86179d3ff",
       "status": "partial",
@@ -7123,6 +7402,27 @@
       ]
     },
     {
+      "id": "H179",
+      "row_sha256": "8a525bfe731677d2221d774ac1319b11952891cf8cc148dfd3a5181d1c7ab01a",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): There is no OS-level hotkey. The `global_shortcut` field in desktop/src-tauri/src/main.rs:23 is a capability flag that `detect()` always sets to false (:47). No shortcut is registered: the Tauri dependency has only the `tray-icon` feature (desktop/src-tauri/Cargo.toml). The only shortcuts are in-page, such as ⌘K for the palette in frontend/src/shell.tsx.",
+      "remaining": "- A global hotkey (default CommandOrControl+Shift+Space) that opens a small capture window\n- A canonicalising accelerator validator that requires a modifier and forbids Escape, with persisted settings\n- Hand-off of the captured text to the normal prompt path, never submit-and-approve",
+      "evidence": [
+        {
+          "path": "desktop/src-tauri/src/main.rs",
+          "sha256": "d2692d946279300b7c3d7e2c4c50509fa9518ecf898d5d85e83c21f6613cfeb4"
+        },
+        {
+          "path": "desktop/src-tauri/Cargo.toml",
+          "sha256": "c32bda466a6fc01a317e920afe3cd42d93fb239cc8e3394292d3a3abdb8906f5"
+        },
+        {
+          "path": "frontend/src/shell.tsx",
+          "sha256": "5e65f05f59e9550645ca4ea7d2fc88da363c5a6b547df71511938236cec1b29c"
+        }
+      ]
+    },
+    {
       "id": "H180",
       "row_sha256": "60e29527e6d7514206c1845537cdfd9798638419f4add6063ebad83aa6ff988d",
       "status": "partial",
@@ -7140,6 +7440,19 @@
         {
           "path": "frontend/src/test/desktop.test.tsx",
           "sha256": "787de2a0049af61839e55d3d3c1feb8c83686d413b5ff5e7bad6a14cdafeb491"
+        }
+      ]
+    },
+    {
+      "id": "H181",
+      "row_sha256": "fa2802c5b9f1cd1c10c5976a27af05fedd7b1d1e108db07cf8406104b34221cc",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nerva has no OS notification path. desktop/src-tauri/src/main.rs registers no notification plugin or command (handlers at :204-208 are desktop_action, desktop_capabilities and desktop_listening). frontend/src never calls the Web Notification API. Owner notifications still go out through chat channels and in-app panels only.",
+      "remaining": "- Native notifications deduplicated by kind and session, with icon, silent and action options\n- Click to focus and jump to the session\n- Action buttons that post to the approval queue through the kernel, with irreversible-tier tasks refused from a notification\n- A Notifications settings page with a master switch, per-kind toggles, a completion sound and a test button",
+      "evidence": [
+        {
+          "path": "desktop/src-tauri/src/main.rs",
+          "sha256": "d2692d946279300b7c3d7e2c4c50509fa9518ecf898d5d85e83c21f6613cfeb4"
         }
       ]
     },
@@ -7173,6 +7486,27 @@
         {
           "path": "tests/test_h182_power.py",
           "sha256": "471fc35b842287c3284d20cb60e20abfa2cc9baf23e7bffc318416e849394400"
+        }
+      ]
+    },
+    {
+      "id": "H183",
+      "row_sha256": "969244804fec73f80ab3e6d8daa0685d55945136fd3e185e58509b86a1470a4a",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): There is no URL-scheme registration or deep-link routing. The only `nerva://` strings are internal evidence URIs (agents/core/reflection_evaluation.py:81, :961-963). desktop/src-tauri/src/main.rs and desktop/src-tauri/Cargo.toml register no protocol and no single-instance plugin.",
+      "remaining": "- Registering the `nerva://` scheme in the installer manifest and again at runtime, plus a separate dev scheme\n- Deep-link routing into the single-instance owner\n- A `nerva://mcp/install` flow with a validating parser that crosses `skill.install` / `mcp.mutating` into the approval queue",
+      "evidence": [
+        {
+          "path": "agents/core/reflection_evaluation.py",
+          "sha256": "7328603d10639b82df28c84467b01c474fb118d4784545a2df1711f0edc36785"
+        },
+        {
+          "path": "desktop/src-tauri/src/main.rs",
+          "sha256": "d2692d946279300b7c3d7e2c4c50509fa9518ecf898d5d85e83c21f6613cfeb4"
+        },
+        {
+          "path": "desktop/src-tauri/Cargo.toml",
+          "sha256": "c32bda466a6fc01a317e920afe3cd42d93fb239cc8e3394292d3a3abdb8906f5"
         }
       ]
     },
@@ -7231,6 +7565,27 @@
         {
           "path": "desktop/README.md",
           "sha256": "b8239c47dbbdedd54edb96eebd564f60e277e24cd428666db5b14d6386153686"
+        }
+      ]
+    },
+    {
+      "id": "H186",
+      "row_sha256": "95bfabf5412e432bce8d9b98f80df93c9f87af5594962818ae9a0e9c5f759358",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Only governed worktree add and conservative removal for kanban task workspaces exist. They were adapted from Hermes worktree_ops in agents/core/kanban/workspaces.py. `plan_workspace` (:235-307) resolves a `.worktrees/<task>` path inside FileScope and refuses an occupied or foreign target. `materialize_workspace` (:378-428) reuses the branch or creates it under a live consumed run. `_clean_worktree` and `cleanup_workspace` (:464-484, :487) remove a terminal task's worktree only when it is clean and fully pushed. Tests: tests/test_hermes_kanban_workspaces.py:46-147 and tests/test_hermes_kanban_child_cleanup.py. No owner-facing worktree list or switch exists, and nothing provides a review or ship pane.",
+      "remaining": "- Owner-facing worktree list, add, remove and switch, branch listing and a base-branch picker\n- A review pane with Uncommitted, Branch and Last-turn diff scopes, stage, unstage and revert\n- Commit-message generation, Commit, Commit&Push and Create PR through `gh`, crossing `repo.sync` into the irreversible approval bucket\n- Repo scan and PR comment fetch",
+      "evidence": [
+        {
+          "path": "agents/core/kanban/workspaces.py",
+          "sha256": "221771c3508f0037502f4309926fb7e3afe74183802cae1af14126916d1d532b"
+        },
+        {
+          "path": "tests/test_hermes_kanban_workspaces.py",
+          "sha256": "c1fa056002d7eec328a5e48f709546d710eb283c90c348d997b13cf205faf4aa"
+        },
+        {
+          "path": "tests/test_hermes_kanban_child_cleanup.py",
+          "sha256": "bf96852c0fd92fdd58d54b4e1364c84b5cbeeadca000bd26e33aa0a8991f5926"
         }
       ]
     },
@@ -7779,6 +8134,27 @@
         {
           "path": "frontend/src/test/soul-edit.test.tsx",
           "sha256": "c5cbcab3787cede45e8683f3e614be412ee8a7dc9ec0754182ea0760e6edfb3b"
+        }
+      ]
+    },
+    {
+      "id": "H203",
+      "row_sha256": "0dae93a4414d8d5251782f498a5b381ea2975cbe1cd0ab00fa7052dce3c1a3b2",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Profile isolation exists, but there is no export or import flow and no scope chip. Since H689, `JARVIS_PROFILE` gives each profile its own data root, with its own settings store, memory, secret store and `.env` (agents/core/paths.py:143-147, `data_root` :201-207). Editing config in a profile's hub therefore changes only that profile. A backup taken under a profile archives only that root (agents/core/backup.py:548). Tests: tests/test_h689_install_identity.py:195 (a profile is its own data root) and :385 (the default hub's forget and backup never reach a profile). There is no profile bundle export or import, and the HUD has no \"Applies to\" scope on config pages.",
+      "remaining": "- Profile export as a bundle, and import back through `skill.install` with the plugin_gate scan, never trusted because the owner picked the file\n- \"Applies to\" profile scope chips on config pages, hidden when only one profile exists, with `?profile=` on config routes",
+      "evidence": [
+        {
+          "path": "agents/core/paths.py",
+          "sha256": "41ebec4e06fa4b6c68040ce5f576f747621760a4becc43f409b8630a0e1aebc0"
+        },
+        {
+          "path": "agents/core/backup.py",
+          "sha256": "b028a62b3ca253b46582a9dec1b5fed9c44411a34d4e242e8d8a98ba5cc385e4"
+        },
+        {
+          "path": "tests/test_h689_install_identity.py",
+          "sha256": "82289092603918ea9991afce46669600881ab6b4615e89fe9e63ddcde1043dac"
         }
       ]
     },
@@ -8501,6 +8877,19 @@
       ]
     },
     {
+      "id": "H224",
+      "row_sha256": "1b4b3bc3992aba576697abc25b364cf55ac478cdc726b56d9c9271058fc9e100",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): The terminal client is still a bare `input()` REPL (agents/run.py:45-53, :57-76). Ctrl-C or Ctrl-D ends input and the loop exits. Nothing else applies: no readline, completion, history navigation, queue editing, $EDITOR, paste or mouse handling, and no Ctrl-C that clears the draft or interrupts the turn.",
+      "remaining": "- Ctrl+C with three meanings in order: clear draft, interrupt turn (needs a server-side interrupt), exit\n- $EDITOR, redraw, paste of text or image, Esc-Esc, Tab completion, ↑/↓ across completions, queue and history, the session switcher, the model picker, readline chords and Enter versus Shift+Enter\n- Push-to-talk, flushing a queued message, wheel and drag selection, and mouse-tracking presets",
+      "evidence": [
+        {
+          "path": "agents/run.py",
+          "sha256": "f56ce6ea649559757c4194962273dbf77a5b06128ca377d380fa1dbdaf82767c"
+        }
+      ]
+    },
+    {
       "id": "H225",
       "row_sha256": "d4474d3ffd8907d9616485db40579cb0c6cb9a2faf1f8e7a5e5314189bf85013",
       "status": "partial",
@@ -8518,6 +8907,27 @@
         {
           "path": "frontend/src/app.tsx",
           "sha256": "00eb201ef19471d9a806414b23a8ebcb8fea48a3d796c5968f907671839161be"
+        }
+      ]
+    },
+    {
+      "id": "H226",
+      "row_sha256": "6237448ab8d2eaf96c0a0ff83dd4f78551f8b274e4898562fa3316b597d4f166",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Approvals can be answered from the terminal, but not in flow. `nerva approvals list|accept|reject|defer|edit|consent|mode` (agents/cli/nerva.py:285-305; `cmd_approvals` :2409-2499) lists the pending queue with tier and reversibility, and decides through the admin route `POST /autonomy/tasks/{id}/decision` or `/consent`. `nerva chat` reports the approval IDs a turn queued and points to `nerva approvals` (:5529-5563). Tests: tests/test_nerva_cli.py:391 (list and decide use the admin routes) and tests/test_h487_consent_cli.py. This is a separate command, not a prompt inside the turn: there are no terminal clarify, confirm, sudo or secret-entry prompts.",
+      "remaining": "- An in-flow approval prompt that shows the exact command and is answered mid-turn\n- Single and batch clarify prompts with per-question locking\n- A confirm prompt for destructive local actions\n- A non-echoing sudo prompt\n- A secret-entry prompt for a missing key, going to the secret broker\n- Audit records naming the terminal surface (not verified)",
+      "evidence": [
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "5d608bd62f99163ff5798447378ad30e9a476f57452670373a5a4e2c4784d98b"
+        },
+        {
+          "path": "tests/test_nerva_cli.py",
+          "sha256": "0ab8b49c518f062237a4a2f06933c7d40152b184ef83cfbba3c26bf01fe947ac"
+        },
+        {
+          "path": "tests/test_h487_consent_cli.py",
+          "sha256": "e4139348ea88214435934bad284fb6047dca1615c2d3c5b99b4a0595c60255c1"
         }
       ]
     },
@@ -9242,6 +9652,80 @@
       ]
     },
     {
+      "id": "H249",
+      "row_sha256": "6fe61abeea7d8c06945da772174fa7e72f7452237601c8caf08874cda0773593",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nerva still has no operator-pinned (managed) configuration layer. The hub's environment comes from three layers, process, repo .env and data-home .env, and the first layer to define a key wins (agents/core/env_provenance.py:1-15). None of them is an administrator-owned file applied on top. The settings plane (agents/core/settings_db.py) has no notion of a pinned leaf. The admin settings PUT (agents/core/routers/admin.py:257) and the `nerva config set|unset` verbs (agents/cli/nerva.py:260-265, agents/cli/nerva.py:1637) never consult a managed predicate before writing. A search for managed_scope, is_env_managed, MANAGED_DIR or 'managed by your administrator' across agents/ and scripts/ finds nothing. Duplicate group: H249 = H267 = H629 (docs/hermes/missing-rows-plan-2026-11-10.md:51).",
+      "remaining": "- An administrator-owned config/.env (e.g. /etc/nerva or $NERVA_MANAGED_DIR), deep-merged on top of the user's settings leaf by leaf\n- Every writer gated on a managed-key predicate: the admin settings PUT/import/reset, `nerva config set/unset` and the .env/secret writers refuse with an 'administrator' reason, and bulk writes strip pinned leaves and report which\n- Managed ${VAR} references expanded only against the process environment\n- The refusal routed through the config.write kernel kind and audited\n- Tests for all of the above",
+      "evidence": [
+        {
+          "path": "agents/core/env_provenance.py",
+          "sha256": "9b012e87a0e844bafc645327106f9c199dcf431fb666355cb85270f7f65ee9d6"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "814bcdb86151d8a84a68ce682cf7578ab520e96c8dde52827b9a69e1d15078cb"
+        },
+        {
+          "path": "agents/core/routers/admin.py",
+          "sha256": "67433447b0fe9a9e0dc321afc321ec5651995373156aa4514004091790cab1bf"
+        },
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "5d608bd62f99163ff5798447378ad30e9a476f57452670373a5a4e2c4784d98b"
+        },
+        {
+          "path": "docs/hermes/missing-rows-plan-2026-11-10.md",
+          "sha256": "bcb735ef53fbae4160d081208ed5d88468cbb425215781d9b539844e2c94505e"
+        }
+      ]
+    },
+    {
+      "id": "H250",
+      "row_sha256": "1dc1116c161f6a320e1f4a02156e5edf5f19b04a6cb6990c6cce31af21165971",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Named, isolated profiles exist (H689/H689b). JARVIS_PROFILE=<name> is validated (agents/core/paths.py:143-175). Each profile gets its own data root at <install root>-profiles/<name> (agents/core/paths.py:195-207). That root holds its own settings, memory, secret store (agents/core/secrets.py:55) and hub lock. A profile's hub reads only <profile root>/.env and neither shared .env (agents/core/env_provenance.py:831-842). The CLI takes `nerva -p NAME`, set before verb modules import so stores resolve into the profile (agents/cli/nerva.py:161-171, agents/cli/nerva.py:185-187). `nerva config path` names the active profile and its store (agents/cli/nerva.py:1975-2010). The emergency stop is shared across profiles (agents/core/estop.py:69). Tests: tests/test_h689b_profile_env.py:53 (a profile reads only its own env), tests/test_h689b_profile_env.py:104 (a refused name stops the load), tests/test_estop.py:131, tests/test_h689_shared_identity.py:202 (separate hub locks). Isolation is per process: a profile is a separate hub, so secrets cannot cross. What Hermes adds on top is missing. There is no sticky active_profile marker and no switch: the profile comes only from the environment or -p. There are no profile list/create/delete verbs and no fallback warning. The config REST endpoints take no ?profile= parameter (agents/core/routers/admin.py:257), and the HUD settings show no 'Applies to' scope.",
+      "remaining": "- A persisted active-profile marker with list/create/switch/delete (a governed action kind for the switch, per the row's governance)\n- ?profile= on the config REST endpoints (or an explicit cross-profile admin surface) and an 'Applies to' scope in the HUD settings\n- A one-shot warning when a requested profile falls back\n- Per-call secret scoping for multiplexed turns (today isolation is per process only)",
+      "evidence": [
+        {
+          "path": "agents/core/paths.py",
+          "sha256": "41ebec4e06fa4b6c68040ce5f576f747621760a4becc43f409b8630a0e1aebc0"
+        },
+        {
+          "path": "agents/core/secrets.py",
+          "sha256": "f379ed9fcc9dc60405726aacb4723a7e15f026ba8a1c1672b633334bad24b27a"
+        },
+        {
+          "path": "agents/core/env_provenance.py",
+          "sha256": "9b012e87a0e844bafc645327106f9c199dcf431fb666355cb85270f7f65ee9d6"
+        },
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "5d608bd62f99163ff5798447378ad30e9a476f57452670373a5a4e2c4784d98b"
+        },
+        {
+          "path": "agents/core/estop.py",
+          "sha256": "5e793dfad5372b31efa3e22844cd725861b5fb715f6cca3527ee46c832b489ee"
+        },
+        {
+          "path": "agents/core/routers/admin.py",
+          "sha256": "67433447b0fe9a9e0dc321afc321ec5651995373156aa4514004091790cab1bf"
+        },
+        {
+          "path": "tests/test_h689b_profile_env.py",
+          "sha256": "33ac8a9007871d262eb582ab448408665eeef749d83c71c62b1eef6fa6052b32"
+        },
+        {
+          "path": "tests/test_estop.py",
+          "sha256": "eabc27dbbca50bfd545130d2dfcb585e721f3d987c09a79e64caaed8e8ffb418"
+        },
+        {
+          "path": "tests/test_h689_shared_identity.py",
+          "sha256": "bda8b589ff3c0565e716967c49f0c0ba312c7c783e547495f879229bd7e45e7e"
+        }
+      ]
+    },
+    {
       "id": "H251",
       "row_sha256": "cd7e519a5d699bade9315c0228fe648b584d7913264d6779276613f569c54b70",
       "status": "equivalent",
@@ -9850,6 +10334,35 @@
         {
           "path": "tests/test_h273d_provenance_review.py",
           "sha256": "e2fc152aedf93153f2cecec8084a23618326ccea61fa34d083f8756abd138d58"
+        }
+      ]
+    },
+    {
+      "id": "H267",
+      "row_sha256": "09a4277e329f0571176daef3f27477ab24b6aebd33137ff052588c282fbe71c6",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nerva has no administrator-pinned managed .env scope. The hub loads process, repo .env and data-home .env with python-dotenv override=False semantics, so the first layer wins (agents/core/env_provenance.py:1-15). A profile reads only its own .env (agents/core/env_provenance.py:831-842). No root-owned layer is applied last with override, and env_config.py explicitly loads no .env itself (agents/core/env_config.py:26-30). Nothing like is_env_managed exists for writers to consult. The settings PUT (agents/core/routers/admin.py:257) and `nerva config set` (agents/cli/nerva.py:1637) write without a pinned-key check. Hermes's admitted v1 hole (in-process os.environ mutation) is therefore moot here, because there is no pinned layer at all. Duplicate group: H249 = H267 = H629 (docs/hermes/missing-rows-plan-2026-11-10.md:51).",
+      "remaining": "- A managed .env layer (default system path, overridable directory) applied last with override, so it beats the user's files and shell exports\n- An is_env_managed(key) predicate that every writer consults (settings PUT, config set/unset, secret store writes), refusing with the administrator message\n- The pinned mapping authoritative in-process, not only on disk (the fix the row asks for over Hermes v1)\n- The refusal audited and crossed as the config.write kernel kind\n- Tests",
+      "evidence": [
+        {
+          "path": "agents/core/env_provenance.py",
+          "sha256": "9b012e87a0e844bafc645327106f9c199dcf431fb666355cb85270f7f65ee9d6"
+        },
+        {
+          "path": "agents/core/env_config.py",
+          "sha256": "e4499bab23bd121739943355a6fa4579c9d3564c4e6eff3a8937e2a4ccc308a8"
+        },
+        {
+          "path": "agents/core/routers/admin.py",
+          "sha256": "67433447b0fe9a9e0dc321afc321ec5651995373156aa4514004091790cab1bf"
+        },
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "5d608bd62f99163ff5798447378ad30e9a476f57452670373a5a4e2c4784d98b"
+        },
+        {
+          "path": "docs/hermes/missing-rows-plan-2026-11-10.md",
+          "sha256": "bcb735ef53fbae4160d081208ed5d88468cbb425215781d9b539844e2c94505e"
         }
       ]
     },
@@ -13381,6 +13894,75 @@
       ]
     },
     {
+      "id": "H316",
+      "row_sha256": "ced23f6a06d7e474deab943d564735a3210a0caad554ca78d1a8229f9d7e2340",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): A blocking clarify tool now exists, adapted from Hermes clarify_tool.py. The donor protocol is vendored with its licence note (agents/core/channels/clarify_protocol.py:1-11). It allows 1-5 questions and at most 4 choices (agents/core/channels/clarify_protocol.py:9-11), and the first choice is suffixed '(Recommended)' (agents/core/channels/clarify_protocol.py:29-35). Batch normalization gives each question a stable qid, choices and a multi_select flag (agents/core/channels/clarify_protocol.py:53-82). The runtime asks the batch question by question. It returns {ok, responses:[...]} in question order and sets timed_out=True when an answer does not come (agents/core/channels/pending_input_runtime.py:446-470). A single question is delivered through the channel bridge for telegram, slack, discord, ntfy or the web HUD and blocks until answered, with a timeout setting (agents/core/channels/pending_input_runtime.py:472-560). The free-text 'Other' path is parse_clarify's awaiting_text (agents/core/channels/pending_input.py:115-167). The tool is registered read_only with untrusted_output=True, so the answer enters the loop as untrusted data (agents/core/channels/pending_input_runtime.py:594-640). The web chat streams a clarify event (agents/web.py:1599-1602, agents/web.py:1723-1727). The HUD renders it as a form with choices, multi-select and Other (frontend/src/pending-question.tsx:1-47, frontend/src/app.tsx:440-442). Children cannot call it: clarify is in DELEGATE_BLOCKED_CAPABILITIES (agents/core/subagents.py:100-117), and job turns strip it (agents/core/job_toolsets.py:98-99). Tests: tests/test_pending_input_completion_h067.py:269 (batch: order, timed_out, stop after timeout), tests/test_pending_input_other_choice.py:36, tests/test_pending_input_web.py:84 (a HUD answer reaches the same model turn), tests/test_pending_input_cards.py:66 (Other on cards), tests/test_h400_delegation.py:299 (blocked for children). The gap is 'always available'. The tool is registered only when channels.pending_inputs_enabled is on, and that is a default-off 'preview' toggle that needs a restart (agents/core/settings_db.py:474, agents/core/channels/pending_input_runtime.py:594-600, tests/test_pending_input_runtime.py:248). It also answers clarify_context_unavailable outside those five channel bindings (agents/core/channels/pending_input_runtime.py:472-483).",
+      "remaining": "- Make clarify available by default (today channels.pending_inputs_enabled defaults to False and needs a restart), so it is 'always available' as in Hermes\n- Bindings for the remaining surfaces where a turn can run (e.g. `nerva chat`, voice) instead of clarify_context_unavailable",
+      "evidence": [
+        {
+          "path": "agents/core/channels/clarify_protocol.py",
+          "sha256": "e58f78f2b3705a2d80c7257b2ead272b81fb7b6265354af388a460be8ca40257"
+        },
+        {
+          "path": "agents/core/channels/pending_input_runtime.py",
+          "sha256": "b8681fbb3805c6573bb4215024c4bb447330587c9795bc904b631b156ac5c9c4"
+        },
+        {
+          "path": "agents/core/channels/pending_input.py",
+          "sha256": "32d8db2fcb5a3a24ec898575a3a7e551abae30bed3dfafb1e7d2680d3c69ba14"
+        },
+        {
+          "path": "agents/web.py",
+          "sha256": "6c7311c0ee49991c2d91348996fc5464f4605032e0b4e07011f95904f7486005"
+        },
+        {
+          "path": "frontend/src/pending-question.tsx",
+          "sha256": "82f177354c4d8fac12b38ab1589d3331ec9abf09b66bd7a5e3a01ffaa488bb96"
+        },
+        {
+          "path": "frontend/src/app.tsx",
+          "sha256": "00eb201ef19471d9a806414b23a8ebcb8fea48a3d796c5968f907671839161be"
+        },
+        {
+          "path": "agents/core/subagents.py",
+          "sha256": "c21b5c4caed29b8be9533c0895705ca0bfac28c76fccb9f26e15641760a078a7"
+        },
+        {
+          "path": "agents/core/job_toolsets.py",
+          "sha256": "88693b85c947b2037dc3a0c820ce83f0a609e805cb2484edd5e66a64c53c0d5b"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "814bcdb86151d8a84a68ce682cf7578ab520e96c8dde52827b9a69e1d15078cb"
+        },
+        {
+          "path": "tests/test_pending_input_completion_h067.py",
+          "sha256": "130bf5baa4f9be7526c3a8615ad15b07fc5692689bca5ba407de262a5a759649"
+        },
+        {
+          "path": "tests/test_pending_input_other_choice.py",
+          "sha256": "ee929c74807a505311f9626334cae5fc03efbd3a33ca735fbb4082380f94a7c7"
+        },
+        {
+          "path": "tests/test_pending_input_web.py",
+          "sha256": "2aa16e9843bf6b7d2007f0ba685c89eb70a62db3e344049818d4557baf0cc600"
+        },
+        {
+          "path": "tests/test_pending_input_cards.py",
+          "sha256": "fff0d63882238ed1eaf72fb2a6648f7ceedc87a7a5a134d6b4a12c2137753310"
+        },
+        {
+          "path": "tests/test_h400_delegation.py",
+          "sha256": "20416f46d00fdf32c3e99308ff6b7be9705cb8d311dbc03b9a9c3b7a4332ebe4"
+        },
+        {
+          "path": "tests/test_pending_input_runtime.py",
+          "sha256": "6f614cfda819dab7728894e87e7c006103886be1a1e9f3b06ff610a075531d69"
+        }
+      ]
+    },
+    {
       "id": "H317",
       "row_sha256": "08e27fb0ec2999846abcd8ac2c348b23c64d8776cb30669b37aa675e573dd7cb",
       "status": "partial",
@@ -14186,6 +14768,39 @@
       ]
     },
     {
+      "id": "H335",
+      "row_sha256": "6b1beaa21b4c26ec07338ce88d8e4c0cd4a910429eae9faee2535ee88faf222c",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Two acquisition shapes now exist, but there is still no multi-source hub. (1) The H336 vendored catalog of Hermes's official skills. It is inert until installed, byte-checked against a manifest, and refuses skills that carry code (agents/core/skills/hermes_catalog.py:1-35). It has a listing (agents/core/skills/hermes_catalog.py:305), browse/search by text, category and kind (agents/core/skills/hermes_catalog.py:464-486), install through the import gates (agents/core/skills/hermes_catalog.py:392) and owner install (agents/core/skills/hermes_catalog.py:628). Repair restores deleted or edited files and follows a new catalog commit as an update (agents/core/skills/hermes_catalog.py:574). These are exposed as POST /api/skills/catalog/install (agents/core/routers/skills.py:851) and `nerva skills catalog [install|repair]` (agents/cli/nerva.py:458-476). (2) Import from a raw GitHub repo, openclaw or the pinned Hermes list (agents/core/routers/skills.py:734-762), plus the local marketplace with publish, install, review, rollback and uninstall (agents/core/routers/skills.py:980, agents/core/routers/skills.py:1006, agents/core/routers/skills.py:1107). Tests: tests/test_h336_catalog_owner_install.py:60, tests/test_h336_catalog_owner_install.py:192 (update via a new commit), tests/test_h336_catalog_owner_install.py:250 (search and filter), tests/test_hermes_skill_catalog.py:352 (a tampered catalog installs nothing), tests/test_marketplace_uninstall.py:21. The core of the contract is still absent: one search/browse/install surface over remote registries with a trust-ranked source router. There are no .well-known/skills endpoints, skills.sh, community registries or user-added taps. There is no quarantine→scan→confirm→lockfile pipeline recorded in the audit chain, no remote update check or `audit`, no outward publish (a PR against a target repo) and no snapshot export/import of an installed set.",
+      "remaining": "- A source router over remote sources with trust ranks (official > tapped GitHub/.well-known > community), and search across them\n- User-added taps\n- A quarantine→scan→confirm→install pipeline with a lockfile kept in the hash-chained audit\n- check/update against the remote source and an `audit` re-scan of installed skills\n- Outward publish (opens a PR) and snapshot export/import of the installed set\n- Each install crossing skill.install with tiered GRANT/QUEUE/refuse by source trust",
+      "evidence": [
+        {
+          "path": "agents/core/skills/hermes_catalog.py",
+          "sha256": "17b5d792770feac03cb550de9ae273e7e337cdd2b8672f2e21f1dc776d03a3a1"
+        },
+        {
+          "path": "agents/core/routers/skills.py",
+          "sha256": "c144402033bc2c970e5f0ec8299720c2bd03ffe98d6f2526201c1d5d587fe4f4"
+        },
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "5d608bd62f99163ff5798447378ad30e9a476f57452670373a5a4e2c4784d98b"
+        },
+        {
+          "path": "tests/test_h336_catalog_owner_install.py",
+          "sha256": "a3035171dcc8873e30490d260a1400f86e678c6394a18011fc55664f74c90512"
+        },
+        {
+          "path": "tests/test_hermes_skill_catalog.py",
+          "sha256": "806f6826b7832f6e20bffc072ce9b1f209d416011ec0fff9048820e46a09ee38"
+        },
+        {
+          "path": "tests/test_marketplace_uninstall.py",
+          "sha256": "677a41aab9c34b7232272e0375ea21043a6b4db9e112aa89211092d603d85ae0"
+        }
+      ]
+    },
+    {
       "id": "H336",
       "row_sha256": "6b7563b217dfa1a197e37667fda91444ddb3988adb26f833ede491a300c304af",
       "status": "partial",
@@ -14355,6 +14970,51 @@
         {
           "path": "tests/test_h318_skill_tools.py",
           "sha256": "f1b77d35ab8e762fadf36f8cdad647da1e8116c25e5f953b7d2606956ef57ae9"
+        }
+      ]
+    },
+    {
+      "id": "H342",
+      "row_sha256": "e9d25f82e93dcd70b6329d538e801b1b02d9d69ed90f831b651776110b1ddb89",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): The declaration side is parsed like Hermes. required_environment_variables (bare names or dicts with prompt, help, provider_url, required_for, optional), setup.collect_secrets and legacy prerequisites.env_vars are merged first-wins (agents/core/skills/frontmatter.py:271-309). The parser also reads required_credential_files (agents/core/skills/frontmatter.py:312-330) and metadata.hermes.config (agents/core/skills/frontmatter.py:332-347), and stores all of them in the manifest (agents/core/skills/frontmatter.py:385-397). The loader exposes the names as required_env (agents/core/skills/loader.py:802-804). For passthrough: when the owner views a vouched skill, its required_env names are declared, scoped to the agent, session and skill and revalidated on every use (agents/core/skills/tools.py:1165-1193, agents/core/code_env.py:196-240). Only those names are then read into an execute_code interpreter's start environment (agents/core/code_tools.py:355-366, agents/core/code_env.py:314-342). Managed provider keys and control names cannot be re-granted (agents/core/code_env.py:33-75). Tests: tests/test_skill_frontmatter_contract.py:140, tests/test_skill_frontmatter_contract.py:450, tests/test_h595_code_env.py:29, tests/test_h595_code_env.py:56. Still missing: values are never requested from the owner. They come from the process environment, the code tool's default source (agents/core/code_tools.py:346), not from the secret broker the row requires. Readiness reports only ready or unsupported by platform (agents/core/skills/visibility.py:124-140, agents/core/routers/skills.py:51-70). There is no setup_needed when a required variable or credential file is absent. Credential files are parsed but never checked or mounted, and metadata.hermes.config values are parsed but never collected or stored as settings.",
+      "remaining": "- Secure collection of a declared value (prompt/help/provider_url) into agents/core/security/secret_broker.py, and resolution from there instead of os.environ\n- readiness_status setup_needed when a required (non-optional) variable or credential file is missing\n- required_credential_files checked and mounted (scoped per run) into sandboxed/remote execution\n- metadata.hermes.config values collected and stored as non-secret skill settings",
+      "evidence": [
+        {
+          "path": "agents/core/skills/frontmatter.py",
+          "sha256": "7d44eb92ef20daca8eac6ef203f719bc2767073a324d0612f07ad76e5f5a0c01"
+        },
+        {
+          "path": "agents/core/skills/loader.py",
+          "sha256": "91119f3d91c5342c152794a00baad4cd39e5e541c1e21232d92c81434bbaf843"
+        },
+        {
+          "path": "agents/core/skills/tools.py",
+          "sha256": "3d607af5c0be8d7c51ac5789fe7282249fa421e88dae3953a426307ff513b8b4"
+        },
+        {
+          "path": "agents/core/code_env.py",
+          "sha256": "4ee52b69b4303d157e6deacfc51292e577f3bbcce1104ad88182d107c5451d4e"
+        },
+        {
+          "path": "agents/core/code_tools.py",
+          "sha256": "67548582b0be03dc8c9109a538dfbf8aa28908e7a0722f0939af0a746a4ff36b"
+        },
+        {
+          "path": "agents/core/skills/visibility.py",
+          "sha256": "a9e0884103caa6367f11f818505f163f0550b5bf37bf53b000669628cd2ccffc"
+        },
+        {
+          "path": "agents/core/routers/skills.py",
+          "sha256": "c144402033bc2c970e5f0ec8299720c2bd03ffe98d6f2526201c1d5d587fe4f4"
+        },
+        {
+          "path": "tests/test_skill_frontmatter_contract.py",
+          "sha256": "8118751cd8323e24cc9117281738f75bece48186d3992a4340b6b531c4cfb2fc"
+        },
+        {
+          "path": "tests/test_h595_code_env.py",
+          "sha256": "eeba70a83cc56f79c43df6937dca457a412fe45ba7d40bbc64c424b44bf2a761"
         }
       ]
     },
@@ -15914,6 +16574,51 @@
         {
           "path": "agents/core/llm/hybrid_router.py",
           "sha256": "0bd3dc63e0e0b2326e6e98fc532f5aa7bb5dffe7c09174b948046269785ae770"
+        }
+      ]
+    },
+    {
+      "id": "H366",
+      "row_sha256": "5de8eb228d7f9f27a634ed88dae950cdcc392f97183971bc0a2a51444b7666d3",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Subscription sign-in exists for one provider, and not for chat. A Nerva-owned Nous Portal device-code login stores tokens encrypted with refresh and rotation (agents/core/llm/nous_auth.py:1-5, agents/core/llm/nous_auth.py:354-456, agents/core/llm/nous_auth.py:504). It is exposed as admin routes /api/oauth/nous/status|login|poll|logout (agents/core/routers/oauth.py:169-205) and `nerva auth providers nous` (agents/cli/nous_auth.py:19-30). The token serves the 'Nous Vision' provider profile, auth_type oauth (agents/core/llm/providers/__init__.py:397-398). Tests: tests/test_h277_nous_auth.py:75 (the device flow keeps the previous credentials and holds no secrets), tests/test_h277_nous_auth.py:129 (refresh rotation and terminal quarantine). A ChatGPT/Codex OAuth bearer token can be supplied for image generation only. It is pasted into NERVA_CODEX_IMAGE_OAUTH_TOKEN with no login flow and no refresh (agents/core/media_backends/codex_image.py:1-5, agents/core/media_backends/codex_image.py:44-80; tests/test_openai_codex_image.py). For what the row is about (Claude Pro/Max and ChatGPT subscriptions as the cloud chat tier) nothing has landed. The Anthropic profile is api-key only via ANTHROPIC_API_KEY (agents/core/llm/providers/__init__.py:356-369). There is no PKCE flow for Anthropic or OpenAI Codex, and no provider auth registry or OAuth provider panel for LLMs. Onboarding still tells the owner 'ChatGPT Plus and Claude Pro subscriptions do not include API access' (agents/core/routers/onboarding.py:467-470).",
+      "remaining": "- Anthropic (Claude Pro/Max) PKCE login and OpenAI Codex/ChatGPT login for chat inference, with refresh and rotation committed to the encrypted store and recorded in the audit log, crossing the kernel like permission.grant\n- A provider auth registry (auth type, client id, scope per provider) plus GET /api/providers/oauth and a HUD OAuth provider panel\n- A Codex login flow with refresh instead of a pasted env-var token\n- Correct the onboarding text once a subscription path exists\n- Owner decision first: whether the providers' terms of service allow consumer-subscription OAuth tokens (Claude Code / Codex client credentials) to be used by a third-party app such as Nerva (docs/hermes/missing-rows-plan-2026-11-10.md:80)",
+      "evidence": [
+        {
+          "path": "agents/core/llm/nous_auth.py",
+          "sha256": "64eabc660325ff2caffad3731be3b0a14a02f834a01cc61126d80041d7b0828c"
+        },
+        {
+          "path": "agents/core/routers/oauth.py",
+          "sha256": "4ab4a803b62fa42e78e2e91f7774b11a2838a55a9f92e8900f4600ba22372ea9"
+        },
+        {
+          "path": "agents/cli/nous_auth.py",
+          "sha256": "1e1a53226b91736bb5e5c619b2162e4c59ce5dbf515556eb46c6c52424deeb9d"
+        },
+        {
+          "path": "agents/core/llm/providers/__init__.py",
+          "sha256": "f5c748cc9af8be88a5187152a648bc6c7af938d41db00baa609243da49bee68f"
+        },
+        {
+          "path": "agents/core/media_backends/codex_image.py",
+          "sha256": "06b298d61fc223a711047e3b1afc5384f92683bb24dcc72b089602d45d41ce72"
+        },
+        {
+          "path": "agents/core/routers/onboarding.py",
+          "sha256": "5074a53ef7aa6142278e5c1bbfa7f9c1d3384dd8b5b2eee39dd6e9e528793d3e"
+        },
+        {
+          "path": "tests/test_h277_nous_auth.py",
+          "sha256": "8f025fecdad5a738fcf56b104c5d2cff9bfad9f05c71ee0a31ecf80cdb4101e2"
+        },
+        {
+          "path": "tests/test_openai_codex_image.py",
+          "sha256": "11268d35e954c1859ba60ed522cbad160053f6be8d2f54ac0e17b7e9ccf617bd"
+        },
+        {
+          "path": "docs/hermes/missing-rows-plan-2026-11-10.md",
+          "sha256": "bcb735ef53fbae4160d081208ed5d88468cbb425215781d9b539844e2c94505e"
         }
       ]
     },
@@ -17993,6 +18698,60 @@
       ]
     },
     {
+      "id": "H401",
+      "row_sha256": "444b75a56243ebfeb8c53ebf48ad002ce9034e06b8097ca4b9e5eea4e3ce127f",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Delegation (H400) has a few of the observability pieces and none of the durability pieces. Delivered: an in-process status listing of every spawn with its failure reason and stats (agents/core/subagents.py:1607-1640), served at GET /api/subagents (agents/core/routers/mesh.py:289-302). A per-child wall clock cancels the child and records an honest 'timeout' failure with its seconds (agents/core/subagents.py:1132-1148). A result contract truncates a child's text to 24 000 characters with output_truncated and omits oversized structured answers (agents/core/delegate_tool.py:62-63, agents/core/delegate_tool.py:340-370). Tests: tests/test_h400_delegation.py:725, tests/test_h400_delegation.py:1077. The durable half of the contract is absent. Spawns live in an in-process dict (agents/core/subagents.py:844). The optional spawns.jsonl, behind JARVIS_SUBAGENT_SPAWN_LOG and off by default, is 'observability only, nothing is replayed' (agents/core/subagents.py:24-27, agents/core/subagents.py:1515-1535). delegate_task blocks the parent turn: there is no background fan-out with one completion event. There is no crash recovery that reports a dead owner, no exactly-once delivery claims, no stale-delegation monitor, no per-child live transcript, no tool_trace, no timeout diagnostic dump, no spill of large summaries and no stale-file reminder.",
+      "remaining": "- A background/async delegation registry that delivers one completion event\n- Durable spawn rows (e.g. on the autonomy queue) with recovery that reports a child whose process died\n- Exactly-once delivery claims across consumers and processes\n- A stale/stall monitor and child heartbeat\n- Live tail-able per-child transcripts and a tool_trace (tool names, payload sizes) linked to the audit log\n- A timeout diagnostic dump of what a hung child was doing\n- Summary spill (not only truncation) and a cross-agent stale-file reminder",
+      "evidence": [
+        {
+          "path": "agents/core/subagents.py",
+          "sha256": "c21b5c4caed29b8be9533c0895705ca0bfac28c76fccb9f26e15641760a078a7"
+        },
+        {
+          "path": "agents/core/routers/mesh.py",
+          "sha256": "a5de1862389a29a30b4d1e08202ac05e6e482c9576ebb504553eeb11021a1d21"
+        },
+        {
+          "path": "agents/core/delegate_tool.py",
+          "sha256": "a7d58b572226dc6b8001d525340f4dcafaf1354379011daf5e618b5521e73f75"
+        },
+        {
+          "path": "tests/test_h400_delegation.py",
+          "sha256": "20416f46d00fdf32c3e99308ff6b7be9705cb8d311dbc03b9a9c3b7a4332ebe4"
+        }
+      ]
+    },
+    {
+      "id": "H402",
+      "row_sha256": "98f2f05bc06c066e234d1d7eea081a22a80e224bebe0f8ff5d6b7decfc07c9fc",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Worktree isolation exists for kanban task workers, not for delegate_task children. Adapted from Hermes kanban_db_workspace.py and worktree_ops.py (agents/core/kanban/workspaces.py:1-7), a task with workspace kind 'worktree' is planned at <repo>/.worktrees/<task_id> on branch wt/<task_id>, or on a declared branch. The plan refuses occupied or foreign targets and paths outside the file scope (agents/core/kanban/workspaces.py:265-297). It is materialized with `git worktree add -b`, branching from the repo's HEAD, and only for the approved, still-current run (agents/core/kanban/workspaces.py:378-428). The dispatcher runs the worker inside that directory's file scope (agents/core/kanban/dispatcher.py:447-453). Tests: tests/test_hermes_kanban_workspaces.py:75 (branch reuse), tests/test_hermes_kanban_workspace_dispatch.py:27 (materialized only after approval), tests/test_hermes_kanban_workspace_dispatch.py:211 (a project worktree runs on a deterministic branch and keeps its work). The row's own path, delegation.worktree_isolation for children spawned by delegate_task / SubAgentManager, is not there. agents/core/subagents.py creates no worktree or branch per child. Concurrent delegated children still share one tree.",
+      "remaining": "- A worktree per delegated child (delegate_task / SubAgentManager.spawn) branched from the parent's HEAD, with the child's file and terminal scope bound to it, sharing the kanban helper\n- Creation crossing file.write, and the branch surfaced as the reviewable artefact for the approval queue",
+      "evidence": [
+        {
+          "path": "agents/core/kanban/workspaces.py",
+          "sha256": "221771c3508f0037502f4309926fb7e3afe74183802cae1af14126916d1d532b"
+        },
+        {
+          "path": "agents/core/kanban/dispatcher.py",
+          "sha256": "0ccc128864ba70ea087a4c1684555a0d90bf9a17e6edecec214843e04977ef94"
+        },
+        {
+          "path": "agents/core/subagents.py",
+          "sha256": "c21b5c4caed29b8be9533c0895705ca0bfac28c76fccb9f26e15641760a078a7"
+        },
+        {
+          "path": "tests/test_hermes_kanban_workspaces.py",
+          "sha256": "c1fa056002d7eec328a5e48f709546d710eb283c90c348d997b13cf205faf4aa"
+        },
+        {
+          "path": "tests/test_hermes_kanban_workspace_dispatch.py",
+          "sha256": "8ee219d3df1eef40a3d65f299c8243da4e11b5f1cb66bc0f1122a1efc629394e"
+        }
+      ]
+    },
+    {
       "id": "H403",
       "row_sha256": "4979224b1661c67d351234b5d63c5aa9697a6ef8084c55c1cd8fca5d71588222",
       "status": "partial",
@@ -18042,6 +18801,77 @@
         {
           "path": "tests/test_h443_review_loop.py",
           "sha256": "4255c0c00620fe91b7c39a733f2822a8058f8c5d17ef5623ff656c8b88b2e8a2"
+        }
+      ]
+    },
+    {
+      "id": "H404",
+      "row_sha256": "74c29279dbef1d3869b3d0c8b0c6a0603a68213c5eb265750c97ff4cf671b3a1",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): There is still no on-demand independent reviewer of the session's work. The slash registry (agents/core/commands.py:972-1013) has no /review. The nearest command, /refine, reviews a conversation for durable memories and skill changes (agents/core/commands.py:471, agents/core/commands.py:994). It does not critique the work produced. agents/core/observability/review_queue.py is a human review queue for flagged traces, and agents/core/reflection_evaluation.py evaluates lesson proposals. Nothing spawns a fresh-context reviewer subagent with an explicit reviewer goal and a 'what it must not assume' context.",
+      "remaining": "- A /review command (and tool) that spawns a fresh-context reviewer subagent over what the session just produced, with reviewer goal and context text (Adopt the prompt text of Hermes agent/review_engine.py)\n- The reviewer limited to read-only: the child blocklist plus denied write and channel-send capabilities\n- Tests",
+      "evidence": [
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "4f94ea2899ec9d031f3a78f35118a5936c826d35a40d1361ea120ebf639c899d"
+        },
+        {
+          "path": "agents/core/observability/review_queue.py",
+          "sha256": "c6f7d74d7dbf78cda7beb54ba992c8d907dc82dd728bc930c4d39893e880b3fb"
+        },
+        {
+          "path": "agents/core/reflection_evaluation.py",
+          "sha256": "7328603d10639b82df28c84467b01c474fb118d4784545a2df1711f0edc36785"
+        }
+      ]
+    },
+    {
+      "id": "H405",
+      "row_sha256": "e11b31f2af1eb2fa49ac20a15db5e2740ae0df5362e0fcf579270aed87cfc356",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nothing verifies the project the agent is working on. agents/core/project_context.py (H594) reads the project's convention files (AGENTS.md, CLAUDE.md, .cursorrules) into the turn (agents/core/project_context.py:1-30). It does not detect build, test or start commands. There is no detect_recipe, no saved environment manifest, no verification evidence ledger and no verify-on-stop nudge or pre_verify hook: a search for detect_recipe, verification_evidence, verify_on_stop or environment.json under agents/ finds none. agents/core/capability_verification.py verifies Nerva's own capability claims, not a user project.",
+      "remaining": "- Recipe detection (bootstrap/build/test/start/port) plus a user-editable project manifest\n- A runner that crosses terminal.exec at the approval floor\n- A passive verification evidence ledger in the hash-chained audit\n- A verify-on-stop nudge after unverified code edits, and a pre_verify gate\n- Tests",
+      "evidence": [
+        {
+          "path": "agents/core/project_context.py",
+          "sha256": "3fe286623b55f160d27a3e85b6798dac36010e062a4ef795a6637bdf04d42dc9"
+        },
+        {
+          "path": "agents/core/capability_verification.py",
+          "sha256": "d58c3652367ad3419209736d98d5872a402f93ffd33a8fe7c19e6110e2dd3881"
+        }
+      ]
+    },
+    {
+      "id": "H406",
+      "row_sha256": "dc16bc522ff6c2061bee5b2b5e4467fce7ccdceb745e57d072fa09702c91b488",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Two pieces of the coding posture landed. (1) Focus-mode skill index (H389). An offer narrowed to coding tools is read as the coding posture (agents/core/skills/visibility.py:80-97, agents/core/skills/visibility.py:199-215). Under it, Hermes's non-coding categories appear in the skills index by name only (agents/core/skills/visibility.py:218-221, agents/core/skills/loader.py:2357-2365). Tests: tests/test_h389_skill_pruning.py:1067, tests/test_h389_skill_pruning.py:1094. (2) The project's convention files are read into the turn from the git root down to the working directory (agents/core/project_context.py:1-30; tests/test_h594_project_context.py:94). That is context, not a project-facts detector. The operating guidance carries Hermes's generic 'finishing the job' brief and per-model-family tool-use enforcement (agents/core/operating_guidance.py:31-52). There is no coding operating brief, no live workspace snapshot (repo root, branch, upstream ahead/behind, dirty counts, recent commits) in any prompt, and no project-facts detection naming the exact test, lint and build commands. There is no per-model edit-format steering and no ContextProfile/RuntimeMode seam. The coding posture does not collapse the toolset itself: it follows an offer the owner narrowed.",
+      "remaining": "- A coding operating brief\n- A live git workspace snapshot in the prompt (root, branch/upstream, ahead/behind, dirty counts, recent commits, verify loop)\n- Project-facts detection of test/lint/build commands (shared with H405)\n- Per-model edit-format steering\n- An immutable RuntimeMode/ContextProfile posture seam, and an owner-selectable focus mode that collapses the toolset",
+      "evidence": [
+        {
+          "path": "agents/core/skills/visibility.py",
+          "sha256": "a9e0884103caa6367f11f818505f163f0550b5bf37bf53b000669628cd2ccffc"
+        },
+        {
+          "path": "agents/core/skills/loader.py",
+          "sha256": "91119f3d91c5342c152794a00baad4cd39e5e541c1e21232d92c81434bbaf843"
+        },
+        {
+          "path": "agents/core/project_context.py",
+          "sha256": "3fe286623b55f160d27a3e85b6798dac36010e062a4ef795a6637bdf04d42dc9"
+        },
+        {
+          "path": "agents/core/operating_guidance.py",
+          "sha256": "f3e83da3ef5a45a5e771ad9e7cdcb83df50ee43d279aee692a6582030ca4152f"
+        },
+        {
+          "path": "tests/test_h389_skill_pruning.py",
+          "sha256": "80c6205b5bc05f1ad66e2c903acdad19ee5efe696dff185ac99a3d6f0b62044a"
+        },
+        {
+          "path": "tests/test_h594_project_context.py",
+          "sha256": "125411a8741fc4eea230b00da663e53946f325b3a9a3e3e3696014f96f8d17bb"
         }
       ]
     },
@@ -18119,6 +18949,59 @@
         {
           "path": "mobile/src/api/__tests__/estop.test.ts",
           "sha256": "b0ebcb474900b1277fb41899f17afb6e9e7a3622223bc788ebc20ad6a39c07a5"
+        }
+      ]
+    },
+    {
+      "id": "H408",
+      "row_sha256": "62d1e8379d163443f28105ede2c388ab957696029a8fe3a81695c9fc566c7cac",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nerva has a lifecycle event bus, but it is deliberately observe-only and runs signed extensions, not the owner's shell scripts. Activated, consented, signed extensions that declare an event receive it (agents/core/extensions/events.py:1-28). The events are command.completed, session.started, session.ended, tool.completed and two smart-approval events (agents/core/extensions/manifest.py:16-17). Each carries a JSON payload of allowlisted fields (agents/core/extensions/events.py:46-53). Delivery runs the extension in its sandbox and reads only the exit code (agents/core/extensions/runtime.py:363-389). Consent, signature and package hash are rechecked on every delivery. Emission is wired at the command registry (agents/core/commands.py:247-249), the tool events (agents/core/observability/tool_events.py:143-145) and session start and end (agents/core/orchestrator.py:7223-7224). The bus is bound when the extension runtime starts (agents/core/acquisition/runtime.py:207). `nerva extensions doctor` validates descriptors (agents/cli/nerva.py:230-234). Tests: tests/test_extension_events.py:83, tests/test_extension_events.py:138, tests/test_extension_events.py:262. Against the contract, Nerva itself says it runs no owner-configured hook commands (agents/core/safe_mode.py:50-51). There is no hooks: block of shell scripts, no stdout or exit-code decision protocol, no fail_open/fail_closed choice and no per-(event, command) first-use consent allowlist. There is no hooks list/test/revoke/doctor with exec-bit, mtime-drift and JSON checks, and the catalogue has 6 events, not Hermes's full VALID_HOOKS set. Owner decision pending: H408 conflicts with skip rows H021/H163/H514 (docs/hermes/missing-rows-plan-2026-11-10.md:67, docs/hermes/missing-rows-plan-2026-11-10.md:140).",
+      "remaining": "- Owner-script hooks declared in config, fired with a JSON payload on stdin and a defined stdout/exit-code protocol\n- Fail-closed by default (inverting Hermes)\n- Registration as permission.grant and each firing crossing terminal.exec with the hardline denylist\n- A per-(event, command) consent allowlist, plus hooks list/test/revoke/doctor\n- The full lifecycle event catalogue with documented extra payload keys\n- Owner decision on the H021/H163/H514 conflict first",
+      "evidence": [
+        {
+          "path": "agents/core/extensions/events.py",
+          "sha256": "a83cb60144156741c9f32aad13937ec35593ddf63625be737952badaeec5658c"
+        },
+        {
+          "path": "agents/core/extensions/manifest.py",
+          "sha256": "2913ef39451e538cdc1548423e5186ef22608e6e69570756d821ce1638439620"
+        },
+        {
+          "path": "agents/core/extensions/runtime.py",
+          "sha256": "d35013aad2e9c19696942e7ee3b673daecc9a0fbcd18626b4b693e0bc43e2b76"
+        },
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "4f94ea2899ec9d031f3a78f35118a5936c826d35a40d1361ea120ebf639c899d"
+        },
+        {
+          "path": "agents/core/observability/tool_events.py",
+          "sha256": "29f9ddd76548f7472c5d12db8aa2e76f44f4feaf593d852f49bcd2db6df9de45"
+        },
+        {
+          "path": "agents/core/orchestrator.py",
+          "sha256": "29d90c257976246ed0a2b2a028e6bd688d3e024729bd0f8eb499cae3e0b76cd9"
+        },
+        {
+          "path": "agents/core/acquisition/runtime.py",
+          "sha256": "8eb5709872ded7cf50a58831a3d224cb2605e6858e88eb2493c40f8f6c26f02c"
+        },
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "5d608bd62f99163ff5798447378ad30e9a476f57452670373a5a4e2c4784d98b"
+        },
+        {
+          "path": "agents/core/safe_mode.py",
+          "sha256": "34851fc2d8a9ea329424e020dbb70d96fc34eb5a719d1e5b4130ab72d5325600"
+        },
+        {
+          "path": "tests/test_extension_events.py",
+          "sha256": "d9f9e4c181ba37a2a1b5ca42e4684ae64b82fa2072a17b546290702225df2841"
+        },
+        {
+          "path": "docs/hermes/missing-rows-plan-2026-11-10.md",
+          "sha256": "bcb735ef53fbae4160d081208ed5d88468cbb425215781d9b539844e2c94505e"
         }
       ]
     },
@@ -18270,6 +19153,35 @@
         {
           "path": "tests/test_h297_production_images.py",
           "sha256": "7419ef9e6ad2abdd9a6c74a195a4b043179a0b954ec72d268a706ef0440a4968"
+        }
+      ]
+    },
+    {
+      "id": "H412",
+      "row_sha256": "80df5566d97f22b576026bc87333e73d10e837b20a749816c55943bcd88ca38a",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): @-references landed (H579). `@file:path` and `@file:path#L10-40` in the owner's own /chat and /chat/stream messages are expanded under '--- Attached Context ---'. They are resolved like file_read through FileScope, refusing secret-looking paths and symlink escapes. They are bounded per reference and per message, and an unattachable reference becomes a warning (agents/core/context_refs.py:1-27, agents/core/context_refs.py:209). The attachment is bound to the turn and tainted (agents/core/context_refs.py:251, agents/web.py:1494-1512). A completion helper serves the composer (agents/core/context_refs.py:272). Tests: tests/test_h579_context_refs.py:50, tests/test_h579_context_refs.py:59, tests/test_h579_context_refs.py:87. Only the file reference type exists, with no diff or page references. The context meter is still absent. The slash registry has no /context and no /compress (agents/core/commands.py:972-1013). No surface shows how the next request is composed against the window, and the context-compress route stays refused and uncalled (frontend/src/panels/mission-canvas.tsx:60). So there is no 100-cell grid, no usage table, no per-skill or per-toolset expansion and no manual compress report that tells a no-op, an abort, a refusal and a fallback apart.",
+      "remaining": "- /context (and a HUD meter) showing the next request's composition by category against the model window, read from the compressor's own policy object, with grid and usage table and per-skill/toolset expansion\n- A manual /compress that reports exactly what it did (no-op/abort/refusal/fallback) and compaction status lines\n- @diff and page reference types",
+      "evidence": [
+        {
+          "path": "agents/core/context_refs.py",
+          "sha256": "812950bc941013fa58bcd14b403257eccf24ccdd97bf08a04fdbb0bed70886f1"
+        },
+        {
+          "path": "agents/web.py",
+          "sha256": "6c7311c0ee49991c2d91348996fc5464f4605032e0b4e07011f95904f7486005"
+        },
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "4f94ea2899ec9d031f3a78f35118a5936c826d35a40d1361ea120ebf639c899d"
+        },
+        {
+          "path": "frontend/src/panels/mission-canvas.tsx",
+          "sha256": "593a68fcba65bdd8c22a0de051aed6ba333216d76fac9f197ffe2a843fedab59"
+        },
+        {
+          "path": "tests/test_h579_context_refs.py",
+          "sha256": "1430d2d19dd967feeaf71ca72db743fc0872e613ff470be0e03badaf7da918cb"
         }
       ]
     },
@@ -20749,6 +21661,27 @@
       ]
     },
     {
+      "id": "H460",
+      "row_sha256": "ebc6a026f5ee97f35264580349009c691ee39bf28161bf2fd1c75446fdf533a7",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): There is still no recurring wakeup inside the conversation you are in. The slash registry has no /loop (agents/core/commands.py:972-1013). What exists is the out-of-session job scheduler. /jobs and /remind create interval or cron jobs with a repeat limit and first-run policy, and the policy cites Hermes /loop only for the timing of the first wakeup (agents/core/autonomy/jobs.py:594-628). Those jobs are not persisted per session and are not restored on resume. They have no self-paced digest backoff, no LOOP_COMPLETE / --until / --times / max_ticks stop order and no watcher that skips mid-turn or goal-owned ticks. Duplicate: H460 = H578 (docs/hermes/missing-rows-plan-2026-11-10.md:52).",
+      "remaining": "- /loop [interval] <prompt> [--times N] [--until cond] with status/pause/resume/stop, persisted per session and restored on resume\n- Self-paced mode with timestamp-stripped digest backoff\n- Stop order LOOP_COMPLETE → --until judge (fail-open) → --times → max_ticks (pause)\n- An idle watcher that never fires mid-turn, yields to a goal and leaves the tick due on skip\n- Tests",
+      "evidence": [
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "4f94ea2899ec9d031f3a78f35118a5936c826d35a40d1361ea120ebf639c899d"
+        },
+        {
+          "path": "agents/core/autonomy/jobs.py",
+          "sha256": "3e683f4dc3c2367dbb7b15d77710cbd14a07160d606a33f1f9754a18f39e9a0c"
+        },
+        {
+          "path": "docs/hermes/missing-rows-plan-2026-11-10.md",
+          "sha256": "bcb735ef53fbae4160d081208ed5d88468cbb425215781d9b539844e2c94505e"
+        }
+      ]
+    },
+    {
       "id": "H461",
       "row_sha256": "d44e344dc3c48655f51eac58a2b57d69e8a2128eab056c741a20b0b40c4b5542",
       "status": "partial",
@@ -21490,6 +22423,35 @@
         {
           "path": "tests/test_hermes_kanban_surfaces_wiring.py",
           "sha256": "fcfe21d3a8ca25272f74d3b9b6910f55ea70263fbd4477df2e62ad98ed43e2aa"
+        }
+      ]
+    },
+    {
+      "id": "H474",
+      "row_sha256": "97743c0d6c2822a4fc8d74a39c35b62c8de7aef13a1c791303043ca6b5308c86",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Only the kanban-task form exists. A worktree task gets .worktrees/<task_id> on branch wt/<task_id>, materialized after approval (agents/core/kanban/workspaces.py:265-297, agents/core/kanban/workspaces.py:378-428). When the task is terminal, the dispatcher runs a conservative reclaim (agents/core/kanban/dispatcher.py:476-487). The reclaim never removes an in-use (bound) workspace, a non-terminal task, a task with an active child or a tree referenced by an attachment. It never removes a dirty tree or one with commits unreachable from remote-tracking refs or trunk. It removes with a non-force `git worktree remove` and deletes only the generated branch (agents/core/kanban/workspaces.py:464-485, agents/core/kanban/workspaces.py:487-603). `kanban create --workspace worktree[:<path>] --branch` exposes it (agents/core/kanban/cli_upstream/handlers.py:81-96). Tests: tests/test_hermes_kanban_workspaces.py:75 (dirty or unpushed trees are kept), tests/test_hermes_kanban_workspaces.py:118, tests/test_hermes_kanban_workspace_dispatch.py:211. Missing from the contract: a session started in its own worktree (`-w`, a branch from the freshly fetched remote tip, its own checkpoint history), and /worktree new to retarget a running session's tools. There is no `worktree list|prune` classifying every tree by age, size, verdict and reason, and no protected-branch rule. Untracked scratch is not archived before removal, and no cron runs opportunistic safe reclaim.",
+      "remaining": "- A session-level worktree start (fresh fetch, own branch, own checkpoints) and /worktree new retargeting a running session\n- worktree list|prune with per-tree age/size/verdict/reason, protected branches, and archive of untracked scratch before removal\n- Opportunistic reclaim on the cron tick as a governed, reversible-tier action",
+      "evidence": [
+        {
+          "path": "agents/core/kanban/workspaces.py",
+          "sha256": "221771c3508f0037502f4309926fb7e3afe74183802cae1af14126916d1d532b"
+        },
+        {
+          "path": "agents/core/kanban/dispatcher.py",
+          "sha256": "0ccc128864ba70ea087a4c1684555a0d90bf9a17e6edecec214843e04977ef94"
+        },
+        {
+          "path": "agents/core/kanban/cli_upstream/handlers.py",
+          "sha256": "112fdd4dd1d724f884a27eb07c8efe5abb83ff79ddae09a4d96f212766e4c582"
+        },
+        {
+          "path": "tests/test_hermes_kanban_workspaces.py",
+          "sha256": "c1fa056002d7eec328a5e48f709546d710eb283c90c348d997b13cf205faf4aa"
+        },
+        {
+          "path": "tests/test_hermes_kanban_workspace_dispatch.py",
+          "sha256": "8ee219d3df1eef40a3d65f299c8243da4e11b5f1cb66bc0f1122a1efc629394e"
         }
       ]
     },
@@ -23723,6 +24685,51 @@
       ]
     },
     {
+      "id": "H509",
+      "row_sha256": "dccf5d52b948966427d85bbab38500e06962aef4108835a2c500f43fb0102c3d",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Browser sign-in now exists, but only for the Nerva Workspace surface (/api/workspace, behind NERVA_WORKSPACE, default off; agents/core/workspace/config.py:30). It covers a random session token in the HttpOnly, SameSite=Lax nerva_ws_session cookie with only its SHA-256 stored, synchronizer CSRF and a cross-origin refusal, and login throttling per email and per IP (agents/core/workspace/auth.py:1-21, agents/core/workspace/auth.py:170-191). Passwords are hashed with scrypt and verified against a dummy hash for unknown or password-less accounts, so timing does not reveal accounts (agents/core/workspace/identity.py:1-6, agents/core/workspace/identity.py:76-86). Login is at POST /login and trusted-proxy SSO at POST /login/sso (agents/core/routers/workspace_auth.py:195, agents/core/routers/workspace_auth.py:267). Tests: tests/test_workspace_foundation_login.py:53, tests/test_workspace_foundation_login.py:75, tests/test_workspace_foundation_login.py:90, tests/test_workspace_foundation_identity.py:48, tests/test_workspace_foundation_sso.py:45. The networked hub and HUD the row is about still authenticate with header tokens (agents/web.py:236-246, agents/web.py:278-279, agents/web.py:334). They have no login page and no session cookie. The bind check refuses an unauthenticated non-loopback bind but accepts JARVIS_ALLOW_INSECURE_BIND=1 (agents/core/boot_guards.py:141-166). Hermes made --insecure a no-op.",
+      "remaining": "- A browser sign-in for the hub/HUD itself: cookie gate derived from the bind (loopback session token; any non-loopback bind gated), with the insecure acknowledgement removed or made a no-op\n- A DashboardAuthProvider-style seam with capability flags and a compliance test, and password, OIDC RP (iss/aud pinned, discovery) and machine-token providers\n- __Host-/__Secure- cookie prefixes chosen from HTTPS × path, clearing all name variants on logout\n- Transparent refresh, 503 rather than re-login when a provider is unreachable, next= validation on both legs, one-shot auto-SSO loop guard and an RFC 8252 loopback native-app broker",
+      "evidence": [
+        {
+          "path": "agents/core/workspace/config.py",
+          "sha256": "c9a0f903cd86457effe07ae0ceb122dc293c5535a2179580f268277e29d07879"
+        },
+        {
+          "path": "agents/core/workspace/auth.py",
+          "sha256": "59f0c7c197c2d055a7e220c31f9584f0e70dc6d4a67b2eab3a69bc25df73ef78"
+        },
+        {
+          "path": "agents/core/workspace/identity.py",
+          "sha256": "04f8a1c68cb952a273eb667514bf92dc8c66e4ea42870caec18da4c9dfc6e743"
+        },
+        {
+          "path": "agents/core/routers/workspace_auth.py",
+          "sha256": "407356049947eda79f7ca6346d13db926757f685989638caadcbe807e4972cc9"
+        },
+        {
+          "path": "agents/web.py",
+          "sha256": "6c7311c0ee49991c2d91348996fc5464f4605032e0b4e07011f95904f7486005"
+        },
+        {
+          "path": "agents/core/boot_guards.py",
+          "sha256": "392c3251978d148f0696fe592199735d5c474218ee49ca826bc0d6f468ece4d9"
+        },
+        {
+          "path": "tests/test_workspace_foundation_login.py",
+          "sha256": "3692fb55528d53d42af4f05ccc41bb50ef341b76d3dcc70f1f26394196393d96"
+        },
+        {
+          "path": "tests/test_workspace_foundation_identity.py",
+          "sha256": "7cdcabc649aef03f08e16e5a063ea347b5c14f218f78fcaebf18ae0dfe19edb4"
+        },
+        {
+          "path": "tests/test_workspace_foundation_sso.py",
+          "sha256": "28aeda884097e1c42b857c74552050508aa86fc91553260f9ed4a26d56ba895c"
+        }
+      ]
+    },
+    {
       "id": "H510",
       "row_sha256": "b682b69073e507299c2500f25504c310595cdc77a6c6d1556c245e16ddac094e",
       "status": "partial",
@@ -25065,6 +26072,31 @@
       ]
     },
     {
+      "id": "H516",
+      "row_sha256": "33f8eaac9012ceb95e9a315cc6a78b7f358defebec39b735edbd95295418d2c9",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nerva still cannot generate or animate a video. The media generator lists 'video' as a kind (agents/core/media_gen.py:22), but no video backend is registered, and the availability route reports video False (agents/core/routers/multimodal.py:437-440). agents/core/video_prompt.py builds a prompt for the owner to paste into Gemini or Veo by hand ($0, no API call; agents/core/video_prompt.py:1-7). agents/core/creative/video_pipeline.py plans a cut and stamps every clip generated: False (agents/core/creative/video_pipeline.py:13, agents/core/creative/video_pipeline.py:122). The agents/core/llm/video_* modules are video analysis, not generation. There is no video_generate tool, no VideoGenProvider ABC or registry, and no FAL, xAI or DeepInfra video backend.",
+      "remaining": "- A video_generate tool (text-to-video, image-to-video, reference-guided, routed on image_url)\n- A VideoGenProvider ABC and registry with at least one backend (Adopt the Hermes provider plugins)\n- Provider-specific edit/extend tools where supported\n- The render step crossing media.generate with a duration/cost bound, and tests",
+      "evidence": [
+        {
+          "path": "agents/core/media_gen.py",
+          "sha256": "936d5719c9b409cb9cf3d8dfa967db5050760a91374e4983e5c5290ca76db54e"
+        },
+        {
+          "path": "agents/core/routers/multimodal.py",
+          "sha256": "038f5921f5864d166d55155dd684dab4e0de0c5ab72fd4e76a66fa47683ce55d"
+        },
+        {
+          "path": "agents/core/video_prompt.py",
+          "sha256": "46cb0bea9c5a02871edda6d41bcf6b248dc5cbb0971d9cd13e6ba95fced2a640"
+        },
+        {
+          "path": "agents/core/creative/video_pipeline.py",
+          "sha256": "e8786a2147a3a3e791fab2c36aee77594421d479187be14e3bf0dd57a9bf1e5c"
+        }
+      ]
+    },
+    {
       "id": "H517",
       "row_sha256": "a08109ff2835318670979802f060e77769e12f0e27baa7d7245625ea50b480ec",
       "status": "partial",
@@ -25820,6 +26852,39 @@
       ]
     },
     {
+      "id": "H528",
+      "row_sha256": "afdec9f1084e66a5c14f5c73aa933f5e308d28455ea11e6c2b5f0dff83392f16",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nerva now delivers a reply as a native voice bubble on Telegram, but only the chat's spoken copy of a text reply, and only on Telegram. After a text reply lands, TelegramChannel._after_reply (agents/core/channels/telegram.py:1765-1799) checks the chat's /voice mode (agents/core/channels/voice_mode.py:51-57), synthesizes the clip on the host TTS engine (agents/core/channels/telegram.py:1801-1813, agents/core/channels/spoken_reply.py:212-247), and _send_voice posts it with sendVoice, falling back once to sendAudio as a regular attachment when Telegram answers 400 (agents/core/channels/telegram.py:1815-1840). A clip over 8 MiB is refused, not sent (agents/core/channels/spoken_reply.py:52, :243). The file suffix comes from a fixed MIME map (agents/core/channels/telegram.py:57-59); nothing sniffs the real container. Tests: tests/test_telegram_voice_reply.py:165 (voice note answered with sendVoice after the text) and :262 (a 400 is resent as sendAudio). The model-facing speak tool plays audio on a room device, not into a chat (agents/core/voice/speak_tool.py:1-48). `nerva send` says native MEDIA: attachments are not carried (agents/cli/nerva.py:833-837).",
+      "remaining": "- No MEDIA: path: an audio file produced by an agent tool (Hermes text_to_speech) is not delivered to a chat; only the automatic spoken copy of a reply is\n- No container sniffing (audio_container.py): the suffix comes from the engine's file extension\n- No Ogg repair or Opus conversion for voice bubbles; a non-Opus clip relies on Telegram accepting it or on the sendAudio fallback\n- No concatenation of multi-chunk TTS output and no per-destination packing under upload limits (a long reply is cut to 1,500 chars instead)\n- No audio attachment path on Discord, Slack or email\n- No delivery allowlist on the outbound audio path",
+      "evidence": [
+        {
+          "path": "agents/core/channels/telegram.py",
+          "sha256": "e29dd656860b41e5992a0431e816dc389e362812fe387e4ae2bbf47e7d83065a"
+        },
+        {
+          "path": "agents/core/channels/voice_mode.py",
+          "sha256": "1f0125c5bed7ab0da850936c66c6237ba226d3fc6f1fa725a00ff8b83d6ed757"
+        },
+        {
+          "path": "agents/core/channels/spoken_reply.py",
+          "sha256": "f051c45d6035eecfca40b987d7faf43c6054e7ef2e54d6aa9788cc4925f1f2a4"
+        },
+        {
+          "path": "agents/core/voice/speak_tool.py",
+          "sha256": "303bf67a214d01cda5af054fa9808cc13d92db34e5dfa86b820ddc249d2dc975"
+        },
+        {
+          "path": "agents/cli/nerva.py",
+          "sha256": "5d608bd62f99163ff5798447378ad30e9a476f57452670373a5a4e2c4784d98b"
+        },
+        {
+          "path": "tests/test_telegram_voice_reply.py",
+          "sha256": "f1f1f907b3156e5b3be009216057979f8707440b4e0b8645cc158c266873916c"
+        }
+      ]
+    },
+    {
       "id": "H529",
       "row_sha256": "d8b3a157fa1921c60db345154a0baaa63258de260d6f375bbe48e4e4a59cb84b",
       "status": "partial",
@@ -26297,6 +27362,19 @@
       ]
     },
     {
+      "id": "H542",
+      "row_sha256": "649f6a748015d5b38b322484dd1d38b671c3046ca27b2fc4432aaa5cacbb5c93",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nerva has no Agent Client Protocol server. There is no acp module under agents/ and no stdio JSON-RPC agent entry point; agents/vendor/hermes carries no acp_adapter. The agent entry points are still HTTP only: POST /chat (agents/web.py:1439) and POST /chat/stream (agents/web.py:1753). Nothing implements initialize, session new/load/resume/fork/list/cancel/prompt, cwd binding, source=\"acp\" persistence, an ACP toolset, a probe filter or an [acp] extra.",
+      "remaining": "- ACP stdio JSON-RPC server (initialize with load_session/fork/list/resume/image capabilities)\n- session/new, load, resume, fork, list (cursor, 50 per page), cancel, prompt\n- workspace cwd binding with Windows to WSL path translation\n- sessions persisted with source=\"acp\"\n- a dedicated editor toolset without messaging/audio/clarify\n- liveness-probe log filter\n- packaging as an extra with a --check preflight\n- owner decision: this contradicts skip row H056 (same feature)",
+      "evidence": [
+        {
+          "path": "agents/web.py",
+          "sha256": "6c7311c0ee49991c2d91348996fc5464f4605032e0b4e07011f95904f7486005"
+        }
+      ]
+    },
+    {
       "id": "H543",
       "row_sha256": "46ba024dc78996bb4cf6de1d4a616d53f21a5721b7f32926f05bccdabc95c542",
       "status": "missing",
@@ -26310,6 +27388,23 @@
         {
           "path": "agents/core/file_tools.py",
           "sha256": "65b4b6cdd690c7bbbe0f48d8027eff92e640c1075086ce158b9b3e5aecf54e7c"
+        }
+      ]
+    },
+    {
+      "id": "H544",
+      "row_sha256": "e7e54357c1ddbb0b30e59b638e6c499511f2f74bc8753fc00d147dec75bc4d8d",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): None of the ACP in-thread surface exists, because Nerva has no ACP server (see H542). The underlying capabilities exist natively but nothing projects them to an editor client: subagent steering (agents/core/subagents.py:1539, STEER_MAX_CHARS at :202) and the slash-command registry used by web and channels (agents/core/commands.py:983). There is no available_commands_update, no ACP tool-kind mapping or per-tool formatters, no FIFO of call ids, no plan-panel projection, no usage updates, no provenance _meta and no transcript replay on session/load.",
+      "remaining": "- the whole ACP rendering and command layer: available_commands_update, slash dispatch before the model with the session cwd pinned\n- /help /model /tools /context /reset /compress /steer /queue /version as ACP commands\n- tool-call kinds, titles, locations, ~20 per-tool result formatters and raw-output suppression\n- per-tool FIFO of call ids for parallel calls\n- todo projected into the editor's plan panel\n- usage updates including cached-read tokens\n- sessionProvenance and compaction-summary markers\n- full transcript replay inside session/load\n- depends on H542",
+      "evidence": [
+        {
+          "path": "agents/core/subagents.py",
+          "sha256": "c21b5c4caed29b8be9533c0895705ca0bfac28c76fccb9f26e15641760a078a7"
+        },
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "4f94ea2899ec9d031f3a78f35118a5936c826d35a40d1361ea120ebf639c899d"
         }
       ]
     },
@@ -26381,6 +27476,48 @@
       ]
     },
     {
+      "id": "H549",
+      "row_sha256": "b639270d29c31b0f44215da960e86c7ba71824964fee87a4424966a504898604",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nerva has no MCP server catalogue. There is no directory of reviewed server manifests, no manifest schema and no `mcp catalog` or `mcp install` verb. MCP servers are added only by hand through POST /api/admin/mcp (agents/core/routers/mcp.py:188) and connected through POST /api/admin/mcp/{name}/connect (agents/core/routers/mcp.py:265). There is no deep-link handler in agents/ or desktop/src-tauri. The curated install pipeline that exists covers skills only (agents/core/skills/marketplace.py:611).",
+      "remaining": "- a reviewed catalogue of MCP server manifests (transport, auth, default-enabled tools, suggest keywords/hosts, post_install)\n- `mcp catalog` listing with future_manifest/invalid diagnostics next to the owner's servers\n- `mcp install <name>`: write from manifest, prompt for credentials, probe, offer the tool checklist\n- an install deep link that is inert until confirmed, 32 KB capped, scheme-restricted and never overwrites a name\n- the skill.install-style owner-approval floor for installs",
+      "evidence": [
+        {
+          "path": "agents/core/routers/mcp.py",
+          "sha256": "683d5a628c20148207c647282fc3429f274790dbe861b412076e614d038161c4"
+        },
+        {
+          "path": "agents/core/skills/marketplace.py",
+          "sha256": "a2eab2eca3979e412646894f78e4798fdbda8e0d758b48dcaf2330b0bfc5ef29"
+        }
+      ]
+    },
+    {
+      "id": "H550",
+      "row_sha256": "73f804d8d9b5e5002121b8d5e7e0df74d0f7d3f934cad74e76a548275b979263",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nerva's MCP client still cannot sign in to an OAuth-protected server. agents/core/mcp/oauth.py is the resource-server half for Nerva's own MCP server, served at /.well-known/oauth-protected-resource and /api/mcp/token (agents/core/routers/mcp.py:324, :338). The client's streamable-HTTP transport (agents/core/mcp/http_transport.py) has no authorization-code flow, token store, refresh, CIMD/DCR or callback listener. The PKCE flow that exists serves the Google/Gmail connectors only, with a fixed loopback redirect (agents/core/plugins/oauth.py:191, :223-224).",
+      "remaining": "- OAuth 2.1 + PKCE for remote MCP servers through one manager\n- per-server token storage in the secret vault, transparent refresh, re-auth only on refresh failure\n- disk watch for tokens refreshed by another process; dedup of concurrent 401 recoveries\n- CIMD client identity with DCR fallback\n- pinned callback ports held as bound sockets\n- a dashboard-mediated callback bridge for headless installs\n- per-server oauth overrides (client_id/secret/name/auth method/redirect/user_agent)\n- an audit row per acquisition",
+      "evidence": [
+        {
+          "path": "agents/core/mcp/oauth.py",
+          "sha256": "0ef5740901fba5054a321735bfebacf9bc0b7513c545951c4603d7394836eafc"
+        },
+        {
+          "path": "agents/core/routers/mcp.py",
+          "sha256": "683d5a628c20148207c647282fc3429f274790dbe861b412076e614d038161c4"
+        },
+        {
+          "path": "agents/core/mcp/http_transport.py",
+          "sha256": "cc81e11bd77cc1d48ffc951110ccccec34af823c90c94ea37a1d717df4c34e52"
+        },
+        {
+          "path": "agents/core/plugins/oauth.py",
+          "sha256": "09dd2cc974340d1e687cdc2203c2405bce3e9fc88566a51e08c6175c8ea0aee6"
+        }
+      ]
+    },
+    {
       "id": "H551",
       "row_sha256": "d36709263aea47ed23673e62454f692bab83bae2f78f0c05f08fa7a8a14872e9",
       "status": "equivalent",
@@ -26398,6 +27535,36 @@
         {
           "path": "tests/test_mcp_tool_filters.py",
           "sha256": "e6a01fe8acb9b9865f40cc60e33c1d3c656425d50f992a0a796927009abc92af"
+        }
+      ]
+    },
+    {
+      "id": "H552",
+      "row_sha256": "9e1e566946eae5804e9584a9c805c9404bd3c6078fefc5f95d1a91314ce056b2",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): The MCP client still speaks only initialize, tools/list and tools/call (agents/core/mcp/client.py:602-605, :607, :644-666). Its initialize sends empty params, and Nerva's own MCP server advertises only tools (agents/core/mcp/server.py:288). Nothing in agents/core/mcp lists or reads resources or prompts.",
+      "remaining": "- per-server list_resources, read_resource, list_prompts and get_prompt tools\n- nextCursor pagination capped at 50 pages\n- 50 MiB single-resource cap\n- binary blocks (image/audio/embedded resource) cached to disk and handed to the model as paths\n- untrusted-text treatment (scan, tag stripping, size cap) for resource text",
+      "evidence": [
+        {
+          "path": "agents/core/mcp/client.py",
+          "sha256": "7573cc263323c6fc68e6f343f5652d96f6871d83306cf0a1545dc10c458c19dd"
+        },
+        {
+          "path": "agents/core/mcp/server.py",
+          "sha256": "4603174e8ccd74264ca6a319aded5b626766849231ddd6986ff65aca328e1439"
+        }
+      ]
+    },
+    {
+      "id": "H553",
+      "row_sha256": "a5ad1ef5337d020a2090a806071ba98f98c7697f6550ad35aa155c95300140a2",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): There is no sampling or elicitation handler. The client sends initialize with empty params and so declares no client capabilities (agents/core/mcp/client.py:602-605). Its reader skips any message that is not the reply to its own request id (agents/core/mcp/client.py:725-746), so a server-initiated sampling/createMessage or elicitation request is never answered.",
+      "remaining": "- sampling/createMessage handler with enabled flag, model override and allowed_models, max_tokens cap, timeout, per-server rate limit on a sliding window, max tool rounds and metrics, charged to the budget ledger\n- elicitation routed to the approval queue, URL mode declined, both schema spellings read, fail closed to decline/cancel",
+      "evidence": [
+        {
+          "path": "agents/core/mcp/client.py",
+          "sha256": "7573cc263323c6fc68e6f343f5652d96f6871d83306cf0a1545dc10c458c19dd"
         }
       ]
     },
@@ -26452,6 +27619,27 @@
         {
           "path": "agents/core/security/dep_audit.py",
           "sha256": "d47391911335063bd039bd77061ad41849921a5c298ad90568cbab29f444ed4e"
+        }
+      ]
+    },
+    {
+      "id": "H556",
+      "row_sha256": "63beb0f1a5b8c79a5e5a10cc002a7aa5f97e21ede2009932436fc28c79efa3fe",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): None of the resilience layers exist. MCPManager.connect_all is still a serial loop that logs failures (agents/core/mcp/client.py:842-847). Saved servers are only registered at boot, not connected (agents/web.py:2235-2244); a server connects only when an admin calls POST /api/admin/mcp/{name}/connect (agents/core/routers/mcp.py:265-280). The only bound is a 10-second deadline per stdio request (agents/core/mcp/client.py:725). There is no schema cache, lazy connect, backoff, cooldown, circuit breaker, parked self-probe, keepalive, idle recycling, parent-death watchdog, stderr log redirection, orphan reaper, discovery lock or status API.",
+      "remaining": "- background discovery with a bounded join and retry allowance\n- fingerprinted schema cache (0600, honouring ttlMs) and lazy connect on first call, with the authorization gate on the live call\n- jittered exponential reconnect, per-server cooldown, circuit breaker, parked state with periodic self-probe\n- keepalive pings, stdio idle/lifetime recycling\n- parent-death watchdog killing the child's process group, orphan reaper\n- stderr redirected to a shared log\n- cross-process discovery lock\n- one status API for all surfaces",
+      "evidence": [
+        {
+          "path": "agents/core/mcp/client.py",
+          "sha256": "7573cc263323c6fc68e6f343f5652d96f6871d83306cf0a1545dc10c458c19dd"
+        },
+        {
+          "path": "agents/web.py",
+          "sha256": "6c7311c0ee49991c2d91348996fc5464f4605032e0b4e07011f95904f7486005"
+        },
+        {
+          "path": "agents/core/routers/mcp.py",
+          "sha256": "683d5a628c20148207c647282fc3429f274790dbe861b412076e614d038161c4"
         }
       ]
     },
@@ -26550,6 +27738,40 @@
       ]
     },
     {
+      "id": "H559",
+      "row_sha256": "04ba634ceaf9daccc2fd08711ec1d24eb236afc49f6ac504b370762d68ff25b5",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nerva's MCP server still exposes none of the inbox or approval tools. Its read allow-list holds status, memory_search, dashboard and codeintel_search (agents/core/mcp/route_tools.py:82-108). Its write allow-list holds only memory_remember (agents/core/mcp/route_tools.py:537-551). Conversations, events, channel sends and permission answers stay HTTP-only.",
+      "remaining": "- conversations_list, conversation_get, messages_read, attachments_fetch\n- events_poll with a monotonic cursor and events_wait long-poll (5-minute cap)\n- messages_send delegating to the governed channel reply\n- channels_list\n- permissions_list_open and permissions_respond (allow-once/allow-always/deny) across identity, kernel and audit, refusing irreversible-tier approvals\n- a push-shaped event bridge",
+      "evidence": [
+        {
+          "path": "agents/core/mcp/route_tools.py",
+          "sha256": "e7a68b5f74ed8973478744fd8b3ee8cb020d81bf6c8622b64c55af25a6e501bf"
+        }
+      ]
+    },
+    {
+      "id": "H560",
+      "row_sha256": "e77b0eddfc7468d7ccbcf086d9f649c71a9cfb8c830e961a557a56a0b5b9df10",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nerva serves no OpenAI-compatible inbound API. There is no route for /v1/chat/completions, /v1/responses or /v1/models, and no /api/model/options. The only /v1 route is GET /v1/capabilities (agents/core/routers/analytics.py:314-318). It describes Nerva's own /chat, /chat/stream and /sessions wire contract (agents/core/client_protocol.py:12-18), not OpenAI's, and is tested at tests/test_client_protocol.py:25. No OpenAI client can use it. Duplicate of H614 (same feature, group G12).",
+      "remaining": "- POST /v1/chat/completions: system flattening, history, fingerprint-derived session id, SSE streaming with a tool-progress event, idempotency keys, 502 agent_incomplete\n- POST /v1/responses with server-side storage, previous_response_id chaining, named conversations, typed streaming events\n- GET and DELETE /v1/responses/{id}\n- GET /v1/models with a stable virtual model and route aliases\n- GET /api/model/options\n- governance: taint at the boundary, mandatory bearer key, default-off flag, loopback bind",
+      "evidence": [
+        {
+          "path": "agents/core/routers/analytics.py",
+          "sha256": "811173995f88d65247ba70c76e23d243d9b88b0d9e853e238c3163e26f4fdc29"
+        },
+        {
+          "path": "agents/core/client_protocol.py",
+          "sha256": "1c9adf82cfbcd51c753eff5e1fb6c8b3d29a2d3f3fdd12e26a88686b0adf92cd"
+        },
+        {
+          "path": "tests/test_client_protocol.py",
+          "sha256": "c8e298b27349cbeb27c55967b65cd465c8a231b385be13efc54d6506720b4394"
+        }
+      ]
+    },
+    {
       "id": "H561",
       "row_sha256": "39c21913697ef95477958c8513cd46303d18ac5e22d73893b6d49c69f6ec9c8f",
       "status": "partial",
@@ -26563,6 +27785,23 @@
         {
           "path": "agents/core/a2a.py",
           "sha256": "2a2415ba1ae6dd7f34aa3b3b27f46c924075f155665a7629a174492dd9ac2da2"
+        }
+      ]
+    },
+    {
+      "id": "H562",
+      "row_sha256": "87b798306776649a9a307f619584fd84cc55e9da52fa17025f2db8ce7ac8967e",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): A2A is still inbound only. agents/core/a2a.py registers peers by id and shared secret, with no url field (agents/core/a2a.py:183), and receives signed tasks (agents/core/a2a.py:224). The router serves the agent card, inbound tasks, peer administration and the inbox (agents/core/routers/a2a.py:45-129). Nothing makes an outbound call to a peer.",
+      "remaining": "- a2a_discover (fetch and summarise a remote Agent Card)\n- a2a_call (task to a named peer or URL, returning the context id)\n- a2a_list and a2a_history (persisted transcript by context id)\n- a2a_orchestrate (fan-out by capability tag, all/first/best)\n- a peer registry with url, bearer auth, timeout and tags\n- egress through plugin.egress with per-peer allowlist and credential redaction",
+      "evidence": [
+        {
+          "path": "agents/core/a2a.py",
+          "sha256": "2a2415ba1ae6dd7f34aa3b3b27f46c924075f155665a7629a174492dd9ac2da2"
+        },
+        {
+          "path": "agents/core/routers/a2a.py",
+          "sha256": "bbe5eed5ea1fba96cffcc908a954dac1172178911f7fb86ba75c4587874b65d8"
         }
       ]
     },
@@ -27080,6 +28319,19 @@
           "path": "agents/core/routers/heartbeat.py",
           "sha256": "67ce6361ab6ae971ea5fd1018e279b540452549ab972c1f660d447921cd5eed7"
         },
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "4f94ea2899ec9d031f3a78f35118a5936c826d35a40d1361ea120ebf639c899d"
+        }
+      ]
+    },
+    {
+      "id": "H578",
+      "row_sha256": "5a0f3c2241a2fecd7bdef9020b9f25fbdda8161a2d2e103106300b3e4f88d186",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): There is no session-scoped /loop. The slash registry has no loop or proactive command; /btw is the nearest sibling (agents/core/commands.py:983). Nothing re-runs a prompt in a session on a fixed or self-paced cadence, detects an unchanged reply digest, honours a LOOP_COMPLETE marker or runs an --until judge. Interval runs in agents/core/autonomy wake company-mode work runs, a different unit. Duplicate of H460 (same feature, group G2).",
+      "remaining": "- /loop [interval] <prompt> with --times and --until (alias /proactive)\n- fixed cadence with a 30-second floor\n- self-paced backoff from 60 s to 900 s, doubling while the reply digest is unchanged and snapping back when it changes\n- five stop conditions including LOOP_COMPLETE and an LLM --until judge\n- deferral to an active /goal; pause rather than kill on interrupt\n- a hard tick cap",
+      "evidence": [
         {
           "path": "agents/core/commands.py",
           "sha256": "4f94ea2899ec9d031f3a78f35118a5936c826d35a40d1361ea120ebf639c899d"
@@ -27664,6 +28916,23 @@
         {
           "path": "tests/test_openrouter_provider_routing.py",
           "sha256": "f4b727cbd1638153e3d3a6081b727a21921baf526922db2bfabcddc5eeb110b4"
+        }
+      ]
+    },
+    {
+      "id": "H585",
+      "row_sha256": "10c0cf194621dee2bf9f5a901bdf84343163ee0b929758203908784f8d52e0f3",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): There is no progressive tool disclosure. No tool_search, tool_describe or tool_call bridge exists, and nothing does BM25 retrieval over tools. ToolRPC tools are registered and advertised whole (agents/core/tool_rpc.py:526). MCP tools are appended to the model's tool list whole (agents/core/mcp/client.py:808).",
+      "remaining": "- deferrable MCP/plugin tools replaced by tool_search/tool_describe/tool_call bridge tools\n- BM25 with stemming plus substring fallback\n- tiered 0/1/2 disclosure against a context-share budget; core tools never deferred\n- unwrap at dispatch so kernel.authorize, hooks and approvals see the real tool name",
+      "evidence": [
+        {
+          "path": "agents/core/tool_rpc.py",
+          "sha256": "a6caf5e11d2e8b2d414a2d7f4c65e076685cea0ccd0949bb095432accb06aa97"
+        },
+        {
+          "path": "agents/core/mcp/client.py",
+          "sha256": "7573cc263323c6fc68e6f343f5652d96f6871d83306cf0a1545dc10c458c19dd"
         }
       ]
     },
@@ -29246,6 +30515,27 @@
       ]
     },
     {
+      "id": "H614",
+      "row_sha256": "46ee8b8c5194dd9ebb16daa3f45f8f3a1944f5663ac34d499b04043c18ae9e9e",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nerva has no OpenAI-compatible endpoint, so none of the named frontends can use it as a backend. The only /v1 route, GET /v1/capabilities (agents/core/routers/analytics.py:314-318), describes Nerva's own /chat and /sessions contract (agents/core/client_protocol.py:12-18; tests/test_client_protocol.py:25), not OpenAI's. Nerva's native sessions, health, CORS and bearer-auth surfaces predate the baseline and do not speak this contract. Duplicate of H560 (same feature, group G12).",
+      "remaining": "- POST /v1/chat/completions and POST /v1/responses with response storage\n- GET /v1/models; an OpenAI-shaped /v1/capabilities\n- per-request model selection\n- Runs, Jobs and Sessions APIs and skills/toolsets discovery in that shape\n- a session-key header for memory scoping\n- system-prompt layering that cannot widen tool scope or autonomy\n- bearer auth bound to an identity with multi-profile routing\n- concurrent-run cap\n- browser-extension control protocol",
+      "evidence": [
+        {
+          "path": "agents/core/routers/analytics.py",
+          "sha256": "811173995f88d65247ba70c76e23d243d9b88b0d9e853e238c3163e26f4fdc29"
+        },
+        {
+          "path": "agents/core/client_protocol.py",
+          "sha256": "1c9adf82cfbcd51c753eff5e1fb6c8b3d29a2d3f3fdd12e26a88686b0adf92cd"
+        },
+        {
+          "path": "tests/test_client_protocol.py",
+          "sha256": "c8e298b27349cbeb27c55967b65cd465c8a231b385be13efc54d6506720b4394"
+        }
+      ]
+    },
+    {
       "id": "H615",
       "row_sha256": "92628630fd7071778aa25bec97e020e51e30dd3eb698b694a49ebf8626565c1a",
       "status": "partial",
@@ -29735,6 +31025,35 @@
       ]
     },
     {
+      "id": "H624",
+      "row_sha256": "ae3ce17bb306b676eec769d8a3e6a6f7693031ee596cfce8ebf7978fdad34dd3",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): There is still no updater. There is no update module or route under agents/ and no `nerva update` verb. Updating is a manual procedure in docs/UPGRADE.md and docs/business/PILOT_GUIDE.md:871 (§15). UPDATE.bat runs git pull, pip install and pytest on Windows only. scripts/update_thirdparty.py re-vendors third-party sources for a PR; it does not update a running install. The repo.sync kernel kind exists (agents/core/kernel/registry.py:65) but no update flow uses it.",
+      "remaining": "- update pipeline with --check preview, --plan, --branch, parked-branch and stash/discard policy\n- machine-readable receipts and a post-restart check that the hub serves the new code\n- opt-in pre-update backup\n- SIGHUP survival with an update log\n- rollback to a commit or tag as a command, not just docs\n- refusal on image-managed installs\n- /update from channels\n- the apply step through the kernel and the irreversible approval queue",
+      "evidence": [
+        {
+          "path": "docs/UPGRADE.md",
+          "sha256": "0c6723ed70b973c923a1fc12a65e7b4f877456a6302ff99d21c4074d85bfc327"
+        },
+        {
+          "path": "docs/business/PILOT_GUIDE.md",
+          "sha256": "86109b5e2f33d8562dfad09fb8b606977aaf22952bc2841bb8ae1dbacc1c6a28"
+        },
+        {
+          "path": "UPDATE.bat",
+          "sha256": "10a23621f99a1be170ce15a28b62476d3e262240c5207e033c84e7b589d6729e"
+        },
+        {
+          "path": "scripts/update_thirdparty.py",
+          "sha256": "77a2c9ef67ebb6d2d0bae6d3bb3beb8b8bcd0b2b9a7facaa7dc7034d7938faff"
+        },
+        {
+          "path": "agents/core/kernel/registry.py",
+          "sha256": "7ec67fb9fcb0755e51e6df01990da09e927c8eef3a9e52130ecd4a402df48edf"
+        }
+      ]
+    },
+    {
       "id": "H625",
       "row_sha256": "bba58d7ec1ef030a6ab7c1ccf6e49b32704b817544e3099a27313935a4fca3db",
       "status": "partial",
@@ -29809,6 +31128,23 @@
         {
           "path": "agents/core/file_checkpoint_history.py",
           "sha256": "1688a073225b1606ba99ad38993a384a693c36ae7b0244384ca13ddccea6a212"
+        }
+      ]
+    },
+    {
+      "id": "H629",
+      "row_sha256": "aa1df6e05c28bc080a9818b676d4c2a2642cea3d9d6cb58027d348816306899f",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): There is no managed scope. Nothing reads an operator-pinned config directory or a managed marker. PUT /api/admin/settings/{category} validates, applies guards and writes behind admin_guard, with no pinned-key refusal (agents/core/routers/admin.py:257-310). put_category writes every known key (agents/core/settings_db.py:1623-1660). Duplicate of H249 and H267 (same feature, group G1).",
+      "remaining": "- an operator-owned config/env scope a non-root user cannot override, read at boot\n- refusal of settings writes (HTTP and CLI) on pinned keys with a named reason in the audit log\n- a managed-mode marker that blocks every config-mutating command and names the correct rebuild command",
+      "evidence": [
+        {
+          "path": "agents/core/routers/admin.py",
+          "sha256": "67433447b0fe9a9e0dc321afc321ec5651995373156aa4514004091790cab1bf"
+        },
+        {
+          "path": "agents/core/settings_db.py",
+          "sha256": "814bcdb86151d8a84a68ce682cf7578ab520e96c8dde52827b9a69e1d15078cb"
         }
       ]
     },
@@ -31450,6 +32786,39 @@
       ]
     },
     {
+      "id": "H669",
+      "row_sha256": "4e7cde49d71cc540ad5ca3c47fb9c66720d37890f4b45594cadc541fddbe941c",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): /btw is native (H414) and covers the Hermes fallback path, but not the preferred cache-parity fork. _btw (agents/core/commands.py:508-581) builds a bounded, redacted snapshot of the session, at most 2,000 chars per turn (agents/core/learning/background_review.py:94) and 12,000 in total (agents/core/llm/auxiliary_text.py:63). It answers once through run_oneshot (agents/core/llm/auxiliary_text.py:278-323), which sends no tools, so no action can be produced, and records usage under the purpose \"btw\". The orchestrator answers /btw before the turn is appended, without the turn lease and without interrupting running work (agents/core/orchestrator.py:2231-2234, :2873-2884), so persistence is detached. It is registered as a slash command (agents/core/commands.py:983) and works over web chat and channels. Tests: tests/test_btw_command.py:86 (bounded redacted snapshot, no turn written), :265 and :277 (answered before append), :479 (no interrupt), :542 (web chat); tests/test_btw_channel_adapters.py:96 (Telegram answers while the lane is occupied).",
+      "remaining": "- the cache-parity fork: same runtime, byte-identical system prompt, tools and reasoning config, the parent's full untruncated message snapshot replayed so the prefix cache is warm\n- usage attributed to the parent session (today it goes to a per-purpose one-shot ledger)\n- a prompt.btw JSON-RPC method (Nerva has no such RPC surface)\n- localized /btw strings (17 gateway locales in Hermes)\n- the /bg vs /btw split of the old /background command",
+      "evidence": [
+        {
+          "path": "agents/core/commands.py",
+          "sha256": "4f94ea2899ec9d031f3a78f35118a5936c826d35a40d1361ea120ebf639c899d"
+        },
+        {
+          "path": "agents/core/learning/background_review.py",
+          "sha256": "0d1004e71c76d709f3c7b806eb9711589f4ea396be8ae915c5cda8636c486512"
+        },
+        {
+          "path": "agents/core/llm/auxiliary_text.py",
+          "sha256": "abaeb7887cc35380a60987383806b74a707342f043c77b51c05063894fd4e4e1"
+        },
+        {
+          "path": "agents/core/orchestrator.py",
+          "sha256": "29d90c257976246ed0a2b2a028e6bd688d3e024729bd0f8eb499cae3e0b76cd9"
+        },
+        {
+          "path": "tests/test_btw_command.py",
+          "sha256": "b3fca810a7f032228d418fec71a438e47a166b34c0df3d08d2a2bdd13e7448ec"
+        },
+        {
+          "path": "tests/test_btw_channel_adapters.py",
+          "sha256": "2129f39f71163bbd3c5d910ce3177d8bb10dea0f0582f75f41688da83c42b92f"
+        }
+      ]
+    },
+    {
       "id": "H670",
       "row_sha256": "6918c8f480eda6ae370128e54db3018f6bc5ba777026f02c3726f25c4f5f0a35",
       "status": "equivalent",
@@ -32930,6 +34299,23 @@
       ]
     },
     {
+      "id": "H690",
+      "row_sha256": "274feb2b9284922f308ab1140a9c9fb9b53fcca867beb567c23cbee26719cc12",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nothing anchors the interpreter for macOS TCC. A search for tcc, tccutil and codesign across agents/, scripts/, install.sh and desktop/src-tauri/src finds no Python or Rust code. Nerva still depends on those grants through its accessibility backend (agents/core/desktop_host.py:272-275). install.sh creates the venv with no anchoring, boot gate or rollback.",
+      "remaining": "- copy the managed interpreter to a stable venv path (real-file copies, never symlinks) and pin its signature\n- hardlink libpython into venv/lib\n- a pre-install boot gate (import encodings, sys.prefix == venv) with rollback of the staged file\n- run only from install/update, no-op off macOS and for unmanaged interpreters, never raising",
+      "evidence": [
+        {
+          "path": "agents/core/desktop_host.py",
+          "sha256": "9b99da15b2d65c39defc041488b38283706d5a0d9859f2449a0b893799fd4818"
+        },
+        {
+          "path": "install.sh",
+          "sha256": "01a3cf1a0dba67d1da668486ab65b868de440d85ed9ffaac9d088ccc13f93ad6"
+        }
+      ]
+    },
+    {
       "id": "H691",
       "row_sha256": "b5b06bd8590604938c2045b17f0b8750acb1f9890ae54eac855847b469b8a027",
       "status": "equivalent",
@@ -32959,6 +34345,27 @@
         {
           "path": "tests/test_trusted_proxies.py",
           "sha256": "4a4a0f3af48772a9bb1237464cc4e51da4757f4cc474f5627569181435874d3a"
+        }
+      ]
+    },
+    {
+      "id": "H692",
+      "row_sha256": "954d3c4b313ad2f897a75d5d0c8192727684f411197e30e455faf1e8f3ebb997",
+      "status": "missing",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): There is no OAuth callback relay, and no MCP client OAuth for it to serve (see H550). The Google/Gmail connect flow uses a fixed loopback redirect, http://127.0.0.1:8080/api/oauth/callback (agents/core/plugins/oauth.py:191). That redirect still dies when the browser is not on the hub's machine. The backend accepts code/state by POST or GET /api/oauth/callback (agents/core/routers/oauth.py:112-134), but no client-side one-shot listener captures the redirect on the user's machine and forwards it. agents/core/mcp/oauth.py remains the server half.",
+      "remaining": "- a one-shot loopback listener on the user's machine (desktop/Tauri or CLI) passed as client_redirect_uri\n- relay of code/state only to the backend, closing on first callback, cancel or a 5-minute timeout, with at most 8 pending\n- a backend-side constant-time state check before redemption, with the token exchange behind the secret vault\n- applied to MCP server OAuth (depends on H550)",
+      "evidence": [
+        {
+          "path": "agents/core/plugins/oauth.py",
+          "sha256": "09dd2cc974340d1e687cdc2203c2405bce3e9fc88566a51e08c6175c8ea0aee6"
+        },
+        {
+          "path": "agents/core/routers/oauth.py",
+          "sha256": "4ab4a803b62fa42e78e2e91f7774b11a2838a55a9f92e8900f4600ba22372ea9"
+        },
+        {
+          "path": "agents/core/mcp/oauth.py",
+          "sha256": "0ef5740901fba5054a321735bfebacf9bc0b7513c545951c4603d7394836eafc"
         }
       ]
     },
