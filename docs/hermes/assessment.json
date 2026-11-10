@@ -51739,6 +51739,30 @@
         "Checked 13 resolved citations and H492 changes against the operator can see how the model is actually performing right now, and choose which fields to see dependencies; no cited text moved."
       ],
       "accepted_at": "2026-11-04T07:23:29Z"
+    },
+    {
+      "id": "H618",
+      "previous_review_sha256": "f73186b85974976a38b547dc44c5503c05ab767d5480eaa6855e52d6d28f3db2",
+      "source_fingerprint": "d170b9f782b27e1abd7713725e4754ef6b349b6a426f9bb50c3b37f302ee4dfe",
+      "paths": [
+        "agents/core/mcp/client.py",
+        "agents/core/routers/mcp.py",
+        "agents/core/mcp/oauth.py",
+        "agents/core/mcp/http_transport.py",
+        "scripts/nerva_mcp_stdio.py",
+        "tests/test_mcp_tool_filters.py",
+        "tests/test_mcp_hardening.py",
+        "tests/test_h16_1_mcp_oauth.py",
+        "tests/test_h10_5_mcp_server.py"
+      ],
+      "head_sha": "d8a5c817874684d5fa0c4859ee6534f318842a19",
+      "worktree_uncommitted": false,
+      "classification": "unrelated",
+      "reason": "tests/test_h16_1_mcp_oauth.py: test_well_known_and_oauth_enforcement now sets web.ADMIN_TOKEN, web._mcp_rs and orch.get_setting through monkeypatch instead of manual assignment, so they are restored on the early-return path; every assertion about the OAuth resource server is unchanged and no production code changed",
+      "checks": [
+        ".venv/bin/python -m pytest -o addopts= -q tests/test_h16_1_mcp_oauth.py -> 7 passed"
+      ],
+      "accepted_at": "2026-11-10T06:45:29Z"
     }
   ],
   "acceptance": [

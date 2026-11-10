@@ -19,8 +19,8 @@ Din acestea, **47** au fost reevaluate pe cod în această livrare; **0** păstr
 ## Axe separate de contabilizare
 
 **Verdict pe cod înregistrat** (review sau audit moștenit): partial 432, equivalent 152, missing 113. Acesta nu este creditul conservator de mai sus.
-**Prospețimea dovezii:** changed 328, current 314, unrecorded 55.
-**Impactul schimbării:** pending 309, none 369, accepted 19. Un hash schimbat cere analiză; nu dovedește singur regresia funcțională.
+**Prospețimea dovezii:** changed 329, current 313, unrecorded 55.
+**Impactul schimbării:** pending 309, none 368, accepted 20. Un hash schimbat cere analiză; nu dovedește singur regresia funcțională.
 **Acceptare runtime/platform/provider:** runtime: unrecorded 694, verified 3; platform: unrecorded 694, required_pending 3; provider: unrecorded 694, required_pending 3. «unrecorded» nu înseamnă că toate rândurile cer servicii externe.
 **Prospețimea acceptării:** runtime: unrecorded 694, stale 3; platform: unrecorded 694, current 1, stale 2; provider: unrecorded 694, current 1, stale 2.
 **Scope-uri declarate încă în așteptare:** runtime 0, platform 5, provider 3.
