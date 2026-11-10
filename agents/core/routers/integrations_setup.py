@@ -20,6 +20,11 @@ malformed request cannot echo a key either.
   log before the choice is stored); an adopted search backend asks the same two
   acknowledgements and its consent row must land before the choice is stored.
 * ``DELETE /api/admin/integrations/search-choice`` — back to ``auto``.
+* G19: a **video** provider (adopted from Hermes) is chosen the same way: ``use`` asks the
+  data-policy and cost acknowledgements, writes a required ``video_provider_consent`` audit
+  row, then stores ``JARVIS_VIDEO_PROVIDER``; ``DELETE /api/admin/integrations/video-choice``
+  turns video generation off again. Its test needs no request: a video costs money, so it
+  only checks that the key is set (each video is its own approval card with its cost).
 """
 
 from __future__ import annotations
@@ -41,7 +46,7 @@ from ._deps import admin_guard
 
 logger = logging.getLogger("jarvis.routers.integrations_setup")
 
-ENTRY_PATTERN = r"^(search|model)\.[a-z0-9][a-z0-9._-]{0,127}$"
+ENTRY_PATTERN = r"^(search|model|video)\.[a-z0-9][a-z0-9._-]{0,127}$"
 TEST_QUERY = "Nerva connection test"
 
 
@@ -386,6 +391,18 @@ async def _test_search(entry) -> dict:
     return {"ok": True, "verdict": "ok", "message": f"The search service answered ({len(rows)} result)."}
 
 
+async def _test_video(entry) -> dict:
+    """No request: any video request is billed, so only the key's presence is checked."""
+    from agents.core import integrations_catalog
+
+    key = integrations_catalog._key_state(entry)
+    if not key["set"]:
+        return {"ok": False, "verdict": "not_configured", "message": "No key is set yet."}
+    return {"ok": True, "verdict": "not_probed",
+            "message": "The key is set. Nerva sends nothing to test it: every video request is billed, "
+                       "so the first video's approval card is the test."}
+
+
 @router.post("/api/admin/integrations/{entry_id}/test", dependencies=WRITE_GUARDS)
 async def integration_test(entry_id: str = Path(pattern=ENTRY_PATTERN)):
     from agents.core import integrations_catalog
@@ -395,6 +412,7 @@ async def integration_test(entry_id: str = Path(pattern=ENTRY_PATTERN)):
         return _not_found()
     try:
         result = await (_test_model(entry) if entry.kind == integrations_catalog.KIND_MODEL
+                        else _test_video(entry) if entry.kind == integrations_catalog.KIND_VIDEO
                         else _test_search(entry))
     except Exception as exc:  # noqa: BLE001 — a test failure is a result, never a 500
         logger.warning("integration test for %s failed (type=%s)", entry_id, type(exc).__name__)
@@ -508,7 +526,68 @@ async def integration_use(body: UseBody, entry_id: str = Path(pattern=ENTRY_PATT
         return _not_found()
     if entry.kind == integrations_catalog.KIND_SEARCH:
         return await _use_search(entry, body)
+    if entry.kind == integrations_catalog.KIND_VIDEO:
+        return await _use_video(entry, body)
     return await _use_model(entry, body)
+
+
+def _video_guards(entry) -> list[dict]:
+    from agents.core import integrations_catalog
+
+    base = {"setting": integrations_catalog.VIDEO_CHOICE, "provider": entry.name, "model": ""}
+    return [
+        {**base, "guard": "data_policy", "needs": "acknowledge_training",
+         "message": f"{entry.display_name} ({entry.host}) receives your video prompts and the images you "
+                    "animate; how it handles them has not been verified",
+         "detail": {"policy": "unknown", "provider": entry.name}},
+        {**base, "guard": "cost", "needs": "confirm_expensive",
+         "message": f"{entry.display_name} is billed per second of video; each video asks your approval "
+                    "with an upper-bound cost first",
+         "detail": {"price": "per_second", "provider": entry.name}},
+    ]
+
+
+async def _use_video(entry, body: UseBody):
+    from agents.core import integration_keys, integrations_catalog
+
+    if integration_keys.env_owned(integrations_catalog.VIDEO_CHOICE):
+        return _env_managed(integrations_catalog.VIDEO_CHOICE)
+    if not integrations_catalog._key_state(entry)["set"]:
+        return nocache_json({"error": "no_key", "detail": f"set a key for {entry.display_name} first"},
+                            status_code=409)
+    guards = _video_guards(entry)
+    given = {"acknowledge_training": body.acknowledge_training is True,
+             "confirm_expensive": body.confirm_expensive is True}
+    missing = sorted({g["needs"] for g in guards if not given[g["needs"]]})
+    if missing:
+        return nocache_json({"error": "selection_guard", "detail": "; ".join(g["message"] for g in guards),
+                             "needs": missing, "guards": guards}, status_code=409)
+    try:
+        await _audit(f"consent (integrations): {integrations_catalog.VIDEO_CHOICE} → {entry.name}, knowing the "
+                     f"provider's data handling is unverified and each video is billed ({entry.host})",
+                     "video_provider_consent", required=True)
+    except Exception:
+        return nocache_json({"error": "consent_not_recorded",
+                             "detail": "the acknowledgement could not be written to the audit log; "
+                                       "nothing was changed"}, status_code=503)
+    try:
+        await asyncio.to_thread(integration_keys.set_choice, integrations_catalog.VIDEO_CHOICE, entry.name)
+    except integration_keys.EnvManaged:
+        return _env_managed(integrations_catalog.VIDEO_CHOICE)
+    return nocache_json({"ok": True, "applied": "now", "integration": _row(entry.id)})
+
+
+@router.delete("/api/admin/integrations/video-choice", dependencies=WRITE_GUARDS)
+async def integration_video_off():
+    """Turn video generation off: no provider is chosen any more."""
+    from agents.core import integration_keys, integrations_catalog
+
+    try:
+        await asyncio.to_thread(integration_keys.set_choice, integrations_catalog.VIDEO_CHOICE, "")
+    except integration_keys.EnvManaged:
+        return _env_managed(integrations_catalog.VIDEO_CHOICE)
+    await _audit(f"integrations: {integrations_catalog.VIDEO_CHOICE} → off", "video_provider_chosen")
+    return nocache_json({"ok": True, "applied": "now"})
 
 
 @router.delete("/api/admin/integrations/search-choice", dependencies=WRITE_GUARDS)

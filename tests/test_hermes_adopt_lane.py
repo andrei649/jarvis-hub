@@ -368,7 +368,16 @@ def test_env_reads_are_limited_to_the_adopted_names(monkeypatch):
         assert os_env.getenv("HOME", "d") == "d"
     with provider_scope("parallel"):
         assert os_env.getenv("PARALLEL_SEARCH_MODE") == "fast"
-    assert not hasattr(os_env, "environ") and not hasattr(os_env, "system")
+    assert not hasattr(os_env, "system")
+    # G19: ``environ`` exists only as ``get`` under the same allowlist (FAL's
+    # ``os.environ.get("FAL_VIDEO_MODEL")`` reads as unset); no mapping, no write.
+    monkeypatch.setenv("FAL_VIDEO_MODEL", "veo3.1")
+    with provider_scope("fal"):
+        assert os_env.environ.get("FAL_VIDEO_MODEL") is None
+        assert os_env.environ.get("OPENAI_API_KEY", "d") == "d"
+    with provider_scope("parallel"):
+        assert os_env.environ.get("PARALLEL_SEARCH_MODE") == "fast"
+    assert not hasattr(os_env.environ, "__getitem__") and not hasattr(os_env.environ, "__setitem__")
 
 
 def test_one_provider_cannot_read_another_providers_key(monkeypatch):

@@ -4,6 +4,18 @@
 
 ### What changed for you — 2026-11-09
 
+**Make videos (FAL, xAI Grok Imagine or DeepInfra)**
+- Nerva can now make a short video from a prompt, animate an image it generated, follow
+  reference images (xAI), and edit or extend a video it made with xAI. Ask in chat; you get
+  one approval card that names the provider, the model, the seconds and the most it can cost.
+  Nothing is sent until you approve, and nothing at all while the emergency stop is on or the
+  conversation is in plan mode.
+- Turn it on in Integrations: filter "video", save the provider's key, press "use for videos"
+  and confirm the consent card. "turn video off" turns it off again.
+- The finished video (MP4 or WebM, up to 16 MiB) appears in the media gallery. A video that
+  stops after the provider got the request is never sent again on its own, so you are never
+  billed twice. How it works: `docs/video-generation.md`.
+
 **Plan first, repeat on a cadence, see what fills the window**
 - `/plan <task>` puts the conversation in plan mode: only reads run, nothing is written, sent
   or executed, and the model writes a step-by-step plan that Nerva saves as a markdown file.

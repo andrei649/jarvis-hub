@@ -306,7 +306,8 @@ _RAW_ENV_READ = re.compile(r"os\.getenv\(|os\.environ\.get\(|os\.environ\[")
 
 # Lower this when you migrate reads. Raising it should be a deliberate,
 # explained choice in the PR — not a reflex to get CI green.
-MAX_RAW_ENV_READS = 107  # RB-2: the bind guard reads its tokens and host under either spelling
+MAX_RAW_ENV_READS = 108  # RB-2: the bind guard reads its tokens and host under either spelling;
+# G19: +1 for the vendored FAL video plugin's upstream os.environ.get (compat os_env, allowlisted)
 
 
 def _raw_env_read_sites():

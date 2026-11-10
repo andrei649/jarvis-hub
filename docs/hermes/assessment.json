@@ -9868,14 +9868,24 @@
     {
       "id": "H516",
       "row_sha256": "33f8eaac9012ceb95e9a315cc6a78b7f358defebec39b735edbd95295418d2c9",
-      "status": "missing",
-      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nerva still cannot generate or animate a video. The media generator lists 'video' as a kind (agents/core/media_gen.py:22), but no video backend is registered, and the availability route reports video False (agents/core/routers/multimodal.py:437-440). agents/core/video_prompt.py builds a prompt for the owner to paste into Gemini or Veo by hand ($0, no API call; agents/core/video_prompt.py:1-7). agents/core/creative/video_pipeline.py plans a cut and stamps every clip generated: False (agents/core/creative/video_pipeline.py:13, agents/core/creative/video_pipeline.py:122). The agents/core/llm/video_* modules are video analysis, not generation. There is no video_generate tool, no VideoGenProvider ABC or registry, and no FAL, xAI or DeepInfra video backend.",
-      "remaining": "- A video_generate tool (text-to-video, image-to-video, reference-guided, routed on image_url)\n- A VideoGenProvider ABC and registry with at least one backend (Adopt the Hermes provider plugins)\n- Provider-specific edit/extend tools where supported\n- The render step crossing media.generate with a duration/cost bound, and tests",
+      "status": "partial",
+      "summary": "Assessed 2026-11-10 after G19 (Adopt lane, video generation). Nerva now generates and animates video through Hermes's own code, vendored byte-for-byte under a recorded import rewrite: the VideoGenProvider ABC and OpenAICompatibleVideoGenProvider (agents/vendor/hermes/agent/video_gen_provider.py), the registry (agents/vendor/hermes/agent/video_gen_registry.py) and the FAL (21 families), xAI Grok Imagine and DeepInfra plugins (agents/vendor/hermes/plugins/video_gen/{fal,xai,deepinfra}/__init__.py), loaded through a ctx that admits only the three reviewed names (agents/core/creative/video_providers.py:78-111). The Nerva tool video_generate (gated; agents/core/creative/video_generation.py:692-739, registered at agents/core/autonomy_coordinator.py:958-959) covers text-to-video, image-to-video (routed on the image input, endpoint at video_generation.py:96-106) and xAI reference-guided video, and xAI edit/extend as operations on the same tool, sourced only from an approved xAI video Nerva made (video_generation.py:282-300). Each video is one plugin.egress approval card whose title and amount carry an upper-bound cost (video_providers.py:139-175; video_generation.py:302-328) under the reviewed cloud-image governance: consented provider choice + key + kernel + enforced mediation + e-stop off (video_generation.py:191-213), approval binding and re-derivation (:330-391), a durable attempt marker before the first POST and no replay (:524-558), a live check before every request (:529-553), egress only to the provider's own RESTRICTED manifest hosts (agents/core/plugin_gate.py:132-150; video_generation.py:132-171), vendored code on a 2-thread executor with a 900 s deadline and cancellation that wakes the poll sleep (video_generation.py:560-600; agents/vendor/hermes_compat/video_clock.py:27-39), a capped streamed download (agents/vendor/hermes_compat/httpx.py:276-318), MP4/WebM check and publication as a media catalog video served by /api/artifacts/md-.../blob (video_generation.py:432-457). Keys are per provider (agents/vendor/hermes_compat/video_shared.py get_secret_str) and are set and chosen in the Integrations panel with a consent card (agents/core/routers/integrations_setup.py:550-590; agents/core/integrations_catalog.py:160-186). Proven by tests/test_hermes_video_generation.py (22 tests, fake providers at the transport) and the HUD test in frontend/src/panels/integrations.test.tsx. PARTIAL, not equivalent, because the contract is not met in full: xAI's server-side storage (reusable public MP4 URLs) is deliberately off (the file is kept locally; only xAI's temporary vidgen.x.ai URL is reused for edit/extend), DeepInfra has no live model catalog (the owner names the model), OpenRouter video is not adopted, no live provider call was made, and creative/video_pipeline.py's render step is still not wired to this runtime.",
+      "remaining": "- xAI server-side storage (reusable public MP4 URLs) — off by design; decide whether to offer it\n- DeepInfra live video model catalog (an approved catalog GET, like the image path)\n- One live call per provider (FAL queue, xAI videos, DeepInfra OpenAI-compatible videos)\n- Wire creative/video_pipeline.py's render step to video_generate\n- OpenRouter video (needs a Nerva key resolver instead of hermes_cli.runtime_provider)",
       "evidence": [
-        "agents/core/media_gen.py",
-        "agents/core/routers/multimodal.py",
-        "agents/core/video_prompt.py",
-        "agents/core/creative/video_pipeline.py"
+        "agents/core/creative/video_generation.py",
+        "agents/core/creative/video_providers.py",
+        "agents/vendor/hermes/agent/video_gen_provider.py",
+        "agents/vendor/hermes/agent/video_gen_registry.py",
+        "agents/vendor/hermes/plugins/video_gen/fal/__init__.py",
+        "agents/vendor/hermes/plugins/video_gen/xai/__init__.py",
+        "agents/vendor/hermes/plugins/video_gen/deepinfra/__init__.py",
+        "agents/vendor/hermes_compat/video_shared.py",
+        "agents/vendor/hermes_compat/video_media.py",
+        "agents/vendor/hermes_compat/video_clock.py",
+        "agents/vendor/hermes_compat/video_openai.py",
+        "agents/core/routers/integrations_setup.py",
+        "agents/core/integrations_catalog.py",
+        "tests/test_hermes_video_generation.py"
       ]
     },
     {

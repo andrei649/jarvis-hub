@@ -3,6 +3,7 @@
   "DELETE /api/a2a/peers/{peer_id}/outbound": "admin",
   "DELETE /api/admin/backup/restore": "admin",
   "DELETE /api/admin/integrations/search-choice": "admin",
+  "DELETE /api/admin/integrations/video-choice": "admin",
   "DELETE /api/admin/integrations/{entry_id}/key": "admin",
   "DELETE /api/admin/llm/custom-endpoints/active": "admin",
   "DELETE /api/admin/llm/custom-endpoints/{key}": "admin",

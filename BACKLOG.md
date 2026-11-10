@@ -2898,6 +2898,19 @@
   forget; e-stop re-read per request; per-peer fan-out refusals; confined home; path-scoped and
   private compat names refused in every import form. Tests: `tests/test_a2a_outbound.py` (65).
   Guide: `docs/hermes/ADOPT_LANE.md` → slice 4.
+  **Adopt lane — G19 video generation (2026-11-10):** Hermes's `VideoGenProvider` ABC, registry and
+  the FAL / xAI Grok Imagine / DeepInfra plugins vendored (8 path-scoped rules, compat
+  `video_shared` / `video_media` / `video_clock` / `video_openai`, compat `httpx.AsyncClient` +
+  capped `download`, `os_env.environ.get`); OpenRouter video not adopted (needs Hermes's runtime
+  credential resolver). Nerva tool `video_generate` (gated): one `plugin.egress` approval card per
+  video with an upper-bound cost as `amount`, the cloud-image governance (consented choice + key,
+  kernel, enforced mediation, e-stop, no replay, live check per request), per-provider manifests
+  (`cloud-video-{fal,xai,deepinfra}`), 2-thread executor, 15-min deadline, cancellable polling,
+  16 MiB capped download, MP4/WebM check, media-catalog `video` artifact. Integrations panel:
+  `video.*` entries, consent card, `DELETE /api/admin/integrations/video-choice`.
+  H516 missing → partial (xAI server-side storage off, no DeepInfra catalog, no live call,
+  `video_pipeline` render step not wired). Tests: `tests/test_hermes_video_generation.py` (22) +
+  1 HUD test. Guides: `docs/video-generation.md`, `docs/hermes/ADOPT_LANE.md` → "Video generation".
   **Run lane, slice 1 (2026-11-10):** the governed Hermes sidecar moves from `0808ed8` to `9c0560f8`
   and the move is now a script: `scripts/hermes_runtime.py bump --commit <sha>`
   (`scripts/hermes_runtime_bump.py`) re-verifies the current pin, downloads and verifies the new
