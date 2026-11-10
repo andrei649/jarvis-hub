@@ -104,6 +104,10 @@ print("@@RB2-PROBE@@" + json.dumps(out))
 """
 
 
+_KEPT_FROM_THE_WORKER = {"PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "TEMP", "TMP", "SYSTEMROOT", "WINDIR",
+                         "VIRTUAL_ENV", "USER", "LOGNAME"}
+
+
 def _boot(tmp_path: Path, shell: dict[str, str], dotenv: str | None = None, *, home_spelling: str = "JARVIS",
           label: str = "run") -> dict:
     """Start the hub in a fresh interpreter. *shell* is its process environment; *dotenv*
@@ -113,9 +117,10 @@ def _boot(tmp_path: Path, shell: dict[str, str], dotenv: str | None = None, *, h
     home.mkdir(parents=True)
     if dotenv is not None:
         (home / ".env").write_text(dotenv, encoding="utf-8")
-    env = {key: value for key, value in os.environ.items()
-           if not env_config.other_spelling(key) and key != env_alias.MARKER
-           and key not in ("DEV_MODE", "NERVA_PUBLIC_PROFILE", "NERVA_WORKSPACE")}
+    # Only what an interpreter needs: a worker's own environment can hold blank keys an
+    # earlier test's load left behind (TELEGRAM_BOT_TOKEN= from a scaffolded .env), and a
+    # blank process value would shadow the very line this start is about.
+    env = {key: value for key, value in os.environ.items() if key in _KEPT_FROM_THE_WORKER}
     env.update({f"{home_spelling}_HOME": str(data), f"{home_spelling}_USER_HOME": str(home),
                 "PYTHONDONTWRITEBYTECODE": "1", "JARVIS_TESTING": "1", "PROBE_TOKEN": ADMIN})
     env.update(shell)

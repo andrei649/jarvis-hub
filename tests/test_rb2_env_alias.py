@@ -24,6 +24,11 @@ from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "agents")]
+# Imported here, before any test puts a token in the environment: agents.web freezes
+# JARVIS_ADMIN_TOKEN into a module global when it is first imported, and a test that was
+# the first to import it with a token loaded would leave every later test on the worker
+# behind an admin token (the owner-from-localhost tests then answer 401).
+import agents.web  # noqa: E402,F401
 from agents.core import boot_guards, env_alias, env_config  # noqa: E402
 from agents.core import env_provenance as ep  # noqa: E402
 

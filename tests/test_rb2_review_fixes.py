@@ -23,13 +23,15 @@ import json
 import os
 import subprocess
 import sys
-import timeit
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "agents")]
+# agents.web freezes the tokens into module globals when first imported: import it now,
+# before any test here has one in the environment (see test_rb2_env_alias.py).
+import agents.web  # noqa: E402,F401
 from agents.core import boot_guards, env_alias, env_config  # noqa: E402
 from agents.core import env_provenance as ep  # noqa: E402
 
@@ -53,8 +55,10 @@ def clean(monkeypatch):
 
 
 def _child_env(extra: dict[str, str]) -> dict[str, str]:
+    # only what an interpreter needs: nothing an earlier test's load left in this worker
     env = {key: value for key, value in os.environ.items()
-           if not env_config.other_spelling(key) and key != env_alias.MARKER}
+           if key in ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "TEMP", "TMP", "SYSTEMROOT", "WINDIR",
+                      "VIRTUAL_ENV", "USER", "LOGNAME")}
     env.update({"PYTHONDONTWRITEBYTECODE": "1", **extra})
     return env
 
@@ -496,26 +500,34 @@ def test_an_inherited_spelling_marker_is_discarded_and_the_fold_still_runs(tmp_p
     assert json.loads(out.stdout.strip().splitlines()[-1]) == {"marker": "JARVIS_HOST", "port": True, "host": False}
 
 
-def test_the_hub_name_check_is_a_lookup_and_the_getter_builds_no_string(clean):
-    """m4. Structure, then a loose timing bound: a hub variable costs two reads of the
-    environment and a dictionary lookup — not a slice and two prefix tests per call."""
+def test_the_hub_name_check_is_a_lookup_and_the_getter_builds_no_string(clean, monkeypatch):
+    """m4. Structure, then a count: the name check is one dictionary lookup, the getter's
+    own code builds no string, a hub variable costs exactly two reads of the environment
+    and a name with one spelling exactly one, as before RB-2. (Timings are in the report;
+    a wall-clock bound does not belong in a suite that runs eight workers wide.)"""
     import dis
 
     assert env_config._OTHER["JARVIS_HARDENED"] == "NERVA_HARDENED" and env_config._OTHER["NERVA_PORT"] == "JARVIS_PORT"
     assert len(env_config._OTHER) == 2 * len(env_config.HUB_ENV_SUFFIXES)
     built = {instruction.opname for instruction in dis.get_instructions(env_config._read)}
-    assert not built & {"BINARY_SLICE", "BUILD_STRING", "FORMAT_VALUE", "BINARY_SUBSCR"}
-    assert "BINARY_OP" not in built                                          # no concatenation
+    assert not built & {"BINARY_SLICE", "BUILD_STRING", "FORMAT_VALUE", "BINARY_SUBSCR", "BINARY_OP"}
     clean.setenv("JARVIS_HARDENED", "1")
-    rounds = 20000
-    raw = min(timeit.repeat(lambda: os.environ.get("JARVIS_HARDENED"), number=rounds, repeat=5))
-    missed = min(timeit.repeat(lambda: os.environ.get("NERVA_HARDENED"), number=rounds, repeat=5))
-    getter = min(timeit.repeat(lambda: env_config.env_str("JARVIS_HARDENED"), number=rounds, repeat=5))
-    plain = min(timeit.repeat(lambda: env_config.env_str("DEV_MODE"), number=rounds, repeat=5))
-    lookup = min(timeit.repeat(lambda: env_config.other_spelling("JARVIS_HARDENED"), number=rounds, repeat=5))
-    assert lookup < raw                                   # the name check is cheaper than one read
-    assert getter < (raw + missed) * 2.5                  # two reads and their overhead, nothing unbounded
-    assert plain < getter                                 # a name with one spelling pays for one read
+    reads = []
+    original = os._Environ.__getitem__
+
+    def spy(self, key):
+        reads.append(key)
+        return original(self, key)
+
+    monkeypatch.setattr(os._Environ, "__getitem__", spy)
+    for name, expected in (("JARVIS_HARDENED", ["JARVIS_HARDENED", "NERVA_HARDENED"]),
+                           ("NERVA_HARDENED", ["NERVA_HARDENED", "JARVIS_HARDENED"]),
+                           ("JARVIS_ROLE_VISION_MODEL", ["JARVIS_ROLE_VISION_MODEL", "NERVA_ROLE_VISION_MODEL"]),
+                           ("DEV_MODE", ["DEV_MODE"]), ("NERVA_HUB_URL", ["NERVA_HUB_URL"]),
+                           ("OPENAI_API_KEY", ["OPENAI_API_KEY"]), ("JARVIS_NOT_A_HUB_NAME", ["JARVIS_NOT_A_HUB_NAME"])):
+        reads.clear()
+        env_config.env_str(name)
+        assert reads == expected, name
 
 
 # ── the reviewer's permutation matrix, kept ─────────────────────────────────────────
