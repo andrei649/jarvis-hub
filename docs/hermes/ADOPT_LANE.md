@@ -341,7 +341,24 @@ Nerva's existing skill import, without a second skills system.
   No new route and no OpenAPI change: both bodies were already untyped. The HUD's Skills Import
   panel shows the catalog with a filter, the keys each skill needs, its flags, and an install
   button that follows the panel's DEV_MODE check. The CLI has no import verb today, so it has
-  none for the catalog either.
+  none for the catalog either. *(Superseded by the owner install below.)*
+- **Owner install, repair and CLI (H336, after slice 3).** `POST /api/skills/catalog/install`
+  (admin guard, **no** DEV_MODE: the catalog alone is pinned, byte-verified and
+  instruction-only) takes `{"skill": <slug | category/skill | official/category/skill>,
+  "repair": bool, "force": bool}` and goes through `hermes_catalog.owner_install`: a new skill
+  through the same `install` → `_save_skill` path; a skill a catalog install already wrote, or
+  `repair: true`, through `hermes_catalog.repair`, which compares the folder with the
+  `source_files` sha256 the install recorded, restores deleted files, refuses edited ones
+  (409 `local_edits`) unless `force` (a copy of each goes to
+  `<data root>/skills/catalog-repair-backups/`), answers `intact` when nothing differs, and
+  never touches a folder the catalog did not write (409 `not_from_catalog`, 404
+  `not_installed`). Writes are recorded in the intent log as `skill.install` / `skill.repair`.
+  `POST /skills/import` is unchanged (user guard, DEV_MODE, every source). The HUD panel's
+  catalog buttons call the owner route with the admin token (install, repair, and a forced
+  repair offered after a `local_edits` refusal). `nerva skills catalog [--search] [--category]
+  [--kind] [--limit N]` browses the catalog rows of `GET /skills/imported`, capped at 100 like
+  Hermes's browse and saying when it cut the list; `nerva skills catalog install|repair
+  [--force]` call the owner route. The catalog page is [`docs/SKILLS_CATALOG.md`](../SKILLS_CATALOG.md).
 
 ### What is in the catalog (pin `9c0560f8`)
 
@@ -388,7 +405,11 @@ installable skill, another commit), `DRIFT` for a catalog row with a rewrite, an
 
 ### Limits of slice 3
 
-- Installing still needs `DEV_MODE=1`, as every skill import does; the catalog adds no way around it.
+- ~~Installing still needs `DEV_MODE=1`, as every skill import does.~~ Since H336 the owner
+  installs and repairs catalog skills without it (`POST /api/skills/catalog/install`, admin);
+  `POST /skills/import` keeps the gate for every source.
+- The 55 skills that carry code are still refused; a scanned, approved package path for them
+  is open.
 - The older network import (`source: "hermes"`, pin `v2026.8.27`) is unchanged. A catalog install
   over a folder that import wrote is an update of the same source, in place.
 - Injection flags in the index are computed when the catalog is built; the loader and

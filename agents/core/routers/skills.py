@@ -814,10 +814,102 @@ def _catalog_refusal(skill_name, refused) -> JSONResponse:
         return JSONResponse({"ok": False, "reason": "excluded", "why": refused.detail,
                              "error": f"the Hermes skill '{skill_name}' is not in the installable catalog "
                                       f"({refused.detail}); nothing was written"}, status_code=422)
+    if refused.reason == "not_installed":
+        return JSONResponse({"ok": False, "reason": "not_installed",
+                             "error": f"the Hermes skill '{skill_name}' is not installed; install it instead "
+                                      "of repairing it"}, status_code=404)
+    if refused.reason == "not_from_catalog":
+        return JSONResponse({"ok": False, "reason": "not_from_catalog",
+                             "error": f"the folder of '{skill_name}' was not written by a catalog install of "
+                                      "that skill; it was left as it is"}, status_code=409)
+    if refused.reason == "local_edits":
+        return JSONResponse({"ok": False, "reason": "local_edits", "files": list(refused.files),
+                             "error": f"the installed files of '{skill_name}' were edited; nothing was written. "
+                                      "Repair with force to replace them (a copy of each is kept)"},
+                            status_code=409)
     logger.warning("Hermes catalog unavailable: %s", refused.detail)
     return JSONResponse({"ok": False, "reason": "catalog_unavailable",
                          "error": "the vendored Hermes catalog does not match its manifest; nothing was "
                                   "written (run scripts/hermes_vendor.py status)"}, status_code=503)
+
+
+class CatalogInstallBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    skill: str = Field(..., min_length=1, max_length=200)
+    repair: StrictBool = False
+    force: StrictBool = False
+
+
+def _catalog_backups():
+    """Where a forced repair keeps the owner's edited files: outside every skills tree."""
+    from agents.core.paths import data_path
+
+    return data_path(*hermes_catalog.REPAIR_BACKUP_PARTS)
+
+
+@router.post("/api/skills/catalog/install", dependencies=[Depends(admin_guard)])
+async def catalog_install(body: CatalogInstallBody):
+    """H336 — the owner installs or repairs one skill of the vendored Hermes catalog
+    (Hermes: ``hermes skills install official/<category>/<skill>``, ``repair-official``).
+
+    An admin route with no DEV_MODE gate, for this catalog only: its skills are pinned to one
+    upstream commit, byte-verified against MANIFEST.json before every write, and carry
+    instructions and plain data only. ``POST /skills/import`` (every other source, and this
+    one for a user token) keeps its DEV_MODE gate. ``skill`` is a slug, ``<category>/<skill>``,
+    the upstream path or ``official/<category>/<skill>``. A skill a catalog install already
+    wrote, or ``repair: true``, is repaired: deleted files are restored from the vendored
+    bytes, an edited file refuses the repair (409 ``local_edits``) unless ``force``, which
+    keeps a copy first. A write is recorded in the intent log as ``skill.install`` or
+    ``skill.repair``."""
+    import asyncio
+
+    orch = get_orch()
+    if not orch or getattr(orch, "skill_importer", None) is None:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        result, refused = await hermes_catalog.owner_install(
+            orch.skill_importer, body.skill, repair_it=body.repair, force=body.force,
+            backup_dir=await asyncio.to_thread(_catalog_backups))
+    except OSError:
+        logger.warning("Hermes catalog install could not write its files", exc_info=True)
+        return JSONResponse({"ok": False, "error": "the skill's files could not be written",
+                             "reason": "write_failed"}, status_code=500)
+    if refused is not None:
+        return _catalog_refusal(body.skill, refused)
+    if result is None:
+        reason, problems = _import_outcome(orch.skill_importer)
+        if reason in ("name_taken", "exists"):
+            return JSONResponse({"ok": False, "reason": reason,
+                                 "error": f"a skill folder or name '{body.skill}' is already taken by a skill the "
+                                          "catalog did not install; nothing was written. Remove or rename it "
+                                          "first"}, status_code=409)
+        if problems:
+            return JSONResponse({"ok": False, "reason": "invalid_skill_md", "problems": [p.as_dict() for p in problems],
+                                 "error": f"the catalog skill '{body.skill}' has a SKILL.md that is not valid"},
+                                status_code=422)
+        return JSONResponse({"ok": False, "reason": reason or "refused",
+                             "error": f"the catalog skill '{body.skill}' was not written"}, status_code=409)
+    audited = False
+    if result.get("changed"):
+        try:
+            orch.skills.discover()
+        except Exception:
+            logger.warning("skill discovery after a catalog install failed", exc_info=True)
+        audit = getattr(orch, "intent_log", None)
+        if callable(getattr(audit, "record", None)):
+            action = "skill.install" if result["action"] == "install" else "skill.repair"
+            why = (f"the owner installed {result['skill']} from the Hermes catalog @{result['commit'][:8]}"
+                   if action == "skill.install" else
+                   f"the owner repaired {result['skill']} from the Hermes catalog @{result['commit'][:8]}")
+            try:
+                audit.record(actor="owner", action=action, why=why, cause="skills.catalog",
+                             metadata={k: result.get(k) for k in (
+                                 "skill", "path", "commit", "status", "restored", "replaced", "backed_up")})
+                audited = True
+            except Exception:
+                logger.warning("optional catalog install intent projection failed", exc_info=True)
+    return {"ok": True, **result, "audited": audited}
 
 
 # ── Agent Marketplace Endpoints (H5.8) ───────────────────────────

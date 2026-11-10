@@ -424,3 +424,230 @@ async def install(importer, slug: str, *, root: Path | None = None) -> tuple[boo
         provenance=provenance(catalog, entry, files), extra_files=extras,
     )
     return bool(ok), None
+
+
+# ── the owner's surface (H336): resolve, browse, install, repair ─────────────
+#
+# Hermes: ``hermes skills browse --source official`` (at most 100 results a source),
+# ``hermes skills install official/<category>/<skill>`` and ``hermes skills repair-official
+# <skill> --restore``. Nerva's owner route ``POST /api/skills/catalog/install`` (admin, no
+# DEV_MODE: the catalog is byte-verified, instruction-only and pinned) and ``nerva skills
+# catalog`` reach the functions below. Every other import source stays DEV_MODE-only.
+
+#: Hermes caps a browse at 100 results a source; ``nerva skills catalog`` does the same.
+BROWSE_LIMIT = 100
+#: Where a forced repair keeps the owner's edited files (outside every skill root).
+REPAIR_BACKUP_PARTS = ("skills", "catalog-repair-backups")
+_IDENT_PREFIXES = ("official/", "hermes/", f"{REQUEST_SOURCE}/")
+
+
+def resolve(catalog: Catalog, ident: str) -> dict | None:
+    """The catalog row ``ident`` names: a slug (``agentmail``), ``<category>/<skill>``
+    (``email/agentmail``), the upstream path (``optional-skills/email/agentmail``) or
+    Hermes's identifier (``official/email/agentmail``). None when nothing matches."""
+    text = str(ident or "").strip().strip("/")
+    if not text or len(text) > 300 or "\\" in text or ".." in text.split("/"):
+        return None
+    for prefix in _IDENT_PREFIXES:
+        if text.startswith(prefix):
+            text = text[len(prefix):]
+            break
+    if "/" not in text:
+        return catalog.entry(text)
+    found = [item for item in catalog.index.get("skills", []) if text in (
+        item.get("path"), str(item.get("path") or "").split("/", 1)[-1],
+        f"{item.get('category')}/{item.get('slug')}")]
+    found.sort(key=lambda item: item.get("kind") != KIND_INSTRUCTION)
+    return found[0] if found else None
+
+
+def browse(rows: list, *, search: str = "", category: str = "", kind: str = "",
+           limit: int = BROWSE_LIMIT) -> tuple[list, int]:
+    """``(shown, matched)``: the listing rows matching ``search`` (in slug, name, category,
+    description or tags, any case), ``category`` and ``kind``, at most ``limit`` of them
+    (clamped to 1..``BROWSE_LIMIT``, as Hermes clamps a browse page)."""
+    limit = max(1, min(int(limit or BROWSE_LIMIT), BROWSE_LIMIT))
+    needle = str(search or "").strip().casefold()
+    cat = str(category or "").strip().casefold()
+    matched = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        if cat and str(row.get("category") or "").casefold() != cat:
+            continue
+        if kind and row.get("kind") != kind:
+            continue
+        if needle:
+            tags = row.get("tags") if isinstance(row.get("tags"), list) else []
+            hay = [row.get("slug"), row.get("name"), row.get("category"), row.get("description"), *tags]
+            if not any(needle in str(v or "").casefold() for v in hay):
+                continue
+        matched.append(row)
+    return matched[:limit], len(matched)
+
+
+def _checked_entry(catalog: Catalog, ident: str) -> tuple[dict | None, InstallRefusal | None]:
+    entry = resolve(catalog, ident)
+    if entry is None:
+        return None, InstallRefusal("not_found")
+    if entry.get("kind") == KIND_UPSTREAM_ONLY:
+        return None, InstallRefusal(
+            "upstream_only", "this Hermes skill carries code; the catalog installs instructions only",
+            tuple(f["path"] for f in entry.get("files") or [] if f.get("executable")))
+    if entry.get("kind") != KIND_INSTRUCTION:
+        return None, InstallRefusal("excluded", str(entry.get("reason") or ""))
+    return entry, None
+
+
+def catalog_record(target: Path, entry: dict) -> dict | None:
+    """The provenance sidecar of ``target`` when a catalog install of ``entry`` wrote it
+    (plain folder, plain ``manifest.json``, ``source_catalog: vendored``, the entry's
+    ``source_path`` and a ``source_files`` list); None for anything else: the owner's own
+    skill, another source's import, the older network import of Hermes."""
+    sidecar = target / "manifest.json"
+    if target.is_symlink() or not target.is_dir() or sidecar.is_symlink() or not sidecar.is_file():
+        return None
+    try:
+        data = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not (isinstance(data, dict) and data.get("imported") is True and data.get("source") == INSTALL_SOURCE
+            and data.get("source_catalog") == "vendored"
+            and data.get("source_path") == f"{entry['path']}/SKILL.md"
+            and isinstance(data.get("source_files"), list)):
+        return None
+    return data
+
+
+def file_state(target: Path, record: dict) -> dict[str, list[str]]:
+    """Each file the install recorded, against its recorded sha256: ``missing`` (deleted),
+    ``edited`` (other bytes, or no longer a plain file) or ``intact``. Files the owner
+    added beside them are not the catalog's and are not looked at."""
+    out: dict[str, list[str]] = {"missing": [], "edited": [], "intact": []}
+    root = target.resolve()
+    for item in record.get("source_files") or []:
+        rel = item.get("path") if isinstance(item, dict) else None
+        if not isinstance(rel, str) or (rel != "SKILL.md" and not safe_extra_path(rel)):
+            continue
+        parts = PurePosixPath(rel).parts
+        if any(target.joinpath(*parts[:i + 1]).is_symlink() for i in range(len(parts))):
+            out["edited"].append(rel)
+            continue
+        path = target / rel
+        if not path.exists():
+            out["missing"].append(rel)
+            continue
+        try:
+            path.resolve().relative_to(root)
+            data = path.read_bytes() if path.is_file() else None
+        except (OSError, ValueError):
+            data = None
+        if data is None or not hmac.compare_digest(hashlib.sha256(data).hexdigest(), str(item.get("sha256"))):
+            out["edited"].append(rel)
+        else:
+            out["intact"].append(rel)
+    return out
+
+
+def _back_up(target: Path, rels: list[str], backup_dir: Path) -> list[str]:
+    """Copy the owner's edited files of ``target`` under ``backup_dir`` (plain files only)."""
+    import time
+
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    base = Path(backup_dir) / target.name / stamp
+    counter = 1
+    while base.exists():
+        base = Path(backup_dir) / target.name / f"{stamp}-{counter}"
+        counter += 1
+    saved = []
+    for rel in rels:
+        src = target / rel
+        if src.is_symlink() or not src.is_file():
+            continue
+        dest = base / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(src.read_bytes())
+        saved.append(rel)
+    return saved
+
+
+async def repair(importer, ident: str, *, force: bool = False, backup_dir: Path | None = None,
+                 root: Path | None = None) -> tuple[dict | None, InstallRefusal | None]:
+    """Restore an installed catalog skill from the vendored bytes (Hermes's
+    ``repair-official --restore``). Only a folder a catalog install of that skill wrote is
+    touched (``not_installed`` 404, ``not_from_catalog`` 409 otherwise). Deleted files are
+    restored; a file whose bytes differ from what the install recorded is the owner's edit,
+    so the repair is refused (``local_edits``, with the files) unless ``force``, which first
+    keeps a copy of each edited file under ``backup_dir``. Nothing to do answers
+    ``status: intact``. ``(None, None)`` when the importer refused the write
+    (``importer.outcome()`` says why)."""
+    try:
+        catalog = load(root)
+    except CatalogError as exc:
+        return None, InstallRefusal("catalog_unavailable", str(exc))
+    entry, refused = _checked_entry(catalog, ident)
+    if refused is not None:
+        return None, refused
+    try:
+        files = verified_files(catalog, entry)
+    except CatalogError as exc:
+        return None, InstallRefusal("catalog_unavailable", str(exc))
+    target = Path(importer.skills_dir) / entry["slug"]
+    if not target.exists() and not target.is_symlink():
+        return None, InstallRefusal("not_installed", "this catalog skill is not installed")
+    record = catalog_record(target, entry)
+    if record is None:
+        return None, InstallRefusal("not_from_catalog",
+                                    "this folder was not written by a catalog install of this skill")
+    state = file_state(target, record)
+    update = str(record.get("source_commit") or "") != catalog.commit
+    base = {"skill": entry["slug"], "path": entry["path"], "commit": catalog.commit,
+            "missing": state["missing"], "edited": state["edited"]}
+    if not state["missing"] and not state["edited"] and not update:
+        return {**base, "status": "intact", "changed": False, "restored": [], "replaced": [],
+                "backed_up": [], "backup_dir": ""}, None
+    if state["edited"] and not force:
+        return None, InstallRefusal("local_edits", "the installed files were edited", tuple(state["edited"]))
+    backed_up: list[str] = []
+    if state["edited"] and backup_dir is not None:
+        backed_up = _back_up(target, state["edited"], backup_dir)
+    raw = files["SKILL.md"]
+    ok = await importer._save_skill(
+        entry["slug"], INSTALL_SOURCE, skill_md_text=raw.decode("utf-8"), skill_md_bytes=raw,
+        provenance=provenance(catalog, entry, files),
+        extra_files={rel: data for rel, data in files.items() if rel != "SKILL.md"},
+    )
+    if not ok:
+        return None, None
+    repaired = bool(state["missing"] or state["edited"])
+    return {**base, "status": "repaired" if repaired else "updated", "changed": True,
+            "restored": state["missing"], "replaced": state["edited"], "backed_up": backed_up,
+            "backup_dir": str(Path(backup_dir) / target.name) if backed_up and backup_dir is not None else ""}, None
+
+
+async def owner_install(importer, ident: str, *, repair_it: bool = False, force: bool = False,
+                        backup_dir: Path | None = None, root: Path | None = None
+                        ) -> tuple[dict | None, InstallRefusal | None]:
+    """The owner's install (``POST /api/skills/catalog/install``). A skill not on disk yet is
+    installed through :func:`install`; one a catalog install already wrote, or any call with
+    ``repair_it``, goes through :func:`repair`, so an install never overwrites the owner's
+    edits without ``force``. ``(None, None)`` when the importer refused the write."""
+    try:
+        catalog = load(root)
+    except CatalogError as exc:
+        return None, InstallRefusal("catalog_unavailable", str(exc))
+    entry, refused = _checked_entry(catalog, ident)
+    if refused is not None:
+        return None, refused
+    target = Path(importer.skills_dir) / entry["slug"]
+    if repair_it or catalog_record(target, entry) is not None:
+        result, refused = await repair(importer, entry["slug"], force=force, backup_dir=backup_dir, root=root)
+        if result is not None:
+            result["action"] = "repair"
+        return result, refused
+    ok, refused = await install(importer, entry["slug"], root=root)
+    if refused is not None or not ok:
+        return None, refused
+    return {"action": "install", "status": "installed", "changed": True, "skill": entry["slug"],
+            "path": entry["path"], "commit": catalog.commit, "missing": [], "edited": [],
+            "restored": [], "replaced": [], "backed_up": [], "backup_dir": ""}, None

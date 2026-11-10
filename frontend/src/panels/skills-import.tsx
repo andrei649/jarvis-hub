@@ -82,6 +82,13 @@
       install button, an `excluded` row with its reason. A response without the key (an older
       hub) shows no catalog section at all — never an empty catalog.
 
+  9c. H336: the catalog's install and repair buttons call the OWNER route
+      POST /api/skills/catalog/install (ADMIN tier, actA) — no DEV_MODE gate, because the
+      catalog is pinned, byte-verified and instruction-only. So they do not wait for the
+      DEV_MODE check above. An installed row has a repair button ({repair:true}); a 409
+      `local_edits` names the edited files and offers a forced repair, which keeps a copy of
+      each on the hub. Every other import source still goes through POST /skills/import.
+
   10. There is NO route that sets DEV_MODE, so this panel offers no enable/disable control
       for it. It states the condition and the server-side remedy the backend itself named,
       and stops.
@@ -91,10 +98,12 @@
 
    The read and the write are both USER tier (act → never actA). */
 import React, { useState } from 'react';
-import { useApi, arr, mono, asLive, Card, State, Row, Tag, Btn, act, inpS, Json } from '../panel-kit';
+import { useApi, arr, mono, asLive, Card, State, Row, Tag, Btn, act, actA, inpS, Json } from '../panel-kit';
 
 const IMPORTED_PATH = '/skills/imported';
 const IMPORT_PATH = '/skills/import';
+/* H336 — the owner's catalog install/repair (admin, no DEV_MODE). */
+const CATALOG_INSTALL_PATH = '/api/skills/catalog/install';
 
 /* _safe_slug, mirrored (importer.py:57-65). A LOCAL HINT ONLY: it never blocks the POST
    and never pre-empts the backend, which reports a bad slug as the same 404 as a missing
@@ -235,6 +244,33 @@ export function SkillsImportPanel() {
   const catShown = catRows.filter((r) => r && r.kind === catKind && (!catQ
     || [r.slug, r.category, r.description].some((v) => String(v || '').toLowerCase().includes(catQ.toLowerCase()))));
   const CAT_LIMIT = 40;
+  /* H336 — the owner route; its own answer, never the DEV_MODE probe, says what happened. */
+  const [catBusy, setCatBusy] = useState('');
+  const [catNote, setCatNote] = useState(null);   // {ok, text, edited?: {slug, files}}
+  const catalogInstall = (slug: string, repair: boolean, force = false) => {
+    if (catBusy) return;
+    setCatBusy(slug); setCatNote(null);
+    actA(CATALOG_INSTALL_PATH, { skill: slug, repair, force },
+      (r: any) => {
+        setCatBusy('');
+        const status = r && r.status ? String(r.status) : '—';
+        const restored = arr(r, 'restored').map(String);
+        const replaced = arr(r, 'replaced').map(String);
+        const parts = [`${r && r.action === 'install' ? 'installed' : 'repair'} · ${r && r.skill != null ? r.skill : slug} · ${status}`];
+        if (restored.length) parts.push(`restored ${restored.join(', ')}`);
+        if (replaced.length) parts.push(`replaced ${replaced.join(', ')} (a copy was kept)`);
+        if (r && r.audited === false && r.changed) parts.push('not recorded in the intent log');
+        setCatNote({ ok: true, text: parts.join(' · ') });
+        reload();
+      },
+      (err) => {
+        const x = refusal(err);
+        setCatBusy('');
+        const b: any = err && err.body;
+        const edited = b && b.reason === 'local_edits' ? { slug, files: arr(b, 'files').map(String) } : null;
+        setCatNote({ ok: false, text: `refused · HTTP ${x.status || '?'} · ${x.text}`, edited });
+      });
+  };
 
   const availTag = avail === 'enabled' ? null
     : avail === 'unknown' ? 'DEV_MODE unknown — press CHECK'
@@ -403,7 +439,8 @@ export function SkillsImportPanel() {
         <Note>
           the vendored Hermes catalog installs offline from the bytes shipped with this hub, checked against
           their manifest, through the same import gates (name check, provenance). Only instruction skills
-          install; a skill that carries code is refused. The list is below.
+          install; a skill that carries code is refused. The list is below — its buttons are the owner’s
+          install, which needs no DEV_MODE.
         </Note>
       )}
       {note && ((note as any).ok
@@ -458,21 +495,44 @@ export function SkillsImportPanel() {
                       {arr(r, 'unmapped_keys').length
                         ? <Note>kept in its SKILL.md, not read by Nerva: {arr(r, 'unmapped_keys').map(String).join(', ')}</Note> : null}
                     </div>
-                    {r.installable === true && (
-                      <button className="tool-btn" disabled={avail !== 'enabled' || busy}
+                    {r.installable === true && !r.installed_commit && (
+                      <button className="tool-btn" disabled={!!catBusy}
                         aria-label={`install ${r.slug}`}
-                        onClick={() => importOne(String(r.slug), 'hermes-catalog')}>
-                        {r.installed_commit ? 'reinstall' : 'install'}
+                        onClick={() => catalogInstall(String(r.slug), false)}>
+                        {catBusy === String(r.slug) ? 'installing…' : 'install'}
+                      </button>
+                    )}
+                    {r.installable === true && r.installed_commit && (
+                      <button className="tool-btn" disabled={!!catBusy}
+                        aria-label={`repair ${r.slug}`}
+                        onClick={() => catalogInstall(String(r.slug), true)}>
+                        {catBusy === String(r.slug) ? 'repairing…' : 'repair'}
                       </button>
                     )}
                   </Row>
                 ))}
                 {catShown.length > CAT_LIMIT && <Note>{catShown.length - CAT_LIMIT} more — narrow the filter</Note>}
                 {catShown.length === 0 && <Note>no catalog row matches</Note>}
+                {catNote && ((catNote as any).ok
+                  ? <Good>{(catNote as any).text}</Good>
+                  : <Fail>{(catNote as any).text}</Fail>)}
+                {catNote && (catNote as any).edited && (
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 4 }}>
+                    <Note>you edited {(catNote as any).edited.files.join(', ')}. A forced repair replaces them with the
+                      catalog’s bytes and keeps a copy of each on the hub.</Note>
+                    <button className="tool-btn" disabled={!!catBusy}
+                      aria-label={`force repair ${(catNote as any).edited.slug}`}
+                      onClick={() => catalogInstall((catNote as any).edited.slug, true, true)}>
+                      replace my edits
+                    </button>
+                  </div>
+                )}
                 <Note>
                   installed skills are imports like any other: their text is read as data until you vouch for it, and a
-                  key they declare is offered to the code tool only after that. Install buttons follow the same
-                  availability check as the import above.
+                  key they declare is offered to the code tool only after that. Install and repair are <b>owner</b>
+                  actions (admin token, POST {CATALOG_INSTALL_PATH}) and need no DEV_MODE: the catalog is pinned,
+                  checked byte for byte against its manifest and carries instructions only. Repair restores deleted
+                  files and refuses over your edits unless you choose to replace them.
                 </Note>
               </>
             )}
