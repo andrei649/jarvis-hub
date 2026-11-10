@@ -1969,6 +1969,7 @@ from agents.core.routers.pressure import router as _pressure_router  # noqa: E40
 from agents.core.routers.model_setup import router as _model_setup_router  # noqa: E402
 from agents.core.routers.permissions import router as _permissions_router  # noqa: E402
 from agents.core.routers.report import router as _report_router  # noqa: E402
+from agents.core.routers.openai_compat import router as _openai_compat_router  # noqa: E402
 from agents.core.routers.brain import router as _brain_router  # noqa: E402
 from agents.core.routers.browser import router as _browser_router  # noqa: E402
 from agents.core.routers.canvas import router as _canvas_router  # noqa: E402
@@ -2116,6 +2117,9 @@ app.include_router(_pressure_router)   # H161: GET /api/system/pressure + dismis
 app.include_router(_model_setup_router)
 app.include_router(_permissions_router)
 app.include_router(_report_router)
+# G12 (H560/H614): OpenAI-compatible API. Off unless openai_api.enabled; each route checks
+# its own bearer key in the handler (never the hub tokens), see routers/openai_compat.py.
+app.include_router(_openai_compat_router)
 
 # Nerva Workspace — the B2B pilot app (docs/business/WORKSPACE_PILOT_SPEC.md). Every
 # /api/workspace route answers 404 workspace_disabled while NERVA_WORKSPACE is off and

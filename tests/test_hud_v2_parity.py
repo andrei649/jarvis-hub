@@ -565,6 +565,13 @@ MACHINE_FACING: dict[str, str] = {
     "/api/a2a/card": "agent-to-agent discovery",
     "/api/a2a/task": "agent-to-agent task submission",
     "/api/mcp/server/rpc": "MCP transport \u2014 remote MCP clients, not our UI",
+    # G12 (H560/H614): the OpenAI-compatible API is for OTHER chat apps (Open WebUI, LibreChat,
+    # the openai SDKs) holding an API key; the HUD talks to Nerva through /chat. Keys are issued
+    # on the box (python -m agents.core.openai_api keys issue). POST /v1/chat/completions is not
+    # listed only because a client file already spells that path for an outbound provider.
+    "/v1/models": "OpenAI-compatible API: model list for external chat apps (bearer API key)",
+    "/v1/responses": "OpenAI-compatible API: Responses calls from external chat apps (bearer API key)",
+    "/v1/responses/{response_id}": "OpenAI-compatible API: stored-response read/delete by the key that made it",
     "/manifest.webmanifest": "PWA install prompt, fetched by the browser",
     "/v2/manifest.webmanifest": "PWA install prompt, fetched by the browser",
     "/sw-v2.js": "service-worker registration, fetched by the browser",

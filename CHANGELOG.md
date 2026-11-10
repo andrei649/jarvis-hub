@@ -19,6 +19,19 @@
   stops after the provider got the request is never sent again on its own, so you are never
   billed twice. How it works: `docs/video-generation.md`.
 
+**Use Nerva from other chat apps (Open WebUI, LibreChat, the openai libraries)**
+- Nerva now answers apps that speak OpenAI's API. Point the app at `http://<nerva>:8765/v1`
+  with a key you issue on the box (`python -m agents.core.openai_api keys issue NAME`), pick
+  the model `nerva` (or `nerva/<agent>`), and each message becomes a normal Nerva turn with
+  its memory and tools. Streaming, stored responses (`/v1/responses`) and the model list work.
+- It is off until you turn on `openai_api.enabled` in Settings, and an administrator can pin
+  it off. Your HUD tokens do not open it, and an API key opens nothing else.
+- A key is a guest unless you issue it with `--owner`. Anything a guest key's turn wants to
+  change waits in your approval queue. A system prompt sent by the app cannot change that.
+- Each key has its own conversations, a rate limit, a limit on turns running at once and a
+  size cap. Images, app-defined tools and HUD key management are not there yet. How to set it
+  up: [docs/OPENAI_COMPATIBLE_API.md](docs/OPENAI_COMPATIBLE_API.md).
+
 **Plan first, repeat on a cadence, see what fills the window**
 - `/plan <task>` puts the conversation in plan mode: only reads run, nothing is written, sent
   or executed, and the model writes a step-by-step plan that Nerva saves as a markdown file.
