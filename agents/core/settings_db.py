@@ -897,12 +897,23 @@ def _pin_for(category: str, key: str, current=None):
         return None
 
 
+#: G1 — the last pin of each setting its declaration accepted, in this process.
+_LAST_VALID_PIN: dict[tuple[str, str], Any] = {}
+
+
 def _pinned_value(category: str, key: str, value: Any, pin) -> tuple[Any, list[str]]:
-    """*value* with *pin* applied, and why the pin is not applied (a pinned value its
-    declaration refuses is reported, never handed to the hub)."""
+    """*value* with *pin* applied, and why the pin is not applied. A pinned value its
+    declaration refuses is never handed to the hub; the last pin it accepted stays in force
+    (an administrator's typo while the hub runs must not hand the setting back to the
+    owner), and only with none the stored value is used. Either way the managed scope
+    lists the problem and refuses every write."""
     merged = _managed().overlay(value, pin[0])
     errors = validate_category(category, {key: merged}, references=False) if (category, key) in _SPEC else []
-    return (value, errors) if errors else (merged, [])
+    if not errors:
+        _LAST_VALID_PIN[(category, key)] = pin[0]
+        return merged, []
+    last = _LAST_VALID_PIN.get((category, key))
+    return (_managed().overlay(value, last) if last is not None else value), errors
 
 
 def _pinned(category: str, key: str, value: Any) -> Any:

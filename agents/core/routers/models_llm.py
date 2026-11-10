@@ -188,7 +188,8 @@ async def _restore_local_provider(
 
     settings_readback_ok = False
     try:
-        settings_readback_ok = all(get_value("llm", key, None) == value for key, value in restore.items())
+        read_back = {key: get_value("llm", key, None) for key in restore}      # every key read
+        settings_readback_ok = all(read_back[key] == value for key, value in restore.items())
     except Exception:
         logger.warning("model rollback settings readback failed")
 
@@ -635,8 +636,21 @@ async def _provider_install_worker(fn, *args):
     return result
 
 
+#: Provider-package steps that change what the hub can run (G1: refused in managed mode).
+_PACKAGE_MUTATIONS = frozenset({"stage", "propose", "decide"})
+
+
+def _refuse_package_change_when_managed() -> None:
+    from agents.core.managed_scope import check_llm_write
+
+    check_llm_write(selection=False)
+
+
 async def _provider_install_call(request: Request, method: str, *args, **kwargs):
     from agents.core.llm.providers.packages import ProviderPackageError
+
+    if method in _PACKAGE_MUTATIONS:
+        _refuse_package_change_when_managed()       # G1: ManagedRefused → 409, audited
 
     try:
         result = await _provider_install_worker(_provider_install_sync,
@@ -694,6 +708,8 @@ async def provider_packages_promote(proposal_id: str, request: Request):
     from agents.core.llm.providers import lifecycle_gates
     from agents.core.llm.providers.packages import ProviderPackageError
 
+    _refuse_package_change_when_managed()           # G1
+
     try:
         service, actor = await _provider_install_worker(_provider_install_context, request)
         provider = await _provider_install_worker(
@@ -712,6 +728,8 @@ async def provider_packages_promote(proposal_id: str, request: Request):
              dependencies=[Depends(admin_guard)])
 async def provider_packages_revoke(provider_id: str, request: Request):
     from agents.core.llm.providers.packages import ProviderPackageError
+
+    _refuse_package_change_when_managed()           # G1
 
     try:
         service, actor = await _provider_install_worker(_provider_install_context, request)

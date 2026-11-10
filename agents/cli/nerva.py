@@ -1870,6 +1870,10 @@ def _config_managed(ns: argparse.Namespace, ctx: Context) -> int:
                 f" ({info['lock']['source']})")
     for problem in info["problems"]:
         ctx.err.write(f"cannot read the managed configuration: {problem}\n")
+    for detail in info.get("details", []):
+        ctx.err.write(f"  why: {detail}\n")
+    for warning in info.get("warnings", []):
+        ctx.err.write(f"warning: {warning}\n")
     ctx.say(f"writes: {info['writes']}")
     return EXIT_FAILED if info["problems"] else EXIT_OK
 

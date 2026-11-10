@@ -20,6 +20,9 @@ def pinned(tmp_path, monkeypatch, hub):  # noqa: F811
     directory.mkdir()
     monkeypatch.delenv("JARVIS_MANAGED_DIR", raising=False)
     monkeypatch.setenv("NERVA_MANAGED_DIR", str(directory))
+    # a test process (a non-root CI runner) owns its temp folder: trusted here only
+    monkeypatch.setattr(managed_scope, "_TRUST_ANY_OWNER_FOR_TESTS", True)
+    monkeypatch.setattr("agents.core.settings_db._LAST_VALID_PIN", {})
     managed_scope.invalidate()
     yield directory
     managed_scope.invalidate()

@@ -2989,7 +2989,11 @@
   show a pinned `${NAME}` as written, `ManagedRefused` is no OSError (global 409 + audit), bundle writers
   judge every key first, managed mode covers custom endpoints / provider selection / credentials, chat
   `/approvals` names the file (`tests/test_g1_managed_review.py`, 18). Runtime state (MCP connect,
-  elicitation answers, sampling spend, `/plan` and `/loop`) is not configuration. Follow-ups: chat `/approvals` (commands.py) answers a pinned mode with its generic "did not become
+  elicitation answers, sampling spend, `/plan` and `/loop`) is not configuration. **Round 2 (2026-11-10):** the suite
+  runs on a non-root CI runner (test-only owner trust, the real root-only check kept by a test), the
+  Windows owner check uses ctypes (no pywin32), untrusted files are never applied, a pin made invalid at
+  run time keeps the last valid one, a self-restart hands on the process environment only, undeclared
+  pins warn, provider packages are refused in managed mode. Follow-ups: chat `/approvals` (commands.py) answers a pinned mode with its generic "did not become
   effective" line; environment pins take effect at the next hub start.
 
 ## Darwin feature absorption — 2026-09-09

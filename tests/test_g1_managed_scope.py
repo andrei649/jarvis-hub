@@ -48,6 +48,9 @@ def managed(tmp_path, monkeypatch):
     directory = tmp_path / "etc-nerva"
     directory.mkdir()
     monkeypatch.setenv("NERVA_MANAGED_DIR", str(directory))
+    # a test process (a non-root CI runner) owns its temp folder: trusted here only
+    monkeypatch.setattr(managed_scope, "_TRUST_ANY_OWNER_FOR_TESTS", True)
+    monkeypatch.setattr("agents.core.settings_db._LAST_VALID_PIN", {})
     managed_scope.invalidate()
     saved = env_config.pinned_environment()
     yield directory

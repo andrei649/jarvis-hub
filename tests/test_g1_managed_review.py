@@ -30,6 +30,9 @@ def managed(tmp_path, monkeypatch):
     directory = tmp_path / "etc-nerva"
     directory.mkdir()
     monkeypatch.setenv("NERVA_MANAGED_DIR", str(directory))
+    # a test process (a non-root CI runner) owns its temp folder: trusted here only
+    monkeypatch.setattr(managed_scope, "_TRUST_ANY_OWNER_FOR_TESTS", True)
+    monkeypatch.setattr("agents.core.settings_db._LAST_VALID_PIN", {})
     managed_scope.invalidate()
     managed_scope.reset_capture()
     saved = env_config.pinned_environment()
@@ -128,7 +131,8 @@ def test_m2_mcp_add_and_remove_refuse_before_the_live_manager_changes(managed, m
 # ── M3: who may write the managed folder ─────────────────────────────────────
 
 @pytest.mark.skipif(os.name == "nt" or os.geteuid() != 0, reason="needs root to change ownership")
-def test_m3_a_managed_file_the_owner_can_write_is_refused(managed):
+def test_m3_a_managed_file_the_owner_can_write_is_refused(managed, monkeypatch):
+    monkeypatch.setattr(managed_scope, "_TRUST_ANY_OWNER_FOR_TESTS", False)     # the real check
     path = _pin(managed, "llm:\n  cloud_fallback: never\n")
     os.chown(path, 1000, 1000)
     managed_scope.invalidate()
@@ -146,9 +150,67 @@ def test_m3_a_managed_file_the_owner_can_write_is_refused(managed):
     os.chmod(managed, 0o755)
 
 
-def test_m3_windows_default_needs_an_administrator_owner(tmp_path):
-    # without pywin32 (or for a folder a user created) the owner cannot be established
-    assert managed_scope._windows_admin_owned(tmp_path) is False
+@pytest.mark.skipif(os.name == "nt", reason="POSIX ownership")
+def test_round2_b1_the_real_check_refuses_a_folder_not_owned_by_root(managed, monkeypatch):
+    """Any runner: the production check (not the test trust) refuses a non-root owner."""
+    monkeypatch.setattr(managed_scope, "_TRUST_ANY_OWNER_FOR_TESTS", False)
+    real = os.stat(managed)
+    fake = os.stat_result((real.st_mode, real.st_ino, real.st_dev, real.st_nlink, 1001, 1001,
+                           real.st_size, int(real.st_atime), int(real.st_mtime), int(real.st_ctime)))
+    assert "not owned by root" in managed_scope._stat_problem(managed, fake)
+    monkeypatch.setattr(managed_scope, "_TRUST_ANY_OWNER_FOR_TESTS", True)
+    assert managed_scope._stat_problem(managed, fake) is None
+    world = os.stat_result((0o40777, *list(fake)[1:]))
+    assert "writable by its group or by others" in managed_scope._stat_problem(managed, world)
+    assert managed_scope._TRUST_ANY_OWNER_FOR_TESTS is True and "TRUST_ANY" not in \
+        (__import__("pathlib").Path(managed_scope.__file__).read_text().split("_TRUST_ANY_OWNER_FOR_TESTS = False")[1]
+         .split("def ")[0])                                  # declared False, set nowhere else
+
+
+def test_round2_w1_windows_owner_is_read_with_ctypes(tmp_path, monkeypatch):
+    """No pywin32: the owner SID comes from advapi32 through ctypes; only Administrators or
+    SYSTEM make the default folder count."""
+    src = __import__("pathlib").Path(managed_scope.__file__).read_text()
+    assert "win32security" not in src and "GetNamedSecurityInfoW" in src
+    assert managed_scope._owner_sid_string(tmp_path) is None or os.name == "nt"   # off Windows: None
+    for sid, trusted in (("S-1-5-32-544", True), ("S-1-5-18", True), ("S-1-5-21-1-2-3-1001", False), (None, False)):
+        monkeypatch.setattr(managed_scope, "_owner_sid_string", lambda path, sid=sid: sid)
+        assert managed_scope._windows_admin_owned(tmp_path) is trusted
+
+
+def test_round2_a3_an_untrusted_file_is_never_applied_readers_keep_the_last_trusted(managed):
+    settings_db.put_category("llm", {"cloud_fallback": "always"})
+    path = _pin(managed, "llm:\n  cloud_fallback: never\n")
+    assert settings_db.get_value("llm", "cloud_fallback") == "never"
+    os.chmod(path, 0o666)                                   # an administrator's mistake …
+    path.write_text("llm:\n  cloud_fallback: on-demand\n")  # … and anyone edits it
+    managed_scope.invalidate()
+    current = managed_scope.scope()
+    assert any("writable" in p for p in current.problems)
+    assert settings_db.get_value("llm", "cloud_fallback") == "always"   # never the untrusted content
+    with pytest.raises(managed_scope.ManagedRefused):
+        settings_db.put_category("llm", {"backend_type": "ollama"})
+
+
+def test_round2_a3_last_trusted_parse_survives_an_untrusted_edit(managed):
+    path = _pin(managed, "llm:\n  cloud_fallback: never\n")
+    managed_scope.scope()                                   # read while trusted
+    os.chmod(path, 0o666)
+    path.write_text("llm:\n  cloud_fallback: on-demand\n")
+    os.utime(path, None)
+    current = managed_scope.scope()                         # cache kept, no invalidate
+    assert current.settings["llm"]["cloud_fallback"] == "never"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX folders")
+def test_round2_profile_folders_are_checked_too(managed, monkeypatch):
+    folder = managed / "profiles" / "kids"
+    folder.mkdir(parents=True)
+    os.chmod(managed / "profiles", 0o777)
+    monkeypatch.setenv("JARVIS_PROFILE", "kids")
+    managed_scope.invalidate()
+    assert any("profiles" in p and "writable" in p for p in managed_scope.scope().problems)
+    os.chmod(managed / "profiles", 0o755)
 
 
 # ── m1: a pin its declaration refuses ────────────────────────────────────────
@@ -159,9 +221,13 @@ def test_m1_an_invalid_pin_is_a_problem_writes_and_boot_refuse(managed):
 
     settings_db.put_category("llm", {"cloud_fallback": "always"})
     _pin(managed, "llm:\n  cloud_fallback: Never\n  no_such_setting: 1\n")
-    problems = managed_scope.describe()["problems"]
-    assert any("cloud_fallback is refused by its declaration" in p for p in problems)
-    assert any("llm.no_such_setting is not a declared setting" in p for p in problems)
+    info = managed_scope.describe()
+    assert any("cloud_fallback is refused by its declaration" in p for p in info["problems"])
+    assert not any("Never" in p for p in info["problems"])          # the value only in details
+    assert any("Never" in d for d in info["details"])
+    # round 2: an undeclared name warns (an upgrade renamed it?) and never stops the hub
+    assert any("llm.no_such_setting is not a declared setting" in w for w in info["warnings"])
+    assert not any("no_such_setting" in p for p in info["problems"])
     with pytest.raises(managed_scope.ManagedRefused):
         settings_db.put_category("llm", {"backend_type": "ollama"})
     with pytest.raises(env_alias.ConfigurationRefused):
@@ -296,3 +362,62 @@ def test_chat_approvals_names_the_managed_file(managed, monkeypatch):
     assert str(path) in str(refused.value)
     src = (__import__("pathlib").Path(__file__).resolve().parents[1] / "agents/core/commands.py").read_text()
     assert "except approval_mode.ModeManaged as exc" in src
+
+
+# ── round 2: A1, A2, A4, undeclared names, 409 bodies, provider packages ────
+
+def test_round2_a1_a_pin_made_invalid_while_running_keeps_the_last_valid_pin(managed):
+    settings_db.put_category("llm", {"cloud_fallback": "always"})
+    _pin(managed, "llm:\n  cloud_fallback: never\n")
+    assert settings_db.get_value("llm", "cloud_fallback") == "never"
+    _pin(managed, "llm:\n  cloud_fallback: Never\n")              # the administrator's typo
+    assert managed_scope.scope().problems
+    assert settings_db.get_value("llm", "cloud_fallback") == "never"   # not the owner's "always"
+
+
+def test_round2_a2_the_check_uses_what_readers_expand_from(managed, monkeypatch):
+    settings_db.put_category("llm", {"cloud_fallback": "always"})
+    managed_scope.capture(force=True)
+    monkeypatch.setenv("FALLBACK_REF", "never")                    # an owner .env value
+    _pin(managed, "llm:\n  cloud_fallback: ${FALLBACK_REF}\n")
+    env = dict(os.environ)
+    env.pop("FALLBACK_REF")                                        # not the process environment
+    managed_scope.capture_process_env(env, force=True)
+    assert managed_scope.scope().problems                          # judged with the capture
+    with pytest.raises(managed_scope.ManagedRefused):
+        settings_db.put_category("llm", {"backend_type": "ollama"})
+
+
+def test_round2_a2_the_load_captures_before_it_judges():
+    src = (__import__("pathlib").Path(__file__).resolve().parents[1] / "agents/core/env_provenance.py").read_text()
+    body = src.split("def _apply_managed")[1]
+    assert body.index("capture_process_env()") < body.index("env_pins(strict=True)")
+
+
+def test_round2_a4_a_restart_hands_on_the_process_environment_only(monkeypatch):
+    from agents.core import env_provenance as ep
+    from agents.core import integration_keys
+
+    monkeypatch.setitem(ep._TABLE, "G1_FROM_DOTENV", {"layer": ep.USER_ENV, "shadowed": []})
+    monkeypatch.setitem(ep._LOADED, "G1_FROM_DOTENV", (ep.USER_ENV, ep._digest("dotenv")))
+    monkeypatch.setitem(ep._TABLE, "G1_PINNED", {"layer": ep.MANAGED, "shadowed": []})
+    monkeypatch.setitem(ep._LOADED, "G1_PINNED", (ep.MANAGED, ep._digest("pinned")))
+    monkeypatch.setitem(ep._TABLE, "G1_PROCESS", {"layer": ep.PROCESS, "shadowed": []})
+    monkeypatch.setitem(integration_keys._PLACED, "G1_PANEL", integration_keys._digest("panel"))
+    monkeypatch.setenv("G1_PANEL", "panel")
+    env = {"G1_FROM_DOTENV": "dotenv", "G1_PINNED": "pinned", "G1_PROCESS": "kept", "G1_PANEL": "panel"}
+    assert ep.successor_environ(env) == {"G1_PROCESS": "kept"}
+    src = (__import__("pathlib").Path(__file__).resolve().parents[1] / "serve.py").read_text()
+    assert src.count("successor_environ(os.environ)") == 2           # exec and spawn
+
+
+def test_round2_provider_packages_are_refused_in_managed_mode(managed):
+    from agents.core.routers import models_llm
+
+    _pin(managed, "locked\n", ".managed")
+    with pytest.raises(managed_scope.ManagedRefused):
+        models_llm._refuse_package_change_when_managed()
+    src = __import__("pathlib").Path(models_llm.__file__).read_text()
+    for route in ("provider_packages_promote", "provider_packages_revoke"):
+        assert "_refuse_package_change_when_managed()" in src.split(f"def {route}")[1].split("@router")[0]
+    assert {"stage", "propose", "decide"} <= models_llm._PACKAGE_MUTATIONS

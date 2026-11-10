@@ -104,6 +104,10 @@ class Scope:
     lock: str | None = None                                # the marker's instruction
     lock_source: str | None = None
     problems: tuple[str, ...] = ()
+    #: why each pin its declaration refuses is refused (values included: admin views only)
+    details: tuple[str, ...] = ()
+    #: pins of names no setting declares (an upgrade renamed it?): applied to nothing, warned
+    warnings: tuple[str, ...] = ()
 
     @property
     def active(self) -> bool:
@@ -197,17 +201,47 @@ def _warn_once(message: str) -> None:
         logger.warning("%s", message)
 
 
-def _windows_admin_owned(path: Path) -> bool:
-    """True when *path* is owned by Administrators or SYSTEM (pywin32), False when it is
-    not or when that cannot be established."""
-    try:
-        import win32security  # type: ignore[import-not-found]
+#: The owners a Windows managed folder may have: BUILTIN\Administrators and SYSTEM.
+WINDOWS_ADMIN_SIDS = frozenset({"S-1-5-32-544", "S-1-5-18"})
 
-        sd = win32security.GetFileSecurity(str(path), win32security.OWNER_SECURITY_INFORMATION)
-        owner = win32security.ConvertSidToStringSid(sd.GetSecurityDescriptorOwner())
+
+def _owner_sid_string(path: Path) -> str | None:
+    """The owner SID of *path* as a string (``S-1-…``), read with ctypes from advapi32
+    (``GetNamedSecurityInfoW`` + ``ConvertSidToStringSidW``): no third-party package. None
+    off Windows or when it cannot be read."""
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)   # type: ignore[attr-defined]
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)   # type: ignore[attr-defined]
+        se_file_object, owner_security_information = 1, 0x00000001
+        owner = ctypes.c_void_p()
+        descriptor = ctypes.c_void_p()
+        status = advapi32.GetNamedSecurityInfoW(
+            wintypes.LPCWSTR(str(path)), se_file_object, owner_security_information,
+            ctypes.byref(owner), None, None, None, ctypes.byref(descriptor))
+        if status != 0 or not owner.value:
+            return None
+        text = wintypes.LPWSTR()
+        try:
+            if not advapi32.ConvertSidToStringSidW(owner, ctypes.byref(text)):
+                return None
+            return text.value
+        finally:
+            if text:
+                kernel32.LocalFree(text)
+            kernel32.LocalFree(descriptor)
     except Exception:  # noqa: BLE001 — unknown owner: not trusted
-        return False
-    return owner in ("S-1-5-32-544", "S-1-5-18")
+        return None
+
+
+def _windows_admin_owned(path: Path) -> bool:
+    """True when Administrators or SYSTEM own *path*; False when another account does or
+    the owner cannot be read."""
+    return _owner_sid_string(path) in WINDOWS_ADMIN_SIDS
 
 
 def managed_dir(environ: Mapping[str, str] | None = None) -> tuple[Path | None, bool]:
@@ -237,9 +271,26 @@ def managed_dir(environ: Mapping[str, str] | None = None) -> tuple[Path | None, 
     return (default, False) if present else (None, False)
 
 
+#: Tests only (a fixture sets it; nothing reads it from the environment, a .env file or the
+#: managed folder): accept a managed folder the test process itself owns, as on a non-root
+#: CI runner. The group/others-writable check still applies. Production: root only.
+_TRUST_ANY_OWNER_FOR_TESTS = False
+
+
+def _stat_problem(path: Path, st: os.stat_result) -> str | None:
+    """POSIX: a managed folder or file someone other than root could rewrite is no pin at
+    all: refused unless root owns it and neither its group nor others may write it."""
+    if os.name == "nt":
+        return None
+    if st.st_mode & 0o022:
+        return f"{path}: writable by its group or by others (mode {st.st_mode & 0o777:o})"
+    if st.st_uid != 0 and not _TRUST_ANY_OWNER_FOR_TESTS:
+        return f"{path}: not owned by root (uid {st.st_uid}); an administrator's pins must be root-owned"
+    return None
+
+
 def _ownership_problem(path: Path) -> str | None:
-    """POSIX: a managed folder or file the owner could rewrite is no pin at all. Refused
-    unless root owns it and neither its group nor others may write it."""
+    """:func:`_stat_problem` for a folder (or file) by path; None when it is absent."""
     if os.name == "nt":
         return None
     try:
@@ -248,11 +299,7 @@ def _ownership_problem(path: Path) -> str | None:
         return None
     except OSError as exc:
         return f"{path}: {type(exc).__name__}: {exc.strerror or exc}"
-    if st.st_uid != 0:
-        return f"{path}: not owned by root (uid {st.st_uid}); an administrator's pins must be root-owned"
-    if st.st_mode & 0o022:
-        return f"{path}: writable by its group or by others (mode {st.st_mode & 0o777:o})"
-    return None
+    return _stat_problem(path, st)
 
 
 def _profile(environ: Mapping[str, str]) -> str | None:
@@ -284,25 +331,42 @@ def _signature(st: os.stat_result) -> tuple:
 
 
 def _read(path: Path, parse) -> tuple[str, Any, str | None]:
-    """``(state, parsed, error)``: state is ``absent``, ``read`` or ``unreadable``. An
-    unreadable file answers its last good parse (or None) with the reason."""
+    """``(state, parsed, error)``: state is ``absent``, ``read``, ``unreadable`` or ``untrusted``
+    (owned by someone other than root, or writable by group or others). Unreadable and
+    untrusted answer the last trusted parse (or None) with the reason."""
     key = str(path)
     try:
-        st = path.stat()
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
     except FileNotFoundError:
         return "absent", None, None
     except OSError as exc:
         return "unreadable", copy.deepcopy(_LAST_GOOD.get(key)), f"{type(exc).__name__}: {exc.strerror or exc}"
-    sig = _signature(st)
-    with _LOCK:
-        hit = _CACHE.get(key)
-        if hit is not None and hit[0] == sig:
-            return "read", copy.deepcopy(hit[1]), None
     try:
-        raw = path.read_bytes()
-        text = raw.decode("utf-8-sig")         # strict: an administrator's file must fail loud
+        # judged by the descriptor it is read from (no stat-then-open race): a file someone
+        # other than root could rewrite is never applied; readers keep the last trusted parse
+        st = os.fstat(fd)
+        untrusted = _stat_problem(path, st)
+        if untrusted:
+            return "untrusted", copy.deepcopy(_LAST_GOOD.get(key)), untrusted
+        sig = _signature(st)
+        with _LOCK:
+            hit = _CACHE.get(key)
+            if hit is not None and hit[0] == sig:
+                return "read", copy.deepcopy(hit[1]), None
+        chunks = []
+        while True:
+            chunk = os.read(fd, 1 << 16)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    except OSError as exc:
+        return "unreadable", copy.deepcopy(_LAST_GOOD.get(key)), f"{type(exc).__name__}: {exc.strerror or exc}"
+    finally:
+        os.close(fd)
+    try:
+        text = b"".join(chunks).decode("utf-8-sig")   # strict: an administrator's file must fail loud
         parsed = parse(text)
-    except (OSError, UnicodeDecodeError, ValueError) as exc:
+    except (UnicodeDecodeError, ValueError) as exc:
         logger.error("managed configuration %s cannot be read: %s — configuration writes are refused "
                      "until it is fixed", path, exc)
         return "unreadable", copy.deepcopy(_LAST_GOOD.get(key)), f"{type(exc).__name__}: {exc}"
@@ -416,6 +480,11 @@ def scope(environ: Mapping[str, str] | None = None) -> Scope:
     places = [("shared", directory)]
     if profile:
         places.append((f"profile {profile}", directory / PROFILES_DIR / profile))
+        if present:                     # the folders on the way to a profile's pins too
+            for folder in (directory / PROFILES_DIR, directory / PROFILES_DIR / profile):
+                owned = _ownership_problem(folder)
+                if owned:
+                    problems.append(owned)
     settings: dict = {}
     setting_sources: dict = {}
     pinned_env: dict = {}
@@ -425,10 +494,6 @@ def scope(environ: Mapping[str, str] | None = None) -> Scope:
         for name, parse in ((CONFIG_FILE, _parse_config), (ENV_FILE, _parse_env), (MARKER_FILE, _parse_marker)):
             path = folder / name
             state, parsed, error = _read(path, parse) if present else ("absent", None, None)
-            if state == "read" and not error:
-                error = _ownership_problem(path)
-                if error:
-                    state = "untrusted"
             files.append({"path": str(path), "kind": name, "scope": where, "state": state,
                           **({"error": error} if error else {})})
             if error:
@@ -449,46 +514,69 @@ def scope(environ: Mapping[str, str] | None = None) -> Scope:
                 lock, lock_source = parsed, str(path)
     if lock is None:
         lock, lock_source = _env_lock(env)
-    problems.extend(_schema_problems(settings, setting_sources, pinned_env))
+    schema, details, warnings = _schema_problems(settings, setting_sources, pinned_env)
+    problems.extend(schema)
     return Scope(directory=directory, explicit=explicit, profile=profile, files=tuple(files),
                  settings=settings, setting_sources=setting_sources, env=pinned_env, env_sources=env_sources,
-                 lock=lock, lock_source=lock_source, problems=tuple(problems))
+                 lock=lock, lock_source=lock_source, problems=tuple(problems),
+                 details=tuple(details), warnings=tuple(warnings))
 
 
-_SCHEMA_MEMO: dict[str, list[str]] = {}
+_SCHEMA_MEMO: dict[str, tuple] = {}
 
 
-def _schema_problems(settings: dict, sources: dict, pinned_env: dict) -> list[str]:
-    """A pin its declaration refuses (or a name no setting declares) is a problem, not a
-    silent fallback to the owner's value: writes are refused and the hub does not start."""
+def _referenced(value: Any) -> set[str]:
+    if isinstance(value, str):
+        return set(_REFERENCE.findall(value))
+    if isinstance(value, dict):
+        return set().union(*(_referenced(item) for item in value.values())) if value else set()
+    if isinstance(value, list):
+        return set().union(*(_referenced(item) for item in value)) if value else set()
+    return set()
+
+
+def _schema_problems(settings: dict, sources: dict, pinned_env: dict) -> tuple[list[str], list[str], list[str]]:
+    """``(problems, details, warnings)``. A pin its declaration refuses is a problem (writes
+    and the start refused), never a silent fallback; its reason, which can quote the
+    pinned value, goes to ``details`` (admin views), not into the refusal a route sends. A
+    pin of a name no setting declares is a warning: an upgrade that renamed a setting must
+    not stop the hub (it still refuses a write of that name). ``${NAME}`` is judged with
+    what readers will expand it from (the captured process environment), and the verdict
+    is remembered per settings text *and* per value of every name referenced."""
     if not settings:
-        return []
-    try:
-        memo_key = json.dumps(settings, sort_keys=True, default=str)
-    except (TypeError, ValueError):
-        memo_key = repr(settings)
-    hit = _SCHEMA_MEMO.get(memo_key)
-    if hit is not None:
-        return list(hit)
-    from . import settings_db
-
+        return [], [], []
     base = dict(_CAPTURED["env"] if _CAPTURED is not None and _CAPTURED["env"] is not None else os.environ)
     base.update(pinned_env)
-    out: list[str] = []
+    names = sorted(_referenced(settings))
+    try:
+        memo_key = json.dumps([settings, [(n, base.get(n)) for n in names]], sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        memo_key = repr((settings, [(n, base.get(n)) for n in names]))
+    hit = _SCHEMA_MEMO.get(memo_key)
+    if hit is not None:
+        return list(hit[0]), list(hit[1]), list(hit[2])
+    from . import settings_db
+
+    problems: list[str] = []
+    details: list[str] = []
+    warnings: list[str] = []
     for category, values in settings.items():
         for key, value in values.items():
             source = sources.get((category, key), "")
             spec = settings_db._SPEC.get((category, key))
             if spec is None:
-                out.append(f"{source}: {category}.{key} is not a declared setting")
+                warnings.append(f"{source}: {category}.{key} is not a declared setting; it pins nothing")
                 continue
             whole = _merge(copy.deepcopy(spec.get("value")), expand(value, base))
             errors = settings_db.validate_category(category, {key: whole}, references=False)
             if errors:
-                out.append(f"{source}: {category}.{key} is refused by its declaration: {'; '.join(errors)}")
+                problems.append(f"{source}: {category}.{key} is refused by its declaration")
+                details.append(f"{source}: {category}.{key}: {'; '.join(errors)}")
+    for warning in warnings:
+        _warn_once(f"managed configuration: {warning}")
     _SCHEMA_MEMO.clear()
-    _SCHEMA_MEMO[memo_key] = out
-    return list(out)
+    _SCHEMA_MEMO[memo_key] = (problems, details, warnings)
+    return list(problems), list(details), list(warnings)
 
 
 # ── reading a pinned value ───────────────────────────────────────────────────
@@ -753,6 +841,8 @@ def describe(environ: Mapping[str, str] | None = None) -> dict[str, Any]:
         "lock": ({"instruction": current.lock, "source": current.lock_source}
                  if current.lock is not None else None),
         "problems": list(current.problems),
+        "details": list(current.details),
+        "warnings": list(current.warnings),
         "writes": ("refused: the managed configuration cannot be read" if current.problems
                    else "refused: managed mode" if current.lock is not None
                    else "pinned values refused" if current.active else "allowed"),

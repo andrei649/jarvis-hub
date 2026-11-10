@@ -905,6 +905,8 @@ def _apply_managed(*, refuse: bool = True) -> dict[str, str]:
     from . import managed_scope
     from .env_config import pin_environment
 
+    # what a pinned ${NAME} may expand from, before the pins are judged (review A2)
+    managed_scope.capture_process_env()
     try:
         pins = managed_scope.env_pins(strict=True)
     except managed_scope.ManagedUnreadable as exc:
@@ -938,8 +940,30 @@ def _apply_managed(*, refuse: bool = True) -> dict[str, str]:
         _FILES[MANAGED] = {"path": str(path), "kind": "file" if present else "absent",
                            "present": present, "read": present}
     pin_environment(applied)
-    managed_scope.capture_process_env()        # what a pinned ${NAME} may expand from
     return applied
+
+
+def successor_environ(environ: Mapping[str, str]) -> dict[str, str]:
+    """G1 review A4 — the environment a self-restart hands the next hub: *environ* without
+    what this hub's load put there (the repo/data-home ``.env`` values, the managed pins)
+    and without the keys the Integrations panel placed. The next hub loads those itself,
+    in their own layers, so none of them becomes "process environment" (which a pinned
+    ``${NAME}`` may expand from) by surviving a restart."""
+    out = dict(environ)
+    for key, row in _TABLE.items():
+        if row["layer"] in (REPO_ENV, USER_ENV, MANAGED) and key in out:
+            loaded = _LOADED.get(key)
+            if loaded is None or loaded[1] == _digest(out[key]):
+                out.pop(key, None)
+    try:
+        from . import integration_keys
+
+        for key in list(out):
+            if integration_keys.placed_here(key):
+                out.pop(key, None)
+    except Exception:  # noqa: BLE001 — the panel is optional
+        logger.debug("successor environment: the Integrations panel's keys could not be told apart")
+    return out
 
 
 def hub_value(key: str, environ: Mapping[str, str] | None = None) -> str | None:
