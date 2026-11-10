@@ -28,7 +28,7 @@ from agents.core.plugins import websearch as ws
 from agents.core.resilience import CircuitBreaker
 from agents.vendor.hermes_compat import httpx as compat_httpx
 from agents.vendor.hermes_compat import os_env, plugin_ctx
-from agents.vendor.hermes_compat.web_search_provider import get_provider_env
+from agents.vendor.hermes_compat.web_search_provider import get_provider_env, provider_scope
 
 REPO = Path(__file__).resolve().parent.parent
 VENDOR = REPO / "agents" / "vendor" / "hermes"
@@ -129,7 +129,8 @@ def test_the_adopted_providers_register_after_the_builtins_on_websearch_egress()
     assert wp.ADOPTED_PROVIDERS == ("exa", "brave-free", "parallel")
     names = wp.search_providers()
     assert names[:3] == ("tavily", "searxng", "duckduckgo")
-    tiers = {"exa": "paid", "brave-free": "free", "parallel": "paid"}
+    # Brave counts as paid: Nerva cannot tell a free-tier key from a paid-plan one.
+    tiers = {"exa": "paid", "brave-free": "paid", "parallel": "paid"}
     for name, tier in tiers.items():
         provider = wp.get_search_provider(name)
         assert isinstance(provider, wp.SearchProvider)
@@ -188,7 +189,7 @@ async def test_exa_searches_through_the_egress_client_and_maps_rows(monkeypatch,
     assert request.method == "POST" and request.url.host == PUBLIC_IP  # pinned dial
     assert request.headers["host"] == "api.exa.ai"
     assert request.headers["x-api-key"] == "exa-secret"
-    assert request.headers["x-exa-integration"] == "hermes-agent"
+    assert request.headers["x-exa-integration"] == "nerva"  # rewrite rule, not a hand edit
     assert egress.body() == {"query": "solar news", "numResults": 5,
                              "contents": {"highlights": True}}
     assert ledger == [{"plugin": "websearch", "host": "api.exa.ai", "method": "POST",
@@ -351,11 +352,36 @@ async def test_vendored_code_on_the_event_loop_is_refused_not_deadlocked():
 def test_env_reads_are_limited_to_the_adopted_names(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-other")
     monkeypatch.setenv("EXA_API_KEY", " exa ")
-    assert get_provider_env("OPENAI_API_KEY") == ""
-    assert get_provider_env("EXA_API_KEY") == "exa"
-    assert os_env.getenv("OPENAI_API_KEY") is None
-    assert os_env.getenv("HOME", "d") == "d"
+    monkeypatch.setenv("PARALLEL_SEARCH_MODE", "fast")
+    with provider_scope("exa"):
+        assert get_provider_env("OPENAI_API_KEY") == ""
+        assert get_provider_env("EXA_API_KEY") == "exa"
+        assert os_env.getenv("OPENAI_API_KEY") is None
+        assert os_env.getenv("PARALLEL_SEARCH_MODE") is None  # parallel's setting, not exa's
+        assert os_env.getenv("HOME", "d") == "d"
+    with provider_scope("parallel"):
+        assert os_env.getenv("PARALLEL_SEARCH_MODE") == "fast"
     assert not hasattr(os_env, "environ") and not hasattr(os_env, "system")
+
+
+def test_one_provider_cannot_read_another_providers_key(monkeypatch):
+    monkeypatch.setenv("EXA_API_KEY", "exa-key")
+    monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "brave-key")
+    with provider_scope("brave-free"):
+        assert get_provider_env("EXA_API_KEY") == ""
+        assert get_provider_env("BRAVE_SEARCH_API_KEY") == "brave-key"
+    assert get_provider_env("EXA_API_KEY") == ""  # outside any provider scope: nothing
+    from agents.vendor.hermes.plugins.web.exa.provider import ExaWebSearchProvider
+    assert ExaWebSearchProvider().is_available() is False  # unscoped
+    assert wp.get_search_provider("exa").configured(VIEW) is True  # the adapter scopes it
+
+
+def test_the_new_key_names_are_managed_and_reported():
+    from agents.core import code_env, support_bundle
+
+    for name in KEYS.values():
+        assert name in code_env._MANAGED_NAMES
+        assert name in support_bundle._OTHER_KEYS["tools"]
 
 
 def test_vendored_modules_see_the_compat_os_and_httpx():
@@ -366,39 +392,95 @@ def test_vendored_modules_see_the_compat_os_and_httpx():
     assert par.os is os_env
 
 
-# ── structure: no bare client in vendored code ───────────────────────────────
+# ── structure: the vendored tree stays inside an allowlist ───────────────────
 
-_NETWORK = {"httpx", "httpcore", "requests", "aiohttp", "urllib3", "socket", "ssl", "http",
-            "urllib", "websocket", "websockets", "exa_py", "parallel", "subprocess"}
-
-
-def _imports(path: Path) -> list[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    names = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            names += [a.name for a in node.names]
-        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-            names.append(node.module)
-        elif isinstance(node, ast.Call) and getattr(node.func, "id", "") in {"__import__", "exec", "eval"}:
-            names.append(node.func.id)
-    return names
-
-
-def test_no_vendored_or_compat_module_imports_a_network_library():
+def test_every_vendored_file_is_inside_the_allowlist():
+    """The same allowlist pull and status apply (scripts/hermes_vendor.py), run on every CI
+    pass: safe stdlib modules, the compat layer and vendored siblings only; data-only
+    non-Python files; no symlinks."""
     offenders = []
-    for root in (VENDOR, COMPAT):
-        for path in sorted(root.rglob("*.py")):
-            for name in _imports(path):
-                if name.split(".")[0] in _NETWORK or name in {"__import__", "exec", "eval"}:
+    for path in sorted(VENDOR.rglob("*")):
+        if "__pycache__" in path.parts:
+            continue
+        rel = path.relative_to(VENDOR).as_posix()
+        if path.is_symlink():
+            offenders.append(f"{rel}: symlink")
+            continue
+        if not path.is_file() or rel in {"LICENSE"}:
+            continue
+        offenders += [f"{rel}: {p}" for p in hv.content_problems(path.read_bytes(), rel)]
+    assert offenders == []
+
+
+#: What the (Nerva-written) compat layer may import: no network or process library.
+_COMPAT_ALLOWED = hv.SAFE_STDLIB | {"threading", "contextvars", "concurrent.futures", "importlib",
+                                    "sys", "agents.core.env_config"}
+
+
+def test_no_compat_module_imports_a_network_library():
+    offenders = []
+    for path in sorted(COMPAT.rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            names = []
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                names = [node.module or "."] if node.level == 0 else ["<relative>"]
+            for name in names:
+                if name not in _COMPAT_ALLOWED and not name.startswith("agents.vendor."):
                     offenders.append(f"{path.relative_to(REPO)}: {name}")
     assert offenders == []
 
 
-def test_every_vendored_python_file_is_fully_mapped_onto_the_compat_layer():
-    for path in sorted(VENDOR.rglob("*.py")):
-        rel = path.relative_to(VENDOR).as_posix()
-        assert hv.unmapped_imports(path.read_text(encoding="utf-8"), rel) == [], rel
+ESCAPES = {
+    "urllib.request": "import urllib.request\ndef f(u):\n    return urllib.request.urlopen(u).read()\n",
+    "subprocess": "import subprocess\ndef f(u):\n    return subprocess.run(['curl', u])\n",
+    "socket": "import socket\ndef f():\n    return socket.create_connection(('x', 80))\n",
+    "from os import environ": "from os import environ\ndef f():\n    return environ['TAVILY_API_KEY']\n",
+    "import os, re": "import os, re\ndef f():\n    return os.environ['TAVILY_API_KEY']\n",
+    "import os as _os": "import os as _os\ndef f():\n    return _os.environ\n",
+    "os_env aliased": "from agents.vendor.hermes_compat import os_env as env\n",
+    "importlib": "import importlib\ndef f(u):\n    return importlib.import_module('httpx').get(u)\n",
+    "asyncio.open_connection": "import asyncio\nasync def f():\n    return await asyncio.open_connection('x', 80)\n",
+    "from asyncio import": "from asyncio import open_connection\n",
+    "getattr string": "import asyncio\ndef f():\n    return getattr(asyncio, 'open_connection')\n",
+    "builtins": "import builtins\ndef f(u):\n    return builtins.__import__('httpx').get(u)\n",
+    "__import__": "def f():\n    return __import__('httpx')\n",
+    "sys.modules": "import sys\ndef f(u):\n    return sys.modules['httpx'].get(u)\n",
+    "relative out of the tree": "from ....core.http_client import PluginHTTPClient\n",
+    "imaplib": "import imaplib\n",
+    "xmlrpc": "import xmlrpc.client\n",
+    "multiprocessing.connection": "from multiprocessing.connection import Client\n",
+    "ctypes": "import ctypes\n",
+    "webbrowser": "import webbrowser\n",
+    "http.client": "import http.client\n",
+    "open": "def f():\n    return open('/etc/passwd').read()\n",
+    "plugin_ctx": "from agents.vendor.hermes_compat import plugin_ctx\n",
+    "agents.core": "from agents.core.http_client import PluginHTTPClient\n",
+}
+
+
+@pytest.mark.parametrize("name", sorted(ESCAPES))
+def test_the_allowlist_refuses_every_escape(name):
+    text, _ = hv.rewrite(ESCAPES[name])
+    assert hv.unmapped_imports(text, "plugins/web/x/provider.py"), name
+
+
+def test_the_allowlist_accepts_only_relative_imports_inside_the_package():
+    assert hv.unmapped_imports("from ._common import x\n", "plugins/web/x/provider.py") == []
+    assert hv.unmapped_imports("from .. import web\n", "plugins/web/x/provider.py")
+
+
+@pytest.mark.parametrize(("rel", "data"), [
+    ("plugins/web/x/hook.pth", b"import os\n"),
+    ("plugins/web/x/run.sh", b"curl evil\n"),
+    ("plugins/web/x/plugin.yaml", b"a: !!python/object/apply:os.system ['id']\n"),
+    ("plugins/web/x/blob.json", b"{not json"),
+    ("plugins/web/x/bin.txt", b"\0\1"),
+])
+def test_non_python_files_must_be_plain_data(rel, data):
+    assert hv.content_problems(data, rel)
+    assert hv.content_problems(b"name: web-x\nkind: backend\n", "plugins/web/x/plugin.yaml") == []
 
 
 # ── manifest and the sync script ─────────────────────────────────────────────
@@ -431,12 +513,13 @@ def test_the_rewrite_is_idempotent():
               "    from plugins.web.keyless_mcp import y\nfrom plugins.web._common import z\n"
               "    from tools.interrupt import i\n    import tools.web_tools as _wt\n"
               "    import pm\n        from exa_py import Exa  # lazy\n"
-              "        import parallel  # lazy\n")
+              "        import parallel  # lazy\n"
+              '        client.headers["x-exa-integration"] = "hermes-agent"\n')
     once, applied = hv.rewrite(sample)
     assert len(applied) == len(hv.REWRITE_RULES)
     assert hv.rewrite(once) == (once, [])
     assert once.count("\n") == sample.count("\n")
-    assert hv.unmapped_imports(once) == []
+    assert hv.unmapped_imports("\n".join(line.strip() for line in once.splitlines())) == []
     assert "        from agents.vendor.hermes_compat.sdk import parallel  # lazy\n" in once
 
 
@@ -536,3 +619,128 @@ def test_pull_refuses_a_file_the_compat_layer_does_not_cover(sandbox):
     code, text = _run(["pull", "--upstream", str(upstream), "--commit", "a" * 40,
                        "../outside.py"], vendor)
     assert code == 2
+
+
+def test_pull_refuses_a_symlink_out_of_the_clone(sandbox, tmp_path):
+    upstream, vendor = sandbox
+    secret = tmp_path / "secret.env"
+    secret.write_text("TOP_SECRET=1\n", encoding="utf-8")
+    (upstream / "plugins/web/plugin.yaml").symlink_to(secret)
+    code, text = _run(["pull", "--upstream", str(upstream), "--commit", "a" * 40,
+                       "plugins/web/plugin.yaml"], vendor)
+    assert code == 2 and "regular file" in text
+    assert not (vendor / "plugins/web/plugin.yaml").exists()
+    outside = tmp_path / "elsewhere"
+    (outside / "web").mkdir(parents=True)
+    (outside / "web" / "y.py").write_text("x = 1\n", encoding="utf-8")
+    (upstream / "linked").symlink_to(outside, target_is_directory=True)
+    code, _ = _run(["pull", "--upstream", str(upstream), "--commit", "a" * 40,
+                    "linked/web/y.py"], vendor)
+    assert code == 2
+
+
+def test_status_checks_rules_applied_against_the_bytes(sandbox):
+    upstream, vendor = sandbox
+    _run(["pull", "--upstream", str(upstream), "--commit", "a" * 40, "plugins/web/x.py"], vendor)
+    manifest = json.loads((vendor / "MANIFEST.json").read_text())
+    manifest["files"][0]["rules_applied"] = []
+    (vendor / "MANIFEST.json").write_text(hv.dump_manifest(manifest), encoding="utf-8")
+    code, text = _run(["status"], vendor)
+    assert code == 1 and "rules_applied" in text
+    manifest["files"][0]["rules_applied"] = ["httpx", "exa-sdk"]
+    (vendor / "MANIFEST.json").write_text(hv.dump_manifest(manifest), encoding="utf-8")
+    code, text = _run(["status", "--upstream", str(upstream)], vendor)
+    assert code == 1 and "DRIFT" in text
+
+
+# ── review fixes: executor, deadlines, logs, redirects ────────────────────────
+
+class Slow:
+    """An egress client whose requests never answer; records their cancellation."""
+
+    def __init__(self):
+        self.started = 0
+        self.cancelled = asyncio.Event()
+
+    async def _wait(self, url, **kw):
+        self.started += 1
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            self.cancelled.set()
+            raise
+
+    get = post = _wait
+
+
+async def test_many_concurrent_searches_do_not_starve_the_default_executor(monkeypatch):
+    """Vendored code runs on its own executor: the egress client's DNS resolution
+    (asyncio.to_thread) must still find a default worker free, even with a tiny pool."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    loop = asyncio.get_running_loop()
+    tiny = ThreadPoolExecutor(max_workers=2)
+    loop.set_default_executor(tiny)
+    monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "k")
+    brave = wp.get_search_provider("brave-free")
+
+    async def one():
+        return await brave.search(Egress().client, VIEW, "q", 3)
+
+    async def bystander():
+        return await asyncio.to_thread(lambda: "free")
+
+    results = await asyncio.wait_for(asyncio.gather(*[one() for _ in range(12)], bystander()),
+                                     timeout=10)
+    assert results[-1] == "free" and all(len(r) == 3 for r in results[:-1])
+
+
+async def test_a_cancelled_caller_releases_the_worker_and_the_request(monkeypatch):
+    monkeypatch.setenv("EXA_API_KEY", "k")
+    slow = Slow()
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(wp.get_search_provider("exa").search(slow, VIEW, "q", 3), 0.3)
+    await asyncio.wait_for(slow.cancelled.wait(), timeout=2)  # the worker gave up promptly
+    assert slow.started == 1
+
+
+async def test_a_search_past_its_deadline_fails_and_stops_waiting(monkeypatch):
+    monkeypatch.setenv("PARALLEL_API_KEY", "k")
+    monkeypatch.setattr(plugin_ctx, "SEARCH_DEADLINE_SECONDS", 0.3)
+    slow = Slow()
+    with pytest.raises(wp.ProviderFailure, match="timeout"):
+        await wp.get_search_provider("parallel").search(slow, VIEW, "q", 3)
+    await asyncio.wait_for(slow.cancelled.wait(), timeout=2)
+
+
+async def test_a_later_dictconfig_cannot_make_vendored_code_log_a_query(monkeypatch, egress):
+    import io
+    import logging.config
+
+    buf = io.StringIO()
+    logging.config.dictConfig({
+        "version": 1, "disable_existing_loggers": False,
+        "handlers": {"s": {"class": "logging.StreamHandler", "stream": buf}},
+        "loggers": {"agents.vendor": {"level": "DEBUG", "handlers": ["s"]}}})
+    try:
+        monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "k")
+        await wp.get_search_provider("brave-free").search(
+            egress.client, VIEW, "my private medical question", 3)
+    finally:
+        vendor_logger = logging.getLogger("agents.vendor")
+        for handler in list(vendor_logger.handlers):
+            vendor_logger.removeHandler(handler)
+        vendor_logger.setLevel(logging.NOTSET)
+    assert "private medical" not in buf.getvalue()
+
+
+async def test_a_credential_request_never_follows_redirects():
+    class Never:
+        async def get(self, url, **kw):  # pragma: no cover - must not be reached
+            raise AssertionError("dialled")
+
+    with compat_httpx.bound_egress(Never(), asyncio.get_running_loop()) as call, \
+            pytest.raises(compat_httpx.ConnectError):
+        await asyncio.to_thread(compat_httpx.get, "https://api.exa.ai/",
+                                headers={"X-API-Key": "k"}, follow_redirects=True)
+    assert call.requests == 0 and call.failure == "redirect_with_credentials"

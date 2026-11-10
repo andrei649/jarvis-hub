@@ -63,7 +63,7 @@ Keys: `TAVILY_API_KEY` (Tavily), `SEARXNG_URL` (your SearXNG; its host is added 
 | 1 | `tavily` | paid | `TAVILY_API_KEY` | `websearch` (RESTRICTED: `api.tavily.com`) |
 | 2 | `searxng` | free | `SEARXNG_URL` | `websearch` (+ the SearXNG host, registered dynamically) |
 | 3 | `exa` | paid | `EXA_API_KEY` | `websearch` (`api.exa.ai`) |
-| 4 | `brave-free` | free | `BRAVE_SEARCH_API_KEY` (Brave's free tier, 2k queries/month) | `websearch` (`api.search.brave.com`) |
+| 4 | `brave-free` | paid (the key may be a paid-plan key) | `BRAVE_SEARCH_API_KEY` (Brave's free tier is 2k queries/month) | `websearch` (`api.search.brave.com`) |
 | 5 | `parallel` | paid | `PARALLEL_API_KEY` (optional `PARALLEL_SEARCH_MODE` = `agentic` · `fast` · `one-shot`) | `websearch` (`api.parallel.ai`) |
 | 6… | plugin-registered | its own | its own `configured()` | its own manifest (RESTRICTED or LAN only) |
 | last | `duckduckgo` | free | `beautifulsoup4` (keyless) | `websearch` (`html.duckduckgo.com`) |

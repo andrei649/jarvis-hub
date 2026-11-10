@@ -54,7 +54,8 @@ _MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}")
 #: (tests/test_support_bundle.py pins that each one is read somewhere under agents/).
 _OTHER_KEYS = {
     "tools": ("ELEVENLABS_API_KEY", "FISH_AUDIO_API_KEY", "FAL_KEY", "TAVILY_API_KEY",
-              "PERPLEXITY_API_KEY", "GITHUB_TOKEN", "HASS_TOKEN", "HOMEBRIDGE_TOKEN", "N8N_API_KEY"),
+              "PERPLEXITY_API_KEY", "EXA_API_KEY", "BRAVE_SEARCH_API_KEY", "PARALLEL_API_KEY",
+              "GITHUB_TOKEN", "HASS_TOKEN", "HOMEBRIDGE_TOKEN", "N8N_API_KEY"),
     "platforms": ("TELEGRAM_BOT_TOKEN", "DISCORD_BOT_TOKEN", "SLACK_BOT_TOKEN", "SLACK_APP_TOKEN"),
     "hub": ("JARVIS_ADMIN_TOKEN", "JARVIS_USER_TOKEN", "JARVIS_BACKUP_KEY"),
 }

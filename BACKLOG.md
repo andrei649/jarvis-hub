@@ -2701,7 +2701,11 @@
   `web_search` backends through a compat layer (`agents/vendor/hermes_compat/`): requests go through
   the `websearch` `PluginHTTPClient` (allowlist, SSRF pinning, ledger, kernel hook), keys are read
   from an allowlist through `env_config`, the keyless tier stays off, and each backend is off until its
-  key is set. `scripts/hermes_vendor.py status|diff|pull` keeps them in step with upstream. Search
+  key is set. `scripts/hermes_vendor.py status|diff|pull` keeps them in step with upstream. An
+  adversarial review's fixes are in. Vendored code runs on its own bounded executor with a 25 s
+  deadline, so it no longer starves DNS on the default one. An allowlist now limits imports and
+  data files for pull, status and CI, and symlinks are refused. Each provider can read only its own
+  key. A logging filter keeps queries out of the logs. Brave counts as paid. Search
   only (vendored `extract` is not wired); no live vendor call made. No ledger row moves: the owner's
   decision 1 (count adopted code as delivered) is still open. Guide: `docs/hermes/ADOPT_LANE.md`.
 

@@ -8,23 +8,49 @@
 ``~/.hermes/.env``, with profile secret scopes). In Nerva a provider key is an env setting
 read at call time through ``agents.core.env_config``, the path ``TAVILY_API_KEY`` takes,
 and only for the names in :data:`PROVIDER_KEYS`: any other name reads as unset, so an
-adopted file can never pick up another integration's key. Values are never logged.
+adopted file can never pick up another integration's key. The names are per provider: the
+adapter binds the provider it is running (:func:`provider_scope`) and a lookup outside that
+scope, or for another provider's key, reads as unset, so Brave's code cannot read Exa's key.
+Values are never logged.
 """
 
 from __future__ import annotations
 
 import abc
+import contextlib
+import contextvars
+from collections.abc import Iterator
 from typing import Any
 
 from agents.core.env_config import env_str
 
-#: Keys the adopted providers may read (documented in .env.example and docs/WEB_SEARCH.md).
-PROVIDER_KEYS = frozenset({"EXA_API_KEY", "BRAVE_SEARCH_API_KEY", "PARALLEL_API_KEY"})
+#: Keys each adopted provider may read (documented in .env.example and docs/WEB_SEARCH.md).
+PROVIDER_KEYS: dict[str, frozenset[str]] = {
+    "exa": frozenset({"EXA_API_KEY"}),
+    "brave-free": frozenset({"BRAVE_SEARCH_API_KEY"}),
+    "parallel": frozenset({"PARALLEL_API_KEY"}),
+}
+
+_SCOPE: contextvars.ContextVar[str] = contextvars.ContextVar("hermes_compat_provider", default="")
+
+
+@contextlib.contextmanager
+def provider_scope(name: str) -> Iterator[None]:
+    """Run vendored code as provider *name*: only its keys and settings are readable."""
+    token = _SCOPE.set(str(name or ""))
+    try:
+        yield
+    finally:
+        _SCOPE.reset(token)
+
+
+def current_provider() -> str:
+    return _SCOPE.get()
 
 
 def get_provider_env(name: str) -> str:
-    """The stripped value of an allowlisted provider key, or ``""``."""
-    if name not in PROVIDER_KEYS:
+    """The stripped value of a key the current provider may read, or ``""``."""
+    if name not in PROVIDER_KEYS.get(current_provider(), frozenset()):
         return ""
     return str(env_str(name, "") or "").strip()
 

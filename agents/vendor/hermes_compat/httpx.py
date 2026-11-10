@@ -27,12 +27,19 @@ import contextlib
 import contextvars
 import json as _json
 import threading
+import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
 #: Upper bound on how long a vendored call may wait for one request (seconds).
 MAX_WAIT_SECONDS = 90.0
+#: How often a waiting worker thread checks whether its caller gave up (seconds).
+POLL_SECONDS = 0.1
+#: Request headers that carry a credential. A request carrying one is never sent with
+#: ``follow_redirects`` (the egress client strips only Authorization/Cookie cross-origin).
+CREDENTIAL_HEADERS = frozenset({"authorization", "x-api-key", "x-subscription-token",
+                                "api-key", "x-goog-api-key", "proxy-authorization", "cookie"})
 
 
 class HTTPError(Exception):
@@ -118,6 +125,13 @@ class EgressCall:
     failure: str = ""
     statuses: list[int] = field(default_factory=list)
     requests: int = 0
+    #: ``time.monotonic()`` after which no request may start or keep waiting.
+    deadline: float = float("inf")
+    #: Set by the adapter when its caller left (cancelled or timed out).
+    abandoned: threading.Event = field(default_factory=threading.Event)
+
+    def abandon(self) -> None:
+        self.abandoned.set()
 
 
 _CALL: contextvars.ContextVar[EgressCall | None] = contextvars.ContextVar(
@@ -125,9 +139,11 @@ _CALL: contextvars.ContextVar[EgressCall | None] = contextvars.ContextVar(
 
 
 @contextlib.contextmanager
-def bound_egress(client: Any, loop: asyncio.AbstractEventLoop) -> Iterator[EgressCall]:
+def bound_egress(client: Any, loop: asyncio.AbstractEventLoop, *,
+                 deadline: float = float("inf")) -> Iterator[EgressCall]:
     """Bind *client* for requests made in this context (and threads that copy it)."""
-    call = EgressCall(client=client, loop=loop, loop_thread=threading.get_ident())
+    call = EgressCall(client=client, loop=loop, loop_thread=threading.get_ident(),
+                      deadline=deadline)
     token = _CALL.set(call)
     try:
         yield call
@@ -159,10 +175,16 @@ def request(method: str, url: str, *, params: Any = None, headers: Any = None,
         raise EgressRefused("no Nerva egress client is bound")
     if call.policy_block:
         raise EgressRefused("refused earlier in this call")
+    if call.abandoned.is_set() or time.monotonic() >= call.deadline:
+        call.failure = call.failure or "timeout"
+        raise TimeoutException("timeout")
     if threading.get_ident() == call.loop_thread:
         # A blocking wait on the loop that must run the request would deadlock it.
         call.failure = call.failure or "called_on_event_loop"
         raise ConnectError("vendored code ran on the event loop")
+    if follow_redirects and any(str(k).lower() in CREDENTIAL_HEADERS for k in dict(headers or {})):
+        call.failure = call.failure or "redirect_with_credentials"
+        raise ConnectError("a credential-bearing request does not follow redirects")
     kwargs: dict[str, Any] = {}
     for key, value in (("params", params), ("headers", headers), ("json", json),
                        ("data", data), ("content", content), ("timeout", timeout)):
@@ -176,8 +198,23 @@ def request(method: str, url: str, *, params: Any = None, headers: Any = None,
         call.failure = call.failure or "unsupported_method"
         raise ConnectError("unsupported method")
     future = asyncio.run_coroutine_threadsafe(sender(url, **kwargs), call.loop)
+    give_up = min(call.deadline, time.monotonic() + _timeout_seconds(timeout))
     try:
-        resp = future.result(timeout=_timeout_seconds(timeout))
+        while True:
+            # Short waits, so a worker never outlives the caller that left it.
+            if call.abandoned.is_set() or time.monotonic() >= give_up:
+                future.cancel()
+                call.failure = call.failure or "timeout"
+                raise TimeoutException("timeout")
+            try:
+                resp = future.result(timeout=POLL_SECONDS)
+                break
+            except TimeoutError:
+                if future.done():  # the request itself raised TimeoutError
+                    raise
+                continue
+    except TimeoutException:
+        raise
     except PermissionError as exc:  # PluginEgressError: allowlist, SSRF, kernel
         if _is_dns_failure(str(exc)):
             call.failure = call.failure or "dns_failed"
@@ -185,7 +222,6 @@ def request(method: str, url: str, *, params: Any = None, headers: Any = None,
         call.policy_block = "egress_blocked"
         raise EgressRefused("egress_blocked") from None
     except TimeoutError:
-        future.cancel()
         call.failure = call.failure or "timeout"
         raise TimeoutException("timeout") from None
     except Exception as exc:

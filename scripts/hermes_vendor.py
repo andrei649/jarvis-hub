@@ -20,8 +20,11 @@ Commands (deterministic; nothing touches the network):
     update would change, reviewed as a diff.
 ``pull --upstream <clone> <paths...>``
     Re-vendor the named upstream paths (rewrite, write, update the manifest). Refused for
-    a file with local edits (``--force`` overrides) and for a file that, rewritten, still
-    imports a Hermes internal or a network library the compat layer does not cover.
+    a symlink or a path resolving outside the clone, a file with local edits (``--force``
+    overrides), a ``.py`` file that, rewritten, reaches beyond the allowlist (safe stdlib
+    modules, the compat layer and vendored siblings only; ``os`` only as the compat
+    ``os_env``; no relative import out of the tree; no network, process or import-machinery
+    names), and a non-Python file that is not plain data.
 
 Exit status: 0 clean, 1 drift or differences found, 2 refused / usage error.
 """
@@ -57,9 +60,10 @@ class Rule:
 
 
 # Line-anchored, order matters (the specific keyless_mcp rule runs before the general
-# ``plugins.web.`` one). Every replacement starts ``from agents.`` / ``import agents.``, which
-# no pattern matches, so applying the rules twice changes nothing (idempotent). Each rule
-# rewrites a line in place: line numbers are preserved, so upstream diffs stay readable.
+# ``plugins.web.`` one). No replacement matches any pattern (the import rules all produce
+# ``from agents.`` / ``import agents.``; the one value rule produces a value its pattern does
+# not match), so applying the rules twice changes nothing (idempotent). Each rule rewrites a
+# line in place: line numbers are preserved, so upstream diffs stay readable.
 REWRITE_RULES: tuple[Rule, ...] = (
     Rule("httpx", r"^(?P<i>[ \t]*)import httpx(?P<rest>[ \t]*(?:#.*)?)$",
          r"\g<i>from agents.vendor.hermes_compat import httpx\g<rest>",
@@ -91,19 +95,46 @@ REWRITE_RULES: tuple[Rule, ...] = (
     Rule("parallel-sdk", r"^(?P<i>[ \t]*)import parallel(?P<rest>[ \t]*(?:#.*)?)$",
          r"\g<i>from agents.vendor.hermes_compat.sdk import parallel\g<rest>",
          "the Parallel SDK is a bare client; the stand-in dials through the compat httpx"),
+    Rule("exa-integration-tag",
+         r'^(?P<i>[ \t]*)client\.headers\["x-exa-integration"\] = "hermes-agent"(?P<rest>[ \t]*(?:#.*)?)$',
+         r'\g<i>client.headers["x-exa-integration"] = "nerva"\g<rest>',
+         "tell Exa the caller is Nerva, not Hermes Agent"),
 )
 
-# A rewritten file may import only these (plus the standard library, minus networking).
-_ALLOWED_PREFIXES = ("agents.vendor.hermes_compat", "agents.vendor.hermes.")
-_HERMES_ROOTS = frozenset({
-    "agent", "tools", "plugins", "hermes_cli", "hermes_state", "gateway", "pm", "acp",
-    "cron", "environments", "hermes_constants", "model_tools", "toolsets", "utils",
+# ── what a vendored file may contain (an allowlist, applied by pull, status and CI) ────
+
+#: Standard-library modules a vendored file may import: no I/O, process, network or
+#: interpreter-escape module is here. ``os`` only arrives as the compat ``os_env``.
+SAFE_STDLIB = frozenset({
+    "__future__", "abc", "asyncio", "base64", "collections", "collections.abc", "contextlib",
+    "copy", "dataclasses", "datetime", "decimal", "difflib", "enum", "fractions", "functools",
+    "hashlib", "html", "itertools", "json", "logging", "math", "numbers", "operator", "re",
+    "statistics", "string", "textwrap", "time", "types", "typing", "unicodedata", "uuid",
+    "warnings", "weakref",
 })
-_NETWORK_ROOTS = frozenset({
-    "httpx", "httpcore", "requests", "aiohttp", "urllib3", "socket", "ssl", "http",
-    "urllib", "websocket", "websockets", "grpc", "exa_py", "parallel", "openai",
-    "anthropic", "mcp", "ftplib", "smtplib", "telnetlib", "asyncio.streams",
+#: Compat modules a vendored file may import (``plugin_ctx`` is not one: a vendored file
+#: never registers itself).
+COMPAT_PACKAGE = "agents.vendor.hermes_compat"
+COMPAT_MODULES = frozenset({
+    "httpx", "os_env", "pm", "web_search_provider", "keyless_mcp", "interrupt", "web_tools",
+    "sdk", "sdk.exa_py", "sdk.parallel",
 })
+VENDOR_PACKAGE = "agents.vendor.hermes"
+#: Attribute / imported / string names that reach the network, a process or the import
+#: machinery from an allowed module (``asyncio.open_connection``, ``getattr(x, "...")``).
+DENIED_ATTRS = frozenset({
+    "open_connection", "open_unix_connection", "start_server", "start_unix_server",
+    "create_connection", "create_server", "create_datagram_endpoint", "create_unix_connection",
+    "create_unix_server", "create_subprocess_exec", "create_subprocess_shell", "sock_connect",
+    "sock_sendall", "sock_recv", "getaddrinfo", "subprocess", "import_module", "__import__",
+    "__builtins__", "__globals__", "__subclasses__", "__code__", "__loader__", "__spec__",
+    "modules", "streams",
+})
+#: Builtins a vendored file may not call or read.
+DENIED_NAMES = frozenset({"__import__", "exec", "eval", "compile", "open", "__builtins__",
+                          "globals", "breakpoint", "input"})
+#: Non-Python files a vendored tree may hold: data only.
+DATA_SUFFIXES = frozenset({".yaml", ".yml", ".json", ".md", ".txt"})
 _LOCAL_FILES = ("__init__.py", "NOTICE.md", "LICENSE", "MANIFEST.json")
 
 
@@ -118,32 +149,104 @@ def rewrite(text: str) -> tuple[str, list[str]]:
     return text, applied
 
 
-def unmapped_imports(text: str, path: str = "<vendored>") -> list[str]:
-    """Imports a rewritten file still makes of a Hermes internal or a network library."""
-    if not path.endswith(".py"):
-        return []
+def _module_allowed(name: str) -> bool:
+    if name in SAFE_STDLIB:
+        return True
+    if name == VENDOR_PACKAGE or name.startswith(VENDOR_PACKAGE + "."):
+        return True
+    if name.startswith(COMPAT_PACKAGE + "."):
+        return name[len(COMPAT_PACKAGE) + 1:] in COMPAT_MODULES
+    return False
+
+
+def _relative_target(path: str, level: int, module: str | None) -> str | None:
+    """The module a relative import names, or None when it leaves the file's own package
+    (only ``from .x import y`` is accepted; upstream writes its imports absolute)."""
+    if level != 1:
+        return None
+    parts = list(Path(path).parent.parts)
+    return ".".join([VENDOR_PACKAGE, *parts] + ([module] if module else []))
+
+
+def unmapped_imports(text: str, path: str = "x.py") -> list[str]:
+    """What a rewritten ``.py`` file reaches beyond the allowlist (empty when it is clean)."""
     try:
         tree = ast.parse(text, filename=path)
     except SyntaxError as exc:
         return [f"unparseable: {exc.msg}"]
     found: list[str] = []
     for node in ast.walk(tree):
-        names: list[str] = []
+        line = getattr(node, "lineno", 0)
         if isinstance(node, ast.Import):
-            names = [alias.name for alias in node.names]
-        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-            names = [node.module]
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) \
-                and node.func.id == "__import__":
-            names = ["__import__"]
-        for name in names:
-            if name.startswith(_ALLOWED_PREFIXES) or name == "agents.vendor.hermes_compat":
-                continue
-            root = name.split(".")[0]
-            if root in _HERMES_ROOTS or root in _NETWORK_ROOTS or name in _NETWORK_ROOTS \
-                    or name == "__import__" or root == "agents":
-                found.append(f"line {node.lineno}: {name}")
+            for alias in node.names:
+                if not _module_allowed(alias.name):
+                    found.append(f"line {line}: import {alias.name}")
+                elif alias.name.startswith(COMPAT_PACKAGE) and "os_env" in alias.name:
+                    found.append(f"line {line}: import {alias.name} (os only as `os_env as os`)")
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                target = _relative_target(path, node.level, node.module)
+                if target is None:
+                    found.append(f"line {line}: relative import leaving its package")
+                    continue
+                module = target
+            else:
+                module = node.module or ""
+            if module == COMPAT_PACKAGE:
+                for alias in node.names:
+                    if alias.name not in COMPAT_MODULES:
+                        found.append(f"line {line}: from {module} import {alias.name}")
+                    elif alias.name == "os_env" and alias.asname not in (None, "os"):
+                        found.append(f"line {line}: os_env imported as {alias.asname}")
+            elif not _module_allowed(module):
+                found.append(f"line {line}: from {module or '.'} import ...")
+            for alias in node.names:
+                if alias.name in DENIED_ATTRS or alias.name == "*":
+                    found.append(f"line {line}: from {module} import {alias.name}")
+        elif isinstance(node, ast.Attribute) and node.attr in DENIED_ATTRS:
+            found.append(f"line {line}: .{node.attr}")
+        elif isinstance(node, ast.Name) and node.id in DENIED_NAMES:
+            found.append(f"line {line}: {node.id}")
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str) \
+                and node.value in DENIED_ATTRS:
+            found.append(f"line {line}: {node.value!r}")
     return found
+
+
+def data_problems(data: bytes, path: str) -> list[str]:
+    """Why a non-Python vendored file is not plain data (empty when it is)."""
+    suffix = Path(path).suffix.lower()
+    if suffix not in DATA_SUFFIXES:
+        return [f"{suffix or 'no extension'} is not a data file type"]
+    if b"\0" in data:
+        return ["binary content"]
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return ["not UTF-8 text"]
+    if suffix in {".yaml", ".yml"}:
+        try:
+            import yaml
+
+            yaml.safe_load(text)
+        except Exception as exc:  # any parse failure is a refusal
+            return [f"not plain YAML: {type(exc).__name__}"]
+    elif suffix == ".json":
+        try:
+            json.loads(text)
+        except ValueError:
+            return ["not JSON"]
+    return []
+
+
+def content_problems(data: bytes, path: str) -> list[str]:
+    """Allowlist check for one vendored file, whatever its type."""
+    if path.endswith(".py"):
+        try:
+            return unmapped_imports(data.decode("utf-8"), path)
+        except UnicodeDecodeError:
+            return ["not UTF-8 text"]
+    return data_problems(data, path)
 
 
 def sha256(data: bytes) -> str:
@@ -189,6 +292,24 @@ def _clone_commit(clone: Path) -> str:
     return sha if re.fullmatch(r"[0-9a-f]{40}", sha) else ""
 
 
+def _symlinked(root: Path, rel: str) -> bool:
+    """True when *rel* or any directory on the way to it under *root* is a symlink."""
+    current = root
+    for part in Path(rel).parts:
+        current = current / part
+        if current.is_symlink():
+            return True
+    return False
+
+
+def _inside(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return True
+
+
 # ── commands ─────────────────────────────────────────────────────────────────
 
 def cmd_status(vendor_root: Path, upstream: Path | None, out) -> int:
@@ -200,6 +321,10 @@ def cmd_status(vendor_root: Path, upstream: Path | None, out) -> int:
     listed = {f["path"] for f in manifest.get("files", [])}
     for entry in sorted(manifest.get("files", []), key=lambda f: f["path"]):
         target = vendor_root / entry["path"]
+        if _symlinked(vendor_root, entry["path"]):
+            out.write(f"SYMLINK {entry['path']}\n")
+            problems += 1
+            continue
         if not target.exists():
             out.write(f"MISSING {entry['path']}\n")
             problems += 1
@@ -214,6 +339,19 @@ def cmd_status(vendor_root: Path, upstream: Path | None, out) -> int:
             out.write(f"DRIFT   {entry['path']}  (rewrite is not a no-op on the vendored text)\n")
             problems += 1
             continue
+        applied = list(entry.get("rules_applied", []))
+        known = [r.id for r in REWRITE_RULES]
+        if any(rule not in known for rule in applied) or \
+                applied != [r for r in known if r in applied] or \
+                (not applied) != (entry["upstream_sha256"] == entry["vendored_sha256"]):
+            out.write(f"DRIFT   {entry['path']}  (rules_applied does not match the bytes)\n")
+            problems += 1
+            continue
+        unsafe = content_problems(data, entry["path"])
+        if unsafe:
+            out.write(f"UNSAFE  {entry['path']}  ({'; '.join(unsafe)})\n")
+            problems += 1
+            continue
         if upstream is not None:
             src = upstream / entry["path"]
             if not src.exists():
@@ -225,16 +363,23 @@ def cmd_status(vendor_root: Path, upstream: Path | None, out) -> int:
                 out.write(f"BEHIND  {entry['path']}  (upstream changed since the pin)\n")
                 problems += 1
                 continue
-            if rewrite(raw.decode("utf-8"))[0].encode("utf-8") != data:
+            redone, redone_rules = rewrite(raw.decode("utf-8"))
+            if redone.encode("utf-8") != data or redone_rules != applied:
                 out.write(f"DRIFT   {entry['path']}  (rewritten upstream != vendored)\n")
                 problems += 1
                 continue
         out.write(f"ok      {entry['path']}\n")
     local = set(manifest.get("local_files", _LOCAL_FILES))
     for path in sorted(vendor_root.rglob("*")):
-        if not path.is_file() or "__pycache__" in path.parts:
+        if "__pycache__" in path.parts:
             continue
         rel = path.relative_to(vendor_root).as_posix()
+        if path.is_symlink():
+            out.write(f"SYMLINK {rel}\n")
+            problems += 1
+            continue
+        if not path.is_file():
+            continue
         if rel not in listed and rel not in local:
             out.write(f"EXTRA   {rel}  (not in MANIFEST.json)\n")
             problems += 1
@@ -266,8 +411,8 @@ def cmd_diff(vendor_root: Path, upstream: Path, paths: list[str], out) -> int:
         ))
         if not new_text.endswith("\n"):
             out.write("\n")
-        for problem in unmapped_imports(new_text, rel):
-            out.write(f"!!! {rel}: would import {problem} (not covered by the compat layer)\n")
+        for problem in content_problems(new_text.encode("utf-8"), rel):
+            out.write(f"!!! {rel}: {problem} (outside the compat allowlist)\n")
     out.write(f"{changed} file(s) differ from upstream\n")
     return 1 if changed else 0
 
@@ -287,16 +432,23 @@ def cmd_pull(vendor_root: Path, upstream: Path, paths: list[str], *, commit: str
     for raw_path in paths:
         rel = _safe_rel(raw_path)
         src = upstream / rel
-        if not src.is_file():
-            out.write(f"refused {rel}: not a file in the upstream clone\n")
+        if _symlinked(upstream, rel) or not _inside(src, upstream) or not src.is_file():
+            out.write(f"refused {rel}: not a regular file inside the upstream clone\n")
             return 2
         raw = src.read_bytes()
-        text, applied = rewrite(raw.decode("utf-8"))
-        problems = unmapped_imports(text, rel)
+        try:
+            text, applied = rewrite(raw.decode("utf-8"))
+        except UnicodeDecodeError:
+            out.write(f"refused {rel}: not UTF-8 text\n")
+            return 2
+        problems = content_problems(text.encode("utf-8"), rel)
         if problems:
-            out.write(f"refused {rel}: still imports " + "; ".join(problems) + "\n")
+            out.write(f"refused {rel}: outside the compat allowlist: " + "; ".join(problems) + "\n")
             return 2
         target = vendor_root / rel
+        if _symlinked(vendor_root, rel) or not _inside(target, vendor_root):
+            out.write(f"refused {rel}: the vendored path is a symlink\n")
+            return 2
         old = entries.get(rel)
         if old and target.exists() and sha256(target.read_bytes()) != old["vendored_sha256"] \
                 and not force:

@@ -73,11 +73,12 @@
       "path": "plugins/web/exa/provider.py",
       "rules_applied": [
         "plugins-web",
-        "exa-sdk"
+        "exa-sdk",
+        "exa-integration-tag"
       ],
       "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
       "upstream_sha256": "2eca7d8cc80efd877934bff4c46331fbb71c7a069057b88cdc2099c249479629",
-      "vendored_sha256": "70fd1ddb8b7d2409d86653b8b4190cad4669ad9140e5dc626b1592adfc0ed1b3"
+      "vendored_sha256": "facc070f5e23d417e4be478a8d0cd91a639f87fcdd7966677c24fc0f10fa84fc"
     },
     {
       "path": "plugins/web/parallel/__init__.py",
@@ -173,6 +174,12 @@
       "pattern": "^(?P<i>[ \\t]*)import parallel(?P<rest>[ \\t]*(?:#.*)?)$",
       "replacement": "\\g<i>from agents.vendor.hermes_compat.sdk import parallel\\g<rest>",
       "why": "the Parallel SDK is a bare client; the stand-in dials through the compat httpx"
+    },
+    {
+      "id": "exa-integration-tag",
+      "pattern": "^(?P<i>[ \\t]*)client\\.headers\\[\"x-exa-integration\"\\] = \"hermes-agent\"(?P<rest>[ \\t]*(?:#.*)?)$",
+      "replacement": "\\g<i>client.headers[\"x-exa-integration\"] = \"nerva\"\\g<rest>",
+      "why": "tell Exa the caller is Nerva, not Hermes Agent"
     }
   ],
   "upstream": {

@@ -13,6 +13,8 @@ A plain-language summary of the last two days. The technical detail for each ite
 - They are Hermes Agent's own code, run as-is, but every request still goes through Nerva's network
   rules: only those services' addresses are allowed, local-network addresses are refused, the
   emergency stop applies, and each request shows in the Network Monitor. Keys are never logged.
+- All three count as paid, Brave included, because a Brave key may be on a paid plan. With
+  `JARVIS_WEB_PROVIDER_TIER=free` none of them answers.
 
 **Use the browser on your behalf (#1321)**
 - Nerva can open pages, click and fill in steps in a real browser. Each run is approved by you
