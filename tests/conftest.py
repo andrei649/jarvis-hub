@@ -201,6 +201,23 @@ def _isolate_provider_quota(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_channel_reliability(tmp_path_factory):
+    """Each test gets its own delivery ledger, dead targets and inbound cursors (G15):
+    a Telegram offset one test saved must not become another test's backfill start."""
+    try:
+        from agents.core.channels import delivery_ledger
+    except Exception:
+        yield
+        return
+    store = delivery_ledger.ReliabilityStore(
+        tmp_path_factory.mktemp("channel_reliability") / "channel_reliability.db")
+    delivery_ledger.set_store(store)
+    yield
+    delivery_ledger.set_store(None)
+    store.close()
+
+
+@pytest.fixture(autouse=True)
 def _isolate_action_origin():
     """Keep one test's action-origin binding out of the next one.
 

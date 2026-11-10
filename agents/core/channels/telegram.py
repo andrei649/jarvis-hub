@@ -17,7 +17,16 @@ from typing import Callable, NamedTuple, Optional
 
 import httpx
 
+from . import delivery_ledger
+from .backfill import (
+    COMMAND_REFUSED,
+    TAP_REFUSED,
+    BackfillBudget,
+    is_backlog,
+    looks_like_command,
+)
 from .base import ChannelAdapter
+from .reconnect import FATAL_REPROBE_S, Backoff, classify_exception
 from .descriptor import DIALECT_TELEGRAM_HTML, ChannelDescriptor
 from .ephemeral import EphemeralDeletes, EphemeralReply, ephemeral_ttl
 from .group_policy import ANSWER, OBSERVE, GroupPolicy, gate_message
@@ -264,7 +273,32 @@ async def _bot_api_only(request: httpx.Request) -> None:
         raise TelegramHostRefused("telegram_host_refused")
 
 
+#: H100 — pause after an error while handling a page (not a transport failure).
+HANDLING_ERROR_PAUSE = 1.0
+#: H100 — how the poll loop waits out a rung of the reconnect ladder (a test seam).
+_backoff_sleep = asyncio.sleep
+_MESSAGE_KEYS = ("message", "edited_message", "channel_post", "edited_channel_post")
+
+
+def _update_message(up) -> Optional[dict]:
+    if not isinstance(up, dict):
+        return None
+    for key in _MESSAGE_KEYS:
+        value = up.get(key)
+        if isinstance(value, dict):
+            return value
+    return None
+
+
 class TelegramChannel(ChannelAdapter):
+    # H116 defaults, so a channel built without __init__ (tests) behaves as before.
+    _cursor_store = None
+    _cursor_name: Optional[str] = None
+    _catching_up = False
+    _backfill: Optional[BackfillBudget] = None
+    _started_wall: Optional[float] = None
+    _cutoff: Optional[float] = None
+    _held: tuple = ()
     descriptor = ChannelDescriptor(
         dialect=DIALECT_TELEGRAM_HTML,
         max_message_length=TELEGRAM_MAX_MESSAGE_LENGTH,
@@ -306,6 +340,17 @@ class TelegramChannel(ChannelAdapter):
         self._bot_id: Optional[int] = None
         self._bot_username: Optional[str] = None
         self._offset = 0
+        # H116: the offset is kept in the reliability store while start() runs the channel,
+        # so a restart resumes where it stopped; a poll loop run without start() keeps it
+        # in memory only. While catching up after a start, old messages are bounded and
+        # queued button taps are refused (see backfill.py).
+        self._cursor_store = None
+        self._cursor_name: Optional[str] = None
+        self._catching_up = False
+        self._backfill: Optional[BackfillBudget] = None
+        self._started_wall: Optional[float] = None
+        # H100: the shared reconnect ladder (reconnect.py) instead of a flat 3 s.
+        self._backoff = Backoff()
         self._poll_task = None
         self._owner_once_generation: str | None = None
         self._owner_once_fast: dict[str, asyncio.Task] = {}
@@ -396,6 +441,9 @@ class TelegramChannel(ChannelAdapter):
             self._ephemeral_deletes = EphemeralDeletes()
         self._pending_callback_generation = object()
         self._owner_once_generation = uuid.uuid4().hex
+        self.health.starting()
+        self._ladder().reset()
+        self._resume_offset()
         self._running = True
         me = await self._get_me()
         if me:
@@ -410,8 +458,35 @@ class TelegramChannel(ChannelAdapter):
         self._poll_task = __import__("asyncio").create_task(self._poll_loop())
         logger.info("Telegram channel started")
 
+    def _resume_offset(self) -> None:
+        """H116 — read the saved offset (if any) and arm the bounded catch-up."""
+        import hashlib
+
+        self._cursor_store = delivery_ledger.store()
+        self._cursor_name = "telegram:" + hashlib.sha256(str(self.token).encode()).hexdigest()[:16]
+        saved = None
+        if self._cursor_store is not None:
+            try:
+                saved = self._cursor_store.cursor(self._cursor_name)
+            except Exception:
+                logger.warning("Telegram saved offset unreadable; resuming from Telegram's queue")
+        if saved is not None and saved.isdigit() and int(saved) > self._offset:
+            self._offset = int(saved)
+        self._started_wall = time.time()
+        self._enter_catch_up()
+
+    def _save_offset(self) -> None:
+        store, name = self._cursor_store, self._cursor_name
+        if store is None or name is None:
+            return
+        try:
+            store.set_cursor(name, str(self._offset))
+        except Exception:
+            logger.warning("Telegram offset not saved")
+
     async def stop(self):
         self._running = False
+        self.health.stopped()
         self._pending_callback_generation = None
         generation = getattr(self, "_owner_once_generation", None)
         self._owner_once_generation = None
@@ -492,14 +567,19 @@ class TelegramChannel(ChannelAdapter):
         if isinstance(message, EphemeralReply):
             default = get_value("display", "ephemeral_system_ttl", 0) if message.ttl_seconds is None else 0
             ttl = ephemeral_ttl(message, default=default)
-            for piece in chunk(message.text, self.descriptor.max_message_length):
+            for index, piece in enumerate(chunk(message.text, self.descriptor.max_message_length)):
                 if not await self._send_ephemeral_chunk(cid, piece, plain=plain, ttl=ttl):
+                    if index:
+                        delivery_ledger.note_partial()
                     return False
             # System notices neither speak nor consume a pending voice turn.
             return True
-        for piece in chunk(str(message or ""), self.descriptor.max_message_length):
+        for index, piece in enumerate(chunk(str(message or ""), self.descriptor.max_message_length)):
             sent = await self._send_plain_chunk(cid, piece) if plain else await self._send_chunk(cid, piece)
             if not sent:
+                if index:
+                    # H081: earlier parts arrived; the ledger records a partial delivery.
+                    delivery_ledger.note_partial()
                 return False
         # The words are delivered; a voice note follows only if this chat asked.
         # `voice=False` marks a service line (a transcript echo, an unreadable-attachment
@@ -546,6 +626,7 @@ class TelegramChannel(ChannelAdapter):
             self._ephemeral_deletes.schedule(ttl, delete)
             return True
         except Exception as exc:
+            delivery_ledger.note_send_failure(exc=exc)
             logger.warning("Telegram system notice delivery failed: %s", type(exc).__name__)
             return False
 
@@ -594,7 +675,9 @@ class TelegramChannel(ChannelAdapter):
         try:
             return await self._send_message(cid, to_telegram_html(piece), plain=to_plain(piece)) is not None
         except Exception as e:
-            logger.error(f"Telegram send error: {e}")
+            # H081: why it failed, for the delivery ledger and the dead-target registry.
+            delivery_ledger.note_send_failure(exc=e)
+            logger.error("Telegram send error: %s", type(e).__name__)
             return False
 
     async def _send_plain_chunk(self, cid, piece: str) -> bool:
@@ -607,6 +690,7 @@ class TelegramChannel(ChannelAdapter):
             resp.raise_for_status()
             return True
         except Exception as e:
+            delivery_ledger.note_send_failure(exc=e)
             logger.error("Telegram send error: %s", type(e).__name__)
             return False
 
@@ -873,27 +957,56 @@ class TelegramChannel(ChannelAdapter):
         self._lanes = ChatLanes(name="telegram")
         while self._running:
             cut_short: Optional[_Page] = None
+            polled = False
             try:
                 # H117: while pieces of a burst are held, poll without the long wait so
                 # the batch flushes when its window closes, not 25 s later.
+                # H116: while catching up after a start, poll without the long wait too,
+                # so the catch-up ends (an empty page) before any live update is read.
                 wait = self._batch.wait()
-                if wait is None:
+                if self._catching_up:
+                    updates = await self._get_updates(timeout=0)
+                elif wait is None:
                     updates = await self._get_updates()
                 else:
                     if wait > 0:
                         await asyncio.sleep(wait)
                     updates = await self._get_updates(timeout=0)
+                polled = True
+                self._poll_succeeded()
                 # H117: when this page came back, read once, before any update in it is
                 # handled; a claimed reply in it is stamped from this reading.
                 page = cut_short = self._page_received()
-                for up in updates:
-                    self._offset = up["update_id"] + 1
-                    await self._handle_update(up, page)
+                if self._catching_up:
+                    # H116: read the whole backlog first (each update is taken and its
+                    # offset saved), then hand over what the bounds admit, newest kept.
+                    # Updates come in order: a live one ends the backlog.
+                    live = False
+                    for up in updates:
+                        self._offset = up["update_id"] + 1
+                        self._save_offset()
+                        live = await self._hold_backlog(up) or live
+                    if not updates or live:
+                        self._catching_up = False
+                        held, self._held = list(self._held), []
+                        for up in held:
+                            await self._handle_update(up, page)
+                else:
+                    for up in updates:
+                        self._offset = up["update_id"] + 1
+                        # H116: saved before the update is handled, so a crash never handles
+                        # it twice after the restart (inbound is at most once).
+                        self._save_offset()
+                        await self._handle_update(up, page)
                 cut_short = None
                 for key in self._batch.due():
                     await self._flush_turn(key)
             except Exception as e:
-                logger.warning(f"Telegram poll error: {e}")
+                if not polled:
+                    # H100: the Bot API did not answer; classify and climb the shared ladder.
+                    await self._poll_failed(e)
+                    continue
+                logger.warning("Telegram update handling error: %s", type(e).__name__)
                 if cut_short is not None:
                     # Handling this page raised before every update in it was handled. The
                     # updates after the failing one come again on the next page; this page
@@ -903,10 +1016,10 @@ class TelegramChannel(ChannelAdapter):
                     # lower bound for what comes again, and it is kept.
                     self._last_page_at = (cut_short.previous if cut_short.previous is not None
                                           else cut_short.now)
-                # Nothing can join a held batch during the back-off, three times the hard
-                # cap: what is held goes out now rather than when a poll next succeeds.
+                # Nothing can join a held batch during the pause: what is held goes out now
+                # rather than when a poll next succeeds.
                 await self._flush_all_turns()
-                await asyncio.sleep(3)
+                await asyncio.sleep(HANDLING_ERROR_PAUSE)
         # Stopping never drops what a sender already said: held pieces go out now, and
         # the turns already in their chats' lanes get a bounded time to finish.
         await self._flush_all_turns()
@@ -914,10 +1027,131 @@ class TelegramChannel(ChannelAdapter):
         if lanes is not None:
             await lanes.drain(LANE_DRAIN_BUDGET)
 
+    def _ladder(self) -> Backoff:
+        backoff = self.__dict__.get("_backoff")
+        if backoff is None:
+            backoff = self._backoff = Backoff()
+        return backoff
+
+    def _poll_succeeded(self) -> None:
+        self._ladder().success()
+        self.health.ok()
+        if self._catching_up and self._cutoff is None:
+            # H116: the backlog is what was dated before the channel was reading again.
+            self._cutoff = time.time()
+        if self._backfill is not None:
+            self.health.backfill = self._backfill.counts()
+
+    def _enter_catch_up(self) -> None:
+        """H116 — the next pages are a backlog (after a start, or an outage while running):
+        bounded, commands and taps refused. Only for a channel run by start()."""
+        if self._started_wall is None:
+            return
+        self._catching_up = True
+        self._cutoff = None
+        self._held = []
+        self._backfill = BackfillBudget()
+        self.health.backfill = self._backfill.counts()
+
+    async def _poll_failed(self, exc: Exception) -> None:
+        """H100 — one failed getUpdates. A fatal answer (the token is wrong or revoked) is
+        shown on the status surface, the owner is told on another channel, and the channel
+        looks again only every ``FATAL_REPROBE_S`` (so a fixed token heals by itself);
+        anything else waits the next rung of the ladder (or the server's retry_after).
+        Logged by kind only: the request URL holds the bot token."""
+        failure = classify_exception(exc)
+        # Nothing can join a held batch while the API is unreachable: send it now.
+        await self._flush_all_turns()
+        # H116: what queues up during the outage is a backlog too.
+        self._enter_catch_up()
+        if failure.fatal:
+            self.health.failed_fatally(failure.kind, reprobe_in=FATAL_REPROBE_S)
+            logger.error("Telegram channel stopped: the Bot API refused the bot token (%s). "
+                         "Fix TELEGRAM_BOT_TOKEN; Nerva looks again every %.0f min.",
+                         failure.kind, FATAL_REPROBE_S / 60)
+            await _backoff_sleep(FATAL_REPROBE_S)
+            return
+        delay = self._ladder().failure()
+        if failure.retry_after is not None:
+            delay = max(delay, failure.retry_after)
+        self.health.retrying(failure.kind, delay)
+        logger.warning("Telegram poll failed (%s); retrying in %.0f s", failure.kind, delay)
+        await _backoff_sleep(delay)
+
+    def _answers_sender(self, uid) -> bool:
+        """Whether Nerva already answers this sender (paired or allowlisted): only they are
+        told a backfilled command was not run; anyone else hears nothing."""
+        if self.allowed_users and uid in self.allowed_users:
+            return True
+        pairing = getattr(self, "_pairing", None)
+        try:
+            return bool(pairing is not None and pairing.is_allowed("telegram", str(uid)))
+        except Exception:
+            return False
+
+    async def _hold_backlog(self, up) -> bool:
+        """H116 — one update read while catching up. A queued tap is answered "not
+        applied"; a message dated before the cutoff is a backfill: too old is skipped, a
+        command is refused (never dispatched), the rest is held and marked so it takes the
+        live path but never answers a pending prompt. Later updates are held as they are.
+        At most the budget's newest backfilled messages are kept. True for a live update."""
+        budget = self._backfill if self._backfill is not None else BackfillBudget()
+        cb = up.get("callback_query") if isinstance(up, dict) else None
+        if cb is not None:
+            budget.refused_taps += 1
+            callback_id = cb.get("id") if isinstance(cb, dict) else None
+            if type(callback_id) is str and 0 < len(callback_id) <= 128:
+                await self._answer_callback(callback_id, TAP_REFUSED)
+            self.health.backfill = budget.counts()
+            return False
+        msg = _update_message(up)
+        date = msg.get("date") if isinstance(msg, dict) else None
+        if not is_backlog(date, self._cutoff if self._cutoff is not None else time.time()):
+            self._held.append(up)
+            return True
+        if not budget.fresh(date, time.time()):
+            self.health.backfill = budget.counts()
+            return False
+        text = msg.get("text") if isinstance(msg.get("text"), str) else msg.get("caption")
+        if looks_like_command(text):
+            budget.refused_commands += 1
+            self.health.backfill = budget.counts()
+            sender = (msg.get("from") or {}).get("id")
+            chat_id = (msg.get("chat") or {}).get("id")
+            if type(chat_id) is int and self._answers_sender(sender):
+                await self.send(COMMAND_REFUSED, chat_id=chat_id, voice=False, plain=True)
+            return False
+        key = next(k for k in _MESSAGE_KEYS if up.get(k) is msg)
+        self._held.append({**up, key: {**msg, "_backfilled": True}})
+        backfilled = [i for i, held in enumerate(self._held) if (_update_message(held) or {}).get("_backfilled")]
+        if len(backfilled) > budget.limit:
+            # Over budget: the oldest backfilled message goes.
+            self._held.pop(backfilled[0])
+            budget.skipped_over_budget += 1
+        budget.processed = min(len(backfilled), budget.limit)
+        self.health.backfill = budget.counts()
+        return False
+
+    def _heal_dead_target(self, up) -> None:
+        """H081 — a chat that writes to the bot is reachable again: lift its dead flag so
+        the next reply is tried. Cheap when nothing is flagged (an in-memory check)."""
+        msg = _update_message(up)
+        chat = msg.get("chat") if isinstance(msg, dict) else None
+        chat_id = chat.get("id") if isinstance(chat, dict) else None
+        if type(chat_id) is not int:
+            return
+        store = delivery_ledger.store() if self._cursor_store is None else self._cursor_store
+        try:
+            if store is not None and store.is_dead("telegram", chat_id):
+                store.clear_dead("telegram", chat_id)
+        except Exception:
+            logger.debug("Telegram dead-target heal skipped", exc_info=True)
+
     async def _handle_update(self, up: dict, page: Optional[_Page] = None) -> None:
         """One update: a button tap, an ignored message, a rejection's reason (H487), or a
         turn piece to batch (H117). *page* is when the update's getUpdates page came back
         (see ``_reason_arrival``); None for an update handled outside the poll loop."""
+        self._heal_dead_target(up)
         # Decision-inbox button taps arrive as callback_query updates.
         cb = up.get("callback_query")
         if cb:
@@ -1007,6 +1241,11 @@ class TelegramChannel(ChannelAdapter):
             # This narrowing marker also follows the ordinary queued path; otherwise
             # a forwarded/edited reply could be intercepted later by the gateway.
             msg = {**msg, "_pending_input_ineligible": True}
+        # H116: a backfilled message takes the live path but never answers a pending
+        # question or a decision-reason prompt (one may have been raised after the restart).
+        backfilled = msg.get("_backfilled") is True
+        if backfilled:
+            msg = {**msg, "_pending_input_ineligible": True}
         uid = msg["from"]["id"]
         if self.allowed_users and uid not in self.allowed_users:
             logger.info("Ignored message from user %s", log_safe(uid))
@@ -1087,7 +1326,7 @@ class TelegramChannel(ChannelAdapter):
         # A delivered clarification may be awaited by this chat's current lane.
         # Only fresh, directly authored, group-authorized text may bypass that lane.
         if (callable(self.pending_reply_handler) and up.get("message") is not None
-                and text and attachment is None
+                and not backfilled and text and attachment is None
                 and not any(msg.get(field) for field in (
                     "forward_origin", "forward_from", "forward_from_chat", "forward_sender_name"))):
             chat = msg.get("chat") or {}
@@ -1123,7 +1362,7 @@ class TelegramChannel(ChannelAdapter):
         # Only a fresh, directly authored reply can explain a decision. Edited,
         # forwarded, attachment and command messages retain their existing paths.
         if (self.on_decision_reason and up.get("message") is not None and text
-                and attachment is None and not is_command(text)
+                and not backfilled and attachment is None and not is_command(text)
                 and not any(msg.get(key) for key in ("forward_origin", "forward_from", "forward_from_chat", "forward_sender_name"))):
             reply_id = (msg.get("reply_to_message") or {}).get("message_id")
             if reply_id is not None and (self._reason_prompts_posting.get(chat_id)

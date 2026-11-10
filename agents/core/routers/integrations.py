@@ -213,6 +213,52 @@ async def channels_send_rate_limit():
     return nocache_json(status_snapshot())
 
 
+@router.get("/api/channels/deliveries", dependencies=[Depends(admin_guard)])
+async def channels_deliveries(limit: int = 50, state: str = ""):
+    """H081 — delivery receipts: what happened to each outbound reply (sent, failed,
+    partial, unknown, skipped), the counts per state, the chats registered as gone, and
+    each channel's connection health (H100). No message text is stored or returned:
+    a row carries the channel, the chat it went to, its length and the failure kind.
+    ``state`` filters to one state (``unknown``, ``failed`` …)."""
+    from agents.core.channels import delivery_ledger
+    store = delivery_ledger.store()
+    if store is None:
+        return JSONResponse({"error": "delivery ledger unavailable"}, status_code=503)
+    states = (state,) if state in delivery_ledger.STATES else None
+    orch = get_orch()
+    channels = {}
+    manager = getattr(orch, "channel_manager", None) if orch else None
+    for cid, ch in (getattr(manager, "channels", None) or getattr(orch, "channels", None) or {}).items():
+        reader = getattr(ch, "health_snapshot", None)
+        if callable(reader):
+            try:
+                channels[str(cid)] = reader()
+            except Exception:
+                channels[str(cid)] = {"state": "unknown"}
+    return nocache_json({
+        "stats": store.stats(),
+        "deliveries": store.recent(max(1, min(int(limit or 50), 200)), states=states),
+        "dead_targets": store.dead_targets(),
+        "health": channels,
+    })
+
+
+class DeadTargetClearBody(BaseModel):
+    channel: str = Field(..., min_length=1, max_length=32)
+    target: str = Field(..., min_length=1, max_length=128)
+
+
+@router.post("/api/channels/dead-targets/clear", dependencies=[Depends(admin_guard)])
+async def channels_dead_target_clear(body: DeadTargetClearBody):
+    """H081 — lift a chat's "gone" flag so the next reply to it is tried again. The flag
+    also lifts by itself when that chat writes to the bot or a send to it succeeds."""
+    from agents.core.channels import delivery_ledger
+    store = delivery_ledger.store()
+    if store is None:
+        return JSONResponse({"error": "delivery ledger unavailable"}, status_code=503)
+    return nocache_json({"cleared": store.clear_dead(body.channel, body.target)})
+
+
 class ChannelSendBody(BaseModel):
     channel: str = Field(..., max_length=32)
     text: str = Field(..., max_length=4_000)

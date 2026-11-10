@@ -14,6 +14,25 @@ from email.mime.text import MIMEText
 from typing import Optional
 
 from .base import ChannelAdapter
+from .reconnect import FATAL_REPROBE_S, Backoff, classify_exception
+
+#: H100 — the IMAP poll's own rungs on the shared ladder (it polls once a minute when well).
+IMAP_LADDER = (30.0, 60.0, 120.0, 300.0, 600.0)
+_AUTH_WORDS = ("authenticationfailed", "authentication failed", "invalid credentials",
+               "login failed", "logon failure", "auth")
+#: RFC 5530 codes (and plain wording) that say an auth failure is temporary: retry.
+_TRANSIENT_WORDS = ("[unavailable]", "temporary", "temporarily", "try again", "[inuse]",
+                    "[serverbug]", "[limit]")
+
+
+def _login_refused(exc: BaseException) -> bool:
+    """A refused login for good (bad password, revoked app password); not a server that
+    says the failure is temporary."""
+    if not isinstance(exc, imaplib.IMAP4.error):
+        return False
+    text = str(exc).lower()
+    return (any(word in text for word in _AUTH_WORDS)
+            and not any(word in text for word in _TRANSIENT_WORDS))
 
 logger = logging.getLogger("jarvis.channels.email")
 
@@ -50,6 +69,7 @@ class EmailChannel(ChannelAdapter):
 
     async def stop(self):
         self._running = False
+        self.health.stopped()
         if self._poll_task:
             self._poll_task.cancel()
 
@@ -88,11 +108,29 @@ class EmailChannel(ChannelAdapter):
             server.send_message(msg)
 
     async def _poll_loop(self):
+        backoff = Backoff(IMAP_LADDER)
         while self._running:
             try:
                 await self._check_imap()
             except Exception as e:
-                logger.warning(f"IMAP poll error: {e}")
+                if _login_refused(e):
+                    # H100: a refused login does not heal by asking again every minute:
+                    # say so on the status surface and try the login again only every
+                    # FATAL_REPROBE_S, so fixed credentials heal by themselves.
+                    self.health.failed_fatally("unauthorized", reprobe_in=FATAL_REPROBE_S)
+                    logger.error("Email channel: the IMAP server refused the login. Fix the "
+                                 "IMAP credentials; Nerva tries again every %.0f min.",
+                                 FATAL_REPROBE_S / 60)
+                    await asyncio.sleep(FATAL_REPROBE_S)
+                    continue
+                kind = classify_exception(e).kind
+                delay = backoff.failure()
+                self.health.retrying(kind, delay)
+                logger.warning("IMAP poll failed (%s); retrying in %.0f s", kind, delay)
+                await asyncio.sleep(delay)
+                continue
+            backoff.success()
+            self.health.ok()
             await asyncio.sleep(self.imap.get("poll_interval", 60))
 
     async def _check_imap(self):

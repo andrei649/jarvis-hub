@@ -640,6 +640,10 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/subagents/{spawn_id}/transcript",
     "/api/subagents/{spawn_id}/result",
     "/api/subagents/completions/claim",
+    # H081 (G15 delivery receipts and dead targets): the owner reads them through the API;
+    # no HUD panel yet (ledger row H081, remaining).
+    "/api/channels/deliveries",
+    "/api/channels/dead-targets/clear",
     # H562 (A2A outbound): peers get an address and token through the admin API; no HUD
     # panel yet (ADOPT_LANE.md slice 4, remaining).
     "/api/a2a/peers/{peer_id}/outbound",

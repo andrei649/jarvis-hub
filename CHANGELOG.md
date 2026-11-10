@@ -88,6 +88,36 @@
   attachments) as a grid and a table; the HUD has the same meter (Console → Context Meter).
   `/compress` tells you what compaction will do on the next turn. Details:
   [docs/SESSION_COMMANDS.md](docs/SESSION_COMMANDS.md).
+
+**Messages you send while Nerva restarts are no longer lost, and lost replies are no longer silent**
+- What you send on Telegram or ntfy while Nerva is down for an update or a power cut, or while
+  its connection is out, is read when it comes back, once, and goes through the same checks as
+  a live message: a stranger is still held for pairing. Only the last 6 hours and at most 20
+  messages are caught up (`JARVIS_CHANNEL_BACKFILL_WINDOW_S`, `JARVIS_CHANNEL_BACKFILL_MAX`, or
+  the `NERVA_` spelling); on Telegram the newest 20 are kept, older ones are skipped.
+- A command you typed while Nerva was offline (`/resume`, `/approve`, `/stop` …) is **not run**
+  when it comes back — an old `/resume` must never undo a newer emergency stop. Nerva tells you
+  "sent while Nerva was offline — send it again". A button you tapped while it was offline is
+  answered "not applied"; tap it again on the card. A caught-up message never answers a
+  question Nerva asked after it came back.
+- Messages are taken at most once: a crash no longer makes Nerva answer the same message twice.
+  The flip side: a message whose answer had not started when Nerva crashed is not re-run (no
+  action is ever replayed) — send it again.
+- Every reply now leaves a receipt: sent, failed, partly sent, or "unknown" when Nerva cannot
+  tell whether it arrived (it is then never resent, so you never get it twice). The receipts,
+  without the reply text, are at `GET /api/channels/deliveries` (admin token). Approval cards
+  have no receipt yet.
+- A chat that has blocked or removed the bot is remembered and no longer retried on every
+  reminder; it is listed with the receipts and clears itself when that chat writes again
+  (or with `POST /api/channels/dead-targets/clear`).
+- When a connection drops, Telegram, ntfy and the email inbox now wait 1, 2, 5, 10, 30 then
+  60 seconds (a little randomised) instead of retrying every 3 seconds, and start over once
+  the connection has been fine for a minute. A revoked or wrong token stops the retries,
+  `/status` says why (`health`: `fatal`, `unauthorized`), Nerva tells you on your other channel
+  (ntfy, or your Telegram chat), and it looks again every 10 minutes, so a fixed token works
+  without a restart. A temporary sign-in failure of the mail server is retried normally.
+  Slack and Discord report their connection the same way.
+
 **Check that a project still builds and passes its tests, and keep the proof**
 - `/verify` tells you how a project in your file roots is built and tested: its test, lint and
   build commands and its run recipe (Node, Python, Go, Rust, Maven, Gradle, Make, docker
