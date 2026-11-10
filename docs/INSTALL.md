@@ -67,6 +67,13 @@ nothing is published on a LAN interface. Data lives in the `nerva_data` volume
 networking* (4.34+). The full stack (qdrant/neo4j/n8n + the headless coordinator) is
 the separate `docker-compose.yml`.
 
+The image and both compose files pin `JARVIS_HOST`, `JARVIS_PORT` and `JARVIS_HOME` under
+the `JARVIS_` spelling. `NERVA_<X>` is the preferred spelling of every other variable,
+but to override one of those three use the `JARVIS_` name (`-e JARVIS_PORT=9000`, or a
+`JARVIS_PORT=` line in `.env`): `NERVA_PORT` beside the pin is one variable set twice, and
+the hub refuses to start and names it rather than pick a port the container does not
+publish. See [`FLAGS.md`](FLAGS.md#variable-names--nerva_x-and-jarvis_x-are-one-variable-rb-2).
+
 ## What `scripts/bootstrap.py` does
 
 Stdlib-only, so it runs before any dependency exists, and tested with fakes

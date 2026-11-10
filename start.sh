@@ -26,9 +26,11 @@ for arg in "$@"; do
 done
 
 # --- Jarvis Signal Layer — opt-IN with JARVIS_SIGNAL_LAYER=1 ---
-if [ "${JARVIS_SIGNAL_LAYER:-0}" = "1" ] && [ -f services/signal-layer/src/index.mjs ]; then
+# RB-2: NERVA_<X> is the preferred spelling of JARVIS_<X>; this script reads both and never
+# sets a JARVIS_ default beside a NERVA_ value you gave (the hub would refuse the pair).
+if [ "${NERVA_SIGNAL_LAYER:-${JARVIS_SIGNAL_LAYER:-0}}" = "1" ] && [ -f services/signal-layer/src/index.mjs ]; then
   if command -v node >/dev/null 2>&1; then
-    export JARVIS_SIGNAL_LAYER_MODE="${JARVIS_SIGNAL_LAYER_MODE:-replay}"
+    export JARVIS_SIGNAL_LAYER_MODE="${NERVA_SIGNAL_LAYER_MODE:-${JARVIS_SIGNAL_LAYER_MODE:-replay}}"
     export SIGNAL_LAYER_HOST="${SIGNAL_LAYER_HOST:-127.0.0.1}"
     export SIGNAL_LAYER_PORT="${SIGNAL_LAYER_PORT:-8787}"
     export WORLDMONITOR_BASE_URL="${WORLDMONITOR_BASE_URL:-http://localhost:3100}"
@@ -50,8 +52,8 @@ else
 fi
 
 # The V2 cockpit is the primary HUD going forward; override with JARVIS_HUD=v1 (legacy at /v1).
-# RB-2: NERVA_<X> is the preferred spelling of JARVIS_<X>; the hub reads both, so does this script.
-export JARVIS_HUD="${NERVA_HUD:-${JARVIS_HUD:-v2}}"
+# RB-2: a NERVA_HUD you set is left alone (exporting JARVIS_HUD beside it would be a conflict).
+if [ -z "${NERVA_HUD:-}" ]; then export JARVIS_HUD="${JARVIS_HUD:-v2}"; fi
 PORT="${NERVA_PORT:-${JARVIS_PORT:-8080}}"
 URL="http://127.0.0.1:${PORT}/v2"
 
@@ -82,5 +84,5 @@ PY
   fi
 fi
 
-echo "Starting Nerva at http://127.0.0.1:${PORT}/  (HUD=$JARVIS_HUD; Command Center at ${URL}; Ctrl-C to stop)"
+echo "Starting Nerva at http://127.0.0.1:${PORT}/  (HUD=${NERVA_HUD:-$JARVIS_HUD}; Command Center at ${URL}; Ctrl-C to stop)"
 exec "$PYBIN" serve.py

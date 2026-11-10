@@ -29,7 +29,7 @@ from agents.core import env_provenance as ep  # noqa: E402
 
 OLD_VALUE, NEW_VALUE = "value-from-the-old-spelling-71c2", "value-from-the-new-spelling-9e4d"
 
-# The variables the brief names, plus one ordinary knob. (suffix, a valid value)
+# The variables the brief names, plus one plain tuning knob. (suffix, a valid value)
 NAMED = [
     ("HARDENED", "1"), ("STRICT_EGRESS", "0"), ("ALLOW_INSECURE_BIND", "1"),
     ("ADMIN_TOKEN", "admin-token-3b1f9c"), ("USER_TOKEN", "user-token-77ad02"),
@@ -52,7 +52,6 @@ def clean(monkeypatch):
     for key in list(os.environ):
         if key == env_alias.MARKER or env_config.other_spelling(key):
             monkeypatch.delenv(key)
-    monkeypatch.setattr(env_alias, "_WARNED", set())
     yield monkeypatch
     for key in set(os.environ) - set(saved):
         os.environ.pop(key, None)
@@ -93,7 +92,9 @@ def test_one_function_maps_and_one_resolves_and_everything_else_goes_through_the
     ({}, (None, None)),
     ({"JARVIS_PORT": "1"}, ("1", "JARVIS_PORT")),
     ({"NERVA_PORT": "2"}, ("2", "NERVA_PORT")),
-    ({"JARVIS_PORT": "1", "NERVA_PORT": "2"}, ("2", "NERVA_PORT")),
+    # different values: no spelling "wins" (every entry point refuses the pair); until the
+    # process has stopped, the answer is what a direct os.environ reader of JARVIS_X sees
+    ({"JARVIS_PORT": "1", "NERVA_PORT": "2"}, ("1", "JARVIS_PORT")),
     ({"JARVIS_PORT": "1", "NERVA_PORT": "1"}, ("1", "NERVA_PORT")),
     ({"JARVIS_PORT": "1", "NERVA_PORT": "  "}, ("1", "JARVIS_PORT")),     # blank is "not set"
     ({"JARVIS_PORT": "", "NERVA_PORT": "2"}, ("2", "NERVA_PORT")),
@@ -175,8 +176,8 @@ def test_equal_values_and_a_blank_one_are_not_a_disagreement():
         assert env_alias.spelling_info("JARVIS_HARDENED", env)["spelling"] == spelled
 
 
-@pytest.mark.parametrize("suffix", [suffix for suffix, _ in NAMED if suffix != "PORT"]
-                         + ["AUDIT_KEY", "CHANNEL_OPEN", "TASK_MEDIATION", "ROLE_VISION_KEY", "HOST",
+@pytest.mark.parametrize("suffix", [suffix for suffix, _ in NAMED]
+                         + ["LOG_LEVEL", "TASK_MAX_SECONDS", "TERMINAL_TIMEOUT_S", "BACKUP_MAX_BYTES", "HUD", "AUDIT_KEY", "CHANNEL_OPEN", "TASK_MEDIATION", "ROLE_VISION_KEY", "HOST",
                             "ALLOWED_HOSTS", "PROFILE", "LM_STUDIO_URL"])
 def test_a_disagreement_refuses_and_names_the_variable_never_a_value(suffix, capsys, caplog):
     env = {f"NERVA_{suffix}": NEW_VALUE, f"JARVIS_{suffix}": OLD_VALUE, "PATH": "/usr/bin"}
@@ -194,19 +195,22 @@ def test_a_disagreement_refuses_and_names_the_variable_never_a_value(suffix, cap
     assert NEW_VALUE not in said and OLD_VALUE not in said
 
 
-def test_an_ordinary_knob_takes_the_new_spelling_and_warns_once_by_name(clean, caplog, capsys):
-    env = {"NERVA_PORT": NEW_VALUE, "JARVIS_PORT": OLD_VALUE}
-    with caplog.at_level(logging.WARNING):
+def test_no_variable_has_a_spelling_that_wins(clean):
+    """The rule has no exception list: whatever the variable, two different values in one
+    layer are refused, and nothing is folded, warned about or picked."""
+    assert not hasattr(env_config, "NERVA_WINS_ON_CONFLICT") and not hasattr(env_alias, "refuses_on_conflict")
+    assert "overridden" not in env_alias.Fold._fields
+    for suffix in sorted(env_config.HUB_ENV_SUFFIXES) + ["ROLE_VISION_MODEL", "VLM_PRESET", "TERMINAL_SSH_HOSTS"]:
+        env = {f"NERVA_{suffix}": NEW_VALUE, f"JARVIS_{suffix}": OLD_VALUE}
         folded = env_alias.normalize(env)
-        env_alias.normalize(env)
-        env_alias.normalize({"NERVA_PORT": NEW_VALUE, "JARVIS_PORT": OLD_VALUE})   # the same pair again
-    assert env == {"JARVIS_PORT": NEW_VALUE, env_alias.MARKER: "JARVIS_PORT"}
-    assert folded.overridden == ("JARVIS_PORT",) and env_alias.conflicts(env) == []
-    warnings = [record for record in caplog.records if "NERVA_PORT" in record.getMessage()]
-    assert len(warnings) == 1 and warnings[0].levelno == logging.WARNING
-    said = caplog.text + "".join(capsys.readouterr())
-    assert "JARVIS_PORT" in said and NEW_VALUE not in said and OLD_VALUE not in said
-    env_alias.refuse_conflicts(env)                       # nothing to refuse
+        assert folded.refused == (f"JARVIS_{suffix}",) and folded.spelling == {}, suffix
+        assert env == {f"NERVA_{suffix}": NEW_VALUE, f"JARVIS_{suffix}": OLD_VALUE}, suffix
+        assert env_alias.conflicts(env) == [f"JARVIS_{suffix}"], suffix
+        # and the two kinds of reader agree on what they see meanwhile
+        assert env_config.resolve_spellings(env, f"JARVIS_{suffix}")[0] == env[f"JARVIS_{suffix}"]
+    clean.setenv("NERVA_PORT", "9000")
+    clean.setenv("JARVIS_PORT", "8080")
+    assert env_config.env_int("JARVIS_PORT", 0) == int(os.environ["JARVIS_PORT"]) == 8080
 
 
 def test_the_process_fold_is_real_and_the_hub_reads_the_variable(clean):
@@ -364,14 +368,17 @@ def test_the_process_environment_disagreeing_stops_the_load_before_a_file_is_rea
     assert "PROV_NEVER_LOADED" not in os.environ
 
 
-def test_a_file_setting_an_ordinary_knob_twice_takes_the_new_spelling_and_says_so(files, caplog):
-    repo, _ = files("JARVIS_PORT=8001\nNERVA_PORT=8002\nJARVIS_LOG_LEVEL=info\nNERVA_LOG_LEVEL=info\n")
-    with caplog.at_level(logging.WARNING):
-        ep.load_layered_env(repo, None)
-    assert os.environ["JARVIS_PORT"] == "8002" and os.environ["JARVIS_LOG_LEVEL"] == "info"
-    warned = [record.getMessage() for record in caplog.records if "NERVA_PORT" in record.getMessage()]
-    assert len(warned) == 1 and "repo .env" in warned[0] and "8001" not in warned[0] and "8002" not in warned[0]
-    assert "NERVA_LOG_LEVEL" not in caplog.text                          # equal values: nothing to say
+def test_a_file_setting_any_variable_twice_differently_stops_the_load(files):
+    """PORT and LOG_LEVEL were once "NERVA wins" knobs: they are refused like the rest."""
+    for suffix in ("PORT", "LOG_LEVEL", "TASK_MAX_SECONDS"):
+        repo, _ = files(f"JARVIS_{suffix}=8001\nNERVA_{suffix}=8002\n")
+        with pytest.raises(SystemExit) as refused:
+            ep.load_layered_env(repo, None)
+        assert f"NERVA_{suffix} / JARVIS_{suffix}" in str(refused.value) and "repo .env" in str(refused.value)
+        assert f"JARVIS_{suffix}" not in os.environ and f"NERVA_{suffix}" not in os.environ   # nothing in effect
+    repo, _ = files("JARVIS_LOG_LEVEL=info\nNERVA_LOG_LEVEL=info\nNERVA_PORT=\nJARVIS_PORT=8001\n")
+    ep.load_layered_env(repo, None)                       # equal, and blank beside a value: fine
+    assert os.environ["JARVIS_LOG_LEVEL"] == "info" and os.environ["JARVIS_PORT"] == "8001"
 
 
 def test_the_predictions_agree_with_the_load(files, clean, tmp_path):
@@ -382,7 +389,7 @@ def test_the_predictions_agree_with_the_load(files, clean, tmp_path):
                        "NERVA_PORT=9000\nNERVA_AUDIT_KEY=audit-key-from-home\n")
     shell = dict(os.environ)
     derived = ep.derive(repo, lambda env: Path(env["JARVIS_USER_HOME"]) / ".env", shell)
-    spellings, conflicts = ep.derive_alias(repo, lambda env: Path(env["JARVIS_USER_HOME"]) / ".env", shell)
+    spellings, conflicts, unsafe = ep.derive_alias(repo, lambda env: Path(env["JARVIS_USER_HOME"]) / ".env", shell)
     merged = ep.after_repo_layer(repo, shell)
     assert merged["JARVIS_HARDENED"] == "1" and merged["JARVIS_USER_TOKEN"] == "shell-user-token"
     assert "NERVA_HARDENED" not in merged
@@ -393,7 +400,7 @@ def test_the_predictions_agree_with_the_load(files, clean, tmp_path):
     assert table["JARVIS_PORT"] == {"layer": "repo_env", "shadowed": ["user_env"]}
     assert table["JARVIS_USER_TOKEN"] == {"layer": "process", "shadowed": ["repo_env"]}
     assert spellings["JARVIS_PORT"] == "JARVIS_PORT" and spellings["JARVIS_AUDIT_KEY"] == "NERVA_AUDIT_KEY"
-    assert conflicts == {}
+    assert conflicts == {} and unsafe == {}
     _write(repo, "NERVA_HARDENED=1\nJARVIS_HARDENED=0\n")
     assert ep.derive_alias(repo, None, {"NERVA_ADMIN_TOKEN": "a", "JARVIS_ADMIN_TOKEN": "b"})[1] == {
         "process": ["JARVIS_ADMIN_TOKEN"], "repo_env": ["JARVIS_HARDENED"]}
@@ -685,8 +692,9 @@ def test_the_cli_refuses_a_variable_set_twice_differently_and_lets_the_doctor_ex
         code, out, err = run(entry, ["config", "path"], {"NERVA_HOME": str(tmp_path / "data")})
         assert code == 0 and str(tmp_path / "data") in out, err[-500:]      # the new spelling names the root
         code, out, err = run(entry, ["-p", "work", "config", "env-path"],
-                             {"NERVA_PORT": "1", "JARVIS_PORT": "2"})         # an ordinary knob: not refused
-        assert code == 0, err[-500:]
+                             {"NERVA_PORT": "1", "JARVIS_PORT": "2"})         # any variable: refused
+        assert code == 2 and "NERVA_PORT / JARVIS_PORT" in err, err[-500:]
+        assert "under the SAME spelling the launcher uses" in err
     code, out, err = run(["scripts/nerva.py"], ["doctor", "--json"],
                          {"NERVA_ADMIN_TOKEN": NEW_VALUE, "JARVIS_ADMIN_TOKEN": OLD_VALUE})
     checks = {row["name"]: row for row in json.loads(out)["checks"]}

@@ -15,72 +15,87 @@ the ``NERVA_`` key back out (a move, not a copy), at the two places a value can 
 - each ``.env`` layer, inside ``env_provenance.load_layered_env``, as that layer loads.
 
 Moving is what keeps every downstream rule exactly as it was: a child process, a
-sandbox allowlist, a denylist by prefix, ``/api/admin/env`` and the 116 direct
+sandbox allowlist, a denylist by prefix, ``/api/admin/env`` and the direct
 ``os.environ`` readers all see the environment they saw when the operator wrote
 ``JARVIS_<X>``. Nothing new exists for a filter to miss. ``env_config``'s getters also
 read both spellings at call time (``resolve_spellings``), so a ``NERVA_<X>`` set while
-running reaches them without this module.
+running reaches them without this module. Wherever an operator *names* a variable
+instead of setting it (a ``--token-env`` option, a passthrough list, a ``${NAME}``
+reference), the name is brought to the same form with ``canonical``.
 
-**One rule when both spellings are set.** A layer is the process environment or one
-``.env`` file. *Across* layers nothing is new: the first layer to set the variable wins,
-whichever spelling each used, so a ``.env`` value never overrides a process value.
-*Within* one layer:
+**One rule when both spellings are set, for every hub variable.** A layer is the
+process environment or one ``.env`` file. *Across* layers nothing is new: the first
+layer to set the variable wins, whichever spelling each used, so a ``.env`` value never
+overrides a process value. *Within* one layer:
 
 - equal values: fine, the variable has that value;
 - one of them blank: the other is used (blank means "not set" throughout ``env_config``);
-- different values: the operator has contradicted themselves, and the hub **refuses to
-  start**, naming the variable and never a value — unless the variable is on the short
-  reviewed list of ordinary tuning knobs (``env_config.NERVA_WINS_ON_CONFLICT``), where
-  the ``NERVA_`` spelling wins and one warning names the variable.
+- different values: the hub **refuses to start**, naming the variable and never a value.
 
-The list is the *exception*, so the rule fails closed: a posture flag, a credential, a
-file-location root, an endpoint, an allowlist, and any variable nobody has reviewed —
-a new one, a dynamic ``JARVIS_ROLE_*`` name — all refuse. Picking either value silently
-for one of those would let a stale line decide the box's protection.
+There is no variable for which one spelling "wins" over the other. A refused pair is
+left in the environment exactly as found (both keys, both values), so the refusal is
+stateless: ``conflicts`` finds it again from the environment alone, in every process
+that inherits it, and until the process has stopped both kinds of reader see the
+``JARVIS_`` value (``env_config.resolve_spellings``). ``refuse_conflicts`` is the boot
+guard; it runs from ``env_provenance.load_hub_env`` (every hub entry point loads through
+it), from ``boot_guards`` and from the command-line entries.
 
-A refused pair is left in the environment exactly as found (both keys, both values), so
-the refusal is stateless: ``conflicts`` finds it again from the environment alone, in
-every process that inherits it. ``refuse_conflicts`` is the boot guard; it runs from
-``env_provenance.load_hub_env`` (every hub entry point loads through it) and again from
-``boot_guards``.
+In the process environment one of the two lines is often not the operator's: the
+container image, the compose file, the service unit and the start scripts pin a few
+variables under the ``JARVIS_`` spelling (``docs/FLAGS.md`` lists them). The refusal
+says so, and says the remedy: override a pinned variable under the spelling the
+launcher uses, or change the launcher's line.
+
+**Paths.** ``refuse_unsafe_paths`` is a second boot guard, for the variables that name
+a directory or a file (``PATH_TYPED``): a value that is the filesystem root is refused,
+under either spelling and from any layer. It is what stands between a mistyped
+``${...}`` reference that expanded to nothing and a file tool rooted at ``/``.
 
 **Which spelling was used** is the one thing a move forgets, and the operator is owed it
 (``/api/admin/env/sources`` and ``nerva doctor`` flag the deprecated spelling). It is kept
-in the environment itself as a list of names — never values — under ``MARKER``, so a hub
-that re-executes itself, or a coordinator started by the supervisor, still knows. The
-marker starts with ``_``: the admin env routes skip such names, and every child-process
-allowlist drops it.
+in the environment itself as a list of names — never values — under ``MARKER``, because
+the hub is importable under two module names and both must see it. It is this process's
+own note: a value inherited from outside is discarded at the first fold, a ``.env`` file
+cannot write it, the admin env routes skip names that start with ``_``, and every
+child-process allowlist drops it.
 
 Standard library only; never logs, prints or returns a value.
 """
 
 from __future__ import annotations
 
-import logging
 import os
+import re
+import sys
 from collections.abc import Container, Mapping, MutableMapping
 from typing import NamedTuple
 
 from .env_config import (
     DEPRECATED_PREFIX,
-    NERVA_WINS_ON_CONFLICT,
     PREFERRED_PREFIX,
     other_spelling,
     resolve_spellings,
 )
 
-logger = logging.getLogger("nerva.env_alias")
-
 #: Names (never values) of the hub variables whose value in effect was supplied under
 #: the preferred spelling. See the module docstring.
 MARKER = "_NERVA_ENV_PREFERRED"
 
-_WARNED: set[str] = set()
+#: Exit status of a process that stopped because its configuration is refused (sysexits'
+#: EX_CONFIG): retrying cannot help, so a supervisor must not respawn on it.
+CONFIG_REFUSED_EXIT = 78
+
+
+class ConfigurationRefused(SystemExit):
+    """The configuration contradicts itself (or names the filesystem root): the process
+    must not start. A ``SystemExit`` whose text is the refusal, as every boot guard
+    raises; a launcher that supervises the process turns it into ``CONFIG_REFUSED_EXIT``."""
 
 
 def canonical(name: str) -> str:
     """The name the hub reads: ``JARVIS_X`` for either spelling of a hub variable, and
-    *name* itself for everything else."""
+    *name* itself for everything else. THE function for a variable an operator names
+    rather than sets."""
     if isinstance(name, str) and name.startswith(PREFERRED_PREFIX):
         return other_spelling(name) or name
     return name
@@ -94,10 +109,9 @@ def preferred_name(name: str) -> str | None:
     return name if name.startswith(PREFERRED_PREFIX) else other
 
 
-def refuses_on_conflict(name: str) -> bool:
-    """Whether two different values for this hub variable in one layer stop the boot
-    (everything but the reviewed ordinary knobs)."""
-    return canonical(name)[len(DEPRECATED_PREFIX):] not in NERVA_WINS_ON_CONFLICT
+def lookup(environ: Mapping[str, str], name: str) -> str | None:
+    """*name*'s value in *environ* under either spelling (the one pair rule), or None."""
+    return resolve_spellings(environ, name)[0]
 
 
 class Fold(NamedTuple):
@@ -107,8 +121,7 @@ class Fold(NamedTuple):
     values: dict[str, str]        # what the layer sets, hub variables under their JARVIS_ name
     spelling: dict[str, str]      # hub variable -> the spelling whose value is in effect
     shadowed: tuple[str, ...]     # hub variables a higher layer already set (this layer's value is ignored)
-    overridden: tuple[str, ...]   # ordinary knobs set twice, differently: the NERVA_ value won
-    refused: tuple[str, ...]      # set twice, differently, and not an ordinary knob
+    refused: tuple[str, ...]      # set under both spellings, differently
 
 
 def _differ(new: object, old: object) -> bool:
@@ -124,7 +137,6 @@ def fold(added: Mapping[str, str], before: Container[str] = ()) -> Fold:
     values: dict[str, str] = {}
     spelling: dict[str, str] = {}
     shadowed: list[str] = []
-    overridden: list[str] = []
     refused: list[str] = []
     for key in added:
         other = other_spelling(key)
@@ -139,14 +151,12 @@ def fold(added: Mapping[str, str], before: Container[str] = ()) -> Fold:
             continue
         new_key = preferred_name(key)
         if new_key in added and name in added and _differ(added[new_key], added[name]):
-            if refuses_on_conflict(name):
-                refused.append(name)
-                values[name], values[new_key] = added[name], added[new_key]
-                continue
-            overridden.append(name)
+            refused.append(name)
+            values[name], values[new_key] = added[name], added[new_key]
+            continue
         value, used = resolve_spellings(added, name)
         values[name], spelling[name] = value, used
-    return Fold(values, spelling, tuple(shadowed), tuple(overridden), tuple(refused))
+    return Fold(values, spelling, tuple(shadowed), tuple(refused))
 
 
 def preferred_supplied(environ: Mapping[str, str] | None = None) -> frozenset[str]:
@@ -170,24 +180,14 @@ def _record(environ: MutableMapping[str, str], spelling: Mapping[str, str]) -> N
         environ.pop(MARKER, None)
 
 
-def _warn_overridden(names, where: str) -> None:
-    for name in names:
-        if name not in _WARNED:
-            _WARNED.add(name)
-            logger.warning("%s and %s are both set in %s with different values: %s is used "
-                           "(%s is the deprecated spelling; remove one)",
-                           preferred_name(name), name, where, preferred_name(name), name)
-
-
-def normalize(environ: MutableMapping[str, str], *, where: str = "the process environment",
-              quiet: bool = False) -> Fold:
+def normalize(environ: MutableMapping[str, str]) -> Fold:
     """Make *environ* canonical in place: every hub variable under its ``JARVIS_`` name,
     its ``NERVA_`` spelling folded in and removed. Idempotent — a second call finds
-    nothing to do. A refused pair is left exactly as found. Never raises."""
+    nothing to do. A refused pair is left exactly as found. Never raises, never logs."""
     pairs = {key: environ[key] for key in list(environ)
              if isinstance(key, str) and key.startswith(PREFERRED_PREFIX) and other_spelling(key)}
     if not pairs:
-        return Fold({}, {}, (), (), ())
+        return Fold({}, {}, (), ())
     for key in list(pairs):
         name = canonical(key)
         if name in environ:
@@ -197,55 +197,139 @@ def normalize(environ: MutableMapping[str, str], *, where: str = "the process en
         environ[name] = folded.values[name]
         environ.pop(preferred_name(name), None)
     _record(environ, folded.spelling)
-    if not quiet:
-        _warn_overridden(folded.overridden, where)
     return folded
 
 
+#: Set on ``sys`` (one object whichever name this module was imported under) once this
+#: process has folded its environment: the marker in it from then on is this process's.
+_FOLDED_FLAG = "_nerva_env_alias_folded"
+
+
 def normalize_process_env() -> Fold:
-    """``normalize(os.environ)`` — the process-start step (see the module docstring)."""
+    """``normalize(os.environ)`` — the process-start step (see the module docstring). The
+    first call in a process also discards a spelling marker it inherited: that note is
+    never trusted from outside (a forked child keeps its parent's, being the same image)."""
+    if not getattr(sys, _FOLDED_FLAG, False):
+        os.environ.pop(MARKER, None)
+        setattr(sys, _FOLDED_FLAG, True)
     return normalize(os.environ)
 
 
 def normalized(environ: Mapping[str, str]) -> dict[str, str]:
     """A canonical copy of *environ*, for code that predicts what the hub would read from
-    an environment it was handed (the doctor, ``env_provenance.derive``). Silent."""
+    an environment it was handed (the doctor, ``env_provenance.derive``)."""
     copy = dict(environ)
-    normalize(copy, quiet=True)
+    normalize(copy)
     return copy
 
 
 def conflicts(environ: Mapping[str, str] | None = None) -> list[str]:
-    """The hub variables set under both spellings with different values that stop a boot
-    (``JARVIS_`` names, sorted). Read from *environ* alone."""
+    """The hub variables set under both spellings with different values (``JARVIS_``
+    names, sorted). Read from *environ* alone."""
     environ = os.environ if environ is None else environ
     found = set()
     for key in list(environ):
         if not (isinstance(key, str) and key.startswith(PREFERRED_PREFIX)):
             continue
         name = other_spelling(key)
-        if (name is not None and name in environ and _differ(environ[key], environ[name])
-                and refuses_on_conflict(name)):
+        if name is not None and name in environ and _differ(environ[key], environ[name]):
             found.add(name)
     return sorted(found)
 
 
-def conflict_message(names, where: str) -> str:
+PROCESS_ENVIRONMENT = "the process environment"
+
+
+def conflict_message(names, where: str = PROCESS_ENVIRONMENT) -> str:
     """The refusal: the variables and the remedy, never a value."""
     pairs = ", ".join(f"{preferred_name(name)} / {name}" for name in names)
-    return (f"Refusing to start: {pairs} — set under both spellings in {where}, with different values.\n"
+    text = (f"Refusing to start: {pairs} — set under both spellings in {where}, with different values.\n"
             "NERVA_<X> and JARVIS_<X> are one variable (NERVA_ is the preferred spelling, JARVIS_ the "
-            "deprecated one). Which value was meant cannot be guessed for a setting that decides the "
-            "box's protection, its credentials or where its data lives — keep one of the two lines.")
+            "deprecated one), and which value was meant is never guessed.")
+    if where == PROCESS_ENVIRONMENT or "shell" in where:
+        return text + (
+            "\nOne of the two may not be yours: the container image, the compose file, the service unit "
+            "and the start scripts set a few variables under the JARVIS_ spelling (docs/FLAGS.md lists "
+            "them). To override one of those, set it under the SAME spelling the launcher uses "
+            "(JARVIS_<X>), or change the launcher's own line; otherwise keep one of your two lines.")
+    return text + "\nKeep one of the two lines in that file."
 
 
 def refuse_conflicts(environ: Mapping[str, str] | None = None, *,
-                     where: str = "the process environment") -> None:
-    """The boot guard: stop when a hub variable is set twice, differently (and is not an
-    ordinary knob). Names the variable, never a value."""
+                     where: str = PROCESS_ENVIRONMENT) -> None:
+    """The boot guard: stop when a hub variable is set under both spellings, differently.
+    Names the variable, never a value."""
     names = conflicts(environ)
     if names:
-        raise SystemExit(conflict_message(names, where))
+        raise ConfigurationRefused(conflict_message(names, where))
+
+
+#: ``<X>`` of the hub variables whose value names a directory or a file (one path, or a
+#: list of them). Measured from the readers in ``agents/`` and ``scripts/``; the test
+#: ``tests/test_rb2_review_fixes.py`` fails when a name that looks like one is missing.
+PATH_TYPED = frozenset({
+    "HOME", "USER_HOME", "MEMORY_DIR", "APP_ROOT",                      # where the hub's own files live
+    "FILE_ROOTS", "TERMINAL_LOCAL_ROOTS", "MEDIA_ROOTS",                # what the tools may reach
+    "KEY_DIR", "EXEC_TEMP_DIR", "FORGET_ARCHIVE_DIR", "PLAYWRIGHT_DOWNLOAD_DIR", "DRIVE_AI_DEST",
+    "EVAL_STORE", "LOG_FILE", "RUNTIME_LOG", "RUNTIME_STATE", "SUBAGENT_SPAWN_LOG",
+    "CA_BUNDLE", "WASM_PYTHON", "TERMINAL_SSH_KNOWN_HOSTS",
+})
+#: What a ``.env`` line may not be built from nothing for: the path-typed variables, and
+#: every hub variable that names an endpoint, a credential or an allowlist.
+_REFERENCE_SENSITIVE = re.compile(
+    r"(?:^|_)(?:URL|URLS|ORIGIN|ORIGINS|HOST|HOSTS|TOKEN|KEY|SECRET|PASSWORD|ALLOWED|ALLOWLIST|DOMAINS"
+    r"|TARGETS|PROXIES|PROXY|ROOTS|ROOT|DIR|HOME|PATH|FILE|STORE)(?:_|$)")
+_DRIVE_ROOT = re.compile(r"[A-Za-z]:[\\/]*\Z")
+_LIST_SEPARATORS = re.compile("[,;\n" + re.escape(os.pathsep) + "]")   # how the roots lists are split
+
+
+def path_typed(name: str) -> bool:
+    """Whether the hub variable *name* (either spelling) names a directory or a file."""
+    key = canonical(name)
+    return key.startswith(DEPRECATED_PREFIX) and key[len(DEPRECATED_PREFIX):] in PATH_TYPED
+
+
+def reference_sensitive(name: str) -> bool:
+    """Whether a ``${...}`` reference that expands to nothing may not build the hub
+    variable *name*: a path, an endpoint, a credential or an allowlist."""
+    key = canonical(name)
+    if other_spelling(key) is None:
+        return False
+    suffix = key[len(DEPRECATED_PREFIX):]
+    return suffix in PATH_TYPED or _REFERENCE_SENSITIVE.search(suffix) is not None
+
+
+def _is_filesystem_root(entry: str) -> bool:
+    entry = entry.strip().strip("'\"")
+    return bool(entry) and (not entry.strip("/\\") or _DRIVE_ROOT.match(entry) is not None)
+
+
+def unsafe_paths(environ: Mapping[str, str] | None = None) -> list[str]:
+    """The path-typed hub variables whose value, or one entry of whose list, is the
+    filesystem root (``/``, ``//``, ``C:\\``), as spelled in *environ* (sorted names)."""
+    environ = os.environ if environ is None else environ
+    found = set()
+    for key, value in list(environ.items()):
+        if isinstance(key, str) and path_typed(key) and any(
+                _is_filesystem_root(entry) for entry in _LIST_SEPARATORS.split(str(value))):
+            found.add(key)
+    return sorted(found)
+
+
+def unsafe_path_message(names, where: str = PROCESS_ENVIRONMENT) -> str:
+    return ("Refusing to start: " + ", ".join(names) + f" — set to the filesystem root in {where}.\n"
+            "A variable that names where the hub keeps its files, or what its tools may reach, is never "
+            "the root of the filesystem. This is what a ${...} reference to a variable that is not set "
+            "leaves behind (\"${NAME}/\" becomes \"/\"): name the directory itself, or fix the reference.")
+
+
+def refuse_unsafe_paths(environ: Mapping[str, str] | None = None, *,
+                        where: str = PROCESS_ENVIRONMENT) -> None:
+    """The boot guard for paths: stop when a path-typed hub variable is the filesystem
+    root. Names the variable, never a value."""
+    names = unsafe_paths(environ)
+    if names:
+        raise ConfigurationRefused(unsafe_path_message(names, where))
 
 
 def spelling_info(key: str, environ: Mapping[str, str] | None = None) -> dict:
@@ -265,7 +349,9 @@ def supplied_name(name: str, environ: Mapping[str, str] | None = None) -> str:
 
 
 __all__ = [
-    "DEPRECATED_PREFIX", "Fold", "MARKER", "PREFERRED_PREFIX", "canonical", "conflict_message", "conflicts",
-    "fold", "normalize", "normalize_process_env", "normalized", "preferred_name", "preferred_supplied",
-    "refuse_conflicts", "refuses_on_conflict", "spelling_info", "supplied_name",
+    "CONFIG_REFUSED_EXIT", "ConfigurationRefused", "DEPRECATED_PREFIX", "Fold", "MARKER", "PATH_TYPED",
+    "PREFERRED_PREFIX", "PROCESS_ENVIRONMENT", "canonical", "conflict_message", "conflicts", "fold", "lookup",
+    "normalize", "normalize_process_env", "normalized", "path_typed", "preferred_name", "preferred_supplied",
+    "refuse_conflicts", "refuse_unsafe_paths", "reference_sensitive", "spelling_info", "supplied_name",
+    "unsafe_path_message", "unsafe_paths",
 ]

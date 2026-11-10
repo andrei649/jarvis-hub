@@ -140,6 +140,12 @@ def _spawn() -> subprocess.Popen:
     return subprocess.Popen([sys.executable, _COORDINATOR], env=_child_env())  # noqa: S603  # nosec B603
 
 
+#: The coordinator's exit status for a configuration it refuses (sysexits' EX_CONFIG;
+#: ``agents.core.env_alias.CONFIG_REFUSED_EXIT``, inlined so this file stays importable
+#: without the app package — a test pins the two equal).
+CONFIG_REFUSED_EXIT = 78
+
+
 def _accept_nerva_spellings() -> None:
     """RB-2: ``NERVA_<X>`` is the preferred spelling of ``JARVIS_<X>``. Importing the hub's
     core package folds it into this environment, which the coordinator inherits. When
@@ -179,6 +185,16 @@ def main() -> int:
                 _append_supervisor_event("stopped", pid=child.pid, exit_code=exit_code)
                 return 0
             uptime = time.monotonic() - started_at
+            if exit_code == CONFIG_REFUSED_EXIT:
+                # RB-2: the coordinator refused its configuration (one variable set under
+                # both spellings, a path at the filesystem root) and said why on stderr.
+                # That is not a crash: respawning repeats the refusal forever. Stop, once,
+                # with the same status, so the service manager does not restart it either.
+                _append_supervisor_event("config_refused", pid=child.pid, exit_code=exit_code)
+                print("runtime supervisor: the coordinator refused its configuration (see its message "
+                      "above); not respawning. Fix the configuration and start the service again.",
+                      file=sys.stderr)
+                return CONFIG_REFUSED_EXIT
             if exit_code == RESTORE_YIELD_EXIT and uptime >= YIELD_MIN_UPTIME_SECONDS:
                 _append_supervisor_event("child_exited", pid=child.pid, exit_code=exit_code,
                                          restore_yield=True)

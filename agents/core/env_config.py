@@ -42,8 +42,8 @@ The rules here:
   ``resolve_spellings`` THE rule for a pair; every getter here reads through them at
   call time, so it needs no help from anyone. Code that reads ``os.environ`` directly
   keeps reading the ``JARVIS_`` name: ``env_alias`` folds a ``NERVA_`` spelling onto
-  it at process start and after each ``.env`` layer, and owns what happens when the
-  two disagree (this module never raises, so it cannot refuse).
+  it at process start and after each ``.env`` layer, and refuses the boot when the
+  two disagree (this module never raises, so it cannot; there is no "wins").
 
 What does NOT belong here: the settings-DB plane (``settings_db.get_value``
 is live-updatable /admin state with its own precedence at each call site),
@@ -106,10 +106,7 @@ DEPRECATED_PREFIX, PREFERRED_PREFIX = "JARVIS_", "NERVA_"
 
 def is_hub_name(name: object) -> bool:
     """Whether *name* is one of the hub's own ``JARVIS_`` variables (``HUB_ENV_SUFFIXES``)."""
-    if not (isinstance(name, str) and name.startswith(DEPRECATED_PREFIX)):
-        return False
-    suffix = name[len(DEPRECATED_PREFIX):]
-    return suffix in HUB_ENV_SUFFIXES or suffix.startswith(HUB_ENV_FAMILIES)
+    return isinstance(name, str) and name.startswith(DEPRECATED_PREFIX) and other_spelling(name) is not None
 
 
 def other_spelling(name: object) -> str | None:
@@ -118,31 +115,35 @@ def other_spelling(name: object) -> str | None:
     ``JARVIS_X`` gives ``NERVA_X`` and back, for the hub's own names only. ``None`` for
     anything else: another program's variable, and a ``NERVA_*`` variable that is its own
     (``NERVA_HUB_URL``, ``NERVA_WORKSPACE*`` — no ``JARVIS_`` name shares their suffix).
+    A fixed name is one dictionary lookup (``_OTHER``, built once below); only a name
+    with one of the two prefixes that is not in it is looked at again, for the run-time
+    families.
     """
-    if not isinstance(name, str):
+    try:
+        found = _OTHER.get(name)
+    except TypeError:                       # not hashable: not a name
         return None
-    if name.startswith(DEPRECATED_PREFIX):
-        return PREFERRED_PREFIX + name[len(DEPRECATED_PREFIX):] if is_hub_name(name) else None
-    if name.startswith(PREFERRED_PREFIX):
-        legacy = DEPRECATED_PREFIX + name[len(PREFERRED_PREFIX):]
-        return legacy if is_hub_name(legacy) else None
+    if found is not None or not isinstance(name, str):
+        return found
+    if name.startswith(_DEPRECATED_FAMILIES):
+        return PREFERRED_PREFIX + name[len(DEPRECATED_PREFIX):]
+    if name.startswith(_PREFERRED_FAMILIES):
+        return DEPRECATED_PREFIX + name[len(PREFERRED_PREFIX):]
     return None
-
-
-def _blank(value: object) -> bool:
-    return not str(value).strip()
 
 
 def resolve_spellings(environ, name: str) -> tuple[str | None, str | None]:
     """THE rule for a pair (RB-2): ``(value, the spelling that supplied it)`` for *name*
     read from *environ* under either spelling; ``(None, None)`` when neither is set.
 
-    One spelling set: that one. Both set: the preferred ``NERVA_`` spelling — unless it is
-    blank and the other is not, because blank means "not set" everywhere in this module
-    (a compose file that forwards both names hands the unused one over empty). Whether two
-    different values may stand side by side at all is not decided here (this module never
-    raises): ``env_alias`` refuses the boot for a posture flag, a credential or a root.
-    Never logs and never returns anything but what *environ* holds.
+    One spelling set: that one. Both set to the same value: that value, under the
+    preferred ``NERVA_`` spelling. One of them blank: the other, because blank means "not
+    set" everywhere in this module (a compose file that forwards both names hands the
+    unused one over empty). Both set, different: there is no "wins" — every entry point
+    refuses to start on that (``env_alias.refuse_conflicts``) — and until it has, this
+    returns the ``JARVIS_`` value, which is what a direct ``os.environ`` reader of the
+    same variable sees, so the two kinds of reader can never disagree.
+    Never raises, never logs and never returns anything but what *environ* holds.
     """
     other = other_spelling(name)
     if other is None:
@@ -152,14 +153,33 @@ def resolve_spellings(environ, name: str) -> tuple[str | None, str | None]:
     new, old = environ.get(preferred), environ.get(legacy)
     if new is None:
         return old, (legacy if old is not None else None)
-    if old is None or not (_blank(new) and not _blank(old)):
+    if old is None or new == old or not str(old).strip():
         return new, preferred
     return old, legacy
 
 
 def _read(name: str) -> str | None:
-    """The process environment's value for *name*, under either spelling, at call time."""
-    return resolve_spellings(os.environ, name)[0]
+    """The process environment's value for *name*, under either spelling, at call time
+    (``resolve_spellings``' rule, written out for the hot path). One dictionary lookup
+    decides whether *name* has a second spelling; a name without one costs a single
+    ``os.environ`` read, as before RB-2, and a hub variable costs two — no string is
+    built either way."""
+    other = _OTHER.get(name)
+    if other is None:
+        if not name.startswith(_BOTH_PREFIXES):
+            return os.environ.get(name)
+        other = other_spelling(name)            # a run-time family, or not a hub name
+        if other is None:
+            return os.environ.get(name)
+    if name.startswith(PREFERRED_PREFIX):
+        new, old = os.environ.get(name), os.environ.get(other)
+    else:
+        old, new = os.environ.get(name), os.environ.get(other)
+    if new is None:
+        return old
+    if old is None or new == old or not old.strip():
+        return new
+    return old
 
 
 def env_flag_is_malformed(name: str) -> bool:
@@ -343,13 +363,13 @@ HUB_ENV_SUFFIXES = frozenset({
     "ROOM_AWARE_VOICE", "ROOT_PATH", "RUNTIME_CYCLE_SECONDS", "RUNTIME_FAKE_LLM", "RUNTIME_LOG",
     "RUNTIME_RESPAWN_DELAY", "RUNTIME_RESTORE_GRACE_SECONDS", "RUNTIME_RESTORE_POLL",
     "RUNTIME_STATE", "SAFE_MODE", "SCANNER_EXTRA_PATTERNS", "SECRET_KEY", "SELF_RESTART",
-    "SESSION_BACKUP_KEEP", "SHUTDOWN_TIMEOUT", "SIGNAL_GOVERNANCE", "SKILL_ENVIRONMENTS",
+    "SESSION_BACKUP_KEEP", "SHUTDOWN_TIMEOUT", "SIGNAL_LAYER", "SIGNAL_LAYER_MODE", "SIGNAL_GOVERNANCE", "SKILL_ENVIRONMENTS",
     "SKILL_HISTORY", "SKILL_SIGNING_KEY", "SMART_APPROVALS", "SMART_APPROVAL_DENY",
     "SMART_APPROVAL_POLICY", "SMART_DENIAL_BREAKER_THRESHOLD", "SOCIAL_LIVE", "SOUL_MAX_CHARS",
     "STRICT_EGRESS", "STRICT_LOCAL", "STRICT_MODELS", "STT_BEAM_SIZE", "STT_COMPUTE_TYPE",
     "SUBAGENT_SPAWN_LOG", "SYSTEM_PROFILE", "TASK_MAX_SECONDS", "TASK_MEDIATION",
     "TERMINAL_CHECKPOINTS", "TERMINAL_LOCAL_HOST", "TERMINAL_LOCAL_ROOTS", "TERMINAL_TARGETS",
-    "TERMINAL_TIMEOUT_S", "TESTING", "TLS_INSECURE_TARGETS", "TOKEN_KEY", "TRUSTED_PROXIES",
+    "TERMINAL_TIMEOUT_S", "TESTING", "TLS_INSECURE_TARGETS", "TOKEN_KEY", "TRUSTED_PROXIES", "TZ",
     "TRUSTED_PROXY", "UNIFIED_ACTION_API", "USER_HOME", "USER_TOKEN", "VIDEO_ANALYSIS",
     "VOICE_COMMANDS", "VOICE_COMMAND_TIMEOUT_S", "VRAM_RESERVE_MB", "VRAM_TOTAL_MB", "WASM_PYTHON",
     "WEBHOOK_CHANNELS", "WEB_BACKEND", "WEB_BLOCKED_DOMAINS", "WEB_PROVIDER_TIER", "WEB_RESCUE",
@@ -366,23 +386,17 @@ HUB_ENV_FAMILIES = ('ROLE_', 'VLM_', 'TERMINAL_SSH_')
 #: (``code_env`` refuses both prefixes).
 UNALIASED_FAMILIES = ("RPC_", "TOOL_RPC_")
 
-#: ``<X>`` of the reviewed ordinary tuning knobs (sizes, counts, timeouts, model picks,
-#: log shape). When both spellings of one of these are set to different values in one
-#: layer, the ``NERVA_`` spelling wins and a warning names the variable. For EVERY other
-#: hub name (posture flags, credentials, file-location roots, endpoints, allowlists, and
-#: any name nobody has reviewed yet) the same disagreement refuses the boot. A name is
-#: added here only after someone has checked that picking either value cannot weaken a
-#: protection.
-NERVA_WINS_ON_CONFLICT = frozenset({
-    "ANALYTICS_MAX_EVENTS", "AUX_ACQUISITION_CAPABILITY_MODEL", "AUX_ACQUISITION_DRAFT_MODEL",
-    "AUX_COMPRESSION_MODEL", "AUX_ONESHOT_MODEL", "AUX_QUERY_REWRITE_MODEL", "AUX_REVIEW_MODEL",
-    "AUX_SESSION_TITLE_MODEL", "AUX_SOUL_DESCRIPTION_MODEL", "BACKUP_MAX_BYTES",
-    "BACKUP_MAX_MEMBERS", "BACKUP_QUICK_KEEP", "COMFYUI_CHECKPOINT", "COMFYUI_CHECKPOINTS",
-    "DEEP_MODEL", "FORGET_ARCHIVE_KEEP", "HUD", "INBOUND_BATCH_MAX_MS", "INBOUND_BATCH_MS",
-    "KEEP_AWAKE", "LLM_WARMUP", "LOG_BACKUPS", "LOG_LEVEL", "LOG_MAX_MB", "MEDIA_PRESENCE_ROOM",
-    "PORT", "RESTART_PREDECESSOR_WAIT_SECONDS", "RESTORE_RUNTIME_WAIT_SECONDS",
-    "RESTORE_STAGE_TTL_HOURS", "RUNTIME_CYCLE_SECONDS", "RUNTIME_RESPAWN_DELAY",
-    "RUNTIME_RESTORE_GRACE_SECONDS", "RUNTIME_RESTORE_POLL", "SESSION_BACKUP_KEEP",
-    "SHUTDOWN_TIMEOUT", "SOUL_MAX_CHARS", "STT_BEAM_SIZE", "STT_COMPUTE_TYPE", "TASK_MAX_SECONDS",
-    "TERMINAL_TIMEOUT_S", "VOICE_COMMAND_TIMEOUT_S", "VRAM_RESERVE_MB", "VRAM_TOTAL_MB",
-})
+
+def _other_spellings() -> dict[str, str]:
+    table: dict[str, str] = {}
+    for suffix in HUB_ENV_SUFFIXES:
+        table[DEPRECATED_PREFIX + suffix] = PREFERRED_PREFIX + suffix
+        table[PREFERRED_PREFIX + suffix] = DEPRECATED_PREFIX + suffix
+    return table
+
+
+#: Either spelling of every fixed hub variable -> the other one (``other_spelling``).
+_OTHER = _other_spellings()
+_BOTH_PREFIXES = (DEPRECATED_PREFIX, PREFERRED_PREFIX)
+_DEPRECATED_FAMILIES = tuple(DEPRECATED_PREFIX + prefix for prefix in HUB_ENV_FAMILIES)
+_PREFERRED_FAMILIES = tuple(PREFERRED_PREFIX + prefix for prefix in HUB_ENV_FAMILIES)

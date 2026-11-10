@@ -39,10 +39,13 @@ ExecStart=/opt/jarvis-hub/.venv/bin/python serve.py
 # Operability knobs (H23.11). Defaults match serve.py; override in the env file.
 # Loopback by default (local-first). A non-loopback JARVIS_HOST without a token
 # is refused at boot unless JARVIS_ALLOW_INSECURE_BIND=1 — see serve.py.
+# RB-2: the Environment= lines below pin their variables under the JARVIS_ spelling.
+# Override one in the env file with a JARVIS_<X> line; NERVA_<X> beside a pin is one variable
+# set twice, and the hub refuses to start. (The log level is no longer pinned: "info" is
+# serve.py's own default, so NERVA_LOG_LEVEL or JARVIS_LOG_LEVEL in the env file sets it.)
 Environment=JARVIS_HOST=127.0.0.1
 Environment=JARVIS_PORT=8080
 Environment=JARVIS_SHUTDOWN_TIMEOUT=10
-Environment=JARVIS_LOG_LEVEL=info
 # Keep runtime state out of the checkout (audit F-08). Point at a writable dir.
 Environment=JARVIS_HOME=/var/lib/jarvis-hub
 # Optional per-host overrides (tokens, secrets, JARVIS_WORLDVIEW=0, …). The

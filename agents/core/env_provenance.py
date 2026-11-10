@@ -31,22 +31,36 @@ RB-2 — every hub variable has two spellings, ``NERVA_<X>`` (preferred) and ``J
 Each layer is folded as it loads (``env_alias.fold``): a ``NERVA_<X>`` a file sets
 becomes ``JARVIS_<X>`` in the environment, a higher layer that set the variable under
 either spelling still wins, a ``FROM_PROCESS_ONLY`` name is left out under either
-spelling, and a file that sets both spellings to different values stops the load for
-anything but a reviewed ordinary knob. ``spelling`` says which spelling supplied a row.
+spelling, and a file that sets both spellings to different values stops the load.
+``spelling`` says which spelling supplied a row.
+
+The values a file sets are worked out here, not by python-dotenv (``layer_values``, one
+function for the load and for every prediction, so they cannot disagree): its parser
+names the bindings, and a ``${NAME}`` / ``${NAME:-default}`` reference is then looked up
+under either spelling of a hub variable, in the environment first and in the file's
+earlier lines second, exactly as python-dotenv orders them when it does not override.
+The fold takes ``NERVA_<X>`` out of the environment, so python-dotenv's own expansion
+would turn ``${NERVA_USER_HOME}/`` into ``/``. A line for a path, an endpoint, a
+credential or an allowlist that is built from a reference to nothing stops the load,
+and so does a path-typed variable left at the filesystem root (``env_alias``).
 """
 from __future__ import annotations
 
 import functools
 import hashlib
 import io
+import logging
 import os
 import re
 import stat
 from collections.abc import Mapping
 from pathlib import Path
+from typing import NamedTuple
 
 from . import env_alias
 from .env_config import dotenv_disabled  # python-dotenv's own switch and spellings
+
+logger = logging.getLogger("nerva.env")
 
 PROCESS, REPO_ENV, USER_ENV, RUNTIME = "process", "repo_env", "user_env", "runtime"
 LABELS = {
@@ -219,6 +233,21 @@ def _bindings(text: str) -> tuple:
                  if binding.key is not None)
 
 
+def _parse_and_warn(text: str) -> tuple:
+    """The load's one parse of a file: ``_bindings``' answer, and python-dotenv's warning
+    for every line its parser cannot read (the load used to get it from ``load_dotenv``)."""
+    from dotenv.parser import parse_stream
+
+    out = []
+    for binding in parse_stream(io.StringIO(text)):
+        if binding.error:
+            logger.warning("python-dotenv could not parse statement starting at line %s",
+                           binding.original.line)
+        if binding.key is not None:
+            out.append((binding.key, binding.value))
+    return tuple(out)
+
+
 def _set_keys(bindings) -> list[str]:
     """The keys the bindings leave set, in first-binding order (as python-dotenv's dict
     keeps them): a key's last binding decides, and one without ``=`` sets nothing."""
@@ -312,30 +341,120 @@ def _shadow(table: dict[str, dict], layer: str, keys) -> None:
 _POSIX_VARIABLE = re.compile(r"\$\{(?P<name>[^\}:]*)(?::-(?P<default>[^\}]*))?\}")
 
 
-def _interpolate(value: str, env: Mapping[str, str]) -> str:
+_UNSET = object()
+
+
+def _expand(value: str, look, nothing: list[str]) -> str:
+    """*value* with every ``${NAME}`` / ``${NAME:-default}`` replaced, as python-dotenv
+    replaces them: ``look(name)`` is what defines the name (``_UNSET``: nothing does, so
+    the default, else ""). *nothing* collects the names that came to nothing with no
+    default to cover them: not defined, or defined blank."""
     def one(match: re.Match) -> str:
-        default = match.group("default")
-        result = env.get(match.group("name"), default if default is not None else "")
-        return result if result is not None else ""
+        name, default = match.group("name"), match.group("default")
+        found = look(name)
+        if found is _UNSET:
+            found = default
+            if default is None:
+                nothing.append(name)
+        elif default is None and not str(found if found is not None else "").strip():
+            nothing.append(name)
+        return found if found is not None else ""
     return _POSIX_VARIABLE.sub(one, value)
 
 
-def hub_values(raw, environ: Mapping[str, str]) -> dict[str, str]:
-    """What ``load_dotenv(override=False)`` adds to *environ* from a file's raw
-    bindings: a key already set is kept, and ``${VAR}`` sees the environment before the
-    file's earlier values (python-dotenv's order when it does not override)."""
+def _interpolate(value: str, env: Mapping[str, str]) -> str:
+    """python-dotenv's own expansion of one value against one mapping (no second
+    spelling): the reference ``_expand`` is checked against."""
+    return _expand(value, lambda name: env.get(name, _UNSET), [])
+
+
+class LayerValues(NamedTuple):
+    """What one file's bindings come to against an environment (``layer_values``)."""
+
+    values: dict[str, str]              # what the file adds, as spelled: a key already set is kept
+    empty: dict[str, tuple[str, ...]]   # key -> the names it references that expanded to nothing
+
+
+def _referenced(name: str, seen: Mapping[str, str | None], seen_set: Mapping[str, str],
+                environ: Mapping[str, str]):
+    """What ``${name}`` stands for: the environment first, then the file's earlier lines
+    (python-dotenv's order when it does not override), a hub variable under either
+    spelling in both (RB-2, the one pair rule). ``_UNSET`` when nothing defines it."""
+    value = env_alias.lookup(environ, name)
+    if value is not None:
+        return value
+    if env_alias.preferred_name(name) is None:
+        return seen.get(name, _UNSET)            # a binding with no "=" is None: python-dotenv reads ""
+    value = env_alias.lookup(seen_set, name)
+    return _UNSET if value is None else value
+
+
+def layer_values(raw, environ: Mapping[str, str]) -> LayerValues:
+    """What a file's raw bindings add to *environ* — THE computation, for the load and
+    for every prediction. A key already set is kept (``override=False``); a reference
+    sees the environment before the file's earlier values, and a hub variable under
+    either spelling. ``empty`` names, per key, the references that came to nothing: a name
+    nothing defines and no ``:-default`` covers, or one that is defined blank."""
     seen: dict[str, str | None] = {}
+    seen_set: dict[str, str] = {}
     out: dict[str, str] = {}
+    empty: dict[str, tuple[str, ...]] = {}
     for key, value in raw:                       # every binding in file order, rebinds too
-        resolved = None if value is None else _interpolate(value, {**seen, **environ})
+        nothing: list[str] = []
+        resolved = None if value is None else _expand(
+            value, lambda name: _referenced(name, seen, seen_set, environ), nothing)
         seen[key] = resolved
+        if resolved is None:
+            seen_set.pop(key, None)
+        else:
+            seen_set[key] = resolved
         if key in environ:
             continue
         if resolved is None:
             out.pop(key, None)                   # a last binding without "=" sets nothing
+            empty.pop(key, None)
         else:
             out[key] = resolved
+            empty[key] = tuple(dict.fromkeys(nothing))
+    return LayerValues(out, {key: names for key, names in empty.items() if names})
+
+
+def hub_values(raw, environ: Mapping[str, str]) -> dict[str, str]:
+    """What the load adds to *environ* from a file's raw bindings (``layer_values``): a
+    key already set is kept, and ``${VAR}`` sees the environment before the file's earlier
+    values (python-dotenv's order when it does not override)."""
+    return layer_values(raw, environ).values
+
+
+def _built_from_nothing(values: LayerValues, folded: env_alias.Fold) -> dict[str, tuple[str, ...]]:
+    """The hub variables this layer puts in effect that name a path, an endpoint, a
+    credential or an allowlist and were built from a reference to nothing:
+    ``{variable as spelled: the names referenced}``."""
+    out = {}
+    for name, used in folded.spelling.items():
+        if name in FROM_PROCESS_ONLY:            # recorded, never in effect
+            continue
+        if values.empty.get(used) and env_alias.reference_sensitive(name):
+            out[used] = values.empty[used]
     return out
+
+
+def _in_effect(folded: env_alias.Fold) -> dict[str, str]:
+    """What a layer puts in effect, each hub variable under the name the file spelled it
+    (so a refusal names the line the operator wrote)."""
+    return {folded.spelling.get(key, key): value for key, value in folded.values.items()
+            if key not in FROM_PROCESS_ONLY}
+
+
+def _nothing_message(found: Mapping[str, tuple[str, ...]], where: str) -> str:
+    lines = "; ".join(f"{key} references {', '.join('${' + name + '}' for name in names)}"
+                      for key, names in sorted(found.items()))
+    return (f"Refusing to start: in {where}, {lines} — and nothing sets "
+            f"{'it' if sum(map(len, found.values())) == 1 else 'them'}.\n"
+            "A reference to a variable that is not set expands to nothing, so a directory becomes "
+            "\"/\", an address or a credential becomes empty, an allowlist loses its entry. Set the "
+            "variable it names (NERVA_<X> and JARVIS_<X> are one variable), give the reference a "
+            "default (${NAME:-value}), or write the value out.")
 
 
 def after_repo_layer(repo_env, environ: Mapping[str, str]) -> dict[str, str]:
@@ -358,8 +477,8 @@ def after_repo_layer(repo_env, environ: Mapping[str, str]) -> dict[str, str]:
 
 def _layer_fold(raw, environ: Mapping[str, str]) -> env_alias.Fold:
     """What a file's raw bindings add to a canonical *environ*, both spellings of a hub
-    variable folded into one (RB-2): ``hub_values``, then ``env_alias.fold``."""
-    return env_alias.fold(hub_values(raw, environ), environ)
+    variable folded into one (RB-2): ``layer_values``, then ``env_alias.fold``."""
+    return env_alias.fold(layer_values(raw, environ).values, environ)
 
 
 def derive(repo_env, home_env, environ: Mapping[str, str]) -> dict[str, dict]:
@@ -390,19 +509,26 @@ def derive(repo_env, home_env, environ: Mapping[str, str]) -> dict[str, dict]:
     return table
 
 
-def derive_alias(repo_env, home_env, environ: Mapping[str, str]) -> tuple[dict[str, str], dict[str, list[str]]]:
-    """RB-2, without loading anything (the doctor): ``(spellings, conflicts)``.
+def derive_alias(repo_env, home_env, environ: Mapping[str, str]) -> tuple[dict, dict, dict]:
+    """RB-2, without loading anything (the doctor): ``(spellings, conflicts, unsafe)``.
 
     ``spellings`` maps a hub variable (its ``JARVIS_`` name) to the spelling that supplies
     the value the hub would have — a variable missing from it was not set by any layer.
     ``conflicts`` maps a layer to the hub variables it sets under both spellings with
     different values, which the hub's load refuses to start on; ``{}`` when there is
-    none. Names only. Follows the files as ``derive`` does; without python-dotenv (only
-    it knows values) a file that names both spellings counts as the preferred one."""
+    none. ``unsafe`` maps a layer to the variables the load refuses for the other reason:
+    a path, endpoint, credential or allowlist built from a ``${...}`` reference to
+    nothing, or a path-typed variable left at the filesystem root. Names only. Follows
+    the files as ``derive`` does; without python-dotenv (only it knows values) a file
+    that names both spellings counts as the preferred one."""
     conflicts: dict[str, list[str]] = {}
+    unsafe: dict[str, list[str]] = {}
     found = env_alias.conflicts(environ)
     if found:
         conflicts[PROCESS] = found
+    rooted = env_alias.unsafe_paths(environ)
+    if rooted:
+        unsafe[PROCESS] = rooted
     merged = env_alias.normalized(environ)
     preferred = env_alias.preferred_supplied(merged)
     spellings = {key: (env_alias.preferred_name(key) if key in preferred else key)
@@ -415,9 +541,13 @@ def derive_alias(repo_env, home_env, environ: Mapping[str, str]) -> tuple[dict[s
             continue
         parsed = _file_bindings(path)
         if parsed is not None and parsed[1] is not None:
-            folded = _layer_fold(parsed[1], merged)
+            values = layer_values(parsed[1], merged)
+            folded = env_alias.fold(values.values, merged)
             if folded.refused:
                 conflicts[layer] = sorted(folded.refused)
+            bad = set(_built_from_nothing(values, folded)) | set(env_alias.unsafe_paths(_in_effect(folded)))
+            if bad:
+                unsafe[layer] = sorted(bad)
             for key, used in folded.spelling.items():
                 spellings.setdefault(key, used)
         elif parsed is not None:
@@ -426,7 +556,7 @@ def derive_alias(repo_env, home_env, environ: Mapping[str, str]) -> tuple[dict[s
                     spellings.setdefault(env_alias.canonical(key), key)
         if layer == REPO_ENV:
             merged = after_repo_layer(path, merged)
-    return spellings, conflicts
+    return spellings, conflicts, unsafe
 
 
 def raw_values(path) -> dict[str, str | None]:
@@ -448,16 +578,17 @@ def load_layered_env(repo_env, home_env) -> dict[str, dict]:
     ``home_env`` may be a callable, called after the repo layer is loaded. A key a
     previous load in this process put in the environment keeps that attribution while
     the environment still holds the value that load set (anything else set it since);
-    what the files shadow is worked out afresh from the files as they are now. The load
-    itself is python-dotenv's public ``load_dotenv``, which checks its switch on every
-    call, so a repo .env that sets ``PYTHON_DOTENV_DISABLED`` stops the next layer."""
-    from dotenv import load_dotenv
-
+    what the files shadow is worked out afresh from the files as they are now. The
+    bindings are python-dotenv's (its parser, once per file, a bad line warned about
+    once); the values are ``layer_values``' (RB-2: a reference is resolved under either
+    spelling). python-dotenv's switch is checked before every file, so a repo .env that
+    sets ``PYTHON_DOTENV_DISABLED`` stops the next layer."""
     # RB-2 — the process layer first: a NERVA_<X> still spelled that way (set since the
-    # package was imported) is folded onto JARVIS_<X>, and a variable set twice,
-    # differently, stops the load before any file is read.
+    # package was imported) is folded onto JARVIS_<X>; a variable set twice, differently,
+    # or a path left at the filesystem root stops the load before any file is read.
     env_alias.normalize_process_env()
     env_alias.refuse_conflicts()
+    env_alias.refuse_unsafe_paths()
     table: dict[str, dict] = {}
     loaded: dict[str, tuple[str, str]] = {}
     not_set: set[str] = set()
@@ -492,22 +623,23 @@ def load_layered_env(repo_env, home_env) -> dict[str, dict]:
         with open(path, encoding="utf-8") as stream:   # once: a pipe cannot be read twice
             text = stream.read()
         info["read"] = True
-        before = set(os.environ)
-        load_dotenv(stream=io.StringIO(text), override=False, interpolate=True)
-        now = dict(os.environ)
-        added = {key: now[key] for key in now.keys() - before}
-        if env_alias.MARKER in added:           # the hub's own note of spellings: no file writes it
-            os.environ.pop(env_alias.MARKER, None)
-            del added[env_alias.MARKER]
+        before = dict(os.environ)
+        raw = _parse_and_warn(text)             # parsed once; a bad line is warned about here
+        values = layer_values(raw, before)
+        added = dict(values.values)
+        added.pop(env_alias.MARKER, None)       # the hub's own note of spellings: no file writes it
         # RB-2 — both spellings of a hub variable are one key of this layer. A file that
-        # sets them differently is refused here, by name, with the file's keys still in
-        # the environment as written (the process is stopping).
+        # sets them differently is refused here, by name, before any of it is in effect;
+        # so is a path, endpoint, credential or allowlist built from a reference to
+        # nothing, and a path-typed variable left at the filesystem root.
+        where = f"the {LABELS[layer]}"
         folded = env_alias.fold(added, before)
         if folded.refused:
-            raise SystemExit(env_alias.conflict_message(sorted(folded.refused), f"the {LABELS[layer]}"))
-        for key in added:
-            if key not in folded.values:
-                os.environ.pop(key, None)       # a NERVA_ spelling: folded, or a higher layer's wins
+            raise env_alias.ConfigurationRefused(env_alias.conflict_message(sorted(folded.refused), where))
+        nothing = _built_from_nothing(values, folded)
+        if nothing:
+            raise env_alias.ConfigurationRefused(_nothing_message(nothing, where))
+        env_alias.refuse_unsafe_paths(_in_effect(folded), where=where)
         for key, value in folded.values.items():
             if key in FROM_PROCESS_ONLY:
                 os.environ.pop(key, None)       # recorded, never in effect (see FROM_PROCESS_ONLY)
@@ -519,9 +651,8 @@ def load_layered_env(repo_env, home_env) -> dict[str, dict]:
             loaded[key] = (layer, _digest(value))
         env_alias._record(os.environ, {key: used for key, used in folded.spelling.items()
                                        if key not in FROM_PROCESS_ONLY})
-        env_alias._warn_overridden(folded.overridden, f"the {LABELS[layer]}")
-        # parsed without a second warning; a hub variable shadows under its JARVIS_ name
-        _shadow(table, layer, [env_alias.canonical(key) for key in _set_keys(_bindings(text))])
+        # a hub variable shadows under its JARVIS_ name
+        _shadow(table, layer, [env_alias.canonical(key) for key in _set_keys(raw)])
     _TABLE.clear()
     _TABLE.update({key: {"layer": row["layer"], "shadowed": list(row["shadowed"])} for key, row in table.items()})
     _FILES.clear()
@@ -670,7 +801,7 @@ def provenance(environ: Mapping[str, str] | None = None) -> dict[str, dict]:
 __all__ = [
     "FROM_PROCESS_ONLY", "HUB_PREFIXES", "LABELS", "SECRET_HINTS", "PROCESS_ONLY_NOTE", "PROCESS", "READ_AGAIN_AFTER_LOAD", "READ_BEFORE_LOAD", "REPO_ENV",
     "REPO_ENV_FILE", "RUNTIME", "SPLIT_NOTES", "OPTIONAL_SPLIT_NOTES", "USER_ENV", "after_repo_layer", "derive", "derive_alias", "dotenv_disabled",
-    "env_file_keys", "files", "hub_credential", "hub_values", "is_fifo", "is_file_or_fifo", "load_hub_env",
+    "env_file_keys", "files", "hub_credential", "hub_values", "is_fifo", "is_file_or_fifo", "layer_values", "load_hub_env",
     "load_layered_env", "masked", "note_for", "profile_env_file", "provenance", "raw_values", "spelling", "text_keys",
 ]
 

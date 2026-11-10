@@ -1739,16 +1739,59 @@ file or compose file needs no change. This page and the code keep the `JARVIS_` 
   used. A `.env` value never overrides a process value, and the names a `.env` cannot
   set (`JARVIS_HOME`, `JARVIS_APP_ROOT`, `JARVIS_MEMORY_DIR`, `JARVIS_PROFILE`) cannot
   be set there as `NERVA_<X>` either.
-- **Both spellings set, in the same place, to different values:** the hub **refuses to
-  start** and names the variable (never a value). That covers every posture flag,
-  credential, file-location root, endpoint and allowlist — a stale line must not decide
-  the box's protection. The exception is a short reviewed list of plain tuning knobs
-  (ports, timeouts, sizes, model picks, log shape —
-  `env_config.NERVA_WINS_ON_CONFLICT`): there `NERVA_<X>` wins and one warning names
-  the variable. Equal values are fine; an empty one yields to the other.
+- **One rule when both spellings are set in the same place** (the process environment,
+  or one `.env` file) **to different values: the hub refuses to start** and names the
+  variable (never a value). This holds for *every* hub variable — there is none for
+  which one spelling "wins". Equal values are fine; an empty one yields to the other.
+  The coordinator, the `nerva` command and the stdio MCP bridge apply the same rule;
+  the runtime supervisor stops (exit status 78) instead of respawning a coordinator
+  that refused.
+- **Naming a variable works under either spelling too:** `--token-env NERVA_USER_TOKEN`,
+  `NERVA_MCP_STDIO_ALLOWED_ENV=NERVA_HOME,NERVA_PROFILE` (the child receives
+  `JARVIS_HOME` / `JARVIS_PROFILE`, exactly what the old spelling passes) and a
+  `${NERVA_HA_URL}` / `${env:NERVA_HA_URL}` reference in a setting.
+- **References in a `.env`.** `${NAME}` and `${NAME:-default}` resolve under either
+  spelling of a hub variable, from the environment first and the file's earlier lines
+  second, in every layer. A line that defines a path, an address, a credential or an
+  allowlist from a `${NAME}` that nothing sets (and that has no `:-default`) is refused
+  at start, and so is a path-typed variable whose value is the filesystem root: before
+  this, `JARVIS_FILE_ROOTS=${UNSET}/` silently became `/`. The path-typed variables:
+  `HOME`, `USER_HOME`, `MEMORY_DIR`, `APP_ROOT`, `FILE_ROOTS`, `TERMINAL_LOCAL_ROOTS`,
+  `MEDIA_ROOTS`, `KEY_DIR`, `EXEC_TEMP_DIR`, `FORGET_ARCHIVE_DIR`,
+  `PLAYWRIGHT_DOWNLOAD_DIR`, `DRIVE_AI_DEST`, `EVAL_STORE`, `LOG_FILE`, `RUNTIME_LOG`,
+  `RUNTIME_STATE`, `SUBAGENT_SPAWN_LOG`, `CA_BUNDLE`, `WASM_PYTHON`,
+  `TERMINAL_SSH_KNOWN_HOSTS`.
 - **Seeing it.** `nerva doctor` (`config_sources`) marks each key still supplied under
-  the old spelling and fails on a conflict; `/api/admin/env/sources` reports
-  `spelling`, `preferred` and `deprecated` per hub variable.
-- **Outside the hub's reach.** A unit file, compose file or shell script that forwards
-  variables by name forwards only the names it lists: one that passes `JARVIS_<X>`
-  through must be given `NERVA_<X>` too before the new spelling reaches the hub.
+  the old spelling and fails on a conflict or an unsafe value; `/api/admin/env/sources`
+  reports `spelling`, `preferred` and `deprecated` per hub variable.
+
+### Variables a launcher pins — override these as `JARVIS_<X>`
+
+A launcher that sets a variable itself puts it in the process environment under the
+`JARVIS_` spelling. If you then set `NERVA_<X>` for the same variable in that environment
+(`docker run -e`, a compose `environment:` or `env_file:`, a systemd `EnvironmentFile`),
+the hub sees one variable with two values and refuses to start; the message says that
+one of the two may be the launcher's. **Override a pinned variable under the spelling
+the launcher uses, or change the launcher's own line.**
+
+| Launcher | Pins (always) |
+|---|---|
+| `Dockerfile` | `JARVIS_HOST`, `JARVIS_PORT`, `JARVIS_HOME` |
+| `docker-compose.yml` (hub) | `JARVIS_HOST`, `JARVIS_PORT`, `JARVIS_HOME` |
+| `docker-compose.yml` (runtime) | `JARVIS_HOME` |
+| `docker-compose.quickstart.yml` | `JARVIS_HOST`, `JARVIS_PORT`, `JARVIS_HOME` |
+| `deploy/systemd/jarvis-hub.service` | `JARVIS_HOST`, `JARVIS_PORT`, `JARVIS_SHUTDOWN_TIMEOUT`, `JARVIS_HOME` |
+| `deploy/systemd/jarvis-runtime.service` | `JARVIS_HOME`, `JARVIS_RUNTIME_LOG`, `JARVIS_RUNTIME_STATE` |
+| `deploy/windows/install-service.ps1` | `JARVIS_HOST`, `JARVIS_PORT`, `JARVIS_SHUTDOWN_TIMEOUT`, `JARVIS_HOME` (script parameters) |
+
+`start.sh` and `START.bat` only *default* a variable when it is not set
+(`JARVIS_HUD=v2`, `JARVIS_SIGNAL_LAYER_MODE=replay`), and they look at both spellings
+first, so a `NERVA_HUD` or `NERVA_SIGNAL_LAYER_MODE` of yours is never turned into a
+conflict. Two pins were removed because they only restated the code's default
+(`JARVIS_HUD=v2` in the image and the quickstart compose file, `JARVIS_LOG_LEVEL=info`
+in the hub unit): those two can be set under either spelling everywhere.
+
+Names that stay `JARVIS_`-only because nothing in the hub reads them through the alias:
+`JARVIS_WORLDVIEW` (a comment in the systemd env template; no code reads it) and the
+`$JARVIS_ADMIN_TOKEN` / `$JARVIS_USER_TOKEN` shell variables in the generated API sweep
+snippets (`scripts/gen_api_sweep.py`, text for a human to paste).

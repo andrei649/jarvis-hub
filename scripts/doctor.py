@@ -34,8 +34,11 @@ config_sources      advisory   informational: which layer supplied each configur
                                the ``JARVIS_`` name the hub reads; the row says when the
                                deprecated ``JARVIS_`` spelling supplied it (``NERVA_<X>`` is
                                preferred, RB-2), and the check is ``fail`` when one layer sets
-                               both spellings to different values (``env_spelling_conflict``:
-                               the hub refuses to start on it). Read from the running hub when it
+                               both spellings to different values (``env_spelling_conflict``),
+                               builds a path, endpoint, credential or allowlist from a
+                               ``${...}`` reference to nothing, or leaves a path at the
+                               filesystem root (``env_unsafe_value``): the hub refuses to
+                               start on each. Read from the running hub when it
                                answers (asked without a credential first; the admin token
                                follows a refusal only to a hub on this machine), else
                                predicted from this shell; warns when it withholds a .env name
@@ -926,6 +929,7 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
     unreadable: list = []
     values: dict | None = {}
     conflicts: dict = {}
+    unsafe: dict = {}
     if hub is not None:
         table = {row["key"]: {"layer": row.get("layer"), "shadowed": _layers(row.get("shadowed"))}
                  for row in hub["sources"] if isinstance(row, dict) and isinstance(row.get("key"), str)}
@@ -953,14 +957,14 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
         if profile_env is not None:
             # H689b — a profile's hub reads its own root's .env and neither shared file.
             table = ep.derive(None, profile_env, env)
-            spellings, conflicts = ep.derive_alias(None, profile_env, env)
+            spellings, conflicts, unsafe = ep.derive_alias(None, profile_env, env)
             detail = (f"profile .env {_file_state(ep, profile_env)}; the repo and data-home .env are "
                       f"{ep.PROFILE_NOT_READ}")
             sources = (("user_env", profile_env),)
         else:
             repo_env = root / ".env"
             table = ep.derive(repo_env, _home_env, env)
-            spellings, conflicts = ep.derive_alias(repo_env, _home_env, env)
+            spellings, conflicts, unsafe = ep.derive_alias(repo_env, _home_env, env)
             home = _home_env(ep.after_repo_layer(repo_env, env))
             detail = f"repo .env {_file_state(ep, repo_env)}; data-home .env {_file_state(ep, home)}"
             sources = (("repo_env", repo_env), ("user_env", home))
@@ -1029,12 +1033,26 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
         reason = (f"env_spelling_conflict:{','.join(sorted({n for names in conflicts.values() for n in names}))} — "
                   f"NERVA_<X> and JARVIS_<X> are one variable, and {named} "
                   f"{'is' if sum(map(len, conflicts.values())) == 1 else 'are'} set under both spellings "
-                  f"with different values: the hub refuses to start; keep one line. " + reason)
+                  f"with different values: the hub refuses to start. Keep one line; if one of them "
+                  f"comes from the container image, the compose file, the service unit or a start "
+                  f"script, override it under the spelling that launcher uses (JARVIS_<X>). " + reason)
+    if unsafe:
+        # RB-2: a path, endpoint, credential or allowlist built from a ${...} reference to
+        # nothing, or a path-typed variable at the filesystem root. The hub refuses these too.
+        status = FAIL
+        named = "; ".join(f"{', '.join(names)} in the {ep.LABELS.get(layer, layer)}"
+                          for layer, names in sorted(unsafe.items()))
+        reason = (f"env_unsafe_value:{','.join(sorted({n for names in unsafe.values() for n in names}))} — "
+                  f"{named}: built from a ${{...}} reference to a variable nothing sets, or left at the "
+                  f"filesystem root. The hub refuses to start; set the variable the reference names or "
+                  f"write the value out. " + reason)
     data = {"sources": rows, "labels": dict(ep.LABELS)}
     if old_spelling:
         data["deprecated_spellings"] = old_spelling      # {the name set: the name to use}
     if conflicts:
         data["spelling_conflicts"] = {layer: list(names) for layer, names in sorted(conflicts.items())}
+    if unsafe:
+        data["unsafe_values"] = {layer: list(names) for layer, names in sorted(unsafe.items())}
     return Check("config_sources", status, reason, f"{where}; {detail}", data=data)
 
 

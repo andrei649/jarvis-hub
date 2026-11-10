@@ -287,13 +287,16 @@ def test_a_roots_disagreement_stops_the_start(tmp_path):
         assert other not in result["message"]
 
 
-def test_an_ordinary_knob_set_twice_starts_on_the_new_spelling_with_one_warning(tmp_path):
-    result = _boot(tmp_path, {"NERVA_PORT": "8201", "JARVIS_PORT": "8202"},
-                   "NERVA_LOG_LEVEL=warning\nJARVIS_LOG_LEVEL=info\n", label="knob")
-    assert not result["refused"], result.get("message")
-    assert result["port"] == 8201 and result["direct"]["JARVIS_LOG_LEVEL"] == "warning"
-    assert result["output"].count("NERVA_PORT and JARVIS_PORT are both set") == 1
-    assert result["output"].count("NERVA_LOG_LEVEL and JARVIS_LOG_LEVEL are both set") == 1
+def test_a_tuning_knob_set_twice_is_refused_like_everything_else(tmp_path):
+    """There is no "NERVA wins" list: PORT in the process and LOG_LEVEL in a file refuse."""
+    in_shell = _boot(tmp_path, {"NERVA_PORT": "8201", "JARVIS_PORT": "8202"}, label="knob-shell")
+    assert in_shell["refused"] and "NERVA_PORT / JARVIS_PORT" in in_shell["message"]
+    # the process refusal says where the other line may come from, and the remedy
+    assert "container image, the compose file, the service unit" in in_shell["message"]
+    assert "under the SAME spelling the launcher uses" in in_shell["message"]
+    in_file = _boot(tmp_path, {}, "NERVA_LOG_LEVEL=warning\nJARVIS_LOG_LEVEL=info\n", label="knob-file")
+    assert in_file["refused"] and "NERVA_LOG_LEVEL / JARVIS_LOG_LEVEL" in in_file["message"]
+    assert "Keep one of the two lines in that file" in in_file["message"]
 
 
 def test_no_hub_variable_is_read_before_the_fold(tmp_path):
