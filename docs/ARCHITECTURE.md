@@ -690,6 +690,7 @@ table, the snapshot, or a tool named in these docs drifts from the registry.
 | `memory` | ungated | reversible | restore | trusted | narrowed live | `tool:memory` |
 | `operator_plan` | ungated | read_only | none | trusted | static | `tool:operator_plan` |
 | `osint_enrich` | gated | sensitive | implementation_specific | untrusted | static | `tool:osint_enrich` |
+| `request_secret` | ungated | read_only | none | untrusted | static | `tool:request_secret` |
 | `search_memory` | ungated | read_only | none | trusted | static | `tool:search_memory` |
 | `session_search` | ungated | read_only | none | trusted | static | `tool:session_search` |
 | `skill_propose` | ungated | reversible | cancel | trusted | static | `tool:skill_propose` |

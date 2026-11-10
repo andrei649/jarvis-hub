@@ -11,6 +11,8 @@ Both surfaces reach state only through the live orchestrator (`orch.secret_broke
 needed. `orch` is read at request time via `get_orch()`.
 """
 
+import re
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 
@@ -22,6 +24,9 @@ from agents.core.app_state import get_orch
 
 
 router = APIRouter(tags=["secrets"])
+
+_BROKER_NAME = re.compile(r"[A-Za-z0-9_.\-]{1,128}")
+_ENV_NAME = re.compile(r"[A-Z][A-Z0-9_]{1,127}")
 
 
 # ── H15.4 Secret broker (JIT credential injection; handles never expose value) ─
@@ -39,6 +44,23 @@ async def secret_broker_put(req: Request):
     name, value = (body or {}).get("name"), (body or {}).get("value")
     if not name or value is None:
         return JSONResponse({"error": "name and value required"}, status_code=400)
+    # G4 review: the handle grammar the broker resolves ({{secret:NAME}}), and a bounded
+    # string value; anything else is not a secret a handle could ever name.
+    if (not isinstance(name, str) or not isinstance(value, str) or len(value) > 65536
+            or _BROKER_NAME.fullmatch(name) is None):
+        return JSONResponse({"error": "invalid name or value"}, status_code=400)
+    # G1/G4: an administrator's managed configuration (managed mode, an unreadable managed
+    # file, or this name pinned in the managed .env) refuses the write, audited.
+    from agents.core.managed_scope import ManagedRefused, audit_refusal, check_env_write, check_writable
+
+    try:
+        if _ENV_NAME.fullmatch(name):
+            check_env_write(name)
+        else:
+            check_writable()
+    except ManagedRefused as exc:
+        audit_refusal(exc, "secret broker write")
+        return nocache_json(exc.payload(), status_code=409)
     broker.put(name, value)
     return nocache_json({"ok": True, "name": name, "reference": broker.reference(name)})
 
