@@ -13,8 +13,11 @@
 - A new chat gets a short title from your first words, then a better one from the local model.
   Rename it yourself in the Sessions panel and the model never changes it back.
 - When you continue a long chat, the continuation is called "Title #2", "#3" and so on. The list
-  shows one row per conversation and opens its newest part; archive, pin and delete act on the
-  whole conversation. `nerva chat -r "Title"` opens the newest part too.
+  shows the newest part of each conversation and hides the earlier ones; a chat you continued
+  twice from the same point shows both branches. Archive and pin act on the whole conversation.
+  Delete asks to remove the whole conversation and keeps a backup of every part.
+  `nerva chat -r "Title"` opens the newest part.
+- Two chats that start with the same words are named "hello" and "hello (2)".
 
 **The approval mode does what it says (#1347)**
 - `/approvals` in chat and `nerva approvals mode` show and set the mode (auto, ask, off); only
