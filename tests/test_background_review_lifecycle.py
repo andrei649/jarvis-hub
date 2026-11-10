@@ -27,6 +27,7 @@ from agents.core import cost_tracker
 from agents.core import orchestrator as orch_module
 from agents.core.commands import Principal
 from agents.core.learning.background_review import BackgroundReviewer, action_summary
+from agents.core.learning.memory_proposals import MemoryProposalStore
 from agents.core.llm.egress import llm_async_client
 from agents.core.llm.tool_protocol import TokenUsage
 from agents.core.llm.usage_context import report_text_usage
@@ -63,6 +64,19 @@ class _Memory:
         return [{"role": "user", "content": "hello"}]
 
 
+class _WatchedFromTheStart(MemoryProposalStore):
+    """These tests are about the review's lifecycle around a session (cancel, usage, the
+    summary's delivery), over a stand-in conversation store. Whether a conversation is
+    clean is H443's own subject (tests/test_h443_review_loop.py, on the real stores):
+    here every conversation is one the hub watched clean from its first turn."""
+
+    def is_clean(self, session_id):
+        return True
+
+    def session_clean(self, session_id, turns=None):
+        return True
+
+
 def _reviewer(llm, **settings):
     values = {"learning.review_daily_budget": 20, **settings}
     return BackgroundReviewer(llm, living=_Living(), get_setting=lambda k, d=None: values.get(k, d))
@@ -76,6 +90,10 @@ def _orch(monkeypatch, reviewer, session="web-1"):
     orch.cognition = SimpleNamespace(sub_enabled=lambda name: name == "review_enabled")
     orch.reviewer = reviewer
     orch._session_id_default = session
+    # H443: the review inherits the turn, so the hub it runs in has settings to read
+    # (the approval dial) and the ledger of conversations watched clean from their start.
+    orch._runtime_settings = {}
+    orch.memory_proposals = _WatchedFromTheStart(None)
     return orch
 
 
@@ -102,7 +120,7 @@ def _stuck():
 def _owner_principal():
     """The review summary is the owner's: these tests run as the admin unless one says
     otherwise (``_as``)."""
-    token = bind_turn_principal(Principal(channel="telegram", sender="1", admin=True))
+    token = bind_turn_principal(Principal(channel="web", sender="1", admin=True))
     yield
     reset_turn_principal(token)
 

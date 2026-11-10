@@ -17,6 +17,7 @@ import { CoachPanel } from './panels/coach';
 import { DocsPanel, docHref, sectionIndex } from './panels/docs';
 import { WebhooksPanel } from './panels/webhooks';
 import { LongTermMemoryPanel } from './panels/long-term-memory';
+import { SessionUsage } from './panels/session-usage';
 import { SkillSwitchesPanel } from './panels/skill-switches';
 import { ProviderCheckPanel } from './panels/provider-check';
 import { ProviderQuotaPanel } from './panels/provider-quota';
@@ -2135,6 +2136,8 @@ function APMPanel() {
       <Row><span>tokens</span><span style={{ marginLeft: 'auto' }}>{d.tokens ?? d.total_tokens ?? '—'}</span></Row>
       <Row><span>cost $</span><span style={{ marginLeft: 'auto' }}>{d.cost ?? d.total_cost ?? '—'}</span></Row>
     </div>}
+    {/* H443: one conversation's usage by purpose — its turns and the reviews made for it. */}
+    <SessionUsage />
   </Card>;
 }
 

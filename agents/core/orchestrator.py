@@ -96,6 +96,7 @@ from .security import GuardrailsEngine, bind_guardrails
 from .security.audit import AuditLogger
 from .security.recall_taint import mark_turn_recall_tainted
 from .security.taint import is_untrusted_source
+from .learning.memory_proposals import write_approval_required
 from .security.types import RedactionMode, SecurityEvent, SecurityEventType
 from .env_config import env_flag, env_str, truthy
 from .log import log_error
@@ -321,6 +322,21 @@ def reset_turn_principal(token) -> None:
 def current_principal() -> Principal:
     """The principal bound to this turn; nobody in particular when none was bound."""
     return _turn_principal.get() or Principal()
+
+
+def _turn_is_untrusted() -> bool:
+    """H443 — whether what this turn puts in its conversation is not the owner's own
+    word: its action origin is untrusted (an inbound channel, web text, a flagged recall,
+    an attached file), or the speaker is a guest (a non-admin token at the HUD shares the
+    owner's conversation). A turn that cannot be placed is untrusted."""
+    try:
+        from .tool_profiles import PRINCIPAL_GUEST, classify_turn
+
+        origin = current_action_origin()
+        return (is_untrusted_source(origin)
+                or classify_turn(_turn_principal.get(), origin).principal == PRINCIPAL_GUEST)
+    except Exception:
+        return True
 
 
 #: H058: set for a turn ``channel_handler`` admits — the path that judges the owner's
@@ -1242,8 +1258,15 @@ class Orchestrator:
             # H665 — batches of skill operations the model proposed, decided by the owner.
             from .skills.batch import SkillBatchStore
             self.skill_batches = SkillBatchStore(path=_dp("learning", "skill_batches.json"))
+            # H443 — memory writes the review holds for the owner, and the conversations
+            # watched clean from their first turn. Read off the event loop; an approval
+            # given before a restart is applied now (once: a ring put is idempotent).
+            from .learning.memory_proposals import MemoryProposalStore
+            self.memory_proposals = await asyncio.to_thread(
+                MemoryProposalStore, _dp("learning", "memory_proposals.json"))
 
             self.reviewer = self._build_background_reviewer()
+            await self.settle_memory_proposals()
 
             # H20.5 — usage telemetry (sidecar, best-effort) + the nightly skill
             # curator (lifecycle + approved-patch application; gated at the tick).
@@ -1439,7 +1462,149 @@ class Orchestrator:
             approvals=getattr(self, "action_approvals", None),
             get_setting=self.get_setting,
             audit=lambda: getattr(self, "intent_log", None),
+            # H443: a memory write the turn may not make on its own is held here, the
+            # gate is read from the settings store itself, and a pass names its turn.
+            memory_proposals=lambda: getattr(self, "memory_proposals", None),
+            write_approval=write_approval_required,
+            require_scope=True,
         )
+
+    def _memory_proposal_apply(self):
+        """H443 — the writer of an approved memory proposal: the living memory while
+        cognition memory and the owner's switch are on, the review's injection scan, the
+        intent log."""
+        from .learning.background_review import _default_detect
+        from .learning.memory_proposals import apply_to_rings
+        from .memory_tool import switched_on
+
+        def _living():
+            cog = getattr(self, "cognition", None)
+            if cog is None or not cog.sub_enabled("memory_enabled"):
+                return None
+            return cog.module("memory")
+
+        return apply_to_rings(_living, switched_on=lambda: switched_on(self.get_setting),
+                              detect=_default_detect, audit=lambda: getattr(self, "intent_log", None))
+
+    async def settle_memory_proposals(self, proposal_id: Optional[str] = None) -> dict:
+        """H443 — bring held memory writes to what their approval cards say (one, or all):
+        an approved one is written, a rejected or expired one closed. Off the event loop
+        (ring file locks, saves). Never raises."""
+        store = getattr(self, "memory_proposals", None)
+        if store is None:
+            return {}
+        queue = getattr(self, "action_approvals", None)
+        try:
+            apply = self._memory_proposal_apply()
+            if proposal_id is not None:
+                return await asyncio.to_thread(store.settle_one, str(proposal_id), queue, apply)
+            return await asyncio.to_thread(store.settle, queue, apply)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning("memory proposals could not be settled", exc_info=True)
+            return {}
+
+    async def decide_memory_proposal(self, proposal_id: str, approved: bool, *, by: str = "admin",
+                                     reason: Optional[str] = None) -> dict:
+        """H443 — the owner's decision on one held memory write, by its id."""
+        store = getattr(self, "memory_proposals", None)
+        if store is None:
+            return {"ok": False, "reason": "unavailable"}
+        try:
+            return await asyncio.to_thread(
+                store.decide, str(proposal_id), bool(approved), getattr(self, "action_approvals", None),
+                self._memory_proposal_apply(), by=by, reason=reason)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # The ledger or the queue could not be saved. What the card says stands, and
+            # the next settle (the list, a restart) brings the proposal to it.
+            logger.warning("memory proposal %s could not be decided now", proposal_id, exc_info=True)
+            return {"ok": False, "reason": "unavailable"}
+
+    def _review_scope(self, channel: Optional[str], session_id: Optional[str] = None):
+        """H443 — what a review of the turn in flight inherits from it (``review_policy``):
+        its principal and surface, whether it read untrusted content or its conversation
+        is not on the clean list, whether its posture was offered the ``memory`` and
+        ``skill_propose`` tools (the tool-profile resolver's own answer) and the approval
+        dial. Read in the turn's context, before it is reset. Fails closed: a turn that
+        cannot be placed is nobody's, and is not reviewed."""
+        from .learning.review_policy import LEG_TOOLS, ReviewScope
+
+        sid = self._review_key(session_id if session_id is not None else self.session_id)
+        try:
+            from .action_origin import OPERATOR_TURN_CHANNELS
+            from .autonomy import mode as approval_mode
+            from .tool_profiles import PRINCIPAL_OWNER, PRINCIPAL_SYSTEM, classify_turn, resolve_tools
+
+            principal = _turn_principal.get()
+            origin = current_action_origin()
+            posture = classify_turn(principal, origin)
+            where = str(channel or "").strip().lower()
+            owner = (principal is not None and principal.admin is True
+                     and posture.principal == PRINCIPAL_OWNER)
+            local_unbound = (principal is None and posture.principal == PRINCIPAL_SYSTEM
+                             and where in OPERATOR_TURN_CHANNELS)
+            # Both tools are registered ungated (memory_tool, skills/tools).
+            rows = [{"name": name, "gated": False} for name in LEG_TOOLS.values()]
+            offered, _withheld = resolve_tools(rows, posture=posture, settings=self.get_setting,
+                                               shared_session=self.on_shared_session())
+            names = {str(row.get("name")) for row in offered}
+            store = getattr(self, "memory_proposals", None)
+            tainted = _turn_is_untrusted() or store is None or not store.is_clean(sid)
+            return ReviewScope(
+                session_id=sid, owner=owner, local_unbound=local_unbound, tainted=tainted,
+                memory_offered=LEG_TOOLS["memory"] in names, skills_offered=LEG_TOOLS["skills"] in names,
+                mode=approval_mode.global_mode(self), channel=where)
+        except Exception:
+            logger.warning("learning review: the turn could not be placed; it is not reviewed", exc_info=True)
+            return ReviewScope(session_id=sid)
+
+    async def _note_turn_taint(self, session_id: Optional[str]) -> None:
+        """H443 — a turn that is untrusted (a message from outside, a guest's, one that
+        read web text, a flagged recall or an attached file) takes its conversation off
+        the clean list, durably: what it leaves there is replayed by later reviews. Called
+        whether or not the review loop is on (it may be switched on later): before the
+        turn's reply is stored, and again as the turn ends, whatever way it ends. Off the
+        event loop; only a conversation that was clean pays the one small save."""
+        store = getattr(self, "memory_proposals", None)
+        if store is None:
+            return
+        try:
+            sid = Orchestrator._review_key(session_id or self.session_id)
+            if not store.is_clean(sid):
+                return
+            await asyncio.shield(asyncio.to_thread(store.revoke, sid))
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning("learning review: the conversation could not be taken off the clean list on "
+                           "disk; it is off it in this process", exc_info=True)
+
+    async def _watch_turn_start(self, session_id: Optional[str]) -> None:
+        """H443 — as a turn starts, before its message joins the conversation: an
+        untrusted turn (a message from outside, a guest's) takes the conversation off the
+        clean list now; a turn that is not, on a conversation that is still empty, puts it
+        on (it is watched from its first turn). A conversation that already holds turns
+        and is not on the list is left off it. Never raises into the turn."""
+        store = getattr(self, "memory_proposals", None)
+        if store is None:
+            return
+        try:
+            sid = Orchestrator._review_key(session_id or self.session_id)
+            if _turn_is_untrusted():
+                await Orchestrator._note_turn_taint(self, sid)
+                return
+            if store.is_clean(sid):
+                return
+            if await self.memory.get_history(sid, last_n=1):
+                return
+            await asyncio.shield(asyncio.to_thread(store.admit, sid))
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.debug("learning review: the conversation was not put on the clean list", exc_info=True)
 
     def _build_daily_reflector(self) -> DailyReflector:
         """The nightly reflection as the hub runs it: the conversation memory, a jarvis
@@ -2908,6 +3073,8 @@ class Orchestrator:
             record_turn_completion("refused")
             return CONTINUATION_REFUSED_REPLY
         finally:
+            # H443: read before the origin is reset, saved after every reset below.
+            read_untrusted = _turn_is_untrusted()
             state = _TURN_CHAT_OUTCOMES.get()
             close_approval_turn(state["context"] if state else None, outcome_token)
             _TURN_CHAT_OUTCOMES.reset(snapshot_token)
@@ -2925,6 +3092,8 @@ class Orchestrator:
             _TURN_TITLE.reset(title_token)
             if titles:
                 self._start_title_upgrades(titles)
+            if read_untrusted:
+                await Orchestrator._note_turn_taint(self, session_id)
 
     async def _handle_input(self, text: str, channel: str = "voice", agent_override: str = None,
                             session_id: str = None) -> str:
@@ -3177,6 +3346,8 @@ class Orchestrator:
             record_turn_completion("refused")
             return CONTINUATION_REFUSED_REPLY
         finally:
+            # H443: read before the origin is reset, saved after every reset below.
+            read_untrusted = _turn_is_untrusted()
             state = _TURN_CHAT_OUTCOMES.get()
             close_approval_turn(state["context"] if state else None, outcome_token)
             _TURN_CHAT_OUTCOMES.reset(snapshot_token)
@@ -3194,6 +3365,8 @@ class Orchestrator:
             _TURN_TITLE.reset(title_token)
             if titles:
                 self._start_title_upgrades(titles)
+            if read_untrusted:
+                await Orchestrator._note_turn_taint(self, session_id)
 
     async def _handle_input_stream(self, text: str, channel: str = "voice", on_token: Callable = None,
                                    agent_override: str = None, session_id: str = None) -> str:
@@ -4725,6 +4898,17 @@ class Orchestrator:
             reviewer = getattr(self, "reviewer", None)
             if reviewer is None:
                 return
+            # H443: the review inherits the turn. Taken here, in the turn's own context;
+            # a turn that is not the owner's is not reviewed (no model call, no budget, no
+            # cadence count), and with the approval dial on ``off`` the proactive pass is
+            # paused like the rest of the machine's own work.
+            scope = self._review_scope(channel)
+            if not scope.admitted:
+                logger.debug("background review skipped (not the owner's turn)")
+                return
+            if scope.mode == "off":
+                logger.debug("background review skipped (the approval dial is off)")
+                return
             ok, reason = reviewer.should_run()
             if not ok:
                 logger.debug("background review skipped (%s)", reason)
@@ -4739,7 +4923,7 @@ class Orchestrator:
                 previous.cancel()
             from .turn_usage import detached_turn_usage
             with detached_turn_usage():
-                task = asyncio.create_task(self._background_review_task(text, synthesized))
+                task = asyncio.create_task(self._background_review_task(text, synthesized, scope))
             tasks[key] = task
             task.add_done_callback(_log_task_result)
             task.add_done_callback(functools.partial(self._forget_review_task, key))
@@ -4789,6 +4973,9 @@ class Orchestrator:
         from .turn_notices import record_turn_notice
 
         key = self._review_key(session_id)
+        # H443: before this turn's message joins the conversation, the clean list follows
+        # it — off for an untrusted turn, on for a conversation watched from its start.
+        await Orchestrator._watch_turn_start(self, key)
         try:
             cancelled = await self.cancel_background_review(key)
         except asyncio.CancelledError:
@@ -4796,12 +4983,38 @@ class Orchestrator:
         except Exception:
             logger.debug("background review cancel skipped", exc_info=True)
             cancelled = False
-        if current_principal().admin is not True:
+        principal = current_principal()
+        if principal.admin is not True or principal.scope != "dm":
+            # H443: a group chat's reply is read by everyone in it; the owner's notices
+            # wait for a conversation that is the owner's alone.
             return cancelled
+        from .action_origin import OPERATOR_TURN_CHANNELS
+        from .learning.review_policy import notification_mode
+
         notices = self.__dict__.get("_review_notices") or {}
-        shown = [key] if key in notices else []
-        shown += [sid for sid in notices if sid != key][:_REVIEW_NOTICE_LINES - len(shown)]
-        lines = [notices[sid] if sid == key else f"{notices[sid]} (conversation {sid})" for sid in shown]
+        mode = notification_mode(getattr(self, "get_setting", None))
+        if mode == "off":
+            # H443 (display.memory_notifications): no line. The reviews still ran and
+            # wrote; nothing is kept to show later.
+            notices.clear()
+            return cancelled
+        # A preview of a fact is shown where the fact came from, or on the hub's own
+        # screen: another conversation's facts are not sent to a chat service.
+        local = str(principal.channel or "").strip().lower() in OPERATOR_TURN_CHANNELS
+
+        def line_for(sid: str) -> str:
+            notice = notices[sid]
+            return (str(getattr(notice, "verbose", notice)) if mode == "verbose" and (sid == key or local)
+                    else str(notice))
+
+        if mode == "on":
+            # A pass that only skipped things has no `on` line: nothing to keep for it.
+            for sid in [sid for sid in notices if not str(notices[sid])]:
+                notices.pop(sid, None)
+        ready = [sid for sid in ([key] if key in notices else []) + [sid for sid in notices if sid != key]
+                 if line_for(sid)]
+        shown = ready[:_REVIEW_NOTICE_LINES]
+        lines = [line_for(sid) if sid == key else f"{line_for(sid)} (conversation {sid})" for sid in shown]
         if lines and record_turn_notice("background_review", "\n".join(lines)):
             for sid in shown:
                 notices.pop(sid, None)
@@ -4842,7 +5055,28 @@ class Orchestrator:
         snapshot = conversation_snapshot(turns)
         if not snapshot:
             return {"ran": False, "reason": "empty_conversation", "actions": []}
-        result = await reviewer.run_on_demand(snapshot, focus=focus)
+        # H443: the review inherits the /refine turn — its principal, and whether it or
+        # its conversation read untrusted content. A caller with no principal bound is
+        # the hub's own machine: its writes are held for the owner.
+        import dataclasses
+
+        principal = _turn_principal.get()
+        scope = self._review_scope(principal.channel if principal is not None else "web", key)
+        store = getattr(self, "memory_proposals", None)
+        if not scope.tainted and (store is None or not store.session_clean(key, turns)):
+            scope = dataclasses.replace(scope, tainted=True)
+        from .turn_usage import detached_turn_usage, turn_usage_scope
+
+        # The review's call is accounted once, to the conversation it reviews and under
+        # the review's own purpose, like a per-turn pass (not inside the command's turn).
+        with detached_turn_usage(), turn_usage_scope() as collector:
+            try:
+                result = await reviewer.run_on_demand(snapshot, focus=focus, scope=scope)
+            except asyncio.CancelledError:
+                self._attribute_review_usage(key, {"ran": False, "reason": "cancelled"},
+                                             collector.snapshot(), trigger="refine")
+                raise
+        self._attribute_review_usage(key, result, collector.snapshot(), trigger="refine")
         for action in result.get("actions", []):
             logger.info("learning review (on demand): %s", action)
         return result
@@ -4865,28 +5099,74 @@ class Orchestrator:
             router, "review", system="You are a precise background reviewer. Output only JSON.",
             prompt=prompt, max_tokens=max_tokens, temperature=0.2)
 
-    async def _background_review_task(self, text: str, synthesized: str) -> None:
+    async def _background_review_task(self, text: str, synthesized: str, scope=None) -> None:
         """Run one review pass in the background and surface its actions."""
+        import dataclasses
+
+        from . import estop
         from .foreign_history import status
-        if (await asyncio.to_thread(status, self.checkpoints, self.session_id or "default")).tainted:
+        from .learning.review_policy import REPLAY_TURN_CHARS, build_replay, replay_budget, replay_mode
+        from .settings_db import bounded_learning_int
+
+        sid = self.session_id or "default"
+        if scope is None:
+            scope = self._review_scope(getattr(self, "_last_channel", ""))
+        if not scope.admitted or scope.mode == "off":
             return
-        if self._session_has_media(self.session_id or "default"):
+        # The e-stop pauses the machine's own new work; the check stats files.
+        if await asyncio.to_thread(estop.check_paused, "background_review", logger):
             return
-        history = ""
+        if (await asyncio.to_thread(status, self.checkpoints, sid)).tainted:
+            return
+        if self._session_has_media(sid):
+            return
+        turns: list = []
+        readable = True
         try:
-            turns = await self.memory.get_history(self.session_id or "default", last_n=6)
-            history = "\n".join(
-                f"{t.get('role', '?')}: {str(t.get('content', ''))[:300]}"
-                for t in (turns or []))
+            turns = list(await self.memory.get_history(sid, last_n=None) or [])
         except Exception:
+            readable = False
             logger.debug("review history gather skipped", exc_info=True)
+        # The turn under review is passed apart; it is not replayed twice.
+        earlier = list(turns)
+        for role, content in (("assistant", synthesized), ("user", text)):
+            if earlier and isinstance(earlier[-1], dict) and earlier[-1].get("role") == role \
+                    and str(earlier[-1].get("content", "")) == content:
+                earlier.pop()
+        # H443: the whole conversation on the chat model, a digest on another review
+        # model, as far as that model's window carries.
+        router = getattr(self, "llm_router", None)
+        budget = replay_budget(router, bounded_learning_int(
+            "review_max_tokens", self.get_setting("learning.review_max_tokens", 512), 512))
+        replay = build_replay(earlier, replay_mode(router), budget)
+        store = getattr(self, "memory_proposals", None)
+        if not scope.tainted and (not readable or store is None
+                                  or not store.session_clean(scope.session_id, turns)):
+            # The conversation is not on the clean list, or holds a turn from before it
+            # was watched: what the replay carries is not written to memory without the
+            # owner.
+            scope = dataclasses.replace(scope, tainted=True)
         from .turn_usage import turn_usage_scope
 
         # H403: the task was spawned outside the reply's receipt (detached_turn_usage);
         # its own collector takes the review call's provider-certified counts, which are
-        # then attributed to the session the review was for.
+        # then attributed to the session the review was for. H443: a pass cancelled or
+        # failed mid-call is accounted too, for what the provider certified of it.
         with turn_usage_scope() as collector:
-            result = await self.reviewer.run(text, synthesized, history=history)
+            try:
+                result = await self.reviewer.run(
+                    text[:REPLAY_TURN_CHARS], synthesized[:REPLAY_TURN_CHARS], history=replay["text"],
+                    context_chars=len(replay["text"]) + 2 * REPLAY_TURN_CHARS + 64, scope=scope)
+            except asyncio.CancelledError:
+                self._attribute_review_usage(self.session_id, {"ran": False, "reason": "cancelled"},
+                                             collector.snapshot())
+                raise
+        try:
+            result["replay"] = {**{key: replay[key] for key in ("mode", "verbatim", "digested", "omitted")},
+                                "budget_chars": budget}
+            result["scope"] = scope.describe()
+        except TypeError:
+            pass
         self._attribute_review_usage(self.session_id, result, collector.snapshot())
         if not result.get("ran"):
             # Why a pass did not run, so a loop that keeps failing leaves a trace
@@ -4894,51 +5174,71 @@ class Orchestrator:
             logger.debug("learning review skipped: %s", result.get("reason"))
         for action in result.get("actions", []):
             logger.info("learning review: %s", action)
-        self._queue_review_summary(self.session_id, result)
+        self._queue_review_summary(self.session_id, result, scope)
 
-    def _attribute_review_usage(self, session_id: Optional[str], result: dict, usage: dict) -> None:
+    def _attribute_review_usage(self, session_id: Optional[str], result: dict, usage: dict,
+                                *, trigger: str = "turn") -> None:
         """H403 — the review's usage goes to the parent session in the cost ledger under
         the ``background_review`` purpose (and to a ``background_review`` row of the
         per-agent meter), and onto the result the learning status shows. Counts the
-        provider did not certify are reported unknown, never invented."""
+        provider did not certify are reported unknown, never invented: H443, a call that
+        was dispatched and not certified (cancelled, failed) is counted as one unmeasured
+        call on the same rows. ``trigger``: the per-turn pass (``turn``) or ``/refine``."""
         key = self._review_key(session_id)
         inputs, outputs = usage.get("input_tokens"), usage.get("output_tokens")
+        calls = usage.get("api_calls")
         try:
             result["usage"] = {
-                "session_id": key, "purpose": "background_review",
-                "input_tokens": inputs, "output_tokens": outputs,
+                "session_id": key, "purpose": "background_review", "trigger": trigger,
+                "api_calls": calls, "input_tokens": inputs, "output_tokens": outputs,
                 "model": usage.get("model"), "provider": usage.get("provider"),
                 "usage_basis": usage.get("usage_basis"), "cost_basis": usage.get("cost_basis"),
             }
         except TypeError:
             return
-        if not usage.get("api_calls") or inputs is None or outputs is None:
+        if type(calls) is not int or calls < 1:
+            # Nothing was dispatched (nothing spent), or the collector cannot say whether
+            # anything was: named unknown on the result, never invented in the ledger.
             return
         try:
             from agents.core import cost_tracker
+            if inputs is None or outputs is None:
+                cost_tracker.record_unmeasured("background_review", session_id=key,
+                                               purpose="background_review", calls=calls)
+                logger.info("Background review complete: session=%s trigger=%s calls=%s in=unknown "
+                            "out=unknown result=%s", key, trigger, calls,
+                            "ran" if result.get("ran") else result.get("reason"))
+                return
             # Strict-local by construction (_review_llm): the route that bills nothing.
             cost_tracker.record("background_review", inputs, outputs,
                                 model=usage.get("model") or cost_tracker.UNPRICED_MODEL,
                                 route="local", session_id=key, purpose="background_review")
+            logger.info("Background review complete: session=%s trigger=%s calls=%s in=%s out=%s result=%s",
+                        key, trigger, calls, inputs, outputs,
+                        "ran" if result.get("ran") else result.get("reason"))
         except Exception:
             logger.debug("review cost record skipped", exc_info=True)
 
-    def _queue_review_summary(self, session_id: Optional[str], result: dict) -> None:
-        """H403 — keep the pass's action summary for the session's next reply; a pass
-        that did nothing leaves no notice. Bounded per process, oldest session first.
-        Only the owner's own turns queue one: a stranger's review (a group chat, a
-        non-admin token) must not put its summary in the pool the owner's replies drain,
-        and the pool is never shown to anyone else (``_settle_background_review``)."""
-        from .learning.background_review import action_summary
+    def _queue_review_summary(self, session_id: Optional[str], result: dict, scope=None) -> None:
+        """H403 — keep the pass's result for the session's next reply; a pass that did
+        nothing leaves no notice. Bounded per process, oldest session first. Only the
+        owner's own turns queue one: a stranger's review (a group chat, a non-admin token)
+        must not put its summary in the pool the owner's replies drain, and the pool is
+        never shown to anyone else (``_settle_background_review``). H443: what the line
+        says (``display.memory_notifications``: nothing, what happened, or that with a
+        preview of each fact) is decided where it is shown."""
+        from .learning.review_policy import review_notice
 
-        summary = action_summary(result)
-        if not summary or current_principal().admin is not True:
+        notice = review_notice(result)
+        if notice is None or current_principal().admin is not True:
+            return
+        if scope is not None and scope.owner is not True:
             return
         notices = self.__dict__.setdefault("_review_notices", {})
         notices.pop(self._review_key(session_id), None)
         while len(notices) >= _REVIEW_NOTICES_LIMIT:
             del notices[next(iter(notices))]
-        notices[self._review_key(session_id)] = summary
+        notices[self._review_key(session_id)] = notice
 
     async def _record_living_memory_after_turn(
         self,
@@ -5147,6 +5447,11 @@ class Orchestrator:
         media: dict | None = None,
     ) -> None:
         """Single post-LLM seam: memory, checkpoint, logs, learning and trace."""
+        if _turn_is_untrusted():
+            # H443: the conversation leaves the clean list before this reply is stored in
+            # it, so a hub that stops right after the append does not restart with an
+            # untrusted reply in a conversation it still reads as clean.
+            await Orchestrator._note_turn_taint(self, self.session_id)
         called = turn_tools.collected()
         if media is not None:
             append_receipt = await self.memory.add_turn(

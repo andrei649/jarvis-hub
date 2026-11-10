@@ -12,7 +12,15 @@
    disk. The owner switches it off or on (`POST /api/memory/switch`, admin: nothing is
    erased) and resets a ring or both for good (`POST /api/memory/reset`, admin), the reset
    behind a typed RESET that states what it erases. Whatever the hub answers is shown in
-   its own words, and both views are re-read. */
+   its own words, and both views are re-read.
+
+   H443 — the memory writes the post-turn review (or a /refine) holds for the owner.
+   `GET /api/memory/proposals` (admin) lists each held write with its facts, the ring each
+   would go to and why it waits; approve or reject posts to
+   `POST /api/memory/proposals/{id}/decide` and the hub's answer is shown as it is (what
+   landed, what a ring refused). `memory.write_approval` is switched here too
+   (`POST /api/memory/approval`): it holds the review's and /refine's writes only — the
+   model's memory tool and /api/memory/remember still write at once, and the panel says so. */
 import React, { useState } from 'react';
 import { ConfirmAction, RISK_TIER } from '../confirm';
 import { Card, Row, State, Tag, actA, arr, asLive, inpS, mono, refusalReason, useApi } from '../panel-kit';
@@ -22,6 +30,31 @@ export const UNDO_PATH = '/api/memory/core/undo';
 export const STATUS_PATH = '/api/memory';
 export const SWITCH_PATH = '/api/memory/switch';
 export const RESET_PATH = '/api/memory/reset';
+export const PROPOSALS_PATH = '/api/memory/proposals';
+export const APPROVAL_PATH = '/api/memory/approval';
+export const decidePath = (id: string) => `${PROPOSALS_PATH}/${encodeURIComponent(id)}/decide`;
+/** Why a write waits, in the owner's words (review_policy.STAGE_REASONS). */
+export const HELD_REASONS: Record<string, string> = {
+  write_approval: 'memory write approval is on',
+  untrusted_content: 'the conversation read untrusted content, or was not watched from its start',
+  no_principal: 'the turn had no owner signed in',
+  memory_tool_withheld: 'the turn was not offered the memory tool',
+  approval_mode_ask: 'the approval dial is on ask',
+  approval_mode_off: 'the approval dial is off',
+};
+const OUTCOMES: Record<string, string> = {
+  added: 'written', duplicate: 'already kept', blocked: 'blocked as prompt-injection',
+  refused: 'refused: the ring is full or the fact too long', memory_off: 'not written: memory is off',
+};
+
+/** What the hub answered to a decision, in its own terms: never "approved" for a write that did not land. */
+export function decisionMessage(r: any, approved: boolean): string {
+  if (!approved) return r?.status === 'rejected' ? 'rejected · nothing written' : `not rejected · ${String(r?.reason || r?.status || 'unknown')}`;
+  const ops = arr(r?.proposal, 'operations');
+  const told = ops.map((op: any) => OUTCOMES[String(op.outcome)] || 'not written yet').join(' · ');
+  if (r?.applied === true) return `approved · ${num(r.written)} written${ops.length ? ` (${told})` : ''}`;
+  return `approved, nothing written · ${told || String(r?.reason || r?.status || 'unknown')}`;
+}
 /** A reset's targets and the rings each erases (memory_tool.RESET_TARGETS). */
 export const RESET_RINGS: Record<string, string[]> = { all: ['memory', 'user'], memory: ['memory'], user: ['user'] };
 const RING_TITLES: Record<string, string> = { memory: 'AGENT NOTES', user: 'USER PROFILE' };
@@ -82,6 +115,8 @@ export function memoryState(s: any): string {
 export function LongTermMemoryPanel() {
   const { d, e, loading, reload } = useApi(CORE_PATH);
   const status = useApi(STATUS_PATH);
+  const held = useApi(PROPOSALS_PATH, true, true);
+  const h: any = held.d;
   const s: any = status.d;
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -89,7 +124,30 @@ export function LongTermMemoryPanel() {
   const enabled = d?.enabled === true;
   const undoable = arr(d, 'undoable');
   const stores = (s && s.stores) || {};
-  const reloadAll = () => { reload(); status.reload(); };
+  const reloadAll = () => { reload(); status.reload(); held.reload(); };
+  const decide = (id: string, approved: boolean) => {
+    setBusy(id);
+    setMsg(null);
+    actA(decidePath(id), { approved },
+      (r: any) => { setMsg(decisionMessage(r, approved)); setBusy(null); reloadAll(); },
+      (err) => {
+        const body = err?.body;
+        setMsg(body && body.proposal ? decisionMessage(body, approved)
+          : `not decided · ${refusalReason(err, String(err?.status || 'error'))}`);
+        setBusy(null);
+        reloadAll();
+      });
+  };
+  const gate = (on: boolean) => actA(APPROVAL_PATH, { enabled: on },
+    (r: any) => {
+      setMsg(r && r.write_approval === on
+        ? (on ? 'write approval on · the review\'s and /refine\'s memory writes now wait for you'
+          : 'write approval off · the review writes memory on its own again')
+        : `not switched · the hub still reads ${r && r.write_approval ? 'on' : 'off'}`);
+      held.reload();
+    },
+    (err) => { setMsg(`not switched · ${refusalReason(err, String(err?.status || 'error'))}`); held.reload(); });
+  const pending = arr(h, 'pending');
   const undo = (ref: string) => {
     setBusy(ref);
     setMsg(null);
@@ -174,6 +232,62 @@ export function LongTermMemoryPanel() {
             </Row>
           ))}
         </>
+      )}
+      {held.e && (
+        <div style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>
+          held memory writes could not be read ({String(held.e)}); nothing here says none are waiting
+        </div>
+      )}
+      {h && (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)', letterSpacing: '.08em' }}>
+            HELD MEMORY WRITES · {pending.length}
+          </div>
+          <div style={{ fontSize: 11, margin: '2px 0 4px' }}>
+            {h.write_approval === true
+              ? 'write approval is on: the post-turn review and /refine ask before they write.'
+              : 'write approval is off: the post-turn review and /refine write on their own, except from a conversation that read untrusted content or was not watched from its start.'}
+            {' '}The model's memory tool and /api/memory/remember are not held by it.
+          </div>
+          <ConfirmAction tier={RISK_TIER.REVERSIBLE}
+            label={h.write_approval === true ? 'switch write approval off' : 'switch write approval on'}
+            armedLabel={h.write_approval === true ? 'confirm off' : 'confirm on'}
+            prompt={h.write_approval === true ? 'let the post-turn review write memory on its own again?'
+              : 'hold the post-turn review\'s and /refine\'s memory writes for your approval?'}
+            onConfirm={() => gate(h.write_approval !== true)} />
+          {h.available === false && <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>not available on this hub</div>}
+          {h.available !== false && pending.length === 0 && <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>none waiting</div>}
+          {pending.map((p: any) => (
+            <div key={p.id} style={{ borderTop: '1px solid var(--panel-line)', marginTop: 6, paddingTop: 4 }}>
+              <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>
+                <span style={{ ...mono }}>{p.id}</span>{' · '}
+                {p.origin === 'refine' ? '/refine' : 'background review'}{' · '}
+                {HELD_REASONS[String(p.reason)] || String(p.reason || 'held')}
+                {p.status === 'applying' ? ' · approved, not written yet (retried)' : ''}
+              </div>
+              {p.tainted === true && (
+                <div style={{ fontSize: 10, color: 'var(--amber)' }}>
+                  from a conversation that read untrusted content (a message from outside, a guest, web text, an attached file) or was not watched from its start: read each fact as a claim, not as yours
+                </div>
+              )}
+              {arr(p, 'operations').map((op: any, i: number) => (
+                <Row key={i}>
+                  <Tag>{RING_LABELS[String(op.target)] || String(op.target)}</Tag>
+                  <span style={{ fontSize: 12 }}>{String(op.text)}</span>
+                  {op.outcome && <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{OUTCOMES[String(op.outcome)] || String(op.outcome)}</span>}
+                </Row>
+              ))}
+              {p.status === 'pending' && (
+                <div style={{ display: 'flex', gap: 6, marginTop: 3 }}>
+                  <button className="tool-btn" disabled={busy === p.id} aria-label={`approve ${p.id}`}
+                    onClick={() => decide(p.id, true)}>approve</button>
+                  <button className="tool-btn" disabled={busy === p.id} aria-label={`reject ${p.id}`}
+                    onClick={() => decide(p.id, false)}>reject</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       )}
       {msg && <div role="status" style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
     </Card>

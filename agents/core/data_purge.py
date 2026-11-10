@@ -680,6 +680,17 @@ async def _clear_live_stores(orch, mem, cleared: list[str], _note_failure) -> No
             cleared.append("memory_undo")
     except Exception as exc:
         _note_failure("memory_undo", exc)
+    # H443: the memory writes held for the owner carry facts about the owner. The final
+    # sweep erases their ledger file; the live store is emptied here (in memory only, so
+    # the pre-forget backup still snapshots the file) or an approval given after the
+    # forget would write a forgotten fact back into the rings.
+    proposals = getattr(orch, "memory_proposals", None)
+    if proposals is not None and hasattr(proposals, "clear_memory"):
+        try:
+            if proposals.clear_memory():
+                cleared.append("memory_proposals")
+        except Exception as exc:
+            _note_failure("memory_proposals", exc)
     # H315: the agent's checklists are process-wide and carry conversation text
     # ("book the flight for Ana"), so a forget drops every one of them. Named in
     # `cleared` only when there was a plan to drop.

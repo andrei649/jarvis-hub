@@ -458,6 +458,12 @@ _REFINE_REFUSALS = {
     "review_unparsed": ("The local model's review was cut off or malformed, so nothing was kept. Raise "
                         "learning.review_max_tokens, or try a narrower focus."),
     "empty_conversation": "There is no conversation here to review yet.",
+    "not_owner": "Only the owner's own turns are reviewed; nothing was read or kept.",
+    "no_scope": "The review could not place this turn, so it did not run; nothing was kept.",
+    "foreign_history_not_promotable": ("This conversation was imported from another assistant; it is never "
+                                       "reviewed into memory or skills."),
+    "image_history_not_promotable": ("This conversation holds an image reading; it is never reviewed into "
+                                     "memory or skills."),
     "unavailable": "The learning reviewer is not available on this hub.",
 }
 
@@ -482,6 +488,9 @@ async def _refine(ctx: CommandContext) -> str:
     lines = [head, *[f"- {a}" for a in actions]]
     if any("patch proposed" in a for a in actions):
         lines.append("A skill change waits for your approval in the Decision Inbox.")
+    if any("memory write" in a and "proposed" in a for a in actions):
+        lines.append("Nothing was written to memory yet: read the held writes in Long-Term Memory "
+                     "(GET /api/memory/proposals) and approve or reject them there or in the Decision Inbox.")
     if any("quarantined" in a for a in actions):
         lines.append("A new skill waits in the pending skills list (SELF-IMPROVEMENT) until you approve it.")
     return "\n".join(lines)

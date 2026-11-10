@@ -430,6 +430,10 @@ DEFAULTS: list[dict[str, Any]] = [
     # disk. Its own row, so no product posture overrides it (the wave-1 postures force
     # cognition.memory_enabled on); only POST /api/memory/switch writes it (ROUTE_ONLY).
     dict(category="memory",  key="core_enabled",     value=True,                  label="Curated memory in prompts: the agent notes and the user profile (nerva memory off|on)", kind="toggle"),
+    # H443 (Hermes memory.write_approval, default false): the post-turn review's and
+    # /refine's memory writes wait for the owner. The model's memory tool and
+    # POST /api/memory/remember are not held by it (H424).
+    dict(category="memory",  key="write_approval",   value=False,                 label="Hold the post-turn review's and /refine's memory writes for my approval (the memory tool and /api/memory/remember still write at once)", kind="toggle"),
     # O26-P0.3 (F2): the H21 cognition subsystem read cognition.* flags that were
     # never seeded — un-toggleable from the product. Master OFF (default-off
     # discipline); sub-flags ON so flipping the single master wakes the layer
@@ -467,6 +471,9 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="channels",key="pending_inputs_enabled", value=False, label="Chat clarification preview (restart to apply)", kind="toggle"),
     dict(category="channels", key="owner_senders", value={}, label="Command owners: Slack team:user, Discord user ID or ntfy receive topic; current pairing required", kind="json"),
     dict(category="display", key="ephemeral_system_ttl", value=0, label="Seconds before temporary system notices are removed (0 keeps them)", kind="number"),
+    # H443 (Hermes display.memory_notifications, default on): only the line beside a
+    # reply. Off does not stop the review or its writes; memory.write_approval holds those.
+    dict(category="display", key="memory_notifications", value="on", label="Line beside a reply when the post-turn review wrote or proposed something (off: no line, the review still runs and writes; verbose: with a preview of each fact)", kind="select", opts=["off", "on", "verbose"]),
     # H063: reset routing context without deleting stored conversations.
     dict(category="sessions", key="reset_mode", value="none", label="Automatic conversation reset policy", kind="select", opts=["none", "idle", "daily", "both"]),
     dict(category="sessions", key="idle_minutes", value=1440, label="Idle minutes before a fresh conversation (idle/both)", kind="number"),
@@ -1288,6 +1295,9 @@ ROUTE_ONLY: dict[tuple[str, str], str] = {
     # H422 — the curated memory's owner switch: its route records it in the intent log and
     # applies it to the running hub at once, and reports whether memory is then on.
     ("memory", "core_enabled"): "Console → Memory → Long-Term Memory, or nerva memory off|on (POST /api/memory/switch)",
+    # H443 — switching the gate off lets the review write memory on its own again: its
+    # route records that in the intent log first, and refuses when it cannot.
+    ("memory", "write_approval"): "Console → Memory → Long-Term Memory (POST /api/memory/approval)",
 }
 
 

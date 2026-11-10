@@ -945,7 +945,7 @@ on the router's existing local backend independently of the conversation model:
 |---|---|---|
 | `JARVIS_AUX_SESSION_TITLE_MODEL` | Session title generation | Dedicated `qwen3:7b`; an unavailable model keeps the instant title |
 | `JARVIS_AUX_QUERY_REWRITE_MODEL` | Recall query rewriting | Active local model, then `qwen3:7b` |
-| `JARVIS_AUX_REVIEW_MODEL` | Background/on-demand conversation review | Active local model, then `google/gemma-4-31b-a4b` |
+| `JARVIS_AUX_REVIEW_MODEL` | Background/on-demand conversation review. Unset (or naming the active model) the per-turn review reads the conversation whole; naming another model switches it to the digest replay: the newest 24 turns verbatim over cut one-line digests of the older ones (H443) | Active local model, then `google/gemma-4-31b-a4b` |
 | `JARVIS_AUX_COMPRESSION_MODEL` | Context compression summary | Active local model, then `qwen3:7b` |
 | `JARVIS_AUX_ACQUISITION_CAPABILITY_MODEL` | Governed capability generation | Active local model, then `local` |
 | `JARVIS_AUX_ACQUISITION_DRAFT_MODEL` | Grounded acquisition plan drafting | Active local model, then `local` |

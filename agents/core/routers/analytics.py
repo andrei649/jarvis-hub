@@ -96,6 +96,19 @@ async def get_analytics_cost():
     return get_summary()
 
 
+@router.get("/api/analytics/session-usage", dependencies=[Depends(admin_guard)])
+async def get_session_usage(session_id: str = Query("default", min_length=1, max_length=200)):
+    """H403/H443 — what one conversation has used, in all and by purpose: its turns
+    (``turn``) and the post-turn learning reviews made for it (``background_review``, a
+    ``/refine`` included), each with calls, tokens, cost and ``unmeasured_calls`` (calls
+    that were dispatched and never certified by the provider: a review cancelled or
+    failed mid-call). ``found`` is false for a conversation the ledger has no row for."""
+    from agents.core.cost_tracker import session_usage
+
+    row = await asyncio.to_thread(session_usage, session_id)
+    return nocache_json({"session_id": session_id, "found": row is not None, "usage": row})
+
+
 @router.get("/api/analytics/model-tiers")
 async def get_model_tiers():
     """Return per-agent model tier classification and usage summary."""

@@ -3391,11 +3391,13 @@ export interface paths {
          * Pin Skill
          * @description H349 — pin or unpin one installed skill (Hermes: ``hermes curator pin|unpin``).
          *
-         *     A pinned skill is left alone by the curator's lifecycle pass (never marked stale or
-         *     archived), and a skill batch and the journey's forget refuse to delete it until it is
-         *     unpinned; it can still be patched. Uninstalling it or rejecting it from review is the
-         *     owner's own act and is not blocked. A skill that ships with Nerva is not pinned
-         *     (409 ``not_pinnable``): nothing ages it out or deletes it.
+         *     A pin stops automation: the curator's lifecycle pass leaves a pinned skill alone
+         *     (never marked stale or archived) and a batch the agent proposed does not delete it;
+         *     it can still be patched. The journey's forget refuses it too, as Hermes's does. The
+         *     owner's own removals are not blocked — the owner's batch delete, an uninstall, a
+         *     reject from review — and retire the pin with the skill. A skill that ships with Nerva
+         *     is not pinned (409 ``not_pinnable``): nothing ages it out or deletes it. Only a skill
+         *     installed and loaded now can be pinned (404 ``not_found``).
          *
          *     An admin route like the skill switch, applied at once like switching off (a pin only
          *     narrows what automation may do), and written to the intent log when it changed
@@ -7767,6 +7769,79 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/memory/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Memory Proposals
+         * @description H443 — the memory writes the post-turn review (or a ``/refine``) holds for the
+         *     owner (Hermes's ``/memory pending``): each with its facts, the ring each would go to,
+         *     why it waits (``memory.write_approval``, a conversation that read untrusted content,
+         *     the approval dial) and its approval card. Admin-only: a held fact is not yet the
+         *     owner's memory. ``write_approval`` is the gate as the settings store holds it now.
+         */
+        get: operations["memory_proposals_api_memory_proposals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory/proposals/{proposal_id}/decide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Memory Proposal Decide
+         * @description H443 — approve or reject one held memory write (Hermes's ``/memory approve|reject``).
+         *     It decides the proposal's own approval card, and what the card then says is what
+         *     happens: approved, each fact goes through the ring's own checks (the owner's memory
+         *     switch, the injection scan, the budget) and the reply says what landed; rejected,
+         *     nothing is written. Deciding the card in the Decision Inbox does the same.
+         */
+        post: operations["memory_proposal_decide_api_memory_proposals__proposal_id__decide_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory/approval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Memory Write Approval
+         * @description H443 — the owner turns ``memory.write_approval`` on or off (Hermes's ``/memory
+         *     approval on|off``). On, the post-turn review's and a ``/refine``'s memory writes wait
+         *     for the owner; the model's ``memory`` tool and ``POST /api/memory/remember`` are not
+         *     held by it. The gate is read from the settings store on every review pass, so it
+         *     holds from the next pass on. Recorded in the intent log as ``memory.write_approval``;
+         *     switching it **off** is refused when that record cannot be written.
+         */
+        post: operations["memory_write_approval_api_memory_approval_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/memory/reset": {
         parameters: {
             query?: never;
@@ -7875,6 +7950,30 @@ export interface paths {
          * @description Return per-agent LLM usage and cost summary (H7.10).
          */
         get: operations["get_analytics_cost_api_analytics_cost_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/session-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Usage
+         * @description H403/H443 — what one conversation has used, in all and by purpose: its turns
+         *     (``turn``) and the post-turn learning reviews made for it (``background_review``, a
+         *     ``/refine`` included), each with calls, tokens, cost and ``unmeasured_calls`` (calls
+         *     that were dispatched and never certified by the provider: a review cancelled or
+         *     failed mid-call). ``found`` is false for a conversation the ledger has no row for.
+         */
+        get: operations["get_session_usage_api_analytics_session_usage_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8455,6 +8554,12 @@ export interface paths {
          *
          *     Names and layers only, at the same boundary as /api/admin/env: no value is
          *     returned, and ``masked`` says whether /api/admin/env masks the key's value.
+         *
+         *     RB-2: a hub variable has two spellings, ``NERVA_<X>`` (preferred) and ``JARVIS_<X>``
+         *     (deprecated). Its row is keyed by the ``JARVIS_`` name the hub reads and says which
+         *     spelling supplied the value (``spelling``), the one to use (``preferred``) and
+         *     whether the deprecated one was used (``deprecated``). ``masked`` holds for the
+         *     variable under either spelling.
          */
         get: operations["admin_env_sources_api_admin_env_sources_get"];
         put?: never;
@@ -15187,6 +15292,18 @@ export interface components {
             /** Valid */
             valid: boolean;
             stats: components["schemas"]["MediationCounts"] | null;
+        };
+        /** MemoryApprovalBody */
+        MemoryApprovalBody: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** MemoryProposalDecision */
+        MemoryProposalDecision: {
+            /** Approved */
+            approved: boolean;
+            /** Reason */
+            reason?: string | null;
         };
         /** MemorySwitchBody */
         MemorySwitchBody: {
@@ -29147,6 +29264,94 @@ export interface operations {
             };
         };
     };
+    memory_proposals_api_memory_proposals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    memory_proposal_decide_api_memory_proposals__proposal_id__decide_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryProposalDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    memory_write_approval_api_memory_approval_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryApprovalBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     memory_reset_api_memory_reset_post: {
         parameters: {
             query?: never;
@@ -29282,6 +29487,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_session_usage_api_analytics_session_usage_get: {
+        parameters: {
+            query?: {
+                session_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

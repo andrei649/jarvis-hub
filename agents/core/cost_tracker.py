@@ -136,6 +136,9 @@ _usage: dict[str, dict] = defaultdict(
     # its whole lifetime bucketed under whichever id came last, and `unpriced_calls`
     # landed on a row naming a model that IS priced. The one thing the counter exists to
     # localise was the one thing it could not.
+    # `unmeasured_calls` (H443) is not declared here: it appears on a row only once a
+    # call was dispatched whose usage the provider never certified (a review cancelled or
+    # failed mid-call) — spent, size unknown. See `record_unmeasured`.
     lambda: {"input_tokens": 0, "output_tokens": 0, "calls": 0, "model": "default",
              "cost_usd": 0.0, "unpriced_calls": 0, "models": {}}
 )
@@ -180,6 +183,8 @@ def _load_unlocked() -> None:
     for agent, data in (raw.get("agents") or {}).items():
         if isinstance(data, dict):
             _usage[agent].update({k: v for k, v in data.items() if k in _usage[agent]})
+            if _unmeasured(data):
+                _usage[agent][UNMEASURED] = _unmeasured(data)
     for day, spend in (raw.get("daily") or {}).items():
         try:
             _daily[str(day)] = float(spend)
@@ -194,6 +199,13 @@ def _load_unlocked() -> None:
 
 
 _SESSION_COUNTS = ("calls", "input_tokens", "output_tokens", "cost_usd")
+#: H443 — present on a row (an agent's, a session's, a purpose's) only when it is not 0.
+UNMEASURED = "unmeasured_calls"
+
+
+def _unmeasured(part) -> int:
+    value = part.get(UNMEASURED, 0) if isinstance(part, dict) else 0
+    return value if type(value) is int and value > 0 else 0
 
 
 def _session_row(data) -> dict | None:
@@ -207,6 +219,8 @@ def _session_row(data) -> dict | None:
         for key in _SESSION_COUNTS:
             value = part.get(key, 0)
             out[key] = value if isinstance(value, (int, float)) and not isinstance(value, bool) else 0
+        if _unmeasured(part):
+            out[UNMEASURED] = _unmeasured(part)
         return out
 
     row = counts(data)
@@ -391,12 +405,11 @@ def record(agent_name: str, input_tokens: int, output_tokens: int,
         _save_unlocked()
 
 
-def _record_session_unlocked(session_id, purpose, input_tokens: int, output_tokens: int,
-                             call_cost: float) -> None:
-    """Add one call to its session's row, under its purpose; the oldest rows go first
-    when the table is full. A malformed id is no session."""
+def _session_slot_unlocked(session_id, purpose) -> tuple[dict, dict] | None:
+    """The session's row and its purpose's slot, made when missing; the oldest rows go
+    first when the table is full. A malformed id is no session."""
     if not isinstance(session_id, str) or not 1 <= len(session_id) <= _MAX_SESSION_ID:
-        return
+        return None
     name = str(purpose or "turn")[:64]
     row = _sessions.get(session_id)
     if row is None:
@@ -408,12 +421,40 @@ def _record_session_unlocked(session_id, purpose, input_tokens: int, output_toke
                                        "cost_usd": 0.0, "purposes": {}, "updated_at": 0.0}
     slot = row["purposes"].setdefault(
         name, {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0})
-    for part in (row, slot):
+    return row, slot
+
+
+def _record_session_unlocked(session_id, purpose, input_tokens: int, output_tokens: int,
+                             call_cost: float) -> None:
+    """Add one call to its session's row, under its purpose."""
+    parts = _session_slot_unlocked(session_id, purpose)
+    if parts is None:
+        return
+    for part in parts:
         part["calls"] += 1
         part["input_tokens"] += input_tokens
         part["output_tokens"] += output_tokens
         part["cost_usd"] = round(part["cost_usd"] + call_cost, 6)
-    row["updated_at"] = time.time()
+    parts[0]["updated_at"] = time.time()
+
+
+def record_unmeasured(agent_name: str, *, session_id: str = "", purpose: str = "", calls: int = 1) -> None:
+    """H443 — *calls* that were dispatched and whose usage the provider never certified
+    (a background review cancelled or failed mid-call). They are counted, on the agent's
+    row and on its session's row under its purpose, as ``unmeasured_calls``: the tokens
+    and the cost stay what was measured, never a guess."""
+    if type(calls) is not int or calls < 1:
+        return
+    with _lock:
+        _load_unlocked()
+        entry = _usage[agent_name]
+        entry[UNMEASURED] = _unmeasured(entry) + calls
+        parts = _session_slot_unlocked(session_id, purpose)
+        if parts is not None:
+            for part in parts:
+                part[UNMEASURED] = _unmeasured(part) + calls
+            parts[0]["updated_at"] = time.time()
+        _save_unlocked()
 
 
 def session_usage(session_id: str) -> dict | None:
