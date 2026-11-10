@@ -582,7 +582,7 @@ class AutonomyCoordinator:
         while True:
             await asyncio.sleep(autonomy_tick_seconds(self._orch))
             # H484: synced before the e-stop check — the stored mode governs while paused too.
-            amode = self._sync_approval_mode()
+            amode = await asyncio.to_thread(self._sync_approval_mode)   # the write lock, off the loop
             from agents.core import estop
             if estop.check_paused("autonomy", logger):
                 # Expiry is queue metadata only under e-stop. Ledger resume and

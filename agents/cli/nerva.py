@@ -1767,8 +1767,11 @@ def _busy(exc: sqlite3.Error) -> str:
 
 
 def _when_applied(category: str, key: str, spec: Mapping[str, Any]) -> str:
-    return ("restart the hub to apply it" if _applies_at_restart(category, key, str(spec.get("kind", "")))
-            else "a running hub picks it up within 30 s")
+    if _applies_at_restart(category, key, str(spec.get("kind", ""))):
+        return "restart the hub to apply it"
+    if category == "autonomy" and key in ("mode", "agent_modes"):     # H484: synced per tick
+        return "a running hub picks it up at its next autonomy tick (60 s by default)"
+    return "a running hub picks it up within 30 s"
 
 
 # ── H006: config edit / path / env-path / migrate ────────────────────────────

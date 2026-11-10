@@ -281,6 +281,16 @@ def stored_values(read: Any = None) -> tuple[str, dict]:
     return read_mode(read("autonomy.mode", DEFAULT_MODE)), overrides
 
 
+def _assert_readable() -> None:
+    """Raise when the settings store cannot be read now. ``get_value`` answers an
+    unreadable store from the process's last good value, which would keep a hub on a
+    mode the store may no longer hold; the sync must see the failure instead."""
+    from ..settings_db import read_setting
+
+    for key in ("mode", "agent_modes"):
+        read_setting("autonomy", key)
+
+
 def sync_policy(orch: Any) -> str:
     """Make the live policy hold what the settings store holds — the mode and the
     per-agent overrides — and return the global mode now in force. Under the write lock,
@@ -290,6 +300,7 @@ def sync_policy(orch: Any) -> str:
     coordinator tick, before the e-stop check, and after every settings write. Raises
     when the store cannot be read: the policy is then left exactly as it is."""
     with _write_lock:
+        _assert_readable()
         mode, overrides = stored_values()
         policy = _policy(orch)
         if policy is not None:
