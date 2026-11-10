@@ -69,36 +69,34 @@ def test_challenge_points_at_metadata():
 
 # ── endpoints ────────────────────────────────────────────────────────────────
 
-def test_well_known_and_oauth_enforcement():
+def test_well_known_and_oauth_enforcement(monkeypatch):
     from agents import web
-    old = web.ADMIN_TOKEN
-    web.ADMIN_TOKEN = "test-secret"
-    web._mcp_rs = None                                # reset cached RS
+    # monkeypatch restores every module global on all exit paths (incl. the
+    # early return below) so the admin token never leaks into later tests.
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "test-secret")
+    monkeypatch.setattr(web, "_mcp_rs", None)         # reset cached RS
     hdr = {"X-Admin-Token": "test-secret"}
     if web.orch is None:
         return
     orig_get = web.orch.get_setting
     flags = {"mcp.server_enabled": True, "mcp.oauth_required": True}
-    web.orch.get_setting = lambda key, default=None: flags.get(key, orig_get(key, default))
-    try:
-        with TestClient(web.app) as c:
-            # discovery doc is public
-            md = c.get("/.well-known/oauth-protected-resource")
-            assert md.status_code == 200 and md.json()["resource"].endswith("/api/mcp/server")
+    monkeypatch.setattr(web.orch, "get_setting",
+                        lambda key, default=None: flags.get(key, orig_get(key, default)))
+    with TestClient(web.app) as c:
+        # discovery doc is public
+        md = c.get("/.well-known/oauth-protected-resource")
+        assert md.status_code == 200 and md.json()["resource"].endswith("/api/mcp/server")
 
-            rpc = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+        rpc = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
 
-            # no token → 401 with a WWW-Authenticate challenge
-            r = c.post("/api/mcp/server/rpc", json=rpc)
-            assert r.status_code == 401 and "WWW-Authenticate" in r.headers
+        # no token → 401 with a WWW-Authenticate challenge
+        r = c.post("/api/mcp/server/rpc", json=rpc)
+        assert r.status_code == 401 and "WWW-Authenticate" in r.headers
 
-            # issue a token (admin) then call successfully
-            issued = c.post("/api/mcp/token", json={"scopes": ["mcp"]}, headers=hdr)
-            assert issued.status_code == 200
-            token = issued.json()["token"]
-            ok = c.post("/api/mcp/server/rpc", json=rpc,
-                        headers={"Authorization": f"Bearer {token}"})
-            assert ok.status_code == 200
-    finally:
-        web.ADMIN_TOKEN = old
-        web.orch.get_setting = orig_get
+        # issue a token (admin) then call successfully
+        issued = c.post("/api/mcp/token", json={"scopes": ["mcp"]}, headers=hdr)
+        assert issued.status_code == 200
+        token = issued.json()["token"]
+        ok = c.post("/api/mcp/server/rpc", json=rpc,
+                    headers={"Authorization": f"Bearer {token}"})
+        assert ok.status_code == 200
