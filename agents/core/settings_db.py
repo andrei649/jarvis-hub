@@ -324,6 +324,10 @@ DEFAULTS: list[dict[str, Any]] = [
     # H486 — Hermes' two named per-turn ceilings ship on at 50 (0 = this ceiling off).
     dict(category="llm",     key="tool_loop_web_search_cap", value=50,              label="Web searches per turn (0 = no ceiling)", kind="number"),
     dict(category="llm",     key="tool_loop_subagent_spawn_cap", value=50,          label="Sub-agents one tool-loop turn may start through delegate_task (0 = no ceiling; HTTP spawns are not in a turn)", kind="number"),
+    # G8 (H585): progressive tool disclosure — a large offer's MCP tools go behind tool_search.
+    dict(category="llm",     key="tool_search", value="auto",                       label="Tool search: defer MCP tools behind tool_search (auto = when their schemas exceed the budget)", kind="select", opts=["auto", "on", "off"]),
+    dict(category="llm",     key="tool_search_threshold_pct", value=5,              label="Tool search budget (% of the model's context window)", kind="number"),
+    dict(category="llm",     key="tool_search_max_tokens", value=4000,              label="Tool search budget ceiling (tokens)", kind="number"),
     dict(category="llm",     key="tool_loop_stall_halt_enabled", value=False,        label="Stop stalled tool loops at failure/no-progress thresholds (off = guidance only)", kind="toggle"),
     dict(category="llm",     key="skills_in_prompt", value=True,                    label="List skill commands in the model prompt", kind="toggle"),
     # H594: read the project's AGENTS.md / CLAUDE.md / .cursorrules into the turn (scanned, bounded, tainting).

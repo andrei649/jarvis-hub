@@ -93,6 +93,7 @@ from .tool_rpc import (
     bind_tool_turn,
     reset_tool_turn,
 )
+from .tool_search import LOOKUP_TOOL_NAMES, lookup, unwrap_call
 
 logger = logging.getLogger("jarvis.agent_runtime")
 
@@ -300,8 +301,13 @@ class AgentToolRuntime:
         guidance_context: Callable[[str], Mapping[str, Any] | None] | None = None,
         heartbeat_seconds: float = _DEFAULT_HEARTBEAT_SECONDS,
         tool_sync: Callable[[], Coroutine[Any, Any, Any]] | None = None,
+        tool_search: Callable[[], Any] | None = None,
     ) -> None:
         self._server = server
+        # G8 (H585) — progressive tool disclosure. A reader of the owner's
+        # ``llm.tool_search*`` settings (see ``tool_search.config_from_settings``);
+        # ``None`` offers every tool directly, as before.
+        self._tool_search = tool_search
         # H557 — brings dynamically sourced tools (the MCP client bridge) onto the
         # allowlist before a turn reads its offer; a failure keeps what is registered.
         self._tool_sync = tool_sync
@@ -444,6 +450,31 @@ class AgentToolRuntime:
             tool["name"] for tool in metadata if tool.get("untrusted_output") is True
         }
         return tools, gated_tools, untrusted_tools
+
+    def _disclose(
+        self, metadata: list[dict[str, Any]], window_tokens: int | None,
+    ) -> tuple[list[ToolSpec], dict[str, bool], set[str], Any]:
+        """G8 (H585) — :meth:`_specs_for`, with a large offer's MCP tools deferred
+        behind the tool-search bridge. The gate map and the untrusted set keep EVERY
+        offered tool (an unwrapped ``tool_call`` is checked against them under its real
+        name); only the provider specs shrink. The fourth value is the turn's
+        :class:`~agents.core.tool_search.Disclosure`, or ``None`` when nothing is
+        deferred. An unreadable setting offers every tool directly: it costs context,
+        never authority."""
+        tools, gated_tools, untrusted_tools = self._specs_for(metadata)
+        if self._tool_search is None:
+            return tools, gated_tools, untrusted_tools, None
+        from .tool_search import ToolSearchConfig, offer_specs, plan_disclosure
+        try:
+            config = ToolSearchConfig.from_raw(self._tool_search())
+            disclosure = plan_disclosure(metadata, config, window_tokens=window_tokens)
+        except Exception:
+            logger.warning("tool search unavailable; every offered tool is sent directly")
+            return tools, gated_tools, untrusted_tools, None
+        if not disclosure.active:
+            return tools, gated_tools, untrusted_tools, None
+        gated_tools = {**gated_tools, **{row["name"]: False for row in disclosure.bridge_rows()}}
+        return offer_specs(disclosure), gated_tools, untrusted_tools, disclosure
 
     def _guided_system(self, base: str, *, model: str, agent_id: str,
                        metadata: list[dict[str, Any]], backend: Any = None) -> str:
@@ -783,7 +814,19 @@ class AgentToolRuntime:
             )
         if not metadata:
             return ToolLoopResult(_NO_TOOLS_REPLY, ToolLoopExitReason.NO_TOOLS)
-        tools, gated_tools, untrusted_tools = self._specs_for(metadata)
+        from .llm.job_selection import selected_window
+        disclosure_window = (effective_window.tokens if effective_window is not None
+                             else selected_window(model)) or int(window_for(model) or 0)
+        tools, gated_tools, untrusted_tools, disclosure = self._disclose(metadata, disclosure_window)
+        if disclosure is not None:
+            await self._emit(event_sink, {
+                "event": "tool_disclosure",
+                "agent_id": _bounded_identity(agent_id),
+                "tier": disclosure.tier,
+                "listing": disclosure.listing_form,
+                "direct": len(disclosure.core),
+                "deferred": len(disclosure.deferred),
+            })
         messages = [
             {"role": "system", "content": self._guided_system(
                 system, model=model, agent_id=agent_id, metadata=metadata, backend=backend)},
@@ -898,7 +941,8 @@ class AgentToolRuntime:
                             },
                         )
                         return ToolLoopResult(_TOOLS_WITHDRAWN_REPLY, ToolLoopExitReason.TOOLS_WITHDRAWN)
-                    tools, gated_tools, untrusted_tools = self._specs_for(metadata)
+                    tools, gated_tools, untrusted_tools, disclosure = self._disclose(
+                        metadata, disclosure_window)
                     trajectory.note_tools(tools)  # H652: the refreshed offer joins the record
                     schema_tokens = (
                         estimate_tokens(json.dumps([tool.as_openai() for tool in tools]))
@@ -1022,18 +1066,25 @@ class AgentToolRuntime:
                     output_risks=dict(output_risks),
                 ):
                     return ToolLoopResult(_CONTEXT_REPLY, ToolLoopExitReason.CONTEXT_REFUSED)
-            capped = self._note_tool_counts(bounded_calls, tool_counts)
+            # G8 (H585): the transcript keeps what the model said (a ``tool_call`` stays
+            # one, so the provider replays its own call); everything from here on —
+            # caps, the offered check, approvals, ToolRPC, the kernel, the fence, the
+            # stall observer — sees the real tool a bridge call names.
+            exec_calls = (tuple(unwrap_call(call) for call in bounded_calls)
+                          if disclosure is not None else tuple(bounded_calls))
+            capped = self._note_tool_counts(exec_calls, tool_counts)
             assistant_message = turn.as_assistant_message()
             assistant_message["tool_calls"] = [call.as_openai() for call in bounded_calls]
             messages.append(assistant_message)
             trajectory.note_message(assistant_message)
             observations = await self._execute_turn_calls(
-                bounded_calls,
+                exec_calls,
                 agent_id=agent_id,
                 gated_tools=gated_tools,
                 event_sink=event_sink,
                 capped=capped,
                 spent=spent,
+                disclosure=disclosure,
             )
             stall_halt: tuple[ToolCall, str, int] | None = None
             # The fence's granularity is this loop, not the individual call: the batch
@@ -1043,7 +1094,7 @@ class AgentToolRuntime:
             # a tainted turn. Deliberate — pinned by
             # tests/test_tool_result_taint.py::test_the_taint_fence_is_per_iteration_not_per_call
             # — and the reason the owner packet says "the next turn", not "the next call".
-            for call, (result, raw) in zip(bounded_calls, observations, strict=True):
+            for call, (result, raw) in zip(exec_calls, observations, strict=True):
                 risk = classify_output(call.name, result, untrusted=call.name in untrusted_tools)
                 # Fenced and marked from the loop's own context (never a child task), so
                 # the recall taint lands on the turn. The stub is keyed on the RAW bytes so
@@ -1115,14 +1166,14 @@ class AgentToolRuntime:
                 trajectory.note_message(message)
                 if risk.external_untrusted:
                     output_risks[id(message)] = risk
-            for call, (result, _raw) in zip(bounded_calls, observations, strict=True):
+            for call, (result, _raw) in zip(exec_calls, observations, strict=True):
                 if call.name in _ALWAYS_RESTATED:
                     restated[call.name] = _answer_revision(result, restated.get(call.name, ""))
             # Scripts after the reads of the same step: the batch runs concurrently, so a
             # read beside a script answered the plan from before it; the step must end on
             # the script's revision, or the next read keys on a plan the model already read
             # (review-H315f m2).
-            for call, (result, _raw) in zip(bounded_calls, observations, strict=True):
+            for call, (result, _raw) in zip(exec_calls, observations, strict=True):
                 if _script_revision_due(call.name, result):
                     # A script may have called tools the model never saw answer (H315 third
                     # review), so it may have changed a restated tool's state: the next read
@@ -1602,6 +1653,7 @@ class AgentToolRuntime:
         event_sink: ToolEventSink | None,
         capped: Mapping[str, tuple[int, int]] | None = None,
         spent: dict[str, int] | None = None,
+        disclosure: Any = None,
     ) -> list[tuple[dict[str, Any], str]]:
         capped = capped or {}
         for call in calls:
@@ -1628,6 +1680,7 @@ class AgentToolRuntime:
                 capped_at=capped_at,
                 cap_limit=cap_limit,
                 spent=spent,
+                disclosure=disclosure,
             )
 
         def parallel_safe(call: ToolCall) -> bool:
@@ -1773,6 +1826,7 @@ class AgentToolRuntime:
         capped_at: int = 0,
         cap_limit: int = 0,
         spent: dict[str, int] | None = None,
+        disclosure: Any = None,
     ) -> tuple[dict[str, Any], str]:
         if overflow:
             return await self._local_failure(
@@ -1812,6 +1866,13 @@ class AgentToolRuntime:
                 },
                 spent=spent,
             )
+        if disclosure is not None and call.name in LOOKUP_TOOL_NAMES:
+            # G8 (H585): a read over this turn's own offer, answered here. It reaches
+            # no tool, so there is nothing for ToolRPC, approval or the kernel to judge.
+            await self._emit(event_sink, self._event(call, agent_id, "tool_started", "running"))
+            result, content = self._prepare_result(lookup(call, disclosure), call.name, spent)
+            await self._emit_result(event_sink, call, agent_id, result)
+            return result, content
 
         if gated:
             async with approval_lock:

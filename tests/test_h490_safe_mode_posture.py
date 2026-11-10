@@ -187,6 +187,8 @@ _NUMBERS_NOT_FORCED = {
     # the tool loop and the pre-turn recall are off in safe mode
     "llm.tool_loop_max_iterations", "llm.tool_loop_context_tokens", "llm.tool_loop_per_tool_cap",
     "llm.tool_loop_web_search_cap", "llm.tool_loop_subagent_spawn_cap",
+    # G8: how many MCP schemas the tool loop sends directly (a context size, not authority)
+    "llm.tool_search_threshold_pct", "llm.tool_search_max_tokens",
     "memory.recall_top_k", "memory.recall_timeout_s",
     # the shipped default is already the loosest value (0 = no cap)
     "llm.daily_cost_cap_usd",

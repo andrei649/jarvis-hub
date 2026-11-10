@@ -58,6 +58,7 @@ from .automation_contracts import ContractTemplate, predicate
 from .autonomy.consent_registration import trusted_registration_key
 from .capability_manifests import RISK_LEVELS, RollbackContract
 from .security.quarantine import strip_invisible, strip_invisible_deep
+from .tool_search import BRIDGE_TOOL_NAMES
 from .turn_approvals import record_pending_approval
 
 logger = logging.getLogger("jarvis.tool_rpc")
@@ -600,6 +601,11 @@ class ToolRPCServer:
         :meth:`tools` or of the consent registration: read it with
         :meth:`declared_effect`.
         """
+        if name in BRIDGE_TOOL_NAMES:
+            # G8 (H585): the tool-search bridge names are the loop's, unwrapped before a
+            # call reaches this server; a tool registered under one would make the bridge
+            # itself an authorizable action.
+            raise ValueError(f"tool name is reserved for the tool-search bridge: {name}")
         if parallel_safe is not None and type(parallel_safe) is not bool:
             raise ValueError("parallel_safe must be a bool or None")
         effect = _effect_declaration(risk, rollback, gated=bool(gated))
@@ -806,6 +812,11 @@ class ToolRPCServer:
 
         if not isinstance(args, dict):
             return refused("bad_args")
+        if name in BRIDGE_TOOL_NAMES:
+            # G8 (H585): the agent loop unwraps ``tool_call`` into the real tool before it
+            # calls here, so every gate below sees the real name. A bridge name arriving
+            # here was not unwrapped (a script, a stale caller): never dispatch it.
+            return refused("bridge_not_unwrapped")
 
         from .job_toolsets import allows
         if not allows(name):

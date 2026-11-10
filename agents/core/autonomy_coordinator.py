@@ -1935,6 +1935,7 @@ class AutonomyCoordinator:
         # gated unless declared read-only, output fenced as untrusted; a built-in name
         # is reserved against them on every sync. The loop syncs at each turn's start.
         from .mcp.model_bridge import MCPModelBridge
+        from .tool_search import config_from_settings as tool_search_config
 
         mcp_bridge = MCPModelBridge(server, lambda: getattr(self._orch, "mcp", None))
         runtime = AgentToolRuntime(
@@ -1978,6 +1979,9 @@ class AutonomyCoordinator:
             tool_profile=_profile_and_note_offer,
             guidance_context=_guidance_context,
             execution_profile=tool_profile,
+            # G8 (H585) — a large offer's MCP tools go behind tool_search/tool_call; the
+            # loop unwraps a bridge call before any gate, so authority is unchanged.
+            tool_search=lambda: tool_search_config(_get_setting),
         )
         bind_external_orchestrator_attribute(self._orch, "tool_rpc", server)
         bind_external_orchestrator_attribute(self._orch, "agent_tool_runtime", runtime)
