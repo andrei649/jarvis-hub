@@ -539,6 +539,10 @@ async def _begin_project_context(orch) -> None:
     state = await asyncio.to_thread(project_context.build_turn, session, setting=lambda _k, _d: on,
                                     scope=scope, workdir=workdir)
     project_context.set_turn(state)
+    if state is not None and state.workdir:
+        from .verify.coding import prewarm   # G5: the session's workspace snapshot, off the loop
+
+        await asyncio.to_thread(prewarm, session, state.workdir)
     if state is not None and state.block:
         from .security.recall_taint import mark_turn_recall_tainted
         mark_turn_recall_tainted()

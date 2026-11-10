@@ -97,7 +97,8 @@ services (Tavily, Exa, Brave Search, Parallel), the cloud model providers that t
   recall give continuity across sessions.
 - **Session commands** in any chat: `/plan` (plan without changing anything), `/loop`
   (repeat a prompt on a cadence), `/btw` (a side question), `/context` and `/compress`
-  (what fills the model's window). See [SESSION_COMMANDS.md](SESSION_COMMANDS.md).
+  (what fills the model's window), `/verify` (detect and run a project's tests and build,
+  with an evidence ledger). See [SESSION_COMMANDS.md](SESSION_COMMANDS.md).
 - **Voice** (optional): push-to-talk dictation + spoken replies.
 - **Autonomy:** Jarvis can work proactively (watchers → proposals → an **approval queue**
   for anything reversible/irreversible). Proactive pushes are capped (**≤4/day** interrupt

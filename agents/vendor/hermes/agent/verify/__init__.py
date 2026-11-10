@@ -1,0 +1,1 @@
+"""Package marker (Nerva-written). Upstream's ``agent/verify/__init__.py`` also imports ``runner.py``, which spawns processes and is not adopted; Nerva's governed runner is ``agents/core/verify/runner.py``. Only ``recipes.py`` and ``environment.py`` are vendored."""

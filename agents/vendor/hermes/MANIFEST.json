@@ -15,6 +15,25 @@
       "vendored_sha256": "050b8d56b474f24aaa0a63e542554f0382ffc49431ba769133157f617e5a8c6f"
     },
     {
+      "path": "agent/verify/environment.py",
+      "rules_applied": [
+        "verify-fs",
+        "verify-siblings"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "82be90c84b395929bdaf899b99667cbd75469a301782ead5ff99795dffe6bcca",
+      "vendored_sha256": "5eec90493ab408fced6363db5ee4eda52857567742e5b3cf6f84de1f44949b8f"
+    },
+    {
+      "path": "agent/verify/recipes.py",
+      "rules_applied": [
+        "verify-fs"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "e024b6d796f5328c2871c67b035476ab26fc62289211be80df8b840b90550cdf",
+      "vendored_sha256": "ccfa316090d816edf166bf140fb1e7305fcc45775fb154e7b8ce61c009a0575f"
+    },
+    {
       "path": "hermes_cli/loops.py",
       "rules_applied": [
         "hermes-cli-config",
@@ -3893,6 +3912,24 @@
       "pattern": "^(?P<i>[ \\t]*)from hermes_cli\\.goals import ",
       "replacement": "\\g<i>from agents.vendor.hermes_compat.goals import ",
       "why": "loop state in Nerva's per-session store; the judge and the goal probe are Nerva's"
+    },
+    {
+      "id": "verify-fs",
+      "paths": [
+        "agent/verify/"
+      ],
+      "pattern": "^(?P<i>[ \\t]*)from pathlib import ",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat.verify_fs import ",
+      "why": "a project path confined to the owner's file roots and the one project being verified: bounded reads, writes only to the manifest Nerva's /verify save allows"
+    },
+    {
+      "id": "verify-siblings",
+      "paths": [
+        "agent/verify/"
+      ],
+      "pattern": "^(?P<i>[ \\t]*)from agent\\.verify\\.",
+      "replacement": "\\g<i>from agents.vendor.hermes.agent.verify.",
+      "why": "vendored siblings live under agents.vendor.hermes"
     }
   ],
   "upstream": {

@@ -485,6 +485,7 @@ class AgentToolRuntime:
                 steer_available=steering_available(agent_id),
                 kanban_task=assigned_task,
                 provider=getattr(getattr(backend, "profile", None), "id", ""),
+                coding=_coding_block(metadata, model),
             )
         except Exception:
             logger.warning("optional operating guidance could not be built; tool profile unchanged")
@@ -818,6 +819,7 @@ class AgentToolRuntime:
         seen_results: dict[str, str] = {}
         output_risks: dict[int, ToolOutputRisk] = {}
         guardian_stopped = False
+        verify_held: str | None = None   # G5: the answer a verify-on-stop nudge held back
 
         # H298 — what this turn has already put in the window, and how big that window
         # is. One cap cannot express the first: five results at 40% of the limit each
@@ -981,6 +983,16 @@ class AgentToolRuntime:
                         or is_backend_failure_reply(turn.content.lstrip())):
                     record_agent_observation(agent_id, 'failed')
                 else:
+                    # G5 verify-on-stop (H405): edited code with no fresh passing check
+                    # gets one nudge and one more round; the answer is held as fallback.
+                    # Not after a guardian stop (the model has no tools to verify with).
+                    if verify_held is None and not guardian_stopped:
+                        nudge = await _verify_on_stop_nudge(frozenset(gated_tools))
+                        if nudge:
+                            verify_held = turn.content
+                            messages.append({"role": "assistant", "content": turn.content})
+                            messages.append({"role": "user", "content": nudge})
+                            continue
                     record_model_completion(agent_id)
                 return ToolLoopResult(turn.content, ToolLoopExitReason.MODEL_RESPONSE)
             if guardian_stopped:
@@ -1121,10 +1133,11 @@ class AgentToolRuntime:
                     for name in _ALWAYS_RESTATED:
                         restated[name] = f"script:{scripts_run}"
             if any(result.get("reason") == "approval_required" for result, _ in observations):
-                return ToolLoopResult(
-                    _approval_reply(result for result, _ in observations),
-                    ToolLoopExitReason.APPROVAL_REQUIRED,
-                )
+                reply = _approval_reply(result for result, _ in observations)
+                if verify_held is not None:
+                    # G5: the nudged round queued a check; the answer it held still stands.
+                    reply = f"{verify_held}\n\n{reply}"
+                return ToolLoopResult(reply, ToolLoopExitReason.APPROVAL_REQUIRED)
             from .approval_outcomes import _has_active_denial_breaker
             if any(result.get('reason') == 'guardian_denied' and _has_active_denial_breaker(result)
                    for result, _ in observations):
@@ -1150,6 +1163,9 @@ class AgentToolRuntime:
                 return ToolLoopResult(_FAILURE_REPLY if failing else _REPEAT_REPLY,
                                       ToolLoopExitReason.FAILING_TOOL if failing else ToolLoopExitReason.REPEATED_CALL)
 
+        if verify_held is not None:
+            # G5: the budget ran out after a verify-on-stop nudge; the held answer stands.
+            return ToolLoopResult(verify_held, ToolLoopExitReason.MODEL_RESPONSE)
         await self._emit(
             event_sink,
             {
@@ -2232,6 +2248,33 @@ def fence_reasons(
     if _declares_taint(result):
         reasons.append("declared_taint")
     return reasons, flags
+
+
+def _coding_block(metadata: list[dict[str, Any]], model: str) -> str:
+    """G5 (H406) — the coding posture block for this offer, or ''. Never raises."""
+    try:
+        from .verify.coding import guidance_block
+
+        return guidance_block(frozenset(str(row.get("name")) for row in metadata), model=model)
+    except Exception:
+        logger.warning("coding posture unavailable", exc_info=True)
+        return ""
+
+
+async def _verify_on_stop_nudge(offered: frozenset[str]) -> str | None:
+    """G5 (H405) — the verify-on-stop nudge for this session's turn, or None. Off by
+    default (``/verify on-stop``); off the event loop; never raises."""
+    try:
+        from .llm.request_context import current_session
+        from .verify.stop import turn_end_nudge
+
+        session = current_session()
+        if not session:
+            return None
+        return await asyncio.to_thread(turn_end_nudge, session, offered)
+    except Exception:
+        logger.warning("verify-on-stop unavailable", exc_info=True)
+        return None
 
 
 def _approval_reply(results: Iterable[Mapping[str, Any]]) -> str:
