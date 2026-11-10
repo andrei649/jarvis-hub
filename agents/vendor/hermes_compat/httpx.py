@@ -1,0 +1,251 @@
+"""A stand-in for ``httpx`` that vendored Hermes code imports instead of the real one.
+
+It exposes only what the vendored files use — ``get`` / ``post`` / ``request``, a small
+``Client``, ``Response`` (``status_code`` / ``text`` / ``json()`` / ``headers`` /
+``raise_for_status()``) and the ``HTTPStatusError`` / ``RequestError`` family — and it owns
+**no network client at all**. Every request is handed to the Nerva ``PluginHTTPClient`` the
+adapter bound for the current search (:func:`bound_egress`), so the manifest allowlist, SSRF
+resolution with IP pinning, the per-plugin breaker, the egress ledger and the kernel's
+``plugin.egress`` hook apply exactly as they do to a native provider.
+
+With nothing bound (vendored code called outside an adapter, or from a thread that did not
+inherit the binding) a request is refused: there is no fallback to a direct dial.
+
+The vendored code is synchronous and catches broad exceptions itself, so a refusal could be
+swallowed into a generic ``{"success": False}`` and look like an ordinary failure. The
+binding therefore keeps the outcome: the first gate refusal is recorded on it, every later
+request in the same call is refused without dialling (a refusal is never retried), and the
+adapter raises Nerva's ``PolicyBlock`` from that record whatever the vendored code returned.
+Exception messages carry a status code or an exception type only — never a URL, a query,
+a header or a key.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import contextvars
+import json as _json
+import threading
+from collections.abc import Iterator
+from dataclasses import dataclass, field
+from typing import Any
+
+#: Upper bound on how long a vendored call may wait for one request (seconds).
+MAX_WAIT_SECONDS = 90.0
+
+
+class HTTPError(Exception):
+    """Base of the stand-in's errors (``httpx.HTTPError``)."""
+
+
+class RequestError(HTTPError):
+    """The request did not get an answer (``httpx.RequestError``)."""
+
+
+class ConnectError(RequestError):
+    """Refused or failed before an answer (``httpx.ConnectError``)."""
+
+
+class TimeoutException(RequestError):
+    """No answer in time (``httpx.TimeoutException``)."""
+
+
+class EgressRefused(ConnectError):
+    """Nerva's egress layer refused the request (allowlist, SSRF guard, kernel, no binding)."""
+
+
+class HTTPStatusError(HTTPError):
+    """``raise_for_status`` on a >= 400 answer (``httpx.HTTPStatusError``)."""
+
+    def __init__(self, message: str, *, request: Any = None, response: Response) -> None:
+        super().__init__(message)
+        self.request = request
+        self.response = response
+
+
+class Response:
+    """The parts of ``httpx.Response`` vendored code reads."""
+
+    def __init__(self, status_code: int, content: bytes = b"", headers: Any = None,
+                 encoding: str | None = None) -> None:
+        self.status_code = int(status_code)
+        self.content = content
+        self.headers = dict(headers or {})
+        self._encoding = encoding or "utf-8"
+
+    @classmethod
+    def from_egress(cls, resp: Any) -> Response:
+        content = getattr(resp, "content", b"")
+        if not isinstance(content, (bytes, bytearray)):
+            content = str(getattr(resp, "text", "") or "").encode("utf-8")
+        headers = getattr(resp, "headers", {}) or {}
+        try:
+            headers = dict(headers.items())
+        except Exception:
+            headers = {}
+        return cls(int(getattr(resp, "status_code", 0) or 0), bytes(content), headers,
+                   getattr(resp, "encoding", None))
+
+    @property
+    def text(self) -> str:
+        return self.content.decode(self._encoding or "utf-8", errors="replace")
+
+    def json(self) -> Any:
+        return _json.loads(self.text)
+
+    @property
+    def is_success(self) -> bool:
+        return 200 <= self.status_code < 300
+
+    def raise_for_status(self) -> Response:
+        if self.status_code >= 400:
+            raise HTTPStatusError(f"HTTP {self.status_code}", response=self)
+        return self
+
+    def __repr__(self) -> str:
+        return f"<Response [{self.status_code}]>"
+
+
+@dataclass
+class EgressCall:
+    """One adapter call: the egress client, the loop that owns it, and what happened."""
+
+    client: Any
+    loop: asyncio.AbstractEventLoop
+    loop_thread: int
+    policy_block: str = ""
+    failure: str = ""
+    statuses: list[int] = field(default_factory=list)
+    requests: int = 0
+
+
+_CALL: contextvars.ContextVar[EgressCall | None] = contextvars.ContextVar(
+    "hermes_compat_egress_call", default=None)
+
+
+@contextlib.contextmanager
+def bound_egress(client: Any, loop: asyncio.AbstractEventLoop) -> Iterator[EgressCall]:
+    """Bind *client* for requests made in this context (and threads that copy it)."""
+    call = EgressCall(client=client, loop=loop, loop_thread=threading.get_ident())
+    token = _CALL.set(call)
+    try:
+        yield call
+    finally:
+        _CALL.reset(token)
+
+
+def current_call() -> EgressCall | None:
+    return _CALL.get()
+
+
+def _is_dns_failure(text: str) -> bool:
+    return text.startswith(("egress blocked: DNS resolution failed",
+                            "egress blocked: empty DNS answer"))
+
+
+def _timeout_seconds(timeout: Any) -> float:
+    if isinstance(timeout, (int, float)) and timeout > 0:
+        return min(float(timeout) + 5.0, MAX_WAIT_SECONDS)
+    return MAX_WAIT_SECONDS
+
+
+def request(method: str, url: str, *, params: Any = None, headers: Any = None,
+            json: Any = None, data: Any = None, content: Any = None, timeout: Any = None,
+            follow_redirects: bool = False) -> Response:
+    """Send one request through the bound Nerva egress client, or refuse."""
+    call = _CALL.get()
+    if call is None:
+        raise EgressRefused("no Nerva egress client is bound")
+    if call.policy_block:
+        raise EgressRefused("refused earlier in this call")
+    if threading.get_ident() == call.loop_thread:
+        # A blocking wait on the loop that must run the request would deadlock it.
+        call.failure = call.failure or "called_on_event_loop"
+        raise ConnectError("vendored code ran on the event loop")
+    kwargs: dict[str, Any] = {}
+    for key, value in (("params", params), ("headers", headers), ("json", json),
+                       ("data", data), ("content", content), ("timeout", timeout)):
+        if value is not None:
+            kwargs[key] = value
+    if follow_redirects:
+        kwargs["follow_redirects"] = True
+    call.requests += 1
+    sender = getattr(call.client, str(method).lower(), None)
+    if not callable(sender):
+        call.failure = call.failure or "unsupported_method"
+        raise ConnectError("unsupported method")
+    future = asyncio.run_coroutine_threadsafe(sender(url, **kwargs), call.loop)
+    try:
+        resp = future.result(timeout=_timeout_seconds(timeout))
+    except PermissionError as exc:  # PluginEgressError: allowlist, SSRF, kernel
+        if _is_dns_failure(str(exc)):
+            call.failure = call.failure or "dns_failed"
+            raise ConnectError("dns_failed") from None
+        call.policy_block = "egress_blocked"
+        raise EgressRefused("egress_blocked") from None
+    except TimeoutError:
+        future.cancel()
+        call.failure = call.failure or "timeout"
+        raise TimeoutException("timeout") from None
+    except Exception as exc:
+        call.failure = call.failure or type(exc).__name__
+        raise ConnectError(type(exc).__name__) from None
+    wrapped = Response.from_egress(resp)
+    call.statuses.append(wrapped.status_code)
+    if wrapped.status_code >= 400:
+        call.failure = call.failure or f"http_{wrapped.status_code}"
+    return wrapped
+
+
+def get(url: str, **kwargs: Any) -> Response:
+    return request("GET", url, **kwargs)
+
+
+def post(url: str, **kwargs: Any) -> Response:
+    return request("POST", url, **kwargs)
+
+
+class Client:
+    """``httpx.Client`` as vendored code uses it: verbs, headers, a context manager."""
+
+    def __init__(self, *, headers: Any = None, timeout: Any = None, base_url: str = "",
+                 **_ignored: Any) -> None:
+        # No transport, proxy, TLS or base-URL host override is honoured: the bound egress
+        # client decides all of that. ``base_url`` may only prefix a path.
+        self.headers = dict(headers or {})
+        self.timeout = timeout
+        self.base_url = str(base_url or "")
+
+    def _merge(self, url: str, kwargs: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        if self.base_url and url.startswith("/"):
+            url = self.base_url.rstrip("/") + url
+        headers = {**self.headers, **dict(kwargs.pop("headers", None) or {})}
+        kwargs["headers"] = headers
+        kwargs.setdefault("timeout", self.timeout)
+        return url, kwargs
+
+    def request(self, method: str, url: str, **kwargs: Any) -> Response:
+        url, kwargs = self._merge(url, kwargs)
+        return request(method, url, **kwargs)
+
+    def get(self, url: str, **kwargs: Any) -> Response:
+        return self.request("GET", url, **kwargs)
+
+    def post(self, url: str, **kwargs: Any) -> Response:
+        return self.request("POST", url, **kwargs)
+
+    def close(self) -> None:
+        return None
+
+    def __enter__(self) -> Client:
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.close()
+
+
+__all__ = [
+    "Client", "ConnectError", "EgressRefused", "HTTPError", "HTTPStatusError", "RequestError",
+    "Response", "TimeoutException", "bound_egress", "current_call", "get", "post", "request",
+]

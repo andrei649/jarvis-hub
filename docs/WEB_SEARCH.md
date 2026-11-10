@@ -62,8 +62,16 @@ Keys: `TAVILY_API_KEY` (Tavily), `SEARXNG_URL` (your SearXNG; its host is added 
 |---|---|---|---|---|
 | 1 | `tavily` | paid | `TAVILY_API_KEY` | `websearch` (RESTRICTED: `api.tavily.com`) |
 | 2 | `searxng` | free | `SEARXNG_URL` | `websearch` (+ the SearXNG host, registered dynamically) |
-| 3… | plugin-registered | its own | its own `configured()` | its own manifest (RESTRICTED or LAN only) |
+| 3 | `exa` | paid | `EXA_API_KEY` | `websearch` (`api.exa.ai`) |
+| 4 | `brave-free` | free | `BRAVE_SEARCH_API_KEY` (Brave's free tier, 2k queries/month) | `websearch` (`api.search.brave.com`) |
+| 5 | `parallel` | paid | `PARALLEL_API_KEY` (optional `PARALLEL_SEARCH_MODE` = `agentic` · `fast` · `one-shot`) | `websearch` (`api.parallel.ai`) |
+| 6… | plugin-registered | its own | its own `configured()` | its own manifest (RESTRICTED or LAN only) |
 | last | `duckduckgo` | free | `beautifulsoup4` (keyless) | `websearch` (`html.duckduckgo.com`) |
+
+`exa`, `brave-free` and `parallel` are Hermes Agent's own provider files run as vendored code
+(`docs/hermes/ADOPT_LANE.md`). Each is off until its key is set, never uses Hermes's anonymous
+keyless tier, and dials only through the `websearch` client like the built-ins. They search only;
+`web_extract` keeps Nerva's own reader.
 
 The keyless DuckDuckGo fallback answers the interactive tool when nothing is configured, and never
 counts as "configured": the HUD's honesty badge and unattended research tasks still read the plugin

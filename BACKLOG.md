@@ -2694,6 +2694,16 @@
   collateral reviews (390 already recorded on the branch); existing verdicts were preserved and
   stale claims/citations corrected. The five new reviews cite the current code and tests without
   claiming a live hub or real-model acceptance. `needs_review` 0; headline 141 → 146/697.
+  **Adopt lane, slice 1 (2026-11-10):** the first Hermes code run as-is rather than ported, per
+  `docs/hermes/feature-integration-plan-2026-11-10.md`. Exa, Brave Search (free tier) and Parallel
+  search are vendored from Hermes `9c0560f8` under `agents/vendor/hermes/` (12 files, byte-identical
+  but for recorded import rewrites; `MANIFEST.json` + MIT `LICENSE`/`NOTICE.md`) and registered as
+  `web_search` backends through a compat layer (`agents/vendor/hermes_compat/`): requests go through
+  the `websearch` `PluginHTTPClient` (allowlist, SSRF pinning, ledger, kernel hook), keys are read
+  from an allowlist through `env_config`, the keyless tier stays off, and each backend is off until its
+  key is set. `scripts/hermes_vendor.py status|diff|pull` keeps them in step with upstream. Search
+  only (vendored `extract` is not wired); no live vendor call made. No ledger row moves: the owner's
+  decision 1 (count adopted code as delivered) is still open. Guide: `docs/hermes/ADOPT_LANE.md`.
 
 ## Darwin feature absorption — 2026-09-09
 

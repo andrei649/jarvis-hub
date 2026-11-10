@@ -124,7 +124,8 @@ REAL_HOSTS = {
     # SEC-5b: previously-unmanifested plugins with static hosts.
     "balance": ["api.ing.com", "api.libra.ro"],
     "analytics": ["analyticsdata.googleapis.com", "oauth2.googleapis.com"],
-    "websearch": ["api.tavily.com", "html.duckduckgo.com"],
+    "websearch": ["api.tavily.com", "html.duckduckgo.com",
+                  "api.exa.ai", "api.search.brave.com", "api.parallel.ai"],
     "digest": ["hnrss.org", "www.reddit.com", "export.arxiv.org",
                "news.google.com", "www.youtube.com"],
     "social_x": ["api.twitter.com"],

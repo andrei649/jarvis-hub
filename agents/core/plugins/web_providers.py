@@ -350,6 +350,27 @@ del _builtin
 _BUILTINS_LOCKED = True
 
 
+def _load_adopted() -> tuple[str, ...]:
+    """Register the Hermes web search providers Nerva runs as vendored code (Adopt lane).
+
+    Exa, Brave Search (free tier) and Parallel come from ``agents/vendor/hermes`` through
+    the compat layer (``docs/hermes/ADOPT_LANE.md``): they register here like any
+    first-party backend, dial as ``websearch`` through the client they are handed, and are
+    configured only when their key is set. A failure to load them never touches the
+    built-ins.
+    """
+    try:
+        from agents.vendor.hermes_compat.plugin_ctx import load_web_providers
+    except Exception as exc:
+        logger.warning("adopted Hermes web providers unavailable (type=%s)", type(exc).__name__)
+        return ()
+    return load_web_providers(sys.modules[__name__])
+
+
+#: Names of the adopted Hermes providers that registered (after the built-ins).
+ADOPTED_PROVIDERS = _load_adopted()
+
+
 # ── configuration, read per call ─────────────────────────────────────────────
 
 def configured_backend(explicit: str | None = None) -> str:

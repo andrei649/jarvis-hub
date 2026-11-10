@@ -6,6 +6,14 @@
 
 A plain-language summary of the last two days. The technical detail for each item is in its PR.
 
+**Three more web search services (Hermes Adopt lane)**
+- Web search can now use Exa, Brave Search (free tier) or Parallel. Each stays off until you put
+  its key in `.env` (`EXA_API_KEY`, `BRAVE_SEARCH_API_KEY`, `PARALLEL_API_KEY`); pick one with
+  `JARVIS_WEB_BACKEND=exa`, `brave-free` or `parallel`.
+- They are Hermes Agent's own code, run as-is, but every request still goes through Nerva's network
+  rules: only those services' addresses are allowed, local-network addresses are refused, the
+  emergency stop applies, and each request shows in the Network Monitor. Keys are never logged.
+
 **Use the browser on your behalf (#1321)**
 - Nerva can open pages, click and fill in steps in a real browser. Each run is approved by you
   before it starts, and what a page says is treated as data, never as an instruction.

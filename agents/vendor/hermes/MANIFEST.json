@@ -1,0 +1,183 @@
+{
+  "files": [
+    {
+      "path": "plugins/__init__.py",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "afceb915688f3d01bec6cc3290d83159534c0939edb05775d24a54afb35353dc",
+      "vendored_sha256": "afceb915688f3d01bec6cc3290d83159534c0939edb05775d24a54afb35353dc"
+    },
+    {
+      "path": "plugins/web/__init__.py",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "011e3b643392241f9e8afe69a2430a12a00dc24ded7ea2482f70faf6870267e7",
+      "vendored_sha256": "011e3b643392241f9e8afe69a2430a12a00dc24ded7ea2482f70faf6870267e7"
+    },
+    {
+      "path": "plugins/web/_common.py",
+      "rules_applied": [
+        "httpx",
+        "web-search-provider",
+        "keyless-mcp",
+        "interrupt",
+        "web-tools-slots",
+        "pm"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "24cd58bfbd598cd90ac06574f9ff36942393485447e7209e1d345f97ffc93346",
+      "vendored_sha256": "7c108ebbbabf59fd5fad41aa9e3834a7eea44fa8127a0229fe7a7e74c1c961e0"
+    },
+    {
+      "path": "plugins/web/brave_free/__init__.py",
+      "rules_applied": [
+        "plugins-web"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "24e2ce03290f1725f2797aeb83ade99d12f226ae8cbfe792af7d546a9a8989cb",
+      "vendored_sha256": "b852ebd98608f203369632c597daf6eb6a1774aeb44c9d474482762a5c433183"
+    },
+    {
+      "path": "plugins/web/brave_free/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "384f464b55f7eab592bc2dbf8dcca2dc3b06663264221742cbeaa934fd795197",
+      "vendored_sha256": "384f464b55f7eab592bc2dbf8dcca2dc3b06663264221742cbeaa934fd795197"
+    },
+    {
+      "path": "plugins/web/brave_free/provider.py",
+      "rules_applied": [
+        "plugins-web"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "5fc2564df1ab1ae8aea5e1d0e3a9674472176d26778aa19c19e2366e82d99a73",
+      "vendored_sha256": "ecbc4e863ef768671f088bf419049db41bdf31e44030c8bd39a6adfb722f95bf"
+    },
+    {
+      "path": "plugins/web/exa/__init__.py",
+      "rules_applied": [
+        "plugins-web"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "9d5fb27faef41d82a98ffd43db0d23c398da5972ae50e9d3b6f40e0faba59ae3",
+      "vendored_sha256": "43603f43922c90fb0bfe7284422a82fb339d4ba81480462f6d6667d9759b583c"
+    },
+    {
+      "path": "plugins/web/exa/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "adae2277f057d1e1af841ddef2ab6b2acb00edb185071a24ea300a10aee0a48b",
+      "vendored_sha256": "adae2277f057d1e1af841ddef2ab6b2acb00edb185071a24ea300a10aee0a48b"
+    },
+    {
+      "path": "plugins/web/exa/provider.py",
+      "rules_applied": [
+        "plugins-web",
+        "exa-sdk"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "2eca7d8cc80efd877934bff4c46331fbb71c7a069057b88cdc2099c249479629",
+      "vendored_sha256": "70fd1ddb8b7d2409d86653b8b4190cad4669ad9140e5dc626b1592adfc0ed1b3"
+    },
+    {
+      "path": "plugins/web/parallel/__init__.py",
+      "rules_applied": [
+        "plugins-web"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "3cfed99a43f9d2f3063bbefee6bc2a777027197ade4a81c0941747968ac3b5ac",
+      "vendored_sha256": "59caec7365b3f754140fa2711776806e1d82e94f86fa310362ea2cd28976c8bd"
+    },
+    {
+      "path": "plugins/web/parallel/plugin.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "76c313f45ae74bc79f161c02c827715352e02432e68aac8e775efd702305db50",
+      "vendored_sha256": "76c313f45ae74bc79f161c02c827715352e02432e68aac8e775efd702305db50"
+    },
+    {
+      "path": "plugins/web/parallel/provider.py",
+      "rules_applied": [
+        "os-env",
+        "plugins-web",
+        "parallel-sdk"
+      ],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "4fb30747fb869bec4c0ec7a35fe0b1c2f948a846eb07c79f096ad4a63c5f6e11",
+      "vendored_sha256": "4f69736abec14998fda0ae3d579e36cb698f6da5ecd5e7cc5c95f5bd738cc5d4"
+    }
+  ],
+  "local_files": [
+    "LICENSE",
+    "MANIFEST.json",
+    "NOTICE.md",
+    "__init__.py"
+  ],
+  "rewrite_rules": [
+    {
+      "id": "httpx",
+      "pattern": "^(?P<i>[ \\t]*)import httpx(?P<rest>[ \\t]*(?:#.*)?)$",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat import httpx\\g<rest>",
+      "why": "the compat httpx sends every request through Nerva's PluginHTTPClient"
+    },
+    {
+      "id": "os-env",
+      "pattern": "^(?P<i>[ \\t]*)import os(?P<rest>[ \\t]*(?:#.*)?)$",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat import os_env as os\\g<rest>",
+      "why": "env reads go through an allowlist on agents.core.env_config"
+    },
+    {
+      "id": "web-search-provider",
+      "pattern": "^(?P<i>[ \\t]*)from agent\\.web_search_provider import ",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat.web_search_provider import ",
+      "why": "the WebSearchProvider base and the secret-scoped key lookup"
+    },
+    {
+      "id": "keyless-mcp",
+      "pattern": "^(?P<i>[ \\t]*)from plugins\\.web\\.keyless_mcp import ",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat.keyless_mcp import ",
+      "why": "the anonymous keyless ring stays off in Nerva"
+    },
+    {
+      "id": "plugins-web",
+      "pattern": "^(?P<i>[ \\t]*)from plugins\\.web\\.",
+      "replacement": "\\g<i>from agents.vendor.hermes.plugins.web.",
+      "why": "vendored siblings live under agents.vendor.hermes"
+    },
+    {
+      "id": "interrupt",
+      "pattern": "^(?P<i>[ \\t]*)from tools\\.interrupt import ",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat.interrupt import ",
+      "why": "Hermes's interrupt flag (Nerva's e-stop acts at egress)"
+    },
+    {
+      "id": "web-tools-slots",
+      "pattern": "^(?P<i>[ \\t]*)import tools\\.web_tools as ",
+      "replacement": "\\g<i>import agents.vendor.hermes_compat.web_tools as ",
+      "why": "the SDK client cache slots"
+    },
+    {
+      "id": "pm",
+      "pattern": "^(?P<i>[ \\t]*)import pm(?P<rest>[ \\t]*(?:#.*)?)$",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat import pm\\g<rest>",
+      "why": "lazy installs are refused; only the compat SDK stand-ins are provided"
+    },
+    {
+      "id": "exa-sdk",
+      "pattern": "^(?P<i>[ \\t]*)from exa_py import ",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat.sdk.exa_py import ",
+      "why": "the Exa SDK is a bare client; the stand-in dials through the compat httpx"
+    },
+    {
+      "id": "parallel-sdk",
+      "pattern": "^(?P<i>[ \\t]*)import parallel(?P<rest>[ \\t]*(?:#.*)?)$",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat.sdk import parallel\\g<rest>",
+      "why": "the Parallel SDK is a bare client; the stand-in dials through the compat httpx"
+    }
+  ],
+  "upstream": {
+    "commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+    "license": "MIT",
+    "repo": "https://github.com/NousResearch/hermes-agent"
+  }
+}
