@@ -89,6 +89,9 @@ GUEST_TOOLS_SETTING = "llm.guest_tools"
 INBOUND_ACTUATION_SETTING = "llm.inbound_actuation"
 INTERNAL_ACTUATION_SETTING = "llm.internal_actuation"
 DEFAULT_GUEST_TOOLS: tuple[str, ...] = ("echo", "time", "todo")
+#: H400 — the model's sub-agent tool and the switch it is offered under (read per offer).
+DELEGATE_TOOL = "delegate_task"
+DELEGATE_SETTING = "llm.delegate_task"
 #: The model-facing prefix of a bridged third-party MCP tool (H557).
 MCP_TOOL_PREFIX = "mcp__"
 
@@ -249,6 +252,9 @@ def resolve_tools(
     for tool in tools:
         name = str(tool.get("name") or "")
         allowed = allows(name) and _posture_allows(posture, tool, settings, guest_names)
+        if allowed and name == DELEGATE_TOOL:
+            # H400 (M1): the owner's switch is read at every offer, not only at boot.
+            allowed = _flag(settings, DELEGATE_SETTING)
         if allowed and name.startswith("kanban_"):
             from .kanban.runtime import offer_allowed
             allowed = offer_allowed(

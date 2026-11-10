@@ -311,7 +311,7 @@ DEFAULTS: list[dict[str, Any]] = [
     # the image is needed only for persistent Docker kernels, not one-shot execution.
     dict(category="llm", key="execute_code", value=False, label="Offer native code execution to the owner", kind="toggle"),
     # H400: off = delegate_task is not registered (read at composition: restart to apply).
-    dict(category="llm", key="delegate_task", value=False, label="Offer delegate_task to the owner's operator turns: the model starts isolated sub-agents (restart to apply)", kind="toggle"),
+    dict(category="llm", key="delegate_task", value=False, label="Offer delegate_task to the owner's operator turns: the model starts isolated sub-agents (on: restart to apply; off: at once; refused while the Action Kernel is on)", kind="toggle"),
     dict(category="llm", key="execute_code_sessions", value=True, label="Keep native code variables across cells when enabled", kind="toggle"),
     dict(category="llm", key="execute_code_image", value="", label="Digest-pinned Docker image for persistent code sessions", kind="text"),
     dict(category="llm", key="execute_code_mode", value="project", label="Native code context mode", kind="select", opts=["project", "strict"]),

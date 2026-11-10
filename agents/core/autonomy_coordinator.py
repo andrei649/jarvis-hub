@@ -713,6 +713,13 @@ class AutonomyCoordinator:
         worker = getattr(self._orch, "autonomy", None)
         if worker is not None and hasattr(worker, "govern_enqueue"):
             return worker.govern_enqueue(*args, **kwargs)
+        # H400 review (M2): the raw fallback says so too when a sub-agent asked.
+        from .autonomy.worker import AutonomyWorker
+
+        if len(args) >= 3:
+            args = (*args[:2], AutonomyWorker._delegated_title(args[2])[0], *args[3:])
+        elif "title" in kwargs:
+            kwargs["title"] = AutonomyWorker._delegated_title(kwargs["title"])[0]
         return self._orch.autonomy_queue.enqueue(*args, **kwargs)
 
     def _submit_job_script(self, payload, origin):
@@ -1751,7 +1758,7 @@ class AutonomyCoordinator:
         # is a state the status route has to be able to report honestly.
         bind_external_orchestrator_attribute(self._orch, "session_kernels", kernels)
 
-        tool_profile = ToolProfileResolver(
+        tool_profile = self._tool_profile = ToolProfileResolver(
             settings=_get_setting,
             agent_patterns=_agent_tool_patterns,
             principal=_turn_principal,
@@ -1894,7 +1901,10 @@ class AutonomyCoordinator:
             context_budget_tokens=lambda: _get_setting("llm.tool_loop_context_tokens", 0),
             per_tool_limit=lambda: _get_setting("llm.tool_loop_per_tool_cap", 0),
             # H486 — the web-search ceiling ships on at 50; the runtime sanitizes the value.
-            tool_turn_caps=lambda: {"web_search": _get_setting("llm.tool_loop_web_search_cap", 50)},
+            tool_turn_caps=lambda: {"web_search": _get_setting("llm.tool_loop_web_search_cap", 50),
+                                    # H400 — every delegate_task CALL counts, refused or not
+                                    # (the children each call starts are counted by the manager).
+                                    "delegate_task": _get_setting("llm.tool_loop_subagent_spawn_cap", 50)},
             # H400 — one delegate_task call waits for its sub-agents: its deadline is the
             # child timeout plus a grace (the manager cancels a slow child first).
             tool_timeouts=lambda: {"delegate_task": loop_timeout_seconds(
@@ -2608,12 +2618,23 @@ class AutonomyCoordinator:
             return "kill_switch_halted"
         return None
 
-    def _registered_tool_names(self):
-        """The tools registered right now (static rows: no live override is consulted)."""
+    def _registered_tool_names(self, agent=""):
+        """The tools a sub-agent of *agent* would be offered now: the registered rows
+        (static: no live override is consulted) through the same tool profile its turn
+        resolves — principal, surface, shared session, the agent's ``tools:`` list and a
+        job's toolset bound, all read from the spawning context, which the child
+        inherits. The manager subtracts the blocked tools (H400 minor 4)."""
         server = getattr(self._orch, "tool_rpc", None)
         if server is None:
             return ()
-        return tuple(row["name"] for row in server.tools(live=False))
+        rows = server.tools(live=False)
+        profile = getattr(self, "_tool_profile", None)
+        if profile is None:
+            return tuple(row["name"] for row in rows)
+        roster = getattr(self._orch, "agents", None) or {}
+        picked = agent if agent in roster else "jarvis"
+        offered, _decision = profile(picked, rows)
+        return tuple(str(row.get("name") or "") for row in offered)
 
     def _subagent_turn_cap(self):
         """``llm.tool_loop_subagent_spawn_cap`` as stored, read at each spawn; the manager

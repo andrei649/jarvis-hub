@@ -138,7 +138,8 @@ _CAP_NOTICE = (
 # subagents.SubAgentManager, keyed on the same per-run tool turn, for every child the
 # delegate_task tool (H400) starts in this turn.
 DEFAULT_TURN_CEILING = 50
-DEFAULT_TURN_CEILINGS: Mapping[str, int] = MappingProxyType({"web_search": DEFAULT_TURN_CEILING})
+DEFAULT_TURN_CEILINGS: Mapping[str, int] = MappingProxyType(
+    {"web_search": DEFAULT_TURN_CEILING, "delegate_task": DEFAULT_TURN_CEILING})
 _DUPLICATE_NOTICE = (
     "This result is byte-identical to the result of call {call_id} earlier this turn and "
     "was not repeated; refer to that result."

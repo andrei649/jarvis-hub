@@ -1209,7 +1209,24 @@ class AutonomyWorker:
         must_ask = invalid_tier or (trusted_tier is not None and decided_tier < trusted_tier)
         return decision, effective_tier, must_ask
 
-    def _record_ask_context(self, task: Task, decision=None, *, recalled: bool = False) -> None:
+    @staticmethod
+    def _delegated_title(title: str) -> tuple[str, Optional[dict]]:
+        """H400 review (M2): a task a sub-agent asked for says so in its title — the line
+        the HUD card and ``nerva approvals list`` show — and the delegation is recorded
+        with the card's ask context. Nothing else changes: not the kind, not the payload
+        (exact payload shapes gate smart approval), not the policy decision."""
+        try:
+            from ..subagents import current_delegation, delegation_label
+
+            delegated = current_delegation()
+        except Exception:  # noqa: BLE001 — provenance never blocks an intake
+            return title, None
+        if not delegated:
+            return title, None
+        return f"[{delegation_label(delegated)}] {title}", delegated
+
+    def _record_ask_context(self, task: Task, decision=None, *, recalled: bool = False,
+                            delegated: Optional[dict] = None) -> None:
         """H484 — remember, for the approval card, the mode this task was held under and
         whether the mode itself (not its risk tier or a floor) is why it asks."""
         try:
@@ -1227,8 +1244,16 @@ class AutonomyWorker:
             by_mode = recalled or (
                 decision is not None and decision.outcome == ASK
                 and str(getattr(decision, "reason", "")).startswith(MODE_REASON))
-            record(task.id, {"mode": mode, "source": source, "global": overall, "by_mode": by_mode,
-                             "recalled": recalled})
+            context = {"mode": mode, "source": source, "global": overall, "by_mode": by_mode,
+                       "recalled": recalled}
+            if delegated:
+                context["delegated"] = delegated
+            elif recalled:
+                kept = getattr(self.queue, "ask_context", None)
+                earlier = kept(task.id) if callable(kept) else None
+                if isinstance(earlier, dict) and isinstance(earlier.get("delegated"), dict):
+                    context["delegated"] = earlier["delegated"]   # a recall keeps who asked
+            record(task.id, context)
         except Exception:
             logger.warning("ask context unavailable for task %s", getattr(task, "id", "?"), exc_info=True)
 
@@ -1334,6 +1359,7 @@ class AutonomyWorker:
         an event loop is running, else the card waits in the inbox).
         """
         origin = self._effective_origin(origin)
+        title, delegated = self._delegated_title(title)
         proposed_payload = payload or {}
         payload, tainted = self._mark_payload_for_origin(proposed_payload, origin)
         classification = self.queue.classify_mediation(kind)
@@ -1412,7 +1438,7 @@ class AutonomyWorker:
             decision="needs-approval",
             expected_status=TaskStatus.PROPOSED,
         )
-        self._record_ask_context(task, decision)
+        self._record_ask_context(task, decision, delegated=delegated)
         # Metadata cannot turn a successfully persisted ask into enqueue_failed.
         try:
             from .approval_grouping import current_model_producer
@@ -1535,6 +1561,7 @@ class AutonomyWorker:
     ) -> Task:
         """Propose a task, gate it through the policy, and route it."""
         origin = self._effective_origin(origin)
+        title, delegated = self._delegated_title(title)
         proposed_payload = payload or {}
         payload, tainted = self._mark_payload_for_origin(proposed_payload, origin)
         classification = self.queue.classify_mediation(kind)
@@ -1621,7 +1648,7 @@ class AutonomyWorker:
             decided_by="policy",
             decision="needs-approval",
         )
-        self._record_ask_context(task, decision)
+        self._record_ask_context(task, decision, delegated=delegated)
         if grouping_context is not None and type(self.policy) is AutonomyPolicy:
             policy = {key: getattr(self.policy, key) for key in (
                 'mode', 'agent_modes', 'cap_per_action', 'daily_ceiling',

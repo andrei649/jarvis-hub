@@ -502,7 +502,8 @@ async def test_the_kernel_when_on_must_grant_the_spawn(tmp_path, monkeypatch):
         return authorize
 
     manager = _manager(tmp_path)
-    for verdict, expected in ((Verdict.DENY, "kernel_denied"), (Verdict.QUEUE, "kernel_denied"),
+    # M3: a QUEUE (the kernel asks the owner) has no card to wait on: refused, and says why.
+    for verdict, expected in ((Verdict.DENY, "kernel_denied"), (Verdict.QUEUE, "kernel_requires_approval"),
                               (Verdict.GRANT, None)):
         tool = DelegateTool(manager=lambda: manager, principal=lambda: OWNER,
                             offer=lambda: frozenset({TOOL, "echo"}), mode=lambda _a: "auto",
@@ -984,15 +985,18 @@ def test_a_childs_allowlist_is_a_subset_of_registry_and_parent_offer():
     assert "kanban_create" not in child_tool_allowlist(registry, None, {"whatever"})
 
 
-async def test_an_owner_route_spawn_is_bound_by_the_registry_minus_the_blocklist(hub):
-    """A spawn made outside any turn (the HTTP routes): the child's own profile decides,
-    inside the registry minus the blocked tools."""
+async def test_an_owner_route_spawn_records_what_the_child_is_really_offered(hub):
+    """A spawn made outside any turn (the HTTP routes) runs as internal/system: the record
+    says the tools that child is offered (its profile minus the blocked ones), not the
+    registry (review minor 4: it used to list desktop_run, terminal_run, file_write)."""
     await hub.manager.spawn("from the route")
     tools = set(hub.manager.list()[0]["tools"])
-    registered = {row["name"] for row in hub.server.tools()}
-    assert tools == registered - blocked_tool_names(DELEGATE_BLOCKED_CAPABILITIES, registered)
     child_offer = set(hub.child_seen[0]["backend"].offers[0])
-    assert child_offer <= tools and not child_offer & {TOOL, "memory", "skill_propose", "clarify"}
+    assert tools == child_offer
+    assert not tools & {TOOL, "memory", "skill_propose", "clarify", "desktop_run", "terminal_run",
+                        "file_write", "file_delete"}
+    registered = {row["name"] for row in hub.server.tools()}
+    assert tools < registered - blocked_tool_names(DELEGATE_BLOCKED_CAPABILITIES, registered)
 
 
 async def test_a_registry_that_cannot_be_read_gives_the_child_no_tools(tmp_path):
@@ -1002,7 +1006,7 @@ async def test_a_registry_that_cannot_be_read_gives_the_child_no_tools(tmp_path)
         seen["tools"] = tools
         return {"output": "x"}
 
-    def broken():
+    def broken(_agent=""):
         raise RuntimeError("registry")
 
     await _manager(tmp_path, runner=runner, tool_registry=broken).spawn("x")

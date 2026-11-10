@@ -176,9 +176,10 @@ def test_the_coordinator_binds_web_search_to_its_setting(monkeypatch):
     coordinator._orch.get_setting = lambda key, default=None: selected.get(key, default)
     coordinator._wire_agent_tool_runtime()
     read = captured["tool_turn_caps"]
-    assert read() == {"web_search": 50}
+    # H400: every delegate_task call counts against the spawn ceiling's number too.
+    assert read() == {"web_search": 50, "delegate_task": 50}
     selected[f"llm.{WEB}"] = 7
-    assert read() == {"web_search": 7}
+    assert read() == {"web_search": 7, "delegate_task": 50}
 
 
 # ── the spawn surface ───────────────────────────────────────────────────────────

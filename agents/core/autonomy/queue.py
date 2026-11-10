@@ -1235,6 +1235,11 @@ class TaskQueue:
                      "global": str(context["global"]), "by_mode": context["by_mode"] is True}
             if context.get("recalled") is True:
                 clean["recalled"] = True
+            delegated = context.get("delegated")
+            if isinstance(delegated, dict):
+                # H400 review (M2): a sub-agent asked. Bounded strings only.
+                clean["delegated"] = {key: str(delegated.get(key) or "")[:limit] for key, limit in
+                                      (("spawn_id", 80), ("parent", 64), ("turn", 32), ("goal", 320))}
             with self._lock:
                 self._conn.execute(
                     "INSERT OR REPLACE INTO task_ask_context (task_id, context) VALUES (?, ?)",
