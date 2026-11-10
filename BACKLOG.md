@@ -2843,6 +2843,13 @@
   verbatim, then a check lets the profile only restate the choice. Native providers kept native;
   13 profile modules not adoptable yet (other wires, OAuth, no fixed host, core deps) — table in the guide.
   Data policy `unknown` for all; no live vendor call made; no ledger row moves (decision 1 open).
+  Review fixes: "check keys" probes an adopted provider only when selected (shared keys never
+  cross hosts) and through the pin; signed packages keep ids like `deepseek` (adopted profiles are
+  not built-ins of the signed registry); choosing one needs the data-policy and unknown-price
+  acknowledgements; Kimi Code keys refused on the Moonshot route; on/off-only models get "off" for
+  minimal/low; un-gated profiles send effort only for owner-declared models; the vendor allowlist
+  refuses `import urllib.parse` and module-through-attribute reaches; the pin's local check uses the
+  egress SSRF resolver off the event loop.
   **Run lane, slice 1 (2026-11-10):** the governed Hermes sidecar moves from `0808ed8` to `9c0560f8`
   and the move is now a script: `scripts/hermes_runtime.py bump --commit <sha>`
   (`scripts/hermes_runtime_bump.py`) re-verifies the current pin, downloads and verifies the new

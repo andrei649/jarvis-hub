@@ -158,7 +158,14 @@ DENIED_ATTRS = frozenset({
     "__builtins__", "__globals__", "__subclasses__", "__code__", "__loader__", "__spec__",
     "modules", "streams", "urlopen", "urlretrieve", "build_opener", "install_opener",
     "OpenerDirector",
+    # A module reached through another module's attribute (``logging.os.system``,
+    # ``x.socket``, ``urllib.request.http.client``): never needed by vendored code.
+    "os", "sys", "socket", "ssl", "http", "builtins", "importlib", "ctypes",
+    "system", "popen", "spawnv", "execv", "Thread", "start_new_thread",
 })
+#: Attribute names refused on a module name unless that name is bound to a compat module
+#: (``urllib`` is the compat ``urllib_refused`` after the ``urllib-request`` rule).
+DENIED_SUBMODULES = {"urllib": frozenset({"request", "error", "response", "robotparser"})}
 #: Builtins a vendored file may not call or read.
 DENIED_NAMES = frozenset({"__import__", "exec", "eval", "compile", "open", "__builtins__",
                           "globals", "breakpoint", "input"})
@@ -208,12 +215,21 @@ def unmapped_imports(text: str, path: str = "x.py") -> list[str]:
     except SyntaxError as exc:
         return [f"unparseable: {exc.msg}"]
     found: list[str] = []
+    compat_bound = {alias.asname or alias.name for node in ast.walk(tree)
+                    if isinstance(node, ast.ImportFrom) and node.level == 0
+                    and node.module == COMPAT_PACKAGE for alias in node.names}
     for node in ast.walk(tree):
         line = getattr(node, "lineno", 0)
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if not _module_allowed(alias.name):
                     found.append(f"line {line}: import {alias.name}")
+                elif ("." in alias.name and alias.asname is None
+                        and not _module_allowed(alias.name.split(".", 1)[0])):
+                    # ``import urllib.parse`` binds ``urllib``, whose ``.request`` is then one
+                    # attribute away: only ``from urllib.parse import …`` is allowed.
+                    found.append(f"line {line}: import {alias.name} (binds {alias.name.split('.', 1)[0]}; "
+                                 f"use from {alias.name} import …)")
                 elif alias.name.startswith(COMPAT_PACKAGE) and "os_env" in alias.name:
                     found.append(f"line {line}: import {alias.name} (os only as `os_env as os`)")
         elif isinstance(node, ast.ImportFrom):
@@ -238,6 +254,10 @@ def unmapped_imports(text: str, path: str = "x.py") -> list[str]:
                     found.append(f"line {line}: from {module} import {alias.name}")
         elif isinstance(node, ast.Attribute) and node.attr in DENIED_ATTRS:
             found.append(f"line {line}: .{node.attr}")
+        elif (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
+                and node.attr in DENIED_SUBMODULES.get(node.value.id, frozenset())
+                and node.value.id not in compat_bound):
+            found.append(f"line {line}: {node.value.id}.{node.attr}")
         elif isinstance(node, ast.Name) and node.id in DENIED_NAMES:
             found.append(f"line {line}: {node.id}")
         elif isinstance(node, ast.Constant) and isinstance(node.value, str) \

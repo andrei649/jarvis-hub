@@ -429,7 +429,9 @@ class HybridRouter(LLMRouter):
             try:
                 backend = build_backend(provider_id, settings=self._admin_setting)
             except Exception as exc:  # noqa: BLE001 — a refused route stays off, never another
-                logger.error("Adopted provider %s refused: %s", provider_id, type(exc).__name__)
+                from .hermes_profiles import AdoptedKeyRefused
+                logger.error("Adopted provider %s refused: %s", provider_id,
+                             exc if isinstance(exc, AdoptedKeyRefused) else type(exc).__name__)
                 backend = None
             if backend is not None:
                 self._compatible_backend = backend

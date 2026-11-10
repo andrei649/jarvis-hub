@@ -196,12 +196,29 @@ the kernel, the request headers and the key.
 
 - **Destination.** `adopted_client` is `egress.llm_async_client` (ledger, quota guard, TLS
   anchor, host protocol, data-handling gate) plus a first request hook that refuses any origin
-  other than the profile's own `https://<host>:443`, and the host if it resolves local. A
-  refusal is a ledger row with `allowed=False` and the request never reaches the transport.
+  other than the profile's own `https://<host>:443`, and the host if the egress SSRF resolver
+  (`security.ssrf.resolve_and_validate`, run off the event loop) finds any non-public address
+  for it; a DNS failure fails closed as unreachable. A refusal is a ledger row with
+  `allowed=False` and the request never reaches the transport. The resolved address is not
+  pinned for the connection, so a rebinding between the check and the dial is a known limit.
   `OpenRouterBackend` refuses an adopted profile on another base URL or with a client that
   lacks that hook, so the router, `construct_backend` and tests all get the pin.
+- **Key checks.** `provider_probe.probe_all` (the HUD's "check keys") probes an adopted
+  provider only when it is the selected one: its key names are shared across hosts
+  (`DASHSCOPE_API_KEY` serves the international and the mainland endpoint; `HF_TOKEN` and
+  Kimi keys have other uses). The probe client takes the same destination pin, and the probe
+  reads every key name of the provider.
+- **Signed packages.** The adopted profiles are not built-ins of the signed provider registry
+  (`install_service.admitted_builtins`): a package the owner signed with an id such as
+  `deepseek` or an alias such as `zai` keeps winning and stays selectable, and no alias can
+  collide with an adopted id.
+- **Choosing one is acknowledged.** Like a custom endpoint or a signed package, choosing an
+  adopted provider's model needs `acknowledge_training` (its data handling is unverified; an
+  audited consent row) and `confirm_expensive` when Nerva has no price for the model
+  (`selection_guards.adopted_data_policy_guard` / `adopted_price_guard`).
 - **Keys.** Only the names in the provider's table row, read through `env_config` at
-  construction. A provider is off until one is set and the owner picks it in
+  construction. A Kimi Code key (`sk-kimi-…`) is refused on the `kimi-coding` routes with a
+  message: it belongs to `api.kimi.com/coding`, which those routes do not reach. A provider is off until one is set and the owner picks it in
   `llm.compatible_provider` (the settings select lists the ids). The names are managed
   (`code_env`), so a skill cannot be granted them, and the support bundle lists them.
 - **Headers.** `User-Agent`, `HTTP-Referer`, `X-Title` (Hermes Agent attribution) and
@@ -211,9 +228,17 @@ the kernel, the request headers and the key.
   verbatim for that model (`derived_efforts`, probed from the profile itself, pure): nearest
   weaker, below the minimum refused. Then the profile shapes the wire, and `check_reasoning`
   lets through only a restatement: an on/off toggle that matches the choice, or a level no
-  stronger than it. With no effort chosen, no reasoning field is sent. Hermes's own upward
-  roundings (Kimi K3 `medium → high`, `xhigh → max`, GLM-5.2 floor `high`) therefore do not
-  apply: Nerva clamps down or refuses, as for every other provider.
+  stronger than it ("off" always passes). With no effort chosen, no reasoning field is sent,
+  except DeepSeek's explicit "on" toggle (DeepSeek and CommandCode's DeepSeek ids): the server
+  thinks by default and an omitted toggle then demands `reasoning_content` echoes, so the toggle
+  restates the default. Hermes's own upward roundings (Kimi K3 `medium → high`, `xhigh → max`,
+  GLM-5.2 floor `high`) do not apply: Nerva clamps down or refuses, as for every other provider.
+  - *On/off-only models* (GLM-4.5/4.6/5, whose profile has a toggle and no levels): a bare "on"
+    is full thinking, so `minimal` and `low` are sent as "off", `medium` and up as "on". A model
+    whose profile cannot say "off" refuses `minimal`/`low` instead of thinking.
+  - *Profiles without a model gate* (`fireworks`, `ai-gateway`, `ollama-cloud`): Hermes asks its
+    core catalog whether a model reasons; Nerva has none, so these send an effort only for a model
+    the owner declared in `llm.compatible_effort_declarations` (`{"model": ["low", "high"]}`).
 - **Data policy.** `unknown` for every adopted provider until someone checks the vendor terms.
 
 ### Compat and rule additions
@@ -228,8 +253,12 @@ the kernel, the request headers and the key.
 | `import threading` | `threading-locks` | `hermes_compat.locks` (`Lock`, `RLock` only) |
 | `import urllib.request` | `urllib-request` | `hermes_compat.urllib_refused` (an inert `Request`, no opener) |
 
-`urllib.parse` joined `SAFE_STDLIB`; `urlopen`, `urlretrieve`, `build_opener`,
-`install_opener` and `OpenerDirector` joined the denied names. `providers/__init__.py` and
+`urllib.parse` joined `SAFE_STDLIB`, but only as `from urllib.parse import …`: `import
+urllib.parse` binds `urllib`, so it is refused, as is any `import a.b` whose `a` is not
+allowed. `urllib.request` (and `.error`, `.response`) is refused on any name not bound to a
+compat module. `urlopen`, `urlretrieve`, `build_opener`, `install_opener`, `OpenerDirector`,
+and modules reached as attributes (`.os`, `.sys`, `.socket`, `.ssl`, `.http`, `.subprocess`,
+`.system`, `.popen`, `.Thread` …) joined the denied names. `providers/__init__.py` and
 `agent/__init__.py` under the vendor tree are Nerva-written package markers (the upstream ones
 are a plugin loader and a JSON preloader); `status` refuses them if they hold more than a
 docstring. So `ProviderProfile.fetch_models` exists in the vendored base but cannot reach the
@@ -252,8 +281,8 @@ network: it builds an inert request and the compat opener refuses it.
 ### Limits of slice 2
 
 - Model lists are the profiles' static `fallback_models`; no live catalog fetch.
-- Kimi: an `sk-kimi-…` Kimi Code key needs `api.kimi.com/coding`, which Hermes picks in core
-  code, not the profile. Here `kimi-coding` always uses `api.moonshot.ai`.
 - `xiaomi` is vision-capable in Hermes; it is not offered for Nerva's vision routes.
 - GLM-5.3 cannot turn thinking off, so `reasoning_effort=none` on it is refused, not ignored.
+- Kimi Code keys are refused rather than routed to `api.kimi.com/coding` (a second pinned id for
+  that host would be the way to add it).
 - Tested against a fake transport only. No live call to any of these providers was made.

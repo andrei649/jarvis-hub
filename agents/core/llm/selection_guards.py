@@ -251,6 +251,49 @@ def data_policy_guard(choice: Choice) -> Finding | None:
     return None
 
 
+def _adopted_profile_for(choice: Choice):
+    """The adopted-from-Hermes profile *choice* selects, or None (a signed package that uses
+    the same id is the owner's own declaration and is not this)."""
+    from .hermes_provider_table import ADOPTED_MODEL_PROVIDER_IDS
+
+    if choice.provider not in ADOPTED_MODEL_PROVIDER_IDS or not choice.model:
+        return None
+    if _current_signed_choice(choice):
+        return None
+    from .hermes_profiles import is_adopted_profile
+
+    return next((p for p in _profiles_for(choice.provider, choice.model) if is_adopted_profile(p)), None)
+
+
+@register
+def adopted_data_policy_guard(choice: Choice) -> Finding | None:
+    """A provider run from a Hermes profile has an unverified data policy: the owner
+    acknowledges that, as for a custom endpoint or a signed package."""
+    profile = _adopted_profile_for(choice)
+    if profile is None:
+        return None
+    policy, note = profile.data_policy_for(choice.model)
+    if policy not in {"unknown", "trains-on-inputs"}:
+        return None
+    return Finding("data_policy", ACKNOWLEDGE_TRAINING, choice,
+                   f"{choice.model} on {profile.display_name}: how this vendor handles your prompts has not "
+                   f"been verified — {note}",
+                   {"policy": policy, "provider": profile.id, "note": note})
+
+
+@register
+def adopted_price_guard(choice: Choice) -> Finding | None:
+    """Nerva has no price for most models of an adopted provider: the owner confirms
+    choosing a model whose cost it cannot show."""
+    profile = _adopted_profile_for(choice)
+    if profile is None or price_of(choice.model) is not None:
+        return None
+    return Finding("cost", CONFIRM_EXPENSIVE, choice,
+                   f"{choice.model} on {profile.display_name}: Nerva has no price for this model, so its cost "
+                   "cannot be shown before use",
+                   {"price": "unknown", "provider": profile.id})
+
+
 # ── running them ─────────────────────────────────────────────────────────────────
 
 def evaluate(choices: Iterable[Choice]) -> list[Finding]:
@@ -284,9 +327,14 @@ def consent_rows(findings: Iterable[Finding], surface: str) -> list[tuple[str, s
     for f in findings:
         what = f"{f.choice.provider or 'any provider'}/{f.choice.model}" if f.choice.model else f.choice.setting
         if f.needs == ACKNOWLEDGE_TRAINING:
+            knowing = ("the vendor's data handling is unverified" if f.detail.get("policy") == "unknown"
+                       else "the vendor may train on prompts")
             rows.append(("model_training_consent",
-                         f"consent ({surface}): {f.choice.setting} → {what}, knowing the vendor may train on prompts "
+                         f"consent ({surface}): {f.choice.setting} → {what}, knowing {knowing} "
                          f"({f.detail.get('provider', f.choice.provider)})", True))
+        elif f.needs == CONFIRM_EXPENSIVE and f.detail.get("price") == "unknown":
+            rows.append(("model_cost_confirmed",
+                         f"confirmed ({surface}): {f.choice.setting} → {what} with no known price", False))
         elif f.needs == CONFIRM_EXPENSIVE:
             rows.append(("model_cost_confirmed",
                          f"confirmed ({surface}): {f.choice.setting} → {what} at {_usd(f.detail['input'])}/M input, "

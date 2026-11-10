@@ -142,9 +142,10 @@ class OpenRouterBackend(LLMBackend):
         elif _adopted_profile(self.profile):
             # Adopt lane: a provider run from a vendored Hermes profile dials only its
             # profile's own host, through the same ledgered client (hermes_profiles).
-            from .hermes_profiles import adopted_client, require_adopted_client
+            from .hermes_profiles import adopted_client, check_adopted_key, require_adopted_client
             if base_url.rstrip("/") != str(self.profile.default_base_url or "").rstrip("/"):
                 raise ValueError("adopted provider destination differs from its profile")
+            check_adopted_key(self.profile, api_key)
             self.client = (require_adopted_client(client, self.profile) if client is not None
                            else adopted_client(self.profile))
         else:

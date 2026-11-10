@@ -53,12 +53,18 @@ CASES = {
     "zai": ("glm-5.2", "high"),
 }
 _BASE_BODY = {"model", "messages", "max_tokens", "temperature", "stream"}
+#: The owner's declaration for providers whose profile does not gate reasoning by model.
+DECLARED = ("low", "medium", "high", "max")
 
 
 @pytest.fixture(autouse=True)
 def no_keys(monkeypatch):
     for name in ADOPTED_MODEL_PROVIDER_KEYS:
         monkeypatch.delenv(name, raising=False)
+    # No live DNS: the pin's resolver answers a public address unless a test says otherwise.
+    monkeypatch.setattr(hp, "_resolve", lambda host, mode="public": (["93.184.216.34"], None))
+    # Keep the process-wide egress ledger clean for later tests (the support bundle reads it).
+    monkeypatch.setattr(llm_egress.EGRESS_MONITOR, "record", lambda *a, **k: None)
 
 
 @pytest.fixture
@@ -87,15 +93,17 @@ class Wire:
         return json.loads(self.requests[-1].content)
 
 
-def _settings(effort: str | None, reasoning: bool = True):
-    values = {"compatible_reasoning_enabled": reasoning, "reasoning_effort": effort or ""}
+def _settings(effort: str | None, reasoning: bool = True, declarations: dict | None = None):
+    values = {"compatible_reasoning_enabled": reasoning, "reasoning_effort": effort or "",
+              "compatible_effort_declarations": json.dumps(declarations or {})}
     return lambda name, default=None: values.get(name, default)
 
 
-def _backend(provider_id, monkeypatch, wire, effort, reasoning=True):
+def _backend(provider_id, monkeypatch, wire, effort, reasoning=True, declarations=None):
     key_name = {row[0]: row[2] for row in ADOPTED_MODEL_PROVIDERS}[provider_id][0]
     monkeypatch.setenv(key_name, f"key-for-{provider_id}")
-    return hp.build_backend(provider_id, settings=_settings(effort, reasoning), transport=wire.transport)
+    return hp.build_backend(provider_id, settings=_settings(effort, reasoning, declarations),
+                            transport=wire.transport)
 
 
 # ── the table and the registry ───────────────────────────────────────────────
@@ -146,19 +154,23 @@ def test_keys_are_managed_and_selectable_in_settings():
 def test_the_request_matches_the_hermes_profile(provider_id, monkeypatch):
     model, effort = CASES[provider_id]
     wire = Wire()
-    backend = _backend(provider_id, monkeypatch, wire, effort)
+    declared = provider_id in hp.NEEDS_DECLARATION
+    backend = _backend(provider_id, monkeypatch, wire, effort,
+                       declarations={model: list(DECLARED)} if declared else None)
     assert asyncio.run(backend.generate(model, "hello")) == "ok"
     request = wire.requests[-1]
     upstream = hp.upstream_profile(provider_id)
     assert str(request.url) == upstream.base_url.rstrip("/") + "/chat/completions"
     assert request.headers["authorization"] == f"Bearer key-for-{provider_id}"
     config = {"enabled": True, "effort": effort} if effort else {"enabled": False}
-    if effort:
+    if declared:
+        assert effort in DECLARED
+    elif effort:
         assert effort in hp.derived_efforts(provider_id, backend.profile.default_base_url, model)
     else:
         assert hp.derived_efforts(provider_id, backend.profile.default_base_url, model) == ()
     extra, top = upstream.build_api_kwargs_extras(
-        reasoning_config=config, model=model, base_url=upstream.base_url, supports_reasoning=True)
+        reasoning_config=config, model=model, base_url=upstream.base_url, supports_reasoning=declared)
     expected = {**upstream.build_extra_body(), **extra, **top}
     body = wire.body()
     assert {k: body[k] for k in set(body) - _BASE_BODY} == expected
@@ -186,12 +198,55 @@ def test_no_effort_chosen_sends_no_reasoning_field(monkeypatch):
     wire = Wire()
     backend = _backend("deepseek", monkeypatch, wire, "high", reasoning=False)
     asyncio.run(backend.generate("deepseek-v4-pro", "hi"))
+    # DeepSeek V4 thinks by default and then demands reasoning_content echoes, so its
+    # profile states the default explicitly: the toggle, no effort.
+    assert wire.body()["thinking"] == {"type": "enabled"}
+    assert "reasoning_effort" not in wire.body()
+    wire = Wire()
+    backend = _backend("zai", monkeypatch, wire, "high", reasoning=False)
+    asyncio.run(backend.generate("glm-5.2", "hi"))
     assert not {"thinking", "reasoning_effort"} & set(wire.body())
+
+
+def test_a_profile_without_a_model_gate_sends_effort_only_for_declared_models(monkeypatch):
+    wire = Wire()
+    backend = _backend("fireworks", monkeypatch, wire, "high")
+    asyncio.run(backend.generate("accounts/fireworks/models/llama-v3p1-8b-instruct", "hi"))
+    assert "reasoning_effort" not in wire.body()
+    wire = Wire()
+    backend = _backend("fireworks", monkeypatch, wire, "high",
+                       declarations={"accounts/fireworks/models/kimi-k2p6": ["low", "high"]})
+    asyncio.run(backend.generate("accounts/fireworks/models/kimi-k2p6", "hi"))
+    assert wire.body()["reasoning_effort"] == "high"
+
+
+@pytest.mark.parametrize(("model", "effort", "sent"), [
+    ("glm-4.6", "minimal", {"type": "disabled"}),
+    ("glm-4.6", "low", {"type": "disabled"}),
+    ("glm-4.6", "medium", {"type": "enabled", "clear_thinking": False}),
+])
+def test_an_on_off_model_is_never_on_for_a_weak_choice(model, effort, sent, monkeypatch):
+    wire = Wire()
+    backend = _backend("zai", monkeypatch, wire, effort)
+    asyncio.run(backend.generate(model, "hi"))
+    assert wire.body()["thinking"] == sent
+    assert "reasoning_effort" not in wire.body()
+
+
+def test_a_bare_on_toggle_never_restates_a_weak_choice():
+    with pytest.raises(ProfileRequestRefused):
+        hp.check_reasoning({"thinking": {"type": "enabled"}}, {"enabled": True, "effort": "low"})
+    hp.check_reasoning({"thinking": {"type": "enabled"}, "reasoning_effort": "low"},
+                       {"enabled": True, "effort": "low"})
+    with pytest.raises(ProfileRequestRefused):
+        hp.check_reasoning({"thinking": {"type": "enabled"}}, None, DEFAULT_REGISTRY.get("zai"))
+    hp.check_reasoning({"thinking": {"type": "enabled"}}, None, DEFAULT_REGISTRY.get("deepseek"))
 
 
 def test_an_effort_between_levels_is_clamped_weaker_by_nerva_first(monkeypatch):
     wire = Wire()
-    backend = _backend("ollama-cloud", monkeypatch, wire, "xhigh")  # Hermes would send "max"
+    backend = _backend("ollama-cloud", monkeypatch, wire, "xhigh",  # Hermes would send "max"
+                       declarations={"deepseek-v4-pro": ["low", "medium", "high", "max"]})
     asyncio.run(backend.generate("deepseek-v4-pro", "hi"))
     assert wire.body()["reasoning_effort"] == "high"
 
@@ -224,7 +279,8 @@ def test_a_profile_that_cannot_turn_reasoning_off_is_refused(monkeypatch):
     ({"thinking": {"type": "enabled"}}, {"enabled": False}, False),
     ({"reasoning_effort": "low"}, {"enabled": False}, False),
     ({"reasoning_effort": "low"}, None, False),
-    ({"reasoning_effort": "none"}, {"enabled": True, "effort": "high"}, False),
+    ({"reasoning_effort": "none"}, {"enabled": True, "effort": "high"}, True),  # off is never stronger
+    ({"reasoning_effort": "high"}, {"enabled": True, "effort": "medium"}, False),
 ])
 def test_the_reasoning_check_only_lets_a_restatement_through(requested, config, ok):
     if ok:
@@ -267,9 +323,8 @@ def test_any_other_destination_is_refused_before_the_transport(url, ledger):
 
 
 def test_the_profile_host_resolving_local_is_refused(monkeypatch, ledger):
-    from agents.core import http_client
-
-    monkeypatch.setattr(http_client, "host_is_local", lambda host: True)
+    monkeypatch.setattr(hp, "_resolve", lambda host, mode="public": (
+        [], f"URL resolves to unsafe address for {mode} mode: 10.0.0.5"))
     wire = Wire()
     client = hp.adopted_client(DEFAULT_REGISTRY.get("deepseek"), transport=wire.transport)
 
@@ -364,3 +419,134 @@ async def test_the_router_leaves_an_adopted_provider_off_without_its_key(monkeyp
         assert router._compatible_backend is None
     finally:
         await router.aclose()
+
+
+def test_a_dns_failure_fails_closed_as_unreachable(monkeypatch):
+    monkeypatch.setattr(hp, "_resolve", lambda host, mode="public": ([], f"DNS resolution failed for {host}"))
+    wire = Wire()
+    client = hp.adopted_client(DEFAULT_REGISTRY.get("deepseek"), transport=wire.transport)
+
+    async def go():
+        async with client:
+            await client.post("/chat/completions", json={})
+
+    with pytest.raises(httpx.ConnectError):
+        asyncio.run(go())
+    assert wire.requests == []
+
+
+def test_a_kimi_code_key_is_refused_on_the_moonshot_route(monkeypatch):
+    from agents.core.llm.openrouter import OpenRouterBackend
+
+    monkeypatch.setenv("KIMI_API_KEY", "sk-kimi-abc")
+    with pytest.raises(hp.AdoptedKeyRefused, match="api.kimi.com/coding"):
+        hp.build_backend("kimi-coding", settings=_settings(None))
+    profile = DEFAULT_REGISTRY.get("kimi-coding")
+    with pytest.raises(hp.AdoptedKeyRefused):
+        OpenRouterBackend("sk-kimi-abc", base_url=profile.default_base_url, profile=profile)
+    monkeypatch.setenv("KIMI_API_KEY", "sk-moonshot-platform")
+    assert hp.build_backend("kimi-coding", settings=_settings(None)) is not None
+
+
+# ── review MAJOR-1: probe-all never sends a shared key to another host ───────
+
+def _probe_factory(sent):
+    def answer(request):
+        sent.append((request.url.host, request.headers.get("authorization")))
+        return httpx.Response(200, json={"data": []})
+
+    def factory(backend, **kw):
+        return llm_egress.llm_async_client(backend, transport=httpx.MockTransport(answer),
+                                           **{k: v for k, v in kw.items() if k in ("timeout", "event_hooks")})
+    return factory
+
+
+def test_probe_all_skips_adopted_providers_that_are_not_selected(monkeypatch):
+    from agents.core.llm import provider_probe
+
+    provider_probe.reset()
+    sent: list = []
+    env = {"DASHSCOPE_API_KEY": "intl-dashscope-key", "KIMI_API_KEY": "k", "HF_TOKEN": "hf_abc"}
+    monkeypatch.setattr(provider_probe, "_selected_compatible", lambda: "alibaba")
+    asyncio.run(provider_probe.probe_all(environ=env, client_factory=_probe_factory(sent)))
+    assert sent == [("dashscope-intl.aliyuncs.com", "Bearer intl-dashscope-key")]
+    provider_probe.reset()
+
+
+def test_an_adopted_probe_takes_the_destination_pin(monkeypatch):
+    from agents.core.llm import provider_probe
+
+    provider_probe.reset()
+    sent: list = []
+    monkeypatch.setattr(hp, "_resolve", lambda host, mode="public": ([], "URL resolves to unsafe address"))
+    result = asyncio.run(provider_probe.probe("nvidia", environ={"NVIDIA_API_KEY": "k"},
+                                              client_factory=_probe_factory(sent)))
+    assert sent == [] and result["verdict"] == "refused"
+    provider_probe.reset()
+
+
+def test_the_probe_reads_every_key_name_of_a_provider():
+    from agents.core.llm import provider_probe
+
+    assert provider_probe.configured_key(DEFAULT_REGISTRY.get("zai"), {"Z_AI_API_KEY": "z"}) == "z"
+
+
+# ── review MAJOR-2: a signed package keeps its id ────────────────────────────
+
+def _layered(builtins, candidate):
+    from agents.core.llm.providers import registry_layers as rl
+
+    return rl.LayeredRegistry(builtins, [candidate], admissions=[rl.AdmissionSnapshot(
+        candidate.id, candidate.source, candidate.home, candidate.digest, candidate.replacement_target)],
+        home="h")
+
+
+@pytest.mark.parametrize(("package_id", "aliases"), [("deepseek", ()), ("my-ds", ("zai",)), ("nvidia", ("nim",))])
+def test_a_signed_package_with_an_adopted_id_keeps_winning(package_id, aliases, monkeypatch):
+    from agents.core.llm.providers import registry_layers as rl
+    from agents.core.llm.providers.install_service import admitted_builtins
+
+    monkeypatch.setattr(rl, "candidate_bytes_match", lambda c: True)
+    candidate = rl.Candidate(package_id, aliases, "user", "h", "0" * 64, None, root="/tmp", directory="x")
+    builtins = admitted_builtins()
+    assert not any(hp.is_adopted_profile(p) for p in builtins)
+    registry = _layered(builtins, candidate)
+    assert registry.get(package_id).source == "user"
+    for alias in aliases:
+        assert registry.canonical_id(alias) == package_id
+
+
+# ── review MINOR-3: choosing an adopted provider is acknowledged ─────────────
+
+def test_choosing_an_adopted_provider_needs_both_acknowledgements():
+    from agents.core.llm import selection_guards as sg
+
+    choice = sg.Choice("llm.compatible_model", "deepseek", "deepseek-v4-pro")
+    with pytest.raises(sg.SelectionRefused) as refused:
+        sg.enforce([choice])
+    assert set(refused.value.missing) == {sg.ACKNOWLEDGE_TRAINING, sg.CONFIRM_EXPENSIVE}
+    findings = sg.enforce([choice], confirm_expensive=True, acknowledge_training=True)
+    rows = sg.consent_rows(findings, "test")
+    assert any(r[0] == "model_training_consent" and "unverified" in r[1] and r[2] for r in rows)
+    assert any(r[0] == "model_cost_confirmed" and "no known price" in r[1] for r in rows)
+    # A native provider's choice is unchanged.
+    assert sg.evaluate([sg.Choice("llm.compatible_model", "openrouter", "some/model")]) == []
+
+
+def test_an_adopted_probe_through_a_factory_that_drops_the_pin_sends_nothing(monkeypatch):
+    from agents.core.llm import provider_probe
+
+    provider_probe.reset()
+    sent: list = []
+
+    def answer(request):
+        sent.append(request)
+        return httpx.Response(200, json={"data": []})
+
+    def careless(backend, **kw):  # drops event_hooks
+        return llm_egress.llm_async_client(backend, transport=httpx.MockTransport(answer))
+
+    result = asyncio.run(provider_probe.probe("nvidia", environ={"NVIDIA_API_KEY": "k"},
+                                              client_factory=careless))
+    assert sent == [] and result["verdict"] == "refused"
+    provider_probe.reset()

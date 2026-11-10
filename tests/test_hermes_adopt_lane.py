@@ -457,6 +457,12 @@ ESCAPES = {
     "open": "def f():\n    return open('/etc/passwd').read()\n",
     "plugin_ctx": "from agents.vendor.hermes_compat import plugin_ctx\n",
     "agents.core": "from agents.core.http_client import PluginHTTPClient\n",
+    "import urllib.parse binds urllib": "import urllib.parse\nurllib.request.Request('https://x')\n",
+    "urllib.request.http.client": "from urllib.parse import quote\nimport collections\n"
+                                  "def f(urllib):\n    return urllib.request.http.client\n",
+    "logging.os.system": "import logging\ndef f():\n    return logging.os.system('id')\n",
+    "threading.Thread": "import threading\nthreading.Thread(target=print).start()\n",
+    "x.socket": "import json\ndef f():\n    return json.socket\n",
 }
 
 

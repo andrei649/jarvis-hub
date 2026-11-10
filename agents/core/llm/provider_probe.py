@@ -95,7 +95,12 @@ def configured_key(profile: ProviderProfile, environ: Mapping[str, str] | None =
         return ""
     read = env_str if environ is None else (lambda name: str(environ.get(name, "")))
     pool = _split_keys(read(f"{profile.auth_env}S")) if profile.id in POOLED else []
-    return pool[0] if pool else read(profile.auth_env).strip()
+    if pool:
+        return pool[0]
+    # Every key name the provider reads, in its order (an adopted profile may list several).
+    return next((value for value in (str(read(name) or "").strip()
+                                     for name in (profile.env_vars or (profile.auth_env,)))
+                 if value), "")
 
 
 def _fingerprint(key: str) -> str:
@@ -176,15 +181,25 @@ def _held_for(profile: ProviderProfile, refusal: Exception) -> float:
 
 
 async def _send(profile: ProviderProfile, key: str, environ, client_factory) -> dict:
+    from .hermes_profiles import is_adopted_profile, pin_hooks, require_adopted_client
     from .host_protocol import HostProtocolRefused
     from .quota import ProviderRateLimited
 
     url, headers = request_for(profile, key, environ)
     # The backend's own network path: xAI and OpenAI Responses never take the env's proxy.
     options = {"trust_env": False} if profile.id in NO_ENV_TRUST else {}
+    adopted = is_adopted_profile(profile)
+    if adopted:
+        # Adopt lane: the probe takes the same destination pin as the backend.
+        options["event_hooks"] = pin_hooks(profile)
     try:
         async with client_factory(profile.id, timeout=TIMEOUT_SECONDS, follow_redirects=False,
                                   **options) as client:
+            if adopted:
+                try:
+                    require_adopted_client(client, profile)
+                except ValueError:
+                    return _result(profile, "refused")
             response = await client.get(url, headers=headers)
     except HostProtocolRefused:
         return _result(profile, "refused")
@@ -288,9 +303,17 @@ def _key_for_elsewhere(profile: ProviderProfile, environ: Mapping[str, str] | No
     """True when ``profile`` shares its key variable with a profile whose base URL is on
     another host: an ``OPENAI_API_KEY`` beside an ``OPENAI_BASE_URL`` on a gateway is that
     gateway's key, sent to api.openai.com only when the owner selected OpenAI Responses."""
+    from .hermes_profiles import is_adopted_profile
     from .host_protocol import hostname_of
 
-    if profile.base_url_env or profile.id == selected:
+    if profile.id == selected:
+        return False
+    if is_adopted_profile(profile):
+        # An adopted provider's key names are shared across hosts (DASHSCOPE_API_KEY serves
+        # the international and the mainland endpoint; HF_TOKEN and Kimi keys have other
+        # uses): only the provider the owner selected is probed with them.
+        return True
+    if profile.base_url_env:
         return False
     home = hostname_of(profile.default_base_url)
     return any(other.auth_env == profile.auth_env and other.base_url_env

@@ -34,6 +34,7 @@ _BODY_PROTECTED = {
     "authorization", "headers", "api_key", "base_url", "endpoint", "url", "transport",
     "client", "generationConfig", "cachedContent", "max_tokens", "max_output_tokens",
     "num_predict", "temperature", "prompt_cache_key", "prompt_cache_retention",
+    "user", "metadata", "response_format", "parallel_tool_calls", "n", "stop",
 }
 _HEADER_PROTECTED = {
     "authorization", "proxy-authorization", "cookie", "host", "content-type",
@@ -254,7 +255,7 @@ def profile_request_defaults(profile, model, *, session_id=None, context=None):
         # ``thinking`` toggle, an effort the vendor clamps lower). The bridge's check
         # holds it to the same rule: restate the owner's choice, never invent or raise it.
         from .hermes_profiles import check_reasoning
-        check_reasoning(requested_reasoning, context.get("reasoning_config"))
+        check_reasoning(requested_reasoning, context.get("reasoning_config"), profile)
     elif requested_reasoning:
         configuration = context.get("reasoning_config")
         if type(configuration) is not dict or configuration.get("enabled") is not True:

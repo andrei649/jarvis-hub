@@ -114,7 +114,16 @@
   shows in the Network Monitor. With "Cloud reasoning effort" set and reasoning turned on for the
   compatible provider, Nerva picks the nearest level the model accepts, never a stronger one.
   A provider whose model cannot turn thinking off says so instead of thinking anyway.
-- How these providers handle your data has not been checked yet; each is marked "unknown".
+- How these providers handle your data has not been checked yet, and Nerva has no price for most
+  of their models, so choosing one asks you to acknowledge both, the way a custom endpoint does.
+- For Fireworks, Vercel AI Gateway and Ollama Cloud, Nerva only sends a thinking level for a model
+  you listed in "Compatible effort declarations", since those services cannot say which models
+  reason. Models that only have thinking on or off get it off for "minimal" and "low".
+- A Kimi Code key (it starts with `sk-kimi-`) is refused with a message: it works only on Kimi
+  Code's own address, which this route does not use. Use a Moonshot platform key.
+- "Check keys" only checks the provider you picked from this list, so a key shared between two
+  of them (Alibaba's `DASHSCOPE_API_KEY`) or used elsewhere (`HF_TOKEN`) is never sent to the
+  other one. A provider package you signed yourself with the same name keeps working as before.
 **The optional Hermes runtime moves to a newer Hermes, and future updates are one command**
 - If you installed the optional Hermes runtime (Admin → Hermes Runtime), Nerva now expects the
   Hermes version of 10 November instead of the one from October. Run
