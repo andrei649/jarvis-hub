@@ -23,7 +23,9 @@
 [scope/deliveries](HERMES_SPRINT.md); query `scripts/hermes_status.py summary | list | show H515`.
 This assessment distinguishes the dated inventory from reviewed implementation; never
 derive its progress from PR counts or the shorter HA checklist. Regenerate it with
-`scripts/hermes_status.py write` after a reviewed capability/evidence change.
+`scripts/hermes_status.py write` after a reviewed capability/evidence change. Rows sit in the
+feature areas of `docs/hermes/areas.json`; evidence is not hash-pinned, so moving code re-opens
+nothing, and `hermes_status.py verify --area <id>` runs an area's acceptance suite.
 
 Two documents are larger than the rest of the repo's prose put together, and neither is ever needed
 whole. Reading them to answer a question is the single most expensive habit available here, so both

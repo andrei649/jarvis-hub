@@ -1,5 +1,19 @@
 # Hermes ledger: re-assess every `needs_review` row (records only)
 
+> **Evidence model changed on 2026-11-10 — this section overrides the rest of this prompt.**
+> Owner decision 3 (`docs/decisions/2026-11-10-hermes-integration-by-feature.md`) retired hash-pinned
+> evidence. `docs/hermes/assessment.json` is schema 3: `evidence` is a list of repository paths, no
+> `sha256`; `path:line` citations are prose and are not screened. There is no `stale_evidence` basis and no
+> restamp: a merge that moves or edits code changes no row, and `scripts/hermes_restamp.py` is retired.
+> Every row belongs to one feature area in `docs/hermes/areas.json`, whose acceptance suite (pytest files
+> or node ids) keeps its `equivalent` rows honest. If a suite fails, that area's equivalent rows show
+> `needs_review` with basis `suite_failed` until the suite is green again or the rows are re-read.
+> Wherever the text below says pin, restamp, drift, stale_evidence or evidence hash, apply this instead:
+> - after your change run `python3.12 scripts/hermes_status.py verify --area <id>` for the areas you
+>   touched (or read CI's `verify --junit` step), then `write && check`;
+> - when you make a row `equivalent`, add the test that proves it to its area's `suite`;
+> - if you move or rename a test file a suite names, update `areas.json` in the same change.
+
 You coordinate a records-only pass over the Hermes capability ledger in `andrei649/jarvis-hub`. You work on branch `claude/cto-session-recovery-qinvkg`, which has draft PR #1207. Up to three other sessions may run at the same time on this branch, handling the `missing`, `partial` and `equivalent` rows. So assume the branch moves under you.
 
 **Goal.** Every row whose live status is `needs_review` ends up with a current, truthful assessment, or is recorded as blocked with a reason. The bucket has two parts:

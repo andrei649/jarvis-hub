@@ -32,14 +32,12 @@ system prompt" trips two patterns, because ``system prompt`` is a bare
 substring), and it emptied the persona-consistency rail's forbidden-phrase list
 at the same moment — so the rail scored the least-constrained agent as clean.
 
-Blast radius that a grep over ``tests/`` cannot see: ``docs/hermes/assessment.json``
-pins a sha256 over ``agents/core/agent.py`` for 8 rows (H146, H298, H363, H364,
-H449, H671, H673, H679), so *any* edit to that file flips them to
-``stale_evidence`` and turns ``tests/test_hermes_sprint_status.py`` red until
-``HERMES_STATUS.md`` and ``docs/HERMES_CAPABILITIES.md`` are regenerated from
-``scripts/hermes_status.py``. The coupling runs through a JSON evidence
-manifest, not an import, so it is invisible to an identifier search — write it
-down rather than rediscover it.
+Blast radius that a grep over ``tests/`` cannot see: until 2026-11-10,
+``docs/hermes/assessment.json`` pinned a sha256 over ``agents/core/agent.py`` for
+8 rows, so any edit to that file re-opened them. Evidence is no longer pinned
+(owner decision 2026-11-10 §3); those rows now depend on the acceptance suites
+of their feature areas in ``docs/hermes/areas.json`` instead, and an edit here
+re-opens nothing unless one of those suites goes red.
 
 The first test in this file is the regression guard that matters most: it pins
 that every SOUL the repo ships is clean under the detector. Without it, a future

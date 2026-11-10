@@ -28,8 +28,14 @@ jobs count; uncovered ones are real gaps in Nerva's own surfaces and are built t
 Each feature area gets one acceptance suite written from the owner's side (what the owner can do, and
 what an attacker cannot). Evidence is that suite passing, not file hashes, so a merge that moves code
 no longer re-opens hundreds of rows. Adversarial review stays mandatory for approvals, memory writes,
-execution, delegation and credentials. Until the tooling change lands, the existing restamp process
-continues.
+execution, delegation and credentials.
+
+**Implemented 2026-11-10:** `docs/hermes/areas.json` maps every row to one of 23 feature areas, each with
+a lane and an acceptance suite seeded from the tests its rows already cited; `assessment.json` is schema 3
+(evidence paths, no hashes; the old pins stay in git history); `scripts/hermes_status.py verify --junit`
+judges the suites from CI's normal pytest run and demotes only a failing area's equivalent rows
+(`suite_failed`). `scripts/hermes_restamp.py` is retired. The seeded suites are a starting point: the
+owner-side suites this decision asks for replace them area by area (`suite_origin: owner`).
 
 ## 4. Thirty-two rows return to `excluded`
 
