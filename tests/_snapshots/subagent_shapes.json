@@ -15,7 +15,9 @@
     "steerable",
     "steers",
     "stop_reason",
-    "task"
+    "task",
+    "timeout_seconds",
+    "tools"
   ],
   "spawn.concurrency_cap": [
     "active",
@@ -63,6 +65,7 @@
     "max_depth",
     "persist",
     "steerable",
+    "timeout_seconds",
     "total",
     "turn_cap"
   ],

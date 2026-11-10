@@ -3391,11 +3391,13 @@ export interface paths {
          * Pin Skill
          * @description H349 — pin or unpin one installed skill (Hermes: ``hermes curator pin|unpin``).
          *
-         *     A pinned skill is left alone by the curator's lifecycle pass (never marked stale or
-         *     archived), and a skill batch and the journey's forget refuse to delete it until it is
-         *     unpinned; it can still be patched. Uninstalling it or rejecting it from review is the
-         *     owner's own act and is not blocked. A skill that ships with Nerva is not pinned
-         *     (409 ``not_pinnable``): nothing ages it out or deletes it.
+         *     A pin stops automation: the curator's lifecycle pass leaves a pinned skill alone
+         *     (never marked stale or archived) and a batch the agent proposed does not delete it;
+         *     it can still be patched. The journey's forget refuses it too, as Hermes's does. The
+         *     owner's own removals are not blocked — the owner's batch delete, an uninstall, a
+         *     reject from review — and retire the pin with the skill. A skill that ships with Nerva
+         *     is not pinned (409 ``not_pinnable``): nothing ages it out or deletes it. Only a skill
+         *     installed and loaded now can be pinned (404 ``not_found``).
          *
          *     An admin route like the skill switch, applied at once like switching off (a pin only
          *     narrows what automation may do), and written to the intent log when it changed
@@ -4826,6 +4828,49 @@ export interface paths {
          *     whether a fallback exists.
          */
         post: operations["subagents_batch_api_subagents_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subagents/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subagents Pause
+         * @description H400 — pause NEW sub-agent spawns (the HTTP routes and the model's delegate_task
+         *     alike). Running sub-agents are not touched. The pause is a file in the data root, so
+         *     it holds across a restart; the answer is the state read back after the write.
+         */
+        post: operations["subagents_pause_api_subagents_pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subagents/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subagents Resume
+         * @description H400 — lift the spawn pause. The emergency stop, when engaged, still stops new
+         *     sub-agents: the answer's ``accepting`` says whether one would start now.
+         */
+        post: operations["subagents_resume_api_subagents_resume_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8455,6 +8500,12 @@ export interface paths {
          *
          *     Names and layers only, at the same boundary as /api/admin/env: no value is
          *     returned, and ``masked`` says whether /api/admin/env masks the key's value.
+         *
+         *     RB-2: a hub variable has two spellings, ``NERVA_<X>`` (preferred) and ``JARVIS_<X>``
+         *     (deprecated). Its row is keyed by the ``JARVIS_`` name the hub reads and says which
+         *     spelling supplied the value (``spelling``), the one to use (``preferred``) and
+         *     whether the deprecated one was used (``deprecated``). ``masked`` holds for the
+         *     variable under either spelling.
          */
         get: operations["admin_env_sources_api_admin_env_sources_get"];
         put?: never;
@@ -16033,6 +16084,14 @@ export interface components {
             overrides?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** SubAgentPauseBody */
+        SubAgentPauseBody: {
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
         };
         /** SubAgentSpawnBody */
         SubAgentSpawnBody: {
@@ -24036,6 +24095,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subagents_pause_api_subagents_pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SubAgentPauseBody"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subagents_resume_api_subagents_resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

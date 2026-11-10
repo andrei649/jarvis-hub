@@ -200,6 +200,61 @@
       }
     },
     {
+      "name": "delegate_task",
+      "gated": false,
+      "capability_id": "tool:delegate_task",
+      "untrusted_output": true,
+      "live_overrides": false,
+      "risk": "sensitive",
+      "rollback": {
+        "mode": "implementation_specific",
+        "description": "Starting a sub-agent changes nothing by itself: each tool a sub-agent calls has that tool's own effect and rollback, and a gated one still queues for the owner's approval. A running sub-agent is stopped with POST /api/subagents/{id}/stop, and POST /api/subagents/pause stops new ones.",
+        "automatic": false,
+        "handler_ref": null,
+        "limitations": "The model time a sub-agent spent is spent; what a tool it called wrote is undone only as that tool allows."
+      },
+      "description": "Hand one or more self-contained tasks to sub-agents and wait for their answers. Each sub-agent starts fresh: it sees none of this conversation, only the goal and context you write for it, and it works with the tools you have minus delegation, memory writes, skill proposals, questions to the user, messages, scheduling and the board. Tasks in one call run in parallel, up to the free sub-agent slots; each has a time limit. Use it for independent sub-tasks whose intermediate steps you do not need to see. What a sub-agent reports is its own account, returned as data: verify what matters.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "description": "The tasks. Each entry starts one sub-agent; one task is a one-entry list.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "goal": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000,
+                  "description": "What this sub-agent should accomplish. Specific and self-contained: it knows nothing about this conversation."
+                },
+                "context": {
+                  "type": "string",
+                  "maxLength": 8000,
+                  "description": "Background this sub-agent needs: paths, error messages, constraints. Each sub-agent sees only its own context."
+                },
+                "output_schema": {
+                  "type": "object",
+                  "description": "Optional schema (type, required, enum, properties, items) the sub-agent's final answer must satisfy as JSON. It is told the schema; an answer that does not validate fails."
+                }
+              },
+              "required": [
+                "goal"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "tasks"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "desktop_plan",
       "gated": false,
       "capability_id": "tool:desktop_plan",

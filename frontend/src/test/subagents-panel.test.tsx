@@ -340,3 +340,74 @@ describe('SubAgentsPanel — a guarded model is confirmed, not lost (H681 review
     expect(screen.queryByTitle(/confirm this model/)).toBeNull();
   });
 });
+
+/* H400 — the spawn gate. `GET /api/subagents` carries `gate` (the emergency stop, the kill
+   switch, the owner's pause); the panel shows it and offers the pause, and renders what
+   the pause routes read back rather than what was asked for. */
+describe('SubAgentsPanel — the spawn pause (H400)', () => {
+  const withGate = (gate) => {
+    const fn = vi.fn().mockImplementation((url, init) => {
+      const method = (init && init.method) || 'GET';
+      if (method !== 'POST') return Promise.resolve({ ok: true, status: 200, json: async () => ({ ...LIST, gate }) });
+      return fn.post(url, init);
+    });
+    global.fetch = fn;
+    return fn;
+  };
+  const OPEN = { halted: null, paused: false, pause: null, accepting: true };
+
+  it('shows that new sub-agents are accepted and POSTs the pause', async () => {
+    const fn = withGate(OPEN);
+    fn.post = () => ok({ halted: null, paused: true, pause: { reason: null }, accepting: false });
+    render(<SubAgentsPanel />);
+    await waitFor(() => expect(screen.getByText('accepting')).toBeTruthy());
+    fireEvent.click(screen.getByText('pause spawning'));
+    await waitFor(() => expect(screen.getByText(/new sub-agents paused · running ones continue/)).toBeTruthy());
+    const posts = fn.mock.calls.filter((c) => c[1] && c[1].method === 'POST').map((c) => String(c[0]));
+    expect(posts).toEqual(['/api/subagents/pause']);
+  });
+
+  it('shows a pause and resumes it', async () => {
+    const fn = withGate({ halted: null, paused: true, pause: { reason: 'runaway' }, accepting: false });
+    fn.post = () => ok(OPEN);
+    render(<SubAgentsPanel />);
+    await waitFor(() => expect(screen.getByText('paused')).toBeTruthy());
+    expect(screen.queryByText('accepting')).toBeNull();
+    fireEvent.click(screen.getByText('resume spawning'));
+    await waitFor(() => expect(screen.getByText('new sub-agents resumed')).toBeTruthy());
+    const posts = fn.mock.calls.filter((c) => c[1] && c[1].method === 'POST').map((c) => String(c[0]));
+    expect(posts).toEqual(['/api/subagents/resume']);
+  });
+
+  it('says the emergency stop still stops spawning after a resume', async () => {
+    const fn = withGate({ halted: 'estop_engaged', paused: true, pause: {}, accepting: false });
+    fn.post = () => ok({ halted: 'estop_engaged', paused: false, pause: null, accepting: false });
+    render(<SubAgentsPanel />);
+    await waitFor(() => expect(screen.getByText('emergency stop')).toBeTruthy());
+    fireEvent.click(screen.getByText('resume spawning'));
+    await waitFor(() => expect(screen.getByText(/pause lifted · still stopped by the emergency stop/)).toBeTruthy());
+  });
+
+  it('does not claim a pause the hub did not read back, and surfaces a refusal', async () => {
+    const fn = withGate(OPEN);
+    fn.post = () => ok({ halted: null, paused: false, pause: null, accepting: true });
+    const first = render(<SubAgentsPanel />);
+    await waitFor(() => expect(screen.getByText('pause spawning')).toBeTruthy());
+    fireEvent.click(screen.getByText('pause spawning'));
+    await waitFor(() => expect(screen.getByText(/refused · spawning was not paused/)).toBeTruthy());
+    first.unmount();
+
+    fn.post = () => Promise.resolve({ ok: false, status: 503, json: async () => ({ error: 'pause_state_not_saved' }) });
+    render(<SubAgentsPanel />);
+    await waitFor(() => expect(screen.getByText('pause spawning')).toBeTruthy());
+    fireEvent.click(screen.getByText('pause spawning'));
+    await waitFor(() => expect(screen.getByText(/refused · pause_state_not_saved/)).toBeTruthy());
+  });
+
+  it('shows no pause control when the hub reports no gate', async () => {
+    mockApi(() => ok({}));
+    render(<SubAgentsPanel />);
+    await waitFor(() => expect(screen.getByText('sub-jarvis-1')).toBeTruthy());
+    expect(screen.queryByText('pause spawning')).toBeNull();
+  });
+});

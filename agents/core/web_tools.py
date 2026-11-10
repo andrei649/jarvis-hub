@@ -107,8 +107,8 @@ MAX_RESULT_BYTES = 100_000
 # smaller ceiling and its rows are fitted to it (wide characters can make ten rows ~60 KB);
 # only web_extract raises the per-result context ceiling.
 MAX_SEARCH_RESULT_BYTES = 50_000
-# The tool loop (AgentToolRuntime.tool_timeout_seconds, 30 s, nothing overrides it and
-# register_tool has no per-tool budget) cuts a call off with ``tool_timeout`` and throws
+# The tool loop (AgentToolRuntime.tool_timeout_seconds, 30 s; register_tool has no
+# per-tool budget, and the host names a longer one for delegate_task only) cuts a call off with ``tool_timeout`` and throws
 # away every page already read. So one web_extract call keeps its own two deadlines under
 # that wall: past the soft one no PDF waits for a parse slot or keeps parsing (the plugin
 # answers ``parser_busy`` for it), past the hard one any read still running is cancelled

@@ -2,9 +2,9 @@
 
 The generic `llm.tool_loop_per_tool_cap` ships off (0). These two ship ON at 50: a turn
 that runs `web_search` past its ceiling is refused with the usual cap notice. The spawn
-ceiling is a DORMANT guard: it refuses a spawn made inside a bound tool-loop turn, but no
-model-facing spawn tool exists and the HTTP routes run outside any turn. When the generic
-cap is also set, the stricter one applies.
+ceiling refuses a spawn made inside a bound tool-loop turn (the children `delegate_task`
+starts, H400; `tests/test_h400_delegation.py` drives it through the tool); the HTTP routes
+run outside any turn. When the generic cap is also set, the stricter one applies.
 """
 
 from __future__ import annotations

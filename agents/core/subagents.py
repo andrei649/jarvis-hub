@@ -42,22 +42,50 @@ Per-child API settings and honest failure (H681):
 * **batch** — :meth:`SubAgentManager.spawn_batch` runs up to ``BATCH_MAX`` children
   within the free slots and returns one ``subagent_model_rejected`` notice when every
   child failed because the provider does not know the model the setting chose.
+
+The one spawn gate (H400). Every child starts in :meth:`SubAgentManager.spawn` — the
+owner routes, the batch and the model's ``delegate_task`` tool all end there — and a
+spawn is admitted under one lock that also serialises the pause writer:
+
+* **emergency stop / spawn pause** — while the install's ESTOP is engaged, the kill
+  switch is halted, or the owner paused spawning (a sentinel file in the data root, so
+  a pause survives a restart), no new child starts. Running children are left alone:
+  both switches stop *new* work only. A state that cannot be read counts as stopped.
+* **caps** — depth and concurrency are checked and the slot is taken in the same
+  critical section; a child's depth comes from the spawn it is running in (a context
+  variable the manager sets), never from a caller's argument.
+* **per-child timeout** — a child that outruns ``child_timeout`` is cancelled, and its
+  slot is released only when its task has actually ended.
+* **tools** — a child's tool allowlist is the registered tools (or, for a spawn made
+  from a model turn, the tools that turn was offered) minus the tools the blocked
+  capabilities stand for (:func:`child_tool_allowlist`); it is recorded on the spawn
+  and handed to runners that accept a ``tools`` kwarg.
+* **batch quality gate** — a batch with a placeholder goal (``todo``, ``task 3``), an
+  unexpanded template marker, or (two or more tasks) a goal under ten characters is
+  refused before any child starts.
+* **typed answer** — ``answer_schema`` validates the JSON in the child's *text* on the
+  parent's side; the child's text is data, never instructions.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
 import json
 import logging
+import os
 import re
 import threading
 import time
+from collections.abc import Iterable
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
 from .env_config import env_flag
+from .estop import SPAWN_PAUSE_SENTINEL
 from .iteration_budget import IterationBudget
 from .tool_rpc import current_tool_turn
 
@@ -72,6 +100,54 @@ logger = logging.getLogger("jarvis.subagents")
 DELEGATE_BLOCKED_CAPABILITIES = frozenset({
     "delegate", "memory_write", "channel_send", "skill_manage", "clarify",
 })
+
+# H400 — the model-facing tools each blocked capability stands for. The capability list
+# above is what a spawn records; this is what enforces it for a runner that reaches
+# tools by name (the production runner narrows the child's turn to the allowlist with
+# ``job_toolsets.toolset_scope``, which both the offer and ``ToolRPCServer.handle``
+# honour). ``cronjob`` sits under ``delegate``: a child that schedules a job starts work
+# that outlives it. The board tools are withheld by prefix (Hermes strips ``kanban``
+# from every child; ``kanban.runtime.delegate_scope`` withholds them as well).
+BLOCKED_CAPABILITY_TOOLS: dict[str, tuple[str, ...]] = {
+    "delegate": ("delegate_task", "cronjob"),
+    "memory_write": ("memory",),
+    "channel_send": ("speak",),
+    "skill_manage": ("skill_propose",),
+    "clarify": ("clarify",),
+}
+BLOCKED_TOOL_PREFIXES: tuple[str, ...] = ("kanban_",)
+
+
+def blocked_tool_names(blocked: Iterable[str], names: Iterable[str]) -> frozenset:
+    """The tools in *names* a child with the *blocked* capabilities may not call."""
+    denied = {tool for capability in blocked for tool in BLOCKED_CAPABILITY_TOOLS.get(capability, ())}
+    return frozenset(name for name in names
+                     if name in denied or name.startswith(BLOCKED_TOOL_PREFIXES))
+
+
+def child_tool_allowlist(registered: Iterable[str], parent_offer: Optional[Iterable[str]],
+                         blocked: Iterable[str]) -> frozenset:
+    """A child's tools: the registered ones its parent holds, minus the blocked ones.
+
+    *parent_offer* is the set a model turn was offered (``None`` for a spawn made
+    outside any turn: then the registry is the bound, and the child's own tool profile
+    narrows it). The result is a subset of both — a child never gains a tool."""
+    names = frozenset(str(name) for name in registered)
+    if parent_offer is not None:
+        names &= frozenset(str(name) for name in parent_offer)
+    return names - blocked_tool_names(blocked, names)
+
+
+# The spawn the code in flight is running in (set by the manager around a child's run),
+# or None. A child's own spawns are attributed to it from here, so depth is counted from
+# what is running and not from what a caller says about itself.
+_CURRENT_SPAWN: ContextVar[Optional[str]] = ContextVar("nerva_current_spawn", default=None)
+
+
+def current_spawn_id() -> Optional[str]:
+    """The id of the sub-agent spawn this code runs in, or None outside one."""
+    return _CURRENT_SPAWN.get()
+
 
 # Declared provenance of a steer message. `user` = the guarded HTTP surface
 # (an operator typing at a running worker); `agent` = another agent / the
@@ -89,8 +165,35 @@ SPAWN_LOG_ENV = "JARVIS_SUBAGENT_SPAWN_LOG"
 DEFAULT_TURN_SPAWN_CAP = 50
 TURN_SPAWN_HISTORY = 64
 
-# Spawn lifecycle. `stopping` is the window between stop() and the child task
-# unwinding; every other move is a terminal write.
+# H400 — the per-child wall clock (``autonomy.subagent_timeout_seconds`` in prod). There
+# is no "off": an unreadable value is the shipped one and every value is clamped.
+DEFAULT_CHILD_TIMEOUT_SECONDS = 300.0
+CHILD_TIMEOUT_MIN_SECONDS = 5.0
+CHILD_TIMEOUT_MAX_SECONDS = 3600.0
+# How long a cancelled child is waited for before its caller is answered. A child that
+# has not ended by then keeps its slot until it does (`stopping`, never a freed slot).
+UNWIND_GRACE_SECONDS = 5.0
+
+# H400 — the spawn pause: a sentinel file, so a pause outlives a restart. Its body is
+# optional JSON; a file that cannot be read still pauses.
+PAUSE_SENTINEL = SPAWN_PAUSE_SENTINEL
+PAUSE_REASON_MAX = 200
+# Why a spawn is refused when new spawns are stopped (as opposed to a cap being full).
+HALT_REASONS = frozenset({"estop_engaged", "kill_switch_halted", "halt_state_unknown", "spawn_paused"})
+
+# H400 — the batch quality gate (Hermes ``_validate_batch_tasks``).
+_PLACEHOLDER_GOAL = re.compile(r"(todo|task\s*\d+)", re.IGNORECASE)
+_TEMPLATE_MARKER = re.compile(
+    r"<[A-Za-z][A-Za-z0-9]*(?:[ _-][A-Za-z0-9]+)+>|\{[A-Za-z][A-Za-z0-9]*(?:[ _-][A-Za-z0-9]+)+\}")
+MIN_BATCH_GOAL_CHARS = 10
+
+# H400 — a typed answer: the schema a child's JSON answer must satisfy, bounded.
+ANSWER_SCHEMA_MAX_BYTES = 8192
+ANSWER_SCHEMA_MAX_DEPTH = 8
+CONTEXT_MAX_CHARS = 8000
+
+# Spawn lifecycle. `stopping` is the window between stop() (or a timeout) and the child
+# task unwinding; every other move is a terminal write.
 SPAWN_TRANSITIONS: dict[str, frozenset] = {
     "running": frozenset({"done", "failed", "stopping", "stopped"}),
     "stopping": frozenset({"stopped", "failed", "done"}),
@@ -117,7 +220,8 @@ SUBAGENT_MODEL_SETTING = "autonomy.subagent_model"
 SUBAGENT_PROVIDER_SETTING = "autonomy.subagent_provider"
 BATCH_MAX = 16
 DETAIL_MAX = 500
-_BATCH_ITEM_KEYS = frozenset({"task", "agent", "output_schema", "model", "provider", "overrides"})
+_BATCH_ITEM_KEYS = frozenset({"task", "agent", "output_schema", "model", "provider", "overrides",
+                              "context", "answer_schema"})
 # The row's rule for a provider's own words: a model phrase, then the failure.
 _MODEL_MISSING_PHRASE = re.compile(r"model.*(not found|does not exist|unknown)", re.IGNORECASE)
 
@@ -316,6 +420,164 @@ def validate_output(value: Any, schema: Any, path: str = "$") -> list[str]:
     return out
 
 
+def schema_problem(schema: Any, _depth: int = 0) -> Optional[str]:
+    """Why *schema* cannot be used as an ``answer_schema``, or None. Checked before a
+    child is spent on: an object of bounded size and depth whose ``type`` names are
+    ones :func:`validate_output` knows and whose ``required`` / ``enum`` /
+    ``properties`` / ``items`` have the shapes it reads."""
+    if not isinstance(schema, dict):
+        return "a schema is a JSON object"
+    if _depth == 0:
+        try:
+            size = len(json.dumps(schema, allow_nan=False))
+        except (TypeError, ValueError):
+            return "a schema is plain JSON"
+        if size > ANSWER_SCHEMA_MAX_BYTES:
+            return f"a schema is at most {ANSWER_SCHEMA_MAX_BYTES} bytes"
+    if _depth > ANSWER_SCHEMA_MAX_DEPTH:
+        return f"a schema nests at most {ANSWER_SCHEMA_MAX_DEPTH} levels"
+    expected = schema.get("type")
+    if expected is not None:
+        types = expected if isinstance(expected, list) else [expected]
+        if not types or any(not isinstance(t, str) or t not in _TYPE_CHECKS for t in types):
+            return f"unknown type {expected!r}"
+    required = schema.get("required")
+    if required is not None and (not isinstance(required, list)
+                                 or any(not isinstance(key, str) for key in required)):
+        return "required is a list of property names"
+    if "enum" in schema and not isinstance(schema["enum"], list):
+        return "enum is a list"
+    props = schema.get("properties")
+    if props is not None:
+        if not isinstance(props, dict):
+            return "properties is an object"
+        for sub in props.values():
+            problem = schema_problem(sub, _depth + 1)
+            if problem:
+                return problem
+    if "items" in schema:
+        return schema_problem(schema["items"], _depth + 1)
+    return None
+
+
+def extract_json_candidate(text: Any) -> tuple[bool, Any]:
+    """``(found, value)``: the JSON a child answered with. The whole text, the body of a
+    leading code fence, or the outermost ``{...}`` / ``[...]`` span is tried in turn."""
+    if not isinstance(text, str):
+        return False, None
+    body = text.strip()
+    fence = re.match(r"```[A-Za-z0-9_-]*[ \t]*\r?\n(.*?)\r?\n?```", body, re.DOTALL)
+    candidates = [body] + ([fence.group(1).strip()] if fence else [])
+    for opener, closer in (("{", "}"), ("[", "]")):
+        start, end = body.find(opener), body.rfind(closer)
+        if 0 <= start < end:
+            candidates.append(body[start:end + 1])
+    for candidate in candidates:
+        try:
+            return True, json.loads(candidate)
+        except (TypeError, ValueError):
+            continue
+    return False, None
+
+
+def goal_problem(goal: str, *, batch_size: int) -> Optional[str]:
+    """The batch quality gate for one goal (Hermes ``_validate_batch_tasks``), or None.
+
+    A placeholder (``todo``, ``task 3``), an unexpanded template marker (a multi-word
+    name in ``<...>`` or ``{...}``; ``Vec<T>``, ``<div>`` and ``{"k": 1}`` are not one),
+    or, in a batch of two or more, a goal under ten characters. Duplicate goals are
+    allowed on purpose (best-of-N)."""
+    normalized = " ".join(str(goal).split())
+    shown = normalized[:60]
+    if _PLACEHOLDER_GOAL.fullmatch(normalized):
+        return (f"placeholder goal ('{shown}'): replace it with a specific, self-contained "
+                "description of what the sub-agent should accomplish")
+    marker = _TEMPLATE_MARKER.search(normalized)
+    if marker:
+        return (f"unexpanded template marker ('{marker.group(0)[:60]}'): substitute the real "
+                "value, a sub-agent cannot resolve placeholders")
+    if batch_size >= 2 and len(normalized) < MIN_BATCH_GOAL_CHARS:
+        return (f"goal too short ('{shown}'): write a specific, self-contained goal of at "
+                f"least {MIN_BATCH_GOAL_CHARS} characters")
+    return None
+
+
+def build_child_prompt(task: str, context: Optional[str] = None,
+                       answer_schema: Optional[dict] = None) -> str:
+    """The focused brief a delegated child is given instead of its parent's history."""
+    parts = [
+        "You are a sub-agent working on one delegated task for another agent. You cannot "
+        "see its conversation: everything you are given is below.",
+        "Work only on this task with the tools you are offered. You cannot ask the user a "
+        "question, write long-term memory, propose skills, send messages, use the board or "
+        "delegate further. Your whole final reply is handed back to the agent that "
+        "delegated the task, as data: report what you did and what you found, concisely.",
+        f"TASK:\n{task}",
+    ]
+    if context and context.strip():
+        parts.append(f"CONTEXT:\n{context.strip()}")
+    if answer_schema is not None:
+        parts.append(
+            "OUTPUT CONTRACT (machine-validated):\nYour final reply must be a single JSON value "
+            "that validates against this schema. No prose before or after it; a ```json code "
+            "fence is acceptable.\n" + json.dumps(answer_schema, indent=2, sort_keys=True))
+    return "\n\n".join(parts)
+
+
+# ── the spawn pause (H400): one sentinel file is the truth ───────────────────
+
+def default_pause_path() -> Path:
+    from .paths import data_path
+
+    return data_path("subagents", PAUSE_SENTINEL)
+
+
+def read_pause(path: Path) -> Optional[dict]:
+    """``{"reason", "paused_at", "by"}`` when spawning is paused, else None. Blocking.
+
+    Fail safe: a sentinel that cannot be stat'ed or read still pauses (all fields None)."""
+    try:
+        if not path.exists():
+            return None
+    except OSError:
+        return {"reason": None, "paused_at": None, "by": None}
+    state = {"reason": None, "paused_at": None, "by": None}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            for key in state:
+                value = raw.get(key)
+                state[key] = value if isinstance(value, (str, int, float)) and value != "" else None
+    except (OSError, ValueError):
+        pass
+    return state
+
+
+def write_pause(path: Path, paused: bool, *, reason: str = "", actor: str = "") -> None:
+    """Create or remove the sentinel. Blocking; raises ``OSError`` when it could not."""
+    if not paused:
+        with contextlib.suppress(FileNotFoundError):
+            path.unlink()
+        return
+    body = json.dumps({"reason": str(reason or "")[:PAUSE_REASON_MAX] or None,
+                       "paused_at": time.time(), "by": str(actor or "")[:80] or None})
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_text(body + "\n", encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        with contextlib.suppress(OSError):      # already moved into place, or never written
+            tmp.unlink()
+
+
+def _estop_halt() -> Optional[str]:
+    """The default halt probe: the install's emergency stop. Blocking (one stat)."""
+    from . import estop
+
+    return "estop_engaged" if estop.is_engaged() else None
+
+
 def _default_cost_probe() -> dict:
     """Read the live cost tracker (best-effort; empty when unavailable)."""
     try:
@@ -390,8 +652,27 @@ class SubAgentManager:
                  decision_hook: Optional[Callable[..., Awaitable[Any]]] = None,
                  selection_defaults: Optional[Callable[[], dict]] = None,
                  fallback_probe: Optional[Callable[[str], Optional[str]]] = None,
-                 turn_cap: Any = DEFAULT_TURN_SPAWN_CAP) -> None:
+                 turn_cap: Any = DEFAULT_TURN_SPAWN_CAP,
+                 child_timeout: Any = DEFAULT_CHILD_TIMEOUT_SECONDS,
+                 halt_probe: Optional[Callable[[], Optional[str]]] = None,
+                 pause_path: Optional[Path] = None,
+                 tool_registry: Optional[Callable[[], Iterable[str]]] = None) -> None:
         self._runner = runner or NullRunner()
+        # H400 — the spawn gate. `halt_probe` answers why no new child may start (the
+        # emergency stop by default; prod adds the kill switch), `pause_path` is the
+        # owner's pause sentinel, and `_gate_lock` is held by every admission and by the
+        # pause writer, so a pause that has been answered is in force for every spawn
+        # admitted after it. Both reads block, so they run on a worker thread.
+        self._halt_probe = halt_probe or _estop_halt
+        self._pause_path = Path(pause_path) if pause_path is not None else None
+        self._gate_lock = asyncio.Lock()
+        # H400 — the per-child wall clock: a number or a reader (the setting in prod).
+        self._child_timeout = child_timeout
+        # H400 — the registered tool names (ToolRPC in prod). With it a spawn records
+        # and hands its runner the child's allowlist; without it there is none to give.
+        self._tool_registry = tool_registry
+        self._runner_takes_tools = _runner_accepts(self._runner, "tools")
+        self._settling: set = set()
         # H681: where a child's model comes from when its spawn names none (the
         # autonomy.subagent_* settings in prod), and what it would run on without it.
         self._selection_defaults = selection_defaults
@@ -405,8 +686,8 @@ class SubAgentManager:
         # H486: how many spawns one tool-loop turn may make (Hermes caps delegate_task at
         # 50 per turn). Read at each spawn (a setting reader in prod); 0 = no ceiling, an
         # unreadable value = the shipped ceiling. Keyed on the tool loop's own turn token,
-        # so a spawn outside any turn is left to the per-boot budget. DORMANT today: the
-        # model has no spawn tool and the only callers (the HTTP routes) run outside a turn.
+        # so a spawn outside any turn (the HTTP routes) is left to the per-boot budget; the
+        # model's delegate_task tool (H400) spawns inside one and is counted.
         self._turn_cap = turn_cap
         self._turn_spawns: dict[str, int] = {}
         # Capability scoping for children (hermes DELEGATE_BLOCKED_TOOLS analog).
@@ -460,6 +741,96 @@ class SubAgentManager:
         # process does not grow a table of finished turns.
         while len(self._turn_spawns) > TURN_SPAWN_HISTORY:
             del self._turn_spawns[next(iter(self._turn_spawns))]
+
+    # ── the spawn gate: emergency stop, pause, timeout (H400) ────
+    def child_timeout(self) -> float:
+        """Seconds one child may run: the configured value clamped into
+        ``CHILD_TIMEOUT_MIN_SECONDS``..``CHILD_TIMEOUT_MAX_SECONDS``; an unreadable,
+        non-numeric, non-finite or non-positive one is the shipped default, never "off"."""
+        raw = self._child_timeout
+        if callable(raw):
+            try:
+                raw = raw()
+            except Exception:
+                logger.warning("sub-agent timeout unreadable; the shipped timeout applies")
+                return DEFAULT_CHILD_TIMEOUT_SECONDS
+        if isinstance(raw, bool):
+            return DEFAULT_CHILD_TIMEOUT_SECONDS
+        try:
+            value = float(raw)
+        except (TypeError, ValueError, OverflowError):
+            return DEFAULT_CHILD_TIMEOUT_SECONDS
+        if value != value or value in (float("inf"), float("-inf")) or value <= 0:
+            return DEFAULT_CHILD_TIMEOUT_SECONDS
+        return min(max(CHILD_TIMEOUT_MIN_SECONDS, value), CHILD_TIMEOUT_MAX_SECONDS)
+
+    def pause_path(self) -> Path:
+        if self._pause_path is None:
+            self._pause_path = default_pause_path()
+        return self._pause_path
+
+    def _halt_state(self) -> dict:
+        """What stops new spawns right now. Blocking: call it on a worker thread.
+
+        Fail closed: a probe or a sentinel that cannot be read stops spawning."""
+        try:
+            halted = self._halt_probe()
+        except Exception:
+            logger.warning("sub-agent halt probe failed; new spawns are refused", exc_info=True)
+            halted = "halt_state_unknown"
+        if halted is not None and (not isinstance(halted, str) or halted not in HALT_REASONS):
+            halted = "halt_state_unknown"
+        try:
+            pause = read_pause(self.pause_path())
+        except Exception:
+            logger.warning("sub-agent pause state unreadable; new spawns are refused", exc_info=True)
+            pause = {"reason": None, "paused_at": None, "by": None}
+        return {"halted": halted, "paused": pause is not None, "pause": pause}
+
+    @staticmethod
+    def _halt_refusal(state: dict) -> Optional[dict]:
+        if state["halted"]:
+            return {"ok": False, "reason": state["halted"],
+                    "detail": "new sub-agents are stopped; running ones are not affected"}
+        if state["paused"]:
+            return {"ok": False, "reason": "spawn_paused", "pause": state["pause"],
+                    "detail": "sub-agent spawning is paused; running ones are not affected"}
+        return None
+
+    async def gate_state(self) -> dict:
+        """``{"halted", "paused", "pause", "accepting"}`` — read under the gate lock, so
+        it is the state the next admitted spawn sees."""
+        async with self._gate_lock:
+            state = await asyncio.to_thread(self._halt_state)
+        return {**state, "accepting": self._halt_refusal(state) is None}
+
+    async def set_paused(self, paused: bool, *, reason: str = "", actor: str = "") -> dict:
+        """Pause or resume NEW spawns and answer the state read back from the sentinel.
+
+        Holds the gate lock, so no spawn is admitted between the write and the answer.
+        Running children are not touched. A resume that could not remove the sentinel,
+        or a pause that could not write it, raises ``OSError`` with nothing claimed."""
+        async with self._gate_lock:
+            await asyncio.to_thread(write_pause, self.pause_path(), bool(paused),
+                                    reason=reason, actor=actor)
+            state = await asyncio.to_thread(self._halt_state)
+        logger.info("sub-agent spawning %s by %s", "paused" if state["paused"] else "resumed",
+                    str(actor or "?")[:80])
+        return {**state, "accepting": self._halt_refusal(state) is None}
+
+    def _child_tools(self, parent_offer: Optional[Iterable[str]]) -> Optional[frozenset]:
+        """The child's allowlist, or None when no registry was given to draw it from.
+        A registry that cannot be read gives the child no tools at all."""
+        if self._tool_registry is None:
+            if parent_offer is None:
+                return None
+            return child_tool_allowlist(parent_offer, parent_offer, self.blocked)
+        try:
+            registered = list(self._tool_registry())
+        except Exception:
+            logger.warning("tool registry unreadable; the sub-agent gets no tools", exc_info=True)
+            return frozenset()
+        return child_tool_allowlist(registered, parent_offer, self.blocked)
 
     # ── introspection ────────────────────────────────────────────
     def _active_count(self) -> int:
@@ -524,67 +895,138 @@ class SubAgentManager:
 
     async def spawn(self, task: str, agent: str = "", parent: str = "",
                     output_schema: Optional[dict] = None, *, model: Optional[str] = None,
-                    provider: Optional[str] = None, overrides: Optional[dict] = None) -> dict:
-        """Spawn an isolated sub-agent for `task`. Rejected if the concurrency cap is
+                    provider: Optional[str] = None, overrides: Optional[dict] = None,
+                    tools: Optional[Iterable[str]] = None, context: Optional[str] = None,
+                    answer_schema: Optional[dict] = None, focused: bool = False) -> dict:
+        """Spawn an isolated sub-agent for `task` — the one place a child starts.
+
+        Refused while new spawns are stopped (the emergency stop, the kill switch, the
+        owner's pause: ``estop_engaged`` / ``kill_switch_halted`` / ``spawn_paused``, or
+        ``halt_state_unknown`` when that cannot be read), when the concurrency cap is
         reached, the total-spawn budget is spent, or the parent-chain is already
-        `max_depth` deep (recursion guard). With `output_schema`, the runner's result
-        must validate or the spawn is recorded as failed. With `model` / `provider` /
-        `overrides` (H681), the child runs pinned; an invalid one is refused
-        (``invalid_selection``) before any budget is spent."""
-        parent = parent or self.parent_agent
-        depth = self._depth_of(parent)
-        if self.max_depth is not None and depth >= self.max_depth:
-            return {"ok": False, "reason": "recursion_depth_cap",
-                    "depth": depth, "max_depth": self.max_depth}
-        if self._active >= self.max_concurrent:
-            return {"ok": False, "reason": "concurrency_cap",
-                    "active": self._active, "cap": self.max_concurrent}
-        if output_schema is not None and not isinstance(output_schema, dict):
-            return {"ok": False, "reason": "invalid_output_schema"}
-        try:
-            selection, ov = self._resolve_selection(model, provider, overrides)
-        except ValueError as exc:
-            return {"ok": False, "reason": "invalid_selection", "detail": str(exc)[:DETAIL_MAX]}
-        turn, cap = current_tool_turn(), self.turn_cap()
-        if turn is not None and cap > 0 and self._turn_spawns.get(turn, 0) >= cap:
-            return {"ok": False, "reason": "turn_spawn_cap",
-                    "spawned": self._turn_spawns[turn], "cap": cap}
-        if self.budget is not None and not self.budget.consume():
-            return {"ok": False, "reason": "spawn_budget_exhausted",
-                    "used": self.budget.used, "max_total": self.budget.max_total}
-        if turn is not None:
-            self._note_turn_spawn(turn)
-        self._counter += 1
-        spawn_id = f"sub-{parent}-{self._counter}"
-        session_id = f"session::{spawn_id}"   # isolated session
-        rec = {"id": spawn_id, "parent": parent, "agent": agent or "sub",
-               "task": task, "session_id": session_id, "status": "running",
-               "created_at": time.time(), "finished_at": None, "result": None,
-               "blocked": sorted(self.blocked), "output_schema": output_schema,
-               "steers": [], "steerable": self._runner_takes_steer,
-               "stop_reason": None, "cost": None, "selection": selection}
-        self._spawns[spawn_id] = rec
-        chan = SteerChannel(spawn_id)
-        self._channels[spawn_id] = chan
-        self._active += 1
+        `max_depth` deep (recursion guard). The checks and the slot are taken under one
+        lock. A child that outruns :meth:`child_timeout` is cancelled and recorded
+        ``failed`` with ``error: timeout``.
+
+        With `output_schema`, the runner's result must validate or the spawn is recorded
+        as failed. With `answer_schema` (H400), the JSON in the child's ``output`` text
+        must validate, and the parsed value is added as ``structured``. With `model` /
+        `provider` / `overrides` (H681), the child runs pinned; an invalid one is refused
+        (``invalid_selection``) before any budget is spent. `tools` is the set of tools
+        the spawning model turn was offered (None outside a turn): the child's allowlist
+        is drawn from it. `focused` gives the runner the brief built from `task`,
+        `context` and `answer_schema` (:func:`build_child_prompt`) instead of the bare task.
+
+        A spawn made from inside a running child is attributed to that child whatever
+        `parent` says, so its depth cannot be understated."""
+        parent = _CURRENT_SPAWN.get() or parent or self.parent_agent
+        if answer_schema is not None:
+            problem = schema_problem(answer_schema)
+            if problem:
+                return {"ok": False, "reason": "invalid_output_schema", "detail": problem[:DETAIL_MAX]}
+        if context is not None and (not isinstance(context, str) or len(context) > CONTEXT_MAX_CHARS):
+            return {"ok": False, "reason": "invalid_context",
+                    "detail": f"context is text of at most {CONTEXT_MAX_CHARS} characters"}
+        timeout = self.child_timeout()
+        # Built before a slot is taken: nothing between the reservation and the child's
+        # task can fail and strand the slot.
+        prompt = build_child_prompt(task, context, answer_schema) if focused else task
+        async with self._gate_lock:
+            # Blocking reads (a stat each), off the loop; the lock keeps this admission
+            # and the pause writer from interleaving.
+            refusal = self._halt_refusal(await asyncio.to_thread(self._halt_state))
+            if refusal is not None:
+                return refusal
+            depth = self._depth_of(parent)
+            if self.max_depth is not None and depth >= self.max_depth:
+                return {"ok": False, "reason": "recursion_depth_cap",
+                        "depth": depth, "max_depth": self.max_depth}
+            if self._active >= self.max_concurrent:
+                return {"ok": False, "reason": "concurrency_cap",
+                        "active": self._active, "cap": self.max_concurrent}
+            if output_schema is not None and not isinstance(output_schema, dict):
+                return {"ok": False, "reason": "invalid_output_schema"}
+            try:
+                selection, ov = self._resolve_selection(model, provider, overrides)
+            except ValueError as exc:
+                return {"ok": False, "reason": "invalid_selection", "detail": str(exc)[:DETAIL_MAX]}
+            turn, cap = current_tool_turn(), self.turn_cap()
+            if turn is not None and cap > 0 and self._turn_spawns.get(turn, 0) >= cap:
+                return {"ok": False, "reason": "turn_spawn_cap",
+                        "spawned": self._turn_spawns[turn], "cap": cap}
+            allowed = self._child_tools(tools)
+            if self.budget is not None and not self.budget.consume():
+                return {"ok": False, "reason": "spawn_budget_exhausted",
+                        "used": self.budget.used, "max_total": self.budget.max_total}
+            if turn is not None:
+                self._note_turn_spawn(turn)
+            self._counter += 1
+            spawn_id = f"sub-{parent}-{self._counter}"
+            session_id = f"session::{spawn_id}"   # isolated session
+            rec = {"id": spawn_id, "parent": parent, "agent": agent or "sub",
+                   "task": task, "session_id": session_id, "status": "running",
+                   "created_at": time.time(), "finished_at": None, "result": None,
+                   "blocked": sorted(self.blocked), "output_schema": output_schema,
+                   "steers": [], "steerable": self._runner_takes_steer,
+                   "stop_reason": None, "cost": None, "selection": selection,
+                   "tools": sorted(allowed) if allowed is not None else None,
+                   "timeout_seconds": timeout}
+            self._spawns[spawn_id] = rec
+            chan = SteerChannel(spawn_id)
+            self._channels[spawn_id] = chan
+            self._active += 1
         before = _cost_totals(self._safe_probe())
-        child = asyncio.ensure_future(self._run(task, session_id, agent or "sub", chan, selection, ov))
+        child = asyncio.ensure_future(
+            self._run(prompt, session_id, agent or "sub", chan, selection, ov, spawn_id, allowed))
         self._tasks[spawn_id] = child
         result: Any = None
         try:
-            result = await child
+            finished, _pending = await asyncio.wait({child}, timeout=timeout)
         except asyncio.CancelledError:
-            if rec["status"] == "stopping":
-                self._set_status(rec, "stopped")
-                rec["result"] = {"error": "stopped", "reason": rec.get("stop_reason")}
-            else:
-                # The *parent* was cancelled (the awaiting task went away): record it
-                # honestly and let the cancellation keep propagating upward.
-                rec["stop_reason"] = rec.get("stop_reason") or "parent_cancelled"
-                self._set_status(rec, "stopped")
-                rec["result"] = {"error": "stopped", "reason": rec["stop_reason"]}
-                self._finish(rec, before, result)
-                raise
+            # The *parent* was cancelled (the awaiting task went away): stop the child,
+            # record it honestly and let the cancellation keep propagating upward.
+            rec["stop_reason"] = rec.get("stop_reason") or "parent_cancelled"
+            await self._end_cancelled(rec, child, chan, before, final="stopped",
+                                      result={"error": "stopped", "reason": rec["stop_reason"]})
+            raise
+        if not finished:
+            # The wall clock ran out: cancel the child's work, not just the wait for it.
+            rec["stop_reason"] = "timeout"
+            payload = {"error": "timeout", "timeout_seconds": timeout,
+                       "detail": f"the sub-agent did not finish within {timeout:g} s and was cancelled"}
+            if not await self._end_cancelled(rec, child, chan, before, final="failed", result=payload):
+                logger.warning("sub-agent %s timed out and has not ended yet; its slot stays taken",
+                               spawn_id)
+        else:
+            result = self._record_outcome(rec, child, output_schema, answer_schema)
+            if ov is not None:
+                rec["overrides_applied"] = sorted(ov.taken())
+                rec["overrides_ignored"] = sorted(ov.requested() - ov.taken())
+            self._finish(rec, before, result)
+        if rec["status"] in TERMINAL_STATUSES:      # a child still unwinding is logged when it ends
+            await self._persist(rec)
+        out = {"ok": rec["status"] == "done", "id": spawn_id,
+               "session_id": session_id, "status": rec["status"],
+               "result": rec["result"], "cost": rec["cost"], "selection": selection}
+        if "overrides_applied" in rec:
+            out["overrides_applied"] = rec["overrides_applied"]
+            out["overrides_ignored"] = rec["overrides_ignored"]
+        return out
+
+    def _record_outcome(self, rec: dict, child: asyncio.Future, output_schema: Optional[dict],
+                        answer_schema: Optional[dict]) -> Any:
+        """Write a finished child's status and result onto its record; returns what the
+        runner answered (None when it did not)."""
+        spawn_id = rec["id"]
+        try:
+            result = child.result()
+        except asyncio.CancelledError:
+            if rec["status"] != "stopping":           # cancelled by something other than stop()
+                rec["stop_reason"] = rec.get("stop_reason") or "cancelled"
+                self._set_status(rec, "stopping")
+            self._set_status(rec, "stopped")
+            rec["result"] = {"error": "stopped", "reason": rec.get("stop_reason")}
+            return None
         except SubAgentProviderError as exc:
             logger.warning("sub-agent %s: its model call failed: %s", spawn_id, exc.detail[:200])
             self._set_status(rec, "failed")
@@ -592,41 +1034,88 @@ class SubAgentManager:
             failures = [d for d in (_failure_dict(f) for f in exc.failures) if d is not None]
             if failures:
                 rec["result"]["failures"] = failures
+            return None
         except Exception:
             logger.warning("sub-agent run failed", exc_info=True)
             self._set_status(rec, "failed")
             rec["result"] = {"error": "run failed"}
+            return None
+        violations = (validate_output(result, output_schema)
+                      if output_schema is not None else [])
+        blank = (isinstance(result, dict) and isinstance(result.get("output"), str)
+                 and not result["output"].strip())
+        structured: Any = None
+        if not blank and not violations and answer_schema is not None:
+            found, structured = extract_json_candidate(
+                result.get("output") if isinstance(result, dict) else result)
+            violations = (validate_output(structured, answer_schema)[:10] if found
+                          else ["$: the answer is not JSON"])
+        if blank:
+            # A turn that answered nothing is not a child that finished its task.
+            self._set_status(rec, "failed")
+            rec["result"] = {"error": "provider_failed", "detail": "empty output"}
+        elif violations:
+            self._set_status(rec, "failed")
+            rec["result"] = {"error": "output_schema_violation",
+                             "violations": violations, "output": result}
         else:
-            violations = (validate_output(result, output_schema)
-                          if output_schema is not None else [])
-            blank = (isinstance(result, dict) and isinstance(result.get("output"), str)
-                     and not result["output"].strip())
-            if blank:
-                # A turn that answered nothing is not a child that finished its task.
-                self._set_status(rec, "failed")
-                rec["result"] = {"error": "provider_failed", "detail": "empty output"}
-            elif violations:
-                self._set_status(rec, "failed")
-                rec["result"] = {"error": "output_schema_violation",
-                                 "violations": violations, "output": result}
-            else:
-                self._set_status(rec, "done")
-                rec["result"] = result
-        if ov is not None:
-            rec["overrides_applied"] = sorted(ov.taken())
-            rec["overrides_ignored"] = sorted(ov.requested() - ov.taken())
-        self._finish(rec, before, result)
-        await self._persist(rec)
-        out = {"ok": rec["status"] == "done", "id": spawn_id,
-               "session_id": session_id, "status": rec["status"],
-               "result": rec["result"], "cost": rec["cost"], "selection": selection}
-        if ov is not None:
-            out["overrides_applied"] = rec["overrides_applied"]
-            out["overrides_ignored"] = rec["overrides_ignored"]
-        return out
+            self._set_status(rec, "done")
+            rec["result"] = ({**result, "structured": structured}
+                             if answer_schema is not None and isinstance(result, dict) else result)
+        return result
+
+    async def _end_cancelled(self, rec: dict, child: asyncio.Future, chan: SteerChannel,
+                             before: Optional[dict], *, final: str, result: dict) -> bool:
+        """Cancel a child and close its record as *final* once its task has ended.
+
+        The child is waited for (``UNWIND_GRACE_SECONDS``). If it has ended, the record
+        is closed and the slot released now. If it has not — its code is holding the
+        cancellation off — the record stays ``stopping`` and keeps its slot, and a
+        done-callback closes it when the task does end: the count of taken slots never
+        drops below the tasks that are still running. Returns whether it has ended."""
+        if rec["status"] == "running":
+            self._set_status(rec, "stopping")
+        chan.stop_requested = True
+        rec["result"] = dict(result)
+
+        def close(_fut: Any = None) -> None:
+            if not child.cancelled():
+                with contextlib.suppress(BaseException):
+                    child.exception()         # retrieved, so the loop does not log it
+            if rec["status"] == "stopping":
+                self._set_status(rec, final)
+            self._finish(rec, before, None)
+
+        recancelled = False
+        if not child.done():
+            child.cancel()
+            try:
+                await asyncio.wait({child}, timeout=UNWIND_GRACE_SECONDS)
+            except asyncio.CancelledError:
+                recancelled = True
+        if child.done():
+            close()
+        else:
+            rec["result"]["unwound"] = False
+
+            def later(fut: Any) -> None:
+                rec["result"].pop("unwound", None)
+                close(fut)
+                try:
+                    task = asyncio.ensure_future(self._persist(rec))
+                except RuntimeError:
+                    return
+                self._settling.add(task)
+                task.add_done_callback(self._settling.discard)
+
+            child.add_done_callback(later)
+        if recancelled:
+            raise asyncio.CancelledError
+        return child.done()
 
     async def _run(self, task: str, session_id: str, agent: str, chan: SteerChannel,
-                   selection: Optional[dict] = None, ov: Any = None):
+                   selection: Optional[dict] = None, ov: Any = None,
+                   spawn_id: Optional[str] = None, tools: Optional[frozenset] = None):
         from .llm.job_selection import selection_scope
         from .llm.request_context import request_overrides_scope
 
@@ -637,16 +1126,35 @@ class SubAgentManager:
             kwargs["steer"] = chan
         if self._runner_takes_selection:
             kwargs["selection"] = selection
+        if self._runner_takes_tools:
+            kwargs["tools"] = tools
         pins = {k: selection[k] for k in ("model", "provider") if selection and selection.get(k)}
-        with selection_scope(pins), request_overrides_scope(ov):
-            return await self._runner(task, session_id, agent, **kwargs)
+        # This coroutine is the child's own task: what it binds here is the child's.
+        marker = _CURRENT_SPAWN.set(spawn_id)
+        try:
+            with selection_scope(pins), request_overrides_scope(ov):
+                return await self._runner(task, session_id, agent, **kwargs)
+        finally:
+            _CURRENT_SPAWN.reset(marker)
 
     # ── batch (H681) ─────────────────────────────────────────────
-    async def spawn_batch(self, tasks: Any, parent: str = "") -> dict:
+    async def spawn_batch(self, tasks: Any, parent: str = "", *,
+                          tools: Optional[Iterable[str]] = None, model_authored: bool = False,
+                          queue: bool = True) -> dict:
         """Run up to ``BATCH_MAX`` children, at most as many at once as there are free
-        slots, and report each. Every item is validated before any runs. The result's
-        ``notice`` is one ``subagent_model_rejected`` when every child failed because the
-        provider does not know the model ``autonomy.subagent_model`` chose."""
+        slots, and report each. Every item is validated before any runs: its shape, its
+        schemas and its selection. A batch a model wrote (``model_authored``: the
+        ``delegate_task`` tool, the only way a model reaches this) also passes the batch
+        quality gate (:func:`goal_problem`, H400): a placeholder goal, an unexpanded
+        template marker or, with two or more tasks, a goal under ten characters refuses
+        the whole batch as ``invalid_goal``, and each child is given the focused brief
+        (:func:`build_child_prompt`). The owner's own batch (the HTTP route) is the
+        owner's words and is not judged. A batch
+        is refused whole while new spawns are stopped. With ``queue=False`` a batch that
+        does not fit the free slots right now is refused (``concurrency_cap``) instead
+        of waiting for them. The result's ``notice`` is one ``subagent_model_rejected``
+        when every child failed because the provider does not know the model
+        ``autonomy.subagent_model`` chose."""
         if not isinstance(tasks, list):
             return {"ok": False, "reason": "invalid_batch", "detail": "tasks must be a list"}
         if not tasks:
@@ -660,22 +1168,45 @@ class SubAgentManager:
                         "detail": f"each task is an object with a non-empty 'task' and only {sorted(_BATCH_ITEM_KEYS)}"}
             if item.get("output_schema") is not None and not isinstance(item["output_schema"], dict):
                 return {"ok": False, "reason": "invalid_output_schema", "index": i}
+            if item.get("answer_schema") is not None:
+                problem = schema_problem(item["answer_schema"])
+                if problem:
+                    return {"ok": False, "reason": "invalid_output_schema", "index": i,
+                            "detail": problem[:DETAIL_MAX]}
+            context = item.get("context")
+            if context is not None and (not isinstance(context, str) or len(context) > CONTEXT_MAX_CHARS):
+                return {"ok": False, "reason": "invalid_context", "index": i,
+                        "detail": f"context is text of at most {CONTEXT_MAX_CHARS} characters"}
+            problem = goal_problem(item["task"], batch_size=len(tasks)) if model_authored else None
+            if problem:
+                return {"ok": False, "reason": "invalid_goal", "index": i,
+                        "detail": f"task {i}: {problem}"[:DETAIL_MAX]}
             try:
                 self._resolve_selection(item.get("model"), item.get("provider"), item.get("overrides"))
             except ValueError as exc:
                 return {"ok": False, "reason": "invalid_selection", "index": i, "detail": str(exc)[:DETAIL_MAX]}
-        gate = asyncio.Semaphore(max(1, self.max_concurrent - self._active))
+        state = await self.gate_state()
+        refusal = self._halt_refusal(state)
+        if refusal is not None:
+            return refusal
+        free = self.max_concurrent - self._active
+        if not queue and len(tasks) > free:
+            return {"ok": False, "reason": "concurrency_cap", "active": self._active,
+                    "cap": self.max_concurrent, "requested": len(tasks)}
+        gate = asyncio.Semaphore(max(1, free))
 
         async def one(item: dict) -> dict:
             async with gate:
                 return await self.spawn(item["task"], agent=str(item.get("agent") or ""), parent=parent,
                                         output_schema=item.get("output_schema"), model=item.get("model"),
-                                        provider=item.get("provider"), overrides=item.get("overrides"))
+                                        provider=item.get("provider"), overrides=item.get("overrides"),
+                                        tools=tools, context=item.get("context"),
+                                        answer_schema=item.get("answer_schema"), focused=model_authored)
 
         children = list(await asyncio.gather(*(one(item) for item in tasks)))
         summary = {"total": len(children),
                    "done": sum(1 for c in children if c.get("status") == "done"),
-                   "failed": sum(1 for c in children if c.get("status") in ("failed", "stopped")),
+                   "failed": sum(1 for c in children if c.get("status") in ("failed", "stopped", "stopping")),
                    "refused": sum(1 for c in children if "status" not in c)}
         return {"ok": summary["done"] == summary["total"], "children": children, "summary": summary,
                 "notice": self._batch_notice(children)}
@@ -859,7 +1390,7 @@ class SubAgentManager:
                "cap": self.max_concurrent, "max_depth": self.max_depth,
                "blocked": sorted(self.blocked), "by_status": by_status,
                "steerable": self._runner_takes_steer, "persist": self.persist,
-               "cost_usd": round(cost_usd, 6)}
+               "cost_usd": round(cost_usd, 6), "timeout_seconds": self.child_timeout()}
         if self.budget is not None:
             out["budget"] = self.budget.status()
         turn = current_tool_turn()
@@ -869,7 +1400,11 @@ class SubAgentManager:
 
 
 __all__ = [
-    "BATCH_MAX", "DELEGATE_BLOCKED_CAPABILITIES", "NullRunner", "STEER_ORIGINS", "SPAWN_LOG_ENV",
-    "SPAWN_TRANSITIONS", "SUBAGENT_MODEL_SETTING", "SUBAGENT_PROVIDER_SETTING", "SteerChannel",
-    "SteerMessage", "SubAgentManager", "SubAgentProviderError", "validate_output",
+    "BATCH_MAX", "BLOCKED_CAPABILITY_TOOLS", "CHILD_TIMEOUT_MAX_SECONDS", "CHILD_TIMEOUT_MIN_SECONDS",
+    "DEFAULT_CHILD_TIMEOUT_SECONDS", "DELEGATE_BLOCKED_CAPABILITIES", "HALT_REASONS", "NullRunner",
+    "STEER_ORIGINS", "SPAWN_LOG_ENV", "SPAWN_TRANSITIONS", "SUBAGENT_MODEL_SETTING",
+    "SUBAGENT_PROVIDER_SETTING", "SteerChannel", "SteerMessage", "SubAgentManager",
+    "SubAgentProviderError", "blocked_tool_names", "build_child_prompt", "child_tool_allowlist",
+    "current_spawn_id", "extract_json_candidate", "goal_problem", "read_pause", "schema_problem",
+    "validate_output", "write_pause",
 ]

@@ -46,8 +46,8 @@ off the tool loop entirely. The rule for every tool the Hermes rows add (critic 
 a tool that acts on the owner's HUD, memory or skills (a canvas pointer, a memory write, a
 skill body) stays off inbound/guest unless the owner names it in ``llm.guest_tools``;
 ``speak`` is gated and follows the gated rows of the table. The **owner-operator** tools
-(:data:`OWNER_OPERATOR_TOOLS`, today ``memory``, H314) are stricter still: they are offered
-to operator/owner only, whatever ``llm.guest_tools`` says.
+(:data:`OWNER_OPERATOR_TOOLS`: ``memory``, H314, and ``delegate_task``, H400) are stricter
+still: they are offered to operator/owner only, whatever ``llm.guest_tools`` says.
 
 A **third-party MCP tool** (a ``mcp__<server>__<tool>`` row the H557 bridge registers) is
 ungated only on its server's own ``readOnlyHint``, which the MCP spec calls untrusted. So
@@ -105,10 +105,11 @@ _UNBOUND_CHANNELS = frozenset({"", "unknown"})
 #: Tools that keep state per session (H315). On the shared default session that state is
 #: the owner's, so there they are offered to an owner's turn only (see the docstring).
 SESSION_SCOPED_TOOLS: frozenset[str] = frozenset({"todo"})
-#: Tools that write what the owner keeps (H314: ``memory``). Offered to the owner at the
-#: operator surface only: not to a guest, not to an inbound turn (a channel message is
-#: untrusted input), not to a job, and not through ``llm.guest_tools`` either.
-OWNER_OPERATOR_TOOLS: frozenset[str] = frozenset({"memory"})
+#: Tools that write what the owner keeps (H314: ``memory``) or start further model runs on
+#: the owner's hub (H400: ``delegate_task``). Offered to the owner at the operator surface
+#: only: not to a guest, not to an inbound turn (a channel message is untrusted input), not
+#: to a job, and not through ``llm.guest_tools`` either.
+OWNER_OPERATOR_TOOLS: frozenset[str] = frozenset({"memory", "delegate_task"})
 MAX_AGENT_PATTERNS = 64
 MAX_PATTERN_CHARS = 64
 

@@ -84,6 +84,10 @@ KEEP_FILES: frozenset[str] = frozenset({
     # H694: the kill switch every profile of the install obeys sits in the default root.
     # It is a safety control, not owner content: a forget must never resume the hubs.
     _estop.SENTINEL_NAME,
+    # H400: the owner's pause on new sub-agents (under ``subagents/``). A safety control
+    # like the kill switch: a forget must never resume spawning. Its body is at most a
+    # short reason the owner typed when pausing.
+    _estop.SPAWN_PAUSE_SENTINEL,
 })
 # H423 review: the core rings' cross-process lock files (``<ring>.json.lock``). They hold
 # no content (empty, or one placeholder byte for the Windows byte-range lock), and a

@@ -1810,6 +1810,29 @@ class AutonomyCoordinator:
 
         register_pointer_tool(server, canvas=lambda: getattr(self._orch, "canvas", None),
                               posture=lambda: tool_profile.posture().key)
+        # H400 — the model hands self-contained tasks to isolated sub-agents. Off unless
+        # `llm.delegate_task` is on (off = not registered). It adds no second way to
+        # start a child: it calls the SubAgentManager the owner routes call, so the
+        # emergency stop, the spawn pause, the caps and the timeout are the same gate.
+        # Who is calling, what the turn was offered, the approval mode and the agent
+        # roster are read from the host at each call, never from an argument.
+        from .delegate_tool import loop_timeout_seconds, register_delegate_tool
+
+        def _delegate_mode(agent_id):
+            from .autonomy.mode import describe
+
+            return describe(self._orch, agent_id)["effective"]
+
+        register_delegate_tool(
+            server,
+            settings=_get_setting,
+            manager=lambda: getattr(self._orch, "subagents", None),
+            principal=_turn_principal,
+            offer=_TURN_TOOL_OFFER.get,
+            mode=_delegate_mode,
+            agents=lambda: getattr(self._orch, "agents", None) or {},
+            authorizer=action_kernel,
+        )
 
         def _profile_and_note_offer(agent_id, tools):
             # H661 — the same decision, unchanged, plus a note of what it offered in the
@@ -1872,6 +1895,10 @@ class AutonomyCoordinator:
             per_tool_limit=lambda: _get_setting("llm.tool_loop_per_tool_cap", 0),
             # H486 — the web-search ceiling ships on at 50; the runtime sanitizes the value.
             tool_turn_caps=lambda: {"web_search": _get_setting("llm.tool_loop_web_search_cap", 50)},
+            # H400 — one delegate_task call waits for its sub-agents: its deadline is the
+            # child timeout plus a grace (the manager cancels a slow child first).
+            tool_timeouts=lambda: {"delegate_task": loop_timeout_seconds(
+                getattr(self._orch, "subagents", None))},
             stall_halt_enabled=lambda: _get_setting("llm.tool_loop_stall_halt_enabled", False) is True,
             # H298 — an oversized tool result is spilled to disk instead of being
             # thrown away, and the caps scale to the model's real context window.
@@ -2512,6 +2539,11 @@ class AutonomyCoordinator:
                 budget=self._subagent_spawn_budget(),
                 # H486 — and this caps how many one tool-loop turn may spawn (Hermes: 50).
                 turn_cap=self._subagent_turn_cap,
+                # H400 — one child's wall clock, the emergency stop and kill switch at
+                # the spawn gate, and the registry a child's tool allowlist is drawn from.
+                child_timeout=self._subagent_timeout,
+                halt_probe=self._subagent_halt,
+                tool_registry=self._registered_tool_names,
             ),
         )
 
@@ -2558,6 +2590,31 @@ class AutonomyCoordinator:
             return None
         return IterationBudget(cap) if cap > 0 else None
 
+    def _subagent_timeout(self):
+        """``autonomy.subagent_timeout_seconds`` as stored, read at each spawn; the
+        manager sanitizes it (an unreadable value is the shipped 300 s, never "off")."""
+        return self._orch.get_setting("autonomy.subagent_timeout_seconds", 300)
+
+    def _subagent_halt(self):
+        """H400 — why no new sub-agent may start, or None: the install's emergency stop,
+        then the kill switch. Blocking (a stat each); the manager calls it on a worker
+        thread, and reads a failure as "stopped"."""
+        from . import estop
+
+        if estop.is_engaged():
+            return "estop_engaged"
+        switch = getattr(self._orch, "kill_switch", None)
+        if switch is not None and switch.is_halted():
+            return "kill_switch_halted"
+        return None
+
+    def _registered_tool_names(self):
+        """The tools registered right now (static rows: no live override is consulted)."""
+        server = getattr(self._orch, "tool_rpc", None)
+        if server is None:
+            return ()
+        return tuple(row["name"] for row in server.tools(live=False))
+
     def _subagent_turn_cap(self):
         """``llm.tool_loop_subagent_spawn_cap`` as stored, read at each spawn; the manager
         sanitizes it (an unreadable value is the shipped 50, 0 is no ceiling)."""
@@ -2593,12 +2650,20 @@ def make_subagent_runner(orch):
     from .llm.provider_errors import provider_failure_scope
     from .subagents import SubAgentProviderError
 
-    async def _subagent_runner(task, session_id, agent, *, steer=None):
+    async def _subagent_runner(task, session_id, agent, *, steer=None, tools=None):
         picked = agent if agent in orch.agents else "jarvis"
         from .steering import steering_scope
+        from .job_toolsets import toolset_scope
         from .kanban.runtime import delegate_scope
+        from .orchestrator import child_turn_scope
 
-        with provider_failure_scope() as failures, steering_scope(steer, agent_id=picked), delegate_scope():
+        # H400 — the child's turn is narrowed to its allowlist for as long as it runs:
+        # the offer and every ToolRPC call honour the scope, it intersects with a job's
+        # own bound, and it expires with this block, so a tool call that outlives a
+        # cancelled child is refused. No allowlist handed in is no tools, never all.
+        allowed = frozenset(tools) if tools is not None else frozenset()
+        with provider_failure_scope() as failures, steering_scope(steer, agent_id=picked), \
+                delegate_scope(), toolset_scope(allowed), child_turn_scope(session_id):
             if current_selection() is not None:
                 router = getattr(orch, "llm_router", None)
                 if not callable(getattr(router, "select_backend", None)):
