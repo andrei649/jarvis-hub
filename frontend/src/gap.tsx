@@ -16,6 +16,7 @@ import { OperatorPanel } from './operator-panel';
 import { CoachPanel } from './panels/coach';
 import { DocsPanel, docHref, sectionIndex } from './panels/docs';
 import { WebhooksPanel } from './panels/webhooks';
+import { McpPanel } from './panels/mcp';
 import { LongTermMemoryPanel } from './panels/long-term-memory';
 import { SessionUsage } from './panels/session-usage';
 import { SkillSwitchesPanel } from './panels/skill-switches';
@@ -5605,6 +5606,7 @@ const PANEL_COMPONENTS = {
   IntegrationsPanel,
   DocsPanel,
   WebhooksPanel,
+  McpPanel,
   LogsPanel,
   PresenceInboxPanel,
   AmbientWatchPanel,

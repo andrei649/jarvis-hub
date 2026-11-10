@@ -143,6 +143,15 @@ class MCPTransportError(RuntimeError):
         self.detail = detail
 
 
+class MCPUnauthorized(MCPTransportError):
+    """The endpoint answered 401. ``sent`` is the Authorization value that request carried
+    (never logged): a refresh replaces that token only if it is still the stored one."""
+
+    def __init__(self, sent: str = "") -> None:
+        super().__init__("unauthorized")
+        self.sent = sent
+
+
 class _MCPHTTPClient(PluginHTTPClient):
     """PluginHTTPClient with the RESTRICTED-plugin address rule.
 
@@ -250,6 +259,8 @@ class StreamableHttpTransport:
         self.protocol_version: str | None = None
         self.server_info: dict = {}
         self.initialized = False
+        #: The last HTTP status the endpoint answered (G9: a 401 asks for sign-in).
+        self.last_status: int | None = None
         self._next_id = 0
         self._lock = asyncio.Lock()
         self._client = http_client or _MCPHTTPClient(
@@ -336,8 +347,9 @@ class StreamableHttpTransport:
 
     async def _post(self, body: dict, req_id: int | None, *, max_bytes: int | None = None) -> dict:
         payload = json.dumps(body, separators=(",", ":")).encode("utf-8")
+        sent = self._request_headers()
         async with self._client.stream(
-            "POST", self.url, headers=self._request_headers(), content=payload,
+            "POST", self.url, headers=sent, content=payload,
         ) as response:
             status = int(response.status_code)
             session = response.headers.get(_SESSION_HEADER.lower())
@@ -349,6 +361,11 @@ class StreamableHttpTransport:
                 self.session_id = None
                 self.initialized = False
                 return {}
+            self.last_status = status
+            if status == 401:
+                # G9: the server wants (another) sign-in. Raised with the credential this
+                # request carried, so a refresh replaces exactly the token that was refused.
+                raise MCPUnauthorized(next((v for k, v in sent.items() if k.lower() == "authorization"), ""))
             if status not in _ACCEPTED_STATUSES:
                 logger.warning("MCP HTTP %s returned status %s", self.name, status)
                 return {}

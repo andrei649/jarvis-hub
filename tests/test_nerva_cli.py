@@ -89,7 +89,7 @@ def test_the_command_tree_is_discoverable_and_complete():
         "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "inspect", "logs", "estop", "jobs", "sessions", "chat", "send", "completion",
         "prompt-size", "desktop", "security", "todo", "skills", "company", "auth", "checkpoints", "kanban", "project", "secrets", "support",
         "uninstall", "backup", "pairing", "webhook", "provider", "goal", "memory", "agents",
-        "journey", "learning", "memory-graph",
+        "journey", "learning", "memory-graph", "mcp",
     }
     # H202: Hermes's profile create/rename/delete beside the SOUL editor; retire deletes
     # nothing and restore brings an agent back.
@@ -104,6 +104,8 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert tree["webhook"] == ["list", "remove", "subscribe", "test"]
     # The owner-managed compatible endpoint is one explicit local CLI family.
     assert tree["provider"] == ["custom"]
+    # G9 (H549, H550, H692): the MCP catalog, a confirmed install, and a loopback-relayed sign-in.
+    assert tree["mcp"] == ["catalog", "install", "login"]
     # H010: backup create/list/verify read the data root; restore asks the hub's approval queue;
     # cancel withdraws a staged restore before it is applied.
     assert tree["backup"] == ["cancel", "create", "list", "restore", "verify"]

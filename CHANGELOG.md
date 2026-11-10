@@ -317,6 +317,30 @@
   status pages answered anyone on the network with personal details. They now ask for the same
   user token as the rest of your data. On the machine itself, with no token set, nothing changes.
 
+**Install MCP servers from a reviewed catalog, and sign in to the ones that need an account**
+- A new Console panel, Interop → **MCP Servers**, lists your MCP servers and a catalog of 66
+  reviewed servers from Hermes Agent (Linear, Notion, Stripe, Sentry, Hugging Face, Context7 and
+  more), with a search. `nerva mcp catalog` lists the same in the terminal.
+- Installing one shows exactly what will run first: the command it starts on your hub, or the
+  address it connects to, the settings it gets, and the names of the secrets it needs. Nothing is
+  installed until you tick "I have read what will run" (in the terminal, `nerva mcp install <name>`
+  asks you), and Nerva installs exactly what you read or nothing. Nothing starts until you press
+  connect. A server name that is taken is never overwritten.
+- Secrets you type for a server are kept encrypted in Nerva's secret store, given only to that
+  server, never written into its settings and never shown again. Removing the server deletes them.
+- Servers that need an account: press **sign in**, approve in your browser, and Nerva keeps the
+  token encrypted, sends it only to that server, renews it before it runs out (and once more if
+  the server refuses it mid-way), and revokes and deletes it when you sign out or remove the
+  server. Each sign-in is written to the audit log.
+- If your browser is on another machine than the hub, sign-in still finishes: the browser comes
+  back to the hub's own address, or `nerva mcp login <server>` on your laptop catches the return
+  and passes it to the hub, or you paste the address your browser ended on into the panel.
+- A vendor can give you an install link (`/v2/console/mcp?install=<name>`); it only opens the
+  install card for you to read. A link cannot set a secret's value, add headers or pick
+  variables that change how a program loads code.
+- The emergency stop, safe mode and administrator-pinned settings stop installs as they stop
+  adding a server by hand. Details: [docs/MCP_CATALOG.md](docs/MCP_CATALOG.md).
+
 **Connected MCP servers can share documents and prompt templates, and stay connected**
 - If an MCP server you added publishes documents ("resources") or prompt templates, Nerva can
   now list and read them, next to the server's own tools. What they contain is treated like a
