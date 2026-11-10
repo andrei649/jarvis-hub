@@ -4,6 +4,28 @@
 
 ### What changed for you — 2026-11-09
 
+**Worktrees, background helpers that survive a restart, and an independent reviewer**
+- `/review` starts a second-opinion reviewer on what this conversation produced and on the
+  project's uncommitted changes (`/review --branch <name>` reviews a branch). The reviewer can
+  only read the project's files: anything that would write, search the web, reach the network or
+  run is refused, so nothing it reads can leave the box. It works in plan mode too.
+  It runs in the background; `/review --wait` waits for the findings instead.
+- Helpers the assistant hands work to can now run in the background
+  ("do these three in the background"). Each result reaches you exactly once, also after a
+  restart: `/delegations` lists them, `/delegations collect` shows the new results. A helper
+  that was running when the hub stopped is reported as lost, never silently re-run. A helper
+  that goes quiet is flagged as stalled, one that runs out of time leaves a note of what it was
+  doing, and you can follow a running one live (`GET /api/subagents/<id>/transcript`).
+- `/worktree new` moves this conversation into its own git worktree of the project, so its
+  edits stay on their own branch; `/worktree off` moves it back. `/worktree list` shows every
+  tree with its age, size and whether it is safe to remove, and `/worktree prune --apply`
+  removes only trees that are clean and pushed. Untracked scratch files are archived first,
+  never deleted; protected branches and trees in use are never touched.
+- Off by default, in Settings → Autonomy: "Give each sub-agent its own git worktree" (each
+  helper works on its own branch and you get back the branch and the files it changed), and
+  "Reclaim clean, pushed git worktrees automatically".
+- Git is only ever run on a repository whose settings cannot make it start a program.
+
 **Make videos (FAL, xAI Grok Imagine or DeepInfra)**
 - Nerva can now make a short video from a prompt, animate an image it generated, follow
   reference images (xAI), and edit or extend a video it made with xAI. Ask in chat; you get

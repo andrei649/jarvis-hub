@@ -4,27 +4,28 @@ Resolution, branch reuse and conservative worktree reclamation are adapted from
 Hermes 59b2aeef6c7a, hermes_cli/kanban_db_workspace.py and worktree_ops.py (MIT).
 The board engine remains in ``upstream``; this module supplies its filesystem
 boundary without process cwd, environment, network or tmux effects.
+
+G18: every git command goes through the shared hardened helper
+(``agents.core.worktrees``), the same one delegated children and owner sessions use; a
+repository whose config could make git run a program is refused before any checkout.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import queue
 import re
-import selectors
 import shutil
 import sqlite3
 import stat
 import subprocess  # nosec B404 - bounded local Git adapter; no shell/network commands
 import tempfile
-import threading
-import time
 import unicodedata
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from types import SimpleNamespace
 
+from agents.core import worktrees
 from agents.core.file_tools import FileScope
 
 from .context import require_mutation
@@ -46,98 +47,11 @@ class WorkspaceSpec(dict):
     __setitem__ = __delitem__ = clear = pop = popitem = setdefault = update = _immutable
 
 
-def _collect(proc: subprocess.Popen[bytes], argv: list[str], deadline: float, output: bytearray) -> bool:
-    """Read *proc*'s merged output into *output* until EOF, killing it at *deadline*
-    (TimeoutExpired) or past ``_GIT_OUTPUT`` bytes (returns False)."""
-    stdout = proc.stdout
-    if stdout is None:
-        raise RuntimeError("Git output pipe is unavailable")
-    if os.name == "nt":
-        # ``select`` takes sockets only on Windows (WinError 10038 on a pipe): a reader
-        # thread feeds a queue, which the same deadline and size bounds drain.
-        chunks: queue.Queue[bytes] = queue.Queue()
-
-        def pump() -> None:
-            try:
-                while True:
-                    chunk = os.read(stdout.fileno(), 4096)
-                    chunks.put(chunk)
-                    if not chunk:
-                        return
-            except OSError:
-                chunks.put(b"")
-
-        threading.Thread(target=pump, daemon=True).start()
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                proc.kill()
-                proc.wait()
-                raise subprocess.TimeoutExpired(argv, _GIT_TIMEOUT)
-            try:
-                chunk = chunks.get(timeout=remaining)
-            except queue.Empty:
-                continue
-            if not chunk:
-                return True
-            output.extend(chunk)
-            if len(output) > _GIT_OUTPUT:
-                proc.kill()
-                proc.wait()
-                return False
-    with selectors.DefaultSelector() as selector:
-        selector.register(stdout, selectors.EVENT_READ)
-        while selector.get_map():
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                proc.kill()
-                proc.wait()
-                raise subprocess.TimeoutExpired(argv, _GIT_TIMEOUT)
-            if not selector.select(remaining):
-                continue
-            chunk = os.read(stdout.fileno(), min(4096, _GIT_OUTPUT + 1 - len(output)))
-            if not chunk:
-                selector.unregister(stdout)
-            else:
-                output.extend(chunk)
-                if len(output) > _GIT_OUTPUT:
-                    proc.kill()
-                    proc.wait()
-                    return False
-    return True
-
-
 def _git(cwd: Path, *args: str, mutate: bool = False) -> subprocess.CompletedProcess[str]:
-    # Explicit argv/cwd and a clean Git environment prevent ambient overrides,
-    # hooks, fsmonitor and network prompts from changing the operation.
-    env = {
-        "PATH": os.defpath,
-        "LC_ALL": "C",
-        "GIT_CONFIG_NOSYSTEM": "1",
-        "GIT_CONFIG_GLOBAL": os.devnull,
-        "GIT_CONFIG_COUNT": "0",
-        "GIT_TERMINAL_PROMPT": "0",
-        "GIT_OPTIONAL_LOCKS": "1" if mutate else "0",
-    }
-    argv = ["git", "-c", f"core.hooksPath={os.devnull}", "-c", "core.fsmonitor=false", *args]
-    with subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT) as proc:  # nosec B603 - fixed Git executable/operations; validated paths/branch, hooks and filters disabled
-        if proc.stdout is None:
-            proc.kill()
-            proc.wait()
-            raise RuntimeError("Git output pipe is unavailable")
-        output = bytearray()
-        deadline = time.monotonic() + _GIT_TIMEOUT
-        if not _collect(proc, argv, deadline, output):
-            return subprocess.CompletedProcess(argv, 1, "", "Git output exceeded bound")
-        remaining = deadline - time.monotonic()
-        try:
-            code = proc.wait(timeout=max(0.001, remaining))
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-            raise
-    decoded = output.decode("utf-8", errors="replace")
-    return subprocess.CompletedProcess(argv, code, decoded, "")
+    """One git command through the shared hardened runner (G18: ``agents.core.worktrees``,
+    which applies G5's overrides — no hooks, fsmonitor, external diff, signatures, ssh
+    command, transport or credential helper; no system or global config; bounded)."""
+    return worktrees.run_git(cwd, *args, mutate=mutate, timeout=_GIT_TIMEOUT, limit=_GIT_OUTPUT)
 
 
 def _git_out(cwd: Path, *args: str) -> str | None:
@@ -200,22 +114,14 @@ def _nearest_repo(scope: FileScope, path: Path) -> Path | None:
 
 
 def _check_branch(branch: str) -> None:
-    if not branch or len(branch) > 240 or branch.startswith("-") or branch.startswith("/"):
-        raise ValueError("invalid worktree branch")
-    if any(part in {"", ".", ".."} for part in branch.split("/")):
-        raise ValueError("invalid worktree branch")
-    result = _git(Path("/"), "check-ref-format", "--branch", branch)
-    if result.returncode:
-        raise ValueError("invalid worktree branch")
+    worktrees.check_branch(branch)
 
 
 def _reject_checkout_commands(repo: Path) -> None:
-    """Refuse repository-configured clean/smudge/process commands before checkout."""
-    configured = _git(repo, "config", "--get-regexp", r"^filter\..*\.(process|smudge|clean)$")
-    if configured.returncode == 0:
-        raise PermissionError("Git checkout filters can execute repository commands")
-    if configured.returncode != 1:
-        raise ValueError("Git checkout filter configuration is unreadable")
+    """Refuse a repository whose config could make git run a program (a checkout filter,
+    an include, an ssh command, a signing program ...): G5's allowlist, through the
+    shared helper. ``WorktreeRefused`` is a ``PermissionError``."""
+    worktrees.require_plain(repo)
 
 
 def _canonical_board(context, board: str | None) -> str:

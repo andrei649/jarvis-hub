@@ -2986,6 +2986,33 @@
   stay **partial** (no app boot/readiness poll; no `pre_verify` hook; no patch editor to steer
   toward, no focus-mode collapse). Guide: `docs/hermes/ADOPT_LANE.md` → slice 5; user docs:
   `docs/SESSION_COMMANDS.md` → /verify. Tests: `tests/test_g5_project_verify.py` (64 cases after the review round).
+  **G18 — worktrees, delegation durability, reviewer (2026-11-10):** one shared hardened worktree
+  helper (`agents/core/worktrees.py`, G5's config allowlist + `-c` overrides on every git call;
+  kanban's `workspaces.py` now uses it). H402: with `autonomy.subagent_worktrees` (off) each delegated
+  child gets `.worktrees/<spawn>` on `sub/<spawn>` from HEAD, crossing e-stop, plan mode and (kernel
+  on) a `file.write` grant; its file tools are confined to the tree; an unchanged tree is removed, a
+  changed one is kept and its branch + changed files go back to the parent with a stale-file
+  reminder. H474: `/worktree new|off|status|list|prune [--apply]` (age/size/verdict/reason,
+  protected branches, in-use and locked kept, scratch archived to `<data>/worktrees/archive`), and an
+  hourly tick reclaim behind `autonomy.worktree_auto_reclaim` (off; forced off in safe mode). H401:
+  durable `subagent_delegations` rows on the autonomy queue, restart recovery (`lost`, never re-run),
+  exactly-once claims (`delegate_task collect`, `/delegations collect`, `POST
+  /api/subagents/completions/claim`), `delegate_task background`, a stall monitor
+  (`autonomy.subagent_stall_seconds`), live JSONL transcripts with the child's tool trace (`GET
+  /api/subagents/{id}/transcript`), timeout dumps, full results at `GET /api/subagents/{id}/result`.
+  H404: `/review [--branch] [--wait] [focus]` — Hermes's `agent/review_engine.py` adopted (rules
+  `review-config`, `review-delegate`; compat `review_shared`), the reviewer read-only (read-only
+  tools only + the kernel's `read_only_floor`). Ledger: H404 → equivalent; H402, H474, H401 partial
+  (child terminal cwd not bound to the tree; no fetch / CLI `-w` / per-tree checkpoints; background
+  results are collected, not injected into the parent turn). Tests: `tests/test_g18_worktrees_delegation.py` (29).
+  Adversarial review round (same day): the reviewer could keep `web_extract`/`session_search` (declared
+  read-only) — now an allowlist of `file_read`/`file_list`/`file_search` on the reviewed checkout, and the
+  floor refuses every other tool and every kernel action, egress GETs included; diff and snapshot fences
+  defanged; spawn ids carry the boot id (no tree/branch/record reuse after a restart); symlinked
+  `.worktrees` refused; trees with git-ignored files kept; kanban `wt/` trees never pruned and leased while
+  a card runs; child trees leased from creation; recovery only past a stale heartbeat (also on the tick);
+  transcript/result/claim routes admin-only; the tick reclaim stops on the kill switch and spawn pause.
+  Tests now 37.
 
   **UX pass done (2026-11-10): the Integrations panel** (owner request: make the Hermes integration
   coherent before adopting more). Console → Start → Integrations lists the 4 search backends (Tavily +

@@ -520,7 +520,10 @@ async def _begin_project_context(orch) -> None:
     from it asks. A guest's turn is given none of the owner's files."""
     from .tool_profiles import PRINCIPAL_GUEST, classify_turn
 
+    from . import worktrees
+
     if classify_turn(current_principal(), current_action_origin()).principal == PRINCIPAL_GUEST:
+        worktrees.apply_session_tree(None)   # G18: a guest's turn is never in the owner's tree
         project_context.set_turn(None)
         return
     getter = getattr(orch, "get_setting", None)
@@ -536,6 +539,17 @@ async def _begin_project_context(orch) -> None:
     scope = workspace.file_scope() if workspace is not None else None
     if workspace is not None:
         workdir = str(workspace.cwd)
+    else:
+        # G18 (H474): a session moved into its own worktree (/worktree new) reads the
+        # project from there, and its file tools resolve inside it, for this turn.
+        from .file_tools import FileScope
+
+        record = await asyncio.to_thread(worktrees.session_tree_or_none, session)
+        tree = worktrees.apply_session_tree(record)
+        if tree is not None and FileScope.from_env().root_for(tree) is None:
+            tree = worktrees.apply_session_tree(None)    # a tree outside the file roots binds nothing
+        if tree is not None and on:
+            workdir, scope = str(tree), FileScope([tree])
     state = await asyncio.to_thread(project_context.build_turn, session, setting=lambda _k, _d: on,
                                     scope=scope, workdir=workdir)
     project_context.set_turn(state)

@@ -389,6 +389,50 @@ def _steer_status(result: dict) -> int:
     return 422
 
 
+@router.get("/api/subagents/{spawn_id}/transcript", dependencies=[Depends(admin_guard)])
+async def subagents_transcript(spawn_id: str, after: int = 0, limit: int = 200):
+    """G18 (H401) — a sub-agent's live transcript: its start, the tool loop's events for
+    it (tool names, status, call ids, sizes — never arguments or results), steers, a
+    stall and its end. Poll with ``after`` = the last ``next`` to tail a running child."""
+    _, m, err = require_component("subagents", "sub-agents unavailable")
+    if err is not None:
+        return err
+    found = await asyncio.to_thread(m.transcript, spawn_id, after=max(0, after), limit=limit)
+    if found is None:
+        return nocache_json({"ok": False, "reason": "unknown_spawn", "id": spawn_id}, status_code=404)
+    return nocache_json(found)
+
+
+@router.get("/api/subagents/{spawn_id}/result", dependencies=[Depends(admin_guard)])
+async def subagents_result(spawn_id: str):
+    """G18 (H401) — the durable row of a sub-agent, its whole kept result included
+    (the parent model is given at most 24 000 characters; the row keeps more). Reading
+    it does not count as receiving it: delivery is the claim."""
+    orch = get_orch()
+    queue = getattr(orch, "autonomy_queue", None) if orch else None
+    if queue is None or not hasattr(queue, "delegation_by_spawn"):
+        return nocache_json({"error": "delegation record unavailable"}, status_code=503)
+    # A delegation id (what the parent is pointed at) first, then a spawn id.
+    row = await asyncio.to_thread(queue.delegation_get, spawn_id)
+    if row is None:
+        row = await asyncio.to_thread(queue.delegation_by_spawn, spawn_id)
+    if row is None:
+        return nocache_json({"ok": False, "reason": "unknown_spawn", "id": spawn_id}, status_code=404)
+    return nocache_json(row)
+
+
+@router.post("/api/subagents/completions/claim", dependencies=[Depends(admin_guard)])
+async def subagents_claim():
+    """G18 (H401) — receive the finished sub-agent results nobody has received yet. Each
+    is handed out exactly once, whichever consumer asks first (this route, /delegations,
+    the model's delegate_task collect), across restarts."""
+    _, m, err = require_component("subagents", "sub-agents unavailable")
+    if err is not None:
+        return err
+    rows = await m.claim_completions("http:claim")
+    return nocache_json({"ok": True, "claimed": len(rows), "results": rows})
+
+
 @router.post("/api/subagents/{spawn_id}/steer", dependencies=[Depends(user_guard)])
 async def subagents_steer(spawn_id: str, body: SubAgentSteerBody):
     """Steer a running sub-agent (company mode). The message is delivered to the

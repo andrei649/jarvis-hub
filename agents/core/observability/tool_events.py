@@ -97,6 +97,19 @@ class ToolEventLog:
             self._events.append(row)
             self._counts[str(row.get("event", "unknown"))] += 1
         self._observed(row)
+        self._traced(row)
+
+    @staticmethod
+    def _traced(row: dict[str, Any]) -> None:
+        """G18 (H401): when the event belongs to a delegated sub-agent (its context carries
+        the child's transcript), the bounded row also joins that child's live transcript —
+        its ``tool_trace``. The call id links it to this log and the audit trail."""
+        try:
+            from agents.core.subagents import trace_tool_event
+
+            trace_tool_event(dict(row))
+        except Exception:
+            logger.debug("sub-agent tool trace failed", exc_info=True)
 
     def _coalesce_heartbeat(self, row: dict[str, Any]) -> None:
         """H399 — keep one heartbeat row per in-flight call. Called under the lock.

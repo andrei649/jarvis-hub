@@ -675,6 +675,39 @@ class TaskQueue:
                 signature TEXT NOT NULL
             )
         """)
+        # G18 (H401) — durable delegation rows: one per sub-agent spawn, so a hub restart
+        # finds the children it was running (reported ``lost``, never re-run) and the
+        # finished ones not yet delivered, and every result is claimed exactly once.
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS subagent_delegations (
+                delegation_id TEXT PRIMARY KEY,
+                spawn_id TEXT NOT NULL,
+                boot_id TEXT NOT NULL,
+                kind TEXT NOT NULL DEFAULT 'delegate',
+                parent TEXT NOT NULL DEFAULT '',
+                agent TEXT NOT NULL DEFAULT '',
+                parent_session TEXT,
+                child_session TEXT,
+                goal TEXT NOT NULL DEFAULT '',
+                background INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                heartbeat_at REAL,
+                activity_at REAL,
+                stalled_at REAL,
+                finished_at REAL,
+                result_json TEXT,
+                worktree_json TEXT,
+                transcript_path TEXT,
+                dump_path TEXT,
+                delivered_at REAL,
+                delivered_to TEXT
+            )
+        """)
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_subagent_delegations_undelivered "
+            "ON subagent_delegations(delivered_at, status)"
+        )
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS capability_outcomes (
                 capability_id TEXT PRIMARY KEY,
@@ -5275,6 +5308,154 @@ class TaskQueue:
             )
         return reaped
 
+    # ── G18 (H401): durable sub-agent delegation rows ─────────────────────────────
+    def delegation_start(self, row: Mapping[str, object]) -> None:
+        """Record a spawn as it starts (status ``running``)."""
+        now = float(row.get("created_at") or time.time())
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO subagent_delegations (delegation_id, spawn_id, boot_id, kind, parent, agent, "
+                "parent_session, child_session, goal, background, status, created_at, heartbeat_at, "
+                "activity_at, worktree_json, transcript_path) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (str(row["delegation_id"]), str(row["spawn_id"]), str(row["boot_id"]),
+                 str(row.get("kind") or "delegate")[:20], str(row.get("parent") or "")[:200],
+                 str(row.get("agent") or "")[:80], _opt_text(row.get("parent_session"), 200),
+                 _opt_text(row.get("child_session"), 200), str(row.get("goal") or "")[:DELEGATION_GOAL_MAX],
+                 1 if row.get("background") else 0, "running", now, now, now,
+                 _json_or_none(row.get("worktree")), _opt_text(row.get("transcript_path"), 1000)),
+            )
+            self._conn.commit()
+
+    def delegation_touch(self, delegation_id: str, *, heartbeat_at: float | None = None,
+                         activity_at: float | None = None, stalled_at: float | None = None,
+                         worktree: Mapping[str, object] | None = None) -> None:
+        """Move a running row's heartbeat / last activity / stall mark forward."""
+        sets, params = [], []
+        for column, value in (("heartbeat_at", heartbeat_at), ("activity_at", activity_at),
+                              ("stalled_at", stalled_at)):
+            if value is not None:
+                sets.append(f"{column}=?")
+                params.append(float(value))
+        if worktree is not None:
+            sets.append("worktree_json=?")
+            params.append(_json_or_none(worktree))
+        if not sets:
+            return
+        with self._lock:
+            self._conn.execute(
+                f"UPDATE subagent_delegations SET {', '.join(sets)} "  # nosec B608 - fixed column names
+                "WHERE delegation_id=? AND status='running'", (*params, str(delegation_id)))
+            self._conn.commit()
+
+    def delegation_finish(self, delegation_id: str, status: str, result: object, *,
+                          worktree: Mapping[str, object] | None = None, dump_path: str | None = None,
+                          finished_at: float | None = None, delivered_to: str | None = None) -> bool:
+        """Close a running row once (``done`` / ``failed`` / ``stopped``). False when it
+        was not running (already closed, or reported ``lost`` by a later boot).
+        *delivered_to* marks a result already handed over in line (a waiting parent), so
+        no later consumer claims it again."""
+        if status not in DELEGATION_TERMINAL:
+            raise ValueError(f"not a terminal delegation status: {status}")
+        ts = float(finished_at or time.time())
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE subagent_delegations SET status=?, finished_at=?, result_json=?, "
+                "worktree_json=COALESCE(?, worktree_json), dump_path=COALESCE(?, dump_path), "
+                "delivered_at=?, delivered_to=? WHERE delegation_id=? AND status='running'",
+                (status, ts, _bounded_result_json(result), _json_or_none(worktree),
+                 _opt_text(dump_path, 1000), ts if delivered_to else None,
+                 _opt_text(delivered_to, 80), str(delegation_id)))
+            self._conn.commit()
+            return cursor.rowcount == 1
+
+    def delegation_recover(self, boot_id: str, *, now: float | None = None,
+                           stale_seconds: float | None = None) -> list[dict]:
+        """Every row another boot left ``running`` whose heartbeat is older than
+        *stale_seconds* is a child whose process died (a live process heartbeats every
+        few seconds, so a second hub on the same database is never mistaken for a dead
+        one). It is closed ``lost`` (never re-run: what it did is unknown) so its owner is
+        told once, like any finished child. Returns the rows closed."""
+        ts = float(now if now is not None else time.time())
+        stale = DELEGATION_STALE_SECONDS if stale_seconds is None else float(stale_seconds)
+        cutoff = ts - max(0.0, stale)
+        result = json.dumps({"error": "lost", "detail": "the hub stopped before this sub-agent "
+                             "finished; it was not resumed and what it did is unknown"})
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                rows = self._conn.execute(
+                    "SELECT * FROM subagent_delegations WHERE status='running' AND boot_id!=? "
+                    "AND COALESCE(heartbeat_at, created_at) < ?", (str(boot_id), cutoff)).fetchall()
+                self._conn.execute(
+                    "UPDATE subagent_delegations SET status='lost', finished_at=?, result_json=? "
+                    "WHERE status='running' AND boot_id!=? AND COALESCE(heartbeat_at, created_at) < ?",
+                    (ts, result, str(boot_id), cutoff))
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
+        return [_delegation_row({**dict(r), "status": "lost", "finished_at": ts, "result_json": result})
+                for r in rows]
+
+    def delegation_claim(self, consumer: str, *, parent_session: str | None = None,
+                         limit: int = 20) -> list[dict]:
+        """Claim finished, undelivered results for *consumer* — each row is handed out
+        exactly once, across consumers and processes (one conditional UPDATE per row
+        inside one write transaction)."""
+        consumer = str(consumer or "unknown")[:80]
+        bound = max(1, min(int(limit or 1), 100))
+        clause = "delivered_at IS NULL AND status IN ('done','failed','stopped','lost')"
+        params: list = []
+        if parent_session is not None:
+            clause += " AND parent_session=?"
+            params.append(str(parent_session))
+        claimed: list[dict] = []
+        now = time.time()
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                rows = self._conn.execute(
+                    f"SELECT * FROM subagent_delegations WHERE {clause} "  # nosec B608 - fixed clause
+                    "ORDER BY finished_at ASC LIMIT ?", (*params, bound)).fetchall()
+                for row in rows:
+                    cursor = self._conn.execute(
+                        "UPDATE subagent_delegations SET delivered_at=?, delivered_to=? "
+                        "WHERE delegation_id=? AND delivered_at IS NULL",
+                        (now, consumer, row["delegation_id"]))
+                    if cursor.rowcount == 1:
+                        claimed.append(_delegation_row({**dict(row), "delivered_at": now,
+                                                        "delivered_to": consumer}))
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
+        return claimed
+
+    def delegation_get(self, delegation_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM subagent_delegations WHERE delegation_id=?",
+                                     (str(delegation_id),)).fetchone()
+        return _delegation_row(dict(row)) if row is not None else None
+
+    def delegation_by_spawn(self, spawn_id: str) -> dict | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM subagent_delegations WHERE spawn_id=? ORDER BY created_at DESC LIMIT 1",
+                (str(spawn_id),)).fetchone()
+        return _delegation_row(dict(row)) if row is not None else None
+
+    def delegation_list(self, *, limit: int = 50, status: str | None = None) -> list[dict]:
+        bound = max(1, min(int(limit or 1), 500))
+        with self._lock:
+            if status:
+                rows = self._conn.execute(
+                    "SELECT * FROM subagent_delegations WHERE status=? ORDER BY created_at DESC LIMIT ?",
+                    (str(status), bound)).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT * FROM subagent_delegations ORDER BY created_at DESC LIMIT ?", (bound,)).fetchall()
+        return [_delegation_row(dict(r)) for r in rows]
+
     def runnable(self, limit: int = 10, max_tier: Optional[int] = None, *,
                  task_id: int | None = None) -> list[Task]:
         """Approved tasks that have not exhausted their retry budget.
@@ -5450,3 +5631,60 @@ def _intake_evidence_columns(
     return sealed.intake_id, json.dumps(
         sealed.to_dict(), ensure_ascii=False, separators=(",", ":"), sort_keys=True
     )
+
+
+# ── G18 (H401): delegation row helpers ───────────────────────────────────────────
+DELEGATION_TERMINAL = frozenset({"done", "failed", "stopped"})
+DELEGATION_GOAL_MAX = 2000
+#: The most of one child's result a row keeps (the parent's view is cut further).
+DELEGATION_RESULT_MAX = 256_000
+#: A running row whose heartbeat is older than this belongs to a process that died
+#: (the manager heartbeats every 10 s).
+DELEGATION_STALE_SECONDS = 90.0
+
+
+def _opt_text(value: object, limit: int) -> str | None:
+    return str(value)[:limit] if value not in (None, "") else None
+
+
+def _json_or_none(value: object) -> str | None:
+    if value is None:
+        return None
+    try:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+    except (TypeError, ValueError):
+        return None
+
+
+def _bounded_result_json(result: object) -> str:
+    """The result as JSON, at most :data:`DELEGATION_RESULT_MAX` characters; a long
+    ``output`` text is cut (``output_truncated``) rather than the JSON broken."""
+    try:
+        text = json.dumps(result, ensure_ascii=False, sort_keys=True, default=str)
+    except (TypeError, ValueError, RecursionError):
+        return json.dumps({"error": "result_unserializable"})
+    if len(text) <= DELEGATION_RESULT_MAX:
+        return text
+    if isinstance(result, Mapping) and isinstance(result.get("output"), str):
+        cut = dict(result)
+        cut["output"] = result["output"][: DELEGATION_RESULT_MAX // 2]
+        cut["output_truncated"] = True
+        try:
+            text = json.dumps(cut, ensure_ascii=False, sort_keys=True, default=str)
+        except (TypeError, ValueError, RecursionError):
+            text = ""
+        if 0 < len(text) <= DELEGATION_RESULT_MAX:
+            return text
+    return json.dumps({"error": "result_too_large"})
+
+
+def _delegation_row(row: dict) -> dict:
+    out = dict(row)
+    for column, key in (("result_json", "result"), ("worktree_json", "worktree")):
+        raw = out.pop(column, None)
+        try:
+            out[key] = json.loads(raw) if raw else None
+        except ValueError:
+            out[key] = None
+    out["background"] = bool(out.get("background"))
+    return out

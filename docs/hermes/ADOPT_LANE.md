@@ -835,3 +835,29 @@ the same allowlist (FAL's `FAL_VIDEO_MODEL` reads as unset, so the approved fami
   refusal for the rest; a provider-reported price is recorded only for xAI.
 - Cancelling a running video stops Nerva's polling; the provider's job itself is not
   cancelled at the provider.
+
+## The /review prompt engine (G18 / H404)
+
+`agent/review_engine.py` (195 lines, fan-in 2) is vendored for its **text**: the reviewer goal
+(`_REVIEW_GOAL`), the conversation snapshot (`snapshot_recent_messages`, the last 10
+user/assistant messages, each cut at 12 000 characters) and the briefing
+(`build_review_task`). Nerva's `/review` (`agents/core/review_command.py`) calls those two
+functions, adds its own runtime note and the project's diff (collected by the hub with the
+hardened git helper, fenced as data), and spawns the reviewer itself through the one spawn
+gate with `read_only=True`: only tools that declared themselves `read_only`, under the
+kernel's `read_only_floor`. Hermes's reviewer is a full-privilege child; Nerva's is not.
+
+| Upstream line | Rule | Becomes |
+|---|---|---|
+| `from hermes_cli.config import load_config_readonly` | `review-config` | `hermes_compat.review_shared`: an empty config, so no `auxiliary.review` model; the reviewer runs on `autonomy.subagent_model` or the agent's route |
+| `from tools.delegate_tool import delegate_task` | `review-delegate` | `hermes_compat.review_shared.delegate_task`: refuses (an error JSON); upstream's `start_review` is never called by Nerva and raises if anything did |
+
+Both rules and the compat module are path-scoped to `agent/review_engine.py` (`REVIEW_PATH`).
+Acceptance: `tests/test_g18_worktrees_delegation.py` (the reviewer's tools, the read-only floor,
+the brief, the refused dispatch). Nerva also calls `collect_parent_loaded_skills` over the
+conversation's messages, fences every snapshot message and the diff with fence delimiters
+defanged, and replaces upstream's "delivered back into that conversation" sentence in the
+composed brief with Nerva's (delivered once through `/delegations collect`); the vendored bytes
+are unchanged. The reviewer's tools are at most `file_read` / `file_list` / `file_search`,
+confined to the checkout under review; the floor refuses every other tool (web, A2A, session
+search) and every Action Kernel action, an egress GET included.

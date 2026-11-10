@@ -1,23 +1,33 @@
 {
   "record": [
+    "activity_at",
     "agent",
+    "background",
     "blocked",
     "cost",
     "created_at",
+    "delegation_id",
     "finished_at",
     "id",
+    "kind",
     "output_schema",
     "parent",
+    "parent_session",
+    "read_only",
     "result",
     "selection",
     "session_id",
+    "settled",
+    "stalled",
     "status",
     "steerable",
     "steers",
     "stop_reason",
     "task",
     "timeout_seconds",
-    "tools"
+    "tools",
+    "transcript",
+    "worktree"
   ],
   "spawn.concurrency_cap": [
     "active",
@@ -31,6 +41,7 @@
   ],
   "spawn.ok": [
     "cost",
+    "delegation_id",
     "id",
     "ok",
     "result",

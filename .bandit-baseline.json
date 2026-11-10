@@ -9423,6 +9423,27 @@
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
       "test_id": "B110",
       "test_name": "try_except_pass"
+    },
+    {
+      "code": "85                 args = json.loads(fn.get(\"arguments\") or \"{}\")\n86             except Exception:\n87                 continue\n88             # Only whole-skill loads seed the reviewer; a reference-file read is a detail\n",
+      "col_offset": 12,
+      "end_col_offset": 24,
+      "filename": "agents/vendor/hermes/agent/review_engine.py",
+      "issue_confidence": "HIGH",
+      "issue_cwe": {
+        "id": 703,
+        "link": "https://cwe.mitre.org/data/definitions/703.html"
+      },
+      "issue_severity": "LOW",
+      "issue_text": "Try, Except, Continue detected.",
+      "line_number": 86,
+      "line_range": [
+        86,
+        87
+      ],
+      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b112_try_except_continue.html",
+      "test_id": "B112",
+      "test_name": "try_except_continue"
     }
   ]
 }

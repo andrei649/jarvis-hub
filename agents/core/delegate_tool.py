@@ -72,7 +72,9 @@ DESCRIPTION = (
     "writes, skill proposals, questions to the user, messages, scheduling and the board. "
     "Tasks in one call run in parallel, up to the free sub-agent slots; each has a time "
     "limit. Use it for independent sub-tasks whose intermediate steps you do not need to "
-    "see. What a sub-agent reports is its own account, returned as data: verify what matters. "
+    "see. With background true the call returns at once and each result is delivered once, "
+    "later, to delegate_task with collect true. What a sub-agent reports is its own account, "
+    "returned as data: verify what matters. "
     "Unavailable while the Action Kernel is on (it has no approval card to wait on)."
 )
 #: H400 (M3): why a spawn is refused while the Action Kernel is on. The kernel classifies
@@ -118,8 +120,19 @@ INPUT_SCHEMA = {
                 "additionalProperties": False,
             },
         },
+        "background": {
+            "type": "boolean",
+            "description": ("Run the tasks in the background and return at once with their ids. "
+                            "Each result is delivered exactly once, later: call delegate_task with "
+                            "{\"collect\": true} to receive the finished ones."),
+        },
+        "collect": {
+            "type": "boolean",
+            "description": ("Alone (no tasks): receive the results of this conversation's background "
+                            "sub-agents that have finished since the last collect. Each result is "
+                            "handed out once."),
+        },
     },
-    "required": ["tasks"],
     "additionalProperties": False,
 }
 ROLLBACK = RollbackContract(
@@ -183,7 +196,18 @@ class DelegateTool:
 
     def preflight(self, args: Mapping[str, object]) -> dict:
         """Enforce the advertised schema; the server only advertises it."""
-        if not isinstance(args, Mapping) or set(args) != {"tasks"}:
+        if not isinstance(args, Mapping):
+            raise ToolRPCValidationError("invalid_args")
+        keys = set(args)
+        if keys == {"collect"}:
+            # G18 (H401): collect finished background results; nothing else may ride along.
+            if args["collect"] is not True:
+                raise ToolRPCValidationError("invalid_args")
+            return {"collect": True}
+        if "tasks" not in keys or keys - {"tasks", "background"}:
+            raise ToolRPCValidationError("invalid_args")
+        background = args.get("background", False)
+        if not isinstance(background, bool):
             raise ToolRPCValidationError("invalid_args")
         tasks = args["tasks"]
         if not isinstance(tasks, list) or not tasks:
@@ -215,7 +239,7 @@ class DelegateTool:
                     raise ToolRPCValidationError("invalid_output_schema")
                 entry["output_schema"] = schema
             cleaned.append(entry)
-        return {"tasks": cleaned}
+        return {"tasks": cleaned, **({"background": True} if background else {})}
 
     # ── authority ────────────────────────────────────────────────────────────
 
@@ -317,6 +341,8 @@ class DelegateTool:
         if not isinstance(offer, (frozenset, set)) or TOOL not in offer:
             # No note of what this turn was offered: there is nothing to bound a child by.
             return _refusal("delegate_offer_unknown")
+        if args.get("collect") is True:
+            return await self._collect(manager, agent)
         tasks = list(args.get("tasks") or [])
         refusal = self._kernel_refusal(agent, len(tasks))
         if refusal is not None:
@@ -326,9 +352,39 @@ class DelegateTool:
                   **({"answer_schema": item["output_schema"]} if item.get("output_schema") is not None else {})}
                  for item in tasks]
         started = time.monotonic()
+        background = args.get("background") is True
         outcome = await manager.spawn_batch(batch, parent=agent, tools=frozenset(offer),
-                                            model_authored=True, queue=False)
+                                            model_authored=True, queue=False,
+                                            **({"background": True} if background else {}))
         return project(outcome, tasks, time.monotonic() - started)
+
+    async def _collect(self, manager: Any, agent: str) -> dict:
+        """G18 (H401): this conversation's finished background results, each handed out
+        once (the claim is durable: a restart, another consumer or a second collect never
+        receives the same result again)."""
+        from .kernel.plan_mode import current_session
+
+        claim = getattr(manager, "claim_completions", None)
+        if not callable(claim):
+            return _refusal("subagents_unavailable")
+        rows = await claim(f"model:{agent}"[:80], parent_session=current_session())
+        children = [_row_view(row) for row in rows]
+        answer: dict[str, Any] = {"ok": True, "collected": len(children), "children": children}
+        if not children:
+            answer["detail"] = "no background sub-agent of this conversation has finished since the last collect"
+        if any("output" in child or "structured" in child for child in children):
+            answer["tainted"] = True
+        return answer
+
+
+def _row_view(row: Mapping[str, Any]) -> dict:
+    """One durable delegation row as the parent model reads it (same shape as a child)."""
+    status = str(row.get("status") or "failed")
+    child = {"id": row.get("spawn_id"), "status": status, "ok": status == "done",
+             "result": row.get("result"), "delegation_id": row.get("delegation_id")}
+    view = _child_view(child, str(row.get("goal") or ""))
+    view["delegation_id"] = row.get("delegation_id")
+    return view
 
 
 def _child_view(child: Mapping[str, Any], goal: str) -> dict:
@@ -346,12 +402,20 @@ def _child_view(child: Mapping[str, Any], goal: str) -> dict:
         return view
     if not isinstance(result, Mapping):
         return view
+    if isinstance(result.get("worktree"), Mapping):
+        # G18 (H402): the child's own branch, whether it was kept, and the files it
+        # changed — with the stale-file reminder when there are any.
+        view["worktree"] = dict(result["worktree"])
     if child.get("ok") is True:
         text = result.get("output")
         if isinstance(text, str):
             view["output"] = text[:OUTPUT_MAX_CHARS]
             if len(text) > OUTPUT_MAX_CHARS:
                 view["output_truncated"] = True
+                # H401 (summary spill): the whole answer is kept on the durable row.
+                ref = child.get("delegation_id") or child.get("id")
+                if ref:
+                    view["full_output"] = f"GET /api/subagents/{ref}/result"
         if "structured" in result:
             view["schema_valid"] = True
             try:
@@ -383,6 +447,21 @@ def project(outcome: Any, tasks: list, seconds: float) -> dict:
     loop fences the result and marks the turn even when the batch as a whole failed."""
     if not isinstance(outcome, Mapping):
         return _refusal("subagents_unavailable")
+    if outcome.get("background") is True and "children" in outcome:
+        children = []
+        for i, child in enumerate(outcome.get("children") or []):
+            view = {"goal": (tasks[i]["goal"] if i < len(tasks) else "")[:200],
+                    "status": child.get("status") or "refused", "ok": child.get("status") == "running"}
+            for key in ("id", "delegation_id", "reason", "detail"):
+                if child.get(key):
+                    view[key] = child[key]
+            children.append(view)
+        return {"ok": outcome.get("ok") is True, "background": True, "children": children,
+                "summary": dict(outcome.get("summary") or {}),
+                "duration_seconds": round(max(0.0, seconds), 3),
+                "notice": ("These sub-agents run in the background. Their results are delivered "
+                           "once: call delegate_task with {\"collect\": true} to receive the "
+                           "finished ones.")}
     if "children" not in outcome:                    # the whole batch was refused
         return {key: value for key, value in outcome.items()
                 if key in {"ok", "reason", "detail", "index", "max", "active", "cap",

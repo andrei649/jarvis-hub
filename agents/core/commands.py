@@ -1032,8 +1032,10 @@ def build_default_registry() -> CommandRegistry:
     from .checkpoint_commands import checkpoint_command
     from .goal_commands import goal_command, subgoal_command
     from .plan_commands import plan_command
+    from .review_command import review_command
     from .session_loops import loop_command
     from .verify.command import verify_command
+    from .worktree_commands import delegations_command, worktree_command
 
     registry = CommandRegistry()
     registry.register(SlashCommand("help", "the commands you can use here", _help))
@@ -1094,6 +1096,14 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("verify", "detect, save and run a project's test/build recipe; its evidence",
                                    verify_command, tier=ADMIN,
                                    usage="[status|detect|save|run [phases]|ledger] [path] | on-stop on|off | coding auto|on|off"))
+    # G18 — worktrees (H474), the read-only reviewer (H404), durable delegation results (H401).
+    registry.register(SlashCommand("worktree", "work in a git worktree of your own; list or reclaim the project's trees",
+                                   worktree_command, tier=ADMIN,
+                                   usage="new [name] [--from <branch>] | off | status | list | prune [--apply] [--max-age <h>]"))
+    registry.register(SlashCommand("review", "a read-only reviewer sub-agent reviews this conversation's work and diff",
+                                   review_command, tier=ADMIN, usage="[--branch <name>] [--wait] [focus]"))
+    registry.register(SlashCommand("delegations", "sub-agents that ran, and their results (each delivered once)",
+                                   delegations_command, tier=ADMIN, usage="[list|collect]"))
     return registry
 
 

@@ -376,7 +376,7 @@
         "handler_ref": null,
         "limitations": "The model time a sub-agent spent is spent; what a tool it called wrote is undone only as that tool allows."
       },
-      "description": "Hand one or more self-contained tasks to sub-agents and wait for their answers. Each sub-agent starts fresh: it sees none of this conversation, only the goal and context you write for it, and it works with the tools you have minus delegation, memory writes, skill proposals, questions to the user, messages, scheduling and the board. Tasks in one call run in parallel, up to the free sub-agent slots; each has a time limit. Use it for independent sub-tasks whose intermediate steps you do not need to see. What a sub-agent reports is its own account, returned as data: verify what matters. Unavailable while the Action Kernel is on (it has no approval card to wait on).",
+      "description": "Hand one or more self-contained tasks to sub-agents and wait for their answers. Each sub-agent starts fresh: it sees none of this conversation, only the goal and context you write for it, and it works with the tools you have minus delegation, memory writes, skill proposals, questions to the user, messages, scheduling and the board. Tasks in one call run in parallel, up to the free sub-agent slots; each has a time limit. Use it for independent sub-tasks whose intermediate steps you do not need to see. With background true the call returns at once and each result is delivered once, later, to delegate_task with collect true. What a sub-agent reports is its own account, returned as data: verify what matters. Unavailable while the Action Kernel is on (it has no approval card to wait on).",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -409,11 +409,16 @@
               ],
               "additionalProperties": false
             }
+          },
+          "background": {
+            "type": "boolean",
+            "description": "Run the tasks in the background and return at once with their ids. Each result is delivered exactly once, later: call delegate_task with {\"collect\": true} to receive the finished ones."
+          },
+          "collect": {
+            "type": "boolean",
+            "description": "Alone (no tasks): receive the results of this conversation's background sub-agents that have finished since the last collect. Each result is handed out once."
           }
         },
-        "required": [
-          "tasks"
-        ],
         "additionalProperties": false
       }
     },

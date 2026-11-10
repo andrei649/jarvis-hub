@@ -627,6 +627,12 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
+    # G18 (H401): a sub-agent's live transcript, its whole kept result and the exactly-once
+    # claim of finished results. The owner reaches them through /delegations in chat today;
+    # no HUD panel tails a transcript yet (ledger row H401, remaining).
+    "/api/subagents/{spawn_id}/transcript",
+    "/api/subagents/{spawn_id}/result",
+    "/api/subagents/completions/claim",
     # H562 (A2A outbound): peers get an address and token through the admin API; no HUD
     # panel yet (ADOPT_LANE.md slice 4, remaining).
     "/api/a2a/peers/{peer_id}/outbound",
