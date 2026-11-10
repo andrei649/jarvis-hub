@@ -913,7 +913,10 @@ class FileTools:
         The store writes nothing nested and no document types there, so a subfolder or
         a document read through the extractor is not covered (and not reachable today).
         """
-        return target.parent in self._spill_dirs or target.parent.name == _SPILL_DIRNAME
+        # H552: a binary block an MCP server sent is cached under <data>/mcp_cache/<server>/
+        # and is third-party content in exactly the same sense.
+        return (target.parent in self._spill_dirs or target.parent.name == _SPILL_DIRNAME
+                or target.parent.parent.name == "mcp_cache")
 
     def reaches(self, raw_path: object) -> bool:
         """True when ``file_read`` would open *raw_path* now — the probe a notice asks

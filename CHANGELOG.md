@@ -225,6 +225,35 @@
   status pages answered anyone on the network with personal details. They now ask for the same
   user token as the rest of your data. On the machine itself, with no token set, nothing changes.
 
+**Connected MCP servers can share documents and prompt templates, and stay connected**
+- If an MCP server you added publishes documents ("resources") or prompt templates, Nerva can
+  now list and read them, next to the server's own tools. What they contain is treated like a
+  web page: checked for hidden instructions, shown to the model as data, and any action Nerva
+  proposes after reading one waits for your approval. Pictures and other files are saved to
+  disk instead of being pasted into the conversation.
+- A server that stops answering no longer stays dead until you press connect: Nerva retries it
+  with growing pauses and checks idle servers every minute. One slow server no longer holds up
+  the others. The MCP admin list shows each server's state, its last error and when the next
+  retry is due. Set `JARVIS_MCP_AUTOCONNECT=1` to connect your saved servers at start.
+- A server may now ask Nerva for a short model answer, but only if you allow it for that server
+  (`sampling`: off by default, "ask" for an approval card each time, or "auto"). It runs on your
+  local model, without tools, within a daily allowance (`JARVIS_MCP_SAMPLING_DAILY_TOKENS`,
+  20 000 by default) and at most 10 requests a minute per server.
+- If you allow it for a server (off by default), a server that needs information from you
+  mid-task asks through an approval card. Nerva never answers it for you: you fill it in,
+  decline it, or it lapses after five minutes. The card shows the server's words cleaned of
+  hidden characters, so it cannot pass itself off as a message from Nerva; if the task that
+  asked ends first, the card is withdrawn. Filling it in is done through the admin API for
+  now; the HUD shows the card but has no form yet.
+- The daily allowance for server requests is kept in memory and starts again after a restart.
+- One answer from a server is capped (100 parts, about 2 million characters), so a server
+  cannot flood the conversation or freeze Nerva with a huge reply; a server that floods Nerva
+  while idle is disconnected, and a server that keeps crashing right after it starts is set
+  aside instead of being restarted over and over. Questions from servers can hold up one
+  answer for at most 15 minutes in total.
+- The emergency stop and the kill switch refuse all of this: no reconnects, no model answers,
+  no questions.
+
 ### What changed for you — 2026-11-01 to 2026-11-02
 
 A plain-language summary of the last two days. The technical detail for each item is in its PR.

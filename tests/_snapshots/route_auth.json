@@ -446,6 +446,7 @@
   "POST /api/admin/llm/providers/probe": "admin",
   "POST /api/admin/llm/test": "admin",
   "POST /api/admin/mcp": "admin",
+  "POST /api/admin/mcp/elicitations/{card_id}/answer": "admin",
   "POST /api/admin/mcp/{name}/connect": "admin",
   "POST /api/admin/mcp/{name}/disconnect": "admin",
   "POST /api/admin/memory/clear": "admin",
