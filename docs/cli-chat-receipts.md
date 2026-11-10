@@ -132,6 +132,19 @@ right where you are, while the turn waits:
   the receipt. An empty line declines. Only the owner is asked: a terminal holding a
   user token, not the admin token, is never offered a secret prompt, and the store
   refuses it. A hub reached over plain http on another machine is never sent a secret.
+  The turn can ask only for an upper-case key name (`WEATHER_API_KEY`) that a skill you
+  installed and vouched for declares as required — never a provider key, a hub token or
+  a key a Nerva component keeps (house, camera, peer and connector keys) — and never once
+  it has read a web page, a tool result from outside or another untrusted message. A key
+  your administrator manages, or any key in managed mode, is refused. A key already held,
+  in the store or in a vault source, is not asked for again.
+- **What is Nerva's and what is the turn's.** Lines Nerva prints start at the left edge.
+  Everything the model or the turn wrote (a question, a choice, a reason, a card's
+  title or command) is shown behind a `│` bar, with direction-changing and invisible
+  characters removed, so it cannot pose as a Nerva prompt. Nerva asks for a key only
+  with its own `! Nerva needs the key NAME …` line followed by a prompt that does not
+  show what you type; an answer that looks like a key or token is never sent as an
+  ordinary answer.
 - **Approvals (confirm and sudo-class commands).** In Nerva these are approval cards: a
   turn that needs one queues it and stops. After the answer, `nerva chat` shows each
   card the turn queued (tier, reversibility, the exact command or path, the rollback

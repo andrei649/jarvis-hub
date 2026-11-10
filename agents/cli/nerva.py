@@ -2534,11 +2534,15 @@ def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
         if not pending:
             ctx.say("no pending approvals")
             return EXIT_OK
+        from .chat_prompts import card_safe
+
         for task in pending:
             flag = "reversible" if task.get("reversible") else "IRREVERSIBLE"
+            # G4 review M3: hub and model text without bidi or zero-width marks, so a
+            # title cannot reorder or hide what sits beside the accept command.
             ctx.say(
-                f"#{_plain(task.get('id', '?'), 20)}  tier {_plain(task.get('risk_tier', '?'), 8)}  {flag:12s}  "
-                f"{_plain(task.get('kind', '?'), 80)}  — {_plain(task.get('title', ''), 400)}"
+                f"#{card_safe(task.get('id', '?'))[:20]}  tier {card_safe(task.get('risk_tier', '?'))[:8]}  "
+                f"{flag:12s}  {card_safe(task.get('kind', '?'))[:80]}  — {card_safe(task.get('title', ''))[:400]}"
             )
             note = _approval_mode_note(task.get("approval_mode"), task.get("asked_under"))
             if note:
@@ -5687,10 +5691,16 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
         if incomplete:
             reason = stop_reason or refusal or ("the turn queued an action for approval and was not executed"
                                  if queued else "the hub returned an empty answer")
+            decided: dict[int, str] = {}
             if interactive and pending:
                 from .chat_prompts import decide_queued
 
-                decide_queued(ctx, pending)
+                decided = decide_queued(ctx, pending)
+            if decided:
+                # The decision is made, but the action runs later on the hub: the turn still
+                # did not complete, and the receipt says what was decided here.
+                reason = (f"{reason}; decided here: "
+                          + ", ".join(f"#{i} {a}" for i, a in sorted(decided.items())))
             if pending:
                 ids = ", ".join(_plain(i, 40) for i in pending)
                 reason = f"{reason} (approval {ids})"

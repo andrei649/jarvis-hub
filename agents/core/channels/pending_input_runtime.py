@@ -55,9 +55,12 @@ _CURRENT = contextvars.ContextVar("channel_pending_input", default=None)
 ENABLED_SETTING = "channels.pending_inputs_enabled"
 UNAVAILABLE = {"ok": False, "reason": "clarify_context_unavailable"}
 SECRET_UNAVAILABLE = {"ok": False, "reason": "secret_prompt_unavailable_here"}
-#: The secret broker's own handle grammar (``{{secret:NAME}}``), bounded.
-_SECRET_NAME = re.compile(r"[A-Za-z0-9_.\-]{1,128}\Z")
-_RESERVED_SECRET_PREFIXES = ("h034.", "integration.")
+#: request_secret only asks for an environment-style key name (``WEATHER_API_KEY``).
+#: Every name a system component keeps in the broker (``house_confirmation_key``,
+#: ``camera.vault_key``, ``a2a.peer.<id>``, ``frigate.token`` …) is lower-case or
+#: dotted, so it can never be asked for; on top of that the name must be declared by an
+#: owner-vouched skill and pass the code-environment rules (_declared_secret_name).
+_SECRET_NAME = re.compile(r"[A-Z][A-Z0-9_]{1,127}\Z")
 
 
 def _without_recommendation(label):
@@ -630,6 +633,39 @@ class ChannelPendingRuntime:
         except Exception:
             return False
 
+    def _secret_available(self, name):
+        """Held in the broker's store OR in an external vault source: a typed copy must
+        never shadow a vault-held secret (review G4 m1)."""
+        if self._secret_stored(name):
+            return True
+        broker = getattr(self.orch, "secret_broker", None)
+        lookup = getattr(broker, "_safe_get", None)
+        try:
+            return callable(lookup) and lookup(name, external=True) is not None
+        except Exception:
+            return True  # unknown: do not ask the owner to overwrite it
+
+    def _declared_secret_name(self, name):
+        """A key an owner-vouched loaded skill declares as required, passable to code
+        under the code-environment rules (no provider, control or hub credential name)."""
+        from ..code_env import _passable_name
+
+        if not _SECRET_NAME.match(name) or not _passable_name(name):
+            return False
+        loader = getattr(self.orch, "skills", None)
+        try:
+            skills = dict(getattr(loader, "skills", {}) or {})
+        except Exception:
+            return False
+        def declares(skill):
+            try:
+                return (getattr(skill, "owner_vouched", False) is True
+                        and name in tuple(getattr(skill, "required_env", ()) or ()))
+            except Exception:
+                return False  # a skill that cannot be read declares nothing
+
+        return any(declares(skill) for skill in skills.values())
+
     async def request_secret(self, args):
         """Ask the owner of this HTTP poll turn to store one named secret (H226).
 
@@ -639,9 +675,17 @@ class ChannelPendingRuntime:
                 or not isinstance(args.get("reason", ""), str)):
             return {"ok": False, "reason": "invalid_secret_args"}
         name, why = args["name"].strip(), args.get("reason", "").strip()
-        if (not _SECRET_NAME.match(name) or name.startswith(_RESERVED_SECRET_PREFIXES)
-                or len(why) > 1024):
+        if not _SECRET_NAME.match(name) or len(why) > 1024:
             return {"ok": False, "reason": "invalid_secret_args"}
+        # Review G4 M1: a turn that has read untrusted content (a page, an MCP result, a
+        # tainted memory, an earlier answer) or that arrived from an untrusted channel
+        # may not ask for a secret: the request itself could be dictated by that content.
+        from ..web_tools import _turn_is_tainted
+
+        if _turn_is_tainted():
+            return {"ok": False, "reason": "secret_request_refused_tainted_turn"}
+        if not self._declared_secret_name(name):
+            return {"ok": False, "reason": "secret_name_not_declared"}
         binding = _CURRENT.get()
         if (binding is None or binding.runtime is not self or not binding.active
                 or binding.source.channel != "web" or not binding.http_poll
@@ -649,8 +693,17 @@ class ChannelPendingRuntime:
                 or not binding.owner_now()):
             return dict(SECRET_UNAVAILABLE)
         reference = f"{{{{secret:{name}}}}}"
-        if self._secret_stored(name):
-            return {"ok": True, "name": name, "reference": reference, "already_present": True}
+        if self._secret_available(name):
+            # Only reachable for a declared skill key: the same answer a fresh store gives.
+            return {"ok": True, "name": name, "reference": reference, "stored": True}
+        from ..managed_scope import ManagedRefused, check_env_write
+
+        try:
+            check_env_write(name)
+        except ManagedRefused:
+            return {"ok": False, "reason": "secret_write_managed"}
+        except Exception:
+            return {"ok": False, "reason": "secret_write_managed"}
         try:
             prompt = self.inputs.register_secret(
                 pending_key(binding.source), name,
@@ -776,12 +829,14 @@ def register_clarify_tool(server, orch):
         # answer arriving mid-turn, so it is read as data, like clarify's.
         untrusted_output=True,
         parallel_safe=False,
-        description=("Ask the owner, in their terminal, to store a missing secret (an API key) "
-                     "by name. Returns its {{secret:NAME}} handle, never the value."),
+        description=("Ask the owner, in their terminal, to store a missing API key that an "
+                     "installed skill declares as required (an upper-case environment-style name). "
+                     "Refused once the turn has read untrusted content. Returns its "
+                     "{{secret:NAME}} handle, never the value."),
         input_schema={
             "type": "object",
             "properties": {
-                "name": {"type": "string", "pattern": r"^[A-Za-z0-9_.\-]{1,128}$"},
+                "name": {"type": "string", "pattern": r"^[A-Z][A-Z0-9_]{1,127}$"},
                 "reason": {"type": "string", "maxLength": 1024},
             },
             "required": ["name"],

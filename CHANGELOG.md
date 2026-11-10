@@ -278,7 +278,12 @@
   time. Your answer reaches the same turn, read as data, just like an answer typed in the HUD.
 - When a turn needs a missing key, it asks you for it there. What you type is not shown, goes
   only to Nerva's encrypted secret store and never into the conversation, the logs or the
-  receipt. Only the owner is asked; a terminal with only the user token is not.
+  receipt. Only the owner is asked; a terminal with only the user token is not. A turn can ask
+  only for a key a skill you installed declares, never for one of Nerva's own keys, and not at
+  all once it has read a web page or other outside content. What the turn writes is shown behind
+  a `│` bar, so it cannot pass itself off as a Nerva prompt, and an answer that looks like a key
+  is never sent as an ordinary answer. Storing a secret is refused while your administrator
+  manages the configuration.
 - After a turn that queued approvals, each card is shown with its exact command and rollback,
   and you can accept, reject, defer or leave it queued, through the same route as the HUD.
 - Scripts are unaffected: with piped input, `--json` or `--no-prompts`, nothing is asked.

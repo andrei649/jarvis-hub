@@ -1783,13 +1783,13 @@
         "handler_ref": null,
         "limitations": ""
       },
-      "description": "Ask the owner, in their terminal, to store a missing secret (an API key) by name. Returns its {{secret:NAME}} handle, never the value.",
+      "description": "Ask the owner, in their terminal, to store a missing API key that an installed skill declares as required (an upper-case environment-style name). Refused once the turn has read untrusted content. Returns its {{secret:NAME}} handle, never the value.",
       "input_schema": {
         "type": "object",
         "properties": {
           "name": {
             "type": "string",
-            "pattern": "^[A-Za-z0-9_.\\-]{1,128}$"
+            "pattern": "^[A-Z][A-Z0-9_]{1,127}$"
           },
           "reason": {
             "type": "string",
