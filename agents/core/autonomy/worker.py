@@ -396,6 +396,9 @@ _REFUSALS_BY_KIND: dict[str, tuple[str, ...]] = {
     # research — unavailable/configuration paths return ``noop``; a websearch
     # exception returns ``failed`` and remains a genuine execution failure.
     "research": (),
+    # a2a.outbound — checked by the A2A runtime when an approved call sends; its refusals
+    # come back from the tool as ``ok: False`` reasons, never as a worker ``failed``.
+    "a2a.outbound": (),
 }
 REFUSAL_REASONS_BY_KIND: dict[str, frozenset[str]] = {
     kind: frozenset(reasons) for kind, reasons in _REFUSALS_BY_KIND.items()}
