@@ -76,6 +76,17 @@
 - When a sub-agent asks for your approval, the card names the action first and then says which
   sub-agent asked and for what.
 
+**See what the background memory review learned, and approve it first if you like (#1347)**
+- After a reply, a short line says when the background review saved or proposed a memory. Set
+  `display.memory_notifications` to off, on or verbose (verbose previews each fact), and per
+  platform with `display.platform_memory_notifications`.
+- Turn on `memory.write_approval` to hold the review's writes. Decide them in the HUD or with
+  `/memory pending`, `/memory approve` and `/memory reject` in your own DM or on the machine.
+- The review is never more trusted than the conversation it reviews: text from someone else, a
+  group chat, a guest or a web page is never written to memory without your approval.
+- When the assistant searches a past conversation that held someone else's text, the actions of
+  that turn wait for your approval. Searching your own past conversations changes nothing.
+
 **Three status pages now need your user token (#1347)**
 - An independent security review found that the Oracle status, learning stats and local-docs
   status pages answered anyone on the network with personal details. They now ask for the same

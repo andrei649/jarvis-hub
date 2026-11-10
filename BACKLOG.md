@@ -2803,6 +2803,18 @@
   row stays `partial`: the model cannot list, steer or stop its own children, a tainted turn under
   the Action Kernel refuses delegation instead of asking, and there is no per-child credential
   resolution. Headline unchanged at 148/697.
+  **H443 (2026-11-10, #1347):** the background memory review — it runs with the trust of the
+  turn it reviews, a line beside the reply says what it wrote or proposed (`display.memory_notifications`
+  off/on/verbose, per platform), `memory.write_approval` holds its writes for `/memory pending|approve|
+  reject` (owner only, in a DM), a full or digest replay, and its own usage line. Four adversarial
+  reviews: the first found observed group messages reaching memory and searches of strangers' text
+  not tainting the turn; the second, that the fix made every upgraded install queue actions after
+  reading its own history; the third, that re-opening your own conversation after a restart marked
+  it imported and that concurrent writes lost reasons; the fourth, a torn journal line and owner
+  continuations read as untrusted. All fixed: each conversation now keeps a durable reason why it is
+  untrusted, and only conversations with such a reason or with evidence (channel, import) taint the
+  actions of a turn that reads them. `partial`: channel conversations, the owner's own DM included,
+  are always held, and the review fork's extra tools were not verified. Headline unchanged at 148/697.
 
 ## Darwin feature absorption — 2026-09-09
 
