@@ -24,6 +24,11 @@ Commands (deterministic; nothing touches the network):
     and plain data, nothing else) are copied byte-identical with a manifest row per file,
     and ``SKILLS_CATALOG.json`` indexes all of them (``upstream_only`` for a skill with code,
     ``excluded`` with a reason otherwise). Catalog files are never rewritten.
+``mcp-catalog --upstream <clone>``
+    Re-vendor Hermes's MCP server catalog (G9): every ``optional-mcps/<name>/manifest.yaml``
+    is copied byte-identical with a manifest row (data only, never rewritten). A folder
+    holding anything else, or a manifest that is not plain YAML, is refused. Nerva's
+    reader (``agents/core/mcp/catalog.py``) re-checks each file against its row.
 ``pull --upstream <clone> <paths...>``
     Re-vendor the named upstream paths (rewrite, write, update the manifest). Refused for
     a symlink or a path resolving outside the clone, a file with local edits (``--force``
@@ -243,7 +248,11 @@ DATA_SUFFIXES = frozenset({".yaml", ".yml", ".json", ".md", ".txt"})
 _LOCAL_FILES = ("__init__.py", "NOTICE.md", "LICENSE", "MANIFEST.json")
 #: Slice 3 — Hermes's skill catalog: vendored at its upstream paths under these folders,
 #: byte-identical (no rewrite rule ever applies), data only, indexed by CATALOG_INDEX.
-CATALOG_ROOTS = ("skills/", "optional-skills/")
+SKILL_CATALOG_ROOTS = ("skills/", "optional-skills/")
+#: G9 — Hermes's MCP server catalog: one ``manifest.yaml`` a folder, byte-identical, data
+#: only. The manifest rows are its index (no separate index file).
+MCP_CATALOG_ROOT = "optional-mcps/"
+CATALOG_ROOTS = (*SKILL_CATALOG_ROOTS, MCP_CATALOG_ROOT)
 CATALOG_INDEX = "SKILLS_CATALOG.json"
 #: What a catalog file may be: plain data by suffix, or a LICENSE text.
 CATALOG_SUFFIXES = DATA_SUFFIXES
@@ -426,12 +435,28 @@ def data_problems(data: bytes, path: str) -> list[str]:
 
 
 def is_catalog_path(path: str) -> bool:
+    """A byte-identical catalog file (skills or MCP manifests): never rewritten."""
     return path.startswith(CATALOG_ROOTS)
+
+
+def is_skill_catalog_path(path: str) -> bool:
+    return path.startswith(SKILL_CATALOG_ROOTS)
+
+
+def is_mcp_catalog_path(path: str) -> bool:
+    return path.startswith(MCP_CATALOG_ROOT)
+
+
+_MCP_MANIFEST_PATH = re.compile(r"optional-mcps/[A-Za-z0-9_-]+/manifest\.yaml")
 
 
 def catalog_problems(data: bytes, path: str) -> list[str]:
     """Why a skill-catalog file is not plain data (empty when it is). Stricter than the
     general rule: no ``.py`` file at all, only the data suffixes and ``LICENSE``."""
+    if is_mcp_catalog_path(path):
+        if not _MCP_MANIFEST_PATH.fullmatch(path):
+            return ["an MCP catalog folder holds one manifest.yaml and nothing else"]
+        return data_problems(data, path)
     if Path(path).name in CATALOG_NAMES:
         if b"\0" in data:
             return ["binary content"]
@@ -716,7 +741,7 @@ def catalog_index_problems(vendor_root: Path, manifest: dict) -> list[str]:
     """Where ``SKILLS_CATALOG.json`` and the manifest's catalog rows disagree: an
     installable skill must have every file in the manifest with the indexed sha256, and
     every catalog row must belong to one (no stray file of a skill that carries code)."""
-    rows = {f["path"]: f for f in manifest.get("files", []) if is_catalog_path(f["path"])}
+    rows = {f["path"]: f for f in manifest.get("files", []) if is_skill_catalog_path(f["path"])}
     index_path = vendor_root / CATALOG_INDEX
     if not index_path.exists():
         return [f"{CATALOG_INDEX} missing while catalog files are vendored"] if rows else []
@@ -769,8 +794,8 @@ def cmd_catalog(vendor_root: Path, upstream: Path, *, commit: str, out) -> int:
                        for kind in (hermes_catalog.KIND_INSTRUCTION, hermes_catalog.KIND_UPSTREAM_ONLY,
                                     hermes_catalog.KIND_EXCLUDED)}
     manifest = load_manifest(vendor_root / "MANIFEST.json")
-    entries = {f["path"]: f for f in manifest.get("files", []) if not is_catalog_path(f["path"])}
-    old_catalog = {f["path"] for f in manifest.get("files", []) if is_catalog_path(f["path"])}
+    entries = {f["path"]: f for f in manifest.get("files", []) if not is_skill_catalog_path(f["path"])}
+    old_catalog = {f["path"] for f in manifest.get("files", []) if is_skill_catalog_path(f["path"])}
     staged: list[tuple[str, bytes]] = []
     for skill in index["skills"]:
         if skill["kind"] != hermes_catalog.KIND_INSTRUCTION:
@@ -796,7 +821,7 @@ def cmd_catalog(vendor_root: Path, upstream: Path, *, commit: str, out) -> int:
         target = vendor_root / rel
         if target.is_file() and not target.is_symlink():
             target.unlink()
-    for root in CATALOG_ROOTS:
+    for root in SKILL_CATALOG_ROOTS:
         base = vendor_root / root.rstrip("/")
         if base.is_dir() and not base.is_symlink():
             for folder in sorted((p for p in base.rglob("*") if p.is_dir()), key=lambda p: -len(p.parts)):
@@ -817,6 +842,70 @@ def cmd_catalog(vendor_root: Path, upstream: Path, *, commit: str, out) -> int:
     return 0
 
 
+def cmd_mcp_catalog(vendor_root: Path, upstream: Path, *, commit: str, out) -> int:
+    """Vendor every ``optional-mcps/<name>/manifest.yaml`` byte-identical (G9). The pin must
+    be the manifest's own: catalog data from another commit than the code is refused."""
+    commit = commit or _clone_commit(upstream)
+    if not commit:
+        out.write("cannot read the clone's commit; pass --commit <sha>\n")
+        return 2
+    manifest = load_manifest(vendor_root / "MANIFEST.json")
+    pinned = manifest.get("upstream", {}).get("commit", "")
+    if pinned and pinned != commit:
+        out.write(f"refused: the clone is at {commit[:8]}, the vendored tree is pinned to {pinned[:8]}\n")
+        return 2
+    src_root = upstream / MCP_CATALOG_ROOT.rstrip("/")
+    if _symlinked(upstream, MCP_CATALOG_ROOT.rstrip("/")) or not src_root.is_dir():
+        out.write(f"refused: no {MCP_CATALOG_ROOT} folder in the clone\n")
+        return 2
+    staged: list[tuple[str, bytes]] = []
+    for folder in sorted(src_root.iterdir()):
+        rel_folder = f"{MCP_CATALOG_ROOT}{folder.name}"
+        if folder.is_symlink() or not folder.is_dir():
+            out.write(f"refused {rel_folder}: not a plain folder\n")
+            return 2
+        names = sorted(p.name for p in folder.iterdir())
+        if names != ["manifest.yaml"]:
+            out.write(f"refused {rel_folder}: holds {names}, only manifest.yaml is catalog data\n")
+            return 2
+        rel = f"{rel_folder}/manifest.yaml"
+        if _symlinked(upstream, rel):
+            out.write(f"refused {rel}: symlink\n")
+            return 2
+        data = (upstream / rel).read_bytes()
+        problems = catalog_problems(data, rel)
+        if problems:
+            out.write(f"refused {rel}: " + "; ".join(problems) + "\n")
+            return 2
+        staged.append((rel, data))
+    entries = {f["path"]: f for f in manifest.get("files", []) if not is_mcp_catalog_path(f["path"])}
+    old = {f["path"] for f in manifest.get("files", []) if is_mcp_catalog_path(f["path"])}
+    wanted = {rel for rel, _ in staged}
+    for rel, data in staged:
+        target = vendor_root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not _inside(target.parent, vendor_root) or _symlinked(vendor_root, rel):
+            out.write(f"refused {rel}: the vendored path leaves the tree\n")
+            return 2
+        target.write_bytes(data)
+        entries[rel] = {"path": rel, "upstream_commit": commit, "upstream_sha256": sha256(data),
+                        "vendored_sha256": sha256(data), "rules_applied": []}
+    for rel in sorted(old - wanted):
+        target = vendor_root / rel
+        if target.is_file() and not target.is_symlink():
+            target.unlink()
+            if target.parent.is_dir() and not any(target.parent.iterdir()):
+                target.parent.rmdir()
+    manifest["files"] = list(entries.values())
+    manifest["rewrite_rules"] = rules_record()
+    manifest.setdefault("upstream", {}).update({"repo": UPSTREAM_REPO, "commit": commit, "license": "MIT"})
+    manifest.setdefault("local_files", list(_LOCAL_FILES))
+    (vendor_root / "MANIFEST.json").write_text(dump_manifest(manifest), encoding="utf-8")
+    out.write(f"mcp catalog @{commit[:8]}: {len(wanted)} manifest(s) vendored, "
+              f"{len(old - wanted)} removed\n")
+    return 0
+
+
 def main(argv: list[str] | None = None, *, vendor_root: Path = VENDOR_ROOT, out=None) -> int:
     out = out or sys.stdout
     parser = argparse.ArgumentParser(prog="scripts/hermes_vendor.py",
@@ -830,6 +919,9 @@ def main(argv: list[str] | None = None, *, vendor_root: Path = VENDOR_ROOT, out=
     p_cat = sub.add_parser("catalog", help="re-vendor Hermes's instruction-only skills and index them all")
     p_cat.add_argument("--upstream", type=Path, required=True)
     p_cat.add_argument("--commit", default="")
+    p_mcp = sub.add_parser("mcp-catalog", help="re-vendor Hermes's MCP server manifests (optional-mcps/)")
+    p_mcp.add_argument("--upstream", type=Path, required=True)
+    p_mcp.add_argument("--commit", default="")
     p_pull = sub.add_parser("pull", help="re-vendor upstream paths and update MANIFEST.json")
     p_pull.add_argument("--upstream", type=Path, required=True)
     p_pull.add_argument("--commit", default="")
@@ -849,6 +941,8 @@ def main(argv: list[str] | None = None, *, vendor_root: Path = VENDOR_ROOT, out=
             return cmd_diff(vendor_root, ns.upstream, ns.paths, out)
         if ns.cmd == "catalog":
             return cmd_catalog(vendor_root, ns.upstream, commit=ns.commit, out=out)
+        if ns.cmd == "mcp-catalog":
+            return cmd_mcp_catalog(vendor_root, ns.upstream, commit=ns.commit, out=out)
         return cmd_pull(vendor_root, ns.upstream, ns.paths, commit=ns.commit,
                         force=ns.force, out=out)
     except ValueError as exc:

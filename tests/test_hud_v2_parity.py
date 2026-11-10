@@ -576,6 +576,8 @@ MACHINE_FACING: dict[str, str] = {
     "/api/plugins/extensions/activate": "owner activation of a local descriptor, via `nerva extensions activate`",
     "/api/oauth/auth-url": "OAuth dance, driven by the provider/browser",
     "/api/oauth/callback": "OAuth redirect target",
+    "/api/oauth/mcp/callback": "MCP sign-in redirect target: the browser returns here from the server's "
+                               "authorization page (G9 / H692)",
     "/api/admin/tool-events":
         "the tool loop's trail, read by `nerva tools` \u2014 the CLI is not in the client "
         "globs above; the HUD renderer for it is the deferred inline-tool-trail slice",
@@ -836,9 +838,6 @@ COMPUTED_URL_CALLERS: dict[str, str] = {
     # AcquisitionPanel: apiPost(`/api/acquisition/${…}/${action}`), action from the buttons
     "/api/acquisition/{name}/revoke": "frontend/src/gap.tsx",
     "/api/acquisition/{name}/rollback": "frontend/src/gap.tsx",
-    # MCP panel: afetch(`/api/admin/mcp/${…}/${action}`), action = connected ? … : …
-    "/api/admin/mcp/{name}/connect": "agents/web/static/admin.js",
-    "/api/admin/mcp/{name}/disconnect": "agents/web/static/admin.js",
     # PromptsPanel: `const base = '/api/admin/prompts/' + agent`, then base + suffix
     "/api/admin/prompts/{agent_id}/ab": "frontend/src/gap.tsx",
     "/api/admin/prompts/{agent_id}/commit": "frontend/src/gap.tsx",
