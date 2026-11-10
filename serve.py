@@ -127,7 +127,12 @@ def apply_staged_restore():
     from agents.core.env_provenance import load_hub_env
     from agents.core.sd_notify import keepalive
 
-    load_hub_env()   # an encrypted archive's key may live in .env (main() loads it anyway)
+    try:
+        load_hub_env()   # an encrypted archive's key may live in .env (main() loads it anyway)
+    except SystemExit as stopped:    # a refused configuration: the same way out as main()'s load
+        if not hasattr(stopped, "exit_status"):
+            raise
+        _leave_refused(stopped)
     with keepalive("applying a staged restore"):
         result = backup.apply_pending_restore()
     if result is None:
@@ -162,12 +167,7 @@ def _leave_refused(refused) -> None:
     raise SystemExit(refused.exit_status) from None
 
 
-try:
-    apply_staged_restore()
-except SystemExit as _stopped:      # its load of the .env files refuses as main()'s does
-    if not hasattr(_stopped, "exit_status"):
-        raise
-    _leave_refused(_stopped)
+apply_staged_restore()
 
 # O26-P0.6 (F6): the boot guards moved to agents/core/boot_guards.py so the
 # raw-uvicorn entry (`python -m uvicorn agents.web:app`) enforces the same
