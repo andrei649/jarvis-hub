@@ -1,4 +1,7 @@
-# Hermes in Nerva: features, not rows (proposal, 2026-11-10)
+# Hermes in Nerva: features, not rows (accepted 2026-11-10)
+
+> **Accepted by the owner on 2026-11-10** — see `docs/decisions/2026-11-10-hermes-integration-by-feature.md`
+> for the four decisions as taken (with the sidecar condition and the 32 exclusions).
 
 The owner asked why the Hermes work runs row by row, and to treat Hermes capabilities as
 features Nerva needs, reusing code from both projects. This is the rethink, with numbers

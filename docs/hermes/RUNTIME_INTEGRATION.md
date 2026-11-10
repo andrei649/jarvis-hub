@@ -102,9 +102,9 @@ delegation and optional connector families still need their own configured
 dependencies and acceptance probes. No provider credentials are imported.
 
 All **697** Hermes parity contracts remain in scope in the existing inventory.
-Adding an upstream runtime does not increase the native-equivalence count or
-close unproved rows. Runtime-backed availability and native Jarvis equivalence
-must be tracked separately. No provider-cost or real device probe is implicit
+Superseded 2026-11-10 (`docs/decisions/2026-11-10-hermes-integration-by-feature.md`):
+a sidecar capability counts as delivered once the owner can reach it from chat, a HUD
+panel or a `nerva` verb with ordinary approval cards; the admin RPC console alone does not. No provider-cost or real device probe is implicit
 in setup or the tests.
 
 ## Verification and rollback

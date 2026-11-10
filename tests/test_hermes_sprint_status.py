@@ -338,9 +338,14 @@ def test_real_inventory_covers_exactly_697_rows_and_reports_are_current():
     formerly_excluded = {f'H{i:03}' for i, row in enumerate(ledger['capabilities'], 1)
                          if row['decision'] == 'skip'}
     assert len(formerly_excluded) == 107
-    assert {item['id'] for item in data['scope_reopenings']} == formerly_excluded
-    assert result["counts"]["excluded"] == 0
-    assert result["accepted"] == 697
+    # Owner decision 2026-11-10 (docs/decisions/2026-11-10-hermes-integration-by-feature.md, §4):
+    # these 32 return to the original audit's exclusion; every other former exclusion stays reopened.
+    re_excluded = set("H050 H054 H077 H087 H102 H110 H125 H128 H149 H166 H213 H215 H233 H239 H292 H324 "
+                      "H341 H371 H376 H384 H489 H546 H565 H568 H572 H584 H587 H609 H627 H628 H638 H662".split())
+    assert len(re_excluded) == 32 and re_excluded <= formerly_excluded
+    assert {item['id'] for item in data['scope_reopenings']} == formerly_excluded - re_excluded
+    assert result["counts"]["excluded"] == 32
+    assert result["accepted"] == 697 - 32
     for relative, generated in hs.reports(rows, data).items():
         assert (hs.REPO / relative).read_text(encoding="utf-8") == generated, relative
 

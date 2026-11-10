@@ -2895,6 +2895,17 @@
   `ToolRegistry.dispatch` and so the worker's tool guard, at both pins; gate them in the
   governed-availability work. No ledger row moves.
 
+  **Owner decisions 2026-11-10 — Hermes by feature, not by row** (`docs/decisions/2026-11-10-hermes-integration-by-feature.md`):
+  (1) adopted Hermes code counts as delivered; a sidecar capability counts only once the owner reaches it
+  from chat, a HUD panel or a `nerva` verb with ordinary approval cards; (2) Hermes's CLI/TUI/desktop rows
+  are judged by job in Nerva's HUD and CLI, not by screen; (3) per-area acceptance suites will replace
+  per-row hash pinning (tooling change pending; restamping continues until then); (4) 32 rows return to
+  `excluded` (reviews archived in `docs/hermes/evidence/2026-11-10-scope-exclusions.json`), 75 former
+  exclusions stay reopened, 9 of them awaiting a separate owner call. Accepted scope 697 → 665;
+  missing 112 → 80; headline 148. Next: first review of the 55 rows never reassessed since 2026-09-07
+  (running), a UX pass (one Integrations panel, keys in the HUD, one consent card), then the waves in
+  `docs/hermes/missing-rows-plan-2026-11-10.md`.
+
 ## Darwin feature absorption — 2026-09-09
 
 - [x] **DW-1 — truthful read-only memory neighborhood.** Live Memory mode uses the

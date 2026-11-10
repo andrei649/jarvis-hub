@@ -12,13 +12,13 @@ Din acestea, **148** au fost reevaluate pe cod în această livrare; **0** păst
 |---|---:|---:|
 | Echivalent | 148 | 21.2% |
 | Parțial | 437 | 62.7% |
-| Lipsă | 112 | 16.1% |
-| Exclus intenționat | 0 | 0.0% |
+| Lipsă | 80 | 11.5% |
+| Exclus intenționat | 32 | 4.6% |
 | De reverificat | 0 | 0.0% |
 
-**Ținta acceptată în produs:** 697 rânduri; progres 148/697 = **21.2%**. Excluderi active: 0. Readmise explicit din vechiul audit: 107; readmiterea nu acordă credit de implementare.
+**Ținta acceptată în produs:** 665 rânduri; progres 148/665 = **22.3%**. Excluderi active: 32. Readmise explicit din vechiul audit: 75; readmiterea nu acordă credit de implementare.
 
-**Acoperirea reevaluării curente:** 642/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
+**Acoperirea reevaluării curente:** 610/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
 
 **Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. Acest procent măsoară codul documentat, nu efortul rămas, calitatea UX sau probele pe servicii reale.
 
@@ -26,26 +26,26 @@ Din acestea, **148** au fost reevaluate pe cod în această livrare; **0** păst
 
 | Domeniu | Total | Echiv. | Parțial | Lipsă | Exclus | Reverificare |
 |---|---:|---:|---:|---:|---:|---:|
-| cli | 56 | 14 | 34 | 8 | 0 | 0 |
-| gateway | 33 | 3 | 24 | 6 | 0 | 0 |
-| platforms | 39 | 3 | 26 | 10 | 0 | 0 |
-| web | 40 | 13 | 21 | 6 | 0 | 0 |
-| desktop | 54 | 4 | 40 | 10 | 0 | 0 |
-| tui | 25 | 2 | 18 | 5 | 0 | 0 |
+| cli | 56 | 14 | 34 | 6 | 2 | 0 |
+| gateway | 33 | 3 | 24 | 4 | 2 | 0 |
+| platforms | 39 | 3 | 26 | 6 | 4 | 0 |
+| web | 40 | 13 | 21 | 4 | 2 | 0 |
+| desktop | 54 | 4 | 40 | 8 | 2 | 0 |
+| tui | 25 | 2 | 18 | 3 | 2 | 0 |
 | config | 18 | 8 | 8 | 2 | 0 | 0 |
-| env | 28 | 5 | 21 | 2 | 0 | 0 |
-| tools — the agent-callable surface | 32 | 9 | 21 | 2 | 0 | 0 |
-| skills | 33 | 14 | 15 | 4 | 0 | 0 |
-| providers | 27 | 6 | 16 | 5 | 0 | 0 |
+| env | 28 | 5 | 21 | 1 | 1 | 0 |
+| tools — the agent-callable surface | 32 | 9 | 21 | 1 | 1 | 0 |
+| skills | 33 | 14 | 15 | 3 | 1 | 0 |
+| providers | 27 | 6 | 16 | 2 | 3 | 0 |
 | agent-core | 36 | 10 | 19 | 7 | 0 | 0 |
 | memory | 27 | 9 | 18 | 0 | 0 | 0 |
 | automation | 32 | 6 | 24 | 2 | 0 | 0 |
-| security | 34 | 7 | 24 | 3 | 0 | 0 |
+| security | 34 | 7 | 24 | 2 | 1 | 0 |
 | media | 27 | 7 | 18 | 2 | 0 | 0 |
-| acp-mcp-dev | 33 | 3 | 13 | 17 | 0 | 0 |
-| docs-features | 48 | 4 | 35 | 9 | 0 | 0 |
-| rest-api | 33 | 3 | 25 | 5 | 0 | 0 |
-| delta | 42 | 18 | 17 | 7 | 0 | 0 |
+| acp-mcp-dev | 33 | 3 | 13 | 13 | 4 | 0 |
+| docs-features | 48 | 4 | 35 | 6 | 3 | 0 |
+| rest-api | 33 | 3 | 25 | 2 | 3 | 0 |
+| delta | 42 | 18 | 17 | 6 | 1 | 0 |
 
 ## Actualizare
 
