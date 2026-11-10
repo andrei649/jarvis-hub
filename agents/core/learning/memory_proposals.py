@@ -316,6 +316,14 @@ class MemoryProposalStore(JsonStore):
         self._revoked: dict[str, dict] = {}
         self._seq = 0
         self._journal_lines = 0
+        #: The journal may end in a partial line (a write that failed): the next write
+        #: starts with a newline.
+        self._journal_torn = False
+        #: Reasons read from an older ledger that kept them inline, until the journal
+        #: holds them (they are saved inline meanwhile).
+        self._inline_reasons = False
+        #: The reasons map passed the cap: trimmed off the event loop, by the next write.
+        self._needs_trim = False
         #: Held writes refused because :data:`MAX_PENDING` were already waiting.
         self._dropped = 0
         #: The clean list as an admission is saving it (shown only once it is on disk),
@@ -332,7 +340,11 @@ class MemoryProposalStore(JsonStore):
 
     def _serialize(self):
         clean = self._saving_clean if self._saving_clean is not None else self._clean
-        return {"proposals": self._items, "clean_sessions": clean, "dropped_at_cap": self._dropped}
+        out = {"proposals": self._items, "clean_sessions": clean, "dropped_at_cap": self._dropped}
+        if self._inline_reasons:
+            out["revoked_sessions"] = {sid: {"reason": rec["reason"], "at": rec["at"]}
+                                       for sid, rec in self._revoked.items()}
+        return out
 
     def _deserialize(self, raw) -> None:
         raw = raw if isinstance(raw, dict) else {}
@@ -351,6 +363,7 @@ class MemoryProposalStore(JsonStore):
         # An earlier ledger kept the reasons inline: read them, the journal follows.
         self._revoked = {}
         revoked = raw.get("revoked_sessions")
+        self._inline_reasons = bool(revoked) and isinstance(revoked, dict)
         for key, rec in (revoked.items() if isinstance(revoked, dict) else []):
             self._apply_line({"s": str(key), "r": rec.get("reason") if isinstance(rec, dict) else None,
                               "t": rec.get("at") if isinstance(rec, dict) else None, "n": 0})
@@ -401,27 +414,59 @@ class MemoryProposalStore(JsonStore):
         # A session with a reason is never clean, whatever the ledger says.
         for sid in self._revoked:
             self._clean.pop(sid, None)
+        if self._inline_reasons and self.journal_path is not None:
+            # An older ledger kept the reasons inline: they move into the journal now,
+            # before any save of the ledger could drop them.
+            try:
+                self.compact()
+                self._inline_reasons = False
+            except OSError:
+                logger.warning("memory proposals: inline reasons could not be moved to the journal; "
+                               "they stay in the ledger", exc_info=True)
 
     def _load_journal(self) -> None:
         import json
+        import os
 
         journal = self.journal_path
         if journal is None or not journal.exists():
             return
-        lines: list[dict] = []
         try:
-            with open(journal, encoding="utf-8") as fh:
-                for raw_line in fh:
-                    try:
-                        line = json.loads(raw_line)
-                    except ValueError:
-                        continue   # a torn last line (a write cut short): skipped
-                    if isinstance(line, dict):
-                        lines.append(line)
+            data = journal.read_bytes()
         except OSError:
             logger.warning("memory proposals: the reasons journal cannot be read; recorded reasons are "
                            "not known (sessions read as never seen)", exc_info=True)
             return
+        if data and not data.endswith(b"\n"):
+            # A write cut short: its partial line is cut off, so the next append starts
+            # on a line of its own (otherwise both would be one unreadable line).
+            keep = data.rfind(b"\n") + 1
+            try:
+                with open(journal, "r+b") as fh:
+                    fh.truncate(keep)
+                    os.fsync(fh.fileno())
+            except OSError:
+                logger.warning("memory proposals: a torn journal tail could not be cut; the next line "
+                               "starts on a new line", exc_info=True)
+                self._journal_torn = True
+            data = data[:keep]
+        lines: list[dict] = []
+        skipped = 0
+        for raw_line in data.split(b"\n"):
+            if not raw_line.strip():
+                continue
+            try:
+                line = json.loads(raw_line.decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                skipped += 1
+                continue
+            if isinstance(line, dict):
+                lines.append(line)
+            else:
+                skipped += 1
+        if skipped:
+            logger.warning("memory proposals: %d unreadable line(s) in the reasons journal were skipped "
+                           "(those sessions read as never seen)", skipped)
         lines.sort(key=lambda line: line.get("n") if type(line.get("n")) is int else 0)
         for line in lines:
             self._apply_line(line)
@@ -429,21 +474,38 @@ class MemoryProposalStore(JsonStore):
 
     def _append_journal(self, line: dict) -> None:
         """Append one numbered line to the reasons journal, flushed to disk. Blocking."""
+        self._append_journal_lines([line])
+
+    def _append_journal_lines(self, lines: list[dict]) -> None:
+        """Append numbered lines to the reasons journal in one write, flushed to disk;
+        a short write is continued, a failed one leaves the next write to start on a new
+        line. Blocking."""
         import json
         import os
 
         journal = self.journal_path
-        if journal is None:
+        if journal is None or not lines:
             return
-        data = (json.dumps(line, separators=(",", ":")) + "\n").encode("utf-8")
+        data = "".join(json.dumps(line, separators=(",", ":")) + "\n" for line in lines).encode("utf-8")
         with self._journal_lock:
+            if self._journal_torn:
+                data = b"\n" + data
             fd = os.open(journal, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
             try:
-                os.write(fd, data)
+                view = memoryview(data)
+                while view:
+                    written = os.write(fd, view)
+                    if written <= 0:
+                        raise OSError("the reasons journal accepted no bytes")
+                    view = view[written:]
                 os.fsync(fd)
+                self._journal_torn = False
+            except BaseException:
+                self._journal_torn = True
+                raise
             finally:
                 os.close(fd)
-            self._journal_lines += 1
+            self._journal_lines += len(lines)
             if self._journal_lines > 2 * len(self._revoked) + 1024:
                 self._compact_journal_locked()
 
@@ -457,15 +519,21 @@ class MemoryProposalStore(JsonStore):
             snapshot = dict(self._revoked)
             seq = self._seq
         tmp = journal.with_name(journal.name + ".tmp")
+        data = "".join(json.dumps({"s": sid, "r": rec["reason"], "t": rec["at"], "n": seq},
+                                  separators=(",", ":")) + "\n" for sid, rec in snapshot.items()).encode("utf-8")
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         try:
-            for sid, rec in snapshot.items():
-                os.write(fd, (json.dumps({"s": sid, "r": rec["reason"], "t": rec["at"], "n": seq},
-                                         separators=(",", ":")) + "\n").encode("utf-8"))
+            view = memoryview(data)
+            while view:
+                written = os.write(fd, view)
+                if written <= 0:
+                    raise OSError("the reasons journal accepted no bytes")
+                view = view[written:]
             os.fsync(fd)
         finally:
             os.close(fd)
         os.replace(tmp, journal)
+        self._journal_torn = False
         self._journal_lines = len(snapshot)
 
     def compact(self) -> None:
@@ -475,22 +543,47 @@ class MemoryProposalStore(JsonStore):
         with self._journal_lock:
             self._compact_journal_locked()
 
-    def _trim_revoked(self, keep: str | None = None) -> None:
-        """Past :data:`MAX_REVOKED_SESSIONS`, drop the records whose loss costs least —
-        unproven ones, then channel conversations (whose id the hub's own evidence still
-        names: ``ch_…``), then the oldest — down to 95% of the cap, so the sort runs once
-        per many new records. A dropped record reads as never seen."""
-        revoked = self._revoked
+    def _trim_order(self, revoked: dict) -> list[str]:
+        """Past :data:`MAX_REVOKED_SESSIONS`, the records to drop — the ones whose loss
+        costs least: unproven, then channel conversations (whose id the hub's own
+        evidence still names: ``ch_…``), then the oldest — down to 95% of the cap, so the
+        sort runs once per many new records."""
         if len(revoked) <= MAX_REVOKED_SESSIONS:
-            return
+            return []
         target = MAX_REVOKED_SESSIONS - MAX_REVOKED_SESSIONS // 20
         order = sorted(revoked, key=lambda key: (revoked[key]["reason"] != RECALLED_UNPROVEN,
                                                  not key.startswith("ch_"), revoked[key]["at"]))
-        for key in order:
-            if len(revoked) <= target:
-                break
-            if key != keep:
-                revoked.pop(key, None)
+        return order[:len(revoked) - target]
+
+    def _trim_revoked(self) -> None:
+        """Trim at load (single-threaded). A dropped record reads as never seen."""
+        for key in self._trim_order(self._revoked):
+            self._revoked.pop(key, None)
+
+    def _trim_if_needed(self) -> None:
+        """Trim the reasons past the cap and write a drop line for each. Blocking: run by
+        the writers, off the event loop. The sort runs on a copy, outside the swap lock."""
+        if not self._needs_trim:
+            return
+        with self._swap_lock:
+            snapshot = {sid: dict(rec) for sid, rec in self._revoked.items()}
+            self._needs_trim = False
+        victims = self._trim_order(snapshot)
+        if not victims:
+            return
+        drops = []
+        with self._swap_lock:
+            for sid in victims:
+                rec = self._revoked.get(sid)
+                if rec is not None and rec.get("seq") == snapshot[sid].get("seq"):
+                    self._revoked.pop(sid, None)
+                    self._seq += 1
+                    drops.append({"s": sid, "d": 1, "n": self._seq})
+        try:
+            self._append_journal_lines(drops)
+        except OSError:
+            logger.warning("memory proposals: drop lines for trimmed reasons could not be written",
+                           exc_info=True)
 
     # ── the conversations watched clean from their first turn ────────────────
 
@@ -561,7 +654,8 @@ class MemoryProposalStore(JsonStore):
         # In place: a reader's single lookup is safe without the lock; every writer and
         # every iteration (the journal's compaction) holds it.
         self._revoked[sid] = rec
-        self._trim_revoked(keep=sid)
+        if len(self._revoked) > MAX_REVOKED_SESSIONS:
+            self._needs_trim = True   # trimmed by the write that follows, off the event loop
         return {"s": sid, "r": reason, "t": rec["at"], "n": rec["seq"]}
 
     def _take_off(self, sid: str, reason: str) -> tuple[bool, dict | None]:
@@ -625,16 +719,7 @@ class MemoryProposalStore(JsonStore):
             return False
         reason = reason if reason in REVOKE_REASONS else "undecidable"
         was_clean, line = self._take_off(sid, reason)
-        try:
-            if line is not None:
-                self._append_journal(line)
-            if was_clean:
-                with self._lock:
-                    self._save()
-        finally:
-            if was_clean:
-                with self._swap_lock:
-                    self._revoking.discard(sid)
+        self._write_taken_off(sid, was_clean, line)
         return was_clean or line is not None
 
     def forget_clean(self, session_id: str, reason: str = "foreign_import") -> tuple[bool, dict | None]:
@@ -649,16 +734,34 @@ class MemoryProposalStore(JsonStore):
 
     def write_forgotten(self, session_id: str, was_clean: bool, line: dict | None) -> None:
         """Write what :meth:`forget_clean` changed. Blocking: run it off the event loop."""
+        self._write_taken_off(str(session_id or ""), was_clean, line)
+
+    def _write_taken_off(self, sid: str, was_clean: bool, line: dict | None) -> None:
+        """The journal line, then the ledger without the session — the ledger is saved
+        whether or not the line could be written, so leaving the clean list holds on
+        disk either way. The first failure is raised. Blocking."""
+        failure: BaseException | None = None
         try:
             if line is not None:
                 self._append_journal(line)
+        except BaseException as exc:
+            failure = exc
+        try:
             if was_clean:
                 with self._lock:
                     self._save()
+        except BaseException as exc:
+            failure = failure or exc
         finally:
             if was_clean:
                 with self._swap_lock:
-                    self._revoking.discard(str(session_id or ""))
+                    self._revoking.discard(sid)
+        try:
+            self._trim_if_needed()
+        except Exception:
+            logger.warning("memory proposals: the reasons could not be trimmed", exc_info=True)
+        if failure is not None:
+            raise failure
 
     def is_clean(self, session_id: str) -> bool:
         """Read on the event loop at every turn: one dict lookup, no lock (a save in

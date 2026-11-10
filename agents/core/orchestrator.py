@@ -1644,9 +1644,10 @@ class Orchestrator:
             await Orchestrator._note_turn_taint(self, sid, reason)
 
     def _history_load_guard(self, session_id: Optional[str]) -> None:
-        """H443 — a history loaded whole from elsewhere (a continuation's seed, an import:
-        ``session_continuation._load_locked`` calls this only then, never for a
-        conversation's own snapshot reloaded after a restart) leaves the clean list at once
+        """H443 — a history loaded whole from elsewhere (an import or a foreign history:
+        ``session_continuation._load_locked`` calls this only then — never for a
+        conversation's own snapshot reloaded after a restart, nor for a continuation, which
+        carries its source's standing from its creation) leaves the clean list at once
         and is recorded as ``foreign_import``, in memory. The write (one journal line) runs
         off the event loop; until it lands the session's continuation or import row is
         the same evidence (``session_unclean_evidence``), and turn start never admits it."""
@@ -1711,8 +1712,10 @@ class Orchestrator:
     def session_unclean_evidence(self, sid: str) -> bool:
         """H443 — for a conversation the review's ledger never saw (older than it, or its
         record dropped): whether the hub's own records say it is not the owner's word — an
-        import or continuation, a foreign history, or a channel conversation. Legacy owner
-        HUD and voice conversations have none. Blocking (SQLite)."""
+        import, a foreign history, or a channel conversation. Legacy owner HUD and voice
+        conversations have none, and neither does a continuation by itself: it carries its
+        source's standing in the ledger from the moment it is made
+        (``inherit_conversation_standing`` in ``create_continuation``). Blocking (SQLite)."""
         import sqlite3
 
         try:
@@ -1729,7 +1732,7 @@ class Orchestrator:
             conn = getattr(manager, "_conn", None)
             if conn is not None:
                 with manager._lock:
-                    for table in ("session_continuations", "session_imports"):
+                    for table in ("session_imports",):
                         try:
                             row = conn.execute(f"SELECT 1 FROM {table} WHERE session_id=?",  # nosec B608 - fixed table names
                                                (sid,)).fetchone()

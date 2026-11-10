@@ -406,11 +406,11 @@ def _load_locked(orch, sid):
         instance, legacy = history_identity(orch.checkpoints._conn, sid)
         head = rewind_head(orch.checkpoints._conn, sid)
         origin = status_locked(orch.checkpoints._conn, sid)
-        # H443: whether this history came from elsewhere (a continuation's seed, an import),
-        # as opposed to the conversation's own snapshot reloaded after a restart.
-        lineage = any(orch.checkpoints._conn.execute(
-            f"SELECT 1 FROM {table} WHERE session_id=?", (sid,)).fetchone() is not None  # nosec B608 - fixed table names
-            for table in ("session_continuations", "session_imports"))
+        # H443: whether this history came from elsewhere (an import), as opposed to the
+        # conversation's own snapshot reloaded after a restart or a continuation (which
+        # carries its source's standing from create_continuation on).
+        lineage = orch.checkpoints._conn.execute(
+            "SELECT 1 FROM session_imports WHERE session_id=?", (sid,)).fetchone() is not None
     if head is not None and head[0] != instance:
         raise ContinuationRefused("history_identity_changed")
     if sid in conversation.sessions:
@@ -542,6 +542,8 @@ async def create_continuation(orch, source, request):
     store = ContinuationStore(orch.checkpoints)
     replay = store.replay(source, request)
     if replay:
+        # H443: idempotent; a hub that stopped before the first call is caught up here.
+        await _inherit_standing(orch, source, replay)
         return replay
     async with orch.turn_lease(source) as acquired:
         if not acquired:
@@ -554,9 +556,20 @@ async def create_continuation(orch, source, request):
                 turns = _load_locked(orch, source)
                 # No await from captured history through the one SQLite activation
                 # commit. Cancellation/response loss after commit resolves by request ID.
-                return store.create(source, request, turns, clock)
+                created = store.create(source, request, turns, clock)
             except ForeignHistoryRefused as exc:
                 raise ContinuationRefused(exc.reason, exc.status) from exc
+    await _inherit_standing(orch, source, created)
+    return created
+
+
+async def _inherit_standing(orch, source, created):
+    """H443: the continuation stands as its source does (a known-unclean source's reason
+    is recorded for it) before its seed is ever loaded or searchable."""
+    inherit = getattr(orch, "inherit_conversation_standing", None)
+    child = created.get("session_id") if isinstance(created, dict) else None
+    if callable(inherit) and child:
+        await inherit(source, child)
 
 
 CONTINUATION_REFUSED_REPLY = (
