@@ -654,6 +654,7 @@
   "POST /api/skills/marketplace/review": "admin",
   "POST /api/skills/marketplace/uninstall": "admin",
   "POST /api/skills/marketplace/{name}/rollback": "admin",
+  "POST /api/skills/pin": "admin",
   "POST /api/skills/review/bulk": "admin",
   "POST /api/skills/switch": "admin",
   "POST /api/skills/{name}/approve": "admin",

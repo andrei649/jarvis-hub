@@ -242,7 +242,7 @@ def skill_item(name: str, usage: dict | None = None, *, description: str = "", f
         "category": "skill",
         "key": name,
         "value": description or "",
-        "origin": str(rec.get("origin") or "bundled"),
+        "origin": str(rec.get("origin") or "unknown"),
         "use_count": uses,
         "pinned": bool(rec.get("pinned")),
         "state": str(rec.get("state") or "active"),

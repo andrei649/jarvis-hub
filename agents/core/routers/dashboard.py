@@ -811,11 +811,13 @@ async def _delete_skill(orch, entry_id: str, name: str):
     if found is None:
         return _no_learned_skill(name)
     skill, rec = found
-    if await asyncio.to_thread(lambda: (Path(skill.path) / "PENDING_REVIEW").exists()):
-        return await _discard_pending_skill(orch, entry_id, name)
+    # H349: the pin is checked first, so a pinned skill still awaiting review is not
+    # discarded here either; the owner unpins it, or rejects it in the review itself.
     if rec.get("pinned"):
         return JSONResponse({"error": f"{name!r} is pinned: unpin it first", "reason": "skill_pinned"},
                             status_code=409)
+    if await asyncio.to_thread(lambda: (Path(skill.path) / "PENDING_REVIEW").exists()):
+        return await _discard_pending_skill(orch, entry_id, name)
     from agents.core.routers.skills import _batch_archive
     from agents.core.skills.batch import run_batch
     from agents.core.skills.usage import STATE_ARCHIVED

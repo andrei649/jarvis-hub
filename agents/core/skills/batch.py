@@ -425,6 +425,19 @@ def _check_standing(target: _Target, loader: Any, index: int, op: dict) -> None:
     target.standing = {k: standing.get(k) for k in ("signed", "approved")}
 
 
+def _refuse_pinned(target: _Target, loader: Any, index: int, op: dict) -> None:
+    """H349 — a skill the owner pinned is not deleted by a batch, the agent's or the
+    owner's own (Hermes: the pin guards tool-driven deletion; patches still go through).
+    Read from the usage sidecar under its lock, at apply time as well as at the check."""
+    usage = getattr(loader, "_usage", None)
+    pinned = getattr(usage, "is_pinned", None)
+    name = getattr(target.skill, "name", None) or target.name
+    if callable(pinned) and pinned(name):
+        raise BatchError("skill_batch_pinned", f"{target.name!r} is pinned, so it is not deleted: the owner "
+                         "has to unpin it first (nerva skills unpin, or the Skill Switches panel)",
+                         index=index, op=op, hints=["patch it instead, or ask the owner to unpin it"])
+
+
 def _stage(target: _Target, batch_id: str) -> None:
     parent = target.live.parent
     target.stage_root = parent / f".skill-batch-{batch_id}"
@@ -1110,6 +1123,8 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
                     if op["action"] == "create":
                         _generation_allowed(index, op, actor)
                     target = _resolve(op["name"], index, op, loader, targets, root, may_see)
+                    if op["action"] == "delete" and target.existing:
+                        _refuse_pinned(target, loader, index, op)
                     if target.stage_root is None:
                         _stage(target, batch_id)
                         if expect is not None and target.existing and expect.get(target.name) != target.before_fp:

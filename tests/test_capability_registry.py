@@ -210,7 +210,8 @@ def test_skill_records_carry_usage_counters_without_writing(tmp_path):
     usage = recs["skill:loaded_skill"].detail["usage"]
     assert (usage["use_count"], usage["view_count"], usage["patch_count"]) == (2, 0, 1)
     assert usage["last_used_at"] == orch.skill_usage.get("loaded_skill")["last_used_at"]
-    assert usage["last_patched_at"] and usage["origin"] == "bundled"
+    # H349: a stand-in loader records no origin, and none is claimed.
+    assert usage["last_patched_at"] and usage["origin"] == "unknown"
     stub = recs["skill:stub_skill"].detail["usage"]
     assert stub["use_count"] == 0 and stub["last_used_at"] is None
     # The registry is read-only observability: deriving a record creates no sidecar row.

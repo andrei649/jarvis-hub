@@ -360,6 +360,59 @@ def _is_external_for_loader(
     )
 
 
+_ORIGIN_RECORD_MAX = 64 * 1024
+
+
+def _small_file(path: Path) -> Optional[bytes]:
+    """The bytes of a regular, non-link file no larger than an install record, or None."""
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > _ORIGIN_RECORD_MAX:
+            return None
+        return path.read_bytes()
+    except OSError:
+        return None
+
+
+def origin_evidence(skill: "Skill") -> tuple[Optional[str], str]:
+    """H349 — where ``skill`` came from, as its own folder shows it: ``(origin, source)``.
+
+    ``("bundled", "")``: it ships with Nerva (its bytes are the shipped ones, or it lives
+    where a shipped skill lives and drifted). ``("import", source)``: its folder holds the
+    record an install writes — the marketplace's ``EXTERNAL_SOURCE`` marker, or the
+    ``manifest.json`` an import writes (``imported``, or a known ``source`` /
+    ``source_install``) — with the source that record names. ``(None, "")``: no install
+    record; whether the agent made it is the usage sidecar's creation-time marker, never
+    read off the folder. The record is the one every install path already writes, so an
+    install made while the hub was down is classified the same at the next start."""
+    path = Path(skill.path)
+    if not getattr(skill, "external", True):
+        return "bundled", ""
+    marker = _small_file(path / EXTERNAL_SOURCE_MARKER)
+    if marker is not None:
+        source = ""
+        for line in marker.decode("utf-8", "replace").splitlines():
+            key, _, value = line.partition("=")
+            if key.strip() == "source":
+                source = value.strip()
+                break
+        return "import", source
+    sidecar = _small_file(path / "manifest.json")
+    if sidecar is not None:
+        try:
+            data = json.loads(sidecar.decode("utf-8"))
+        except (UnicodeError, json.JSONDecodeError):
+            data = None
+        if isinstance(data, dict):
+            install, source = data.get("source_install"), data.get("source")
+            if isinstance(install, str) and install.strip():
+                return "import", install
+            if data.get("imported") is True or source in ("hermes", "openclaw"):
+                return "import", source if isinstance(source, str) else ""
+    if _shipped_location(path):
+        return "bundled", ""
+    return None, ""
+
+
 def _external_skill_may_import(
     path: Path,
     signature_reason: str,
@@ -684,6 +737,35 @@ class SkillLoader:
 
         for skill in self.skills.values():
             skill.usage_hook = _hook
+        self.sync_origins()
+
+    def sync_origins(self, names=None) -> None:
+        """H349 — record in the usage sidecar where each registered skill came from
+        (:func:`origin_evidence`): every one, or just ``names``. Called when the sidecar is
+        attached and whenever a skill takes a registry slot, which every install path
+        crosses (import, marketplace, generation, a batch, a start after an offline
+        install), so no path has to remember to record it. The sidecar writes only rows
+        that changed. Best-effort like the counters: a sidecar that cannot be written
+        leaves loading alone, and the row is tried again at the next registration."""
+        store = self._usage
+        reconcile = getattr(store, "reconcile_origins", None)
+        if not callable(reconcile):
+            return
+        observed = {}
+        for name in (list(self.skills) if names is None else names):
+            skill = self.skills.get(name)
+            if skill is None:
+                continue
+            try:
+                observed[name] = origin_evidence(skill)
+            except Exception:
+                logger.warning("the origin of skill %r could not be read", name, exc_info=True)
+        if not observed:
+            return
+        try:
+            reconcile(observed)
+        except Exception:
+            logger.warning("skill origins could not be recorded in the usage sidecar", exc_info=True)
 
     def approval_times(self, paths) -> dict[str, str]:
         """H046 — when the owner last approved each skill folder in ``paths`` (ISO), keyed by
@@ -783,6 +865,8 @@ class SkillLoader:
             (logger.warning if same_tree else logger.info)(
                 "Skill name '%s' from %s replaces the one from %s", name, skill.path, previous.path)
         self.skills[name] = skill
+        # H349: the registry slot is the one place every installed skill passes.
+        self.sync_origins([name])
 
     def _load_skill(self, path: Path, *, discovery_root: Path | None = None):
         # H32.5: acquired packages are signed for integrity but are NEVER trusted

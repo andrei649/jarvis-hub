@@ -15,10 +15,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from fastapi import Path as PathParam
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from agents.core.routers._deps import user_guard, admin_guard
-from agents.core.routers._component import component_unavailable
+from agents.core.routers._component import component_unavailable, require_component
 
 from agents.core.web_helpers import error_json, logger
 from agents.core import app_state
@@ -214,6 +214,76 @@ async def switch_skill(body: SkillSwitchBody):
             "unchanged": outcome["unchanged"], "essential": outcome["essential"],
             "off_everywhere": outcome["off_everywhere"], "unstorable": outcome["unstorable"],
             "switches": outcome["state"], "audited": audited, **extra}
+
+
+class SkillPinBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    skill: str = Field(..., min_length=1, max_length=128)
+    pinned: StrictBool
+
+
+@router.post("/api/skills/pin", dependencies=[Depends(admin_guard)])
+async def pin_skill(body: SkillPinBody):
+    """H349 — pin or unpin one installed skill (Hermes: ``hermes curator pin|unpin``).
+
+    A pinned skill is left alone by the curator's lifecycle pass (never marked stale or
+    archived), and a skill batch and the journey's forget refuse to delete it until it is
+    unpinned; it can still be patched. Uninstalling it or rejecting it from review is the
+    owner's own act and is not blocked. A skill that ships with Nerva is not pinned
+    (409 ``not_pinnable``): nothing ages it out or deletes it.
+
+    An admin route like the skill switch, applied at once like switching off (a pin only
+    narrows what automation may do), and written to the intent log when it changed
+    something. The one write is ``SkillUsageStore.pin``, which makes the same checks under
+    the sidecar's lock, so the answer is what the sidecar file now holds."""
+    import asyncio
+
+    from agents.core.skills import switches
+    from agents.core.skills.usage import PinRefused, usage_summary
+
+    orch, usage, unavailable = require_component(
+        "skill_usage", "the skill usage sidecar is not available, so nothing was pinned")
+    if unavailable is not None:
+        return unavailable
+    if getattr(orch, "skills", None) is None or not callable(getattr(usage, "pin", None)):
+        return component_unavailable("the skill usage sidecar is not available, so nothing was pinned")
+    found = switches.find(orch.skills.skills.values(), body.skill)
+    # An unpin also reaches a pinned skill that is no longer loaded, by its exact name.
+    name = found.name if found is not None else body.skill
+
+    def _write():
+        if found is not None:
+            sync = getattr(orch.skills, "sync_origins", None)
+            if callable(sync):
+                sync([name])                      # the row and its origin, as the folder is now
+        elif body.pinned:
+            raise PinRefused("not_found", f"no installed skill named {body.skill!r}")
+        return usage.pin(name, body.pinned)
+
+    try:
+        outcome = await asyncio.to_thread(_write)
+    except PinRefused as exc:
+        return JSONResponse({"error": str(exc), "reason": exc.reason},
+                            status_code=404 if exc.reason == "not_found" else 409)
+    except Exception:
+        logger.warning("skill pin could not be saved", exc_info=True)
+        return JSONResponse({"error": "the pin could not be saved; nothing changed", "reason": "write_failed"},
+                            status_code=503)
+    audited = False
+    if outcome["changed"]:
+        audit = getattr(orch, "intent_log", None)
+        if callable(getattr(audit, "record", None)):
+            try:
+                audit.record(actor="owner", action="skill.pin" if body.pinned else "skill.unpin",
+                             why=f"the owner {'pinned' if body.pinned else 'unpinned'} {name}",
+                             cause="skills.pin",
+                             metadata={"skill": name, "pinned": body.pinned, "origin": outcome.get("origin")})
+                audited = True
+            except Exception:
+                logger.warning("optional skill pin intent projection failed", exc_info=True)
+    return {"ok": True, "skill": name, "pinned": bool(outcome.get("pinned")), "changed": outcome["changed"],
+            "audited": audited, "usage": usage_summary(usage, name)}
 
 
 # ── H026: named skill bundles ────────────────────────────────────────────────────

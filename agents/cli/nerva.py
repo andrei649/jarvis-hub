@@ -416,6 +416,14 @@ def build_parser() -> argparse.ArgumentParser:
         switch.add_argument("--bundle", help="every installed skill of this bundle instead of one skill")
         switch.add_argument("--channel", help="only on this channel (telegram, voice, web, ...)")
         switch.add_argument("--json", action="store_true")
+    # H349 — the owner's pin: the curator leaves a pinned skill alone and a batch or the
+    # journey's forget refuses to delete it.
+    for verb, text in (("pin", "pin a skill: never aged out by the curator, never deleted by a skill "
+                               "batch or the journey's forget (admin)"),
+                       ("unpin", "remove a skill's pin (admin)")):
+        pin = skills_verbs.add_parser(verb, help=text)
+        pin.add_argument("name", help="the skill's name or folder, as `nerva skills list` shows it")
+        pin.add_argument("--json", action="store_true")
     # H026 — named groups of skills, switched off/on as one unit with --bundle.
     bundles = skills_verbs.add_parser(
         "bundles", help="named groups of skills, switched as one unit (`nerva skills off|on --bundle`) "
@@ -2994,9 +3002,13 @@ def cmd_skills(ns: argparse.Namespace, ctx: Context) -> int:
     """H350 — ``nerva skills lint``: the hard check every write path runs, plus advice.
     H329 — ``nerva skills list | off | on | config``: running-hub skill switches.
     H354 — ``nerva skills verify``: run one skill's reality-harness case on the hub.
-    H026 — ``nerva skills bundles list|show|create|delete|reload``: named skill bundles."""
+    H026 — ``nerva skills bundles list|show|create|delete|reload``: named skill bundles.
+    H349 — ``nerva skills pin | unpin``: the owner's pin, and where each skill came from
+    in ``nerva skills list``."""
     if ns.action in ("list", "off", "on", "config"):
         return _skill_switches(ns, ctx)
+    if ns.action in ("pin", "unpin"):
+        return _skill_pin(ns, ctx)
     if ns.action == "verify":
         return _skill_verify(ns, ctx)
     if ns.action == "bundles":
@@ -3137,6 +3149,49 @@ def _skill_usage_suffix(usage: Any) -> str:
     if patched:
         text += f" · patched {patched}×"
     return text
+
+
+def _skill_origin_suffix(usage: Any) -> str:
+    """H349 — `` · import (hermes) · pinned``: where the hub recorded the skill came from,
+    and the owner's pin. Nothing for an older hub, or for an origin it never recorded."""
+    if not isinstance(usage, Mapping):
+        return ""
+    origin = usage.get("origin")
+    text = ""
+    if isinstance(origin, str) and origin and origin != "unknown":
+        text = f" · {_plain(origin, 20)}"
+        source = usage.get("source")
+        if isinstance(source, str) and source:
+            text += f" ({_plain(source, 64)})"
+    if usage.get("pinned") is True:
+        text += " · pinned"
+    return text
+
+
+def _skill_pin(ns: argparse.Namespace, ctx: Context) -> int:
+    """H349 — ``nerva skills pin|unpin NAME``: the hub's ``POST /api/skills/pin``. A
+    refusal (no such skill, a skill that ships with Nerva, a sidecar that could not be
+    written) is the hub's error and a failed exit, never a printed success."""
+    wanted = ns.action == "pin"
+    reply = ctx.client().post("/api/skills/pin", {"skill": ns.name, "pinned": wanted})
+    if not isinstance(reply, Mapping) or reply.get("ok") is not True or reply.get("pinned") is not wanted:
+        ctx.err.write("unexpected reply from the hub: the pin was not confirmed\n")
+        return EXIT_FAILED
+    if ns.json:
+        ctx.dump(reply)
+        return EXIT_OK
+    name = _plain(reply.get("skill") or ns.name, 130)
+    if not reply.get("changed"):
+        ctx.say(f"{name}: already {'pinned' if wanted else 'not pinned'}")
+        return EXIT_OK
+    if wanted:
+        ctx.say(f"pinned {name}: the curator leaves it alone, and a skill batch or the journey's forget "
+                "will not delete it")
+    else:
+        ctx.say(f"unpinned {name}")
+    if not reply.get("audited"):
+        ctx.say("note: the intent log could not record this change")
+    return EXIT_OK
 
 
 def _skill_verify(ns: argparse.Namespace, ctx: Context) -> int:
@@ -3325,7 +3380,7 @@ def _skill_switches(ns: argparse.Namespace, ctx: Context) -> int:
             where = ("off everywhere" if row.get("disabled") else
                      "off on " + ", ".join(row["disabled_channels"]) if row.get("disabled_channels") else "on")
             ctx.say(f"{name}: {where}{' (essential)' if row.get('essential') else ''}"
-                    f"{_skill_usage_suffix(row.get('usage'))}")
+                    f"{_skill_usage_suffix(row.get('usage'))}{_skill_origin_suffix(row.get('usage'))}")
         return EXIT_OK
     bundle = getattr(ns, "bundle", None)
     if sum(1 for target in (ns.name, ns.category, bundle) if target) != 1:
