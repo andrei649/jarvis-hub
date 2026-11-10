@@ -77,6 +77,468 @@
       "vendored_sha256": "7c0ff64eb35de93a9f4c11e35fc1833f7432cabb155dcc11b38dec3a06b37d0e"
     },
     {
+      "path": "optional-mcps/airtable/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "96c7d530059a1b04c9a6cb826da1ee70d4d318bae41993db78727fda5d2552f7",
+      "vendored_sha256": "96c7d530059a1b04c9a6cb826da1ee70d4d318bae41993db78727fda5d2552f7"
+    },
+    {
+      "path": "optional-mcps/algolia/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "b88fc295e7061d98d754e9a0ec65938ca5f2261438a5393905803d1b55f85c89",
+      "vendored_sha256": "b88fc295e7061d98d754e9a0ec65938ca5f2261438a5393905803d1b55f85c89"
+    },
+    {
+      "path": "optional-mcps/alltrails/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "060aeab675c55cf3f55901c616a58a516bf3f51ea504f88af3f4a3f8b96d43c5",
+      "vendored_sha256": "060aeab675c55cf3f55901c616a58a516bf3f51ea504f88af3f4a3f8b96d43c5"
+    },
+    {
+      "path": "optional-mcps/amplitude/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "cfb84ab49136c5302148f12843c5544807b3bb440fece0c9e6656356c2e6fedc",
+      "vendored_sha256": "cfb84ab49136c5302148f12843c5544807b3bb440fece0c9e6656356c2e6fedc"
+    },
+    {
+      "path": "optional-mcps/asana/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "311bb3d523a5078f4718a632d99ce276a262df5989b71cc45fa63d7e42be3099",
+      "vendored_sha256": "311bb3d523a5078f4718a632d99ce276a262df5989b71cc45fa63d7e42be3099"
+    },
+    {
+      "path": "optional-mcps/atlassian/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "bdbb7bd9da9aaa832cd620c25445c74403461a8ac8a92ad866003e9b78e54886",
+      "vendored_sha256": "bdbb7bd9da9aaa832cd620c25445c74403461a8ac8a92ad866003e9b78e54886"
+    },
+    {
+      "path": "optional-mcps/attio/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "67a32aab943530e24053f68c228b9bb421e6b454e0e74cebe5b4b12a875b7479",
+      "vendored_sha256": "67a32aab943530e24053f68c228b9bb421e6b454e0e74cebe5b4b12a875b7479"
+    },
+    {
+      "path": "optional-mcps/aws-knowledge/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "ced8013639a85db3b4d6173885ee50fd6480f2cf51bf324fb18d7850c0979a5f",
+      "vendored_sha256": "ced8013639a85db3b4d6173885ee50fd6480f2cf51bf324fb18d7850c0979a5f"
+    },
+    {
+      "path": "optional-mcps/betterstack/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "df7827e3f71c7ee2316561f08231d74f58006b7a0ebcc27a673a8ffcf0b3cdad",
+      "vendored_sha256": "df7827e3f71c7ee2316561f08231d74f58006b7a0ebcc27a673a8ffcf0b3cdad"
+    },
+    {
+      "path": "optional-mcps/buildkite/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "7aaab7bf03dda7900f7983c2fc2406acab362f999c36646bed0546468ccda3ac",
+      "vendored_sha256": "7aaab7bf03dda7900f7983c2fc2406acab362f999c36646bed0546468ccda3ac"
+    },
+    {
+      "path": "optional-mcps/calendly/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "53cd43c29fb33fe84f406f1c63be08525fb612bdc2051b153d5120a79ceaf43c",
+      "vendored_sha256": "53cd43c29fb33fe84f406f1c63be08525fb612bdc2051b153d5120a79ceaf43c"
+    },
+    {
+      "path": "optional-mcps/canva/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "0c8ec1f0d9a1357329c84e0819191a6d258c31829f21381f91a1ece1b0f03b74",
+      "vendored_sha256": "0c8ec1f0d9a1357329c84e0819191a6d258c31829f21381f91a1ece1b0f03b74"
+    },
+    {
+      "path": "optional-mcps/circleci/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "3631757d6e1760ad0e53988f21372a9b50aafb0b917fc6b070120108c2057caa",
+      "vendored_sha256": "3631757d6e1760ad0e53988f21372a9b50aafb0b917fc6b070120108c2057caa"
+    },
+    {
+      "path": "optional-mcps/clickup/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "e041f3d2d7b5195b4e9165e6602be1e35f7303cf9fd9c0b8dced700d45ed134f",
+      "vendored_sha256": "e041f3d2d7b5195b4e9165e6602be1e35f7303cf9fd9c0b8dced700d45ed134f"
+    },
+    {
+      "path": "optional-mcps/close/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "9db62d61710f981727b9c8ba3378974d0fd77440bf7600e15bfaf3313cf88993",
+      "vendored_sha256": "9db62d61710f981727b9c8ba3378974d0fd77440bf7600e15bfaf3313cf88993"
+    },
+    {
+      "path": "optional-mcps/cloudflare/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "c4b018f97a599d89244b185df7c41189c64fb0329f0818f110dbffb6decf2481",
+      "vendored_sha256": "c4b018f97a599d89244b185df7c41189c64fb0329f0818f110dbffb6decf2481"
+    },
+    {
+      "path": "optional-mcps/cloudinary/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "133ffa046643a3c56eba1379e6e089d04d9290a9d0971eeed827691ea5378b8d",
+      "vendored_sha256": "133ffa046643a3c56eba1379e6e089d04d9290a9d0971eeed827691ea5378b8d"
+    },
+    {
+      "path": "optional-mcps/comfy-cloud/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "cf936ff786357d9056a314554be26668dc39a42b484679460405519b2d3d6820",
+      "vendored_sha256": "cf936ff786357d9056a314554be26668dc39a42b484679460405519b2d3d6820"
+    },
+    {
+      "path": "optional-mcps/context7/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "b40a67ea1679ff5d932cfec2568c453baae4343183acaf2b80ffa4685b26888f",
+      "vendored_sha256": "b40a67ea1679ff5d932cfec2568c453baae4343183acaf2b80ffa4685b26888f"
+    },
+    {
+      "path": "optional-mcps/craft/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "fdac7cd0fa976a537a558ef5e0c1f218c80097910f644e51d2ee90c1b8ada599",
+      "vendored_sha256": "fdac7cd0fa976a537a558ef5e0c1f218c80097910f644e51d2ee90c1b8ada599"
+    },
+    {
+      "path": "optional-mcps/datadog/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "f2e23de1cb0c5ddf84f6b61efe9ac86cd1e42d46f1b9ecda135ce997a92c0c27",
+      "vendored_sha256": "f2e23de1cb0c5ddf84f6b61efe9ac86cd1e42d46f1b9ecda135ce997a92c0c27"
+    },
+    {
+      "path": "optional-mcps/deepwiki/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "b574f35969398d6920a58c0878a7914c01479c8a7204150f9382f040c1a91262",
+      "vendored_sha256": "b574f35969398d6920a58c0878a7914c01479c8a7204150f9382f040c1a91262"
+    },
+    {
+      "path": "optional-mcps/dropbox/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "c5b8299c02961997b30ad48e131833c0e0947c20a51a0ef87e95a536e0bd5013",
+      "vendored_sha256": "c5b8299c02961997b30ad48e131833c0e0947c20a51a0ef87e95a536e0bd5013"
+    },
+    {
+      "path": "optional-mcps/figma/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "54b9e044963812be85d44a3d43497a8e00ea1f38e4082030d26f55b3a492d218",
+      "vendored_sha256": "54b9e044963812be85d44a3d43497a8e00ea1f38e4082030d26f55b3a492d218"
+    },
+    {
+      "path": "optional-mcps/fireflies/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "bf9894e6acf52bc21bda0ea0b5e6007e795b7ecd1cbe4598fde1503587d0df7b",
+      "vendored_sha256": "bf9894e6acf52bc21bda0ea0b5e6007e795b7ecd1cbe4598fde1503587d0df7b"
+    },
+    {
+      "path": "optional-mcps/gamma/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "59a4483de3530da7bdc4072eea4c2f2d5f8e9e09606aaed2b105afa36e2d8bc3",
+      "vendored_sha256": "59a4483de3530da7bdc4072eea4c2f2d5f8e9e09606aaed2b105afa36e2d8bc3"
+    },
+    {
+      "path": "optional-mcps/gitlab/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "2604adae2f61674b64e412e52698bee5ba8b1f391c9ab1afd66ba2922def7bbc",
+      "vendored_sha256": "2604adae2f61674b64e412e52698bee5ba8b1f391c9ab1afd66ba2922def7bbc"
+    },
+    {
+      "path": "optional-mcps/globalping/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "012fff2c05e4243346bff2a166808e2553f5ee79992165eccd7978d5e8d650c3",
+      "vendored_sha256": "012fff2c05e4243346bff2a166808e2553f5ee79992165eccd7978d5e8d650c3"
+    },
+    {
+      "path": "optional-mcps/grafana/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "8658ac97af107d76994330f298d0ae2d87b35caa9c16837100aa0de6f6a7710c",
+      "vendored_sha256": "8658ac97af107d76994330f298d0ae2d87b35caa9c16837100aa0de6f6a7710c"
+    },
+    {
+      "path": "optional-mcps/hugging_face/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "21477f7cdaf5ddc1e499980060130de353d9513acd48f559be1ab7d0281e3174",
+      "vendored_sha256": "21477f7cdaf5ddc1e499980060130de353d9513acd48f559be1ab7d0281e3174"
+    },
+    {
+      "path": "optional-mcps/indeed/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "411278cb8b85c8635c44cc422f0a1d06f54b2a24d05c6462d73612be6f29ac64",
+      "vendored_sha256": "411278cb8b85c8635c44cc422f0a1d06f54b2a24d05c6462d73612be6f29ac64"
+    },
+    {
+      "path": "optional-mcps/intercom/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "b6181fffba6dded39846b9ce43ec9950f77a9e8af6d38f46f1bfd9111694dfa5",
+      "vendored_sha256": "b6181fffba6dded39846b9ce43ec9950f77a9e8af6d38f46f1bfd9111694dfa5"
+    },
+    {
+      "path": "optional-mcps/kiwi/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "ca50ca4a0ed0b9788c48e3f5fa1149bdbf77c4d981faa1b676e809f8ad80dc6b",
+      "vendored_sha256": "ca50ca4a0ed0b9788c48e3f5fa1149bdbf77c4d981faa1b676e809f8ad80dc6b"
+    },
+    {
+      "path": "optional-mcps/klaviyo/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "3f20bc8d27e132afa6c1f7a78247202d43e8a40818fe55929692eb2ccb7f4e4e",
+      "vendored_sha256": "3f20bc8d27e132afa6c1f7a78247202d43e8a40818fe55929692eb2ccb7f4e4e"
+    },
+    {
+      "path": "optional-mcps/linear/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "88d93ae81ff175952802a6cca2b72c3f1be5cd113623dae6b53a67823e44770e",
+      "vendored_sha256": "88d93ae81ff175952802a6cca2b72c3f1be5cd113623dae6b53a67823e44770e"
+    },
+    {
+      "path": "optional-mcps/microsoft-learn/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "846a5847a35e8347fb263aba930056b0fff5b08c1367efc26956a7b119e20a9c",
+      "vendored_sha256": "846a5847a35e8347fb263aba930056b0fff5b08c1367efc26956a7b119e20a9c"
+    },
+    {
+      "path": "optional-mcps/miro/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "8285b6dc0bdd45312ccc0e06b225a7893ccab0e5db78f9252ef97655e1b44b1b",
+      "vendored_sha256": "8285b6dc0bdd45312ccc0e06b225a7893ccab0e5db78f9252ef97655e1b44b1b"
+    },
+    {
+      "path": "optional-mcps/mixpanel/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "a879f069daa1b0d47a70a2b0b709d91a17c0e1df5db9afa195b7a5577596fd58",
+      "vendored_sha256": "a879f069daa1b0d47a70a2b0b709d91a17c0e1df5db9afa195b7a5577596fd58"
+    },
+    {
+      "path": "optional-mcps/monday/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "43548c81431bf48716ce8ffefc4c9b4a4956ab7c7f4dfaaa7a80fd7301ff7069",
+      "vendored_sha256": "43548c81431bf48716ce8ffefc4c9b4a4956ab7c7f4dfaaa7a80fd7301ff7069"
+    },
+    {
+      "path": "optional-mcps/motherduck/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "f2ad1c31f0826952310f5f2ec5105c8e8dc67db5dd8b108e203dca8d320c678f",
+      "vendored_sha256": "f2ad1c31f0826952310f5f2ec5105c8e8dc67db5dd8b108e203dca8d320c678f"
+    },
+    {
+      "path": "optional-mcps/n8n-official/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "1647da81bf326925eacff9726662ba240cc6b336d0dd2c08225ae85cc8e93926",
+      "vendored_sha256": "1647da81bf326925eacff9726662ba240cc6b336d0dd2c08225ae85cc8e93926"
+    },
+    {
+      "path": "optional-mcps/neon/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "90c49de88394966083bb7db5374857bfdf0fdd4cc40451bb106a3eee22092340",
+      "vendored_sha256": "90c49de88394966083bb7db5374857bfdf0fdd4cc40451bb106a3eee22092340"
+    },
+    {
+      "path": "optional-mcps/netlify/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "b4d59996c7c7752d90d3aed679791b1b4c1b0a8c5c56dc7e56bad43a8b8e360c",
+      "vendored_sha256": "b4d59996c7c7752d90d3aed679791b1b4c1b0a8c5c56dc7e56bad43a8b8e360c"
+    },
+    {
+      "path": "optional-mcps/notion/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "f8b403fe7d4b28485776dac7ddc0bc05874b307bffbac0a33829ed46744b1518",
+      "vendored_sha256": "f8b403fe7d4b28485776dac7ddc0bc05874b307bffbac0a33829ed46744b1518"
+    },
+    {
+      "path": "optional-mcps/paypal/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "2c3fc4b70266d419bd0efb3bc469f2c1b28fa39b842d86dc9e2bea7da2617776",
+      "vendored_sha256": "2c3fc4b70266d419bd0efb3bc469f2c1b28fa39b842d86dc9e2bea7da2617776"
+    },
+    {
+      "path": "optional-mcps/plaid/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "0e486018db3b382b83e41404448ae78b6c3d06a8991c432869342fc32863a933",
+      "vendored_sha256": "0e486018db3b382b83e41404448ae78b6c3d06a8991c432869342fc32863a933"
+    },
+    {
+      "path": "optional-mcps/postman/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "a6f8c6825298cd8aecfb7294fa0ca4a99e6af04daf4380a3ffe0617e860c2dcd",
+      "vendored_sha256": "a6f8c6825298cd8aecfb7294fa0ca4a99e6af04daf4380a3ffe0617e860c2dcd"
+    },
+    {
+      "path": "optional-mcps/prisma-postgres/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "a814322cc7dd1bb2ca1ec3e9f2550a0d17b5439ccd3f4f846c62578cd1dfb8fe",
+      "vendored_sha256": "a814322cc7dd1bb2ca1ec3e9f2550a0d17b5439ccd3f4f846c62578cd1dfb8fe"
+    },
+    {
+      "path": "optional-mcps/railway/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "ecd5ad7082e410379af9f26647bf0f83776d51e39af644d288bd90a99c4ea81b",
+      "vendored_sha256": "ecd5ad7082e410379af9f26647bf0f83776d51e39af644d288bd90a99c4ea81b"
+    },
+    {
+      "path": "optional-mcps/rentahuman/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "7d792d3dbae1524daa9b10b4bd9bc1d27d0ca3cc4934fdf86bb872b1e064e2d7",
+      "vendored_sha256": "7d792d3dbae1524daa9b10b4bd9bc1d27d0ca3cc4934fdf86bb872b1e064e2d7"
+    },
+    {
+      "path": "optional-mcps/robinhood/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "499f7f301b7536f0bde469475a58a622425dcf3dbcb9ee5a6d9516303f1c6ca9",
+      "vendored_sha256": "499f7f301b7536f0bde469475a58a622425dcf3dbcb9ee5a6d9516303f1c6ca9"
+    },
+    {
+      "path": "optional-mcps/semgrep/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "c19927cb90caaf14667dd43acbcfafb17d7eb3ab61fed4d8b5c098ba55d4bc7e",
+      "vendored_sha256": "c19927cb90caaf14667dd43acbcfafb17d7eb3ab61fed4d8b5c098ba55d4bc7e"
+    },
+    {
+      "path": "optional-mcps/sentry/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "f8c20053a1472cfd3d5e98e0ffeae9ef43ca5b258ce555bc016624f13a8b3cf6",
+      "vendored_sha256": "f8c20053a1472cfd3d5e98e0ffeae9ef43ca5b258ce555bc016624f13a8b3cf6"
+    },
+    {
+      "path": "optional-mcps/square/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "fb1fe31af0d70d0925e4ba6067f18353f34872c386e418c7dcb7f392685321a7",
+      "vendored_sha256": "fb1fe31af0d70d0925e4ba6067f18353f34872c386e418c7dcb7f392685321a7"
+    },
+    {
+      "path": "optional-mcps/strava/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "5d8e159c5c697d1d62137d56714cf4b5c6df5d773d4bfa0cdc0acbb76b4103e1",
+      "vendored_sha256": "5d8e159c5c697d1d62137d56714cf4b5c6df5d773d4bfa0cdc0acbb76b4103e1"
+    },
+    {
+      "path": "optional-mcps/stripe/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "bc9a834e7798bf5888924dd407e10c5d182130fc7a1bbe5adee4528a8469749e",
+      "vendored_sha256": "bc9a834e7798bf5888924dd407e10c5d182130fc7a1bbe5adee4528a8469749e"
+    },
+    {
+      "path": "optional-mcps/supabase/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "1d0b0b72e8103dcea3bfe00f09dd24c8d7f3ad531991364a3ee23209947aa45a",
+      "vendored_sha256": "1d0b0b72e8103dcea3bfe00f09dd24c8d7f3ad531991364a3ee23209947aa45a"
+    },
+    {
+      "path": "optional-mcps/todoist/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "d72318031f1b71e4db9f645ee660dc5d287c91d585559f70357be78766bb8f0b",
+      "vendored_sha256": "d72318031f1b71e4db9f645ee660dc5d287c91d585559f70357be78766bb8f0b"
+    },
+    {
+      "path": "optional-mcps/trivago/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "030bb895dd76dc85d8439b409bbb4de2f58aa0dd5cddd29f903f647c45b1d8ec",
+      "vendored_sha256": "030bb895dd76dc85d8439b409bbb4de2f58aa0dd5cddd29f903f647c45b1d8ec"
+    },
+    {
+      "path": "optional-mcps/twelve-data/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "3a9139bab928c3b7a97c89a51f9cfa0dacc5dd1831c8a31fd511edd9a62cd545",
+      "vendored_sha256": "3a9139bab928c3b7a97c89a51f9cfa0dacc5dd1831c8a31fd511edd9a62cd545"
+    },
+    {
+      "path": "optional-mcps/twilio-docs/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "d7717038927774856abc8b26727595f5c7514aa49ea67521c7312a4fb30c27a3",
+      "vendored_sha256": "d7717038927774856abc8b26727595f5c7514aa49ea67521c7312a4fb30c27a3"
+    },
+    {
+      "path": "optional-mcps/unreal-engine/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "6b9ef80c777123cb461181ccf0a1742d1cb4f7e8b8965781daaf189f84806521",
+      "vendored_sha256": "6b9ef80c777123cb461181ccf0a1742d1cb4f7e8b8965781daaf189f84806521"
+    },
+    {
+      "path": "optional-mcps/vercel/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "0f5909f807531517aa5699810225bc803b254dd647a5edaa0d50c2b9d6ed8356",
+      "vendored_sha256": "0f5909f807531517aa5699810225bc803b254dd647a5edaa0d50c2b9d6ed8356"
+    },
+    {
+      "path": "optional-mcps/webflow/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "20429bb8d25ef92bdf62a215ddd1abca84f6cb8e8f43394f3edf0300bfc771da",
+      "vendored_sha256": "20429bb8d25ef92bdf62a215ddd1abca84f6cb8e8f43394f3edf0300bfc771da"
+    },
+    {
+      "path": "optional-mcps/wolfram/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "69d103768ecac7dc398e83015ba3c916932b24f0d42569508bcf2e69971c73f5",
+      "vendored_sha256": "69d103768ecac7dc398e83015ba3c916932b24f0d42569508bcf2e69971c73f5"
+    },
+    {
+      "path": "optional-mcps/wordpress-com/manifest.yaml",
+      "rules_applied": [],
+      "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
+      "upstream_sha256": "60ed73b0fed8f108500432dd2a199dc0c7bd7449d299075b62b84249845db4c3",
+      "vendored_sha256": "60ed73b0fed8f108500432dd2a199dc0c7bd7449d299075b62b84249845db4c3"
+    },
+    {
       "path": "optional-skills/autonomous-ai-agents/agent-merge-conflict-arbiter/SKILL.md",
       "rules_applied": [],
       "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",

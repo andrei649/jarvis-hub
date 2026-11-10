@@ -82,6 +82,7 @@ from agents.core.mcp.http_transport import (
     TRANSPORT_STDIO,
     TRANSPORT_STREAMABLE_HTTP,
     MCPTransportError,
+    MCPUnauthorized,
     StreamableHttpTransport,
     http_client_enabled,
     normalize_transport,
@@ -379,7 +380,8 @@ def _is_server_request(msg: dict) -> bool:
 def _permanent_refusal(reason: str | None) -> bool:
     """A connect refusal no retry can fix: the configuration itself is refused."""
     text = str(reason or "")
-    return text in {"unsafe_command", "missing_command"} or text.startswith(
+    return text in {"unsafe_command", "missing_command", "oauth_required", "secret_missing",
+                    "token_origin_mismatch"} or text.startswith(
         ("unsupported_transport", "transport_disabled"))
 
 
@@ -483,6 +485,11 @@ class MCPServer:
         tools_deny: list[str] | None = None,
         sampling: object = None,
         elicitation: object = None,
+        auth: str | None = None,
+        secret_env: list[str] | None = None,
+        secret_headers: dict[str, str] | None = None,
+        oauth: dict | None = None,
+        origin: dict | None = None,
     ):
         """
         ``transport`` is normalised (``"HTTP"`` → ``streamable-http``); an unknown
@@ -521,6 +528,15 @@ class MCPServer:
         self.cwd = cwd
         self.env = dict(env or {})
         self.headers = dict(headers or {})
+        #: G9 — how this server authenticates (``none`` / ``oauth`` / ``api_key``), the names
+        #: of its secrets in the encrypted store (``mcp.secret.<server>.<NAME>``: values are
+        #: read at spawn/connect, never kept in the config), header templates filled from
+        #: them (``Bearer ${NAME}``), OAuth client pins, and where it was installed from.
+        self.auth = str(auth or "none")
+        self.secret_env = [str(n) for n in (secret_env or []) if isinstance(n, str)]
+        self.secret_headers = {str(k): str(v) for k, v in dict(secret_headers or {}).items()}
+        self.oauth = dict(oauth or {})
+        self.origin = dict(origin or {})
         self.tools: list[MCPTool] = []
         #: H552 — list_resources / read_resource / list_prompts / get_prompt, offered only
         #: for the capabilities the server declared on ``initialize``.
@@ -685,8 +701,14 @@ class MCPServer:
             await self._teardown()
         self.tools = []
         self.utility_tools = []
+        from agents.core.mcp.oauth_client import connect_headers
+
+        headers, refusal = await connect_headers(self)
+        if refusal:
+            self.last_error = refusal
+            return False
         try:
-            self._http = self._http_factory(self.url, self.headers, name=self.name)
+            self._http = self._http_factory(self.url, headers, name=self.name)
             result = await self._http.initialize()
             if result:
                 # No server-to-client channel is read on this transport, so nothing is
@@ -697,6 +719,12 @@ class MCPServer:
         except MCPTransportError as exc:
             logger.warning("MCP HTTP connect refused (%s): %s", self.name, exc.reason)
             self.last_error = exc.reason
+            if isinstance(exc, MCPUnauthorized):
+                # G9: the server wants (another) sign-in. A held token is refreshed on the
+                # next connect; with none, the owner signs in from the MCP panel.
+                from agents.core.mcp.oauth_client import mark_rejected
+
+                mark_rejected(self.name)
             self._http = None
             return False
         if not (self.tools or self.utility_tools):
@@ -735,8 +763,14 @@ class MCPServer:
         hub's real environment from ``/proc/<ppid>/environ``. See the module
         docstring — this withholds, it does not contain.
         """
+        overrides = dict(self.env)
+        if self.secret_env:
+            # G9: the server's own secrets, read from the encrypted store at spawn time.
+            from agents.core.mcp.catalog import secret_env_values
+
+            overrides.update(secret_env_values(self.name, self.secret_env))
         if stdio_env_baseline_enabled():
-            env = stdio_env_baseline(None, self.env)
+            env = stdio_env_baseline(None, overrides)
             # The default drops variables, so it must not drop them silently: a
             # server that stops working because it relied on an inherited credential
             # otherwise reports a bare auth error with nothing pointing back here.
@@ -765,10 +799,10 @@ class MCPServer:
                         self.name, ", ".join(readable),
                     )
             return env
-        if not self.env:
+        if not overrides:
             return None
         merged = os.environ.copy()
-        merged.update({str(k): str(v) for k, v in self.env.items()})
+        merged.update({str(k): str(v) for k, v in overrides.items()})
         return merged
 
     def client_capabilities(self) -> dict:
@@ -975,9 +1009,15 @@ class MCPServer:
                 return {}
             try:
                 method = msg.get("method", "")
-                return await self._http.request(
-                    method, msg.get("params") or {},
-                    max_bytes=MAX_CONTENT_REPLY_BYTES if method in _CONTENT_METHODS else None)
+                cap = MAX_CONTENT_REPLY_BYTES if method in _CONTENT_METHODS else None
+                try:
+                    return await self._http.request(method, msg.get("params") or {}, max_bytes=cap)
+                except MCPUnauthorized as exc:
+                    # G9: the token expired mid-session. A 401 means the server did not act,
+                    # so the one retry with the refreshed token cannot run anything twice.
+                    if not await self._renew_bearer(exc.sent):
+                        raise
+                    return await self._http.request(method, msg.get("params") or {}, max_bytes=cap)
             except MCPTransportError as exc:
                 logger.warning("MCP HTTP call refused (%s): %s", self.name, exc.reason)
                 return {"error": {"code": -32000, "message": exc.reason}}
@@ -988,6 +1028,23 @@ class MCPServer:
             async with _content_gate():
                 return await self._send_stdio(msg, STDIO_LINE_LIMIT)
         return await self._send_stdio(msg, STDIO_CALL_LINE_LIMIT)
+
+    async def _renew_bearer(self, sent: str) -> bool:
+        """G9 — refresh this server's OAuth token after a 401 (one refresh per server at a
+        time, shared with every other caller) and put it on the live transport."""
+        from agents.core.mcp import oauth_client
+
+        if self._http is None or (self.auth != "oauth" and not oauth_client.has_tokens(self.name)):
+            return False
+        refused = sent[7:] if sent.startswith("Bearer ") else ""
+        token, _reason = await oauth_client.access_token(self.name, self.url, rejected=refused,
+                                                         pins=self.oauth)
+        if not token or self._http is None or token == refused:
+            return False
+        for key in [k for k in self._http.headers if k.lower() == "authorization"]:
+            self._http.headers.pop(key)
+        self._http.headers["Authorization"] = f"Bearer {token}"
+        return True
 
     async def _send_stdio(self, msg: dict, line_limit: int) -> dict:
         async with self._io_lock:
@@ -1461,6 +1518,13 @@ class MCPManager:
                 "tools_deny": srv.tools_deny,
                 "sampling": srv.sampling.to_config(),
                 "elicitation": srv.elicitation.to_config(),
+                # G9 — written only when set, so a config saved before stays byte-identical.
+                **({"auth": srv.auth} if srv.auth != "none" else {}),
+                **({"env": dict(srv.env)} if srv.env and srv.origin else {}),
+                **({"secret_env": list(srv.secret_env)} if srv.secret_env else {}),
+                **({"secret_headers": dict(srv.secret_headers)} if srv.secret_headers else {}),
+                **({"oauth": dict(srv.oauth)} if srv.oauth else {}),
+                **({"origin": dict(srv.origin)} if srv.origin else {}),
             }
             for srv in self.servers.values()
         ]
@@ -1507,5 +1571,32 @@ class MCPManager:
                 tools_deny=cfg.get("tools_deny"),
                 sampling=cfg.get("sampling"),
                 elicitation=cfg.get("elicitation"),
+                **_g9_fields(cfg),
             )
             self.servers[srv.name] = self._adopt(srv)
+
+
+def _g9_fields(cfg: dict) -> dict:
+    """G9 — the catalog/OAuth fields of a saved server, each kept only in its expected shape.
+    ``env`` is read back only for a server installed through the catalog (``origin``): its
+    values are the manifest's static, non-secret settings."""
+    out: dict = {}
+    auth = cfg.get("auth")
+    if auth in ("none", "oauth", "api_key"):
+        out["auth"] = auth
+    origin = cfg.get("origin")
+    if isinstance(origin, dict):
+        out["origin"] = {str(k): v for k, v in origin.items() if isinstance(v, (str, int, type(None)))}
+        env = cfg.get("env")
+        if isinstance(env, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
+            out["env"] = dict(env)
+    names = cfg.get("secret_env")
+    if isinstance(names, list):
+        out["secret_env"] = [n for n in names if isinstance(n, str)]
+    headers = cfg.get("secret_headers")
+    if isinstance(headers, dict):
+        out["secret_headers"] = {k: v for k, v in headers.items() if isinstance(k, str) and isinstance(v, str)}
+    oauth = cfg.get("oauth")
+    if isinstance(oauth, dict):
+        out["oauth"] = {k: v for k, v in oauth.items() if isinstance(k, str) and isinstance(v, (str, int))}
+    return out
