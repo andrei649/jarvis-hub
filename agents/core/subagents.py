@@ -162,15 +162,35 @@ def current_delegation() -> Optional[dict]:
     return dict(found) if found else None
 
 
+def card_safe(text: object) -> str:
+    """Text that came from a model (a delegated goal) made safe to sit beside the action an
+    approval card names: no control, format, separator, surrogate or private-use character
+    (ANSI escapes, bidi overrides, zero-width marks), no bracket that could fake the end of
+    the attribution, whitespace collapsed (second H400 review, B-1)."""
+    import unicodedata
+
+    kept = []
+    for char in str(text or ""):
+        if unicodedata.category(char) in {"Cc", "Cf", "Zl", "Zp", "Cs", "Co"}:
+            kept.append(" ")
+        elif char in "[]":
+            kept.append("(" if char == "[" else ")")
+        else:
+            kept.append(char)
+    return " ".join("".join(kept).split())
+
+
 def delegation_label(delegation: Optional[dict]) -> str:
-    """One bounded line for an approval card: who asked, on whose behalf, for what."""
+    """One bounded line for an approval card: who asked, on whose behalf, for what. Every
+    part is passed through :func:`card_safe`; the card puts it AFTER the action's own
+    title, so model-written text can never stand where the action is named."""
     if not delegation:
         return ""
-    goal = " ".join(str(delegation.get("goal") or "").split())
+    goal = card_safe(delegation.get("goal"))
     if len(goal) > DELEGATION_GOAL_CHARS:
         goal = goal[: DELEGATION_GOAL_CHARS - 1] + "…"
-    spawn = str(delegation.get("spawn_id") or "?")[:80]
-    parent = str(delegation.get("parent") or "?")[:64]
+    spawn = card_safe(delegation.get("spawn_id") or "?")[:80]
+    parent = card_safe(delegation.get("parent") or "?")[:64]
     return f"asked by sub-agent {spawn} of {parent}: {goal}"
 
 

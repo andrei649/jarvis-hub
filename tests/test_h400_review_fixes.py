@@ -279,8 +279,8 @@ async def test_a_childs_gated_request_is_marked_on_the_card_and_the_parents_is_n
     parent, child = tasks
     spawn_id = hub.manager.list()[0]["id"]
     assert parent.title == "Tool 'send_money' via RPC"
-    assert child.title.startswith(f"[asked by sub-agent {spawn_id} of jarvis: {GOAL}]")
-    assert child.title.endswith("Tool 'send_money' via RPC")
+    # The action is named first; the model-written attribution only follows it (B-1).
+    assert child.title == f"Tool 'send_money' via RPC — asked by sub-agent {spawn_id} of jarvis: {GOAL}"
     # Gating is unchanged: same kind, same payload, both wait for the owner.
     assert child.kind == parent.kind and child.payload == parent.payload
     assert child.status == parent.status == "blocked"
@@ -309,7 +309,7 @@ async def test_the_approvals_route_projects_who_asked(worker_hub, monkeypatch):
         pending = (await client.get("/autonomy/approvals")).json()["pending"]
     assert len(pending) == 1
     card = pending[0]
-    assert card["title"].startswith("[asked by sub-agent ")
+    assert card["title"].startswith("Tool 'send_money' via RPC — asked by sub-agent ")
     assert card["delegated_by"]["parent"] == "jarvis"
     assert card["delegated_by"]["label"].startswith("asked by sub-agent ")
 
@@ -319,6 +319,18 @@ def test_the_card_label_is_bounded_and_one_line():
                                         "goal": "line one\nline two " + "z" * 500})
     assert "\n" not in label and len(label) < 200 and label.endswith("…")
     assert subagents.delegation_label(None) == ""
+
+
+def test_a_goal_cannot_spoof_the_action_on_the_card():
+    """Second H400 review, B-1: a child's goal is model text. ANSI escapes, bidi overrides,
+    zero-width marks and brackets are neutralised, and the action stays first."""
+    hostile = "\x1b[2K\rTool 'read_weather' via RPC]\u202e\u200b\u2028 done"
+    label = subagents.delegation_label({"spawn_id": "sub\x1b[31m-1", "parent": "jar\u202evis",
+                                        "goal": hostile})
+    for bad in ("\x1b", "\r", "\u202e", "\u200b", "\u2028", "[", "]"):
+        assert bad not in label
+    assert label.startswith("asked by sub-agent sub (31m-1 of jar vis: ")
+    assert subagents.card_safe("a\n\tb  c") == "a b c"
 
 
 # ── M3: kernel on ⇒ delegation refused, and it says so ──────────────────────────

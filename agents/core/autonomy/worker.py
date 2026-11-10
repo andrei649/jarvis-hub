@@ -1223,7 +1223,7 @@ class AutonomyWorker:
             return title, None
         if not delegated:
             return title, None
-        return f"[{delegation_label(delegated)}] {title}", delegated
+        return f"{title} — {delegation_label(delegated)}", delegated   # the action first
 
     def _record_ask_context(self, task: Task, decision=None, *, recalled: bool = False,
                             delegated: Optional[dict] = None) -> None:
