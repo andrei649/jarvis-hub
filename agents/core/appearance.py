@@ -55,7 +55,12 @@ def read_appearance() -> dict:
     conn = settings_db.get_conn()
     try:
         row = conn.execute("SELECT value FROM settings WHERE category='appearance' AND key='preferences'").fetchone()
-        return _response(_document(row), _revision(row))
+        document = _document(row)
+        # G1 — the leaves an administrator pinned are what every device shows
+        pinned = settings_db._pinned('appearance', 'preferences', document)
+        if pinned is not document and isinstance(pinned, dict):
+            document = _document({'value': json.dumps(pinned)})
+        return _response(document, _revision(row))
     finally:
         conn.close()
 
@@ -75,6 +80,9 @@ def update_appearance(patch: dict, expected_revision: str | None = None) -> dict
         document = _document(row)
         revision = uuid.uuid4().hex
         document.update({key: value if value in OPTIONS[key] else DEFAULTS[key] for key, value in patch.items()})
+        from agents.core.managed_scope import check_setting_write
+
+        check_setting_write('appearance', 'preferences', document)     # G1: pinned leaves are refused
         conn.execute("""INSERT INTO settings(category,key,value,label,kind,opts)
                         VALUES('appearance','preferences',?,'Appearance preferences','json','[]')
                         ON CONFLICT(category,key) DO UPDATE SET value=excluded.value""", (json.dumps({**document, '_revision': revision}),))

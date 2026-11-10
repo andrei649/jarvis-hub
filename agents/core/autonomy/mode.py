@@ -75,6 +75,23 @@ class ModeNotSaved(RuntimeError):
     """The settings store did not take the write; nothing was applied."""
 
 
+class ModeManaged(ModeNotSaved):
+    """G1 — the setting is pinned by the administrator (or no configuration write may
+    happen now); the message names the managed file. Nothing was applied."""
+
+
+def _refuse_if_managed(orch: Any, key: str, value: Any, change: str, who: str) -> None:
+    """G1 — raise :class:`ModeManaged` (audited) when the managed layer refuses writing
+    ``autonomy.<key>``."""
+    from ..managed_scope import ManagedRefused, check_setting_write
+
+    try:
+        check_setting_write("autonomy", key, value)
+    except ManagedRefused as exc:
+        _audit(orch, f"{change} REFUSED: {exc} {who}", "settings_managed_refused")
+        raise ModeManaged(str(exc)) from exc
+
+
 def normalize_mode(value: Any) -> tuple[str, bool]:
     """``(mode, known)`` for a stored value. Unset (``None``: no row) is the default;
     ``False`` (YAML 1.1 ``off``/``no``) is ``off``; Hermes' ``manual``/``smart`` are
@@ -248,9 +265,13 @@ def roster_problem(orch: Any, agent: str) -> str | None:
 
 
 def _put_category(category: str, values: dict) -> tuple[int, list[str]]:
-    from ..settings_db import put_category
+    from ..settings_db import managed_setting_names, put_category
 
-    return put_category(category, values)
+    updated, skipped = put_category(category, values)
+    # G1 — a key written with exactly its pinned value is left out of the store on purpose:
+    # the value is in force, so it is not "not saved"
+    pinned = set(managed_setting_names(category))
+    return updated, [key for key in skipped if f"{category}.{key}" not in pinned]
 
 
 def _read_raw(key: str, default: Any) -> Any:
@@ -364,6 +385,7 @@ def set_global_mode(orch: Any, requested: str, *, actor: str, surface: str) -> d
     who = f"(via {_plain(surface, 24)}, by {_plain(actor, 64)})"
     with _write_lock:
         was = global_mode(orch)
+        _refuse_if_managed(orch, "mode", mode, f"settings.autonomy.mode: {was} → {mode}", who)
         try:
             stored_before = read_mode(_read_raw("mode", DEFAULT_MODE))
         except Exception:  # noqa: BLE001 — unknown: not a no-op
@@ -419,6 +441,7 @@ def set_agent_mode(orch: Any, agent: str, requested: str, *, actor: str, surface
         else:
             after[agent] = mode
         change = f"settings.autonomy.agent_modes: {_map_text(before)} → {_map_text(after)}"
+        _refuse_if_managed(orch, "agent_modes", after, change, who)
         try:
             _updated, skipped = _put_category("autonomy", {"agent_modes": after})
         except Exception as exc:

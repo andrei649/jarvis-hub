@@ -105,6 +105,17 @@ describe('Integrations panel', () => {
     expect(screen.getByText(/edit it there/)).toBeTruthy();
   });
 
+  it('a key or search choice the administrator pinned is shown as managed and read-only (G1)', async () => {
+    const pinned = { ...ENV, key: { ...ENV.key, source: 'managed' } };
+    hub(() => ({ status: 200, body: { ...listing([pinned]), search: { backend: 'tavily', answers: 'tavily', choice_source: 'managed' } } }));
+    render(<IntegrationsPanel />);
+    expect(await screen.findByText(/\(🔒 managed by your administrator\)/)).toBeTruthy();
+    expect(screen.queryByText('choose automatically')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'manage Parallel' }));
+    expect(screen.queryByLabelText(/key for Parallel/)).toBeNull();
+    expect(screen.getByTestId('key-managed').textContent).toContain('managed by your administrator');
+  });
+
   it('the test button shows the hub plain-language answer', async () => {
     const calls = hub((url, method) => (method === 'POST' && url.endsWith('/test')
       ? { status: 200, body: { test: { ok: false, verdict: 'auth_failed', message: 'The provider rejected the key. Check that it was copied whole and is still valid.' } } }

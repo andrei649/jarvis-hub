@@ -868,6 +868,8 @@ async def _approvals(ctx: CommandContext) -> str:
     try:
         result = await asyncio.to_thread(
             approval_mode.set_global_mode, ctx.orch, wanted, actor=actor, surface="chat")
+    except approval_mode.ModeManaged as exc:      # G1: name the administrator's file
+        return f"Approval mode remains {approval_mode.global_mode(ctx.orch)}; {exc}."
     except Exception:  # noqa: BLE001 — a store that refused the write: say what still holds
         logger.warning("/approvals: the mode could not be saved", exc_info=True)
         return (f"Approval mode remains {approval_mode.global_mode(ctx.orch)}; "

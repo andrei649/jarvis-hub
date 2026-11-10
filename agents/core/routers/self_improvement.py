@@ -142,6 +142,13 @@ async def self_improvement_enable():
     """Flip the documented bundle of already-existing settings (see
     ``_ENABLE_BUNDLE`` above / docs/OWNER_TASKS.md). One explicit owner action,
     same effect as making each PUT call individually via the admin settings API."""
+    from agents.core.managed_scope import check_setting_write
+
+    # G1 — every key of the bundle is judged before any category is written: a pin in the
+    # last category must not leave the first ones changed (ManagedRefused → 409, audited)
+    for category, values in _ENABLE_BUNDLE.items():
+        for key, value in values.items():
+            check_setting_write(category, key, value)
     applied: dict[str, dict[str, bool]] = {}
     for category, values in _ENABLE_BUNDLE.items():
         errors = validate_category(category, values)

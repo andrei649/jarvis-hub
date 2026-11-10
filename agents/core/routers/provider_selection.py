@@ -59,6 +59,10 @@ async def _call(request, method, kwargs):
 
     from .models_llm import _provider_install_worker
 
+    if method in {'select_provider', 'clear_selection'}:
+        from agents.core.managed_scope import check_llm_write
+
+        check_llm_write(selection=True)          # G1: managed mode, or a pinned model choice
     try:
         if method in {'select_provider', 'clear_selection'}:
             from agents.core.llm.provider_selection import read_selection
