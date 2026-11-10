@@ -26,6 +26,19 @@
   "Reclaim clean, pushed git worktrees automatically".
 - Git is only ever run on a repository whose settings cannot make it start a program.
 
+**Many MCP tools no longer crowd out the conversation (tool search)**
+- When the MCP servers you connected bring more tools than fit comfortably in the model's
+  window (by default more than 5% of it, at most 4000 tokens), Nerva sends the model its own
+  built-in tools plus a small search tool instead of every MCP tool. The model looks a tool up
+  by what it does, reads its arguments, and calls it.
+- A tool called this way is checked exactly like one called directly: the same approval card,
+  plan mode, emergency stop and limits. A guest on Telegram or another chat can only find the
+  tools a guest may use. Tool descriptions written by an MCP server are cleaned before the
+  model reads them, and one that reads like an instruction is withheld.
+- What a tool search turns up counts as outside text: like an MCP tool's own answer, it makes
+  the rest of that turn ask before acting.
+- Change it in Settings → LLM: "Tool search" `auto` (default), `on` or `off`, plus the budget.
+
 **Make videos (FAL, xAI Grok Imagine or DeepInfra)**
 - Nerva can now make a short video from a prompt, animate an image it generated, follow
   reference images (xAI), and edit or extend a video it made with xAI. Ask in chat; you get

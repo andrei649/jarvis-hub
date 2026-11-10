@@ -2352,6 +2352,7 @@
         "tests/test_g12_guest_context.py",
         "tests/test_g12_openai_compat.py",
         "tests/test_g2_session_commands.py",
+        "tests/test_g8_tool_search.py",
         "tests/test_goal_contract.py",
         "tests/test_h011_rollback_conversation.py",
         "tests/test_h015_job_operations.py",
