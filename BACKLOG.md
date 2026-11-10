@@ -2850,6 +2850,22 @@
   minimal/low; un-gated profiles send effort only for owner-declared models; the vendor allowlist
   refuses `import urllib.parse` and module-through-attribute reaches; the pin's local check uses the
   egress SSRF resolver off the event loop.
+  **Adopt lane, slice 3 (2026-11-10):** Hermes skills. All 185 upstream skill folders at `9c0560f8`
+  (`skills/` 44, `optional-skills/` 141) are indexed in `agents/vendor/hermes/SKILLS_CATALOG.json`;
+  the 125 instruction-only ones (SKILL.md + plain data, 459 files) are vendored byte-identical with a
+  MANIFEST row per file (`scripts/hermes_vendor.py catalog`; status/CI check index ↔ manifest ↔ bytes,
+  catalog files are never rewritten and admit only .md/.txt/.yaml/.yml/.json/LICENSE). They are inert
+  (`agents/vendor` is not a skill root) until installed through the existing `POST /skills/import`
+  (`source: "hermes-catalog"`, same DEV_MODE gate) into `SkillImporter._save_skill`: validator,
+  `exists`/`name_taken` checks, install id, sidecar `source: hermes` with provenance "imported from
+  Hermes @9c0560f8"; `_save_skill` gained guarded `extra_files` for references. Installed skills
+  get import trust (unsigned, unvouched: `skill_view` tainted, flagged rows dropped from the index,
+  `required_env` declared only once vouched). 55 skills carrying code are listed `upstream_only`
+  with their code files and refused (no import path copies code; the marketplace package path
+  stays the owner's); 5 excluded (HTML templates ×3, files over 256 KB ×2). `GET /skills/imported`
+  carries `hermes_catalog` (no new route, no OpenAPI change); the Skills Import panel lists and
+  installs it. Unmapped frontmatter keys and undeclared key mentions are shown, never dropped.
+  No ledger row moves (decision 1 open). Guide: `docs/hermes/ADOPT_LANE.md` → "Skills (slice 3)".
   **Run lane, slice 1 (2026-11-10):** the governed Hermes sidecar moves from `0808ed8` to `9c0560f8`
   and the move is now a script: `scripts/hermes_runtime.py bump --commit <sha>`
   (`scripts/hermes_runtime_bump.py`) re-verifies the current pin, downloads and verifies the new

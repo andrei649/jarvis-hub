@@ -170,7 +170,11 @@ RETIRED_TOOL_MENTIONS: dict[tuple[str, str], str] = {}
 #: only (``_row_vocabulary``); a backticked ``test_…`` name is a test that exists (``cited_tests``).
 VOCABULARY_ROOTS = ("agents", "scripts", "frontend")
 VOCABULARY_FILES = ("docker-compose.yml", "docker-compose.quickstart.yml", "requirements.txt", "pyproject.toml")
-VOCABULARY_SKIP = ("agents/web/",)
+VOCABULARY_SKIP = ("agents/web/",
+                   # Adopt lane slice 3: Hermes's skill catalog is third-party text, data only.
+                   "agents/vendor/hermes/skills/", "agents/vendor/hermes/optional-skills/")
+#: Generated data files read by no code path as names (the catalog index of third-party text).
+VOCABULARY_SKIP_FILES = ("agents/vendor/hermes/SKILLS_CATALOG.json",)
 #: The frontend's test lanes: the HUD vitest setup and fixtures (``vite.config.ts``), the
 #: native vitest project (``vitest.native.config.ts``) and every Playwright ``testDir``
 #: (``test_every_frontend_test_lane_is_outside_the_vocabulary`` keeps this exhaustive).
@@ -1089,7 +1093,7 @@ def _vocabulary_paths() -> list[Path]:
                              and not (rel + d + "/").startswith(VOCABULARY_SKIP + VOCABULARY_TEST_LANES))
             paths += [Path(folder, name) for name in sorted(files)
                       if Path(name).suffix in _VOCABULARY_SUFFIXES and name != "package-lock.json"
-                      and not is_test_path(rel + name)]
+                      and not is_test_path(rel + name) and rel + name not in VOCABULARY_SKIP_FILES]
     return paths
 
 

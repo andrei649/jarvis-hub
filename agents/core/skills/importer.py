@@ -436,8 +436,14 @@ class SkillImporter:
         skill_md_text: Optional[str] = None,
         manifest: Optional[dict] = None,
         skill_md_bytes: Optional[bytes] = None,
-        provenance: Optional[dict[str, str]] = None,
+        provenance: Optional[dict] = None,
+        extra_files: Optional[dict[str, bytes]] = None,
     ) -> bool:
+        """Write one imported skill. ``extra_files`` (Adopt lane slice 3, the Hermes
+        catalog) are supporting files of plain data (``references/x.md`` …) written beside
+        the SKILL.md; each path must pass ``hermes_catalog.safe_extra_path`` and every one is
+        checked before anything is written. An update removes the supporting files its
+        earlier import recorded (``source_files``) that the new one no longer carries."""
         self.last_refusal = []
         self.last_conflict = ""
         self.last_created = None
@@ -512,6 +518,12 @@ class SkillImporter:
             logger.warning("Rejected skill import: its SKILL.md declares a name the folder %s already holds",
                            holder.name)
             return False
+        extras = self._checked_extra_files(extra_files)
+        if extras is None:
+            self.last_refusal = []
+            _OUTCOME.set(ImportOutcome(False, "unsafe_extra_file"))
+            logger.warning("Rejected skill import: a supporting file is not plain data at a safe path")
+            return False
         created = not target_dir.exists()
         # H349 (third review, M1) — a new install stamps its folder with an install id, so
         # the usage sidecar knows it for new whenever the hub first sees it (now, after a
@@ -532,7 +544,10 @@ class SkillImporter:
         # H349: in a NEW folder the install record (with its install id) is written first
         # and SKILL.md last, so the folder is never a loadable skill without the id that
         # says it is a new install — a crash in between leaves a folder the loader ignores.
-        # An update keeps the order it always had.
+        # An update keeps the order it always had. Supporting files land before the
+        # SKILL.md in both cases (a skill is never loadable with half of its references).
+        if extras:
+            self._write_extra_files(target_dir, extras, created=created)
         if not created:
             _write_skill_md()
 
@@ -561,6 +576,59 @@ class SkillImporter:
         _OUTCOME.set(ImportOutcome(True, ""))
         logger.info(f"Imported skill '{skill_name}' from {source} -> {target_dir}")
         return True
+
+    @staticmethod
+    def _checked_extra_files(extra_files: Optional[dict]) -> Optional[dict[str, bytes]]:
+        """``extra_files`` when every path is a safe data path and every value bytes within
+        the catalog's bounds; ``{}`` when there are none; None when one is refused."""
+        if not extra_files:
+            return {}
+        from .hermes_catalog import MAX_FILE_BYTES, MAX_FILES, safe_extra_path
+
+        if not isinstance(extra_files, dict) or len(extra_files) > MAX_FILES:
+            return None
+        for rel, data in extra_files.items():
+            if not safe_extra_path(rel) or not isinstance(data, bytes) or len(data) > MAX_FILE_BYTES:
+                return None
+            try:
+                data.decode("utf-8")
+            except UnicodeDecodeError:
+                return None
+            if b"\0" in data:
+                return None
+        return dict(extra_files)
+
+    @staticmethod
+    def _write_extra_files(target_dir: Path, extras: dict[str, bytes], *, created: bool) -> None:
+        root = target_dir.resolve()
+        if not created:
+            # The supporting files this source's earlier import recorded and the new one
+            # drops go; nothing else in the folder is touched.
+            try:
+                old = json.loads((target_dir / "manifest.json").read_text(encoding="utf-8"))
+                recorded = [f.get("path") for f in old.get("source_files", []) if isinstance(f, dict)]
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError, AttributeError):
+                recorded = []
+            from .hermes_catalog import safe_extra_path
+
+            for rel in recorded:
+                if isinstance(rel, str) and rel not in extras and safe_extra_path(rel):
+                    stale = target_dir / rel
+                    if _is_plain_file(stale, max_bytes=1 << 30) and _really_inside(stale, root):
+                        stale.unlink()
+        for rel, data in sorted(extras.items()):
+            path = target_dir / rel
+            current = target_dir
+            for part in Path(rel).parts[:-1]:
+                current = current / part
+                if current.is_symlink() or (current.exists() and not current.is_dir()):
+                    raise OSError(f"refused to write through {current}")
+                current.mkdir(exist_ok=True)
+            if path.is_symlink() or (path.exists() and not path.is_file()):
+                raise OSError(f"refused to overwrite {path}")
+            if not _really_inside(path.parent, root):
+                raise OSError(f"refused to write outside {target_dir}")
+            path.write_bytes(data)
 
     @staticmethod
     def outcome() -> ImportOutcome:

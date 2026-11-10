@@ -18,6 +18,12 @@ Commands (deterministic; nothing touches the network):
     For each vendored file (or the named upstream paths), the unified diff from the
     vendored text to the clone's current text with the same rewrites applied: what an
     update would change, reviewed as a diff.
+``catalog --upstream <clone>``
+    Re-vendor Hermes's skill catalog (Adopt lane slice 3): every skill folder under
+    ``skills/`` and ``optional-skills/`` is classified, the instruction-only ones (a SKILL.md
+    and plain data, nothing else) are copied byte-identical with a manifest row per file,
+    and ``SKILLS_CATALOG.json`` indexes all of them (``upstream_only`` for a skill with code,
+    ``excluded`` with a reason otherwise). Catalog files are never rewritten.
 ``pull --upstream <clone> <paths...>``
     Re-vendor the named upstream paths (rewrite, write, update the manifest). Refused for
     a symlink or a path resolving outside the clone, a file with local edits (``--force``
@@ -172,6 +178,13 @@ DENIED_NAMES = frozenset({"__import__", "exec", "eval", "compile", "open", "__bu
 #: Non-Python files a vendored tree may hold: data only.
 DATA_SUFFIXES = frozenset({".yaml", ".yml", ".json", ".md", ".txt"})
 _LOCAL_FILES = ("__init__.py", "NOTICE.md", "LICENSE", "MANIFEST.json")
+#: Slice 3 — Hermes's skill catalog: vendored at its upstream paths under these folders,
+#: byte-identical (no rewrite rule ever applies), data only, indexed by CATALOG_INDEX.
+CATALOG_ROOTS = ("skills/", "optional-skills/")
+CATALOG_INDEX = "SKILLS_CATALOG.json"
+#: What a catalog file may be: plain data by suffix, or a LICENSE text.
+CATALOG_SUFFIXES = DATA_SUFFIXES
+CATALOG_NAMES = frozenset({"LICENSE"})
 #: Nerva-written package markers for upstream packages whose own ``__init__.py`` is not
 #: adopted (``providers/__init__.py`` is Hermes's plugin loader, ``agent/__init__.py``
 #: preloads a JSON library). Each must be a docstring and nothing else (``status``).
@@ -292,8 +305,30 @@ def data_problems(data: bytes, path: str) -> list[str]:
     return []
 
 
+def is_catalog_path(path: str) -> bool:
+    return path.startswith(CATALOG_ROOTS)
+
+
+def catalog_problems(data: bytes, path: str) -> list[str]:
+    """Why a skill-catalog file is not plain data (empty when it is). Stricter than the
+    general rule: no ``.py`` file at all, only the data suffixes and ``LICENSE``."""
+    if Path(path).name in CATALOG_NAMES:
+        if b"\0" in data:
+            return ["binary content"]
+        try:
+            data.decode("utf-8")
+        except UnicodeDecodeError:
+            return ["not UTF-8 text"]
+        return []
+    if Path(path).suffix.lower() not in CATALOG_SUFFIXES:
+        return [f"{Path(path).suffix or 'no extension'} is not a catalog data file type"]
+    return data_problems(data, path)
+
+
 def content_problems(data: bytes, path: str) -> list[str]:
     """Allowlist check for one vendored file, whatever its type."""
+    if is_catalog_path(path):
+        return catalog_problems(data, path)
     if path.endswith(".py"):
         try:
             return unmapped_imports(data.decode("utf-8"), path)
@@ -397,7 +432,12 @@ def cmd_status(vendor_root: Path, upstream: Path | None, out) -> int:
             out.write(f"EDITED  {entry['path']}  (local edit: vendored bytes differ from MANIFEST)\n")
             problems += 1
             continue
-        again, _ = rewrite(data.decode("utf-8"))
+        catalog = is_catalog_path(entry["path"])
+        if catalog and (entry.get("rules_applied") or entry["upstream_sha256"] != entry["vendored_sha256"]):
+            out.write(f"DRIFT   {entry['path']}  (a catalog file is vendored byte-identical, never rewritten)\n")
+            problems += 1
+            continue
+        again = data.decode("utf-8") if catalog else rewrite(data.decode("utf-8"))[0]
         if again.encode("utf-8") != data:
             out.write(f"DRIFT   {entry['path']}  (rewrite is not a no-op on the vendored text)\n")
             problems += 1
@@ -426,13 +466,17 @@ def cmd_status(vendor_root: Path, upstream: Path | None, out) -> int:
                 out.write(f"BEHIND  {entry['path']}  (upstream changed since the pin)\n")
                 problems += 1
                 continue
-            redone, redone_rules = rewrite(raw.decode("utf-8"))
+            redone, redone_rules = ((raw.decode("utf-8"), []) if catalog
+                                    else rewrite(raw.decode("utf-8")))
             if redone.encode("utf-8") != data or redone_rules != applied:
                 out.write(f"DRIFT   {entry['path']}  (rewritten upstream != vendored)\n")
                 problems += 1
                 continue
         out.write(f"ok      {entry['path']}\n")
     local = set(manifest.get("local_files", _LOCAL_FILES)) | set(_LOCAL_PACKAGE_MARKERS)
+    for problem in catalog_index_problems(vendor_root, manifest):
+        out.write(f"CATALOG {problem}\n")
+        problems += 1
     for rel in sorted(r for r in local if r.endswith(".py")):
         target = vendor_root / rel
         if target.is_file() and not target.is_symlink() and not _docstring_only(target.read_bytes()):
@@ -467,7 +511,9 @@ def cmd_diff(vendor_root: Path, upstream: Path, paths: list[str], out) -> int:
             out.write(f"--- {rel}: absent in the upstream clone\n")
             changed += 1
             continue
-        new_text, _ = rewrite(src.read_text(encoding="utf-8"))
+        new_text = src.read_text(encoding="utf-8")
+        if not is_catalog_path(rel):
+            new_text, _ = rewrite(new_text)
         target = vendor_root / rel
         old_text = target.read_text(encoding="utf-8") if target.exists() else ""
         if new_text == old_text:
@@ -499,6 +545,9 @@ def cmd_pull(vendor_root: Path, upstream: Path, paths: list[str], *, commit: str
     staged: list[tuple[str, bytes, dict]] = []
     for raw_path in paths:
         rel = _safe_rel(raw_path)
+        if is_catalog_path(rel):
+            out.write(f"refused {rel}: a skill-catalog file; a skill is vendored whole by `catalog`\n")
+            return 2
         src = upstream / rel
         if _symlinked(upstream, rel) or not _inside(src, upstream) or not src.is_file():
             out.write(f"refused {rel}: not a regular file inside the upstream clone\n")
@@ -542,6 +591,111 @@ def cmd_pull(vendor_root: Path, upstream: Path, paths: list[str], *, commit: str
     return 0
 
 
+def catalog_index_problems(vendor_root: Path, manifest: dict) -> list[str]:
+    """Where ``SKILLS_CATALOG.json`` and the manifest's catalog rows disagree: an
+    installable skill must have every file in the manifest with the indexed sha256, and
+    every catalog row must belong to one (no stray file of a skill that carries code)."""
+    rows = {f["path"]: f for f in manifest.get("files", []) if is_catalog_path(f["path"])}
+    index_path = vendor_root / CATALOG_INDEX
+    if not index_path.exists():
+        return [f"{CATALOG_INDEX} missing while catalog files are vendored"] if rows else []
+    try:
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        skills = list(index["skills"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return [f"{CATALOG_INDEX} cannot be read"]
+    problems: list[str] = []
+    if CATALOG_INDEX not in manifest.get("local_files", []):
+        problems.append(f"{CATALOG_INDEX} is not listed in local_files")
+    if index.get("commit") != manifest.get("upstream", {}).get("commit"):
+        problems.append(f"{CATALOG_INDEX} names another commit than MANIFEST.json")
+    owned: set[str] = set()
+    for skill in skills:
+        if skill.get("kind") != "instruction":
+            continue
+        for item in skill.get("files", []):
+            rel = f"{skill.get('path')}/{item.get('path')}"
+            owned.add(rel)
+            row = rows.get(rel)
+            if row is None:
+                problems.append(f"{rel} is indexed as installable but not vendored")
+            elif row["vendored_sha256"] != item.get("sha256"):
+                problems.append(f"{rel} differs from its index sha256")
+    problems += [f"{rel} is vendored but belongs to no installable skill" for rel in sorted(set(rows) - owned)]
+    return problems
+
+
+def cmd_catalog(vendor_root: Path, upstream: Path, *, commit: str, out) -> int:
+    commit = commit or _clone_commit(upstream)
+    if not commit:
+        out.write("cannot read the clone's commit; pass --commit <sha>\n")
+        return 2
+    if str(REPO) not in sys.path:
+        sys.path.insert(0, str(REPO))
+    from agents.core.skills import hermes_catalog
+
+    index = hermes_catalog.build_index(upstream, commit)
+    for skill in index["skills"]:
+        if skill["kind"] != hermes_catalog.KIND_INSTRUCTION:
+            continue
+        for item in skill["files"]:
+            rel = f"{skill['path']}/{item['path']}"
+            if _symlinked(upstream, rel) or _symlinked(vendor_root, rel) \
+                    or catalog_problems((upstream / rel).read_bytes(), rel):
+                skill["kind"], skill["reason"] = hermes_catalog.KIND_EXCLUDED, "file_not_plain_data"
+                break
+    index["counts"] = {kind: sum(1 for s in index["skills"] if s["kind"] == kind)
+                       for kind in (hermes_catalog.KIND_INSTRUCTION, hermes_catalog.KIND_UPSTREAM_ONLY,
+                                    hermes_catalog.KIND_EXCLUDED)}
+    manifest = load_manifest(vendor_root / "MANIFEST.json")
+    entries = {f["path"]: f for f in manifest.get("files", []) if not is_catalog_path(f["path"])}
+    old_catalog = {f["path"] for f in manifest.get("files", []) if is_catalog_path(f["path"])}
+    staged: list[tuple[str, bytes]] = []
+    for skill in index["skills"]:
+        if skill["kind"] != hermes_catalog.KIND_INSTRUCTION:
+            continue
+        for item in skill["files"]:
+            rel = f"{skill['path']}/{item['path']}"
+            data = (upstream / rel).read_bytes()
+            if sha256(data) != item["sha256"]:
+                out.write(f"refused {rel}: changed while the catalog was read\n")
+                return 2
+            staged.append((rel, data))
+    wanted = {rel for rel, _ in staged}
+    for rel, data in staged:
+        target = vendor_root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not _inside(target.parent, vendor_root):
+            out.write(f"refused {rel}: the vendored path leaves the tree\n")
+            return 2
+        target.write_bytes(data)
+        entries[rel] = {"path": rel, "upstream_commit": commit, "upstream_sha256": sha256(data),
+                        "vendored_sha256": sha256(data), "rules_applied": []}
+    for rel in sorted(old_catalog - wanted):
+        target = vendor_root / rel
+        if target.is_file() and not target.is_symlink():
+            target.unlink()
+    for root in CATALOG_ROOTS:
+        base = vendor_root / root.rstrip("/")
+        if base.is_dir() and not base.is_symlink():
+            for folder in sorted((p for p in base.rglob("*") if p.is_dir()), key=lambda p: -len(p.parts)):
+                if not any(folder.iterdir()):
+                    folder.rmdir()
+            if not any(base.iterdir()):
+                base.rmdir()
+    manifest["files"] = list(entries.values())
+    manifest["rewrite_rules"] = rules_record()
+    manifest.setdefault("upstream", {}).update({"repo": UPSTREAM_REPO, "commit": commit, "license": "MIT"})
+    manifest["local_files"] = sorted(set(manifest.get("local_files", _LOCAL_FILES)) | {CATALOG_INDEX})
+    (vendor_root / CATALOG_INDEX).write_text(hermes_catalog.dump_index(index), encoding="utf-8")
+    (vendor_root / "MANIFEST.json").write_text(dump_manifest(manifest), encoding="utf-8")
+    counts = index["counts"]
+    out.write(f"catalog @{commit[:8]}: {counts['instruction']} instruction-only vendored "
+              f"({len(wanted)} files), {counts['upstream_only']} upstream-only (carry code), "
+              f"{counts['excluded']} excluded\n")
+    return 0
+
+
 def main(argv: list[str] | None = None, *, vendor_root: Path = VENDOR_ROOT, out=None) -> int:
     out = out or sys.stdout
     parser = argparse.ArgumentParser(prog="scripts/hermes_vendor.py",
@@ -552,6 +706,9 @@ def main(argv: list[str] | None = None, *, vendor_root: Path = VENDOR_ROOT, out=
     p_diff = sub.add_parser("diff", help="upstream changes, rewritten, per vendored file")
     p_diff.add_argument("--upstream", type=Path, required=True)
     p_diff.add_argument("paths", nargs="*")
+    p_cat = sub.add_parser("catalog", help="re-vendor Hermes's instruction-only skills and index them all")
+    p_cat.add_argument("--upstream", type=Path, required=True)
+    p_cat.add_argument("--commit", default="")
     p_pull = sub.add_parser("pull", help="re-vendor upstream paths and update MANIFEST.json")
     p_pull.add_argument("--upstream", type=Path, required=True)
     p_pull.add_argument("--commit", default="")
@@ -569,6 +726,8 @@ def main(argv: list[str] | None = None, *, vendor_root: Path = VENDOR_ROOT, out=
             return 2
         if ns.cmd == "diff":
             return cmd_diff(vendor_root, ns.upstream, ns.paths, out)
+        if ns.cmd == "catalog":
+            return cmd_catalog(vendor_root, ns.upstream, commit=ns.commit, out=out)
         return cmd_pull(vendor_root, ns.upstream, ns.paths, commit=ns.commit,
                         force=ns.force, out=out)
     except ValueError as exc:

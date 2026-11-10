@@ -124,6 +124,22 @@
 - "Check keys" only checks the provider you picked from this list, so a key shared between two
   of them (Alibaba's `DASHSCOPE_API_KEY`) or used elsewhere (`HF_TOKEN`) is never sent to the
   other one. A provider package you signed yourself with the same name keeps working as before.
+
+**Hermes Agent's skill catalog, browsable and installable**
+- The Skills Import panel now lists all 185 skills that ship with Hermes Agent: 125 you can
+  install, 55 that come with scripts, and 5 left out. You can filter the list and see what each
+  skill needs (for example an API key) before you install it.
+- Installing one is a single click, the same import as before (it still needs `DEV_MODE=1`).
+  It works offline, from a copy shipped with Nerva and checked against its recorded fingerprint.
+  The installed skill says it was "imported from Hermes @9c0560f8".
+- Nothing from the catalog is used until you install it. An installed skill is treated like
+  any other import: Nerva reads its text as information, not as orders, until you vouch for it,
+  and it gets no API key until then. A skill whose text looks like it tries to give the model
+  orders is marked in the list and kept out of the model's skill list.
+- Skills that come with scripts are listed with the names of their scripts and cannot be
+  installed from the catalog. Five more are left out because they carry web pages or files too
+  large to read.
+- A skill whose name is already used by one of yours is refused, as with any import.
 **The optional Hermes runtime moves to a newer Hermes, and future updates are one command**
 - If you installed the optional Hermes runtime (Admin → Hermes Runtime), Nerva now expects the
   Hermes version of 10 November instead of the one from October. Run
