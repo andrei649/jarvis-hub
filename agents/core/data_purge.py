@@ -173,7 +173,8 @@ PURGE_MEMORY_FILES: tuple[str, ...] = (
     "house/private_graph.cipher.salt",
 )
 # Directories removed wholesale (embedded recall cache derived from user content).
-PURGE_MEMORY_DIRS: tuple[str, ...] = ("embedding_cache",)
+# G14: the A2A transcripts and outbound audit (peer replies and the owner's messages).
+PURGE_MEMORY_DIRS: tuple[str, ...] = ("embedding_cache", "a2a_hermes")
 # Top-level files that are NOT conversation transcripts — never treated as sessions.
 # Shared with retention and memory.persistence (agents/core/session_files.py).
 _NON_SESSION_JSONL: frozenset[str] = NON_SESSION_STEMS

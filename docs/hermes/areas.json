@@ -2205,7 +2205,8 @@
         "H565"
       ],
       "suite": [
-        "tests/test_client_protocol.py"
+        "tests/test_client_protocol.py",
+        "tests/test_a2a_outbound.py"
       ]
     },
     {

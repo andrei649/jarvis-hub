@@ -189,6 +189,21 @@
 - Installs and repairs are recorded in the intent log. Skills that come with scripts still
   cannot be installed from the catalog. The full list by category is in
   `docs/SKILLS_CATALOG.md`.
+
+**Nerva can now ask your other agents for help (A2A)**
+- Give one of your A2A peers an address (`PUT /api/a2a/peers/<id>/outbound` with its URL and,
+  if it needs one, a token) and Nerva gets five tools: look up the peer's card, send it a task,
+  send one task to every peer with a tag (for example "research"), list your peers and read back
+  an earlier conversation. These are Hermes Agent's own A2A tools, run inside Nerva.
+- Sending a task shares your text with another agent, so every send waits for your approval.
+  While the emergency stop is on, nothing is sent. Nerva only ever contacts peers you set up.
+- A peer on your home network has to be named by its IP address and marked as a home-network
+  peer; anything on the internet must use https. A peer's token is kept in the secret store
+  and only ever sent to that peer; a peer cannot redirect your message or its token elsewhere.
+- What a peer answers is treated as information, not instructions: it is labelled as coming
+  from another agent, and anything Nerva proposes after reading it waits for your approval.
+- Off unless `JARVIS_A2A_ENABLED=1`. Tested against a simulated peer only; no live peer yet.
+
 **The optional Hermes runtime moves to a newer Hermes, and future updates are one command**
 - If you installed the optional Hermes runtime (Admin → Hermes Runtime), Nerva now expects the
   Hermes version of 10 November instead of the one from October. Run

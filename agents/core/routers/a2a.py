@@ -23,9 +23,16 @@ _a2a_registry = None
 def _get_a2a_registry():
     global _a2a_registry
     if _a2a_registry is None:
-        from agents.core.a2a import A2ARegistry
-        _a2a_registry = A2ARegistry()
+        from agents.core.a2a import get_registry
+        _a2a_registry = get_registry()
     return _a2a_registry
+
+
+def _secret_broker():
+    from agents.core.app_state import get_orch
+
+    orch = get_orch()
+    return getattr(orch, "secret_broker", None) if orch is not None else None
 
 
 class A2APeerBody(BaseModel):
@@ -40,6 +47,17 @@ class A2ACardBody(BaseModel):
 
 class A2ADecisionBody(BaseModel):
     approve: bool
+
+
+class A2AOutboundBody(BaseModel):
+    """Where and how this hub calls a peer (G14). The token is stored in the secret store."""
+    url: str = Field(..., max_length=2048)
+    token: Optional[str] = Field(None, max_length=4096)
+    keep_token: bool = False
+    allow_lan: bool = False
+    timeout: int = Field(60, ge=5, le=90)
+    capabilities: list[str] = Field(default_factory=list, max_length=20)
+    tenant: str = Field("", max_length=128)
 
 
 @router.get("/.well-known/agent-card")
@@ -112,7 +130,33 @@ async def a2a_add_peer(body: A2APeerBody):
 
 @router.delete("/api/a2a/peers/{peer_id}", dependencies=[Depends(admin_guard)])
 async def a2a_remove_peer(peer_id: str):
-    ok = _get_a2a_registry().remove_peer(peer_id)
+    ok = _get_a2a_registry().remove_peer(peer_id, secret_broker=_secret_broker())
+    return nocache_json({"ok": ok}, status_code=200 if ok else 404)
+
+
+@router.put("/api/a2a/peers/{peer_id}/outbound", dependencies=[Depends(admin_guard)])
+async def a2a_set_peer_outbound(peer_id: str, body: A2AOutboundBody):
+    """Let this hub call the peer (G14): URL, optional bearer token, LAN opt-in, tags.
+
+    A LAN address is refused unless ``allow_lan`` is set, and then only as a private IP
+    literal or ``localhost``; an internet peer must use https. The token is never echoed."""
+    try:
+        result = _get_a2a_registry().set_outbound(
+            peer_id, body.url, token=body.token or None, keep_token=body.keep_token,
+            allow_lan=body.allow_lan, timeout=body.timeout, capabilities=body.capabilities,
+            tenant=body.tenant, secret_broker=_secret_broker())
+    except KeyError:
+        return nocache_json({"error": "unknown peer"}, status_code=404)
+    except ValueError as exc:
+        reason = str(exc) if str(exc).replace("_", "").isalnum() else "invalid"
+        status = 503 if reason == "secret_store_unavailable" else 400
+        return nocache_json({"error": reason}, status_code=status)
+    return nocache_json(result)
+
+
+@router.delete("/api/a2a/peers/{peer_id}/outbound", dependencies=[Depends(admin_guard)])
+async def a2a_clear_peer_outbound(peer_id: str):
+    ok = _get_a2a_registry().clear_outbound(peer_id, secret_broker=_secret_broker())
     return nocache_json({"ok": ok}, status_code=200 if ok else 404)
 
 

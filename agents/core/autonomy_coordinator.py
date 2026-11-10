@@ -1670,6 +1670,22 @@ class AutonomyCoordinator:
             server,
             lambda: (getattr(self._orch, "plugins", None) or {}).get("websearch"),
         )
+        # G14 — the owner's A2A peers as tools (the adopted Hermes client tools). Off unless
+        # JARVIS_A2A_ENABLED; a2a_call / a2a_orchestrate are gated (they send the owner's
+        # text off the box), every answer is untrusted output.
+        from .a2a_outbound import A2AOutbound, register_a2a_tools
+        from .routers.a2a import _get_a2a_registry
+
+        def _a2a_kernel():
+            from .kernel.binding import make_action_kernel
+
+            return make_action_kernel(self._orch)
+
+        register_a2a_tools(server, A2AOutbound(
+            _get_a2a_registry,
+            secret_broker=lambda: getattr(self._orch, "secret_broker", None),
+            kernel=_a2a_kernel,
+        ))
         from .memory.rag_tool import register_search_memory
 
         register_search_memory(

@@ -1,4 +1,5 @@
 {
+ "a2a.outbound": "kernel",
  "admin.agent_roster": "kernel",
  "admin.capability_issue": "kernel",
  "admin.kill_switch": "kernel",

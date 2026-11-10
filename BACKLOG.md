@@ -2879,6 +2879,22 @@
   install|repair [--force]` call the route. Catalog page: `docs/SKILLS_CATALOG.md`. Still open on
   H336: installing the 55 skills that carry code (needs a scanned, approved package path).
   Tests: `tests/test_h336_catalog_owner_install.py` (14), panel vitest (+1).
+  **Adopt lane, slice 4 — G14 A2A outbound (2026-11-10):** Hermes's A2A client tools
+  (`plugins/platforms/a2a/{tools,protocol,security}.py`) vendored with three path-scoped rules
+  (`a2a-urllib`, `a2a-shared`, `a2a-futures`) and compat `urllib` / `a2a_shared` / `futures`.
+  `PUT|DELETE /api/a2a/peers/{id}/outbound` (admin) gives a peer a URL, a token (secret store),
+  `allow_lan` (private IP literal only), timeout, tags. With `JARVIS_A2A_ENABLED` the coordinator
+  registers `a2a_call` + `a2a_orchestrate` (gated) and `a2a_discover`, `a2a_list`, `a2a_history`
+  (ungated, read-only); e-stop, kernel kind `a2a.outbound`, `a2a` egress manifest (allowlist =
+  configured peers), a per-call origin/credential guard, untrusted + tainted replies. H562 →
+  partial (the approved reply does not return into the asking turn; raw URLs only to configured
+  peers). Adversarial review fixes: `a2a_discover` takes a peer (id/name/exact URL) and the guard
+  allows a GET of the two card paths only (no model text in a path or query); denied strings in
+  dicts/comparisons exempt only `"http"` and only in the a2a package; recipients on the card,
+  re-checked at the approved run; per-peer transcript names, redacted, rotated, capped, in the
+  forget; e-stop re-read per request; per-peer fan-out refusals; confined home; path-scoped and
+  private compat names refused in every import form. Tests: `tests/test_a2a_outbound.py` (65).
+  Guide: `docs/hermes/ADOPT_LANE.md` → slice 4.
   **Run lane, slice 1 (2026-11-10):** the governed Hermes sidecar moves from `0808ed8` to `9c0560f8`
   and the move is now a script: `scripts/hermes_runtime.py bump --commit <sha>`
   (`scripts/hermes_runtime_bump.py`) re-verifies the current pin, downloads and verifies the new

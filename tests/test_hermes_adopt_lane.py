@@ -534,7 +534,23 @@ def test_the_rewrite_is_idempotent():
               "        from hermes_cli.version_info import hermes_user_agent\n"
               "import threading\n        import urllib.request\n")
     once, applied = hv.rewrite(sample)
-    assert len(applied) == len(hv.REWRITE_RULES)
+    assert len(applied) == len([r for r in hv.REWRITE_RULES if not r.paths])
+    # Slice 4: the A2A-scoped rules apply to the a2a package only, and are idempotent too.
+    a2a_sample = ("import urllib.error\nimport urllib.request\nimport urllib.parse\n"
+                  "from gateway.platforms._shared import coerce_port\n"
+                  "    from hermes_cli.config import load_config_readonly\n"
+                  "from hermes_constants import get_hermes_home\nfrom pathlib import Path\n"
+                  "from agent.proxy_bypass import is_loopback_host\n"
+                  "        from agent.secret_scope import get_secret\n"
+                  "    from agent.redact import redact_for_egress\n"
+                  "from concurrent.futures import Future\n")
+    a2a_path = "plugins/platforms/a2a/tools.py"
+    a2a_once, a2a_applied = hv.rewrite(a2a_sample, a2a_path)
+    assert a2a_applied == [r.id for r in hv.REWRITE_RULES if r.paths]
+    assert hv.rewrite(a2a_once, a2a_path) == (a2a_once, [])
+    assert hv.unmapped_imports("\n".join(line.strip() for line in a2a_once.splitlines()),
+                               a2a_path) == []
+    assert hv.rewrite(a2a_sample)[1] == ["urllib-request"]    # elsewhere: the refused shim
     assert hv.rewrite(once) == (once, [])
     assert once.count("\n") == sample.count("\n")
     assert hv.unmapped_imports("\n".join(line.strip() for line in once.splitlines())) == []
