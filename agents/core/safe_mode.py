@@ -122,6 +122,8 @@ FORCED_SETTINGS: dict[str, object] = {
     "security.sandbox_timeout": _MORE_LOOSENS,
     "security.sandbox_memory": _UNCAPPED_UNDER_1,              # Docker reads --memory 0m as none
     "autonomy.max_subagent_spawns_per_boot": _UNCAPPED_UNDER_1,
+    "autonomy.subagent_timeout_seconds": _MORE_LOOSENS,
+    "llm.delegate_task": _ON_LOOSENS,
     "channels.rate_limit": _MORE_LOOSENS,
     "learning.review_daily_budget": _MORE_LOOSENS,
     # H378: a higher line, or 0 (never ask), asks before fewer expensive models.

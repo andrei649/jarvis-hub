@@ -99,6 +99,21 @@ def current_tool_turn() -> Optional[str]:
     return _tool_turn.get()
 
 
+#: H400 — where a sync handler's worker-thread future is also noted, when the call runs
+#: inside a sub-agent: the manager keeps the child's slot until those threads return
+#: (a thread cannot be interrupted, so a cancelled child's tool may still be running).
+_sync_thread_sink: ContextVar[Optional[set]] = ContextVar("nerva_sync_thread_sink", default=None)
+
+
+def bind_sync_thread_sink(sink: Optional[set]):
+    """Note every sync-handler thread started in this context in *sink*; returns the token."""
+    return _sync_thread_sink.set(sink)
+
+
+def reset_sync_thread_sink(token) -> None:
+    _sync_thread_sink.reset(token)
+
+
 #: A coroutine function, or (H297) a plain function: a sync handler runs on a worker
 #: thread (``asyncio.to_thread``, the call's context copied) so it never blocks the loop.
 Handler = Callable[[dict], object]
@@ -1212,6 +1227,9 @@ class ToolRPCServer:
             raise
         threads = self._sync_threads.setdefault(name, set())
         threads.add(future)
+        sink = _sync_thread_sink.get()
+        if sink is not None:
+            sink.add(future)
 
         def _finished(done: Future) -> None:
             threads.discard(done)

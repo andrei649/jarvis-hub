@@ -248,6 +248,15 @@ def _mode_projection(orch, task) -> dict:
         shown["asked_under"] = {"mode": asked["mode"],
                                 "source": "agent" if asked.get("source") == "agent" else "global",
                                 "global": asked["global"], "by_mode": asked.get("by_mode") is True}
+    if isinstance(asked, dict) and isinstance(asked.get("delegated"), dict):
+        # H400 review (M2): a sub-agent asked for this, on behalf of an agent's turn.
+        from agents.core.subagents import delegation_label
+
+        delegated = asked["delegated"]
+        shown["delegated_by"] = {"spawn_id": delegated.get("spawn_id", ""),
+                                 "parent": delegated.get("parent", ""),
+                                 "turn": delegated.get("turn", ""),
+                                 "label": delegation_label(delegated)}
     return shown
 
 

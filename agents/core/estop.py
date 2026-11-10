@@ -45,6 +45,11 @@ from pathlib import Path
 from agents.core.paths import install_root, profiles_root
 
 SENTINEL_NAME = "ESTOP"
+#: H400 — the file name of the owner's pause on NEW sub-agent spawns
+#: (``<data root>/subagents/SPAWN_PAUSED``, read and written by
+#: ``agents.core.subagents``). Named here because, like the sentinel above, it is a live
+#: safety switch and not owner data: a forget keeps it and a backup leaves it out.
+SPAWN_PAUSE_SENTINEL = "SPAWN_PAUSED"
 
 # Per-component "logged already for this engagement" flags so a paused
 # dispatch loop logs once per engagement instead of once per tick.

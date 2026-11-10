@@ -310,6 +310,8 @@ DEFAULTS: list[dict[str, Any]] = [
     # Native execute_code remains owner opt-in. Sessions follow that switch by default;
     # the image is needed only for persistent Docker kernels, not one-shot execution.
     dict(category="llm", key="execute_code", value=False, label="Offer native code execution to the owner", kind="toggle"),
+    # H400: off = delegate_task is not registered (read at composition: restart to apply).
+    dict(category="llm", key="delegate_task", value=False, label="Offer delegate_task to the owner's operator turns: the model starts isolated sub-agents (on: restart to apply; off: at once; refused while the Action Kernel is on)", kind="toggle"),
     dict(category="llm", key="execute_code_sessions", value=True, label="Keep native code variables across cells when enabled", kind="toggle"),
     dict(category="llm", key="execute_code_image", value="", label="Digest-pinned Docker image for persistent code sessions", kind="text"),
     dict(category="llm", key="execute_code_mode", value="project", label="Native code context mode", kind="select", opts=["project", "strict"]),
@@ -320,7 +322,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="tool_loop_per_tool_cap", value=0,                 label="Agent tool-loop calls per tool per turn (0 = no cap; todo is not capped)", kind="number"),
     # H486 — Hermes' two named per-turn ceilings ship on at 50 (0 = this ceiling off).
     dict(category="llm",     key="tool_loop_web_search_cap", value=50,              label="Web searches per turn (0 = no ceiling)", kind="number"),
-    dict(category="llm",     key="tool_loop_subagent_spawn_cap", value=50,          label="Sub-agent spawns per tool-loop turn (0 = no ceiling; dormant: the model has no spawn tool, HTTP spawns are not in a turn)", kind="number"),
+    dict(category="llm",     key="tool_loop_subagent_spawn_cap", value=50,          label="Sub-agents one tool-loop turn may start through delegate_task (0 = no ceiling; HTTP spawns are not in a turn)", kind="number"),
     dict(category="llm",     key="tool_loop_stall_halt_enabled", value=False,        label="Stop stalled tool loops at failure/no-progress thresholds (off = guidance only)", kind="toggle"),
     dict(category="llm",     key="skills_in_prompt", value=True,                    label="List skill commands in the model prompt", kind="toggle"),
     # H594: read the project's AGENTS.md / CLAUDE.md / .cursorrules into the turn (scanned, bounded, tainting).
@@ -588,6 +590,8 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="autonomy", key="night_start",     value=23,     label="Night window start (h)", kind="number"),
     dict(category="autonomy", key="night_end",       value=6,      label="Night window end (h)", kind="number"),
     dict(category="autonomy", key="max_subagent_spawns_per_boot", value=50, label="Max sub-agent spawns per boot (0 = unbounded)", kind="number"),
+    # H400: one sub-agent's wall clock; past it the child is cancelled and its spawn fails.
+    dict(category="autonomy", key="subagent_timeout_seconds", value=300, label="Sub-agent time limit (5–3600 s)", kind="number"),
     # H681: the model a delegated sub-agent runs on when its spawn names none (empty =
     # the agent's own route), and the provider that serves it (empty = the routed one).
     dict(category="autonomy", key="subagent_model", value="", label="Sub-agent model (empty = the agent's own)", kind="text"),
@@ -1179,6 +1183,8 @@ def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
         return f"{key}: expected an integer between 1 and 300 seconds"
     if key == "run_timeout_seconds" and (type(value) is not int or not 0 <= value <= 86_400):
         return f"{key}: expected an integer between 0 (unbounded) and 86400 seconds"
+    if key == "subagent_timeout_seconds" and (type(value) is not int or not 5 <= value <= 3600):
+        return f"{key}: expected an integer between 5 and 3600 seconds"
     if key == "task_max_seconds" and (type(value) is not int or not 1 <= value <= 86_400):
         return f"{key}: expected an integer between 1 and 86400 seconds"
     if key == "sandbox_temp_dir":

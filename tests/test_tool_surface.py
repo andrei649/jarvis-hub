@@ -80,7 +80,7 @@ UPDATE_HINT = ("If the change is intended, run `python tests/test_tool_surface.p
 #: Every default-off tool switched on: the snapshot pins every tool a host can register.
 #: A tool that is off on a fresh install is not a tool whose schema may drift.
 ENV = {"JARVIS_FILE_TOOLS": "1", "JARVIS_MEDIA_DIRECTOR": "1", "JARVIS_VIDEO_ANALYSIS": "1"}
-SETTINGS = {"llm.execute_code": True, "channels.pending_inputs_enabled": True}
+SETTINGS = {"llm.execute_code": True, "channels.pending_inputs_enabled": True, "llm.delegate_task": True}
 #: Host settings that make an already-registered tool offer another description or schema
 #: (H325 review r1). Each is pinned as the rows it changes against the base registry.
 #: ``session_kernels``: an image pinned by digest composes the K2 kernel manager

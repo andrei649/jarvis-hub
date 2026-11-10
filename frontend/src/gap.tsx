@@ -1557,6 +1557,26 @@ export function SubAgentsPanel() {
   const [steerText, setSteerText] = useState('');
   const atCap = stats.cap != null && (stats.active ?? 0) >= stats.cap;
   const statusColor = (s) => (s === 'done' ? 'var(--green)' : s === 'failed' ? 'var(--red)' : 'var(--amber)');
+  // H400 — whether a NEW sub-agent would start now: the emergency stop, the kill switch and
+  // the owner's pause all refuse new spawns (the model's delegate_task included) and leave
+  // running ones alone. The pause routes answer the state read back; that is what is shown.
+  const gate = (d && d.gate) || null;
+  const HALTS = { estop_engaged: 'emergency stop', kill_switch_halted: 'kill switch', halt_state_unknown: 'stop state unreadable' };
+  const togglePause = () => {
+    if (!gate) return;
+    const pausing = !gate.paused;
+    setNote(null);
+    act(pausing ? '/api/subagents/pause' : '/api/subagents/resume', {},
+      (r) => {
+        const paused = !!(r && r.paused);
+        if (paused !== pausing) setNote(pausing ? 'refused · spawning was not paused' : 'refused · spawning is still paused');
+        else if (pausing) setNote('new sub-agents paused · running ones continue');
+        else if (r && r.accepting) setNote('new sub-agents resumed');
+        else setNote(`pause lifted · still stopped by the ${HALTS[r && r.halted] || 'emergency stop'}`);
+        reload();
+      },
+      (err) => { setNote(`refused · ${refusalReason(err, pausing ? 'pause failed' : 'resume failed')}`); reload(); });
+  };
   const spawn = () => {
     const t = task.trim();
     if (!t || pending) return;
@@ -1665,6 +1685,20 @@ export function SubAgentsPanel() {
               <Tag>{stats.total ?? spawns.length} total</Tag>
             </span>
           </Row>
+          {gate && (
+            <Row><span style={mono}>new sub-agents</span>
+              <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+                {gate.halted && <Tag c="var(--red)">{HALTS[gate.halted] || 'stopped'}</Tag>}
+                {gate.paused && <Tag c="var(--amber)">paused</Tag>}
+                {gate.accepting && <Tag c="var(--green)">accepting</Tag>}
+                <button
+                  className="tool-btn"
+                  title={gate.paused ? 'let new sub-agents start again' : 'refuse new sub-agents; running ones continue'}
+                  onClick={togglePause}
+                >{gate.paused ? 'resume spawning' : 'pause spawning'}</button>
+              </span>
+            </Row>
+          )}
           {spawns.slice(0, 10).map((s, i) => (
             <React.Fragment key={s.id || i}>
               <Row>

@@ -133,11 +133,13 @@ _CAP_NOTICE = (
 # per-tool cap these ceilings ship ON: `tool_turn_caps` names a tool and its ceiling (the
 # coordinator reads llm.tool_loop_web_search_cap), an unreadable value reads as the shipped
 # ceiling rather than as "off", and 0 turns one ceiling off on purpose. When the generic
-# cap is also set the stricter of the two applies. Sub-agent spawns have no model-facing
-# tool today; their ceiling (llm.tool_loop_subagent_spawn_cap) is a dormant guard in
-# subagents.SubAgentManager, keyed on the same per-run tool turn, for the day one exists.
+# cap is also set the stricter of the two applies. Sub-agent spawns are counted per child,
+# not per call: their ceiling (llm.tool_loop_subagent_spawn_cap) is enforced in
+# subagents.SubAgentManager, keyed on the same per-run tool turn, for every child the
+# delegate_task tool (H400) starts in this turn.
 DEFAULT_TURN_CEILING = 50
-DEFAULT_TURN_CEILINGS: Mapping[str, int] = MappingProxyType({"web_search": DEFAULT_TURN_CEILING})
+DEFAULT_TURN_CEILINGS: Mapping[str, int] = MappingProxyType(
+    {"web_search": DEFAULT_TURN_CEILING, "delegate_task": DEFAULT_TURN_CEILING})
 _DUPLICATE_NOTICE = (
     "This result is byte-identical to the result of call {call_id} earlier this turn and "
     "was not repeated; refer to that result."
@@ -290,6 +292,7 @@ class AgentToolRuntime:
         execution_profile: ToolProfileHook | None = None,
         per_tool_limit: int | Callable[[], int] = 0,
         tool_turn_caps: Mapping[str, Any] | Callable[[], Mapping[str, Any]] | None = None,
+        tool_timeouts: Mapping[str, Any] | Callable[[], Mapping[str, Any]] | None = None,
         duplicate_stub_bytes: int = _DEFAULT_DUPLICATE_STUB_BYTES,
         result_store: Any | None = None,
         result_thresholds: Callable[[], Mapping[str, object]] | None = None,
@@ -324,6 +327,10 @@ class AgentToolRuntime:
         # H486 — None keeps the shipped ceilings; a mapping (or a reader of one) overrides
         # them by tool name and is re-read each time it is consulted.
         self._tool_turn_caps = tool_turn_caps
+        # H400 — a tool whose one call is long by design (delegate_task waits for its
+        # sub-agents) names its own call deadline here; every other tool keeps
+        # ``tool_timeout_seconds``. Re-read at each call; the run's wall still bounds it.
+        self._tool_timeouts = tool_timeouts
         self._duplicate_stub_bytes = _safe_int(
             duplicate_stub_bytes, default=_DEFAULT_DUPLICATE_STUB_BYTES, minimum=64,
         )
@@ -1447,6 +1454,27 @@ class AgentToolRuntime:
             return shipped or 0
         return _safe_int(overrides[name], default=shipped or DEFAULT_TURN_CEILING, minimum=0)
 
+    def _timeout_for(self, name: str) -> float:
+        """H400: how long one call to *name* may take. The loop's own deadline unless the
+        host named another for this tool; an unreadable, non-numeric or non-positive
+        value is the loop's deadline, and a named one is clamped to the wall's range."""
+        overrides = self._tool_timeouts
+        if callable(overrides):
+            try:
+                overrides = overrides()
+            except Exception:
+                logger.warning("per-tool timeouts unreadable; the default tool timeout applies")
+                overrides = None
+        if not isinstance(overrides, Mapping) or name not in overrides:
+            return self._tool_timeout_seconds
+        raw = overrides[name]
+        if isinstance(raw, bool):
+            return self._tool_timeout_seconds
+        parsed = _safe_float(raw, default=0.0)
+        if parsed <= 0:
+            return self._tool_timeout_seconds
+        return min(max(WALL_SECONDS_MIN, parsed), WALL_SECONDS_CAP)
+
     def _cap_for(self, name: str) -> int:
         """The limit one tool gets this turn: the stricter of the generic per-tool cap and
         the tool's own ceiling, either one alone when the other is off, 0 when both are."""
@@ -1838,7 +1866,7 @@ class AgentToolRuntime:
                     {"tool": call.name, "args": call.arguments},
                     **handle_kwargs,
                 ),
-                timeout=self._tool_timeout_seconds,
+                timeout=self._timeout_for(call.name),
                 exclude_human_wait=True,
             )
         except _OwnedTimeout:

@@ -31,7 +31,7 @@ DEFAULTS = lambda key, default: default  # noqa: E731 — the settings a fresh i
 #: Settings the snapshot resolves under: every default-off tool switched ON, so the
 #: snapshot pins the widest registry a host can present. A tool that is off on a fresh
 #: install is not a tool whose postures may go unreviewed.
-SNAPSHOT_SETTINGS = {"llm.execute_code": True}
+SNAPSHOT_SETTINGS = {"llm.execute_code": True, "llm.delegate_task": True}
 
 
 def _live_registry(root: str) -> list[dict]:

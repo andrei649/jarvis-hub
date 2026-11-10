@@ -1212,6 +1212,95 @@ not spilled to a file.
 **Revert:** set it back to `false` and restart; the tool disappears from the allowlist.
 A call already in flight is refused on its next tool call.
 
+### `llm.delegate_task` (+ `autonomy.subagent_timeout_seconds`, the spawn pause)
+
+**Default: OFF** (`agents/core/delegate_tool.py`). Switching it on is read at composition
+(restart to apply); switching it off applies at once.
+
+**OFF:** `register_delegate_tool` is a no-op — `delegate_task` is not on the ToolRPC
+allowlist, so no profile can offer it. Turned off on a running hub, it is no longer
+offered from the next turn, and a call that still reaches it is refused
+(`delegate_task_disabled`). The owner's `/api/subagents` routes work as before.
+
+**ON:** in the owner's own operator turn (the web HUD, the local voice loop) the model
+may hand up to 16 self-contained tasks to isolated sub-agents and wait for their
+answers. The tool calls the same `SubAgentManager` the routes call; it is no second way
+to start a child. Ungated, like `execute_code`: starting a child changes nothing by
+itself, and every tool a child calls is mediated as the parent's would be.
+
+**What a child is.** The same agent as its parent (the model cannot pick another), in a
+session of its own, given a focused brief (the goal, the context the parent wrote, the
+output contract) and none of the parent's history. Its tools are the tools the parent
+turn was offered, minus `delegate_task`, `memory`, `skill_propose`, `clarify`, `speak`,
+`cronjob` and the board tools; the bound is enforced where tools are offered and again
+in `ToolRPCServer.handle`, and it ends with the child. It runs under the parent's
+principal, approval mode and action origin, so a parent turn that read untrusted
+content hands that taint to its child, and a gated call a child makes queues for the
+owner's approval; its card's title starts `[asked by sub-agent <id> of <agent>: <goal>]`
+(the HUD inbox and `nerva approvals list` show it; `/autonomy/approvals` and
+`/autonomy/tasks` also carry `delegated_by`). The request itself — kind, payload, risk
+— is the same one the parent would make, and is gated the same way. A child's loop
+exit, refusals and trajectory are its own and do not land in the delegating request's
+collectors. What a child answers comes back as a tool result declared untrusted:
+the loop fences it as data and marks the parent turn. With `output_schema` the answer
+must be JSON that validates (type, required, enum, properties, items), checked by the
+parent. An answer over 200,000 characters, or JSON nesting deeper than 32 levels, fails
+the check; a valid parsed answer over 24,000 characters is reported as
+`structured_omitted` (the text, cut at 24,000 characters, stays). A schema the check
+cannot apply is refused before any child starts, on the routes too
+(`invalid_output_schema`); any failure while recording a child's outcome fails that
+child (`answer_unchecked`, a fixed message) and gives its slot back.
+
+**Who is refused.** A guest, an inbound channel turn (the owner's too), a job or
+heartbeat, a script run by `execute_code`, a direct `/api/toolrpc/call`, and a sub-agent
+itself: `delegate_task` is an owner-operator tool, whatever `llm.guest_tools`,
+`llm.inbound_actuation` or `llm.internal_actuation` say. It is also refused while the
+agent's approval mode is `off`. **With the Action Kernel on (`JARVIS_ACTION_KERNEL`),
+delegation is off:** the kernel classifies the spawn as a `tool.rpc` effect at the
+irreversible tier and asks the owner, and a delegation has no approval card to wait on,
+so the call is refused with `kernel_requires_approval` (a kernel DENY is
+`kernel_denied`). This is the same as an `execute_code` session cell under the kernel;
+the kernel's classification is not loosened for delegation.
+
+**Limits the model cannot raise.** `autonomy.max_subagents` (how many run at once; a call
+with more tasks than free slots is refused whole), `autonomy.max_subagent_depth` (a child
+cannot delegate at all), `llm.tool_loop_subagent_spawn_cap` (children per turn),
+`autonomy.max_subagent_spawns_per_boot`, the same number again as a ceiling on
+`delegate_task` CALLS per turn (refused ones count), and
+**`autonomy.subagent_timeout_seconds`**
+(default 300, whole seconds 5..3600, no "off"; an unreadable value is 300): a child past
+it is cancelled, its spawn is recorded `failed` with `error: timeout`, and its slot is
+released when its task has ended. A sync tool handler a child had already started runs
+to its end (ToolRPC cannot interrupt a thread); the cancelled child can call nothing
+further, and its slot stays taken (the record shows `threads_running`) until that thread
+returns, so the threads running for children never exceed the cap. There is no per-turn
+money budget to count children against: a child inherits the
+delegating request's usage collector (`turn_usage`, not detached), but a sub-agent's one-shot completion
+is not metered into `cost_tracker`, so it is not in the spend `llm.daily_cost_cap_usd`
+checks (a known gap of every one-shot completion, not closed here). The delegating turn is still bounded by its own agent timeout
+(`agents.agent_timeout_seconds`, 120 s by default; `agents.reasoning_timeout_seconds` on
+the deep route): children that need longer
+than that end with the turn.
+
+**The batch quality gate.** A `delegate_task` call is refused whole, before any child
+starts, when a goal is a placeholder (`todo`, `task 3`), carries an unexpanded template
+marker (a multi-word name in `<...>` or `{...}`), or, with two or more tasks, is under
+ten characters. The owner's own batch (`POST /api/subagents/batch`) is not judged.
+
+**Stopping new sub-agents.** `POST /api/subagents/pause` (admin; optional `reason`) and
+`POST /api/subagents/resume` pause and resume NEW spawns for the routes and the tool
+alike; `GET /api/subagents` reports it under `gate`. The pause is a file in the data
+root (`subagents/SPAWN_PAUSED`), so it holds across a restart; a forget keeps it and a
+backup does not carry it (a restore neither lifts nor reinstates a pause). The emergency stop
+(`/api/ops/estop/engage`) and a halted kill switch stop new spawns the same way, the
+owner's own route spawns included, and a pause or stop state that cannot be read counts
+as stopped. Refusals: `spawn_paused`, `estop_engaged`, `kill_switch_halted`,
+`halt_state_unknown` (HTTP 409 on the routes). None of them touches a sub-agent that is
+already running: stop one with `POST /api/subagents/{id}/stop`.
+
+**Rollback:** set `llm.delegate_task` off (it applies at once); the routes, the pause and the
+timeout stay.
+
 ### `llm.execute_code_sessions` (+ `llm.execute_code_image`, `llm.execute_code_max_kernels`, `llm.execute_code_idle_ttl`)
 
 **Execution context (H595):** `llm.execute_code_mode` accepts `project`
@@ -1572,14 +1661,12 @@ the shipped 50 (never "off"). Past the ceiling the call is refused with the cap
 notice and the loop ends the turn with that notice, exactly as the generic cap
 already does; this is now on by default for `web_search`.
 
-`llm.tool_loop_subagent_spawn_cap` (default 50, `0` = off) is a **dormant guard**.
-It applies at `SubAgentManager.spawn` only to spawns made inside a bound tool-loop
-turn (refusal `turn_spawn_cap`). No such spawn exists today: the model has no
-spawn tool, and the only callers of `spawn`/`spawn_batch` are the
-`/api/subagents/spawn` and `/batch` HTTP routes, which run outside any tool-loop
-turn and are limited by `autonomy.max_subagent_spawns_per_boot` and the
-concurrency/depth caps instead. The guard starts to matter if a model-facing spawn
-tool is ever added.
+`llm.tool_loop_subagent_spawn_cap` (default 50, `0` = off) applies at
+`SubAgentManager.spawn` to spawns made inside a bound tool-loop turn (refusal
+`turn_spawn_cap`): the children the model starts with `delegate_task` (H400, off unless
+`llm.delegate_task` is on) are counted per turn. The `/api/subagents/spawn` and `/batch`
+HTTP routes run outside any tool-loop turn and are limited by
+`autonomy.max_subagent_spawns_per_boot` and the concurrency/depth caps instead.
 
 ## `JARVIS_PROVIDER_PLUGINS` — signed model-provider installation
 

@@ -1,6 +1,7 @@
 {
   "registry": [
     "canvas_point",
+    "delegate_task",
     "desktop_plan",
     "desktop_run",
     "echo",

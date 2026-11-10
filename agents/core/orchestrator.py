@@ -15,7 +15,7 @@ import importlib
 import re
 import time
 import uuid
-from contextlib import asynccontextmanager, nullcontext, suppress
+from contextlib import asynccontextmanager, contextmanager, nullcontext, suppress
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Callable, Optional
@@ -353,6 +353,41 @@ _active_session: contextvars.ContextVar = contextvars.ContextVar(
 _session_is_shared: contextvars.ContextVar = contextvars.ContextVar(
     "jarvis_session_is_shared", default=None
 )
+
+
+@contextmanager
+def child_turn_scope(session_id: str):
+    """H400 — a delegated sub-agent's turn: a session and per-turn meter maps of its own.
+
+    A child runs in a task that copied its spawner's context, so without this it would
+    read the spawner's session (its history is what "isolated" must keep out) and write
+    its route and usage into the spawner's per-turn maps. The session becomes
+    *session_id*; whether the turn counts as being on the shared session is NOT
+    loosened — it keeps the spawner's answer, and a spawn made outside any turn counts
+    as shared — so a session-scoped tool is never offered to a child that its spawner
+    would not have been offered. The spawner's per-turn collectors are detached too
+    (H400 review, minor 1): the runtime-stop collector, the turn-outcome collector and
+    the trajectory recorder — a child's loop exit, refusals and transcript are its own,
+    not the request that delegated. The pending-approval collector stays: an approval a
+    child queued is one that request is waiting on. Everything else the context carries
+    (the principal, the action origin and its taint, a job's toolset bound) is inherited
+    on purpose."""
+    from . import trajectory, turn_outcome, turn_stops
+
+    shared = _session_is_shared.get()
+    tokens = (
+        (_active_session, _active_session.set(session_id)),
+        (_session_is_shared, _session_is_shared.set(True if shared is None else shared)),
+        (_TURN_METER_MAPS, _TURN_METER_MAPS.set({})),
+        (turn_stops._CURRENT, turn_stops._CURRENT.set(None)),
+        (turn_outcome._current, turn_outcome._current.set(None)),
+        (trajectory._active, trajectory._active.set(None)),
+    )
+    try:
+        yield
+    finally:
+        for var, token in reversed(tokens):
+            var.reset(token)
 
 
 def _sum_usage(running, incoming):

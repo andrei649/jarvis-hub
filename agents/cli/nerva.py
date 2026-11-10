@@ -2399,8 +2399,8 @@ def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
         for task in pending:
             flag = "reversible" if task.get("reversible") else "IRREVERSIBLE"
             ctx.say(
-                f"#{task.get('id', '?')}  tier {task.get('risk_tier', '?')}  {flag:12s}  "
-                f"{task.get('kind', '?')}  — {task.get('title', '')}"
+                f"#{_plain(task.get('id', '?'), 20)}  tier {_plain(task.get('risk_tier', '?'), 8)}  {flag:12s}  "
+                f"{_plain(task.get('kind', '?'), 80)}  — {_plain(task.get('title', ''), 400)}"
             )
             note = _approval_mode_note(task.get("approval_mode"), task.get("asked_under"))
             if note:

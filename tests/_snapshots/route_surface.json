@@ -656,6 +656,8 @@
   "POST /api/skills/{name}/approve",
   "POST /api/skills/{name}/discard",
   "POST /api/subagents/batch",
+  "POST /api/subagents/pause",
+  "POST /api/subagents/resume",
   "POST /api/subagents/spawn",
   "POST /api/subagents/{spawn_id}/steer",
   "POST /api/subagents/{spawn_id}/stop",

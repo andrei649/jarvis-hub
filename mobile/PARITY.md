@@ -262,6 +262,7 @@ remain open, so the partial rows below do not become shipped. Details and source
 | Escalation (ask-tier fan-out) | `GET /api/autonomy/escalation/targets` (open); admin `POST /api/autonomy/escalate` | ✅ | ➖ admin ceremony run from the owner HUD; the phone is the escalation *target*, not the fan-out control (triage 2026-09-01) | — |
 | Agent dossier (soul + run history) | `GET /api/agents/{agent_id}/soul`, `GET /api/agents/{agent_id}/history` | ✅ | ⬜ | |
 | Sub-agent steer + stop (H20.6) | `POST /api/subagents/{spawn_id}/steer`, `POST /api/subagents/{spawn_id}/stop` | ⬜ routes shipped, no HUD control yet — the Console SUB-AGENTS panel lists and spawns only | ⬜ | |
+| Sub-agent spawn pause (H400) | admin `POST /api/subagents/pause`, `POST /api/subagents/resume`; `gate` on user `GET /api/subagents` | ✅ Console SUB-AGENTS panel (pause / resume, emergency-stop and kill-switch state) | ➖ admin ceremony run from the owner HUD | — |
 | Local models + cloud auth profiles + VLM status | user `GET /api/vlm/status`; admin `POST /api/llm/{load,unload}`, `GET /api/llm/auth-profiles`, `GET /api/models/info`, `GET /api/models/local`, `POST /api/models/local/switch` | ✅ | ➖ hub-host capability (model lifecycle lives on the hub's GPU box; triage 2026-09-01) | — |
 | System profile (read-only; selected via `JARVIS_SYSTEM_PROFILE`) | `GET /api/system/profiles` | ✅ | ⬜ | |
 | Sentence-streamed TTS | `POST /tts/stream` | ✅ | ⬜ | |
