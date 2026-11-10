@@ -2751,8 +2751,13 @@
   schema latch) is fixed too: a list row is now the newest part of a conversation (every branch end
   reachable), backups are pruned once after a whole-conversation delete, automatic duplicates get
   "(2)" not "#2", a schema refusal is read from the error body, and the lineage columns are indexed
-  (49 more tests). Neither second fix round has been reviewed a third time. Both rows stay
-  `partial`; 146/697.
+  (49 more tests). **Third reviews (2026-11-10):** H484 — no blocker, judged safe
+  to merge (no non-owner path loosens, nothing fails open in-process, nothing machine-approved runs
+  under `off`); its two majors are fixed (the sync froze the event loop behind the write lock; an
+  unreadable store was served from the last value seen) and its minors are listed on the row. H440 —
+  one more blocker (a chat written to after it was continued was hidden with its newer turns), a
+  backup set cut by the next prune, and schema-refusal false positives; fixes in progress. Both rows
+  stay `partial`; 146/697.
 
 ## Darwin feature absorption — 2026-09-09
 
