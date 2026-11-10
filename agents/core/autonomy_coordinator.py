@@ -738,6 +738,15 @@ class AutonomyCoordinator:
             raise RuntimeError('governed scheduled-task intake is unavailable')
         return enqueue(**kwargs)
 
+    def _clean_session_check(self):
+        """H443 — ``session_id -> bool``: whether a conversation is on the review's clean
+        list, read per call from the hub's ledger (none: not clean)."""
+        def is_clean(session_id: str) -> bool:
+            store = getattr(self._orch, "memory_proposals", None)
+            return store is not None and store.is_clean(session_id) is True
+
+        return is_clean
+
     def _wire_agent_tool_runtime(self, action_kernel=None, *, _browser_fixture_origin=None):
         """Build the shared, default-off governed tool loop for loaded agents."""
         # Keep imports local: AgentToolRuntime imports ToolRPCServer, while the
@@ -1563,7 +1572,8 @@ class AutonomyCoordinator:
         # reaches the model. Who may ask is the tool profile's decision (3b), not the tool's.
         from .memory.session_search import register_session_search
 
-        register_session_search(server)
+        # H443: a hit from a conversation off the review's clean list taints the turn.
+        register_session_search(server, is_clean=self._clean_session_check())
         # 1.1.0 operator wave — governed file read/list/search/write/delete. Default-off:
         # register_file_tools returns [] and touches nothing unless JARVIS_FILE_TOOLS
         # is set. The two mutating tools are gated, so they can only run from an
@@ -1654,6 +1664,7 @@ class AutonomyCoordinator:
         register_search_memory(
             server,
             lambda: getattr(getattr(self._orch, "memory", None), "recall", None),
+            is_clean=self._clean_session_check(),
         )
 
         acquisition = AcquisitionRuntime(

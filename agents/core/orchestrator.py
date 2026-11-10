@@ -1266,6 +1266,7 @@ class Orchestrator:
                 MemoryProposalStore, _dp("learning", "memory_proposals.json"))
 
             self.reviewer = self._build_background_reviewer()
+            self.install_history_guards()
             await self.settle_memory_proposals()
 
             # H20.5 — usage telemetry (sidecar, best-effort) + the nightly skill
@@ -1581,6 +1582,49 @@ class Orchestrator:
         except Exception:
             logger.warning("learning review: the conversation could not be taken off the clean list on "
                            "disk; it is off it in this process", exc_info=True)
+
+    async def _history_write_guard(self, session_id: Optional[str], channel: Optional[str] = None, *,
+                                   force: bool = False) -> None:
+        """H443 — the check every turn written into a session's history passes first
+        (``ConversationMemory.write_guard``): a turn whose speaker is untrusted or a guest
+        (``_turn_is_untrusted``), that arrives on a channel that is not the owner's own
+        surface, or that goes into an imported conversation takes that conversation off
+        the clean list before the text is stored. Never raises into the write."""
+        store = getattr(self, "memory_proposals", None)
+        if store is None:
+            return
+        try:
+            sid = Orchestrator._review_key(session_id)
+            if not store.is_clean(sid):
+                return
+            from .action_origin import INBOUND_ACTION_ORIGIN, origin_for_channel
+
+            conversation = getattr(getattr(self, "memory", None), "conversation", None)
+            untrusted = (force or _turn_is_untrusted()
+                         or (bool(channel) and origin_for_channel(channel) == INBOUND_ACTION_ORIGIN)
+                         or sid in (getattr(conversation, "foreign_origins", None) or {}))
+        except Exception:
+            untrusted = True
+            sid = Orchestrator._review_key(session_id)
+        if untrusted:
+            await Orchestrator._note_turn_taint(self, sid)
+
+    def _history_load_guard(self, session_id: Optional[str]) -> None:
+        """H443 — a history loaded whole (a continuation seed, an import) leaves the clean
+        list in memory at once; its turns' dates keep it off after a restart."""
+        store = getattr(self, "memory_proposals", None)
+        if store is not None:
+            try:
+                store.forget_clean(Orchestrator._review_key(session_id))
+            except Exception:
+                logger.debug("learning review: a loaded history was not taken off the clean list", exc_info=True)
+
+    def install_history_guards(self) -> None:
+        """H443 — put the two guards on the conversation store this hub writes through."""
+        conversation = getattr(getattr(self, "memory", None), "conversation", None)
+        if conversation is not None:
+            conversation.write_guard = self._history_write_guard
+            conversation.load_guard = self._history_load_guard
 
     async def _watch_turn_start(self, session_id: Optional[str]) -> None:
         """H443 — as a turn starts, before its message joins the conversation: an
@@ -2495,6 +2539,10 @@ class Orchestrator:
     ) -> Optional[str]:
         """One inbound channel message → one turn, under the session's lease."""
         if observe_only:
+            # H443: a message the hub only watches (a group, a third party) is never the
+            # owner's word: the conversation leaves the clean list before it is stored
+            # (the history write guard does too; this holds without it).
+            await Orchestrator._note_turn_taint(self, self.session_id)
             await self.memory.add_turn(self.session_id, "user", text, channel=channel)
             return None
         async with self.turn_lease() as acquired:
@@ -4457,6 +4505,17 @@ class Orchestrator:
         from .security.recall_taint import mark_turn_recall_tainted
         wrapped = wrap_memory([provenance_from_hit(h) for h in (hits or [])],
                               label="long-term memory (recall)")
+        from .learning.memory_proposals import hits_from_unclean
+
+        store = getattr(self, "memory_proposals", None)
+        if store is not None and hits_from_unclean(hits, store.is_clean):
+            # H443: this prompt now carries a turn recalled from a conversation off the
+            # clean list (a stranger's, a guest's, a channel's, one older than the
+            # ledger): the conversation leaves the clean list, so a reply that restates it
+            # is never written to memory without the owner. (The kernel's own recall taint
+            # stays with the hit's marks below: an owner's pre-upgrade turn is not made
+            # untrusted for actions by this.)
+            await Orchestrator._note_turn_taint(self, self.session_id)
         if wrapped.tainted:
             # SEC-B5: the prompt now carries untrusted recalled memory, so anything this
             # turn emits is derived from it — raise the turn's action origin so the kernel
@@ -4984,7 +5043,11 @@ class Orchestrator:
             logger.debug("background review cancel skipped", exc_info=True)
             cancelled = False
         principal = current_principal()
-        if principal.admin is not True or principal.scope != "dm":
+        bound = _turn_principal.get()
+        # H443: a turn nobody signed in to on the hub's own machine (the local voice loop,
+        # the terminal) is shown counts only — never a fact, never a preview.
+        local_unbound = bound is None and not _turn_is_untrusted()
+        if not local_unbound and (principal.admin is not True or principal.scope != "dm"):
             # H443: a group chat's reply is read by everyone in it; the owner's notices
             # wait for a conversation that is the owner's alone.
             return cancelled
@@ -4992,7 +5055,8 @@ class Orchestrator:
         from .learning.review_policy import notification_mode
 
         notices = self.__dict__.get("_review_notices") or {}
-        mode = notification_mode(getattr(self, "get_setting", None))
+        platform = str(principal.channel or "").strip().lower() if bound is not None else ""
+        mode = notification_mode(getattr(self, "get_setting", None), platform or None)
         if mode == "off":
             # H443 (display.memory_notifications): no line. The reviews still ran and
             # wrote; nothing is kept to show later.
@@ -5004,8 +5068,11 @@ class Orchestrator:
 
         def line_for(sid: str) -> str:
             notice = notices[sid]
-            return (str(getattr(notice, "verbose", notice)) if mode == "verbose" and (sid == key or local)
-                    else str(notice))
+            verbose = (mode == "verbose" and (sid == key or local) and not local_unbound
+                       and getattr(notice, "counts_only", False) is not True)
+            line = str(getattr(notice, "verbose", notice)) if verbose else str(notice)
+            explain = getattr(notice, "explain", "")
+            return f"{line}\n{explain}" if line and explain else line
 
         if mode == "on":
             # A pass that only skipped things has no `on` line: nothing to keep for it.
@@ -5016,7 +5083,12 @@ class Orchestrator:
         shown = ready[:_REVIEW_NOTICE_LINES]
         lines = [line_for(sid) if sid == key else f"{line_for(sid)} (conversation {sid})" for sid in shown]
         if lines and record_turn_notice("background_review", "\n".join(lines)):
+            explained = self.__dict__.setdefault("_unclean_explained", set())
             for sid in shown:
+                if getattr(notices.get(sid), "explain", ""):
+                    explained.add(sid)
+                    while len(explained) > 4096:
+                        explained.pop()
                 notices.pop(sid, None)
         return cancelled
 
@@ -5140,8 +5212,9 @@ class Orchestrator:
             "review_max_tokens", self.get_setting("learning.review_max_tokens", 512), 512))
         replay = build_replay(earlier, replay_mode(router), budget)
         store = getattr(self, "memory_proposals", None)
-        if not scope.tainted and (not readable or store is None
-                                  or not store.session_clean(scope.session_id, turns)):
+        conversation_unclean = (not readable or store is None
+                                or not store.session_clean(scope.session_id, turns))
+        if not scope.tainted and conversation_unclean:
             # The conversation is not on the clean list, or holds a turn from before it
             # was watched: what the replay carries is not written to memory without the
             # owner.
@@ -5174,6 +5247,8 @@ class Orchestrator:
             logger.debug("learning review skipped: %s", result.get("reason"))
         for action in result.get("actions", []):
             logger.info("learning review: %s", action)
+        if isinstance(result, dict) and conversation_unclean:
+            result["held_unclean"] = True
         self._queue_review_summary(self.session_id, result, scope)
 
     def _attribute_review_usage(self, session_id: Optional[str], result: dict, usage: dict,
@@ -5227,13 +5302,27 @@ class Orchestrator:
         never shown to anyone else (``_settle_background_review``). H443: what the line
         says (``display.memory_notifications``: nothing, what happened, or that with a
         preview of each fact) is decided where it is shown."""
-        from .learning.review_policy import review_notice
+        from .learning.review_policy import unclean_explanation, review_notice
 
         notice = review_notice(result)
-        if notice is None or current_principal().admin is not True:
+        if notice is None:
             return
-        if scope is not None and scope.owner is not True:
+        if scope is None:
+            if current_principal().admin is not True:
+                return
+        elif scope.owner is not True and scope.local_unbound is not True:
             return
+        if scope is not None and scope.local_unbound is True:
+            # H443: a turn nobody signed in to (the local voice loop, the terminal) — its
+            # held writes are told to the owner at their next turn, as counts, never the
+            # facts: whoever spoke there is not known to be the owner.
+            notice.counts_only = True
+            notice.verbose = str(notice)
+        explained = self.__dict__.setdefault("_unclean_explained", set())
+        key = self._review_key(session_id)
+        if (isinstance(result, dict) and result.get("held_unclean") and (result.get("counts") or {}).get("proposed")
+                and key not in explained):
+            notice.explain = unclean_explanation(getattr(scope, "channel", ""))
         notices = self.__dict__.setdefault("_review_notices", {})
         notices.pop(self._review_key(session_id), None)
         while len(notices) >= _REVIEW_NOTICES_LIMIT:

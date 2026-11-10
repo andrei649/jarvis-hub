@@ -443,7 +443,8 @@ def _cap_text(out: dict, field: str) -> None:
         out["flags"] = flags
 
 
-def register_search_memory(server: Any, recall_getter: Callable[[], Any], *, scan: bool = True) -> str:
+def register_search_memory(server: Any, recall_getter: Callable[[], Any], *, scan: bool = True,
+                           is_clean: Callable[[str], bool] | None = None) -> str:
     """Expose ``search_memory`` on a ToolRPC server, over whatever recall the getter
     returns at call time (the live memory manager's fused recall, sync or async).
 
@@ -475,7 +476,12 @@ def register_search_memory(server: Any, recall_getter: Callable[[], Any], *, sca
         tool = MemorySearchTool(lambda _q, _k: hits, scan=scan)
         try:
             result = tool.search(query, top_k)
-            result["tainted"] = any(_hit_tainted(h) for h in result.get("hits") or [])
+            from ..learning.memory_proposals import hits_from_unclean
+
+            # H443: a hit taken from a conversation that is not on the review's clean list
+            # (a stranger's, a guest's, a channel's) is not the owner's word either.
+            result["tainted"] = (any(_hit_tainted(h) for h in result.get("hits") or [])
+                                 or hits_from_unclean(raw, is_clean))
         except Exception as exc:
             # the scan/verdict never leaks a traceback to the model: a named refusal,
             # and nothing from the hits is delivered

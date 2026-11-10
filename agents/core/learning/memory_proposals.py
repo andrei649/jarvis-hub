@@ -155,6 +155,47 @@ def clean_operations(operations: Any) -> list[dict]:
     return out
 
 
+_SESSION_KEYS = ("session_id", "session")
+_NESTED_KEYS = ("payload", "metadata", "properties")
+
+
+def hit_session(hit: Any, _depth: int = 0) -> str | None:
+    """H443 — the conversation a recalled or searched hit was taken from, when it names
+    one (``session_id`` or ``session``, on the hit or in its payload / metadata /
+    properties), else None (a hit that is not conversation text: a fact, a document)."""
+    if _depth > 3:
+        return None
+    if not isinstance(hit, dict):
+        payload = getattr(hit, "payload", None)
+        return hit_session(payload, _depth + 1) if isinstance(payload, dict) else None
+    for key in _SESSION_KEYS:
+        value = hit.get(key)
+        if isinstance(value, str) and value:
+            return value
+    for key in _NESTED_KEYS:
+        found = hit_session(hit.get(key), _depth + 1) if isinstance(hit.get(key), dict) else None
+        if found:
+            return found
+    return None
+
+
+def hits_from_unclean(hits: Any, is_clean: Callable[[str], bool] | None) -> bool:
+    """H443 — whether any hit is text from a conversation that is not on the clean list
+    (a stranger's, a guest's, a channel's, an imported one, one older than the ledger):
+    reading it makes the turn untrusted, as reading a flagged hit does. *is_clean* None
+    (no ledger) reads every named conversation as not clean; a check that fails, too."""
+    for hit in hits or []:
+        sid = hit_session(hit)
+        if sid is None:
+            continue
+        try:
+            if is_clean is None or is_clean(sid) is not True:
+                return True
+        except Exception:
+            return True
+    return False
+
+
 def _turn_time(value: Any) -> float | None:
     """A stored turn's ISO timestamp as epoch seconds, or None when it cannot be read."""
     if not isinstance(value, str) or not value:
@@ -178,6 +219,8 @@ class MemoryProposalStore(JsonStore):
         self._card_lock = threading.Lock()
         self._items: dict[str, dict] = {}
         self._clean: dict[str, float] = {}
+        #: Held writes refused because :data:`MAX_PENDING` were already waiting.
+        self._dropped = 0
         #: The clean list as an admission is saving it (shown only once it is on disk),
         #: and the sessions a revocation is taking off it meanwhile.
         self._saving_clean: dict[str, float] | None = None
@@ -188,12 +231,18 @@ class MemoryProposalStore(JsonStore):
 
     def _serialize(self):
         clean = self._saving_clean if self._saving_clean is not None else self._clean
-        return {"proposals": self._items, "clean_sessions": clean}
+        return {"proposals": self._items, "clean_sessions": clean, "dropped_at_cap": self._dropped}
 
     def _deserialize(self, raw) -> None:
         raw = raw if isinstance(raw, dict) else {}
         items = raw.get("proposals")
-        self._items = {str(k): v for k, v in items.items() if isinstance(v, dict)} if isinstance(items, dict) else {}
+        self._items = {}
+        for key, rec in (items.items() if isinstance(items, dict) else []):
+            rec = _sane(str(key), rec)
+            if rec is not None:
+                self._items[str(key)] = rec
+        dropped = raw.get("dropped_at_cap")
+        self._dropped = dropped if type(dropped) is int and dropped >= 0 else 0
         clean = raw.get("clean_sessions")
         self._clean = ({str(k): float(v) for k, v in clean.items()
                         if isinstance(v, (int, float)) and not isinstance(v, bool)}
@@ -280,6 +329,15 @@ class MemoryProposalStore(JsonStore):
         finally:
             self._revoking.discard(sid)
 
+    def forget_clean(self, session_id: str) -> None:
+        """Take *session_id* off the clean list in memory only (a caller that cannot block:
+        a history load under the conversation lock). The next save writes it."""
+        sid = str(session_id or "")
+        if sid in self._clean:
+            self._revoking.add(sid)
+            self._clean = {key: value for key, value in self._clean.items() if key != sid}
+            self._revoking.discard(sid)
+
     def is_clean(self, session_id: str) -> bool:
         """Read on the event loop at every turn: one dict lookup, no lock (a save in
         another thread holds the store's lock across its disk write)."""
@@ -315,6 +373,12 @@ class MemoryProposalStore(JsonStore):
                         [(o["target"], o["text"]) for o in ops]:
                     return _copy(rec)
             if len(pending) >= MAX_PENDING:
+                # Counted and saved, so the owner is told how many were not kept.
+                self._dropped += 1
+                try:
+                    self._save()
+                except Exception:
+                    logger.warning("memory proposals: the dropped count could not be saved", exc_info=True)
                 return None
             pid = f"mp-{uuid.uuid4().hex[:12]}"
             rec = {"id": pid, "origin": str(origin or "background_review")[:64],
@@ -355,12 +419,25 @@ class MemoryProposalStore(JsonStore):
                     for op in rec.get("operations") or []}
 
     def stats(self) -> dict:
+        """Counts only, never a fact: what the learning status and the HUD show."""
         with self._lock:
             counts: dict[str, int] = {}
+            oldest = None
             for rec in self._items.values():
                 counts[str(rec.get("status"))] = counts.get(str(rec.get("status")), 0) + 1
-            return {"by_status": counts, "pending": counts.get(STATUS_PENDING, 0),
-                    "clean_sessions": len(self._clean)}
+                if rec.get("status") in (STATUS_PENDING, STATUS_APPLYING):
+                    ts = rec.get("ts")
+                    if isinstance(ts, (int, float)) and not isinstance(ts, bool):
+                        oldest = ts if oldest is None else min(oldest, ts)
+            waiting = counts.get(STATUS_PENDING, 0) + counts.get(STATUS_APPLYING, 0)
+            return {"by_status": counts, "pending": waiting, "max_pending": MAX_PENDING,
+                    "oldest_pending_age_s": (max(0.0, round(self._now() - oldest, 1))
+                                             if oldest is not None else None),
+                    "dropped_at_cap": self._dropped, "clean_sessions": len(self._clean)}
+
+    def is_full(self) -> bool:
+        with self._lock:
+            return sum(1 for rec in self._items.values() if rec.get("status") == STATUS_PENDING) >= MAX_PENDING
 
     def _mark(self, proposal_id: str, status: str, **fields) -> dict | None:
         with self._lock:
@@ -544,18 +621,55 @@ class MemoryProposalStore(JsonStore):
                 logger.warning("memory proposal %s could not be settled", pid, exc_info=True)
         return out
 
-    def clear_memory(self) -> int:
+    def clear_memory(self, queue: Any = None) -> int:
         """A forget: drop every proposal from the live store (their text is the owner's
-        data), so an approval given afterwards finds nothing to write, and the clean list
-        with them (a conversation is admitted again only once it is empty). In memory only:
-        the forget's own sweep erases the file, after its backup. A card left in the queue
-        names a proposal that is gone, and deciding it writes nothing."""
+        data), so an approval given afterwards finds nothing to write, withdraw each open
+        proposal's card from *queue* (the Decision Inbox), and drop the clean list with
+        them (a conversation is admitted again only once it is empty). The store's file is
+        left to the forget's own sweep, after its backup. Blocking (the queue's save):
+        callers run it off the event loop."""
         self._clean = {}
         with self._apply_lock, self._lock:
             count = len(self._items)
+            cards = [rec.get("card") for rec in self._items.values()
+                     if rec.get("status") in (STATUS_PENDING, STATUS_APPLYING) and rec.get("card")]
             self._items = {}
             self._clean = {}
+        for card in cards:
+            item = _card(queue, card)
+            if item is not None and item.get("status") == "pending":
+                _withdraw(queue, card, "forgotten")
         return count
+
+
+_KNOWN_STATUSES = frozenset({STATUS_PENDING, STATUS_APPLYING, STATUS_APPLIED, STATUS_REJECTED,
+                              STATUS_EXPIRED, STATUS_FAILED})
+
+
+def _sane(key: str, rec: Any) -> dict | None:
+    """A stored proposal as the store uses it, or None. A hand-edited or damaged record is
+    never trusted into a write: an operation that is not ``{target, text}`` is dropped
+    (and marked, so the proposal can only fail, never apply part of what the owner saw);
+    an unknown status is read as failed; nothing here raises."""
+    if not isinstance(rec, dict):
+        return None
+    ops, damaged = [], False
+    for op in rec.get("operations") if isinstance(rec.get("operations"), list) else []:
+        if (isinstance(op, dict) and op.get("target") in TARGETS and isinstance(op.get("text"), str)
+                and op["text"].strip()):
+            ops.append(op)
+        else:
+            damaged = True
+    if not isinstance(rec.get("operations"), list):
+        damaged = True
+    out = {**rec, "id": key, "operations": ops}
+    open_or_unknown = out.get("status") in (STATUS_PENDING, STATUS_APPLYING) or out.get("status") not in _KNOWN_STATUSES
+    if (damaged or not ops) and open_or_unknown or out.get("status") not in _KNOWN_STATUSES:
+        # Never applied: a damaged open record is closed, and its card, decided or not,
+        # writes nothing. A decided record keeps what it was.
+        out["status"] = STATUS_FAILED
+        out["reason"] = "damaged_record"
+    return out
 
 
 def _copy(rec: dict) -> dict:
@@ -599,12 +713,15 @@ def public(rec: dict | None) -> dict | None:
     """A proposal as the admin routes show it."""
     if rec is None:
         return None
+    if not isinstance(rec, dict):
+        return None
+    ops = rec.get("operations") if isinstance(rec.get("operations"), list) else []
     return {"id": rec.get("id"), "origin": rec.get("origin"), "session_id": rec.get("session_id"),
             "reason": rec.get("reason"), "tainted": bool(rec.get("tainted")), "status": rec.get("status"),
             "ts": rec.get("ts"), "decided_ts": rec.get("decided_ts"), "card": rec.get("card"),
             "operations": [{"target": op.get("target"), "text": op.get("text"),
                             **({"outcome": op["outcome"]} if op.get("outcome") else {})}
-                           for op in rec.get("operations") or []]}
+                           for op in ops if isinstance(op, dict)]}
 
 
 def apply_to_rings(living: Callable[[], Any], *, switched_on: Callable[[], bool],

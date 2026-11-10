@@ -84,6 +84,10 @@ async def cognition_learning():
         proposals = getattr(orch, "skill_proposals", None)
         if proposals is not None and hasattr(proposals, "stats"):
             out["skill_proposals"] = proposals.stats()
+        held = getattr(orch, "memory_proposals", None)
+        if held is not None and hasattr(held, "stats"):
+            # H443: memory writes waiting for the owner — counts only, never a fact.
+            out["memory_proposals"] = held.stats()
     return out
 
 

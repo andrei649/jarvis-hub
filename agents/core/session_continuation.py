@@ -495,6 +495,10 @@ def _load_locked(orch, sid):
         turn.timestamp = value["timestamp"]
         restored.append(turn)
     conversation.invalidate_active_images(sid)
+    guard = getattr(conversation, "load_guard", None)
+    if callable(guard):
+        # H443: a history loaded whole from elsewhere was not watched turn by turn.
+        guard(sid)
     conversation.sessions[sid] = restored
     conversation.instances[sid] = instance
     conversation.revisions[sid] = loaded_revision

@@ -35,8 +35,8 @@ digest on a cheaper one. The review here is one strict-local call on the auxilia
 ``review`` task: with no ``NERVA_AUX_REVIEW_MODEL`` override it runs on the active local
 chat model and reads the conversation whole, newest turns first, as far as one call
 carries (:func:`replay_budget`: what the local backend says its window for that model is,
-less the answer and the prompt, at most :data:`FULL_REPLAY_CHARS`; a backend that reports
-no window gets :data:`UNKNOWN_WINDOW_CHARS`, the bound the review always had). Pointed at
+less the answer and the prompt; a backend that reports no window gets
+:data:`UNKNOWN_WINDOW_CHARS`). Pointed at
 a different model it reads the last :data:`DIGEST_TAIL_TURNS` turns verbatim under a
 digest of the older ones (Hermes's ``USER: …`` / ``ASSISTANT[tools: …]: …`` lines, cut
 short), in two thirds and one third of the same budget. The digest is cut from the stored
@@ -58,14 +58,19 @@ from typing import Any
 logger = logging.getLogger("jarvis.learning.review")
 
 NOTIFY_SETTING = "display.memory_notifications"
+#: Hermes's ``display.platforms.<platform>.memory_notifications``: one mode per platform
+#: (``telegram``, ``slack``, ``web`` …) that overrides the global one there.
+PLATFORM_NOTIFY_SETTING = "display.platform_memory_notifications"
 NOTIFY_MODES: tuple[str, ...] = ("off", "on", "verbose")
 NOTIFY_DEFAULT = "on"
-#: The whole conversation, as much as one local review call reads at most.
+#: What a review reads of the conversation on a backend that does not report its context
+#: window, and the least it is given on a small one. A reported window decides otherwise.
 FULL_REPLAY_CHARS = 24_000
-#: What a review reads on a backend that does not report its context window (the cap the
-#: review's whole context had before H443), and the least it is given on a small one.
-UNKNOWN_WINDOW_CHARS = 6_000
+UNKNOWN_WINDOW_CHARS = FULL_REPLAY_CHARS
 MIN_REPLAY_CHARS = 2_000
+#: A hard ceiling on one replay whatever a window says (a corrupt report is not a reason
+#: to read a megabyte); far above what a conversation of 100 turns holds.
+MAX_REPLAY_CHARS = 400_000
 #: A token is taken as three characters, and the prompt's fixed part as this many tokens.
 CHARS_PER_TOKEN = 3
 PROMPT_OVERHEAD_TOKENS = 900
@@ -167,7 +172,7 @@ def replay_budget(router: Any, max_tokens: int) -> int:
     """How many characters of conversation one review call may carry: the window the
     local backend reports for the review's model (read, never probed), less the answer's
     *max_tokens* and the prompt's fixed part; :data:`UNKNOWN_WINDOW_CHARS` when it reports
-    none or cannot be asked. Between :data:`MIN_REPLAY_CHARS` and :data:`FULL_REPLAY_CHARS`."""
+    none or cannot be asked. Between :data:`MIN_REPLAY_CHARS` and :data:`MAX_REPLAY_CHARS`."""
     try:
         from ..llm.auxiliary_text import resolve_auxiliary_model
         from ..llm.effective_window import resolve_effective_window
@@ -181,7 +186,7 @@ def replay_budget(router: Any, max_tokens: int) -> int:
         return UNKNOWN_WINDOW_CHARS
     answer = max_tokens if type(max_tokens) is int and max_tokens > 0 else 512
     room = (tokens - answer - PROMPT_OVERHEAD_TOKENS) * CHARS_PER_TOKEN
-    return max(MIN_REPLAY_CHARS, min(FULL_REPLAY_CHARS, room))
+    return max(MIN_REPLAY_CHARS, min(MAX_REPLAY_CHARS, room))
 
 
 def _conversation_turns(turns: Any) -> list[dict]:
@@ -235,7 +240,7 @@ def build_replay(turns: Any, mode: str, budget: int = FULL_REPLAY_CHARS) -> dict
     those first to go in (the rest, at most :data:`DIGEST_OLDER_CHARS`). Anything else
     reads as digest."""
     kept = _conversation_turns(turns)
-    budget = max(0, min(FULL_REPLAY_CHARS, budget if type(budget) is int else UNKNOWN_WINDOW_CHARS))
+    budget = max(0, min(MAX_REPLAY_CHARS, budget if type(budget) is int else UNKNOWN_WINDOW_CHARS))
     if mode == "full":
         lines, taken = _verbatim(kept, budget)
         return {"text": "\n".join(lines), "mode": "full", "verbatim": taken, "digested": 0,
@@ -261,11 +266,15 @@ def build_replay(turns: Any, mode: str, budget: int = FULL_REPLAY_CHARS) -> dict
 
 # ── notifications ────────────────────────────────────────────────────────────
 
-def notification_mode(get_setting: Callable[[str, Any], Any] | None) -> str:
-    """``display.memory_notifications`` as stored. A value that is not one of the three,
-    or a read that fails, is ``on``: the line that carries no content."""
+def notification_mode(get_setting: Callable[[str, Any], Any] | None, platform: str | None = None) -> str:
+    """``display.memory_notifications`` as stored, or the *platform*'s own entry of
+    ``display.platform_memory_notifications`` when it has one. A value that is not one of
+    the three, or a read that fails, is ``on``: the line that carries no content."""
     try:
         raw = get_setting(NOTIFY_SETTING, NOTIFY_DEFAULT) if callable(get_setting) else NOTIFY_DEFAULT
+        per = get_setting(PLATFORM_NOTIFY_SETTING, {}) if callable(get_setting) and platform else {}
+        if isinstance(per, dict) and str(platform or "") in per:
+            raw = per[str(platform)]
     except Exception:
         return NOTIFY_DEFAULT
     if raw is False:                      # a YAML 1.1 bare ``off``
@@ -303,14 +312,33 @@ def notification_lines(result: Any, mode: str, label: str = "Background review")
 class ReviewNotice(str):
     """A review's line as it waits for a reply that can show it: the text is the ``on``
     line (what happened, no content), :attr:`verbose` the same with the previews. Which
-    one is shown, if any, is decided where it is shown."""
+    one is shown, if any, is decided where it is shown. :attr:`counts_only`: the pass
+    reviewed a turn nobody signed in to (the local voice loop, the terminal), so its
+    previews are never shown. :attr:`explain`: the one line that says why this
+    conversation's memory waits for approval (once per conversation)."""
 
     verbose: str
+    counts_only: bool = False
+    explain: str = ""
 
     def __new__(cls, on: str, verbose: str = ""):
         instance = super().__new__(cls, on)
         instance.verbose = verbose or on
         return instance
+
+
+def unclean_explanation(channel: str | None) -> str:
+    """H443 — why a conversation's memory waits for approval, and what to do about it."""
+    from ..action_origin import OPERATOR_TURN_CHANNELS
+
+    if str(channel or "").strip().lower() in OPERATOR_TURN_CHANNELS:
+        return ("Memory from this conversation waits for your approval: it read untrusted content, or "
+                "it began before the review could watch it. A new conversation (/new) is one the "
+                "review can learn from on its own; /memory pending lists what waits.")
+    where = str(channel or "this channel")
+    return (f"Memory from {where} conversations always waits for your approval (a channel message is "
+            "outside input); /memory pending lists what waits, and the HUD's Long-Term Memory "
+            "panel shows it in full.")
 
 
 def review_notice(result: Any, label: str = "Background review") -> ReviewNotice | None:
@@ -327,8 +355,9 @@ def review_notice(result: Any, label: str = "Background review") -> ReviewNotice
 
 
 __all__ = [
-    "DIGEST_HEADER", "DIGEST_TAIL_TURNS", "FULL_REPLAY_CHARS", "LEG_TOOLS", "NOTIFY_DEFAULT", "NOTIFY_MODES",
-    "NOTIFY_SETTING", "STAGE_REASONS", "UNKNOWN_WINDOW_CHARS", "ReviewNotice", "ReviewScope", "build_replay",
+    "DIGEST_HEADER", "DIGEST_TAIL_TURNS", "FULL_REPLAY_CHARS", "LEG_TOOLS", "MAX_REPLAY_CHARS", "NOTIFY_DEFAULT", "NOTIFY_MODES",
+    "NOTIFY_SETTING", "PLATFORM_NOTIFY_SETTING", "STAGE_REASONS", "UNKNOWN_WINDOW_CHARS", "ReviewNotice",
+    "ReviewScope", "build_replay", "unclean_explanation",
     "memory_disposition", "replay_budget", "review_notice",
     "notification_lines", "notification_mode", "replay_mode",
 ]

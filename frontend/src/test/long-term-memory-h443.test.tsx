@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, waitFor, fireEvent, cleanup } from '@testing-library/react';
 import {
-  APPROVAL_PATH, CORE_PATH, LongTermMemoryPanel, PROPOSALS_PATH, STATUS_PATH, decidePath, decisionMessage,
+  APPROVAL_PATH, CORE_PATH, LongTermMemoryPanel, PROPOSALS_PATH, STATUS_PATH, decidePath, decisionMessage, heldStats,
 } from '../panels/long-term-memory';
 
 let calls;
@@ -133,5 +133,16 @@ describe('LongTermMemoryPanel — H443 held memory writes', () => {
     expect(decisionMessage({ applied: false, status: 'failed', proposal: { operations: [{ outcome: 'memory_off' }] } }, true))
       .toBe('approved, nothing written · not written: memory is off');
     expect(decisionMessage({ reason: 'not_pending:applied' }, false)).toBe('not rejected · not_pending:applied');
+  });
+
+  it('shows the oldest held write and how many a full list dropped (review-H443 M2)', async () => {
+    held = () => reply(200, { available: true, write_approval: false, pending: [proposal()], decided: [],
+                              stats: { pending: 1, max_pending: 50, oldest_pending_age_s: 2 * 86400 + 5, dropped_at_cap: 3 } });
+    render(<LongTermMemoryPanel />);
+    await waitFor(() => expect(screen.getByLabelText('held writes status')).toBeTruthy());
+    expect(screen.getByLabelText('held writes status').textContent)
+      .toBe('oldest waiting 2 d · 3 not kept: 50 were already waiting');
+    expect(heldStats({ pending: 0, dropped_at_cap: 0 })).toBe('');
+    expect(heldStats(undefined)).toBe('');
   });
 });

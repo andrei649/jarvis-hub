@@ -310,14 +310,16 @@ class MemoryManager:
             self._bind_history_instance(session_id)
             self._check_rewind_head_before_append(session_id)
             try:
+                # H443: the channel rides along to the write guard.
+                extra = {"channel": channel} if channel else {}
                 if tools or media is not None:
                     append_receipt = await self.conversation.add_turn(
                         session_id, role, content, agent_id,
                         **({"tools": tools} if tools else {}),
-                        **({"media": media} if media is not None else {}))
+                        **({"media": media} if media is not None else {}), **extra)
                 else:
                     append_receipt = await self.conversation.add_turn(
-                        session_id, role, content, agent_id)
+                        session_id, role, content, agent_id, **extra)
             except persistence.RewindPersistenceError as exc:
                 if exc.inconsistent:
                     self._quarantine_rewind(session_id)

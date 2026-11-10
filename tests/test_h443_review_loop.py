@@ -140,6 +140,7 @@ def hub(tmp_path, monkeypatch):
                                       _local_model=CHAT_MODEL)
     orch.load_runtime_settings()
     orch.reviewer = orch._build_background_reviewer()
+    orch.install_history_guards()                     # as load_agents does
     monkeypatch.setattr(web, "orch", orch)
     monkeypatch.setattr(web, "ADMIN_TOKEN", "t")
     yield SimpleNamespace(orch=orch, living=living, conv=conv, model=model, ledger=ledger, tmp=tmp_path,
@@ -892,7 +893,8 @@ async def test_a_held_write_from_a_chat_is_previewed_only_in_that_chat(hub):
                     session="tg-1")
     (line,) = await _notices(hub, OWNER_TELEGRAM, "tg-1")
     assert line == ("Background review: 1 memory write proposed (pending approval: the conversation read "
-                    "untrusted content, or was not watched from its start); ⏳ user profile: “prefers green tea”")
+                    "untrusted content, or was not watched from its start); ⏳ user profile: “prefers green tea”\n"
+                    + rp.unclean_explanation("telegram"))
 
 
 async def test_the_learning_status_never_carries_a_fact(hub):
@@ -926,11 +928,16 @@ async def test_the_review_reads_the_whole_conversation_on_the_chat_model(hub):
         assert f"assistant: answer {index:02d} " + "a" * 400 in prompt
     assert prompt.count("user: last question") == 1 and prompt.count("assistant: last answer") == 1
     assert hub.orch.reviewer.last_result["replay"] == {"mode": "full", "verbatim": 24, "digested": 0, "omitted": 0,
-                                                       "budget_chars": rp.FULL_REPLAY_CHARS}
+                                                       "budget_chars": (16_384 - 512 - rp.PROMPT_OVERHEAD_TOKENS) * 3}
 
 
 async def test_the_replay_fits_the_window_the_backend_reports_and_the_old_bound_when_it_reports_none(hub):
-    assert rp.replay_budget(hub.orch.llm_router, 512) == rp.FULL_REPLAY_CHARS       # 16k tokens: the cap
+    # 16k tokens: the window decides, not a fixed cap (review-H443 m3).
+    assert rp.replay_budget(hub.orch.llm_router, 512) == (16_384 - 512 - rp.PROMPT_OVERHEAD_TOKENS) * 3
+    hub.model.window = 131_072
+    assert rp.replay_budget(hub.orch.llm_router, 512) == (131_072 - 512 - rp.PROMPT_OVERHEAD_TOKENS) * 3
+    hub.model.window = 10_000_000
+    assert rp.replay_budget(hub.orch.llm_router, 512) == rp.MAX_REPLAY_CHARS
     hub.model.window = 4096
     assert rp.replay_budget(hub.orch.llm_router, 512) == (4096 - 512 - rp.PROMPT_OVERHEAD_TOKENS) * 3
     assert rp.replay_budget(hub.orch.llm_router, 4000) == rp.MIN_REPLAY_CHARS       # never less
@@ -948,6 +955,7 @@ async def test_the_replay_fits_the_window_the_backend_reports_and_the_old_bound_
     conversation = prompt[prompt.index("user: question") if "user: question" in prompt else 0:
                           prompt.index("assistant: last answer")]
     assert len(conversation) <= rp.UNKNOWN_WINDOW_CHARS + 2 * 2000
+    assert rp.UNKNOWN_WINDOW_CHARS == 24_000                           # the fallback, only without a window
     assert "assistant: answer 39 " + "a" * 400 in prompt and "question 00" not in prompt   # the newest, whole
 
 
@@ -1072,17 +1080,23 @@ async def test_a_pass_that_never_reached_the_model_spends_nothing(hub):
 # ── forget ──────────────────────────────────────────────────────────────────
 
 async def test_a_forget_drops_the_held_writes_so_a_late_approval_writes_nothing(hub):
+    from agents.core import data_purge
+
     _gate(hub, True)
     hub.model.replies.append(_reply(user=["prefers green tea"]))
     await _end_turn(hub, "tea", "Noted.")
     (record,) = hub.store.list()
-    assert hub.store.is_clean("web-1")
-    assert hub.store.clear_memory() == 1 and hub.store.list() == []
-    assert not hub.store.is_clean("web-1")                             # and it holds turns: not admitted again
+    assert hub.store.is_clean("web-1") and hub.queue.get(record["card"])["status"] == "pending"
+    cleared, failed = [], []
+    await data_purge._clear_live_stores(hub.orch, hub.orch.memory, cleared, lambda name, exc: failed.append(name))
+    assert "memory_proposals" in cleared and "memory_proposals" not in failed
+    assert hub.store.list() == [] and not hub.store.is_clean("web-1")  # it holds turns: not admitted again
+    # review-H443 m1: the held write's card leaves the Decision Inbox with it.
+    assert hub.queue.get(record["card"])["status"] == "rejected" and hub.queue.list("pending") == []
     late = hub.client.post(f"/api/actions/{record['card']}/decide", json={"approved": True}, headers=ADMIN).json()
-    assert "nothing was written" in late["action"]["note"] and _rings(hub) == ([], [])
+    assert _rings(hub) == ([], []) and "applied" not in late["action"]
     source = (repo_root / "agents" / "core" / "data_purge.py").read_text(encoding="utf-8")
-    assert "proposals.clear_memory()" in source and 'cleared.append("memory_proposals")' in source
+    assert "await asyncio.to_thread(proposals.clear_memory" in source            # review-H443 m2: off the loop
     from agents.core.data_purge import KEEP_DIRS, KEEP_FILES
 
     assert "learning" not in KEEP_DIRS and "memory_proposals.json" not in KEEP_FILES   # the sweep erases the file

@@ -1195,8 +1195,9 @@ async def _memory_proposals_body(orch) -> dict:
     records = await asyncio.to_thread(store.list)
     open_ones = [public(rec) for rec in records if rec.get("status") in (STATUS_PENDING, STATUS_APPLYING)]
     decided = [public(rec) for rec in records if rec.get("status") not in (STATUS_PENDING, STATUS_APPLYING)]
+    stats = await asyncio.to_thread(store.stats)
     return {"available": True, "write_approval": gate, "pending": open_ones, "decided": decided[-20:][::-1],
-            "pending_ttl_days": int(PENDING_TTL_S // 86400)}
+            "pending_ttl_days": int(PENDING_TTL_S // 86400), "stats": stats}
 
 
 @router.get("/api/memory/proposals", dependencies=[Depends(admin_guard)])

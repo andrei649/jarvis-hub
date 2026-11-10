@@ -47,6 +47,21 @@ const OUTCOMES: Record<string, string> = {
   refused: 'refused: the ring is full or the fact too long', memory_off: 'not written: memory is off',
 };
 
+/** H443 — the held writes' status in words: the oldest one's age and how many were not
+    kept because the waiting list was full. Counts only; empty when there is nothing to say. */
+export function heldStats(s: any): string {
+  if (!s) return '';
+  const parts: string[] = [];
+  const age = s.oldest_pending_age_s;
+  if (typeof age === 'number' && Number.isFinite(age) && num(s.pending) > 0) {
+    parts.push(`oldest waiting ${age < 3600 ? `${Math.floor(age / 60)} min` : age < 86400 ? `${Math.floor(age / 3600)} h` : `${Math.floor(age / 86400)} d`}`);
+  }
+  if (num(s.dropped_at_cap) > 0) {
+    parts.push(`${n(s.dropped_at_cap)} not kept: ${n(s.max_pending)} were already waiting`);
+  }
+  return parts.join(' · ');
+}
+
 /** What the hub answered to a decision, in its own terms: never "approved" for a write that did not land. */
 export function decisionMessage(r: any, approved: boolean): string {
   if (!approved) return r?.status === 'rejected' ? 'rejected · nothing written' : `not rejected · ${String(r?.reason || r?.status || 'unknown')}`;
@@ -243,6 +258,11 @@ export function LongTermMemoryPanel() {
           <div style={{ ...mono, fontSize: 9.5, color: 'var(--ink-2)', letterSpacing: '.08em' }}>
             HELD MEMORY WRITES · {pending.length}
           </div>
+          {heldStats(h.stats) && (
+            <div aria-label="held writes status" style={{ fontSize: 10, color: num(h.stats?.dropped_at_cap) > 0 ? 'var(--amber)' : 'var(--ink-2)' }}>
+              {heldStats(h.stats)}
+            </div>
+          )}
           <div style={{ fontSize: 11, margin: '2px 0 4px' }}>
             {h.write_approval === true
               ? 'write approval is on: the post-turn review and /refine ask before they write.'

@@ -473,6 +473,9 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="display", key="ephemeral_system_ttl", value=0, label="Seconds before temporary system notices are removed (0 keeps them)", kind="number"),
     # H443 (Hermes display.memory_notifications, default on): only the line beside a
     # reply. Off does not stop the review or its writes; memory.write_approval holds those.
+    # H443 (Hermes display.platforms.<platform>.memory_notifications): a platform's own
+    # mode, e.g. {"telegram": "off"}; a platform not named uses the line above.
+    dict(category="display", key="platform_memory_notifications", value={}, label="Review notification line per platform: {\"telegram\": \"off\"} (off, on or verbose; unnamed platforms use the setting above)", kind="json"),
     dict(category="display", key="memory_notifications", value="on", label="Line beside a reply when the post-turn review wrote or proposed something (off: no line, the review still runs and writes; verbose: with a preview of each fact)", kind="select", opts=["off", "on", "verbose"]),
     # H063: reset routing context without deleting stored conversations.
     dict(category="sessions", key="reset_mode", value="none", label="Automatic conversation reset policy", kind="select", opts=["none", "idle", "daily", "both"]),
@@ -1165,6 +1168,11 @@ def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
             not isinstance(value, str) or len(value) > 2048 or "\x00" in value
             or (value != "" and (value != value.strip() or not os.path.isabs(value)))):
         return f"{key}: expected an absolute project folder path or empty"
+    if key == "platform_memory_notifications" and (
+            not isinstance(value, dict) or len(value) > 32
+            or any(not isinstance(name, str) or re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", name) is None
+                   or mode not in ("off", "on", "verbose") for name, mode in value.items())):
+        return f"{key}: expected up to 32 platform names, each mapped to off, on or verbose"
     if key == "status_bar_fields" and selected_status_fields(value) is None:
         return f"{key}: expected up to twenty distinct declared status fields"
     if key == "execute_code_env_passthrough":

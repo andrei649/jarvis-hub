@@ -433,8 +433,12 @@ def search_sessions(
 
 # ── the ToolRPC seam ─────────────────────────────────────────────────────────
 
-def register_session_search(server: Any, *, directory: Path | None = None) -> str:
-    """Expose ``session_search`` on a ToolRPC server (ungated, read-only)."""
+def register_session_search(server: Any, *, directory: Path | None = None,
+                            is_clean: Any = None) -> str:
+    """Expose ``session_search`` on a ToolRPC server (ungated, read-only). H443:
+    *is_clean* (``session_id -> bool``, the review's clean list) — a hit from a
+    conversation that is not on it (a stranger's, a guest's, a channel's, an imported one)
+    makes the result ``tainted``; with none, every hit from a conversation does."""
 
     async def _handle(args: dict) -> dict:
         result = await asyncio.to_thread(
@@ -449,8 +453,11 @@ def register_session_search(server: Any, *, directory: Path | None = None) -> st
         # the turn; declare it on the result, as search_memory does, so the tool loop and
         # the ToolRPC broker raise the turn's origin (H586 image readings, SEC-B5 flags).
         if result.get("ok"):
-            result["tainted"] = any(hit.get("image_derived") or hit.get("injection_flagged")
-                                    for hit in result.get("hits", []))
+            from ..learning.memory_proposals import hits_from_unclean
+
+            hits = result.get("hits", [])
+            result["tainted"] = (any(hit.get("image_derived") or hit.get("injection_flagged") for hit in hits)
+                                 or hits_from_unclean(hits, is_clean))
         return result
 
     server.register_tool(

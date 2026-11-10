@@ -687,7 +687,9 @@ async def _clear_live_stores(orch, mem, cleared: list[str], _note_failure) -> No
     proposals = getattr(orch, "memory_proposals", None)
     if proposals is not None and hasattr(proposals, "clear_memory"):
         try:
-            if proposals.clear_memory():
+            # Off the event loop: it takes the store's apply lock and withdraws the held
+            # writes' cards from the Decision Inbox (a save of the queue).
+            if await asyncio.to_thread(proposals.clear_memory, getattr(orch, "action_approvals", None)):
                 cleared.append("memory_proposals")
         except Exception as exc:
             _note_failure("memory_proposals", exc)
