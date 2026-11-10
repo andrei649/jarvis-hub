@@ -275,6 +275,49 @@ def _probe_widget_config(client, monkeypatch, tmp_path):
     return client.get("/api/widget/guess/config"), client.get(f"/api/widget/{token}/config")
 
 
+class _ApiOrch:
+    """A stand-in hub for the OpenAI-compatible API probes: one agent, a fixed answer."""
+
+    agents = {"jarvis": None}
+
+    async def handle_input(self, text, **_kwargs):
+        return "probe answer"
+
+
+def _openai_api(monkeypatch, tmp_path):
+    """The real key store on a temp file, the API switched on, one issued key and one
+    response stored for it. The switch is not the credential under test, so it is forced on."""
+    from agents import web
+    from agents.core.openai_api import policy
+    from agents.core.openai_api import store as api_store
+
+    store = api_store.OpenAIApiStore(tmp_path / "openai_api.db")
+    monkeypatch.setattr(api_store, "_store", store)
+    monkeypatch.setattr(policy, "enabled", lambda: True)
+    monkeypatch.setattr(web, "orch", _ApiOrch())
+    policy.GATE.reset()
+    key, record = store.issue("h511 probe")
+    store.save_response("resp_probe", record.key_id, "oai-probe", {"id": "resp_probe", "object": "response"})
+    revoked, revoked_record = store.issue("h511 revoked")
+    store.revoke(revoked_record.key_id)
+    return key, revoked
+
+
+def _api_probe(method, path, body=None):
+    def probe(client, monkeypatch, tmp_path):
+        key, revoked = _openai_api(monkeypatch, tmp_path)
+        kwargs = {"json": body} if body is not None else {}
+        call = getattr(client, method)
+        assert call(path, headers={"Authorization": f"Bearer {revoked}"}, **kwargs).status_code == 401
+        assert call(path, headers={"x-admin-token": ADMIN}, **kwargs).status_code == 401   # hub tokens never open it
+        return (call(path, headers={"Authorization": "Bearer nrv-guess"}, **kwargs),
+                call(path, headers={"Authorization": f"Bearer {key}"}, **kwargs))
+    return probe
+
+
+_CHAT = {"model": "nerva", "messages": [{"role": "user", "content": "h511"}]}
+
+
 # Route -> (probe, refusal statuses). A capability URL answers an unknown token
 # with 404 so it never confirms a token exists; a forged OAuth state is a 400.
 HTTP_PROBES = {
@@ -286,6 +329,11 @@ HTTP_PROBES = {
     "POST /api/widget/{token}/message": (_probe_widget_message, {404}),
     "GET /api/widget/{token}": (_probe_widget_snippet, {404}),
     "GET /api/widget/{token}/config": (_probe_widget_config, {404}),
+    "POST /v1/chat/completions": (_api_probe("post", "/v1/chat/completions", _CHAT), {401}),
+    "POST /v1/responses": (_api_probe("post", "/v1/responses", {"model": "nerva", "input": "h511"}), {401}),
+    "GET /v1/responses/{response_id}": (_api_probe("get", "/v1/responses/resp_probe"), {401}),
+    "DELETE /v1/responses/{response_id}": (_api_probe("delete", "/v1/responses/resp_probe"), {401}),
+    "GET /v1/models": (_api_probe("get", "/v1/models"), {401}),
 }
 
 # Routes whose in-handler credential has more than one posture: each extra posture
@@ -333,6 +381,17 @@ def test_in_handler_guards_admit_the_credential(client, monkeypatch, tmp_path):
     assert "H511 probe widget" in snippet.text
     config = _probe_widget_config(client, monkeypatch, tmp_path)[1].json()
     assert config["title"] == "H511 probe widget" and config["token"]
+    # The OpenAI-compatible API: a live key reaches the turn, the store and the model list.
+    chat = HTTP_PROBES["POST /v1/chat/completions"][0](client, monkeypatch, tmp_path)[1].json()
+    assert chat["choices"][0]["message"]["content"] == "probe answer"
+    response = HTTP_PROBES["POST /v1/responses"][0](client, monkeypatch, tmp_path)[1].json()
+    assert response["output_text"] == "probe answer"
+    stored = HTTP_PROBES["GET /v1/responses/{response_id}"][0](client, monkeypatch, tmp_path)[1].json()
+    assert stored == {"id": "resp_probe", "object": "response"}
+    deleted = HTTP_PROBES["DELETE /v1/responses/{response_id}"][0](client, monkeypatch, tmp_path)[1].json()
+    assert deleted["deleted"] is True
+    models = HTTP_PROBES["GET /v1/models"][0](client, monkeypatch, tmp_path)[1].json()
+    assert [m["id"] for m in models["data"]] == ["nerva", "nerva/jarvis"]
 
 
 # ── Guard spies ───────────────────────────────────────────────────────────────

@@ -473,6 +473,14 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="channels",key="streaming_replies", value=True,                 label="Write chat replies in place as they are produced (channels that can edit a message)", kind="toggle"),
     dict(category="channels",key="pending_inputs_enabled", value=False, label="Chat clarification preview (restart to apply)", kind="toggle"),
     dict(category="channels", key="owner_senders", value={}, label="Command owners: Slack team:user, Discord user ID or ntfy receive topic; current pairing required", kind="json"),
+    # G12 (H560/H614) — the OpenAI-compatible API (/v1/chat/completions, /v1/responses,
+    # /v1/models). Off by default; an administrator can pin it (managed config.yaml).
+    # Keys are issued with `python -m agents.core.openai_api keys issue`.
+    dict(category="openai_api", key="enabled", value=False, label="OpenAI-compatible API for other chat apps (/v1/chat/completions; needs an API key)", kind="toggle"),
+    dict(category="openai_api", key="rate_limit_per_min", value=20, label="OpenAI-compatible API: requests per minute per key (1-600)", kind="number"),
+    dict(category="openai_api", key="max_concurrent", value=2, label="OpenAI-compatible API: turns one key may run at once (1-16)", kind="number"),
+    dict(category="openai_api", key="max_request_kb", value=256, label="OpenAI-compatible API: largest request body in KB (4-4096)", kind="number"),
+    dict(category="openai_api", key="max_input_chars", value=16000, label="OpenAI-compatible API: largest text one turn may send (256-200000 characters)", kind="number"),
     dict(category="display", key="ephemeral_system_ttl", value=0, label="Seconds before temporary system notices are removed (0 keeps them)", kind="number"),
     # H443 (Hermes display.memory_notifications, default on): only the line beside a
     # reply. Off does not stop the review or its writes; memory.write_approval holds those.

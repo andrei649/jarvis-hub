@@ -66,6 +66,10 @@ SETTING = f"{CATEGORY}.{KEY}"
 FLOOR = ("help", "whoami")
 SCOPES = ("dm", "group")
 ANY_CHANNEL = "*"
+#: G12 review: channels the ``"*"`` entry does not cover. A guest key of the OpenAI-compatible
+#: API is a machine door, not a chat the owner configured: only an explicit
+#: ``"openai_api"`` entry grants its guests commands above the floor.
+EXPLICIT_ONLY_CHANNELS = frozenset({"openai_api"})
 #: Hermes ``_DM_CHAT_TYPES`` (plus Slack's ``im``): everything else is a group.
 DM_CHAT_TYPES = frozenset({"", "dm", "direct", "private", "im"})
 PREVIEW = 12
@@ -164,7 +168,7 @@ def allowed_names(registry, principal) -> list[str] | None:
     listed = None
     if policy is not None:
         listed = _scope_list(policy.get(principal.channel), principal.scope)
-        if listed is None:
+        if listed is None and principal.channel not in EXPLICIT_ONLY_CHANNELS:
             listed = _scope_list(policy.get(ANY_CHANNEL), principal.scope)
     granted: set[str] = set()
     if listed is not None:

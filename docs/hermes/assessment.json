@@ -10660,13 +10660,21 @@
     {
       "id": "H560",
       "row_sha256": "e77b0eddfc7468d7ccbcf086d9f649c71a9cfb8c830e961a557a56a0b5b9df10",
-      "status": "missing",
-      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nerva serves no OpenAI-compatible inbound API. There is no route for /v1/chat/completions, /v1/responses or /v1/models, and no /api/model/options. The only /v1 route is GET /v1/capabilities (agents/core/routers/analytics.py:314-318). It describes Nerva's own /chat, /chat/stream and /sessions wire contract (agents/core/client_protocol.py:12-18), not OpenAI's, and is tested at tests/test_client_protocol.py:25. No OpenAI client can use it. Duplicate of H614 (same feature, group G12).",
-      "remaining": "- POST /v1/chat/completions: system flattening, history, fingerprint-derived session id, SSE streaming with a tool-progress event, idempotency keys, 502 agent_incomplete\n- POST /v1/responses with server-side storage, previous_response_id chaining, named conversations, typed streaming events\n- GET and DELETE /v1/responses/{id}\n- GET /v1/models with a stable virtual model and route aliases\n- GET /api/model/options\n- governance: taint at the boundary, mandatory bearer key, default-off flag, loopback bind",
+      "status": "partial",
+      "summary": "Re-assessed 2026-11-10 after G12 and its adversarial review (built against the H560 contract; duplicate of H614). Nerva serves an OpenAI-compatible inbound API (agents/core/routers/openai_compat.py, mounted at agents/web.py:2122). POST /v1/chat/completions (openai_compat.py:263) flattens system/developer messages into a labelled instructions block (sent when a conversation starts and again only when it changes), sends the last user message as the input and the earlier messages as history only when the conversation is new to Nerva (agents/core/openai_api/protocol.py:188), derives a stable per-key session id from the first system + user message and the client's `user` field when the client names no conversation (protocol.py:205, :223; openai_compat.py:234), streams valid chat.completion.chunk SSE frames ending in [DONE] with an optional usage chunk (openai_compat.py:340), replays a non-streamed call with the same Idempotency-Key through the hub's idempotency store (openai_compat.py:290) and answers a failed turn with 502 agent_incomplete (no model loaded: 503 model_unavailable), never as content (agents/core/openai_api/turn.py:106-167). POST /v1/responses (openai_compat.py:412) stores responses per key (agents/core/openai_api/store.py:195-230, bounded per key), chains previous_response_id to the same session, maps a named conversation to one session and streams the typed events response.created ... response.completed/failed with sequence numbers (openai_compat.py:488); GET and DELETE /v1/responses/{id} (openai_compat.py:578, :590) are scoped to the key that stored it. GET /v1/models (openai_compat.py:222) advertises the stable virtual model `nerva` plus `nerva/<agent>` aliases (protocol.py:233, :250); model names pick Nerva agents, never providers. Governance: default-off setting openai_api.enabled (agents/core/settings_db.py:479), read per request off the event loop and fail-closed (agents/core/openai_api/policy.py:49), pinnable by the managed layer and kept off in safe mode; a mandatory bearer key even on loopback, hashed at rest (store.py:117-150; the hub tokens never open it); a non-owner key's turn is bound inbound at the boundary and by the orchestrator chokepoint (turn.py:69, :130), so the kernel queues its mutating actions. A guest key's turn, like every guest door's, gets none of the owner's private context (no plugin data, core memory or long-term recall: agents/core/orchestrator.py:348, :4312, :4774, :5084) and writes nothing into the owner's knowledge graph, entity index or learning text (orchestrator.py:7010); tests/test_g12_guest_context.py proves it for the API guest key, a HUD user token, a Telegram non-owner and the widget (:127, :184, :197). Per-key rate, concurrency and size caps (policy.py:95; openai_compat.py:77-130), with a stream's slot returned however the response ends (openai_compat.py:198). Proved by tests/test_g12_openai_compat.py (44 tests, e.g. :369 guest key queues, :289 stream chunks, :517 responses chaining, :558 typed events, :187 managed pin, :648 a real orchestrator continuing one session across a dropped memory) and the in-handler probes in tests/test_route_inhandler_guards.py. Verified once by hand with the official openai Python SDK against the app (models, completions, streaming, responses, chaining, streamed events, 401). Not equivalent: no tool-progress stream event, no GET /api/model/options, and the bind address is the hub's own, not a separate loopback listener.",
+      "remaining": "- a tool-progress event in the chat-completions stream (Hermes `hermes.tool.progress`)\n- GET /api/model/options (native provider inventory)\n- a separate loopback-only listener for the API (it shares the hub's bind address)",
       "evidence": [
-        "agents/core/routers/analytics.py",
-        "agents/core/client_protocol.py",
-        "tests/test_client_protocol.py"
+        "agents/core/routers/openai_compat.py",
+        "agents/core/openai_api/turn.py",
+        "agents/core/openai_api/protocol.py",
+        "agents/core/openai_api/store.py",
+        "agents/core/openai_api/policy.py",
+        "agents/core/openai_api/cli.py",
+        "agents/core/orchestrator.py",
+        "tests/test_g12_openai_compat.py",
+        "tests/test_g12_guest_context.py",
+        "tests/test_route_inhandler_guards.py",
+        "docs/OPENAI_COMPATIBLE_API.md"
       ]
     },
     {
@@ -11684,13 +11692,21 @@
     {
       "id": "H614",
       "row_sha256": "46ee8b8c5194dd9ebb16daa3f45f8f3a1944f5663ac34d499b04043c18ae9e9e",
-      "status": "missing",
-      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nerva has no OpenAI-compatible endpoint, so none of the named frontends can use it as a backend. The only /v1 route, GET /v1/capabilities (agents/core/routers/analytics.py:314-318), describes Nerva's own /chat and /sessions contract (agents/core/client_protocol.py:12-18; tests/test_client_protocol.py:25), not OpenAI's. Nerva's native sessions, health, CORS and bearer-auth surfaces predate the baseline and do not speak this contract. Duplicate of H560 (same feature, group G12).",
-      "remaining": "- POST /v1/chat/completions and POST /v1/responses with response storage\n- GET /v1/models; an OpenAI-shaped /v1/capabilities\n- per-request model selection\n- Runs, Jobs and Sessions APIs and skills/toolsets discovery in that shape\n- a session-key header for memory scoping\n- system-prompt layering that cannot widen tool scope or autonomy\n- bearer auth bound to an identity with multi-profile routing\n- concurrent-run cap\n- browser-extension control protocol",
+      "status": "partial",
+      "summary": "Re-assessed 2026-11-10 after G12 and its adversarial review (duplicate of H560, same build). Any OpenAI-format front end can use Nerva as its backend: POST /v1/chat/completions (streamed or not), POST /v1/responses with response storage, GET/DELETE /v1/responses/{id} and GET /v1/models (agents/core/routers/openai_compat.py:222-599), with per-request model selection mapped to Nerva agents (`nerva`, `nerva/<agent>`; agents/core/openai_api/protocol.py:233). A turn arriving this way is an ordinary identity-attributed orchestrator turn (agents/core/openai_api/turn.py:106): a bearer key the owner issued (agents/core/openai_api/store.py:117-150; `python -m agents.core.openai_api keys issue|list|revoke`, agents/core/openai_api/cli.py) maps to the owner principal only when issued --owner, otherwise to a guest on the inbound `openai_api` channel whose actions queue for approval (turn.py:69, :130; tests/test_g12_openai_compat.py:369). A guest key's turn, like every guest door's, gets none of the owner's private context (no plugin data, core memory or long-term recall: agents/core/orchestrator.py:348, :4312, :4774, :5084) and writes nothing into the owner's knowledge graph, entity index or learning text (orchestrator.py:7010); tests/test_g12_guest_context.py proves it for the API guest key, a HUD user token, a Telegram non-owner and the widget (:127, :184, :197). A client system prompt is a labelled text block and cannot widen tool scope or autonomy (protocol.py:188; tests/test_g12_openai_compat.py:386); a `\"*\"` command policy does not reach guest keys (agents/core/slash_access.py). A client conversation id (X-Nerva-Conversation-Id or metadata.conversation_id) scopes memory to one per-key session (openai_compat.py:234; test :430). Per-key concurrent-run cap and rate limit (agents/core/openai_api/policy.py:95). Off by default (agents/core/settings_db.py:479), managed-pinnable (test :187). Not equivalent: the Runs, Jobs and Sessions APIs, skills/toolsets discovery, an OpenAI-shaped /v1/capabilities, multi-profile routing by key, and the browser-extension control protocol are not built; keys are managed from the box, not the HUD.",
+      "remaining": "- Runs, Jobs and Sessions APIs and skills/toolsets discovery in the OpenAI-compatible shape\n- an OpenAI-shaped /v1/capabilities (the existing one describes Nerva's own /chat contract)\n- multi-profile routing by key (one key -> one Nerva profile)\n- browser-extension control protocol\n- key management from the HUD",
       "evidence": [
-        "agents/core/routers/analytics.py",
-        "agents/core/client_protocol.py",
-        "tests/test_client_protocol.py"
+        "agents/core/routers/openai_compat.py",
+        "agents/core/openai_api/turn.py",
+        "agents/core/openai_api/protocol.py",
+        "agents/core/openai_api/store.py",
+        "agents/core/openai_api/policy.py",
+        "agents/core/openai_api/cli.py",
+        "agents/core/orchestrator.py",
+        "tests/test_g12_openai_compat.py",
+        "tests/test_g12_guest_context.py",
+        "tests/test_route_inhandler_guards.py",
+        "docs/OPENAI_COMPATIBLE_API.md"
       ]
     },
     {

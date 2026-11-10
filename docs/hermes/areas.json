@@ -2221,8 +2221,10 @@
         "H565"
       ],
       "suite": [
+        "tests/test_a2a_outbound.py",
         "tests/test_client_protocol.py",
-        "tests/test_a2a_outbound.py"
+        "tests/test_g12_guest_context.py",
+        "tests/test_g12_openai_compat.py"
       ]
     },
     {
@@ -2347,6 +2349,8 @@
         "tests/test_file_read_h444_documents.py",
         "tests/test_file_read_h444_docx_coverage.py",
         "tests/test_file_search.py",
+        "tests/test_g12_guest_context.py",
+        "tests/test_g12_openai_compat.py",
         "tests/test_g2_session_commands.py",
         "tests/test_goal_contract.py",
         "tests/test_h011_rollback_conversation.py",

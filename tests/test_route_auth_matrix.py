@@ -54,6 +54,11 @@ INTENTIONALLY_OPEN = {
     "POST /api/widget/{token}/message",     # widget capability token in the path
     "POST /api/channels/pairing/request",   # inbound pairing; lands in approval, mints nothing
     "POST /api/analytics/event",            # H22 public privacy-first beacon; bounded INSERT, mints nothing
+    # G12 (H560/H614) OpenAI-compatible API: 404 unless openai_api.enabled, then a bearer key
+    # the owner issued (routers/openai_compat.py:_admit); a guest key's turns are inbound.
+    "POST /v1/chat/completions",
+    "POST /v1/responses",
+    "DELETE /v1/responses/{response_id}",
     # Nerva Workspace public entry points (spec §6/§7). Each answers 404 while
     # NERVA_WORKSPACE is off, requires a same-origin Origin/Sec-Fetch-Site and a JSON
     # body (check_public_origin), and is throttled by the workspace itself.
@@ -187,6 +192,12 @@ IN_HANDLER_GUARDED = {
     "POST /api/widget/{token}/message": "widget capability token in the path",
     "GET /api/widget/{token}": "widget capability token in the path",
     "GET /api/widget/{token}/config": "widget capability token in the path",
+    # G12: an OpenAI-compatible API key (Authorization: Bearer), never the hub tokens.
+    "POST /v1/chat/completions": "OpenAI-compatible API key (bearer), API switched on",
+    "POST /v1/responses": "OpenAI-compatible API key (bearer), API switched on",
+    "GET /v1/responses/{response_id}": "OpenAI-compatible API key (bearer), the key that stored it",
+    "DELETE /v1/responses/{response_id}": "OpenAI-compatible API key (bearer), the key that stored it",
+    "GET /v1/models": "OpenAI-compatible API key (bearer), API switched on",
 }
 
 # H511 review: the read half is partitioned exactly like the mutators — an open GET
