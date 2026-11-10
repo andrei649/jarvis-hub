@@ -22,9 +22,9 @@ import json
 import shutil
 import sys
 import zipfile
+from pathlib import Path
 
 import pytest
-from pathlib import Path
 
 repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(repo_root))
