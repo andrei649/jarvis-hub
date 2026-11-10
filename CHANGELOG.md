@@ -36,6 +36,27 @@
   attachments) as a grid and a table; the HUD has the same meter (Console → Context Meter).
   `/compress` tells you what compaction will do on the next turn. Details:
   [docs/SESSION_COMMANDS.md](docs/SESSION_COMMANDS.md).
+
+**Messages you send while Nerva restarts are no longer lost, and lost replies are no longer silent**
+- What you send on Telegram or ntfy while Nerva is down for an update or a power cut is read
+  when it comes back, once, and goes through the same checks as a live message: a stranger is
+  still held for pairing, a command is still judged. Only the last 6 hours and at most 20
+  messages are caught up (`JARVIS_CHANNEL_BACKFILL_WINDOW_S`, `JARVIS_CHANNEL_BACKFILL_MAX`);
+  older ones are skipped, not replayed. A button you tapped while Nerva was offline is
+  answered "not applied" — tap it again on the card — so an approval is never acted on hours
+  later. A crash no longer makes Nerva answer the same message twice.
+- Every reply now leaves a receipt: sent, failed, partly sent, or "unknown" when Nerva cannot
+  tell whether it arrived (it is then never resent, so you never get it twice). The receipts,
+  without the reply text, are at `GET /api/channels/deliveries`.
+- A chat that has blocked or removed the bot is remembered and no longer retried on every
+  reminder; it is listed with the receipts and clears itself when that chat writes again
+  (or with `POST /api/channels/dead-targets/clear`).
+- When a connection drops, Telegram, ntfy and the email inbox now wait 1, 2, 5, 10, 30 then
+  60 seconds (a little randomised) instead of retrying every 3 seconds, and start over once
+  the connection has been fine for a minute. A revoked or wrong bot token stops the channel
+  and `/status` says why (`health`: `fatal`, `unauthorized`) instead of retrying forever;
+  Slack and Discord report their connection the same way.
+
 **Check that a project still builds and passes its tests, and keep the proof**
 - `/verify` tells you how a project in your file roots is built and tested: its test, lint and
   build commands and its run recipe (Node, Python, Go, Rust, Maven, Gradle, Make, docker

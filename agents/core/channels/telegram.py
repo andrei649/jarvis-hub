@@ -17,7 +17,10 @@ from typing import Callable, NamedTuple, Optional
 
 import httpx
 
+from . import delivery_ledger
+from .backfill import BackfillBudget
 from .base import ChannelAdapter
+from .reconnect import Backoff, classify_exception
 from .descriptor import DIALECT_TELEGRAM_HTML, ChannelDescriptor
 from .ephemeral import EphemeralDeletes, EphemeralReply, ephemeral_ttl
 from .group_policy import ANSWER, OBSERVE, GroupPolicy, gate_message
@@ -264,7 +267,30 @@ async def _bot_api_only(request: httpx.Request) -> None:
         raise TelegramHostRefused("telegram_host_refused")
 
 
+#: H100 — pause after an error while handling a page (not a transport failure).
+HANDLING_ERROR_PAUSE = 1.0
+#: H100 — how the poll loop waits out a rung of the reconnect ladder (a test seam).
+_backoff_sleep = asyncio.sleep
+_MESSAGE_KEYS = ("message", "edited_message", "channel_post", "edited_channel_post")
+
+
+def _update_message(up) -> Optional[dict]:
+    if not isinstance(up, dict):
+        return None
+    for key in _MESSAGE_KEYS:
+        value = up.get(key)
+        if isinstance(value, dict):
+            return value
+    return None
+
+
 class TelegramChannel(ChannelAdapter):
+    # H116 defaults, so a channel built without __init__ (tests) behaves as before.
+    _cursor_store = None
+    _cursor_name: Optional[str] = None
+    _catching_up = False
+    _backfill: Optional[BackfillBudget] = None
+    _started_wall: Optional[float] = None
     descriptor = ChannelDescriptor(
         dialect=DIALECT_TELEGRAM_HTML,
         max_message_length=TELEGRAM_MAX_MESSAGE_LENGTH,
@@ -306,6 +332,17 @@ class TelegramChannel(ChannelAdapter):
         self._bot_id: Optional[int] = None
         self._bot_username: Optional[str] = None
         self._offset = 0
+        # H116: the offset is kept in the reliability store while start() runs the channel,
+        # so a restart resumes where it stopped; a poll loop run without start() keeps it
+        # in memory only. While catching up after a start, old messages are bounded and
+        # queued button taps are refused (see backfill.py).
+        self._cursor_store = None
+        self._cursor_name: Optional[str] = None
+        self._catching_up = False
+        self._backfill: Optional[BackfillBudget] = None
+        self._started_wall: Optional[float] = None
+        # H100: the shared reconnect ladder (reconnect.py) instead of a flat 3 s.
+        self._backoff = Backoff()
         self._poll_task = None
         self._owner_once_generation: str | None = None
         self._owner_once_fast: dict[str, asyncio.Task] = {}
@@ -396,6 +433,9 @@ class TelegramChannel(ChannelAdapter):
             self._ephemeral_deletes = EphemeralDeletes()
         self._pending_callback_generation = object()
         self._owner_once_generation = uuid.uuid4().hex
+        self.health.starting()
+        self._ladder().reset()
+        self._resume_offset()
         self._running = True
         me = await self._get_me()
         if me:
@@ -410,8 +450,37 @@ class TelegramChannel(ChannelAdapter):
         self._poll_task = __import__("asyncio").create_task(self._poll_loop())
         logger.info("Telegram channel started")
 
+    def _resume_offset(self) -> None:
+        """H116 — read the saved offset (if any) and arm the bounded catch-up."""
+        import hashlib
+
+        self._cursor_store = delivery_ledger.store()
+        self._cursor_name = "telegram:" + hashlib.sha256(str(self.token).encode()).hexdigest()[:16]
+        saved = None
+        if self._cursor_store is not None:
+            try:
+                saved = self._cursor_store.cursor(self._cursor_name)
+            except Exception:
+                logger.warning("Telegram saved offset unreadable; resuming from Telegram's queue")
+        if saved is not None and saved.isdigit() and int(saved) > self._offset:
+            self._offset = int(saved)
+        self._started_wall = time.time()
+        self._backfill = BackfillBudget()
+        self._catching_up = True
+        self.health.backfill = self._backfill.counts()
+
+    def _save_offset(self) -> None:
+        store, name = self._cursor_store, self._cursor_name
+        if store is None or name is None:
+            return
+        try:
+            store.set_cursor(name, str(self._offset))
+        except Exception:
+            logger.warning("Telegram offset not saved")
+
     async def stop(self):
         self._running = False
+        self.health.stopped()
         self._pending_callback_generation = None
         generation = getattr(self, "_owner_once_generation", None)
         self._owner_once_generation = None
@@ -492,14 +561,19 @@ class TelegramChannel(ChannelAdapter):
         if isinstance(message, EphemeralReply):
             default = get_value("display", "ephemeral_system_ttl", 0) if message.ttl_seconds is None else 0
             ttl = ephemeral_ttl(message, default=default)
-            for piece in chunk(message.text, self.descriptor.max_message_length):
+            for index, piece in enumerate(chunk(message.text, self.descriptor.max_message_length)):
                 if not await self._send_ephemeral_chunk(cid, piece, plain=plain, ttl=ttl):
+                    if index:
+                        delivery_ledger.note_partial()
                     return False
             # System notices neither speak nor consume a pending voice turn.
             return True
-        for piece in chunk(str(message or ""), self.descriptor.max_message_length):
+        for index, piece in enumerate(chunk(str(message or ""), self.descriptor.max_message_length)):
             sent = await self._send_plain_chunk(cid, piece) if plain else await self._send_chunk(cid, piece)
             if not sent:
+                if index:
+                    # H081: earlier parts arrived; the ledger records a partial delivery.
+                    delivery_ledger.note_partial()
                 return False
         # The words are delivered; a voice note follows only if this chat asked.
         # `voice=False` marks a service line (a transcript echo, an unreadable-attachment
@@ -546,6 +620,7 @@ class TelegramChannel(ChannelAdapter):
             self._ephemeral_deletes.schedule(ttl, delete)
             return True
         except Exception as exc:
+            delivery_ledger.note_send_failure(exc=exc)
             logger.warning("Telegram system notice delivery failed: %s", type(exc).__name__)
             return False
 
@@ -594,7 +669,9 @@ class TelegramChannel(ChannelAdapter):
         try:
             return await self._send_message(cid, to_telegram_html(piece), plain=to_plain(piece)) is not None
         except Exception as e:
-            logger.error(f"Telegram send error: {e}")
+            # H081: why it failed, for the delivery ledger and the dead-target registry.
+            delivery_ledger.note_send_failure(exc=e)
+            logger.error("Telegram send error: %s", type(e).__name__)
             return False
 
     async def _send_plain_chunk(self, cid, piece: str) -> bool:
@@ -607,6 +684,7 @@ class TelegramChannel(ChannelAdapter):
             resp.raise_for_status()
             return True
         except Exception as e:
+            delivery_ledger.note_send_failure(exc=e)
             logger.error("Telegram send error: %s", type(e).__name__)
             return False
 
@@ -873,27 +951,46 @@ class TelegramChannel(ChannelAdapter):
         self._lanes = ChatLanes(name="telegram")
         while self._running:
             cut_short: Optional[_Page] = None
+            polled = False
             try:
                 # H117: while pieces of a burst are held, poll without the long wait so
                 # the batch flushes when its window closes, not 25 s later.
+                # H116: while catching up after a start, poll without the long wait too,
+                # so the catch-up ends (an empty page) before any live update is read.
                 wait = self._batch.wait()
-                if wait is None:
+                if self._catching_up:
+                    updates = await self._get_updates(timeout=0)
+                elif wait is None:
                     updates = await self._get_updates()
                 else:
                     if wait > 0:
                         await asyncio.sleep(wait)
                     updates = await self._get_updates(timeout=0)
+                polled = True
+                self._poll_succeeded()
                 # H117: when this page came back, read once, before any update in it is
                 # handled; a claimed reply in it is stamped from this reading.
                 page = cut_short = self._page_received()
-                for up in updates:
+                admitted = await self._admit_page(updates)
+                for up, admit in zip(updates, admitted, strict=True):
                     self._offset = up["update_id"] + 1
-                    await self._handle_update(up, page)
+                    # H116: saved before the update is handled, so a crash never handles it
+                    # twice after the restart.
+                    self._save_offset()
+                    if admit:
+                        await self._handle_update(up, page)
+                if self._catching_up and not updates:
+                    self._catching_up = False
                 cut_short = None
                 for key in self._batch.due():
                     await self._flush_turn(key)
             except Exception as e:
-                logger.warning(f"Telegram poll error: {e}")
+                if not polled:
+                    # H100: the Bot API did not answer; classify and climb the shared ladder.
+                    if await self._poll_failed(e):
+                        break
+                    continue
+                logger.warning("Telegram update handling error: %s", type(e).__name__)
                 if cut_short is not None:
                     # Handling this page raised before every update in it was handled. The
                     # updates after the failing one come again on the next page; this page
@@ -903,10 +1000,10 @@ class TelegramChannel(ChannelAdapter):
                     # lower bound for what comes again, and it is kept.
                     self._last_page_at = (cut_short.previous if cut_short.previous is not None
                                           else cut_short.now)
-                # Nothing can join a held batch during the back-off, three times the hard
-                # cap: what is held goes out now rather than when a poll next succeeds.
+                # Nothing can join a held batch during the pause: what is held goes out now
+                # rather than when a poll next succeeds.
                 await self._flush_all_turns()
-                await asyncio.sleep(3)
+                await asyncio.sleep(HANDLING_ERROR_PAUSE)
         # Stopping never drops what a sender already said: held pieces go out now, and
         # the turns already in their chats' lanes get a bounded time to finish.
         await self._flush_all_turns()
@@ -914,10 +1011,90 @@ class TelegramChannel(ChannelAdapter):
         if lanes is not None:
             await lanes.drain(LANE_DRAIN_BUDGET)
 
+    def _ladder(self) -> Backoff:
+        backoff = self.__dict__.get("_backoff")
+        if backoff is None:
+            backoff = self._backoff = Backoff()
+        return backoff
+
+    def _poll_succeeded(self) -> None:
+        self._ladder().success()
+        self.health.ok()
+        if self._backfill is not None:
+            self.health.backfill = self._backfill.counts()
+
+    async def _poll_failed(self, exc: Exception) -> bool:
+        """H100 — one failed getUpdates. True when the failure is fatal (the token is wrong
+        or revoked): the loop stops and the status surface says why, instead of retrying
+        forever. Otherwise wait the next rung of the ladder (or the server's retry_after).
+        Logged by kind only: the request URL holds the bot token."""
+        failure = classify_exception(exc)
+        # Nothing can join a held batch while the API is unreachable: send it now.
+        await self._flush_all_turns()
+        if failure.fatal:
+            self.health.failed_fatally(failure.kind)
+            self._running = False
+            logger.error("Telegram channel stopped: the Bot API refused the bot token (%s). "
+                         "Fix TELEGRAM_BOT_TOKEN and restart the channel.", failure.kind)
+            return True
+        delay = self._ladder().failure()
+        if failure.retry_after is not None:
+            delay = max(delay, failure.retry_after)
+        self.health.retrying(failure.kind, delay)
+        logger.warning("Telegram poll failed (%s); retrying in %.0f s", failure.kind, delay)
+        await _backoff_sleep(delay)
+        return False
+
+    async def _admit_page(self, updates: list) -> list[bool]:
+        """H116 — which updates of a page are handled. Live updates all are. While catching
+        up after a start, a message sent before the start is admitted only within the
+        backfill window and budget, and a queued button tap is refused (answered, never
+        applied). An admitted backfilled update takes exactly the live path."""
+        flags = [True] * len(updates)
+        budget = self._backfill
+        if not self._catching_up or budget is None or self._started_wall is None:
+            return flags
+        backlog, dates = [], []
+        for index, up in enumerate(updates):
+            cb = up.get("callback_query") if isinstance(up, dict) else None
+            if cb is not None:
+                flags[index] = False
+                budget.refused_taps += 1
+                callback_id = cb.get("id") if isinstance(cb, dict) else None
+                if type(callback_id) is str and 0 < len(callback_id) <= 128:
+                    await self._answer_callback(
+                        callback_id, "Not applied: this was tapped while Nerva was offline. Tap again.")
+                continue
+            msg = _update_message(up)
+            date = msg.get("date") if isinstance(msg, dict) else None
+            if isinstance(date, (int, float)) and not isinstance(date, bool) and date < self._started_wall:
+                backlog.append(index)
+                dates.append(date)
+        for index, admit in zip(backlog, budget.plan(dates, time.time()), strict=True):
+            flags[index] = admit
+        self.health.backfill = budget.counts()
+        return flags
+
+    def _heal_dead_target(self, up) -> None:
+        """H081 — a chat that writes to the bot is reachable again: lift its dead flag so
+        the next reply is tried. Cheap when nothing is flagged (an in-memory check)."""
+        msg = _update_message(up)
+        chat = msg.get("chat") if isinstance(msg, dict) else None
+        chat_id = chat.get("id") if isinstance(chat, dict) else None
+        if type(chat_id) is not int:
+            return
+        store = delivery_ledger.store() if self._cursor_store is None else self._cursor_store
+        try:
+            if store is not None and store.is_dead("telegram", chat_id):
+                store.clear_dead("telegram", chat_id)
+        except Exception:
+            logger.debug("Telegram dead-target heal skipped", exc_info=True)
+
     async def _handle_update(self, up: dict, page: Optional[_Page] = None) -> None:
         """One update: a button tap, an ignored message, a rejection's reason (H487), or a
         turn piece to batch (H117). *page* is when the update's getUpdates page came back
         (see ``_reason_arrival``); None for an update handled outside the poll loop."""
+        self._heal_dead_target(up)
         # Decision-inbox button taps arrive as callback_query updates.
         cb = up.get("callback_query")
         if cb:

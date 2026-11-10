@@ -625,6 +625,10 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
+    # H081 (G15 delivery receipts and dead targets): the owner reads them through the API;
+    # no HUD panel yet (ledger row H081, remaining).
+    "/api/channels/deliveries",
+    "/api/channels/dead-targets/clear",
     # H562 (A2A outbound): peers get an address and token through the admin API; no HUD
     # panel yet (ADOPT_LANE.md slice 4, remaining).
     "/api/a2a/peers/{peer_id}/outbound",

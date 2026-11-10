@@ -11,8 +11,8 @@ Din acestea, **154** au fost reevaluate pe cod în această livrare; **0** păst
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
 | Echivalent | 154 | 22.1% |
-| Parțial | 467 | 67.0% |
-| Lipsă | 44 | 6.3% |
+| Parțial | 468 | 67.1% |
+| Lipsă | 43 | 6.2% |
 | Exclus intenționat | 32 | 4.6% |
 | De reverificat | 0 | 0.0% |
 
@@ -29,8 +29,8 @@ Fiecare rând aparține unui singur domeniu din [areas.json](docs/hermes/areas.j
 | Domeniu | Lane | Rânduri | Echiv. | Parțial | Lipsă | Exclus | Reverificare | Suită | Stare suită |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | [cli](docs/HERMES_CAPABILITIES.md#area-cli) — Command line: jobs done through the nerva CLI | own | 56 | 14 | 36 | 4 | 2 | 0 | 108 | seed din dovezi |
-| [gateway](docs/HERMES_CAPABILITIES.md#area-gateway) — Always-on gateway and slash commands | own/run | 33 | 3 | 27 | 1 | 2 | 0 | 101 | seed din dovezi |
-| [platforms](docs/HERMES_CAPABILITIES.md#area-platforms) — Messaging platforms and channels | own | 39 | 3 | 27 | 5 | 4 | 0 | 38 | seed din dovezi |
+| [gateway](docs/HERMES_CAPABILITIES.md#area-gateway) — Always-on gateway and slash commands | own/run | 33 | 3 | 27 | 1 | 2 | 0 | 102 | seed din dovezi |
+| [platforms](docs/HERMES_CAPABILITIES.md#area-platforms) — Messaging platforms and channels | own | 39 | 3 | 28 | 4 | 4 | 0 | 39 | seed din dovezi |
 | [web](docs/HERMES_CAPABILITIES.md#area-web) — Web dashboard and HUD | own/run | 40 | 13 | 22 | 3 | 2 | 0 | 66 | seed din dovezi |
 | [desktop](docs/HERMES_CAPABILITIES.md#area-desktop) — Desktop app: jobs done in the HUD and Tauri shell | own | 54 | 4 | 42 | 6 | 2 | 0 | 50 | **subțire**, seed din dovezi |
 | [tui](docs/HERMES_CAPABILITIES.md#area-tui) — Terminal UI: jobs done in the HUD and nerva CLI | own | 25 | 2 | 19 | 2 | 2 | 0 | 25 | **subțire**, seed din dovezi |

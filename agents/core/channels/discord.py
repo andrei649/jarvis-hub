@@ -194,6 +194,30 @@ class DiscordChannel(ChannelAdapter):
         if task is not None:
             task.cancel()
 
+    def health_snapshot(self) -> dict:
+        """H100 — discord.py reconnects the gateway itself; this reports what it sees:
+        ready (healthy), running but not ready (retrying), or why the client gave up — a
+        refused token or refused intents are fatal and named."""
+        row = super().health_snapshot()
+        task = getattr(self, "_start_task", None)
+        if task is not None and task.done() and not task.cancelled():
+            exc = task.exception()
+            if exc is not None:
+                name = type(exc).__name__
+                reason = ("unauthorized" if name == "LoginFailure"
+                          else "intents_refused" if name == "PrivilegedIntentsRequired"
+                          else "gateway_closed")
+                return {**row, "state": "fatal", "fatal": reason, "error": reason}
+        client = self._client
+        if self._running and client is not None:
+            try:
+                ready = bool(client.is_ready()) and not client.is_closed()
+            except Exception:
+                ready = False
+            row["state"] = "healthy" if ready else "retrying"
+            row["error"] = None if ready else "not_ready"
+        return row
+
     def _pending_view(self, markup: dict, generation):
         """Translate the bounded card markup into real Discord components."""
         rows = markup.get("inline_keyboard") if type(markup) is dict else None

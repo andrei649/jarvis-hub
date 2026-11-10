@@ -33,6 +33,7 @@ from asyncio import sleep
 from collections import OrderedDict
 from collections.abc import Mapping
 from time import monotonic
+from time import time as wall_time
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -41,9 +42,12 @@ import httpx
 from ..env_config import truthy
 from ..http_client import PluginEgressError, PluginHTTPClient
 from ..plugin_gate import register_dynamic_domain
+from . import delivery_ledger
+from .backfill import BackfillBudget, configured_window
 from .base import ChannelAdapter
 from .descriptor import DIALECT_PLAIN, ChannelDescriptor
 from .pairing import channel_open_acknowledged, pairing_enabled
+from .reconnect import Backoff, classify_exception, classify_status
 from .render import chunk, render_outbound
 
 logger = logging.getLogger("jarvis.channels.ntfy")
@@ -92,6 +96,8 @@ _URL_RE = re.compile(r"^https?://[^\s/]+(?:/[^\s]*)?$")
 _MAX_TITLE = 120
 _ECHO_TAG = "nerva-agent"
 _RECONNECT_BACKOFF = (2, 5, 10, 30, 60)
+#: H116: ids of the most recent messages taken, remembered across restarts.
+_SEEN_IDS = 64
 _MAX_FRAME = 65_536
 
 
@@ -190,6 +196,15 @@ class NtfyChannel(ChannelAdapter):
         self._subscription_context: str | None = None
         self._dedup: OrderedDict[str, float] = OrderedDict()
         self.fatal_error: str | None = None
+        # H100: the shared ladder (with jitter and reset-after-healthy), on ntfy's rungs.
+        self._backoff = Backoff(_RECONNECT_BACKOFF, clock=lambda: monotonic())
+        # H116: the since= cursor (last message time and ids), saved in the reliability
+        # store; a backfill after a start is bounded (backfill.py).
+        self._cursor_store = None
+        self._since: int | None = None
+        self._seen: list[str] = []
+        self._started_wall: float | None = None
+        self._backfill: BackfillBudget | None = None
         self._reply_binding: contextvars.ContextVar = contextvars.ContextVar("ntfy-reply", default=None)
         register_dynamic_domain("ntfy", url)
         self.client = client if client is not None else _NtfyHTTPClient(self._request_guard)
@@ -225,7 +240,10 @@ class NtfyChannel(ChannelAdapter):
             raise ValueError("ntfy inbound requires a shared handler and pairing gate")
         self._running = True
         self.fatal_error = None
+        self.health.starting()
+        self._backoff.reset()
         if self.inbound:
+            self._resume_cursor()
             self._epoch = secrets.token_hex(32)
             self._pending_callback_generation = object()
             self._subscription_context = self._context()
@@ -235,8 +253,56 @@ class NtfyChannel(ChannelAdapter):
             self._stream_task = asyncio.create_task(self._run_stream(), name="ntfy-subscription")
         logger.info("ntfy channel ready")
 
+    def _cursor_name(self) -> str:
+        return "ntfy:" + hashlib.sha256(json.dumps([self.url, self.topic]).encode()).hexdigest()[:16]
+
+    def _resume_cursor(self) -> None:
+        """H116 — read where the last run stopped reading (time and ids) and arm the
+        bounded catch-up. No saved cursor: subscribe from now, as before."""
+        self._cursor_store = delivery_ledger.store()
+        self._since, self._seen = None, []
+        saved = None
+        if self._cursor_store is not None:
+            try:
+                saved = json.loads(self._cursor_store.cursor(self._cursor_name()) or "null")
+            except (ValueError, TypeError):
+                saved = None
+            except Exception:
+                logger.warning("ntfy saved cursor unreadable; subscribing from now")
+        if isinstance(saved, dict):
+            since, seen = saved.get("time"), saved.get("ids")
+            if type(since) is int and since > 0:
+                self._since = since
+            if isinstance(seen, list):
+                self._seen = [i for i in seen if isinstance(i, str) and 0 < len(i) <= 200][-_SEEN_IDS:]
+        self._started_wall = wall_time()
+        self._backfill = BackfillBudget()
+        self.health.backfill = self._backfill.counts()
+
+    def _stream_params(self) -> dict:
+        params = {"poll": "false"}
+        if self._since is not None and self._started_wall is not None:
+            window = configured_window()
+            if window > 0:
+                params["since"] = str(max(self._since, int(wall_time()) - window))
+        return params
+
+    def _taken(self, key: str, sent_at) -> None:
+        """Remember a message as taken, before it is handled: a restart never takes it again."""
+        self._seen = [*self._seen[-(_SEEN_IDS - 1):], key]
+        if type(sent_at) is int and sent_at > 0:
+            self._since = max(self._since or 0, sent_at)
+        store = self._cursor_store
+        if store is None:
+            return
+        try:
+            store.set_cursor(self._cursor_name(), json.dumps({"time": self._since, "ids": self._seen}))
+        except Exception:
+            logger.warning("ntfy cursor not saved")
+
     async def stop(self) -> None:
         self._running = False
+        self.health.stopped()
         task, self._stream_task = self._stream_task, None
         if task is not None:
             task.cancel()
@@ -273,40 +339,48 @@ class NtfyChannel(ChannelAdapter):
         return {"Authorization": f"Bearer {self._token}"}
 
     async def _run_stream(self) -> None:
-        backoff = 0
         while self._running:
             if self._subscription_context != self._context():
                 self.fatal_error = "configuration_changed"
+                self.health.failed_fatally("configuration_changed")
                 self._running = False
                 return
             started = monotonic()
+            kind = "stream_closed"
             try:
                 async with contextlib.AsyncExitStack() as stack:
                     # Restrict redaction to opening the subscription. Inbound
                     # handlers keep their ordinary HTTP diagnostics afterwards.
                     with _private_transport_logs():
                         response = await stack.enter_async_context(self.client.stream(
-                            "GET", f"{self.url}/{self.topic}/json", params={"poll": "false"},
+                            "GET", f"{self.url}/{self.topic}/json", params=self._stream_params(),
                             headers=self._auth_headers(),
                             timeout=httpx.Timeout(15.0, read=90.0),
                         ))
-                    if response.status_code in {401, 403, 404}:
+                    failure = (classify_status(response.status_code)
+                               if response.status_code >= 400 else None)
+                    if failure is not None and failure.fatal:
+                        # H100: a wrong or revoked credential, or a topic that is gone:
+                        # retrying cannot fix it. Stop, and say so on the status surface.
                         self.fatal_error = f"http_{response.status_code}"
+                        self.health.failed_fatally(failure.kind)
                         self._running = False
                         logger.warning("ntfy subscription stopped: HTTP %s", response.status_code)
                         return
                     response.raise_for_status()
+                    self._backoff.success(at=started)
+                    self.health.ok()
                     await self._consume_stream(response)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
+                kind = classify_exception(exc).kind
                 logger.warning("ntfy stream error: %s", exc.__class__.__name__)
             if not self._running:
                 return
-            if monotonic() - started >= 60:
-                backoff = 0
-            await sleep(_RECONNECT_BACKOFF[min(backoff, len(_RECONNECT_BACKOFF) - 1)])
-            backoff += 1
+            delay = self._backoff.failure()
+            self.health.retrying(kind, delay)
+            await sleep(delay)
 
     async def _consume_stream(self, response) -> None:
         # aiter_lines buffers an unbounded unterminated frame. Bound bytes before
@@ -358,11 +432,26 @@ class NtfyChannel(ChannelAdapter):
         now = monotonic()
         while self._dedup and next(iter(self._dedup.values())) <= now - 300:
             self._dedup.popitem(last=False)
-        if key in self._dedup:
+        sent_at = event.get("time")
+        sent_at = sent_at if type(sent_at) is int and sent_at > 0 else None
+        # H116: an id taken before (this run or the last) that the server sends again
+        # with a since= replay is not taken twice.
+        if key in self._dedup or (sent_at is not None and key in self._seen):
             return
         self._dedup[key] = now
         if len(self._dedup) > 1000:
             self._dedup.popitem(last=False)
+        budget = self._backfill
+        if (budget is not None and self._started_wall is not None and sent_at is not None
+                and sent_at < self._started_wall):
+            # H116: sent while Nerva was not listening. Bounded; once admitted it takes
+            # exactly the live path below (pending input, gateway pairing, inbox, approval).
+            admitted = budget.admit(sent_at, wall_time())
+            self.health.backfill = budget.counts()
+            if not admitted:
+                self._taken(key, sent_at)
+                return
+        self._taken(key, sent_at)
         metadata = {"sender": self.topic, "chat_id": self.topic,
                     "ntfy_topic": self.topic, "ntfy_context": self._context()}
         if self._events is None:
@@ -442,6 +531,7 @@ class NtfyChannel(ChannelAdapter):
         text = str(message or "")
         pieces = (chunk(text, self.descriptor.max_message_length) if kwargs.get("plain") is True or self.markdown
                   else render_outbound(text, self.descriptor))
+        delivered = 0
         for piece in pieces:
             try:
                 for body in _byte_chunks(piece):
@@ -453,7 +543,10 @@ class NtfyChannel(ChannelAdapter):
                             timeout=self._timeout,
                         )
                     resp.raise_for_status()
+                    delivered += 1
             except Exception as exc:
+                # H081: why, for the delivery ledger; a refusal is the topic's credential.
+                delivery_ledger.note_send_failure(exc=exc, partial=delivered > 0, channel_level=True)
                 logger.error("ntfy send error: %s", exc.__class__.__name__)
                 return False
         return True

@@ -13,6 +13,7 @@ import time
 from typing import Any
 
 from ..automation_contracts import ContractTemplate, contract_denial, predicate
+from . import delivery_ledger
 from .base import ChannelAdapter
 from ..errors import E_CHANNEL_START_FAIL
 from ..log import log_error
@@ -29,6 +30,33 @@ _SAFE_CONTRACT_TOKEN = re.compile(r"^[A-Za-z0-9_.:/@\-]{1,200}$")
 # executor below.
 _SUPPORTED_SEND_CHANNELS = frozenset({"telegram", "web", "voice", "ntfy"})
 _SUPPORTED_REPLY_CHANNELS = frozenset({"telegram", "web", "email", "slack", "discord", "ntfy"})
+
+
+#: H081 — which send kwarg names the chat a reply goes to, per channel (for the ledger
+#: row and the dead-target registry). A channel with no per-chat target is "default".
+_TARGET_KEYS = {
+    "telegram": ("chat_id",),
+    "web": ("client_id",),
+    "slack": ("slack_channel",),
+    "discord": ("channel_id",),
+    "email": ("to",),
+    "ntfy": ("ntfy_topic",),
+}
+
+
+def _delivery_target(channel: str, adapter, kwargs: dict) -> str:
+    for key in _TARGET_KEYS.get(channel, ()):
+        value = kwargs.get(key)
+        if value not in (None, ""):
+            return str(value)
+    if channel == "ntfy":
+        return str(getattr(adapter, "publish_topic", "") or "default")
+    return "default"
+
+
+def _delivery_text(response) -> str:
+    text = getattr(response, "text", None)
+    return text if isinstance(text, str) else str(response if response is not None else "")
 
 
 def _safe_contract_token(value: Any) -> bool:
@@ -112,6 +140,13 @@ class ChannelManager:
         return self.channels.get(channel_id)
 
     async def start_all(self) -> None:
+        # H081: close the ledger rows a previous process left open (never resent).
+        store = delivery_ledger.store()
+        if store is not None:
+            try:
+                store.recover()
+            except Exception:
+                logger.warning("Delivery ledger recovery failed", exc_info=True)
         for cid, ch in self.channels.items():
             try:
                 await ch.start()
@@ -137,18 +172,61 @@ class ChannelManager:
         ch = self.channels.get(channel)
         if not ch:
             return False
+        delivery_key = kwargs.pop("delivery_key", None)
         if self._contract_denial(channel, response, kwargs) is not None:
             return False
-        if channel == "telegram":
-            return bool(await ch.send(response, **kwargs))
-        elif channel == "web":
-            return bool(await ch.send(response, **kwargs))
+        if channel in ("telegram", "web", "ntfy"):
+            # ntfy: outbound-only push (Hermes absorption 4g); title / priority ride in kwargs.
+            return await self._ledgered(channel, ch, response, kwargs, delivery_key,
+                                        lambda: ch.send(response, **kwargs))
         elif channel == "voice":
-            return bool(await ch.send(response))
-        elif channel == "ntfy":
-            # Outbound-only push (Hermes absorption 4g): title / priority ride in kwargs.
-            return bool(await ch.send(response, **kwargs))
+            return await self._ledgered(channel, ch, response, kwargs, delivery_key,
+                                        lambda: ch.send(response))
         return False
+
+    async def _ledgered(self, channel: str, adapter, response, kwargs: dict,
+                        delivery_key, send) -> bool:
+        """H081 — one send with its ledger row: pending, attempting, then sent / failed /
+        partial / unknown. A dead target or a duplicate ``delivery_key`` is not sent (a
+        duplicate of a delivered send answers True). The ledger is best effort: if it
+        cannot be written the send still goes out."""
+        store = delivery_ledger.store()
+        target = _delivery_target(channel, adapter, kwargs)
+        delivery = None
+        if store is not None:
+            try:
+                delivery = store.open_delivery(channel, target, _delivery_text(response),
+                                               key=delivery_key if isinstance(delivery_key, str) else None)
+            except Exception:
+                logger.warning("Delivery ledger unavailable; sending without a receipt", exc_info=True)
+        if delivery is not None and not delivery.send:
+            return delivery.already_sent
+        outcome, token = delivery_ledger.begin_outcome()
+        try:
+            if delivery is not None:
+                delivery.attempting()
+            try:
+                ok = bool(await send())
+            except BaseException as exc:
+                if delivery is not None:
+                    delivery.raised(exc)
+                raise
+        finally:
+            delivery_ledger.end_outcome(token)
+        if delivery is not None:
+            delivery.finished(ok, outcome)
+        try:
+            if store is not None and ok:
+                store.clear_dead(channel, target)
+            elif store is not None and outcome.dead and target != "default":
+                store.mark_dead(channel, target, outcome.kind or "gone")
+        except Exception:
+            logger.warning("Dead-target registry unavailable", exc_info=True)
+        health = getattr(adapter, "health", None)
+        if outcome.fatal and health is not None and hasattr(health, "failed_fatally"):
+            # H100: the platform refused the credential on a send: show it, do not hide it.
+            health.failed_fatally(outcome.fatal)
+        return ok
 
     async def send_pending_card(self, channel: str, response, markup: dict, **kwargs) -> int | None:
         """Direct Telegram prompt delivery through the existing send contract.
@@ -175,12 +253,15 @@ class ChannelManager:
         ch = self.channels.get(channel)
         if not ch:
             return False
+        delivery_key = kwargs.pop("delivery_key", None)
         if self._reply_contract_denial(channel, response, kwargs) is not None:
             return False
         if channel == "ntfy":
-            return bool(await ch.send_reply(response, **kwargs))
+            return await self._ledgered(channel, ch, response, kwargs, delivery_key,
+                                        lambda: ch.send_reply(response, **kwargs))
         if channel in _SUPPORTED_REPLY_CHANNELS:
-            return bool(await ch.send(response, **kwargs))
+            return await self._ledgered(channel, ch, response, kwargs, delivery_key,
+                                        lambda: ch.send(response, **kwargs))
         return False
 
     async def send_channel_prompt(self, channel: str, response, markup: dict, **kwargs) -> dict | None:

@@ -74,15 +74,53 @@ def _channel_rows(orch):
             or getattr(channel, "_running", False)
             or getattr(channel, "running", False)
         )
-        rows.append({
+        row = {
             "id": str(channel_id),
             "running": is_running,
             "ready": is_running or channel_id in {"web", "voice"},
             # Hermes absorption 5b: how many times pairing held a stranger on this
             # channel — a tally, never an identity (the pairing store owns those).
             "held_senders": _held_count(gateway, str(channel_id)),
-        })
+        }
+        health = _channel_health(channel)
+        if health is not None:
+            row["health"] = health
+        rows.append(row)
     return rows
+
+
+_HEALTH_KEYS = ("state", "error", "fatal", "failures", "retry_in_s", "since", "last_ok")
+_HEALTH_TOKEN = re.compile(r"[a-z0-9_]{1,40}")
+
+
+def _channel_health(channel) -> dict | None:
+    """H100 — the channel's connection health (``ChannelAdapter.health_snapshot``): state,
+    the error kind, failures in a row, seconds to the next retry, the fatal reason and what
+    the last catch-up did. Kinds and counts only; anything else is dropped."""
+    reader = getattr(channel, "health_snapshot", None)
+    if not callable(reader):
+        return None
+    try:
+        raw = reader()
+    except Exception:
+        return {"state": "unknown"}
+    if not isinstance(raw, dict):
+        return {"state": "unknown"}
+    out = {}
+    for key in _HEALTH_KEYS:
+        value = raw.get(key)
+        if isinstance(value, str):
+            out[key] = value if _HEALTH_TOKEN.fullmatch(value) else "unknown"
+        elif isinstance(value, int) and not isinstance(value, bool):
+            out[key] = value
+        else:
+            out[key] = None
+    backfill = raw.get("backfill")
+    if isinstance(backfill, dict):
+        out["backfill"] = {k: v for k, v in backfill.items()
+                           if isinstance(k, str) and _HEALTH_TOKEN.fullmatch(k)
+                           and isinstance(v, int) and not isinstance(v, bool)}
+    return out
 
 
 def _gateway_state(rows: list[dict]) -> dict:

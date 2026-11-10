@@ -14,6 +14,12 @@ from email.mime.text import MIMEText
 from typing import Optional
 
 from .base import ChannelAdapter
+from .reconnect import Backoff, classify_exception
+
+#: H100 — the IMAP poll's own rungs on the shared ladder (it polls once a minute when well).
+IMAP_LADDER = (30.0, 60.0, 120.0, 300.0, 600.0)
+_AUTH_WORDS = ("authenticationfailed", "authentication failed", "invalid credentials",
+               "login failed", "logon failure", "auth")
 
 logger = logging.getLogger("jarvis.channels.email")
 
@@ -50,6 +56,7 @@ class EmailChannel(ChannelAdapter):
 
     async def stop(self):
         self._running = False
+        self.health.stopped()
         if self._poll_task:
             self._poll_task.cancel()
 
@@ -88,11 +95,27 @@ class EmailChannel(ChannelAdapter):
             server.send_message(msg)
 
     async def _poll_loop(self):
+        backoff = Backoff(IMAP_LADDER)
         while self._running:
             try:
                 await self._check_imap()
             except Exception as e:
-                logger.warning(f"IMAP poll error: {e}")
+                if isinstance(e, imaplib.IMAP4.error) and any(
+                        word in str(e).lower() for word in _AUTH_WORDS):
+                    # H100: a refused login does not heal by asking again every minute.
+                    self.health.failed_fatally("unauthorized")
+                    self._running = False
+                    logger.error("Email channel stopped: the IMAP server refused the login. "
+                                 "Fix the IMAP credentials and restart the channel.")
+                    return
+                kind = classify_exception(e).kind
+                delay = backoff.failure()
+                self.health.retrying(kind, delay)
+                logger.warning("IMAP poll failed (%s); retrying in %.0f s", kind, delay)
+                await asyncio.sleep(delay)
+                continue
+            backoff.success()
+            self.health.ok()
             await asyncio.sleep(self.imap.get("poll_interval", 60))
 
     async def _check_imap(self):

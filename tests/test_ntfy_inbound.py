@@ -217,6 +217,8 @@ async def test_reconnect_backoff_reset_and_dedup_across_connections(tmp_path, mo
 
     monkeypatch.setattr(ntfy, "sleep", sleep)
     channel.client = httpx.AsyncClient(transport=httpx.MockTransport(transport))
+    # G15: the shared ladder jitters each wait by up to ±20 %; pinned here to read the rungs.
+    channel._backoff.jitter = 0
     try:
         await channel.start()
         await channel.start()  # idempotent: no second listener
