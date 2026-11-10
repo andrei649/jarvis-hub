@@ -29,6 +29,7 @@ def apply_safe_mode_switch(argv=None) -> bool:
     hub is imported, so every loader sees it; the variable itself works the same way."""
     if SAFE_MODE_SWITCH in (sys.argv[1:] if argv is None else argv):
         os.environ.update({"JARVIS_SAFE_MODE": "1"})   # a write, not a read of the environment
+        os.environ.pop("NERVA_SAFE_MODE", None)        # RB-2: the switch wins over either spelling
         return True
     return False
 

@@ -18,6 +18,12 @@ from pathlib import Path
 from typing import Any
 
 REPO = Path(__file__).resolve().parent.parent
+try:  # RB-2: NERVA_<X> is the preferred spelling of JARVIS_<X>; importing the core folds it in
+    if str(REPO) not in sys.path:
+        sys.path.insert(0, str(REPO))
+    import agents.core  # noqa: F401,E402
+except Exception:  # noqa: BLE001  # nosec B110 - the script still runs on the JARVIS_ names
+    pass
 DATA_ROOT = Path(
     os.environ.get("JARVIS_HOME", "").strip()
     or os.environ.get("JARVIS_MEMORY_DIR", "").strip()

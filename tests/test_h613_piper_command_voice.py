@@ -1136,7 +1136,8 @@ def test_flags_are_documented():
     example = (root / ".env.example").read_text(encoding="utf-8")
     flags = (root / "docs" / "FLAGS.md").read_text(encoding="utf-8")
     for name in ("JARVIS_VOICE_COMMANDS", "JARVIS_VOICE_COMMAND_TIMEOUT_S"):
-        assert name in example and name in flags
+        # RB-2: .env.example spells every hub variable NERVA_<X>, the preferred spelling
+        assert name.replace("JARVIS_", "NERVA_", 1) in example and name in flags
 
 
 # ── review round (h613_review F0..F20) ────────────────────────────────────────────────

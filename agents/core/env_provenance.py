@@ -25,6 +25,14 @@ port below (python-dotenv 1.2.3's grammar) is the fallback that lets
 
 The settings plane is separate: ``settings_db`` reports each stored value as the
 declared ``default`` or ``set``.
+
+RB-2 — every hub variable has two spellings, ``NERVA_<X>`` (preferred) and ``JARVIS_<X>``
+(deprecated), and the table names it once, under the ``JARVIS_`` name the code reads.
+Each layer is folded as it loads (``env_alias.fold``): a ``NERVA_<X>`` a file sets
+becomes ``JARVIS_<X>`` in the environment, a higher layer that set the variable under
+either spelling still wins, a ``FROM_PROCESS_ONLY`` name is left out under either
+spelling, and a file that sets both spellings to different values stops the load for
+anything but a reviewed ordinary knob. ``spelling`` says which spelling supplied a row.
 """
 from __future__ import annotations
 
@@ -37,6 +45,7 @@ import stat
 from collections.abc import Mapping
 from pathlib import Path
 
+from . import env_alias
 from .env_config import dotenv_disabled  # python-dotenv's own switch and spellings
 
 PROCESS, REPO_ENV, USER_ENV, RUNTIME = "process", "repo_env", "user_env", "runtime"
@@ -333,15 +342,24 @@ def after_repo_layer(repo_env, environ: Mapping[str, str]) -> dict[str, str]:
     """The environment the hub has once the repo .env is loaded, without loading it:
     *environ* plus what the file adds. Just *environ* when python-dotenv is switched off
     or missing (only it knows values), or the file cannot be read."""
-    merged = dict(environ)
+    merged = env_alias.normalized(environ)
     if dotenv_disabled(merged):
         return merged
     parsed = _file_bindings(repo_env)
     if parsed is None or parsed[1] is None:
         return merged
-    merged.update({key: value for key, value in hub_values(parsed[1], merged).items()
+    folded = _layer_fold(parsed[1], merged)
+    merged.update({key: value for key, value in folded.values.items()
                    if key not in FROM_PROCESS_ONLY})
+    env_alias._record(merged, {key: used for key, used in folded.spelling.items()
+                               if key not in FROM_PROCESS_ONLY})
     return merged
+
+
+def _layer_fold(raw, environ: Mapping[str, str]) -> env_alias.Fold:
+    """What a file's raw bindings add to a canonical *environ*, both spellings of a hub
+    variable folded into one (RB-2): ``hub_values``, then ``env_alias.fold``."""
+    return env_alias.fold(hub_values(raw, environ), environ)
 
 
 def derive(repo_env, home_env, environ: Mapping[str, str]) -> dict[str, dict]:
@@ -351,16 +369,18 @@ def derive(repo_env, home_env, environ: Mapping[str, str]) -> dict[str, dict]:
     the repo layer (``after_repo_layer``), so a data home the repo .env names, or
     builds from ``${VAR}``, is followed as the hub follows it. python-dotenv checks its
     switch on every load, so a repo .env that sets ``PYTHON_DOTENV_DISABLED`` stops the
-    data-home layer here too. A named pipe is not read."""
-    table = {key: {"layer": PROCESS, "shadowed": []} for key in environ}
-    merged = dict(environ)
+    data-home layer here too. A named pipe is not read. Both spellings of a hub variable
+    are one row, under its ``JARVIS_`` name (RB-2); ``derive_alias`` names the spelling
+    behind each and the pairs the hub's load would refuse."""
+    merged = env_alias.normalized(environ)
+    table = {key: {"layer": PROCESS, "shadowed": []} for key in merged if key != env_alias.MARKER}
     for layer, source in ((REPO_ENV, repo_env), (USER_ENV, home_env)):
         if dotenv_disabled(merged):
             break
         path = _resolve(source, merged) if layer == USER_ENV else source
         if path is None or (layer == USER_ENV and _same_file(path, repo_env)):
             continue
-        keys = env_file_keys(path)
+        keys = list(dict.fromkeys(env_alias.canonical(key) for key in env_file_keys(path)))
         for key in keys:
             if key not in table:
                 table[key] = {"layer": layer, "shadowed": []}
@@ -368,6 +388,45 @@ def derive(repo_env, home_env, environ: Mapping[str, str]) -> dict[str, dict]:
         if layer == REPO_ENV:
             merged = after_repo_layer(path, merged)
     return table
+
+
+def derive_alias(repo_env, home_env, environ: Mapping[str, str]) -> tuple[dict[str, str], dict[str, list[str]]]:
+    """RB-2, without loading anything (the doctor): ``(spellings, conflicts)``.
+
+    ``spellings`` maps a hub variable (its ``JARVIS_`` name) to the spelling that supplies
+    the value the hub would have — a variable missing from it was not set by any layer.
+    ``conflicts`` maps a layer to the hub variables it sets under both spellings with
+    different values, which the hub's load refuses to start on; ``{}`` when there is
+    none. Names only. Follows the files as ``derive`` does; without python-dotenv (only
+    it knows values) a file that names both spellings counts as the preferred one."""
+    conflicts: dict[str, list[str]] = {}
+    found = env_alias.conflicts(environ)
+    if found:
+        conflicts[PROCESS] = found
+    merged = env_alias.normalized(environ)
+    preferred = env_alias.preferred_supplied(merged)
+    spellings = {key: (env_alias.preferred_name(key) if key in preferred else key)
+                 for key in merged if env_alias.preferred_name(key)}
+    for layer, source in ((REPO_ENV, repo_env), (USER_ENV, home_env)):
+        if dotenv_disabled(merged):
+            break
+        path = _resolve(source, merged) if layer == USER_ENV else source
+        if path is None or (layer == USER_ENV and _same_file(path, repo_env)):
+            continue
+        parsed = _file_bindings(path)
+        if parsed is not None and parsed[1] is not None:
+            folded = _layer_fold(parsed[1], merged)
+            if folded.refused:
+                conflicts[layer] = sorted(folded.refused)
+            for key, used in folded.spelling.items():
+                spellings.setdefault(key, used)
+        elif parsed is not None:
+            for key in sorted(parsed[0], key=lambda name: not name.startswith(env_alias.PREFERRED_PREFIX)):
+                if env_alias.preferred_name(key):
+                    spellings.setdefault(env_alias.canonical(key), key)
+        if layer == REPO_ENV:
+            merged = after_repo_layer(path, merged)
+    return spellings, conflicts
 
 
 def raw_values(path) -> dict[str, str | None]:
@@ -394,10 +453,17 @@ def load_layered_env(repo_env, home_env) -> dict[str, dict]:
     call, so a repo .env that sets ``PYTHON_DOTENV_DISABLED`` stops the next layer."""
     from dotenv import load_dotenv
 
+    # RB-2 — the process layer first: a NERVA_<X> still spelled that way (set since the
+    # package was imported) is folded onto JARVIS_<X>, and a variable set twice,
+    # differently, stops the load before any file is read.
+    env_alias.normalize_process_env()
+    env_alias.refuse_conflicts()
     table: dict[str, dict] = {}
     loaded: dict[str, tuple[str, str]] = {}
     not_set: set[str] = set()
     for key, value in os.environ.items():
+        if key == env_alias.MARKER:
+            continue
         prior = _LOADED.get(key)
         if prior is not None and prior[1] == _digest(value):
             table[key] = {"layer": prior[0], "shadowed": []}
@@ -429,15 +495,33 @@ def load_layered_env(repo_env, home_env) -> dict[str, dict]:
         before = set(os.environ)
         load_dotenv(stream=io.StringIO(text), override=False, interpolate=True)
         now = dict(os.environ)
-        for key in now.keys() - before:
+        added = {key: now[key] for key in now.keys() - before}
+        if env_alias.MARKER in added:           # the hub's own note of spellings: no file writes it
+            os.environ.pop(env_alias.MARKER, None)
+            del added[env_alias.MARKER]
+        # RB-2 — both spellings of a hub variable are one key of this layer. A file that
+        # sets them differently is refused here, by name, with the file's keys still in
+        # the environment as written (the process is stopping).
+        folded = env_alias.fold(added, before)
+        if folded.refused:
+            raise SystemExit(env_alias.conflict_message(sorted(folded.refused), f"the {LABELS[layer]}"))
+        for key in added:
+            if key not in folded.values:
+                os.environ.pop(key, None)       # a NERVA_ spelling: folded, or a higher layer's wins
+        for key, value in folded.values.items():
             if key in FROM_PROCESS_ONLY:
                 os.environ.pop(key, None)       # recorded, never in effect (see FROM_PROCESS_ONLY)
                 not_set.add(key)
                 table.setdefault(key, {"layer": layer, "shadowed": []})
                 continue
+            os.environ[key] = value
             table[key] = {"layer": layer, "shadowed": []}
-            loaded[key] = (layer, _digest(now[key]))
-        _shadow(table, layer, _set_keys(_bindings(text)))    # parsed without a second warning
+            loaded[key] = (layer, _digest(value))
+        env_alias._record(os.environ, {key: used for key, used in folded.spelling.items()
+                                       if key not in FROM_PROCESS_ONLY})
+        env_alias._warn_overridden(folded.overridden, f"the {LABELS[layer]}")
+        # parsed without a second warning; a hub variable shadows under its JARVIS_ name
+        _shadow(table, layer, [env_alias.canonical(key) for key in _set_keys(_bindings(text))])
     _TABLE.clear()
     _TABLE.update({key: {"layer": row["layer"], "shadowed": list(row["shadowed"])} for key, row in table.items()})
     _FILES.clear()
@@ -514,7 +598,8 @@ def hub_value(key: str, environ: Mapping[str, str] | None = None) -> str | None:
     the profile's own .env (H689b). For a process that must not load, such as
     ``scripts/runtime_supervisor.py``, whose child would then read every file key as
     the process environment's (review-H273f m3). None when no layer sets it."""
-    env = dict(os.environ if environ is None else environ)
+    key = env_alias.canonical(key)                                   # RB-2: either spelling
+    env = env_alias.normalized(os.environ if environ is None else environ)
     if key in env:
         return env[key]
     try:
@@ -527,7 +612,7 @@ def hub_value(key: str, environ: Mapping[str, str] | None = None) -> str | None:
         parsed = _file_bindings(profile_env)
         if parsed is None or parsed[1] is None:
             return None
-        return hub_values(parsed[1], env).get(key)
+        return _layer_fold(parsed[1], env).values.get(key)
     merged = after_repo_layer(REPO_ENV_FILE, env)
     if key in merged:
         return merged[key]
@@ -540,7 +625,14 @@ def hub_value(key: str, environ: Mapping[str, str] | None = None) -> str | None:
     parsed = _file_bindings(path)
     if parsed is None or parsed[1] is None:
         return None
-    return hub_values(parsed[1], merged).get(key)
+    return _layer_fold(parsed[1], merged).values.get(key)
+
+
+def spelling(key: str, environ: Mapping[str, str] | None = None) -> dict:
+    """RB-2 — for a hub variable, which spelling supplied the value in effect:
+    ``{"spelling", "preferred", "deprecated"}`` (names and a flag, never a value);
+    ``{}`` for a name with one spelling."""
+    return env_alias.spelling_info(key, environ)
 
 
 def note_for(key: str, layer: str) -> str:
@@ -564,6 +656,8 @@ def provenance(environ: Mapping[str, str] | None = None) -> dict[str, dict]:
     environ = os.environ if environ is None else environ
     out = {}
     for key in environ:
+        if key == env_alias.MARKER:        # RB-2: the hub's own note of spellings, not configuration
+            continue
         row = None if key in _NOT_SET else _TABLE.get(key)
         out[key] = ({"layer": row["layer"], "shadowed": list(row["shadowed"])} if row is not None
                     else {"layer": RUNTIME, "shadowed": []})
@@ -575,8 +669,8 @@ def provenance(environ: Mapping[str, str] | None = None) -> dict[str, dict]:
 
 __all__ = [
     "FROM_PROCESS_ONLY", "HUB_PREFIXES", "LABELS", "SECRET_HINTS", "PROCESS_ONLY_NOTE", "PROCESS", "READ_AGAIN_AFTER_LOAD", "READ_BEFORE_LOAD", "REPO_ENV",
-    "REPO_ENV_FILE", "RUNTIME", "SPLIT_NOTES", "OPTIONAL_SPLIT_NOTES", "USER_ENV", "after_repo_layer", "derive", "dotenv_disabled",
+    "REPO_ENV_FILE", "RUNTIME", "SPLIT_NOTES", "OPTIONAL_SPLIT_NOTES", "USER_ENV", "after_repo_layer", "derive", "derive_alias", "dotenv_disabled",
     "env_file_keys", "files", "hub_credential", "hub_values", "is_fifo", "is_file_or_fifo", "load_hub_env",
-    "load_layered_env", "masked", "note_for", "profile_env_file", "provenance", "raw_values", "text_keys",
+    "load_layered_env", "masked", "note_for", "profile_env_file", "provenance", "raw_values", "spelling", "text_keys",
 ]
 

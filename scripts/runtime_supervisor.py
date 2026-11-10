@@ -77,6 +77,7 @@ def apply_safe_mode_switch(argv=None) -> bool:
     when the app package cannot be imported."""
     if SAFE_MODE_SWITCH in (sys.argv[1:] if argv is None else argv):
         os.environ.update({"JARVIS_SAFE_MODE": "1"})   # a write, not a read of the environment
+        os.environ.pop("NERVA_SAFE_MODE", None)        # RB-2: the switch wins over either spelling
         return True
     return False
 
@@ -139,8 +140,22 @@ def _spawn() -> subprocess.Popen:
     return subprocess.Popen([sys.executable, _COORDINATOR], env=_child_env())  # noqa: S603  # nosec B603
 
 
+def _accept_nerva_spellings() -> None:
+    """RB-2: ``NERVA_<X>`` is the preferred spelling of ``JARVIS_<X>``. Importing the hub's
+    core package folds it into this environment, which the coordinator inherits. When
+    the app package cannot be imported this supervisor still runs, on the ``JARVIS_``
+    names only (the coordinator it starts will not import either)."""
+    try:
+        if str(_REPO_ROOT) not in sys.path:
+            sys.path.insert(0, str(_REPO_ROOT))
+        import agents.core  # noqa: F401
+    except Exception:  # noqa: BLE001  # nosec B110 - documented fallback, nothing to report
+        pass
+
+
 def main() -> int:
     apply_safe_mode_switch()
+    _accept_nerva_spellings()
     starting_delay = float(os.environ.get("JARVIS_RUNTIME_RESPAWN_DELAY", "1.0"))
     backoff = starting_delay
     stopping = False

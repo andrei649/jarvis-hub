@@ -69,7 +69,12 @@ def _owned(names: set[str]) -> set[str]:
     declared = set(re.findall(r"^#?\s*([A-Z][A-Z0-9_]+)=", (ROOT / ".env.example").read_text(encoding="utf-8"),
                               re.M))
     hub_names = doctor.hub_env_names(ROOT)
-    return {name for name in names if name.startswith(("JARVIS_", "NERVA_", "NEO4J_"))
+    # RB-2: NERVA_<X> is the other spelling of JARVIS_<X>, read by the same call
+    # (env_config.resolve_spellings), so a variable is classified once, by the JARVIS_
+    # name the lists hold.
+    from agents.core.env_alias import canonical
+
+    return {canonical(name) for name in names if name.startswith(("JARVIS_", "NERVA_", "NEO4J_"))
             or name in declared or name in hub_names}
 
 

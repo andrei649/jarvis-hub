@@ -69,6 +69,7 @@ _CONTROL_NAMES = frozenset({
     "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "VIRTUAL_ENV",
     "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "PATHEXT", "APPDATA",
     "LOCALAPPDATA", "USERPROFILE", "USERNAME", "HOMEDRIVE", "HOMEPATH",
+    "_NERVA_ENV_PREFERRED",   # RB-2: the hub's note of which variables were spelled NERVA_
 })
 _CONTROL_PREFIXES = (
     "PYTHON", "LD_", "DYLD_", "GIT_CONFIG", "JARVIS_RPC_", "HERMES_RPC_",
@@ -89,7 +90,9 @@ def _passable_name(name: object) -> bool:
         return False
     if upper.startswith(_CONTROL_PREFIXES):
         return False
-    return not upper.startswith(("AUXILIARY_", "JARVIS_", "HERMES_"))
+    # RB-2: NERVA_<X> is the other spelling of JARVIS_<X> (and NERVA_* holds the
+    # workspace's own secrets), so the hub's namespace is refused under both prefixes.
+    return not upper.startswith(("AUXILIARY_", "JARVIS_", "NERVA_", "HERMES_"))
 
 
 #: How long a skill view's declaration lasts unless the host sizes it otherwise (the

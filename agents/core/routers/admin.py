@@ -662,6 +662,12 @@ async def admin_env_sources():
 
     Names and layers only, at the same boundary as /api/admin/env: no value is
     returned, and ``masked`` says whether /api/admin/env masks the key's value.
+
+    RB-2: a hub variable has two spellings, ``NERVA_<X>`` (preferred) and ``JARVIS_<X>``
+    (deprecated). Its row is keyed by the ``JARVIS_`` name the hub reads and says which
+    spelling supplied the value (``spelling``), the one to use (``preferred``) and
+    whether the deprecated one was used (``deprecated``). ``masked`` holds for the
+    variable under either spelling.
     """
     from pathlib import Path
 
@@ -677,6 +683,10 @@ async def admin_env_sources():
         note = env_provenance.note_for(key, row["layer"])
         if note:
             item["note"] = note
+        spelled = env_provenance.spelling(key)
+        if spelled:
+            item.update(spelled)
+            item["masked"] = item["masked"] or masked(spelled["preferred"])
         rows.append(item)
     # What the load did with each file (read, absent, the same file as the repo .env,
     # or skipped because python-dotenv was switched off); with no load in this process,

@@ -30,7 +30,12 @@ runtime_resolves    advisory   the route a Jarvis turn takes does not resolve to
 config_sources      advisory   informational: which layer supplied each configuration key
                                (process environment > repo .env > data-home .env, first
                                wins) and which .env values a higher layer overrides — names
-                               only, never a value (H273). Read from the running hub when it
+                               only, never a value (H273). A hub variable is one row under
+                               the ``JARVIS_`` name the hub reads; the row says when the
+                               deprecated ``JARVIS_`` spelling supplied it (``NERVA_<X>`` is
+                               preferred, RB-2), and the check is ``fail`` when one layer sets
+                               both spellings to different values (``env_spelling_conflict``:
+                               the hub refuses to start on it). Read from the running hub when it
                                answers (asked without a credential first; the admin token
                                follows a refusal only to a hub on this machine), else
                                predicted from this shell; warns when it withholds a .env name
@@ -803,12 +808,19 @@ def hub_env_names(root: Path) -> frozenset:
 
 
 def declared_env_names(root: Path) -> frozenset:
-    """The names ``.env.example`` tells the owner to set (commented out or not)."""
+    """The names ``.env.example`` tells the owner to set (commented out or not). The
+    example spells a hub variable ``NERVA_<X>`` (RB-2); the ``JARVIS_<X>`` the hub reads
+    is the same declaration, so both spellings are in the answer."""
     try:
         text = (_code_base(root) / ".env.example").read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return frozenset()
-    return frozenset(re.findall(r"^#?[ \t]*([A-Z][A-Z0-9_]+)=", text, re.M))
+    declared = set(re.findall(r"^#?[ \t]*([A-Z][A-Z0-9_]+)=", text, re.M))
+    try:
+        from agents.core.env_config import other_spelling
+    except Exception:  # noqa: BLE001  (a broken install: the names as written)
+        return frozenset(declared)
+    return frozenset(declared | {other_spelling(name) for name in declared if other_spelling(name)})
 
 
 def _home_env(environ) -> Path | None:
@@ -913,9 +925,14 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
     hub, why = _hub_sources(env, opener, readyz)
     unreadable: list = []
     values: dict | None = {}
+    conflicts: dict = {}
     if hub is not None:
         table = {row["key"]: {"layer": row.get("layer"), "shadowed": _layers(row.get("shadowed"))}
                  for row in hub["sources"] if isinstance(row, dict) and isinstance(row.get("key"), str)}
+        # RB-2: the hub says which spelling supplied each of its variables
+        spellings = {row["key"]: row["spelling"] for row in hub["sources"]
+                     if isinstance(row, dict) and isinstance(row.get("key"), str)
+                     and isinstance(row.get("spelling"), str) and _IDENTIFIER.match(row["spelling"])}
         files = hub.get("files") if isinstance(hub.get("files"), dict) else {}
         where = f"read from the running hub at {hub_url(env)}"
         detail = "; ".join(f"{ep.LABELS.get(layer, layer)} {info.get('path')} ({info.get('kind') or ('present' if info.get('present') else 'absent')})"
@@ -936,12 +953,14 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
         if profile_env is not None:
             # H689b — a profile's hub reads its own root's .env and neither shared file.
             table = ep.derive(None, profile_env, env)
+            spellings, conflicts = ep.derive_alias(None, profile_env, env)
             detail = (f"profile .env {_file_state(ep, profile_env)}; the repo and data-home .env are "
                       f"{ep.PROFILE_NOT_READ}")
             sources = (("user_env", profile_env),)
         else:
             repo_env = root / ".env"
             table = ep.derive(repo_env, _home_env, env)
+            spellings, conflicts = ep.derive_alias(repo_env, _home_env, env)
             home = _home_env(ep.after_repo_layer(repo_env, env))
             detail = f"repo .env {_file_state(ep, repo_env)}; data-home .env {_file_state(ep, home)}"
             sources = (("repo_env", repo_env), ("user_env", home))
@@ -954,6 +973,7 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
     names = hub_env_names(root)
     declared = declared_env_names(root)
     rows, withheld, unseen = [], 0, 0
+    old_spelling: dict = {}
     for key, row in sorted(table.items()):
         known = key in names or key in declared or (key.startswith(CONFIG_PREFIXES)
                                                      and bool(_IDENTIFIER.match(key)))
@@ -970,6 +990,9 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
         note = ep.note_for(key, row["layer"])
         if note:
             item["note"] = note
+        preferred = ep.env_alias.preferred_name(key)
+        if preferred and spellings.get(key, key) != preferred:
+            old_spelling[key] = preferred   # RB-2: supplied as JARVIS_<X>; NERVA_<X> is preferred
         rows.append(item)
     counts = {layer: sum(1 for row in rows if row["layer"] == layer)
               for layer in (ep.PROCESS, ep.REPO_ENV, ep.USER_ENV, ep.RUNTIME)}
@@ -984,6 +1007,10 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
     if overriding:
         reason += (f"; {overriding} key{'s' if overriding != 1 else ''} set in the process environment "
                    f"override{'' if overriding != 1 else 's'} a .env value")
+    deprecated = len(old_spelling)
+    if deprecated:
+        reason += (f"; {deprecated} key{'s' if deprecated != 1 else ''} use the deprecated JARVIS_ spelling "
+                   f"(still honoured; NERVA_<X> is the preferred spelling of every JARVIS_<X>)")
     status = OK
     if unreadable:
         status = WARN
@@ -993,8 +1020,22 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
         reason = (f"withheld_env_names:{withheld} — {withheld} .env key{'s' if withheld != 1 else ''} not "
                   f"shown: not a name Nerva reads or .env.example declares, nor a plain one-case name with "
                   f"a value (an unquoted or mis-escaped multi-line value may produce such keys). " + reason)
-    return Check("config_sources", status, reason, f"{where}; {detail}",
-                 data={"sources": rows, "labels": dict(ep.LABELS)})
+    if conflicts:
+        # RB-2: one layer sets a hub variable under both spellings, differently. The hub
+        # refuses to start on that, so this is the one red row this check has.
+        status = FAIL
+        named = "; ".join(f"{', '.join(names)} in the {ep.LABELS.get(layer, layer)}"
+                          for layer, names in sorted(conflicts.items()))
+        reason = (f"env_spelling_conflict:{','.join(sorted({n for names in conflicts.values() for n in names}))} — "
+                  f"NERVA_<X> and JARVIS_<X> are one variable, and {named} "
+                  f"{'is' if sum(map(len, conflicts.values())) == 1 else 'are'} set under both spellings "
+                  f"with different values: the hub refuses to start; keep one line. " + reason)
+    data = {"sources": rows, "labels": dict(ep.LABELS)}
+    if old_spelling:
+        data["deprecated_spellings"] = old_spelling      # {the name set: the name to use}
+    if conflicts:
+        data["spelling_conflicts"] = {layer: list(names) for layer, names in sorted(conflicts.items())}
+    return Check("config_sources", status, reason, f"{where}; {detail}", data=data)
 
 
 def _layers(value) -> list:
@@ -1078,11 +1119,24 @@ def check_smoke(root: Path, *, enabled: bool, run=None) -> Check:
 
 
 # ── report ─────────────────────────────────────────────────────────
+def _canonical_env(env):
+    """RB-2 — ``NERVA_<X>`` is the preferred spelling of every ``JARVIS_<X>``, and the checks
+    below read the ``JARVIS_`` names. Importing the hub's core package folds this process's
+    environment; a mapping handed in is folded into a copy. A broken install that cannot
+    import it is checked on the ``JARVIS_`` names alone."""
+    try:
+        from agents.core import env_alias
+    except Exception:  # noqa: BLE001  (a broken install must still get its report)
+        return env
+    return env if env is None else env_alias.normalized(env)
+
+
 def run_doctor(root: Path = REPO_ROOT, *, env=None, opener=None,
                smoke: bool = False, run=None, version_info=None) -> DoctorReport:
     """``opener`` stands in for every request (tests); left out, the hub is reached only
     through ``hub_open`` and the local runtime probes through urllib's own opener."""
     root = Path(root)
+    env = _canonical_env(env)
     to_hub = opener or hub_open
     readyz = check_readyz(to_hub, env=env)
     checks = [
@@ -1113,10 +1167,12 @@ def format_report(report: DoctorReport) -> str:
         if help_for(c):
             lines.append(f"         see {help_for(c)}")
         labels = c.data.get("labels", {}) if c.data else {}
+        renamed = c.data.get("deprecated_spellings", {}) if c.data else {}
         for row in (c.data or {}).get("sources", []):
             ignored = ", ".join(labels.get(layer, layer) for layer in row["shadowed"])
             lines.append(f"         {row['key']:<28} <- {labels.get(row['layer'], row['layer'])}"
                          + (f" (ignored: {ignored})" if ignored else "")
+                         + (f" [deprecated spelling: use {renamed[row['key']]}]" if row["key"] in renamed else "")
                          + (f" [{row['note']}]" if row.get("note") else ""))
     lines.append("verdict: " + ("healthy" if report.ok else "NOT healthy — fix the FAIL rows"))
     return "\n".join(lines)

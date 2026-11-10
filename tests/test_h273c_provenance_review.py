@@ -82,7 +82,11 @@ def test_every_nerva_name_read_while_the_hub_is_imported_is_classified(tmp_path)
     from scripts import doctor
 
     hub_names = doctor.hub_env_names(ROOT)
-    owned = {name for name in read if name.startswith(("JARVIS_", "NERVA_", "NEO4J_"))
+    # RB-2: NERVA_<X> is the other spelling of JARVIS_<X>, read by the same call, so a
+    # variable is classified once, by the JARVIS_ name the lists hold.
+    from agents.core.env_alias import canonical
+
+    owned = {canonical(name) for name in read if name.startswith(("JARVIS_", "NERVA_", "NEO4J_"))
              or name in _declared_in_example() or name in hub_names}
     assert read >= ep.READ_AGAIN_AFTER_LOAD           # stale READ_BEFORE_LOAD entries: the start test (H273d)
     unclassified = (owned - ep.READ_BEFORE_LOAD - ep.READ_AGAIN_AFTER_LOAD

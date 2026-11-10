@@ -299,7 +299,7 @@ _RAW_ENV_READ = re.compile(r"os\.getenv\(|os\.environ\.get\(|os\.environ\[")
 
 # Lower this when you migrate reads. Raising it should be a deliberate,
 # explained choice in the PR — not a reflex to get CI green.
-MAX_RAW_ENV_READS = 110
+MAX_RAW_ENV_READS = 107  # RB-2: the bind guard reads its tokens and host under either spelling
 
 
 def _raw_env_read_sites():

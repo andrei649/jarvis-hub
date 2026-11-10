@@ -50,8 +50,9 @@ else
 fi
 
 # The V2 cockpit is the primary HUD going forward; override with JARVIS_HUD=v1 (legacy at /v1).
-export JARVIS_HUD="${JARVIS_HUD:-v2}"
-PORT="${JARVIS_PORT:-8080}"
+# RB-2: NERVA_<X> is the preferred spelling of JARVIS_<X>; the hub reads both, so does this script.
+export JARVIS_HUD="${NERVA_HUD:-${JARVIS_HUD:-v2}}"
+PORT="${NERVA_PORT:-${JARVIS_PORT:-8080}}"
 URL="http://127.0.0.1:${PORT}/v2"
 
 # Open the Command Center once /readyz answers (stdlib poll, loopback only; gives up

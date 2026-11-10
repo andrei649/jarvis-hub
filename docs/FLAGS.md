@@ -1718,3 +1718,37 @@ run `/status` and the rest of the user tier keeps `/help` and `/whoami` only unt
 lists more. The behaviour from before this setting is
 `{"*": {"dm": ["btw", "jobs", "recap", "sessions", "status", "voice"], "group": ["btw", "jobs", "recap", "sessions", "status", "voice"]}}`;
 owner commands stay the owner's either way.
+
+## Variable names — `NERVA_<X>` and `JARVIS_<X>` are one variable (RB-2)
+
+The product is Nerva; `jarvis-hub` is the engine's codename. Every hub variable on this
+page named `JARVIS_<X>` is also read as **`NERVA_<X>`, the preferred spelling**.
+`JARVIS_<X>` is the **deprecated** spelling and keeps working: an existing `.env`, unit
+file or compose file needs no change. This page and the code keep the `JARVIS_` names;
+`.env.example` uses `NERVA_`. Variables that were always `NERVA_*` (`NERVA_WORKSPACE*`,
+`NERVA_PUBLIC_PROFILE`, `NERVA_HUB_URL`, …) have one spelling and are untouched.
+
+- **Same variable, same effect.** `NERVA_HARDENED=1` hardens exactly as
+  `JARVIS_HARDENED=1` does, from the process environment or from any `.env` file; a
+  typo in `NERVA_CHANNEL_OPEN` is refused by the same parse check. The hub folds a
+  `NERVA_<X>` onto `JARVIS_<X>` when it starts and as each `.env` file loads
+  (`agents/core/env_alias.py`), so child processes, sandboxes and
+  `/api/admin/env` see `JARVIS_<X>`, as before.
+- **Layers are unchanged.** Process environment, then the repo `.env`, then the
+  data-home `.env`: the first layer to set a variable wins, whichever spelling each
+  used. A `.env` value never overrides a process value, and the names a `.env` cannot
+  set (`JARVIS_HOME`, `JARVIS_APP_ROOT`, `JARVIS_MEMORY_DIR`, `JARVIS_PROFILE`) cannot
+  be set there as `NERVA_<X>` either.
+- **Both spellings set, in the same place, to different values:** the hub **refuses to
+  start** and names the variable (never a value). That covers every posture flag,
+  credential, file-location root, endpoint and allowlist — a stale line must not decide
+  the box's protection. The exception is a short reviewed list of plain tuning knobs
+  (ports, timeouts, sizes, model picks, log shape —
+  `env_config.NERVA_WINS_ON_CONFLICT`): there `NERVA_<X>` wins and one warning names
+  the variable. Equal values are fine; an empty one yields to the other.
+- **Seeing it.** `nerva doctor` (`config_sources`) marks each key still supplied under
+  the old spelling and fails on a conflict; `/api/admin/env/sources` reports
+  `spelling`, `preferred` and `deprecated` per hub variable.
+- **Outside the hub's reach.** A unit file, compose file or shell script that forwards
+  variables by name forwards only the names it lists: one that passes `JARVIS_<X>`
+  through must be given `NERVA_<X>` too before the new spelling reaches the hub.
