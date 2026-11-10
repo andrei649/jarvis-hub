@@ -42,6 +42,17 @@
 - Approval cards show the mode a task was asked under. The wording no longer says the
   irreversible tier always asks: in auto, a payment inside your spending caps runs.
 
+**See where each skill came from, and pin the ones you want kept (#1347)**
+- The Skill Switches panel and `nerva skills list` show each skill's origin (ships with Nerva,
+  imported and from where, your own, made by the agent) and how often it was used.
+- Pin a skill (the panel, or `nerva skills pin NAME`) and the nightly curator leaves it alone
+  and an agent cannot delete it. You can still delete, uninstall or reject it yourself.
+- Only skills Nerva learned on its own are aged out; a skill the assistant made for you in a
+  conversation is kept.
+- An import or marketplace package is refused when a skill of that name is already installed,
+  instead of quietly replacing it.
+- The list of imported skills now needs your user token (it showed local folder paths).
+
 **Three status pages now need your user token (#1347)**
 - An independent security review found that the Oracle status, learning stats and local-docs
   status pages answered anyone on the network with personal details. They now ask for the same
