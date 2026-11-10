@@ -4,12 +4,16 @@ Four self-contained prompts, one per ledger bucket, for a fresh Claude Code sess
 (`/effort ultracode`). Each computes its rows live from `scripts/hermes_status.py`, so the counts in it
 are a snapshot, not a contract. Written 2026-09-28 at `abf0aebd` and checked against the repo.
 
+Since 2026-11-10 evidence is no longer hash-pinned: rows sit in feature areas (`docs/hermes/areas.json`)
+whose acceptance suites keep equivalent rows honest, and restamping is retired. Each prompt opens with
+a note that overrides its older pin/restamp instructions.
+
 | Bucket | Prompt | What the session does |
 |---|---|---|
 | missing | [missing.md](missing.md) | builds missing rows to equivalent, or an honest partial |
 | partial | [partial.md](partial.md) | closes `remaining` items, nearest-to-equivalent first |
 | equivalent | [equivalent.md](equivalent.md) | audits the 190, the 108 inherited 7 September rows first; downgrades honestly |
-| needs_review | [needs-review.md](needs-review.md) | records work: re-reads and restamps stale rows, assesses reopened ones |
+| needs_review | [needs-review.md](needs-review.md) | records work: re-reads rows a failing area suite demoted, assesses reopened ones |
 
 Launch one with: `Read docs/prompts/hermes/<bucket>.md from branch claude/cto-session-recovery-qinvkg and execute it.`
 
