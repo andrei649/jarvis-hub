@@ -543,6 +543,107 @@ the default; `JARVIS_MCP_STDIO_ALLOWED_ENV` is the narrow remedy, `=0` the blunt
   the list, so keep it to the minimum. Names are matched case-insensitively; names not
   set on the host are ignored.
 
+### MCP client: resources, prompts, reconnects, sampling, elicitation (H552 · H556 · H553)
+
+Code: `agents/core/mcp/resources.py`, `resilience.py`, `host_requests.py`, wired in
+`agents/core/mcp/client.py`. Tests: `tests/test_mcp_g6_g7_client.py` and
+`tests/test_mcp_g6_g7_review.py`, `tests/test_mcp_g6_g7_round2.py` (a fake stdio server,
+`tests/fixtures/mcp_fake_server.py`, with hostile modes).
+
+**Resources and prompts.** A server that declares `resources` or `prompts` on `initialize`
+gets up to four extra tools next to its own: `mcp__<server>__list_resources`,
+`read_resource` (uri), `list_prompts`, `get_prompt` (name, arguments). They read only, so
+neither trust tier blocks them, and the owner's `tools_allow` / `tools_deny` patterns apply
+to these names too. Their output is third-party text and is treated like a fetched web
+page: format characters (zero-width, bidi, TAG), private-use code points and control
+characters other than newline and tab are removed from every string; a uri, prompt name or
+argument name carrying one is withheld instead (counted as `withheld`), because a cleaned
+copy would name something else; texts are scanned for prompt injection (on a worker thread
+when large; hits are listed as `injection_flags` with a warning), fenced as data, and the
+turn's action origin is raised so a later action in the same turn waits for approval.
+Listings follow `nextCursor` for at most 50 pages; one resource may be at most 50 MiB, over
+stdio (the line limit is 72 MiB; a longer line drops the connection, which the supervisor
+restores) and over Streamable HTTP (`resources/read` and `prompts/get` replies may be up to
+72 MiB there; every other HTTP reply keeps its 4 MiB cap). One result (a resource read,
+a prompt, a tool call) keeps at most 100 blocks and 2 000 000 characters of text in all,
+each block cut head+tail at 100 000; the cut happens before any cleaning or scanning, and
+cleaning, scanning and bounding run on a worker thread for large results. On stdio the
+reader's line limit is 1 MiB while idle (so a server can park at most about 2 MiB in the
+hub; one that writes that much unsolicited output is disconnected), 16 MiB during an
+ordinary call and 72 MiB only during a content read, of which at most 2 run at once
+across all servers. Parsing a maximum-size reply still holds the interpreter for a
+fraction of a second (about 0.15–0.25 s for 60 MB). Binary content (resource blobs, prompt and tool-result images,
+audio and embedded blobs) is saved under `<data>/mcp_cache/<server>/` (mode 0600,
+content-hash name, extension only from a short image/audio allowlist, else `.bin`), the
+model gets the path, `file_read` treats those files as third-party (tainted), and each
+server's cache keeps at most 500 files, 256 MiB and 7 days.
+
+**Connecting and staying connected.** `MCPManager.connect_all()` connects every server at
+once (at most 4 in flight), each with its own 30 s deadline, so a server that hangs costs
+only its own slot. A supervisor started at boot reconnects a server that dropped, with
+jittered exponential backoff (5 retries, 60 s ceiling, ±20 %), a circuit breaker (3
+failures within 60 s pause it for 60 s) and a parked state probed every 300 s; it pings an
+idle stdio server every 60 s and reads each child's stderr into the log so a chatty server
+cannot block on a full pipe (read in chunks, so an over-long line cannot stop the drain).
+Only the owner (connect, `connect_all`, autoconnect) marks a server as wanted; the
+supervisor re-checks that, the e-stop and both kill-switch scopes under the server's lock
+right before it spawns, so a disconnect or removal made mid-pass holds, and removing a
+server closes it in every state. A server that keeps dying right after connecting trips
+the breaker like one that never connects, and parks once its failures since the last
+connection that stayed up for 60 s pass the retry limit. Nothing is connected, reconnected or pinged
+while the e-stop or a kill switch (`mcp` or `mcp:<server>`) is engaged; the kill switch
+also refuses calls (the e-stop does not: it pauses new autonomous work, not chat).
+`GET /api/admin/mcp` shows, per server, `health` (state, attempts, last error, seconds to
+the next retry, circuit state, connect time, sampling/elicitation counters),
+`resource_tools`, `sampling` and `elicitation`, plus the day's `sampling_budget` and the
+open `pending_elicitations`.
+
+- **`JARVIS_MCP_AUTOCONNECT`** — default **off**: saved servers are registered at boot and
+  connected when the owner presses connect. On: every saved server is connected in the
+  background at boot (boot does not wait for any of them).
+
+**Sampling** (a server asks Nerva for a model completion). Per server, `sampling` is
+`off` (default), `ask` (an approval card per request) or `auto`. A request is refused under
+the e-stop or the kill switch (global or `mcp:<server>`), over the day's budget, over the
+per-server rate limit (`max_rpm`, default 10 per minute), or when it carries tools — Nerva
+never runs tools for a server and never declares `sampling.tools`. The answer is one
+stateless completion on the local auxiliary rail, at most `max_tokens_cap` (default and
+ceiling 1024) tokens, within `timeout` (default 30 s). The server's model preferences pick
+a Nerva role, never a model name: `capable` (the auxiliary `review` task's model) when its
+intelligence priority leads, `fast` (the one-shot model) otherwise; the saved `sampling` keys `role` /
+`allowed_roles` pin or narrow it.
+
+- **`JARVIS_MCP_SAMPLING_DAILY_TOKENS`** — default **20000**: the owner's daily allowance
+  (estimated tokens: four ASCII characters or one other character per token, prompt +
+  answer) for all MCP sampling together, on a K3 `BudgetLedger` dimension
+  `mcp_sampling_tokens`. The ledger is in memory: it resets when Nerva restarts and at UTC
+  midnight. `0` refuses every sampling request.
+
+**Elicitation** (a server asks the owner for input). Off unless the owner turns it on for
+the server (`elicitation: true`); at most 3 cards a minute per server and 2 server requests
+per client call. It becomes an approval card (`mcp.elicitation`) with the server's message
+and the fields it asks for, every server-chosen string passed through `card_safe` (no
+newline, ANSI, bidi or zero-width trick); a request whose field names or choices would need
+cleaning is declined without a card. It is never answered automatically.
+`POST /api/admin/mcp/elicitations/{card_id}/answer` with `{"content": {...}}` fills the
+fields (checked against the server's schema) and approves the card; a second answer is
+refused (409); rejecting the card declines; a card nobody answers within 300 s is
+cancelled. While the card is pending the tool loop's deadline is extended (a native
+human-wait window), and no longer; MCP cards together may hold one turn open for at most
+15 minutes, and open cards count against the per-minute limit. If the call ends first, the
+card is withdrawn, the server is told `cancel`, and a late answer gets `too_late` (410);
+an answer given just before the call ended is the one the server receives. Approving without content
+accepts only a request with no required fields. URL-mode requests are declined. There is
+no HUD form for the answer yet: the card shows in the approval inbox, the typed answer
+goes through the route.
+
+**Not done (H556 stays partial):** a schema cache with lazy connect (Hermes's
+`mcp_schema_cache.py` was not adopted: its fingerprint leaves out `cwd`, `env`, headers and
+the trust tier, and it needs two new compat shims), stdio idle/lifetime recycling, a
+parent-death watchdog for the child's process group, an orphan reaper and a cross-process
+discovery lock. Sampling and elicitation work on stdio servers only; a Streamable HTTP
+server is not offered either, because the client does not read server requests there.
+
 ### `JARVIS_VLM_PRESET`
 
 **Default: unset** (absolute pixels assumed — the only convention
@@ -1591,6 +1692,8 @@ failed query to a second configured provider. **Revert:** unset the variable.
 | `JARVIS_MCP_HTTP_CLIENT` | off (`mcp/http_transport.py:61`) | `MCPServer.connect()` speaks Streamable HTTP for `transport: streamable-http`; the tool-call contract widens via `active_tool_call_contract()` | Outbound HTTP to configured MCP endpoints through the SSRF-pinned `PluginHTTPClient`; bearer headers in memory only | Unset (no restart): `connect()` refuses `transport_disabled:JARVIS_MCP_HTTP_CLIENT`, contract reverts to stdio-only at the next call |
 | `JARVIS_MCP_STDIO_ENV_BASELINE` | **on** (`mcp/client.py` `STDIO_ENV_BASELINE_FLAG`) | stdio MCP subprocesses are handed only `STDIO_ENV_ALLOWLIST` + `JARVIS_MCP_STDIO_ALLOWED_ENV` + the per-server `env` — they are not handed the hub's API keys, tokens or proxies; one INFO line per connect reports the withheld **count** of host values (never names or values) and `GET /api/admin/mcp` reports `env_baseline` per spawning row (`null` for rows that spawn nothing) | **Defence in depth, not a boundary:** the child is same-UID, so a hostile server still reads the hub env from `/proc/<ppid>/environ`; the boundary needs the unshipped command screener + process isolation. A server that relied on inheriting a hub credential stops seeing it — the remedy is `JARVIS_MCP_STDIO_ALLOWED_ENV`, **not** the per-server `env` (in-process only, no config surface) | `JARVIS_MCP_STDIO_ENV_BASELINE=0` + reconnect: full parent env inherited again, for every stdio server at once |
 | `JARVIS_MCP_STDIO_ALLOWED_ENV` | empty (`mcp/client.py` `STDIO_ENV_ALLOW_FLAG`) | Comma-separated host variable **names** stdio MCP servers may keep inheriting on top of the allow-list; a listed name passes through even if it looks like a credential | Host-wide, not per-server: every stdio MCP server sees every listed name — list the minimum. Still narrower than `=0`, which surrenders the whole environment | Remove the name + reconnect: that variable is withheld again |
+| `JARVIS_MCP_AUTOCONNECT` | off (`web.py` lifespan → `MCPManager.start`) | Every saved MCP server is connected in the background at boot, in parallel (4 at a time, 30 s each); the reconnect supervisor runs either way | One more child process per saved stdio server from boot onwards | Unset: servers connect when the owner presses connect |
+| `JARVIS_MCP_SAMPLING_DAILY_TOKENS` | 20000 (`mcp/host_requests.py` `DAILY_TOKENS_ENV`) | The daily allowance for completions MCP servers request (only servers whose `sampling` is `ask` or `auto`) | Local model time spent on a third party's prompts | `0`: every sampling request is refused |
 | `JARVIS_VLM_PRESET` | unset (absolute pixels assumed) | Names a pinned open grounder from `vlm.py:VLM_PRESETS` so `LocalVLMLocator` normalizes 0–1000-relative vs absolute-on-resized coordinates before a click | Right preset = clicks land where the model meant; **wrong** preset = mis-clicks (why it is explicit). Still needs `JARVIS_VLM_MODEL` (`vlm_model_unset`); unknown id → `vlm_preset_unknown` | Unset: the locator assumes absolute pixels on the original screenshot |
 | `JARVIS_ROLE_<NAME>_*` (H277: `DEEP_MODEL`, `VISION_PROVIDER/_MODEL/_BASE_URL`, `VIDEO_*`, `APPROVAL_JUDGE_*`) | unset (`llm/model_roles.py`) | Picks a model per job; the `JARVIS_VLM_*` / `JARVIS_DEEP_MODEL` names stay the fallbacks. `APPROVAL_JUDGE_MODEL` turns on an advisory judge that scores queued tool-call approvals off the request path | The judge sees each queued call's arguments: local by default; remote only with `JARVIS_ROLE_APPROVAL_JUDGE_ALLOW_REMOTE=1`, never under strict-local / `cloud_fallback=never` / safe mode / H378 findings, never for local-policy agents or tainted items. It decides nothing | Unset: roles fall back to the legacy names; no judge |
 | `JARVIS_FAULT_INJECT` | off (`observability/fault_injection.py`) | Arms the in-process failure-injection harness (llm_down / db_corrupt / disk_full / clock_skew) for the **test lane** | `inject()` may patch httpx send, `open()`/`sqlite3.connect` under the data root, and `time.time` inside a `with` block; nothing outside `data_root()` is touched | Unset: nothing is patched. `JARVIS_HARDENED=1` refuses unconditionally (`fault_injection_refused:hardened`) |

@@ -105,6 +105,7 @@ export const CONSOLE_PANELS = [
   {"id": "jobs", "label": "Jobs", "group": "Autonomy & Agents", "component": "JobsPanel"},
   {"id": "learning", "label": "Learning", "group": "Autonomy & Agents", "component": "LearningPanel"},
   {"id": "sessions", "label": "Sessions", "group": "Autonomy & Agents", "component": "SessionsPanel"},
+  {"id": "context-meter", "label": "Context Meter", "group": "Autonomy & Agents", "component": "ContextMeterPanel"},
   {"id": "heartbeat", "label": "Heartbeat", "group": "Autonomy & Agents", "component": "HeartbeatPanel"},
   {"id": "transcript", "label": "Transcript", "group": "Autonomy & Agents", "component": "TranscriptPanel"},
   {"id": "escalation", "label": "Escalation", "group": "Autonomy & Agents", "component": "EscalationPanel"},

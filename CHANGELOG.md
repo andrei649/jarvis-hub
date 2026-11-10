@@ -4,6 +4,23 @@
 
 ### What changed for you — 2026-11-09
 
+**Plan first, repeat on a cadence, see what fills the window**
+- `/plan <task>` puts the conversation in plan mode: only reads run, nothing is written, sent
+  or executed, and the model writes a step-by-step plan that Nerva saves as a markdown file.
+  Plan mode stays on, also after a restart, until you send `/plan off`. Only you can turn it
+  on or off.
+- `/loop 5m <prompt>` repeats a prompt in the same conversation; without an interval it paces
+  itself, waiting longer while nothing changes. It stops on `--times N`, on `--until <condition>`,
+  or when the model says the task is done; after 100 runs it pauses. Each run is checked like
+  any action, and the emergency stop, the kill switch, plan mode or approval mode `off` pause it.
+  On Telegram and similar chats each answer is sent to the chat, and before every run Nerva checks
+  again that the chat is still yours; `/loop resume` gives a paused loop a fresh allotment.
+- `/btw` now reads the whole conversation (as much as the local model holds), not only the last
+  few messages, and what it uses is counted against the conversation.
+- `/context` shows what fills the model's window (system prompt, tools, skills, memory, history,
+  attachments) as a grid and a table; the HUD has the same meter (Console → Context Meter).
+  `/compress` tells you what compaction will do on the next turn. Details:
+  [docs/SESSION_COMMANDS.md](docs/SESSION_COMMANDS.md).
 **Set up search services and cloud model providers from one HUD panel, no `.env` edit, no restart**
 - A new Console panel, Start → **Integrations**, lists everything that needs your setup: the four
   search services (Tavily, plus Exa, Brave Search and Parallel from Hermes Agent), the cloud model
@@ -243,6 +260,35 @@
 - An independent security review found that the Oracle status, learning stats and local-docs
   status pages answered anyone on the network with personal details. They now ask for the same
   user token as the rest of your data. On the machine itself, with no token set, nothing changes.
+
+**Connected MCP servers can share documents and prompt templates, and stay connected**
+- If an MCP server you added publishes documents ("resources") or prompt templates, Nerva can
+  now list and read them, next to the server's own tools. What they contain is treated like a
+  web page: checked for hidden instructions, shown to the model as data, and any action Nerva
+  proposes after reading one waits for your approval. Pictures and other files are saved to
+  disk instead of being pasted into the conversation.
+- A server that stops answering no longer stays dead until you press connect: Nerva retries it
+  with growing pauses and checks idle servers every minute. One slow server no longer holds up
+  the others. The MCP admin list shows each server's state, its last error and when the next
+  retry is due. Set `JARVIS_MCP_AUTOCONNECT=1` to connect your saved servers at start.
+- A server may now ask Nerva for a short model answer, but only if you allow it for that server
+  (`sampling`: off by default, "ask" for an approval card each time, or "auto"). It runs on your
+  local model, without tools, within a daily allowance (`JARVIS_MCP_SAMPLING_DAILY_TOKENS`,
+  20 000 by default) and at most 10 requests a minute per server.
+- If you allow it for a server (off by default), a server that needs information from you
+  mid-task asks through an approval card. Nerva never answers it for you: you fill it in,
+  decline it, or it lapses after five minutes. The card shows the server's words cleaned of
+  hidden characters, so it cannot pass itself off as a message from Nerva; if the task that
+  asked ends first, the card is withdrawn. Filling it in is done through the admin API for
+  now; the HUD shows the card but has no form yet.
+- The daily allowance for server requests is kept in memory and starts again after a restart.
+- One answer from a server is capped (100 parts, about 2 million characters), so a server
+  cannot flood the conversation or freeze Nerva with a huge reply; a server that floods Nerva
+  while idle is disconnected, and a server that keeps crashing right after it starts is set
+  aside instead of being restarted over and over. Questions from servers can hold up one
+  answer for at most 15 minutes in total.
+- The emergency stop and the kill switch refuse all of this: no reconnects, no model answers,
+  no questions.
 
 ### What changed for you — 2026-11-01 to 2026-11-02
 

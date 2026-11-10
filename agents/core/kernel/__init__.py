@@ -196,6 +196,23 @@ def authorize(action: Action,
             _emit_audit(audit, action, decision)
         return decision
 
+    # 1b) Plan mode (H668) — a session the owner put in plan mode runs reads only. It is
+    #     a floor in front of the policy, the approval queue and every sealed receipt, so
+    #     a plan turn cannot even queue a card for a write. It only ever denies: a kind it
+    #     does not refuse falls through to the gates below, unchanged.
+    from .plan_mode import action_denial as _plan_mode_denial
+
+    try:
+        planned = _plan_mode_denial(action.kind, action.payload)
+    except Exception:  # noqa: BLE001 — a plan-mode check that fails, fails closed
+        from .plan_mode import current_session as _plan_session
+        planned = "plan mode: state unavailable" if _plan_session() else None
+    if planned is not None:
+        decision = Decision(Verdict.DENY, reason=planned)
+        if not _non_consuming:
+            _emit_audit(audit, action, decision)
+        return decision
+
     # 2) Budget + loop circuit breaker (K3, folds H23.1). Inert unless supplied — a
     #    runaway loop or an over-budget task is halted at the front door before any work.
     if loop_detector is not None and not (

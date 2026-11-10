@@ -1141,6 +1141,14 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
             assert code == (503 if enabled and spy._verdict is Verdict.DENY else 202)
         finally:
             rig.q.close()
+    elif kind == "session.loop_tick":
+        # H460/H578: every /loop wakeup asks the kernel before its turn runs.
+        from types import SimpleNamespace
+
+        from agents.core.session_loops import tick_decision
+
+        state = SimpleNamespace(created_at=0.0, max_ticks=0, ticks_fired=0)
+        tick_decision(SimpleNamespace(), "matrix-session", state, kernel=spy)
     elif kind == "a2a.outbound":
         import asyncio
 

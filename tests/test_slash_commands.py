@@ -295,6 +295,8 @@ def test_the_default_registry_names_the_first_wave(monkeypatch, tmp_path):
         "whoami",              # H058: a user command, so in both sets
         "approvals",           # H484: the approval dial, an owner command
         "memory",              # H443: held memory writes, an owner command (DM only)
+        "plan", "loop", "proactive",   # H668, H460/H578: owner session commands
+        "context", "compress",         # H412: the context meter, owner commands
     }
     # H058: a guest sees /help and /whoami until the owner allows more; allowed everything
     # a non-owner may be allowed, it sees the user tier, never an owner command.

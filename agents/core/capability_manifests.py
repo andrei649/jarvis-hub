@@ -286,6 +286,19 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         ),
         implementation="agents.core.tool_rpc:ToolRPCServer.handle",
     ),
+    "session.loop_tick": _action(
+        "session.loop_tick",
+        "Start one /loop wakeup: the owner's repeating prompt as an ordinary turn in its session.",
+        required=("session_id", "tick"),
+        risk="reversible",
+        supports=("loop",),
+        rollback=RollbackContract(
+            mode="cancel",
+            description="Pause or stop the loop (/loop pause, /loop stop, the emergency stop).",
+            limitations="A wakeup already running finishes; what its tools did has their own rollback.",
+        ),
+        implementation="agents.core.session_loops:run_tick",
+    ),
     "repo.sync": _action(
         "repo.sync",
         "Pull and validate an externally triggered repository update.",

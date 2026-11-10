@@ -63,6 +63,9 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # Wave 3 — a gated Tool-RPC call is mediated by the kernel before it can enqueue
     # an approval task (a DENY blocks it: kill-switch / budget / loop).
     "tool.rpc": Mediation.KERNEL,
+    # H460/H578 — every /loop wakeup crosses the kernel before its turn runs (kill
+    # switch, plan mode, approval mode, the loop's own budget); a denial pauses the loop.
+    "session.loop_tick": Mediation.KERNEL,
     # R1 residual hardening — an external GitHub trigger asking Oracle to pull/rebase
     # and run tests is host execution. It is default-refused when the kernel is off,
     # and when enabled it crosses kernel.authorize before any git/pytest subprocess.

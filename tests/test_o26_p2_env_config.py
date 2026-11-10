@@ -152,6 +152,9 @@ _HELPER_DEF = re.compile(r"def\s+(_env_truthy|_env_flag|_env_int|_env_bool|truth
 _SCAN_ROOTS = ["agents", "serve.py"]
 _EXEMPT = {
     "agents/core/env_config.py",   # the one home for the convention
+    # The Integrations panel's key store: it places owner-entered keys into the process
+    # environment and must see exactly which spelling is set there, like the .env loader.
+    "agents/core/integration_keys.py",
 }
 
 
@@ -161,7 +164,11 @@ def _runtime_py_files():
         if p.is_file():
             yield p
         else:
-            yield from sorted(p.rglob("*.py"))
+            # Vendored Hermes files read the environment only through the compat layer's
+            # per-provider allowlist (agents/vendor/hermes_compat); tests/test_hermes_adopt_lane.py
+            # refuses any other access in that tree.
+            yield from (f for f in sorted(p.rglob("*.py"))
+                        if not f.relative_to(repo_root).as_posix().startswith("agents/vendor/hermes/"))
 
 
 def test_one_truthy_convention_in_the_tree():

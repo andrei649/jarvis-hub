@@ -546,7 +546,14 @@ def test_the_rewrite_is_idempotent():
                   "from concurrent.futures import Future\n")
     a2a_path = "plugins/platforms/a2a/tools.py"
     a2a_once, a2a_applied = hv.rewrite(a2a_sample, a2a_path)
-    assert a2a_applied == [r.id for r in hv.REWRITE_RULES if r.paths]
+    assert a2a_applied == [r.id for r in hv.REWRITE_RULES if r.paths and r.applies_to(a2a_path)]
+    # G2: the loop module's two rules apply to hermes_cli/loops.py only.
+    loops_sample = ("        from hermes_cli.config import load_config\n"
+                    "        from hermes_cli.goals import judge_goal\n")
+    loops_once, loops_applied = hv.rewrite(loops_sample, "hermes_cli/loops.py")
+    assert loops_applied == ["hermes-cli-config", "hermes-cli-goals"]
+    assert hv.rewrite(loops_once, "hermes_cli/loops.py") == (loops_once, [])
+    assert hv.rewrite(loops_sample, "plugins/web/x.py")[1] == []
     assert hv.rewrite(a2a_once, a2a_path) == (a2a_once, [])
     assert hv.unmapped_imports("\n".join(line.strip() for line in a2a_once.splitlines()),
                                a2a_path) == []
@@ -645,10 +652,10 @@ def test_status_detects_a_local_edit_and_pull_refuses_to_overwrite_it(sandbox):
 def test_pull_refuses_a_file_the_compat_layer_does_not_cover(sandbox):
     upstream, vendor = sandbox
     (upstream / "plugins/web/bad.py").write_text(
-        "import requests\nfrom hermes_cli.config import load_config\n", encoding="utf-8")
+        "import requests\nfrom hermes_cli.setup import run_setup\n", encoding="utf-8")
     code, text = _run(["pull", "--upstream", str(upstream), "--commit", "a" * 40,
                        "plugins/web/bad.py"], vendor)
-    assert code == 2 and "requests" in text and "hermes_cli.config" in text
+    assert code == 2 and "requests" in text and "hermes_cli.setup" in text
     assert not (vendor / "plugins/web/bad.py").exists()
     code, text = _run(["pull", "--upstream", str(upstream), "--commit", "a" * 40,
                        "../outside.py"], vendor)
