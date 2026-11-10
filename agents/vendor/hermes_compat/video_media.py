@@ -43,6 +43,11 @@ class VideoSink:
     directory: Path
     max_bytes: int
     files: list[Path] = field(default_factory=list)
+    #: Hosts a provider URL may be fetched from (the task's manifest); a URL elsewhere is
+    #: refused here, before any dial, so the task's egress latch stays open for a fallback.
+    hosts: tuple[str, ...] = ()
+    #: Job ids the compat OpenAI ``videos.create`` saw (DeepInfra's download fallback).
+    job_ids: list[str] = field(default_factory=list)
 
 
 _SINK: contextvars.ContextVar[VideoSink | None] = contextvars.ContextVar(
@@ -50,8 +55,8 @@ _SINK: contextvars.ContextVar[VideoSink | None] = contextvars.ContextVar(
 
 
 @contextlib.contextmanager
-def bound_sink(directory: Path, max_bytes: int) -> Iterator[VideoSink]:
-    sink = VideoSink(Path(directory), int(max_bytes))
+def bound_sink(directory: Path, max_bytes: int, hosts: tuple[str, ...] = ()) -> Iterator[VideoSink]:
+    sink = VideoSink(Path(directory), int(max_bytes), hosts=tuple(hosts))
     token = _SINK.set(sink)
     try:
         yield sink
@@ -100,6 +105,29 @@ def save_b64(kind: str, b64_data: str, *, prefix: str = "video", extension: str 
     return _write(raw, prefix=prefix, extension=extension)
 
 
+def host_admitted(url: str, sink: VideoSink | None = None) -> bool:
+    """True when *url* is https on one of the sink's hosts (or a sub-domain of one)."""
+    from urllib.parse import urlsplit
+
+    sink = sink or _SINK.get()
+    parts = urlsplit(str(url or ""))
+    host = (parts.hostname or "").lower().rstrip(".")
+    return bool(sink and parts.scheme == "https" and host
+                and any(host == h or host.endswith("." + h) for h in sink.hosts))
+
+
+def save_data_uri(url: str, *, prefix: str = "video") -> str:
+    """A ``data:video/...;base64,...`` answer (DeepInfra documents one) into the sink, capped."""
+    if _SINK.get() is None:
+        raise SinkRefused("no approved video task is bound")
+    head, _, payload = str(url or "").partition(",")
+    kind = head[5:].split(";", 1)[0].lower() if head.startswith("data:") else ""
+    if not head.endswith(";base64") or kind not in ("video/mp4", "video/webm", "video/quicktime"):
+        raise ValueError("not a base64 video data URI")
+    return save_b64("videos", payload, prefix=prefix,
+                    extension={"video/webm": "webm", "video/quicktime": "mov"}.get(kind, "mp4"))
+
+
 def save_url(kind: str, url: str, *, prefix: str = "video", timeout: float = 180.0,
              max_bytes: int = 0, chunk_size: int = 0, content_types: dict | None = None,
              url_extensions: tuple = (), default_extension: str = "mp4", label: str = "Video",
@@ -110,6 +138,10 @@ def save_url(kind: str, url: str, *, prefix: str = "video", timeout: float = 180
     sink = _SINK.get()
     if sink is None:
         raise SinkRefused("no approved video task is bound")
+    if str(url or "").startswith("data:"):
+        return save_data_uri(str(url), prefix=prefix)
+    if not host_admitted(str(url), sink):
+        raise SinkRefused("video host not admitted")
     limit = min(int(max_bytes or sink.max_bytes), sink.max_bytes)
     status, body, ctype = httpx.download(str(url), max_bytes=limit, headers=headers,
                                          timeout=min(float(timeout or 85.0), 85.0))
@@ -122,4 +154,4 @@ def save_url(kind: str, url: str, *, prefix: str = "video", timeout: float = 180
 
 
 __all__ = ["GENERATED_SUBDIR", "SinkRefused", "VideoSink", "bound_sink", "current_sink",
-           "save_b64", "save_bytes", "save_url"]
+           "host_admitted", "save_b64", "save_bytes", "save_data_uri", "save_url"]

@@ -132,51 +132,109 @@ def key_set(name: str) -> bool:
     return bool(row and str(env_str(row.key, "") or "").strip())
 
 
-# ── pricing ──────────────────────────────────────────────────────────────────────
+class VideoRequestError(ValueError):
+    """An argument Nerva will not send (the reason is a fixed code)."""
 
-#: USD per output second, list prices checked 2026-11-10 (docs.x.ai pricing; fal.ai model
-#: pages). ``basis`` says how firm a number is.
-LIST_PRICES: dict[tuple[str, str], tuple[float, str]] = {
-    ("xai", "grok-imagine-video"): (0.07, "list: $0.05/s at 480p, $0.07/s at 720p (docs.x.ai)"),
-    ("xai", "grok-imagine-video-1.5"): (0.15, "ceiling: list from $0.08/s at 480p; 720p unpublished, $0.15/s assumed"),
-    ("fal", "pixverse-v6"): (0.09, "list: about $0.09/s at 1080p with audio, less at lower settings (fal.ai)"),
+
+# ── pricing ──────────────────────────────────────────────────────────────────────
+#
+# Only verified list prices (checked 2026-11-10 on the fal.ai model pages, the
+# docs.x.ai pricing page and deepinfra.com). A model, a modality or a resolution with no
+# verified price is refused (``price_unverified``): a guess is never shown as a ceiling.
+# The estimate is still an upper bound: an unknown audio default counts as audio on, a
+# resolution the family drops counts at its dearest listed rate, an unset duration at the
+# family's longest.
+
+PRICE_SOURCE = "list price checked 2026-11-10 (fal.ai model pages, docs.x.ai/developers/pricing, deepinfra.com)"
+
+#: FAL family -> verified modalities and USD/s per resolved resolution as
+#: (audio off, audio on); ``None`` is the key for a family with no resolution setting.
+FAL_PRICES: dict[str, dict] = {
+    "pixverse-v6": {"modalities": ("text", "image"), "rates": {
+        "360p": (0.025, 0.035), "540p": (0.035, 0.045), "720p": (0.045, 0.060), "1080p": (0.090, 0.115)}},
+    "veo3.1": {"modalities": ("text", "image"), "rates": {
+        "720p": (0.20, 0.40), "1080p": (0.20, 0.40), "4k": (0.40, 0.60)}},
+    "kling-v3": {"modalities": ("text", "image"), "rates": {None: (0.084, 0.126)}},
+    "kling-v3-pro": {"modalities": ("text",), "rates": {None: (0.112, 0.168)}},
+    "kling-v3-4k": {"modalities": ("text",), "rates": {None: (0.42, 0.42)}},
+    "seedance-2.0": {"modalities": ("text",), "rates": {"720p": (0.3034, 0.3034), "1080p": (0.682, 0.682)}},
+    "seedance-2.0-mini": {"modalities": ("text",), "rates": {"480p": (0.0721, 0.0721), "720p": (0.1547, 0.1547)}},
+    "wan-3.0": {"modalities": ("text", "image"), "rates": {
+        "480p": (0.05, 0.05), "720p": (0.10, 0.10), "1080p": (0.20, 0.20)}},
+    "wan-2.7": {"modalities": ("text",), "rates": {"720p": (0.10, 0.10), "1080p": (0.15, 0.15)}},
+    "minimax-h3": {"modalities": ("text",), "rates": {"768P": (0.06, 0.06), "2K": (0.13, 0.13), "4K": (0.16, 0.16)}},
+    "flux-3": {"modalities": ("text",), "rates": {"720p": (0.17, 0.17), "1080p": (0.29, 0.29)}},
+    "happy-horse": {"modalities": ("text",), "rates": {"720p": (0.14, 0.14), "1080p": (0.18, 0.18)}},
 }
-#: Upper bounds per output second where Nerva has no list price.
-TIER_CEILINGS = {"cheap": 0.10, "premium": 0.50}
-#: Per input image (xAI charges $0.002–$0.01 an image; FAL/DeepInfra treated the same).
+#: xAI model -> USD/s per resolution (docs.x.ai).
+XAI_PRICES: dict[str, dict[str, float]] = {
+    "grok-imagine-video": {"480p": 0.05, "720p": 0.07},
+    "grok-imagine-video-1.5": {"480p": 0.08, "720p": 0.14, "1080p": 0.25},
+}
+#: DeepInfra model -> USD/s, flat (deepinfra.com).
+DEEPINFRA_PRICES: dict[str, float] = {"Wan-AI/Wan3.0-Video": 0.20, "Wan-AI/Wan2.6-T2V": 0.10}
+#: Per input image (xAI lists $0.002–$0.01 an image; the dearer is used).
 IMAGE_INPUT_USD = 0.01
-#: xAI bills an input video by the second for an edit.
+#: xAI bills an input video by the second (edit and extend).
 XAI_VIDEO_INPUT_USD_PER_SECOND = 0.01
 
 
-def _per_second(provider_name: str, model: str) -> tuple[float, str]:
-    known = LIST_PRICES.get((provider_name, model))
-    if known is not None:
-        return known
-    if provider_name == "fal":
-        tier = str(plugin_module("fal").FAL_FAMILIES.get(model, {}).get("tier") or "premium")
-        rate = TIER_CEILINGS.get(tier, TIER_CEILINGS["premium"])
-        return rate, f"ceiling: Nerva has no list price for this FAL family; ${rate:.2f}/s assumed ({tier} tier)"
-    rate = TIER_CEILINGS["premium"]
-    return rate, f"ceiling: Nerva has no list price for this model; ${rate:.2f}/s assumed"
+def _unverified() -> VideoRequestError:
+    return VideoRequestError("price_unverified")
+
+
+def _per_second(body: dict) -> float:
+    name, model = body["provider"], body["model"]
+    if name == "xai":
+        rates = XAI_PRICES.get(model)
+        if not rates:
+            raise _unverified()
+        if body.get("operation", "generate") != "generate":
+            return max(rates.values())          # the output resolution is xAI's choice
+        rate = rates.get(body["resolution"])
+        if rate is None:
+            raise _unverified()
+        return rate
+    if name == "deepinfra":
+        rate = DEEPINFRA_PRICES.get(model)
+        if rate is None:
+            raise _unverified()
+        return rate
+    family = plugin_module("fal").FAL_FAMILIES[model]
+    prices = FAL_PRICES.get(model)
+    modality = "image" if any(i.startswith("image:") for i in body.get("images", [])) else "text"
+    if prices is None or modality not in prices["modalities"]:
+        raise _unverified()
+    rates = prices["rates"]
+    if not family["resolutions"]:
+        key = None
+    else:
+        resolved = (family.get("resolution_aliases") or {}).get(body["resolution"].lower(), body["resolution"])
+        key = resolved if resolved in family["resolutions"] else "*"
+    if key == "*":                               # dropped: the endpoint decides
+        pair = max(rates.values(), key=lambda r: r[1])
+    elif key in rates:
+        pair = rates[key]
+    else:
+        raise _unverified()
+    return pair[0] if body.get("audio") is False else pair[1]
 
 
 def estimate(body: dict) -> dict:
-    """``{"usd", "per_second", "seconds", "basis"}`` — an upper bound for the approval."""
-    rate, basis = _per_second(body["provider"], body["model"])
+    """``{"usd", "per_second", "seconds", "basis"}`` — an upper bound from verified prices.
+
+    Raises :class:`VideoRequestError` ``price_unverified`` when Nerva has no verified price."""
+    rate = _per_second(body)
     seconds = int(body["billed_seconds"])
     inputs = len(body.get("images", []))
     usd = rate * seconds + IMAGE_INPUT_USD * inputs
-    if body.get("operation") == "edit":
-        usd += XAI_VIDEO_INPUT_USD_PER_SECOND * seconds
-    usd = math.ceil(usd * 100) / 100
-    return {"usd": usd, "per_second": rate, "seconds": seconds, "basis": basis}
+    if body.get("operation", "generate") != "generate":
+        usd += XAI_VIDEO_INPUT_USD_PER_SECOND * int(body.get("source_seconds") or 0)
+    usd = math.ceil(round(usd * 100, 6)) / 100
+    return {"usd": usd, "per_second": rate, "seconds": seconds, "basis": PRICE_SOURCE}
 
 
 # ── the request the owner approves ───────────────────────────────────────────────
-
-class VideoRequestError(ValueError):
-    """An argument Nerva will not send (the reason is a fixed code)."""
 
 
 def _image_ref(value: Any, row: VideoProviderRow) -> str:
@@ -320,7 +378,9 @@ def normalize_request(args: dict) -> dict:
             raise VideoRequestError("model_required")
         if refs is not None or audio is not None:
             raise VideoRequestError("unsupported_video_option")
-        seconds = min(duration, 10) if duration is not None else 10
+        if duration is None:              # the endpoint's own default is not documented
+            raise VideoRequestError("duration_required")
+        seconds = min(duration, 10)
         body.update(model=model, duration=(min(duration, 10) if duration is not None else None),
                     billed_seconds=seconds)
         if negative is not None:
@@ -328,9 +388,10 @@ def normalize_request(args: dict) -> dict:
         if seed is not None:
             body["seed"] = seed
     body["images"] = images
+    estimate(body)                       # refuses a price Nerva has not verified
     return body
 
 
-__all__ = ["ADOPTED_VIDEO_PLUGINS", "ASPECT_RATIOS", "CHOICE_ENV", "LIST_PRICES", "PROVIDERS",
-           "RESOLUTIONS", "TIER_CEILINGS", "VideoProviderRow", "VideoRequestError", "chosen",
+__all__ = ["ADOPTED_VIDEO_PLUGINS", "ASPECT_RATIOS", "CHOICE_ENV", "DEEPINFRA_PRICES", "FAL_PRICES",
+           "PRICE_SOURCE", "PROVIDERS", "RESOLUTIONS", "XAI_PRICES", "VideoProviderRow", "VideoRequestError", "chosen",
            "estimate", "key_set", "normalize_request", "provider", "registry"]

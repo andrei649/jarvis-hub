@@ -2665,11 +2665,12 @@
         "video-gen-provider",
         "video-shared",
         "video-xai-http-module",
-        "video-mimetypes"
+        "video-mimetypes",
+        "video-xai-asyncio"
       ],
       "upstream_commit": "9c0560f8e6856bc14c11bfe6d666df06be14d2de",
       "upstream_sha256": "0c0af2bf476bda3d1c1d499a608b10d3af6e0e2c82d290ade2a4f7cfee955302",
-      "vendored_sha256": "db1234f4cf945af804f5b5391379cda25309bea1364e0a5fe8396f79dca5596c"
+      "vendored_sha256": "41b3b65d21369767e17e3662ee8e3ec3358ca69a0838e67a69b672a5cfc7e1bd"
     },
     {
       "path": "plugins/video_gen/xai/plugin.yaml",
@@ -4049,6 +4050,15 @@
       "pattern": "^(?P<i>[ \\t]*)import openai(?P<rest>[ \\t]*(?:#.*)?)$",
       "replacement": "\\g<i>from agents.vendor.hermes_compat import video_openai as openai\\g<rest>",
       "why": "the OpenAI SDK's videos API (create, retrieve, download) over the compat httpx"
+    },
+    {
+      "id": "video-xai-asyncio",
+      "paths": [
+        "plugins/video_gen/xai/"
+      ],
+      "pattern": "^(?P<i>[ \\t]*)import asyncio(?P<rest>[ \\t]*(?:#.*)?)$",
+      "replacement": "\\g<i>from agents.vendor.hermes_compat import video_asyncio as asyncio\\g<rest>",
+      "why": "the xAI poll's sleep wakes when the approved task is cancelled or out of time"
     },
     {
       "id": "video-registry-export",

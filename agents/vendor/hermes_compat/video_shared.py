@@ -44,6 +44,8 @@ from agents.vendor.hermes_compat.web_search_provider import current_provider, pr
 
 #: The owner's consented video provider (the Integrations panel's "use").
 CHOICE_ENV = "JARVIS_VIDEO_PROVIDER"
+#: The one module ``ProviderRegistry.export`` may bind into.
+REGISTRY_MODULE = "agents.vendor.hermes.agent.video_gen_registry"
 #: Keys each adopted video provider may read (documented in .env.example).
 VIDEO_PROVIDER_KEYS: dict[str, frozenset[str]] = {
     "fal": frozenset({"FAL_KEY"}),
@@ -148,6 +150,10 @@ class ProviderRegistry[P]:
         ``globals()``; the rewrite passes ``__name__``)."""
         import sys
 
+        # Only the vendored video registry, on itself: export() never writes into another
+        # module (the vendor allowlist also refuses any other export call).
+        if module_name != REGISTRY_MODULE:
+            raise ValueError("the compat registry exports only into the video registry module")
         module = sys.modules.get(str(module_name))
         if module is None:
             raise RuntimeError("registry module not loaded")

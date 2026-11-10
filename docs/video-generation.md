@@ -36,10 +36,15 @@ Ask in chat ("make a 5 second video of a red fox running in snow"). The model ca
   ("up to $0.45");
 - the card's payload shows the exact prompt and settings, and `amount` (the same cost,
   counted by the approval policy's money accounting);
-- the cost is a list price where Nerva has one (xAI `grok-imagine-video`, FAL Pixverse v6,
-  checked 2026-11-10) and otherwise a stated ceiling ($0.10/s for FAL's cheap tier, $0.50/s
-  for premium families and DeepInfra). After the run, a price the provider reports (xAI) is
-  recorded next to the estimate.
+- the cost comes from verified list prices only (checked 2026-11-10): FAL Pixverse v6, Veo
+  3.1, Kling 3.0 (standard, pro, 4K), Seedance 2.0 and 2.0 Mini, Wan 3.0 and 2.7, MiniMax H3,
+  FLUX 3, Happy Horse; xAI `grok-imagine-video` and `grok-imagine-video-1.5`; DeepInfra
+  `Wan-AI/Wan3.0-Video` and `Wan-AI/Wan2.6-T2V`. A model, resolution or image-to-video use
+  without a verified price is refused (`price_unverified`) rather than guessed. When audio is
+  left to the provider it is priced as on, and an unset duration at the model's longest.
+- after the run, a price the provider reports (xAI) is recorded next to the estimate; if it is
+  higher, the result warns you and the approval policy's daily spend counts the real amount.
+- an xAI edit is priced on the length of the video it edits, plus xAI's input-video charge.
 
 Approve it in the Decision Inbox (or with `nerva approvals`). The video runs once on the
 autonomy worker. While a conversation is in plan mode the tool is refused; while the
@@ -53,7 +58,7 @@ families that take them), and for xAI `operation: "edit" | "extend"` with
 
 ## Where the video goes
 
-The file is kept only if it is an MP4 or WebM of at most 16 MiB. It lands in the media
+The file is kept only if it is an MP4, QuickTime or WebM of at most 16 MiB. It lands in the media
 store and the media gallery (kind `video`); open it from the gallery or
 `/api/artifacts/<id>/blob`. The task result names its catalog id and size.
 
@@ -72,6 +77,7 @@ store and the media gallery (kind `video`); open it from the gallery or
 
 - Tested against a fake provider only; no live video was generated.
 - No OpenRouter video provider (its Hermes plugin needs Hermes's own credential resolver).
-- DeepInfra has no live model list in Nerva: name the model.
+- DeepInfra has no live model list in Nerva: name the model (and the duration).
+- The provider manifests ship disabled; choosing a provider is what lets its requests out.
 - FAL's 2× upscale pass and Hermes's managed (Nous subscription) FAL gateway are not used.
 - A local file the model names is never read or sent; only images Nerva generated are.

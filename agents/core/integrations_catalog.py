@@ -163,22 +163,17 @@ def video_entries() -> list[Entry]:
 
     out = []
     for name, row in vp.PROVIDERS.items():
-        if name == "fal":
-            models = tuple(vp.plugin_module("fal").FAL_FAMILIES)
-        elif name == "xai":
-            models = tuple(vp.plugin_module("xai")._MODELS)
-        else:
-            models = ()
-        priced = sum(1 for (prov, _model) in vp.LIST_PRICES if prov == name)
+        # Only the models Nerva has a verified price for are offered (others are refused).
+        models = tuple({"fal": vp.FAL_PRICES, "xai": vp.XAI_PRICES,
+                        "deepinfra": vp.DEEPINFRA_PRICES}[name])
         out.append(Entry(
             id=entry_id(KIND_VIDEO, name), kind=KIND_VIDEO, name=name, display_name=row.display,
             origin=ORIGIN_HERMES, keys=(row.key,), host=row.host, host_country=None,
             data_policy="unknown",
             data_policy_note="how this provider handles your video prompts and images has not been verified",
-            price_known="some" if priced else "no",
-            price_note=("paid per second of video; Nerva knows the list price of "
-                        f"{priced} model(s) and assumes a ceiling for the rest. Every video's "
-                        "approval card shows its upper-bound cost"),
+            price_known="some",
+            price_note=(f"paid per second of video; Nerva knows the verified list price of {len(models)} "
+                        "model(s) and refuses the others. Every video's approval card shows its upper-bound cost"),
             selectable=True, models=models))
     return out
 

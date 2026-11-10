@@ -46,7 +46,7 @@ EXTERNAL_BINDING_WRITERS: Mapping[str, tuple[ExternalBindingCallsite, ...]] = Ma
         "ambient_runtime": (("agents/core/ambient/runtime.py", 216, 16),),
         "acquisition": (("agents/core/autonomy_coordinator.py", 1702, 8),),
         "cloud_images": (("agents/core/autonomy_coordinator.py", 2132, 8),),
-        "cloud_videos": (("agents/core/creative/video_generation.py", 775, 4),),
+        "cloud_videos": (("agents/core/creative/video_generation.py", 831, 4),),
         "tool_rpc": (("agents/core/autonomy_coordinator.py", 1968, 8),),
         "agent_tool_runtime": (("agents/core/autonomy_coordinator.py", 1969, 8),),
         "session_kernels": (("agents/core/autonomy_coordinator.py", 1792, 8),),

@@ -9,7 +9,7 @@ fields are the stored files-cdn HTTPS link; pass it as ``video_url`` for edit/ex
 
 from __future__ import annotations
 
-import asyncio
+from agents.vendor.hermes_compat import video_asyncio as asyncio
 import base64
 import logging
 from agents.vendor.hermes_compat.video_shared import mimetypes

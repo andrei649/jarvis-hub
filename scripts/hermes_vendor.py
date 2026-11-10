@@ -83,6 +83,10 @@ class Rule:
 A2A_PATH = "plugins/platforms/a2a/"
 #: G19: the adopted video-generation files (the ABC, the registry and the provider plugins).
 VIDEO_PATHS = ("agent/video_gen_provider.py", "agent/video_gen_registry.py", "plugins/video_gen/")
+#: The one vendored file that may call the compat registry's ``export`` (on itself).
+REGISTRY_EXPORT_PATH = "agent/video_gen_registry.py"
+#: The adopted xAI video plugin (its private event loop's sleep is governed).
+XAI_VIDEO_PATH = "plugins/video_gen/xai/"
 
 REWRITE_RULES: tuple[Rule, ...] = (
     Rule("httpx", r"^(?P<i>[ \t]*)import httpx(?P<rest>[ \t]*(?:#.*)?)$",
@@ -203,6 +207,10 @@ REWRITE_RULES: tuple[Rule, ...] = (
          r"\g<i>from agents.vendor.hermes_compat import video_openai as openai\g<rest>",
          "the OpenAI SDK's videos API (create, retrieve, download) over the compat httpx",
          paths=VIDEO_PATHS),
+    Rule("video-xai-asyncio", r"^(?P<i>[ \t]*)import asyncio(?P<rest>[ \t]*(?:#.*)?)$",
+         r"\g<i>from agents.vendor.hermes_compat import video_asyncio as asyncio\g<rest>",
+         "the xAI poll's sleep wakes when the approved task is cancelled or out of time",
+         paths=(XAI_VIDEO_PATH,)),
     Rule("video-registry-export", r"^(?P<i>[ \t]*)_registry\.export\(globals\(\)\)(?P<rest>[ \t]*(?:#.*)?)$",
          r"\g<i>_registry.export(__name__)\g<rest>",
          "the registry binds its API by module name; globals() stays a denied name",
@@ -235,7 +243,7 @@ COMPAT_MODULES = frozenset({
     # slice 4 (A2A client tools)
     "urllib", "a2a_shared", "futures",
     # G19 (video generation)
-    "video_shared", "video_media", "video_clock", "video_openai",
+    "video_shared", "video_media", "video_clock", "video_openai", "video_asyncio",
 })
 #: Compat modules only some vendored paths may import: the governed ``urllib`` can open a
 #: request (through the egress binding of one A2A call), so no other adopted file may
@@ -247,7 +255,7 @@ WIRE_DATA_STRINGS = frozenset({"http"})
 PATH_SCOPED_COMPAT: dict[str, tuple[str, ...]] = {
     "urllib": (A2A_PATH,), "a2a_shared": (A2A_PATH,), "futures": (A2A_PATH,),
     "video_shared": VIDEO_PATHS, "video_media": VIDEO_PATHS, "video_clock": VIDEO_PATHS,
-    "video_openai": VIDEO_PATHS,
+    "video_openai": VIDEO_PATHS, "video_asyncio": (XAI_VIDEO_PATH,),
 }
 #: Underscore names a compat module exports on purpose, because the upstream code imports
 #: them by that name (G2: ``hermes_cli/loops.py`` takes SessionDB access from
@@ -385,6 +393,13 @@ def unmapped_imports(text: str, path: str = "x.py") -> list[str]:
                              and item.value in WIRE_DATA_STRINGS)
     for node in ast.walk(tree):
         line = getattr(node, "lineno", 0)
+        # G19: the compat registry's ``export`` binds an API into a module by name. Only the
+        # vendored video registry may call it, and only on itself (``export(__name__)``).
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "export"
+                and (path != REGISTRY_EXPORT_PATH or node.keywords or len(node.args) != 1
+                     or not isinstance(node.args[0], ast.Name) or node.args[0].id != "__name__")):
+            found.append(f"line {line}: .export(...) (only export(__name__) in {REGISTRY_EXPORT_PATH})")
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if not _module_allowed(alias.name):

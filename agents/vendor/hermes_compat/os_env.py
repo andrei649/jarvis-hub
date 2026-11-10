@@ -25,7 +25,7 @@ def getenv(name: str, default: str | None = None) -> str | None:
 
 class _Environ:
     """``os.environ`` reduced to ``get`` under the same allowlist as :func:`getenv` (G19:
-    the FAL video plugin reads ``os.environ.get("FAL_VIDEO_MODEL")``, which is not allowed,
+    the FAL video plugin asks environ for ``FAL_VIDEO_MODEL``, which is not allowed,
     so it reads as unset and the family the owner approved is the one used)."""
 
     def get(self, name: str, default: str | None = None) -> str | None:

@@ -45,8 +45,10 @@ are on the `websearch` manifest allowlist, the same way the built-ins' hosts are
 The rules live in `REWRITE_RULES` in `scripts/hermes_vendor.py` and are copied into the
 manifest. `status` fails if the two differ. Each rule rewrites one import line in place, so
 line numbers stay the same and upstream diffs stay readable. No replacement matches any
-pattern, so the rewrite is idempotent. All rules but one rewrite an import. The exception,
-`exa-integration-tag`, changes the caller name the Exa provider sends.
+pattern, so the rewrite is idempotent. All rules but two rewrite an import. The exceptions:
+`exa-integration-tag` changes the caller name the Exa provider sends, and
+`video-registry-export` (G19) turns the video registry's `_registry.export(globals())` into
+`_registry.export(__name__)`.
 
 | Rule | Upstream line | Becomes |
 |---|---|---|
@@ -634,11 +636,11 @@ not on the card).
 
 | Piece | Where | What it does |
 |---|---|---|
-| Provider table, registry load, request check, price | `agents/core/creative/video_providers.py` | `PROVIDERS`: the three reviewed names, each with one egress identity, one key name, its API host and the media hosts it accepts image URLs from. The plugins register through a ctx with one method (`register_video_gen_provider`); any other name is refused. `normalize_request` checks and clamps the arguments the way the plugin will (FAL family duration snap, xAI model by modality and resolution fallback), so the card shows what is sent. `estimate` is the upper-bound cost. |
+| Provider table, registry load, request check, price | `agents/core/creative/video_providers.py` | `PROVIDERS`: the three reviewed names, each with one egress identity, one key name, its API host and the media hosts it accepts image URLs from. The plugins register through a ctx with one method (`register_video_gen_provider`); any other name is refused. `normalize_request` checks and clamps the arguments the way the plugin will (FAL family duration snap, xAI model by modality and resolution fallback), so the card shows what is sent. `estimate` is the upper-bound cost from **verified list prices only** (`FAL_PRICES` per family, modality, resolution and audio; `XAI_PRICES` per model and resolution; `DEEPINFRA_PRICES` per model; checked 2026-11-10). A family, modality, resolution or model without a verified price is refused (`price_unverified`) before any card; an unknown audio default counts as on, a dropped resolution at the dearest rate, an unset duration at the family's longest. |
 | Runtime | `agents/core/creative/video_generation.py` (`CloudVideoRuntime`) | The reviewed cloud-image governance (`cloud_image_runtime` helpers): availability (heavy features, enforced mediation, kernel on, signer, the consented choice, the key, e-stop off), one `plugin.egress` approval task per video with `amount` = estimate, a configuration generation bound to the key, prompt screening, the proposal binding, a durable attempt marker before the first POST (never replayed), a live check before every request (approval still binds, e-stop, mediation receipt, kernel), publication into the media store. |
 | Tool | `video_generate` (gated, `register_video_tool`) | Preflight validates; intake proposes one card; it never runs in the turn. Plan mode refuses it at the tool front door. |
 | Worker wiring | `wire_cloud_video` (outermost `plugin.egress` guard/handler in `AutonomyCoordinator.build_executor`) | `orch.cloud_videos`. |
-| Manifests | `cloud-video-fal` (`queue.fal.run`, `fal.media`), `cloud-video-xai` (`api.x.ai`, `vidgen.x.ai`), `cloud-video-deepinfra` (`api.deepinfra.com`) | RESTRICTED, https only. A POST may go only to the provider's API host. |
+| Manifests | `cloud-video-fal` (`queue.fal.run`, `fal.media`), `cloud-video-xai` (`api.x.ai`, `vidgen.x.ai`), `cloud-video-deepinfra` (`api.deepinfra.com`) | RESTRICTED, https only, shipped **disabled** like the cloud-image manifests: the runtime treats one as on only while the owner has that provider chosen. Exactly one POST per task, to the approved URL (`task.payload["url"]`); a second POST (a retry, FAL's upscale pass) is refused (`second_submit_refused` / `dispatch_changed`). |
 | Owner surface | Integrations panel (`video.*` entries), `/api/media` (`cloud_video`, `kinds.video`) | Key, consent card (`video_provider_consent` audit row), `DELETE /api/admin/integrations/video-choice`. |
 
 **Running the vendored code.** The synchronous `generate` runs on its own executor (2
@@ -653,7 +655,7 @@ plugin cannot retry past it) and its reason is reported, not the plugin's text.
 **The file.** A provider URL is fetched by `video_media.save_url` through `httpx.download`: a
 stream capped at 16 MiB (a declared length over the cap is refused before reading), no
 redirect, no credential to a media host. The bytes are kept only if the media store
-recognizes them as MP4 or WebM; they get a Nerva-minted name in `media/generated` and a
+recognizes them as MP4 (including fragmented `iso5`/`iso6`), QuickTime or WebM; they get a Nerva-minted name in `media/generated` and a
 catalog row (kind `video`), served by `/api/artifacts/md-…/blob`. Provider text (errors,
 model names in answers) reaches nobody except as a fixed reason code.
 
@@ -693,7 +695,20 @@ the same allowlist (FAL's `FAL_VIDEO_MODEL` reads as unset, so the approved fami
   delivery URL on a CDN, an xAI host other than `vidgen.x.ai`) is refused
   (`video_host_not_admitted`), not fetched.
 - Videos over 16 MiB are refused (the media store's serving limit).
+- **Cost.** xAI edit is priced on the source video's real length (its completion record) plus
+  xAI's $0.01/s input-video charge; extend adds the same input charge. When a provider reports
+  a cost above the estimate (xAI), the result carries `warning: reported_cost_above_estimate`
+  and the difference is added to the approval policy's spend, so the daily accounting holds
+  the real amount.
+- **DeepInfra delivery.** A delivery URL off `api.deepinfra.com` is never dialled: the same
+  file is fetched from the OpenAI videos content endpoint on the API host (the job id the
+  stand-in recorded), and a `data:video/...;base64` answer is decoded, capped, in place. A
+  URL off any other provider's hosts is refused before any request (`video_host_not_admitted`).
+- The compat registry's `export` binds only `agents.vendor.hermes.agent.video_gen_registry`, and
+  the vendor allowlist refuses any `.export(...)` call except `export(__name__)` in that file.
+- xAI's `await asyncio.sleep(5)` between polls is `video_asyncio.sleep` (rule `video-xai-asyncio`,
+  xAI plugin only), which wakes on cancel or deadline like the other polls.
 - DeepInfra needs a named model (no catalog fetch). Prices: list for three models, a stated
-  ceiling for the rest; a provider-reported price is recorded only for xAI.
+  refusal for the rest; a provider-reported price is recorded only for xAI.
 - Cancelling a running video stops Nerva's polling; the provider's job itself is not
   cancelled at the provider.

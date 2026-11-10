@@ -37,6 +37,7 @@ import base64
 import contextvars
 import hashlib
 import json
+import logging
 import re
 import shutil
 import time
@@ -67,6 +68,8 @@ from ..paths import data_root
 from ..security.taint import is_untrusted_source
 from ..vault import _file_lock
 from . import video_providers as vp
+
+logger = logging.getLogger("jarvis.creative.video_generation")
 
 VERSION = "hermes-video-v1"
 TOOL = "video_generate"
@@ -161,7 +164,11 @@ class _VideoClient(PluginHTTPClient):
 
         manifest = (self.gate.plugins if self.gate is not None else BUILTIN_PLUGINS).get(self.plugin_name)
         host = urlsplit(url).hostname or ""
-        if (manifest is None or not manifest.enabled
+        row = _BY_PLUGIN.get(self.plugin_name)
+        # Shipped disabled like the cloud-image manifests; on only while the owner has this
+        # provider chosen (an explicit enable through the plugin gate also counts).
+        enabled = manifest is not None and (manifest.enabled or (row is not None and vp.chosen() == row.name))
+        if (manifest is None or not enabled
                 or manifest.network_access is not NetworkAccess.RESTRICTED
                 or urlsplit(url).scheme != "https"
                 or not host_in_allowlist(host, manifest.allowed_domains)):
@@ -247,6 +254,12 @@ class CloudVideoRuntime:
 
     # ── inputs ─────────────────────────────────────────────────────────────────
 
+    def _hosts(self, plugin):
+        from ..plugin_gate import BUILTIN_PLUGINS
+
+        manifest = (self.gate.plugins if self.gate is not None else BUILTIN_PLUGINS).get(plugin)
+        return tuple(manifest.allowed_domains) if manifest is not None else ()
+
     def _image_bytes(self, artifact_id):
         from ..media_backends.comfyui import artifact_bytes
 
@@ -302,7 +315,23 @@ class CloudVideoRuntime:
         if (done.get("binding") != _task_binding(source) or parts.scheme != "https"
                 or (parts.hostname or "") != "vidgen.x.ai"):
             raise ValueError("video source unavailable")
-        return url
+        reported = done.get("artifact", {}).get("duration")
+        billed = source.payload["video"]["body"].get("billed_seconds")
+        # The provider's reported length, else what the source was billed for (an upper bound).
+        seconds = reported if type(reported) is int and 1 <= reported <= 60 else billed
+        if type(seconds) is not int or not 1 <= seconds <= 60:
+            raise ValueError("video source unavailable")
+        return url, seconds
+
+    def _finish_body(self, body):
+        """Edit / extend: bind the source video's URL and real length (the edit's output
+        length and the input-video charge both follow it)."""
+        if body["operation"] == "generate":
+            return body
+        body["source_url"], body["source_seconds"] = self._source(body["source_task_id"])
+        if body["operation"] == "edit":
+            body["billed_seconds"] = body["source_seconds"]
+        return body
 
     # ── proposal ───────────────────────────────────────────────────────────────
 
@@ -312,8 +341,7 @@ class CloudVideoRuntime:
         body = vp.normalize_request(dict(args))
         row = self._available(body["provider"])
         self._bind_images(body)
-        if body["operation"] != "generate":
-            body["source_url"] = self._source(body["source_task_id"])
+        self._finish_body(body)
         _, generation = self._configuration(body["provider"])
         cost = vp.estimate(body)
         payload = {
@@ -355,9 +383,7 @@ class CloudVideoRuntime:
             if not isinstance(body, dict) or body.get("provider") != row.name:
                 raise ValueError
             self._available(row.name)
-            expected = vp.normalize_request(_args_of(body))
-            if body["operation"] != "generate":
-                expected["source_url"] = body.get("source_url")
+            expected = self._finish_body(vp.normalize_request(_args_of(body)))
             digests = body.get("image_sha256")
             if expected["images"]:
                 expected["image_sha256"] = digests
@@ -439,7 +465,8 @@ class CloudVideoRuntime:
     def _publish(self, task, data, mime, *, provider_url, reported_usd, duration):
         generated = _safe(self.root / "media" / "generated")
         artifact_id = uuid.uuid4().hex
-        target = generated / f"{artifact_id}.{'webm' if mime == 'video/webm' else 'mp4'}"
+        suffix = {"video/webm": "webm", "video/quicktime": "mov"}.get(mime, "mp4")
+        target = generated / f"{artifact_id}.{suffix}"
         with open(target, "xb") as handle:
             handle.write(data)
         digest = hashlib.sha256(data).hexdigest()
@@ -497,9 +524,22 @@ class CloudVideoRuntime:
         video = result.get("video")
         sink = video_media.current_sink()
         provider_url = None
-        if isinstance(video, str) and video.startswith("https://"):
-            provider_url = video
-            path = Path(video_media.save_url("videos", video, prefix=name, max_bytes=sink.max_bytes))
+        if isinstance(video, str) and video.startswith("data:"):
+            path = Path(video_media.save_data_uri(video, prefix=name))
+        elif isinstance(video, str) and video.startswith("https://"):
+            if video_media.host_admitted(video, sink):
+                provider_url = video
+                path = Path(video_media.save_url("videos", video, prefix=name, max_bytes=sink.max_bytes))
+            elif name == "deepinfra" and sink.job_ids:
+                # A delivery URL off api.deepinfra.com (a CDN): the same file through the
+                # OpenAI videos content endpoint on the API host, so a paid video is not lost.
+                from agents.vendor.hermes_compat import video_openai
+
+                client = video_openai.OpenAI(api_key=prov._api_key(), base_url=prov._base_url())
+                raw = client.videos.download_content(sink.job_ids[-1]).read()
+                path = Path(video_media.save_bytes("videos", raw, prefix=name))
+            else:
+                raise _Declined("video_host_not_admitted", "video host refused")
         else:
             path = Path(str(video or ""))
         if path not in sink.files:
@@ -534,15 +574,11 @@ class CloudVideoRuntime:
             image_url, refs = self._image_inputs(body)
 
             def live_check(method, url):
-                from urllib.parse import urlsplit
-
                 self.validate(task.payload)
                 self._bound(task)
                 if estop.is_engaged():
                     raise _Declined("estop_engaged", "video dispatch refused")
-                host = (urlsplit(url).hostname or "").lower()
-                api = host == row.host
-                if method not in {"GET", "POST"} or (method == "POST" and not api):
+                if method not in {"GET", "POST"} or (method == "POST" and url != task.payload["url"]):
                     raise _Declined("dispatch_changed", "video dispatch refused")
                 try:
                     mediated = self.worker.queue.validate_mediated_execution(task, fingerprint)
@@ -560,7 +596,11 @@ class CloudVideoRuntime:
             def check(method, url):
                 nonlocal phase
                 live_check(method, url)
-                if method == "POST" and not attempted.exists():
+                if method == "POST":
+                    # One approved submit: a second POST (a retry, an upstream add-on pass
+                    # such as FAL's upscale) is refused, never billed.
+                    if attempted.exists():
+                        raise _Declined("second_submit_refused", "video dispatch refused")
                     _write(attempted, json.dumps({"binding": _task_binding(task)}).encode())
                     phase = "dialled"
 
@@ -582,7 +622,8 @@ class CloudVideoRuntime:
 
             try:
                 with compat_httpx.bound_egress(client, loop, deadline=deadline) as call, \
-                        provider_scope(row.name), video_media.bound_sink(staging, self.max_bytes):
+                        provider_scope(row.name), video_media.bound_sink(
+                            staging, self.max_bytes, hosts=self._hosts(row.plugin)):
                     ctx = contextvars.copy_context()
                     work = loop.run_in_executor(_EXECUTOR, ctx.run, self._run_vendored,
                                                 row.name, body, image_url, refs, staging)
@@ -619,13 +660,25 @@ class CloudVideoRuntime:
                 mime = sniff(data)
             except ValueError:
                 mime = ""
-            if mime not in {"video/mp4", "video/webm"}:
-                raise _ProviderFailed("video_unrecognized", "not an MP4 or WebM video")
+            if mime not in {"video/mp4", "video/webm", "video/quicktime"}:
+                raise _ProviderFailed("video_unrecognized", "not an MP4, QuickTime or WebM video")
             live_check("POST", task.payload["url"])
             phase = "published"
             self._publish(task, data, mime, provider_url=provider_url, reported_usd=reported,
                           duration=duration)
-            return self.recover(task)
+            result = self.recover(task)
+            amount = float(task.payload["amount"])
+            if reported is not None and reported > amount:
+                # The provider billed more than the card said: the owner is told, and the
+                # spend accounting carries the real amount (the worker settles ``amount``
+                # on success; the difference is added here).
+                result["warning"] = "reported_cost_above_estimate"
+                logger.warning("video task %s: provider reported $%.4f, above the $%.2f estimate",
+                               task.id, reported, amount)
+                policy = getattr(self.worker, "policy", None)
+                if policy is not None and callable(getattr(policy, "record_spend", None)):
+                    policy.record_spend(round(reported - amount, 4))
+            return result
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -734,12 +787,15 @@ class VideoToolDispatcher:
         return {"status": "failed", "reason": "cloud_worker_required"}
 
 
+DESCRIPTION = ("Propose one paid video (text-to-video, image-to-video, reference-guided; "
+               "xAI edit/extend) on the provider the owner chose; owner approval with a cost estimate required.")
+
+
 def register_video_tool(server, runtime, approved_task):
     dispatcher = VideoToolDispatcher(runtime, approved_task=approved_task)
     server.register_tool(
         TOOL, dispatcher.execute, gated=True,
-        description=("Propose one paid video (text-to-video, image-to-video, reference-guided; "
-                     "xAI edit/extend) on the provider the owner chose; owner approval with a cost estimate required."),
+        description=DESCRIPTION,
         input_schema=INPUT_SCHEMA, capability_id=f"tool:{TOOL}",
         preflight=dispatcher.preflight, trusted_execution=True, gated_intake=dispatcher.intake,
     )

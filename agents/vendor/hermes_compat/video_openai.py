@@ -20,6 +20,7 @@ a repr or an error.
 
 from __future__ import annotations
 
+import contextlib
 import re
 from types import SimpleNamespace
 from typing import Any
@@ -71,7 +72,12 @@ class _Videos:
         resp = httpx.post(f"{self._client.base_url}/videos", json=body,
                           headers=self._client._headers(), timeout=TIMEOUT_SECONDS)
         resp.raise_for_status()
-        return _model(resp.json())
+        answer = resp.json()
+        sink = video_media.current_sink()
+        if sink is not None and isinstance(answer, dict):
+            with contextlib.suppress(OpenAIError):
+                sink.job_ids.append(_job_id(answer.get("id")))
+        return _model(answer)
 
     def retrieve(self, video_id: Any) -> Any:
         resp = httpx.get(f"{self._client.base_url}/videos/{_job_id(video_id)}",

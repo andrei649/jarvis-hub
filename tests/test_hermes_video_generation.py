@@ -24,6 +24,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
+REPORTED_TICKS = 3_000_000_000
 MP4 = b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2" + b"\x00" * 200
 
 
@@ -58,7 +59,7 @@ def _respond_xai(state):
             return httpx.Response(200, json={
                 "status": "done", "model": "grok-imagine-video",
                 "video": {"url": "https://vidgen.x.ai/xai-vidgen-bucket/v.mp4", "duration": 6},
-                "usage": {"cost_in_usd_ticks": 3_000_000_000}})
+                "usage": {"cost_in_usd_ticks": REPORTED_TICKS}})
         if host == "vidgen.x.ai":
             return httpx.Response(200, content=state.video, headers={"content-type": "video/mp4"})
         return httpx.Response(404)
@@ -100,8 +101,8 @@ def video(tmp_path, monkeypatch):
 
     def transport(request):
         requests.append(request)
-        return {"fal": _respond_fal, "xai": _respond_xai,
-                "deepinfra": _respond_deepinfra}[state.provider](state)(request)
+        return {"fal": _respond_fal, "xai": _respond_xai, "deepinfra": _respond_deepinfra,
+                "deepinfra-cdn": _respond_deepinfra_cdn}[state.provider](state)(request)
 
     runtime = CloudVideoRuntime(
         worker, kernel=kernel, redact=lambda s: s.replace("fal-fixture-key", "[redacted]"),
@@ -154,8 +155,9 @@ async def test_approved_fal_video_runs_vendored_code_to_its_hosts_and_is_served(
     assert task.payload["plugin"] == "cloud-video-fal"
     assert task.payload["url"] == "https://queue.fal.run/fal-ai/pixverse/v6/text-to-video"
     cost = task.payload["video"]["cost"]
-    assert cost["seconds"] == 5 and cost["usd"] == pytest.approx(0.45) and task.payload["amount"] == cost["usd"]
-    assert "up to $0.45" in task.title
+    # Pixverse v6 at 720p, audio left to the endpoint (counted as on): $0.060/s x 5 s
+    assert cost["seconds"] == 5 and cost["usd"] == pytest.approx(0.30) and task.payload["amount"] == cost["usd"]
+    assert "up to $0.30" in task.title
     assert not video.requests
     task = await _approve(video, task_id)
     assert task.result["status"] == "ok", task.result
@@ -249,12 +251,12 @@ async def test_deepinfra_runs_the_openai_videos_flow_through_the_stand_in(video,
     video.state.bodies = []
     with pytest.raises(ValueError):  # no live catalog: DeepInfra needs a named model
         video.runtime.submit({"prompt": "rain"}, "user")
-    task_id = video.runtime.submit({"prompt": "rain", "model": "Wan-AI/Wan2.1-T2V-1.3B", "duration": 4}, "user")
+    task_id = video.runtime.submit({"prompt": "rain", "model": "Wan-AI/Wan2.6-T2V", "duration": 4}, "user")
     task = video.queue.get(task_id)
     assert task.payload["url"] == "https://api.deepinfra.com/v1/openai/videos"
     task = await _approve(video, task_id)
     assert task.result["status"] == "ok", task.result
-    assert video.state.bodies == [{"model": "Wan-AI/Wan2.1-T2V-1.3B", "prompt": "rain", "seconds": "4",
+    assert video.state.bodies == [{"model": "Wan-AI/Wan2.6-T2V", "prompt": "rain", "seconds": "4",
                                    "size": "720p", "aspect_ratio": "16:9"}]
     assert {r.headers["authorization"] for r in video.requests} == {"Bearer di-fixture-key"}
 
@@ -476,13 +478,171 @@ def test_requests_are_refused_without_an_approved_task_binding():
         video_media.save_bytes("videos", MP4)
 
 
-def test_estimate_uses_list_prices_and_states_ceilings():
+@pytest.mark.parametrize("args, usd", [
+    # verified list prices (2026-11-10): rate x the seconds the provider will bill
+    ({"provider": "fal", "model": "seedance-2.0", "resolution": "1080p", "duration": 15}, 10.23),
+    ({"provider": "fal", "model": "seedance-2.0", "resolution": "1080p"}, 10.23),     # unset: family max
+    ({"provider": "fal", "model": "kling-v3-4k", "duration": 15}, 6.30),
+    ({"provider": "fal", "model": "veo3.1", "resolution": "1080p", "duration": 8, "audio": True}, 3.20),
+    ({"provider": "fal", "model": "veo3.1", "resolution": "1080p", "duration": 8, "audio": False}, 1.60),
+    ({"provider": "fal", "model": "minimax-h3", "resolution": "1080p", "duration": 15}, 1.95),   # 2K
+    ({"provider": "fal", "model": "wan-3.0", "resolution": "1080p"}, 6.00),                    # 30 s
+    ({"provider": "fal", "model": "flux-3", "resolution": "1080p", "duration": 20}, 5.80),
+    ({"provider": "fal", "model": "happy-horse", "resolution": "1080p", "duration": 15}, 2.70),
+    ({"provider": "xai", "model": "grok-imagine-video", "duration": 10}, 0.70),
+    ({"provider": "deepinfra", "model": "Wan-AI/Wan3.0-Video", "duration": 10}, 2.00),
+])
+def test_the_card_estimate_is_the_verified_list_price(args, usd, monkeypatch):
     from agents.core.creative import video_providers as vp
 
-    xai = vp.estimate({"provider": "xai", "model": "grok-imagine-video", "billed_seconds": 10, "images": []})
-    assert xai["usd"] == pytest.approx(0.7) and xai["basis"].startswith("list")
-    veo = vp.estimate({"provider": "fal", "model": "veo3.1", "billed_seconds": 8, "images": []})
-    assert veo["usd"] == pytest.approx(4.0) and veo["basis"].startswith("ceiling")
+    body = vp.normalize_request({"prompt": "x", **args})
+    cost = vp.estimate(body)
+    assert cost["usd"] == pytest.approx(usd) and cost["basis"].startswith("list price checked")
+
+
+@pytest.mark.parametrize("args", [
+    {"provider": "fal", "model": "ltx-2.3", "duration": 10},                  # priced per megapixel
+    {"provider": "fal", "model": "seedance-2.5", "duration": 10},             # no verified price
+    {"provider": "fal", "model": "seedance-2.0", "resolution": "480p"},       # resolution not listed
+    {"provider": "fal", "model": "flux-3", "image": "a" * 32},                # image-to-video not verified
+    {"provider": "xai", "model": "grok-imagine-video-9-ultra"},
+    {"provider": "deepinfra", "model": "Wan-AI/Wan2.1-T2V-14B", "duration": 5},
+])
+def test_a_model_or_setting_without_a_verified_price_is_refused(args):
+    from agents.core.creative import video_providers as vp
+
+    with pytest.raises(vp.VideoRequestError, match="price_unverified"):
+        vp.normalize_request({"prompt": "x", **args})
+
+
+@pytest.mark.asyncio
+async def test_a_second_post_on_the_api_host_is_refused(video, monkeypatch):
+    """Review repro: upstream's SeedVR upscale pass is a second billed submit."""
+    from agents.core.creative import video_providers as vp
+
+    prov = vp.provider("fal")
+    orig = type(prov).generate
+    monkeypatch.setattr(type(prov), "generate", lambda self, p, **kw: orig(self, p, upscale=True, **kw))
+    task = await _approve(video, video.runtime.submit({"prompt": "a red fox runs", "duration": 5}, "user"))
+    posts = [r for r in video.requests if r.method == "POST"]
+    assert len(posts) == 1 and posts[0].url.path.endswith("/text-to-video")
+    # the extra submit is refused before it is sent; Nerva never asks for it (no upscale option)
+    assert task.result["status"] == "refused" and task.result["reason"] == "dispatch_changed", task.result
+
+
+def test_registry_export_binds_only_the_video_registry():
+    import logging
+
+    import scripts.hermes_vendor as hv
+    from agents.vendor.hermes_compat import providers as other
+    from agents.vendor.hermes_compat.video_shared import ProviderRegistry
+
+    before = other.register_provider
+    with pytest.raises(ValueError):
+        ProviderRegistry(label="x", provider_cls=object, logger=logging.getLogger("x")).export(other.__name__)
+    assert other.register_provider is before
+    assert hv.unmapped_imports("_registry.export(__name__)\n", "agent/video_gen_registry.py") == []
+    assert hv.unmapped_imports("_registry.export('agents.x')\n", "agent/video_gen_registry.py")
+    assert hv.unmapped_imports("_registry.export(__name__)\n", "plugins/video_gen/fal/__init__.py")
+
+
+@pytest.mark.asyncio
+async def test_xai_edit_is_priced_on_the_source_length_and_a_higher_reported_cost_is_charged(video, monkeypatch):
+    monkeypatch.setenv("JARVIS_VIDEO_PROVIDER", "xai")
+    video.state.provider = "xai"
+    first = await _approve(video, video.runtime.submit({"prompt": "waves"}, "user"))
+    assert first.result["status"] == "ok", first.result
+    task_id = video.runtime.submit({"prompt": "add snow", "operation": "edit", "source_task_id": first.id}, "user")
+    body = video.queue.get(task_id).payload["video"]["body"]
+    cost = video.queue.get(task_id).payload["video"]["cost"]
+    # the source reported 6 s: output 6 s at $0.07 + input 6 s at $0.01
+    assert body["source_seconds"] == 6 and body["billed_seconds"] == 6
+    assert cost["usd"] == pytest.approx(0.48)
+    extend = video.runtime.submit({"prompt": "more", "operation": "extend", "source_task_id": first.id,
+                                   "duration": 4}, "user")
+    assert video.queue.get(extend).payload["video"]["cost"]["usd"] == pytest.approx(0.07 * 4 + 0.01 * 6)
+    # the provider reports $1.00 for the edit: warned, and the spend carries the real amount
+    from tests import test_hermes_video_generation as me
+
+    monkeypatch.setattr(me, "REPORTED_TICKS", 10_000_000_000)
+    before = video.worker.policy._spent_today
+    task = await _approve(video, task_id)
+    assert task.result["status"] == "ok" and task.result["warning"] == "reported_cost_above_estimate"
+    assert task.result["cost"]["reported_usd"] == pytest.approx(1.0)
+    assert video.worker.policy._spent_today - before == pytest.approx(1.0)
+
+
+def test_video_manifests_ship_disabled_and_open_only_for_the_chosen_provider(video, monkeypatch):
+    from agents.core.creative.video_generation import _VideoClient
+    from agents.core.plugin_gate import BUILTIN_PLUGINS
+
+    assert all(BUILTIN_PLUGINS[f"cloud-video-{n}"].enabled is False for n in ("fal", "xai", "deepinfra"))
+    fal = _VideoClient(lambda *a: None, plugin="cloud-video-fal")
+    assert fal._manifest_mode("https://queue.fal.run/x") == "public"          # fal is chosen
+    xai = _VideoClient(lambda *a: None, plugin="cloud-video-xai")
+    with pytest.raises(PermissionError):
+        xai._manifest_mode("https://api.x.ai/v1/videos/generations")         # not chosen
+
+
+def _respond_deepinfra_cdn(state):
+    def handler(request):
+        host, path = request.headers.get("host", ""), request.url.path
+        if host != "api.deepinfra.com":
+            state.offhost += 1
+            return httpx.Response(200, content=MP4)
+        if request.method == "POST":
+            return httpx.Response(200, json={"id": "vid_9", "status": "queued"})
+        if path.endswith("/content"):
+            return httpx.Response(200, content=MP4, headers={"content-type": "video/mp4"})
+        return httpx.Response(200, json={"id": "vid_9", "status": "succeeded",
+                                         "data": [{"url": state.delivery}]})
+    return handler
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("delivery", ["https://cdn.deepinfra-media.example/v.mp4", "data-uri"])
+async def test_a_paid_deepinfra_video_is_not_lost_to_its_delivery_url(video, monkeypatch, delivery):
+    import base64
+
+    from agents.vendor.hermes_compat import video_clock
+
+    monkeypatch.setenv("JARVIS_VIDEO_PROVIDER", "deepinfra")
+    monkeypatch.setenv("DEEPINFRA_API_KEY", "di-fixture-key")
+    monkeypatch.setattr(video_clock, "MAX_SLEEP_SECONDS", 0.01)
+    video.state.provider = "deepinfra-cdn"
+    video.state.offhost = 0
+    video.state.delivery = ("data:video/mp4;base64," + base64.b64encode(MP4).decode()
+                            if delivery == "data-uri" else delivery)
+    task = await _approve(video, video.runtime.submit(
+        {"prompt": "rain", "model": "Wan-AI/Wan2.6-T2V", "duration": 4}, "user"))
+    assert task.result["status"] == "ok", task.result
+    assert video.state.offhost == 0          # never dialled off the API host
+
+
+@pytest.mark.parametrize("brand, mime", [(b"iso5", "video/mp4"), (b"iso6", "video/mp4"), (b"qt  ", "video/quicktime")])
+def test_fragmented_mp4_and_quicktime_brands_are_recognized(brand, mime):
+    from agents.core.artifact_store import sniff
+
+    assert sniff(b"\x00\x00\x00\x18ftyp" + brand + b"\x00" * 20) == mime
+
+
+def test_the_video_choice_routes_are_gated_by_managed_configuration(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from agents import web
+    from agents.core import managed_scope
+
+    def pinned(name):
+        raise managed_scope.ManagedRefused(f"{name} is pinned", names=[name], source="managed.env")
+
+    monkeypatch.setattr(managed_scope, "check_env_write", pinned)
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "admin-token")
+    client = TestClient(web.app)
+    headers = {"X-Admin-Token": "admin-token", "Content-Type": "application/json"}
+    off = client.delete("/api/admin/integrations/video-choice", headers=headers)
+    use = client.post("/api/admin/integrations/video.fal/use", headers=headers,
+                      json={"acknowledge_training": True, "confirm_expensive": True})
+    assert off.status_code == 409 and use.status_code == 409
 
 
 def test_integrations_catalog_lists_the_video_providers_with_their_facts(monkeypatch):

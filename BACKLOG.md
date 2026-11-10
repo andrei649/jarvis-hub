@@ -2911,6 +2911,14 @@
   H516 missing → partial (xAI server-side storage off, no DeepInfra catalog, no live call,
   `video_pipeline` render step not wired). Tests: `tests/test_hermes_video_generation.py` (22) +
   1 HUD test. Guides: `docs/video-generation.md`, `docs/hermes/ADOPT_LANE.md` → "Video generation".
+  Adversarial review fixed: card cost from verified list prices only (per FAL family, modality,
+  resolution, audio; xAI per model/resolution; two DeepInfra models), unpriced ones refused
+  (`price_unverified`); a provider-reported cost above the estimate warns and is charged to the
+  spend; xAI edit priced on the source's real length + input-video charge; exactly one POST, to the
+  approved URL; video manifests ship disabled, open only for the chosen provider; registry
+  `export` only into the video registry (vendor allowlist too); DeepInfra CDN/data-URI delivery
+  recovered via the API host; `iso5`/`iso6`/`qt` brands; xAI poll sleep cancellable; video choice
+  routes gated by managed configuration; env ratchet back to 107. Video tests now 48.
   **Run lane, slice 1 (2026-11-10):** the governed Hermes sidecar moves from `0808ed8` to `9c0560f8`
   and the move is now a script: `scripts/hermes_runtime.py bump --commit <sha>`
   (`scripts/hermes_runtime_bump.py`) re-verifies the current pin, downloads and verifies the new

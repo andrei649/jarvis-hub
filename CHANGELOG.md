@@ -12,7 +12,10 @@
   conversation is in plan mode.
 - Turn it on in Integrations: filter "video", save the provider's key, press "use for videos"
   and confirm the consent card. "turn video off" turns it off again.
-- The finished video (MP4 or WebM, up to 16 MiB) appears in the media gallery. A video that
+- The cost on the card comes from verified list prices only; a model or setting Nerva has no
+  verified price for is refused instead of guessed. If the provider later reports a higher
+  price, you are told and the daily spend counts the real amount.
+- The finished video (MP4, QuickTime or WebM, up to 16 MiB) appears in the media gallery. A video that
   stops after the provider got the request is never sent again on its own, so you are never
   billed twice. How it works: `docs/video-generation.md`.
 
