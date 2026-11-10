@@ -1013,3 +1013,32 @@ def test_a_rename_gives_the_same_answer_for_a_real_id_and_a_made_up_one(cp, monk
     assert _title(cp, "native") == "Native chat"
     assert cp.set_session_title("fresh", made_up, "first_words") is False
     assert rename("session notes") == (200, None)
+
+
+# ── fourth review ────────────────────────────────────────────────────────────────────
+
+def test_repeated_copies_of_one_session_do_not_pile_up_in_a_kept_set(tmp_path):
+    """A delete that fails after its backup was written is retried by every sweep, and each
+    retry writes the session again under the same conversation key. A kept set holds one
+    copy of each session — the newest — and other sessions of the set are untouched."""
+    import os
+
+    from agents.core import session_archive as archive
+
+    key = "0123456789abcdef"
+
+    def write(session, second, mtime):
+        path = tmp_path / archive.backup_name(session, f"20261110T0000{second:02d}000000Z", key)
+        path.write_bytes(b"x")
+        os.utime(path, ns=(mtime, mtime))
+        return path
+
+    stuck = [write("session_stuck", i, 1_000 + i) for i in range(6)]
+    other = write("session_other", 30, 900)
+    legacy = tmp_path / f"session_old-20261109T000000000000Z{archive.BACKUP_SUFFIX}"
+    legacy.write_bytes(b"x")
+
+    removed = archive.prune_backups(tmp_path, keep=10)
+
+    assert sorted(removed) == sorted(p.name for p in stuck[:-1])
+    assert stuck[-1].exists() and other.exists() and legacy.exists()

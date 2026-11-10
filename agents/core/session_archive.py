@@ -240,6 +240,10 @@ def read_backup(path: str | Path) -> dict:
 _SET_RE = re.compile(r"\.c-([0-9a-f]{16})" + re.escape(BACKUP_SUFFIX) + "$")
 
 
+#: ``<session>-<stamp>.c-<key>.json.enc`` → the session id (the stamp has no dash).
+_COPY_RE = re.compile(r"(.+)-\d{8}T\d{12}Z\.c-[0-9a-f]{16}" + re.escape(BACKUP_SUFFIX) + "$")
+
+
 def conversation_key(record: dict) -> str:
     """H440 third review — what the backups of one conversation have in common: a digest
     of its lineage root (the root's id and the instance that id named when the
@@ -288,13 +292,26 @@ def prune_backups(root: Path, keep: int | None = None) -> list[str]:
     if keep is None:
         keep = env_int("JARVIS_SESSION_BACKUP_KEEP", BACKUP_KEEP_DEFAULT, minimum=1)
     removed: list[str] = []
-    for stale_set in backup_sets(root)[max(1, keep):]:
-        for stale in stale_set:
-            try:
-                stale.unlink()
-                removed.append(stale.name)
-            except OSError:
-                logger.warning("could not prune the stale session backup %s", stale.name)
+    sets = backup_sets(root)
+    stale_files = [stale for stale_set in sets[max(1, keep):] for stale in stale_set]
+    # H440 fourth review: a delete that fails after its backup was written is retried by
+    # every sweep, and each retry writes the session again under the same key. A kept set
+    # holds one copy of each session, the newest (a set lists its files newest first).
+    for kept_set in sets[:max(1, keep)]:
+        seen: set[str] = set()
+        for path in kept_set:
+            match = _COPY_RE.match(path.name)
+            if match is None:
+                continue
+            if match.group(1) in seen:
+                stale_files.append(path)
+            seen.add(match.group(1))
+    for stale in stale_files:
+        try:
+            stale.unlink()
+            removed.append(stale.name)
+        except OSError:
+            logger.warning("could not prune the stale session backup %s", stale.name)
     return removed
 
 
