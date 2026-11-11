@@ -363,6 +363,7 @@ def env_int_map(name: str, default: dict[str, int] | None = None) -> dict[str, i
 
 #: ``<X>`` of every fixed ``JARVIS_<X>`` variable name in the hub's source.
 HUB_ENV_SUFFIXES = frozenset({
+    "UPDATE_MAX_BOOTS", "UPDATE_VERIFY_SECONDS",  # H624: the post-update boot guard
     "A2A_ENABLED", "A2A_KEY", "ACP_MCP_TRUST", "ACP_PERMISSION_TIMEOUT", "ACQUISITION_SANDBOX_IMAGE", "ACTION_KERNEL", "ADMIN_TOKEN",
     "ALLOWED_HOSTS", "ALLOW_INSECURE_BIND", "ALLOW_INSECURE_SIGNIN", "ANALYTICS_MAX_EVENTS", "APP_ROOT", "AUDIT_KEY",
     "AUTO_DEEP", "AUX_ACQUISITION_CAPABILITY_MODEL", "AUX_ACQUISITION_DRAFT_MODEL",

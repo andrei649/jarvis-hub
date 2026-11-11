@@ -213,7 +213,10 @@ def _update_guard_fallback(exc: BaseException) -> bool:
     log = receipt.setdefault("log", [])
     log.append(f"boot guard unavailable ({type(exc).__name__}): boot {receipt['boots']} counted by serve.py")
     try:
-        limit = max(1, int(os.environ.get("JARVIS_UPDATE_MAX_BOOTS") or 3))
+        # Standard library only (this runs when the guard module cannot import). A NERVA_
+        # spelling is already moved onto JARVIS_ when the agents package loads (RB-2).
+        env = os.environ
+        limit = max(1, int(env.get("JARVIS_UPDATE_MAX_BOOTS") or 3))
     except ValueError:
         limit = 3
     moved = False
@@ -222,7 +225,7 @@ def _update_guard_fallback(exc: BaseException) -> bool:
         done = subprocess.run(  # nosec B603 B607 - fixed argv
             ["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "reset", "--keep", src],
             cwd=str(Path(__file__).resolve().parent), capture_output=True, text=True, timeout=120, check=False,
-            env={"PATH": os.environ.get("PATH", os.defpath), "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"})
+            env={"PATH": env.get("PATH", os.defpath), "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"})
         moved = done.returncode == 0
         log.append(f"git reset --keep {src[:12]}: {'ok' if moved else done.stderr.strip()[-200:]}")
         if moved:
