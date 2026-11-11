@@ -692,6 +692,8 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         "agents/core/memory_tool.py",
         # H422: GET /api/memory only reports that safe mode keeps the curated memory out.
         "agents/core/routers/memory_kg.py",
+        # G12 (H560): the OpenAI-compatible API stays off in safe mode, whatever the setting.
+        "agents/core/openai_api/policy.py",
         "agents/core/orchestrator.py",
         "agents/core/plugin_gate.py",
         "agents/core/project_context.py",
