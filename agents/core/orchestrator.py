@@ -560,6 +560,14 @@ async def _begin_project_context(orch) -> None:
         from .file_tools import FileScope
 
         record = await asyncio.to_thread(worktrees.session_tree_or_none, session)
+        if record is None:
+            # G11 (H542): an editor conversation (``nerva acp``) works in the editor's
+            # folder — bound like a session tree, and like one only inside the file roots.
+            from .acp import sessions as acp_sessions
+
+            editor_cwd = acp_sessions.cwd_for(session)
+            if editor_cwd is not None:
+                record = {"path": str(editor_cwd)}
         tree = worktrees.apply_session_tree(record)
         if tree is not None and FileScope.from_env().root_for(tree) is None:
             tree = worktrees.apply_session_tree(None)    # a tree outside the file roots binds nothing

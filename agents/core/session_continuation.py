@@ -394,6 +394,13 @@ class ContinuationStore:
             raise ContinuationRefused("continuation_unavailable", 503) from None
 
 
+def _fresh_editor_session(sid) -> bool:
+    """G11 — *sid* is an editor conversation this process opened and still holds open."""
+    from .acp import sessions as acp_sessions
+
+    return acp_sessions.get(sid) is not None
+
+
 def _load_locked(orch, sid):
     """Caller holds manager then conversation lock; never switches current ID."""
     from .foreign_history import seed as foreign_seed
@@ -435,6 +442,10 @@ def _load_locked(orch, sid):
                     or digest != head[2]):
                 raise ContinuationRefused("invalid_history")
         if not turns:
+            if head is None and _fresh_editor_session(sid):
+                # G11: the empty conversation this hub opened for an editor (POST
+                # /api/acp/sessions) before its first turn; nothing to seed or verify.
+                return turns
             if head is None or conversation.revisions.get(sid) != head[1]:
                 raise ContinuationRefused("invalid_history")
         else:

@@ -1,6 +1,7 @@
 [
   "DELETE /api/a2a/peers/{peer_id}",
   "DELETE /api/a2a/peers/{peer_id}/outbound",
+  "DELETE /api/acp/sessions/{session_id}",
   "DELETE /api/admin/backup/restore",
   "DELETE /api/admin/channels/{channel_id}/secret/{name}",
   "DELETE /api/admin/integrations/search-choice",
@@ -453,6 +454,8 @@
   "POST /api/a2a/inbox/{task_id}/decide",
   "POST /api/a2a/peers",
   "POST /api/a2a/task",
+  "POST /api/acp/sessions",
+  "POST /api/acp/sessions/{session_id}/mcp",
   "POST /api/acquisition/ledger/purge",
   "POST /api/acquisition/{name}/revoke",
   "POST /api/acquisition/{name}/rollback",

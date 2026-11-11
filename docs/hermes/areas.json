@@ -2176,7 +2176,8 @@
       ],
       "suite": [
         "tests/test_mcp_admin.py",
-        "tests/test_mcp_client.py"
+        "tests/test_mcp_client.py",
+        "tests/test_g11_acp.py"
       ]
     },
     {

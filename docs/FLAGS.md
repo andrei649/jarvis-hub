@@ -644,6 +644,17 @@ parent-death watchdog for the child's process group, an orphan reaper and a cros
 discovery lock. Sampling and elicitation work on stdio servers only; a Streamable HTTP
 server is not offered either, because the client does not read server requests there.
 
+### `JARVIS_ACP_PERMISSION_TIMEOUT` · `JARVIS_ACP_MCP_TRUST` (G11, `nerva acp`)
+
+- **`JARVIS_ACP_PERMISSION_TIMEOUT`**: default **300** seconds (`agents/cli/nerva.py`
+  `cmd_acp`; `--permission-timeout` overrides it, 1–86400). It is how long an editor has to answer
+  one permission request. No answer is a **reject** of the approval card.
+- **`JARVIS_ACP_MCP_TRUST`**: default **`read-only`** (`agents/core/routers/acp.py`). It is the
+  trust tier of an MCP server an editor hands over for one session. `full` lets its mutating
+  tools be offered, each still an approval card. An unknown spelling is read-only.
+
+See `docs/ACP_EDITORS.md`.
+
 ### `JARVIS_VLM_PRESET`
 
 **Default: unset** (absolute pixels assumed — the only convention
@@ -1721,6 +1732,8 @@ failed query to a second configured provider. **Revert:** unset the variable.
 | `JARVIS_MCP_STDIO_ALLOWED_ENV` | empty (`mcp/client.py` `STDIO_ENV_ALLOW_FLAG`) | Comma-separated host variable **names** stdio MCP servers may keep inheriting on top of the allow-list; a listed name passes through even if it looks like a credential | Host-wide, not per-server: every stdio MCP server sees every listed name — list the minimum. Still narrower than `=0`, which surrenders the whole environment | Remove the name + reconnect: that variable is withheld again |
 | `JARVIS_MCP_AUTOCONNECT` | off (`web.py` lifespan → `MCPManager.start`) | Every saved MCP server is connected in the background at boot, in parallel (4 at a time, 30 s each); the reconnect supervisor runs either way | One more child process per saved stdio server from boot onwards | Unset: servers connect when the owner presses connect |
 | `JARVIS_MCP_SAMPLING_DAILY_TOKENS` | 20000 (`mcp/host_requests.py` `DAILY_TOKENS_ENV`) | The daily allowance for completions MCP servers request (only servers whose `sampling` is `ask` or `auto`) | Local model time spent on a third party's prompts | `0`: every sampling request is refused |
+| `JARVIS_ACP_PERMISSION_TIMEOUT` | 300 s (`cli/nerva.py` `cmd_acp`) | Seconds an editor has to answer one ACP permission request | Longer: a card waits longer in the editor (never runs without an accept) | Shorter: unanswered cards are rejected sooner |
+| `JARVIS_ACP_MCP_TRUST` | `read-only` (`routers/acp.py`) | Trust tier of an editor-supplied, session-only MCP server; `full` offers its mutating tools as approval cards | A third-party server's mutating tools reach the model (still gated) | Unset: only tools the server marks read-only are offered |
 | `JARVIS_VLM_PRESET` | unset (absolute pixels assumed) | Names a pinned open grounder from `vlm.py:VLM_PRESETS` so `LocalVLMLocator` normalizes 0–1000-relative vs absolute-on-resized coordinates before a click | Right preset = clicks land where the model meant; **wrong** preset = mis-clicks (why it is explicit). Still needs `JARVIS_VLM_MODEL` (`vlm_model_unset`); unknown id → `vlm_preset_unknown` | Unset: the locator assumes absolute pixels on the original screenshot |
 | `JARVIS_ROLE_<NAME>_*` (H277: `DEEP_MODEL`, `VISION_PROVIDER/_MODEL/_BASE_URL`, `VIDEO_*`, `APPROVAL_JUDGE_*`) | unset (`llm/model_roles.py`) | Picks a model per job; the `JARVIS_VLM_*` / `JARVIS_DEEP_MODEL` names stay the fallbacks. `APPROVAL_JUDGE_MODEL` turns on an advisory judge that scores queued tool-call approvals off the request path | The judge sees each queued call's arguments: local by default; remote only with `JARVIS_ROLE_APPROVAL_JUDGE_ALLOW_REMOTE=1`, never under strict-local / `cloud_fallback=never` / safe mode / H378 findings, never for local-policy agents or tainted items. It decides nothing | Unset: roles fall back to the legacy names; no judge |
 | `JARVIS_FAULT_INJECT` | off (`observability/fault_injection.py`) | Arms the in-process failure-injection harness (llm_down / db_corrupt / disk_full / clock_skew) for the **test lane** | `inject()` may patch httpx send, `open()`/`sqlite3.connect` under the data root, and `time.time` inside a `with` block; nothing outside `data_root()` is touched | Unset: nothing is patched. `JARVIS_HARDENED=1` refuses unconditionally (`fault_injection_refused:hardened`) |

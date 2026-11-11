@@ -58,9 +58,23 @@ class MCPBridgeError(RuntimeError):
 def _fingerprint(row: dict[str, Any]) -> str:
     return json.dumps(
         [bool(row.get("gated")), row.get("description") or "", row.get("input_schema"),
-         row.get("qualified_name")],
+         row.get("qualified_name"), row.get("session_scope")],
         sort_keys=True, default=str,
     )
+
+
+def _session_visibility(scope: Any) -> Callable[[], bool] | None:
+    """G11 (H545) — a tool of a server an editor handed over for one conversation is
+    offered, and callable from a model turn, only while that conversation's turn runs."""
+    if not isinstance(scope, str) or not scope:
+        return None
+
+    def visible() -> bool:
+        from agents.core.llm.request_context import current_session
+
+        return current_session() == scope
+
+    return visible
 
 
 def _description(row: dict[str, Any]) -> str:
@@ -153,6 +167,8 @@ class MCPModelBridge:
                         # as "no mutation". A gated one keeps the gated contract.
                         risk=None if gated else "sensitive",
                         rollback=None if gated else UNGATED_ROLLBACK,
+                        **({"visible": visible}
+                           if (visible := _session_visibility(row.get("session_scope"))) else {}),
                     )
                 except Exception:
                     logger.warning("MCP tool %s could not be offered", name, exc_info=True)

@@ -26,10 +26,35 @@ from __future__ import annotations
 import logging
 import threading
 from collections import Counter, deque
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager, suppress
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger("jarvis.tool_events")
+
+#: G11 (H544) — the fields of a row a turn's own client is shown live (an editor's
+#: tool-call card): which tool, which call, where it stands. Never more than the trail.
+LIVE_FIELDS = ("event", "tool", "call_id", "status")
+#: The turn's own listeners. The ContextVar holds a **mutable list** bound by whoever
+#: started the turn: a tool call runs in a child task or a worker thread with a *copy*
+#: of the context, and a copy still points at the same list (``turn_approvals`` does
+#: the same). Nothing outside that turn's context tree reaches it.
+_turn_listeners: ContextVar[list[Callable[[dict[str, Any]], None]] | None] = ContextVar(
+    "nerva_turn_tool_listeners", default=None)
+
+
+@contextmanager
+def turn_listener(callback: Callable[[dict[str, Any]], None]) -> Iterator[None]:
+    """Tell *callback* about every tool event of the turn running in this context, as a
+    row cut to :data:`LIVE_FIELDS`. The callback may be called from a worker thread and
+    must not block; one that raises is dropped from this turn's list."""
+    token = _turn_listeners.set([callback])
+    try:
+        yield
+    finally:
+        _turn_listeners.reset(token)
 
 #: Events kept. A busy turn emits a handful per tool call, so this is roughly the last
 #: few dozen turns — enough to answer "what did it just do", short of a log file.
@@ -98,6 +123,21 @@ class ToolEventLog:
             self._counts[str(row.get("event", "unknown"))] += 1
         self._observed(row)
         self._traced(row)
+        self._live(row)
+
+    @staticmethod
+    def _live(row: dict[str, Any]) -> None:
+        listeners = _turn_listeners.get()
+        if not listeners:
+            return
+        live = {key: row[key] for key in LIVE_FIELDS if key in row}
+        for callback in list(listeners):
+            try:
+                callback(dict(live))
+            except Exception:
+                logger.debug("turn tool listener failed; dropped", exc_info=True)
+                with suppress(ValueError):
+                    listeners.remove(callback)
 
     @staticmethod
     def _traced(row: dict[str, Any]) -> None:

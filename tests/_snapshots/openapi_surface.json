@@ -1,6 +1,7 @@
 {
   "DELETE /api/a2a/peers/{peer_id}": "a2a_remove_peer_api_a2a_peers__peer_id__delete",
   "DELETE /api/a2a/peers/{peer_id}/outbound": "a2a_clear_peer_outbound_api_a2a_peers__peer_id__outbound_delete",
+  "DELETE /api/acp/sessions/{session_id}": "acp_close_session_api_acp_sessions__session_id__delete",
   "DELETE /api/admin/backup/restore": "backup_restore_cancel_api_admin_backup_restore_delete",
   "DELETE /api/admin/channels/{channel_id}/secret/{name}": "channel_secret_delete_api_admin_channels__channel_id__secret__name__delete",
   "DELETE /api/admin/integrations/search-choice": "integration_search_auto_api_admin_integrations_search_choice_delete",
@@ -453,6 +454,8 @@
   "POST /api/a2a/inbox/{task_id}/decide": "a2a_decide_api_a2a_inbox__task_id__decide_post",
   "POST /api/a2a/peers": "a2a_add_peer_api_a2a_peers_post",
   "POST /api/a2a/task": "a2a_receive_task_api_a2a_task_post",
+  "POST /api/acp/sessions": "acp_open_session_api_acp_sessions_post",
+  "POST /api/acp/sessions/{session_id}/mcp": "acp_add_session_mcp_api_acp_sessions__session_id__mcp_post",
   "POST /api/acquisition/ledger/purge": "acquisition_purge_api_acquisition_ledger_purge_post",
   "POST /api/acquisition/{name}/revoke": "acquisition_revoke_api_acquisition__name__revoke_post",
   "POST /api/acquisition/{name}/rollback": "acquisition_rollback_api_acquisition__name__rollback_post",

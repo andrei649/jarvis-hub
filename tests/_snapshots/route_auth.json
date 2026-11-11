@@ -837,5 +837,8 @@
   "PUT /api/skills/setup/{name}/{var}": "admin",
   "PUT /api/workflows/{pipeline_id}": "admin",
   "PUT /api/workspace/admin/smtp": "ws_admin",
-  "PUT /plugins/{plugin_id}/toggle": "admin"
+  "PUT /plugins/{plugin_id}/toggle": "admin",
+  "DELETE /api/acp/sessions/{session_id}": "admin",
+  "POST /api/acp/sessions": "admin",
+  "POST /api/acp/sessions/{session_id}/mcp": "admin"
 }

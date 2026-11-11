@@ -888,6 +888,24 @@ def build_parser() -> argparse.ArgumentParser:
                            "hub's machine; it must name the destination the hub reports")
     _selection_flags(chat)
 
+    acp = verbs.add_parser(
+        "acp",
+        help="be an editor's coding agent over the Agent Client Protocol (stdio)",
+        description="Speak the Agent Client Protocol (JSON-RPC on stdin/stdout) so an editor "
+                    "(Zed, JetBrains, any ACP client) drives Nerva as its coding agent. Every turn "
+                    "runs in the running hub; every permission the editor answers is the same "
+                    "decision as the HUD's approval card; no answer is a reject. Needs the hub "
+                    "and JARVIS_ADMIN_TOKEN (to decide approvals). See docs/ACP_EDITORS.md.",
+        epilog="examples:\n"
+               "  nerva acp --check\n"
+               "  python /path/to/jarvis-hub/scripts/nerva.py acp   # the command an editor launches",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    acp.add_argument("--check", action="store_true",
+                     help="check the hub, the credential and the protocol setup, then exit")
+    acp.add_argument("--permission-timeout", type=float, metavar="SECONDS", default=None,
+                     help="seconds the editor has to answer a permission before it is a reject "
+                          "(default JARVIS_ACP_PERMISSION_TIMEOUT, else 300)")
+
     send = verbs.add_parser(
         "send",
         help="message a configured channel, or reply to an inbox thread (scripts, cron, CI)",
@@ -5665,6 +5683,41 @@ def _write_usage(path: str, report: dict[str, Any], ctx: Context) -> None:
                 os.unlink(temporary)
 
 
+def cmd_acp(ns: argparse.Namespace, ctx: Context) -> int:
+    """``nerva acp`` (G11): the ACP agent on stdio. stdout is the protocol channel."""
+    from agents.core.acp.server import DEFAULT_PERMISSION_TIMEOUT
+    from agents.core.env_config import env_float
+
+    timeout = ns.permission_timeout
+    if timeout is None:
+        timeout = env_float("JARVIS_ACP_PERMISSION_TIMEOUT", DEFAULT_PERMISSION_TIMEOUT)
+    if not 1 <= timeout <= 24 * 3600:
+        ctx.err.write("--permission-timeout must be between 1 and 86400 seconds\n")
+        return EXIT_USAGE
+    client = ctx.client()
+    if ns.check:
+        health = client.get("/api/commands")
+        commands = len((health or {}).get("commands") or []) if isinstance(health, dict) else 0
+        ctx.err.write(f"hub: {client.base_url} answers ({commands} commands)\n")
+        if not client.admin_token:
+            ctx.err.write("JARVIS_ADMIN_TOKEN is not set: turns run, but approvals cannot be decided "
+                          "from the editor and editor MCP servers cannot be added\n")
+            return EXIT_AUTH
+        client.get("/autonomy/approvals")
+        ctx.err.write(f"credential: approvals readable; permission timeout {timeout:g} s\n")
+        ctx.err.write("ok: point the editor at `python <checkout>/scripts/nerva.py acp` (docs/ACP_EDITORS.md)\n")
+        return EXIT_OK
+    import asyncio
+
+    from .acp_hub import serve_stdio
+
+    try:
+        asyncio.run(serve_stdio(client, permission_timeout=timeout))
+    except KeyboardInterrupt:
+        return EXIT_INTERRUPTED
+    return EXIT_OK
+
+
 def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
     """One scripted turn. H002 — a turn in, an answer out, and an exit code a script can trust.
 
@@ -6783,6 +6836,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "sessions": cmd_sessions,
     "todo": cmd_todo,
     "chat": cmd_chat,
+    "acp": cmd_acp,
     "send": cmd_send,
     "desktop": cmd_desktop,
     "support": cmd_support,

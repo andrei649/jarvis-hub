@@ -1274,6 +1274,9 @@ class ChatRequest(BaseModel):
     agent: str = "jarvis"
     reasoning: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"] | None = None
     session_id: str | None = None
+    # G11 (H544): /chat/stream only — also send the turn's bounded tool events (tool, call
+    # id, status; never arguments or results) as `tool` events, for an editor's tool cards.
+    tool_events: bool = False
 
     @field_validator("session_id")
     @classmethod
@@ -1720,7 +1723,8 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
 
 
 async def _chat_event_stream(orch, message: str, agent: str, agent_override, principal=None, reasoning=None, session_id=None,
-                             attached=None, own_words=None, pending_actor=None, pending_current=None, refused=None):
+                             attached=None, own_words=None, pending_actor=None, pending_current=None, refused=None,
+                             tool_events=False):
     """SSE producer for /chat/stream — cancellation-safe (AUD-7 / F8).
 
     The model turn runs in a background ``runner`` task feeding a queue; this
@@ -1776,7 +1780,19 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             except RuntimeError:
                 loop.call_soon_threadsafe(queue.put_nowait, event)
 
-        with turn_usage_scope() as collector, turn_stops_scope() as stops:
+        def tool_progress(row):
+            # G11 (H544): already cut to tool/call id/status by the trail itself.
+            try:
+                if asyncio.get_running_loop() is loop:
+                    queue.put_nowait(("tool", row))
+                    return
+            except RuntimeError:
+                pass
+            loop.call_soon_threadsafe(queue.put_nowait, ("tool", row))
+
+        from agents.core.observability.tool_events import turn_listener
+        listening = turn_listener(tool_progress) if tool_events else nullcontext()
+        with turn_usage_scope() as collector, turn_stops_scope() as stops, listening:
             collector.observe_progress(usage_progress)
             live_usage = collector
             await run_in_scope(collector, stops, usage_progress)
@@ -1875,6 +1891,8 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
                 yield f"data: {json.dumps({'type': 'token', 'text': data})}\n\n"
             elif kind == "outcome_progress":
                 yield f"data: {json.dumps({'type': 'outcome_progress', 'outcome': data})}\n\n"
+            elif kind == "tool":
+                yield f"data: {json.dumps({'type': 'tool', 'event': data})}\n\n"
             elif kind == "clarify":
                 prompt, acknowledged = data
                 yield f"data: {json.dumps(prompt)}\n\n"
@@ -1947,7 +1965,7 @@ async def chat_stream(req: ChatRequest, request: Request):
         _chat_event_stream(orch, message, req.agent, agent_override, principal=_web_principal(request), reasoning=req.reasoning, session_id=req.session_id,
                            attached=expansion, own_words=req.message, pending_actor=actor,
                            pending_current=lambda: actor is not None and http_actor(request) == actor,
-                           refused=refused),
+                           refused=refused, tool_events=req.tool_events),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -2145,6 +2163,7 @@ from agents.core.routers.agents_api import router as _agents_api_router  # noqa:
 from agents.core.routers.dashboard import dashboard  # noqa: E402  (re-export: MCP route-tool + drift guard resolve web.dashboard)
 from agents.core.routers.payments import router as _payments_router  # noqa: E402
 from agents.core.routers.mcp import router as _mcp_router  # noqa: E402
+from agents.core.routers.acp import router as _acp_router  # noqa: E402  (G11 editor agent)
 from agents.core.routers.voice import router as _voice_router  # noqa: E402
 from agents.core.routers.eval import router as _eval_router  # noqa: E402
 from agents.core.routers.heartbeat import router as _heartbeat_router  # noqa: E402
@@ -2232,6 +2251,7 @@ app.include_router(_integrations_router)
 app.include_router(_dashboard_router)
 app.include_router(_payments_router)
 app.include_router(_mcp_router)
+app.include_router(_acp_router)
 app.include_router(_agents_api_router)
 app.include_router(_voice_router)
 app.include_router(_multimodal_router)

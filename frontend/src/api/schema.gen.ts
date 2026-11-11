@@ -1418,6 +1418,104 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Auth Session
+         * @description Whether this browser holds a live owner session (and its CSRF token if so).
+         *
+         *     Open by design: an anonymous caller learns only ``signed_in: false``, whether the hub
+         *     has an owner credential to sign in with, and whether this transport allows browser
+         *     sign-in. The CSRF token comes back solely for a valid session cookie sent with
+         *     positive same-origin evidence. Reading it counts as use (the HUD reads it on load),
+         *     so it refreshes the idle clock.
+         */
+        get: operations["auth_session_api_auth_session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Login
+         * @description Exchange the owner secret for a browser session cookie.
+         *
+         *     Same-origin and ``application/json`` only (a cross-site form cannot send either);
+         *     over plain HTTP from another device only with ``JARVIS_ALLOW_INSECURE_SIGNIN=1``.
+         *     Throttled per address before the secret is checked; the hub-wide failure count
+         *     never refuses a correct secret (anyone could otherwise lock the owner out), it only
+         *     slows and refuses wrong ones. Loopback is exempt from both. The secret is compared
+         *     in constant time. Each sign-in rotates the session: the one the browser presented
+         *     is revoked.
+         */
+        post: operations["auth_login_api_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Logout
+         * @description Sign this browser out: revoke the session it presents and expire the cookie.
+         *
+         *     Needs no other credential — it can only end the session it is shown — but a
+         *     cross-origin request is refused so another site cannot sign the owner out.
+         */
+        post: operations["auth_logout_api_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/logout-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Logout All
+         * @description Sign out everywhere: revoke every owner browser session (owner only; a cookie
+         *     caller must send its CSRF token, which the admin guard checks).
+         */
+        post: operations["auth_logout_all_api_auth_logout_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/quickbar/resolve": {
         parameters: {
             query?: never;
@@ -10542,6 +10640,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/acp/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Acp Open Session
+         * @description Open a conversation for an editor folder (``session/new``).
+         */
+        post: operations["acp_open_session_api_acp_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/sessions/{session_id}/mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Acp Add Session Mcp
+         * @description Register an editor-supplied MCP server for this conversation only (H545).
+         */
+        post: operations["acp_add_session_mcp_api_acp_sessions__session_id__mcp_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Acp Close Session
+         * @description The editor closed the session: remove its MCP servers, forget its folder.
+         */
+        delete: operations["acp_close_session_api_acp_sessions__session_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agents": {
         parameters: {
             query?: never;
@@ -15227,6 +15385,24 @@ export interface components {
              */
             name: string;
         };
+        /** AcpMcpBody */
+        AcpMcpBody: {
+            /** Name */
+            name: string;
+            /** Command */
+            command: string;
+            /** Args */
+            args?: string[];
+            /** Env */
+            env?: {
+                [key: string]: string;
+            };
+        };
+        /** AcpSessionBody */
+        AcpSessionBody: {
+            /** Cwd */
+            cwd: string;
+        };
         /** AcquisitionCaseBody */
         AcquisitionCaseBody: {
             /** Input */
@@ -15744,6 +15920,11 @@ export interface components {
             reasoning?: ("none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra") | null;
             /** Session Id */
             session_id?: string | null;
+            /**
+             * Tool Events
+             * @default false
+             */
+            tool_events: boolean;
         };
         /** ChatResponse */
         ChatResponse: {
@@ -20842,6 +21023,86 @@ export interface operations {
         };
     };
     pairing_revoke_links_api_channels_pairing_link_revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    auth_session_api_auth_session_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    auth_login_api_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    auth_logout_api_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    auth_logout_all_api_auth_logout_all_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -34897,6 +35158,105 @@ export interface operations {
                 };
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acp_open_session_api_acp_sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcpSessionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acp_add_session_mcp_api_acp_sessions__session_id__mcp_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcpMcpBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acp_close_session_api_acp_sessions__session_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
