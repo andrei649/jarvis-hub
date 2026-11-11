@@ -1179,6 +1179,7 @@
         "tests/test_h330_skill_delete_references.py",
         "tests/test_h331_pending_skill_review.py",
         "tests/test_h336_catalog_owner_install.py",
+        "tests/test_h348_skill_consolidation.py",
         "tests/test_h349_review2_fixes.py",
         "tests/test_h349_review3_fixes.py",
         "tests/test_h349_review4_fixes.py",

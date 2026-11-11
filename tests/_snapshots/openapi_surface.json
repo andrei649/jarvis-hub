@@ -713,6 +713,7 @@
   "POST /api/skills/bundles": "create_skill_bundle_api_skills_bundles_post",
   "POST /api/skills/bundles/reload": "reload_skill_bundles_api_skills_bundles_reload_post",
   "POST /api/skills/catalog/install": "catalog_install_api_skills_catalog_install_post",
+  "POST /api/skills/consolidation/analyze": "skills_consolidation_analyze_api_skills_consolidation_analyze_post",
   "POST /api/skills/marketplace/install": "marketplace_install_api_skills_marketplace_install_post",
   "POST /api/skills/marketplace/install-zip": "marketplace_install_zip_api_skills_marketplace_install_zip_post",
   "POST /api/skills/marketplace/publish": "marketplace_publish_api_skills_marketplace_publish_post",

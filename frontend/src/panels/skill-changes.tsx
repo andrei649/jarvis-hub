@@ -28,6 +28,7 @@ export function originLabel(origin: unknown): string {
   if (text.startsWith('agent:')) return `agent ${text.slice(6) || '?'}`;
   if (text === 'refine') return '/refine';
   if (text === 'background_review') return 'background review';
+  if (text === 'curator:consolidation') return 'skill consolidation';
   return text || 'unknown';
 }
 

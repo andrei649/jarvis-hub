@@ -11,8 +11,8 @@ Din acestea, **161** au fost reevaluate pe cod în această livrare; **0** păst
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
 | Echivalent | 161 | 23.1% |
-| Parțial | 484 | 69.4% |
-| Lipsă | 16 | 2.3% |
+| Parțial | 485 | 69.6% |
+| Lipsă | 15 | 2.2% |
 | Exclus intenționat | 36 | 5.2% |
 | De reverificat | 0 | 0.0% |
 
@@ -37,7 +37,7 @@ Fiecare rând aparține unui singur domeniu din [areas.json](docs/hermes/areas.j
 | [config](docs/HERMES_CAPABILITIES.md#area-config) — Configuration and settings | own | 18 | 9 | 9 | 0 | 0 | 0 | 30 | seed din dovezi |
 | [env](docs/HERMES_CAPABILITIES.md#area-env) — Environment, install and execution targets | own | 28 | 6 | 21 | 0 | 1 | 0 | 157 | seed din dovezi |
 | [tools](docs/HERMES_CAPABILITIES.md#area-tools) — Agent-callable tools and toolsets | adopt/own | 32 | 9 | 22 | 0 | 1 | 0 | 81 | seed din dovezi |
-| [skills](docs/HERMES_CAPABILITIES.md#area-skills) — Skills: authoring, catalogue and curation | adopt/own | 33 | 14 | 17 | 1 | 1 | 0 | 79 | seed din dovezi |
+| [skills](docs/HERMES_CAPABILITIES.md#area-skills) — Skills: authoring, catalogue and curation | adopt/own | 33 | 14 | 18 | 0 | 1 | 0 | 80 | seed din dovezi |
 | [providers](docs/HERMES_CAPABILITIES.md#area-providers) — Model providers, routing and fallback | adopt/own | 27 | 6 | 17 | 0 | 4 | 0 | 82 | seed din dovezi |
 | [agent-core](docs/HERMES_CAPABILITIES.md#area-agent-core) — Agent loop, context and sessions | own | 36 | 11 | 25 | 0 | 0 | 0 | 112 | seed din dovezi |
 | [memory](docs/HERMES_CAPABILITIES.md#area-memory) — Memory and recall | own | 27 | 9 | 18 | 0 | 0 | 0 | 69 | seed din dovezi |

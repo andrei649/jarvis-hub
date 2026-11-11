@@ -1762,6 +1762,39 @@ async def skills_batch(body: SkillBatchBody):
                         headers={"Cache-Control": "no-store"})
 
 
+class SkillConsolidationBody(BaseModel):
+    """H348: the owner asks which skills overlap and, with ``draft``, for umbrella proposals."""
+
+    model_config = {"extra": "forbid"}
+
+    threshold: float = Field(0.35, ge=0.1, le=1.0)
+    max_groups: int = Field(3, ge=1, le=3)
+    draft: StrictBool = True
+
+
+@router.post("/api/skills/consolidation/analyze", dependencies=[Depends(admin_guard)])
+async def skills_consolidation_analyze(body: SkillConsolidationBody):
+    """H348 — find overlapping skills locally (TF-IDF similarity) and, with ``draft``, have the
+    local model draft one umbrella skill per group. Each draft becomes one skill batch
+    (create the umbrella, delete each member ``absorbed_into`` it) with one approval card;
+    nothing changes until the owner approves that card. Only ever runs when the owner asks."""
+    from agents.core.skills.consolidation import ConsolidationLedger, analyze
+
+    orch = get_orch()
+    loader = getattr(orch, "skills", None) if orch else None
+    if loader is None:
+        return component_unavailable("skills are not available")
+    from agents.core.paths import data_path
+
+    result = await analyze(loader, usage=getattr(orch, "skill_usage", None),
+                           batches=getattr(orch, "skill_batches", None),
+                           queue=getattr(orch, "action_approvals", None),
+                           ledger=ConsolidationLedger(data_path("learning", "skill_consolidations.json")),
+                           router=getattr(orch, "llm_router", None), threshold=body.threshold,
+                           max_groups=body.max_groups, draft=body.draft)
+    return JSONResponse(result, headers={"Cache-Control": "no-store"})
+
+
 @router.get("/api/skills/batches", dependencies=[Depends(admin_guard)])
 async def skill_batches():
     """The skill batches the model proposed and the owner has not decided (H665): each

@@ -4,6 +4,14 @@
 
 ### What changed for you — 2026-11-11
 
+**Merge overlapping skills, only when you say so**
+- In the Decision Inbox, "find overlaps" shows which of your skills cover the same ground
+  (measured on this machine). "draft umbrellas" asks your local model to write one umbrella
+  skill per group; each becomes a skill batch with every diff, waiting for your approval.
+- Nothing changes until you approve the card. Approving creates the umbrella skill and
+  archives the skills it replaces (they can be moved back); rejecting changes nothing.
+  Nerva never runs this on its own.
+
 **Matrix: no plain text into encrypted rooms**
 - Before Nerva writes to a Matrix room it checks whether the room is end-to-end encrypted.
   Nerva cannot encrypt Matrix messages yet, so it no longer posts plain text into an

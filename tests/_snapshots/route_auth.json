@@ -717,6 +717,7 @@
   "POST /api/skills/bundles": "admin",
   "POST /api/skills/bundles/reload": "admin",
   "POST /api/skills/catalog/install": "admin",
+  "POST /api/skills/consolidation/analyze": "admin",
   "POST /api/skills/marketplace/install": "admin",
   "POST /api/skills/marketplace/install-zip": "admin",
   "POST /api/skills/marketplace/publish": "admin",

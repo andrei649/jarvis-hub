@@ -33,7 +33,7 @@ import { ResetAll, ResetCategory, SettingsSearch, SettingsTransfer, UndoReset, s
 import { useSelectionGuard, type GuardFlags } from './selection-guard';
 import { PLANS_PATH, PlansInFlight } from './panels/plans';
 import { SKILL_CHANGES_PATH, SkillChangesInbox } from './panels/skill-changes';
-import { BatchReferences, SKILL_BATCHES_PATH, SkillBatchEditor, SkillBatchesInbox } from './panels/skill-batches';
+import { BatchReferences, SKILL_BATCHES_PATH, SkillBatchEditor, SkillBatchesInbox, SkillConsolidation } from './panels/skill-batches';
 import { RETENTION_KIND, RetentionBanner, RetentionCard, refusedWhy, saveOrder, sentFor } from './panels/retention';
 import { VOICE_COMMAND_KIND, VoiceCommandCard, VoiceCommands } from './panels/voice-commands';
 import { CodeIntelPanel } from './panels/codeintel';
@@ -3805,6 +3805,7 @@ export function DecisionInboxPanel() {
       <SkillChangesInbox reply={changes.d} error={changes.e} onDecided={changes.reload} />
       <SkillBatchesInbox reply={batches.d} error={batches.e} onDecided={batches.reload} />
       <SkillBatchEditor onApplied={batches.reload} />
+      <SkillConsolidation onProposed={batches.reload} />
       <PlansInFlight reply={plans.d} error={plans.e} />
     </Card></div>
   );
