@@ -529,7 +529,8 @@ _CLIENT_GLOBS = (
 # inheriting a bare list. The audit's own count came down from 86 to 68 precisely because
 # entries like these had been miscounted as missing UI.
 MACHINE_FACING: dict[str, str] = {
-    "/api/acp/sessions": "G11: `nerva acp` opens a conversation for an editor folder (ACP session/new)",
+    "/chat/interrupt": "H224: Ctrl+C in `nerva chat -i` stops the caller's own running /chat turn",
+    "/api/acp/sessions":"G11: `nerva acp` opens a conversation for an editor folder (ACP session/new)",
     "/api/acp/sessions/{session_id}": "G11: `nerva acp` closes an editor session and its MCP servers",
     "/api/acp/sessions/{session_id}/lease": "G11 review: `nerva acp` renews its sessions' lease while the editor is connected",
     "/api/acp/sessions/{session_id}/mcp": (

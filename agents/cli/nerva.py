@@ -906,6 +906,7 @@ def build_parser() -> argparse.ArgumentParser:
                "  echo \"summarise this\" | nerva chat -z --usage-file spend.json\n"
                "  nerva chat -z -f prompt.txt --agent athena\n"
                "  nerva chat -z --image screenshot.png \"what does this error say?\"\n"
+               "  nerva chat -i            (the interactive chat on this terminal; /keys inside)\n"
                "\n"
                "This verb never auto-approves. If the turn queues an action for approval it\n"
                "stays queued: stdout is empty, the exit code is 1, and stderr names what to\n"
@@ -935,6 +936,12 @@ def build_parser() -> argparse.ArgumentParser:
     selection.add_argument("-c", "--continue", dest="continue_latest", action="store_true",
                            help="use the latest unarchived conversation and print a free recap")
     chat.add_argument("--json", action="store_true")
+    chat.add_argument("-i", "--interactive", action="store_true",
+                      help="an interactive chat on this terminal (H224): Enter sends, Alt+Enter is a "
+                           "newline, Ctrl+C clears / stops the turn / exits, Tab completes, "
+                           "/keys lists the rest")
+    chat.add_argument("--no-history", action="store_true",
+                      help="with -i: keep no history file")
     chat.add_argument("--no-prompts", action="store_true",
                       help="do not answer the turn's questions, secret requests or approvals here, "
                            "even on a terminal")
@@ -5913,6 +5920,41 @@ def cmd_acp(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+def _interactive_chat(ns: argparse.Namespace, ctx: Context) -> int:
+    """H224 — `nerva chat -i`: the interactive terminal chat (agents/cli/repl.py)."""
+    conflicts = [flag for flag, given in (
+        ("MESSAGE", ns.message), ("--file", ns.file), ("-z", getattr(ns, "oneshot", False)),
+        ("--json", ns.json), ("--usage-file", getattr(ns, "usage_file", None)),
+        ("--image", getattr(ns, "image", None)), ("--clipboard-image", getattr(ns, "clipboard_image", False)),
+        ("--no-prompts", getattr(ns, "no_prompts", False))) if given]
+    if conflicts:
+        ctx.err.write(f"-i is the interactive chat; {', '.join(conflicts)} belong to a scripted turn\n")
+        return EXIT_USAGE
+    if not (_is_tty(ctx.inp) and _is_tty(ctx.out)):
+        ctx.err.write("-i needs a terminal on stdin and stdout; a script uses `nerva chat MESSAGE`\n")
+        return EXIT_USAGE
+    session = getattr(ns, "session", None)
+    selector = getattr(ns, "resume", None)
+    if selector or getattr(ns, "continue_latest", False):
+        if selector and selector.startswith("@"):
+            ctx.err.write("-i resumes the hub's own sessions; import a foreign one with "
+                          "`nerva chat -r @claude MESSAGE` first\n")
+            return EXIT_USAGE
+        try:
+            resolved = ctx.client().post("/sessions/resolve", {
+                "selector": selector or "latest", "latest_mode": bool(getattr(ns, "continue_latest", False))})
+        except HubError as exc:
+            ctx.err.write(f"{_plain(exc, 300)}\n")
+            return EXIT_AUTH if exc.status in (401, 403) else EXIT_FAILED
+        session = resolved.get("session_id") if isinstance(resolved, dict) else None
+    from .repl import Repl, load_readline
+
+    repl = Repl(ctx, session_id=session if isinstance(session, str) and session else None,
+                agent=ns.agent or None, reasoning=getattr(ns, "reasoning", None),
+                history=not getattr(ns, "no_history", False), readline_module=load_readline())
+    return repl.run()
+
+
 def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
     """One scripted turn. H002 — a turn in, an answer out, and an exit code a script can trust.
 
@@ -5922,6 +5964,8 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
     verb reports it on stderr and exits non-zero, and there is no flag that changes that.
     Nothing in this function can approve, execute or bypass a queued item.
     """
+    if getattr(ns, "interactive", False):
+        return _interactive_chat(ns, ctx)
     oneshot = bool(getattr(ns, "oneshot", False))
     usage_file = getattr(ns, "usage_file", None)
     if usage_file is not None and not str(usage_file).strip():

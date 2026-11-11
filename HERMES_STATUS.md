@@ -11,8 +11,8 @@ Din acestea, **161** au fost reevaluate pe cod în această livrare; **0** păst
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
 | Echivalent | 161 | 23.1% |
-| Parțial | 489 | 70.2% |
-| Lipsă | 11 | 1.6% |
+| Parțial | 490 | 70.3% |
+| Lipsă | 10 | 1.4% |
 | Exclus intenționat | 36 | 5.2% |
 | De reverificat | 0 | 0.0% |
 
@@ -33,7 +33,7 @@ Fiecare rând aparține unui singur domeniu din [areas.json](docs/hermes/areas.j
 | [platforms](docs/HERMES_CAPABILITIES.md#area-platforms) — Messaging platforms and channels | own | 39 | 3 | 30 | 0 | 6 | 0 | 41 | seed din dovezi |
 | [web](docs/HERMES_CAPABILITIES.md#area-web) — Web dashboard and HUD | own/run | 40 | 13 | 25 | 0 | 2 | 0 | 68 | seed din dovezi |
 | [desktop](docs/HERMES_CAPABILITIES.md#area-desktop) — Desktop app: jobs done in the HUD and Tauri shell | own | 54 | 5 | 46 | 1 | 2 | 0 | 52 | seed din dovezi |
-| [tui](docs/HERMES_CAPABILITIES.md#area-tui) — Terminal UI: jobs done in the HUD and nerva CLI | own | 25 | 2 | 19 | 2 | 2 | 0 | 25 | **subțire**, seed din dovezi |
+| [tui](docs/HERMES_CAPABILITIES.md#area-tui) — Terminal UI: jobs done in the HUD and nerva CLI | own | 25 | 2 | 20 | 1 | 2 | 0 | 26 | **subțire**, seed din dovezi |
 | [config](docs/HERMES_CAPABILITIES.md#area-config) — Configuration and settings | own | 18 | 9 | 9 | 0 | 0 | 0 | 30 | seed din dovezi |
 | [env](docs/HERMES_CAPABILITIES.md#area-env) — Environment, install and execution targets | own | 28 | 6 | 21 | 0 | 1 | 0 | 157 | seed din dovezi |
 | [tools](docs/HERMES_CAPABILITIES.md#area-tools) — Agent-callable tools and toolsets | adopt/own | 32 | 9 | 22 | 0 | 1 | 0 | 81 | seed din dovezi |

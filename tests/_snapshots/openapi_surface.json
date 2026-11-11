@@ -807,6 +807,7 @@
   "POST /autonomy/tasks/{task_id}/consent": "autonomy_consent_autonomy_tasks__task_id__consent_post",
   "POST /autonomy/tasks/{task_id}/decision": "autonomy_decide_autonomy_tasks__task_id__decision_post",
   "POST /chat": "chat_chat_post",
+  "POST /chat/interrupt": "interrupt_turn_chat_interrupt_post",
   "POST /chat/pending/{prompt_id}/answer": "answer_pending_chat_pending__prompt_id__answer_post",
   "POST /chat/stream": "chat_stream_chat_stream_post",
   "POST /heartbeat/{agent_id}/run": "heartbeat_run_heartbeat__agent_id__run_post",

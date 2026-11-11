@@ -811,6 +811,7 @@
   "POST /autonomy/tasks/{task_id}/consent": "admin",
   "POST /autonomy/tasks/{task_id}/decision": "admin",
   "POST /chat": "user",
+  "POST /chat/interrupt": "user",
   "POST /chat/pending/{prompt_id}/answer": "user",
   "POST /chat/stream": "user",
   "POST /heartbeat/{agent_id}/run": "admin",

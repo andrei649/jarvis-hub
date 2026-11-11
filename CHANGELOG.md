@@ -4,6 +4,23 @@
 
 ### What changed for you — 2026-11-11
 
+**An interactive chat in the terminal: `nerva chat -i`**
+- Enter sends. Alt+Enter adds a new line, and so does Shift+Enter on terminals that report
+  it separately. A line ending in `\` also continues on the next line. A multi-line paste
+  arrives as one message.
+- Ctrl+C clears what you are typing. On an empty line while Nerva is working, it stops that
+  turn; only a turn your own credential started can be stopped. When nothing is running, a
+  second Ctrl+C (or Ctrl+D) leaves.
+- Ctrl+X Ctrl+E or `/edit` opens your `$VISUAL`/`$EDITOR` on a private temporary file, and
+  the text comes back as your draft. Ctrl+L redraws the screen. Esc Esc discards the draft,
+  and Ctrl+Y brings it back.
+- Tab completes slash commands you may run and `@file:` paths. Up and Down go through your
+  history, which is kept in a private file (`--no-history` to keep none).
+- Messages you type while a turn runs wait in a queue (`/queue` to see or drop them).
+  `/image PATH` or `/paste-image` sends your next message, with the image, to the vision
+  model. `/switch` moves between your sessions. `/model` picks the hub's local model
+  (owner only). `/keys` lists every key.
+
 **Merge overlapping skills, only when you say so**
 - In the Decision Inbox, "find overlaps" shows which of your skills cover the same ground
   (measured on this machine). "draft umbrellas" asks your local model to write one umbrella

@@ -158,3 +158,48 @@ is read from the terminal and the exit codes above are unchanged.
 Questions and secret prompts need the clarification preview to be on:
 `nerva config set channels.pending_inputs_enabled true`, then restart the hub. It is
 off by default; while it is off the model has no `clarify` or `request_secret` tool.
+
+## The interactive chat: `nerva chat -i` (H224)
+
+`nerva chat -i` keeps a conversation open on the terminal. It needs a terminal on stdin
+and stdout, writes no receipt, and refuses the scripted-turn flags (`MESSAGE`, `-f`, `-z`,
+`--json`, `--usage-file`, `--image`, `--no-prompts`). `--session`, `-r`/`-c` (the hub's
+own sessions), `--agent` and `--reasoning` apply to every turn. It is built on GNU
+readline from the standard library.
+
+| Key | What it does |
+|---|---|
+| Enter | send |
+| Alt+Enter, Shift+Enter | new line in the message. Shift+Enter works only where the terminal sends it as its own sequence (kitty and other CSI-u terminals, xterm with modifyOtherKeys). A trailing `\` also continues the message. |
+| Ctrl+C | 1) clear the draft; 2) on an empty draft while a turn runs, stop it; 3) when idle, arm exit, and a second press within 3 s leaves |
+| Ctrl+D | leave (on an empty line) |
+| Ctrl+X Ctrl+E, `/edit [text]` | compose in `$VISUAL`/`$EDITOR`. The editor is run without a shell on an owner-only (0600) temporary file, which is removed afterwards; the saved text becomes the draft |
+| Ctrl+L | redraw |
+| Esc Esc | discard the draft (Ctrl+Y brings it back) |
+| Tab, Shift+Tab | cycle completions: the slash commands this credential may run (`GET /api/commands`), the client commands below, and `@file:` paths (`GET /api/context-refs`) |
+| Up, Down | history |
+| paste | bracketed paste: a multi-line paste is one message |
+
+Client commands, never sent to the hub: `/edit`, `/image PATH` and `/paste-image` (the
+next message goes to the vision model with the image, as `--image` does), `/switch`
+(list your sessions, then `/switch N`, `/switch <id>` or `/switch new`), `/model` (the
+hub's local models; switching uses the owner's admin route, so a user token is told
+no), `/queue` (messages typed while a turn runs wait here: `/queue drop N`,
+`/queue clear`), `/keys`, `/exit`. Any other line, hub slash commands included, is sent
+to the hub.
+
+**Stopping a turn.** Ctrl+C calls `POST /chat/interrupt`. The hub stops only turns
+started with the same credential as the caller (in the current session once the chat
+has one). The stopped turn answers *Interrupted. Nothing more was done for this message.*
+with a `turn_interrupted` notice. A step already done is not undone. An older hub
+without the route says so, and the turn runs to its end.
+
+**History** is kept in `<data>/cli/chat_history.jsonl`: owner-only (0600), the last
+1,000 messages, multi-line messages kept whole. A line that looks like a key or token
+is never written. `--no-history` keeps no file.
+
+Questions a turn asks while it runs, and the approval cards it queued, are shown when
+they arrive; press Enter to answer them (the same prompts as above). Not available:
+Up/Down through a completion menu (readline has none), detecting an image pasted with
+Cmd/Ctrl+V, and the mouse. With macOS's libedit Python only Tab completion is bound,
+and without readline (Windows) the prompt is plain input.

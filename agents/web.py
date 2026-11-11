@@ -1713,9 +1713,22 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
                         await _bind_status_scope(collector, orch, req.session_id or getattr(orch, "session_id", None))
                         conversation_token = code_interruptions.bind_conversation(
                             str(req.session_id or getattr(orch, "session_id", None) or ""))
+                        # H224: the caller (and only the caller's credential) can stop this
+                        # turn with POST /chat/interrupt; it then ends with a reply.
+                        from agents.core import turn_interrupts
+                        from agents.core import turn_notices as turn_notices_mod
+                        from agents.core.routers.chat_pending import http_actor
                         try:
-                            reply = await orch.handle_input(message, channel="web", agent_override=req.agent if req.agent != "jarvis" else None,
-                                                           **({"session_id": req.session_id} if req.session_id is not None else {}))
+                            with turn_interrupts.track(http_actor(request),
+                                                       req.session_id or getattr(orch, "session_id", None)) as live:
+                                try:
+                                    reply = await orch.handle_input(message, channel="web", agent_override=req.agent if req.agent != "jarvis" else None,
+                                                                   **({"session_id": req.session_id} if req.session_id is not None else {}))
+                                except asyncio.CancelledError:
+                                    if not turn_interrupts.absorb(live):
+                                        raise
+                                    reply = turn_interrupts.INTERRUPTED_REPLY
+                                    turn_notices_mod.record_turn_notice(turn_interrupts.NOTICE_CODE, turn_interrupts.NOTICE_TEXT)
                         finally:
                             code_interruptions.reset_conversation(conversation_token)
         finally:

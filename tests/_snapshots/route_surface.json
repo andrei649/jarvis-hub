@@ -807,6 +807,7 @@
   "POST /autonomy/tasks/{task_id}/consent",
   "POST /autonomy/tasks/{task_id}/decision",
   "POST /chat",
+  "POST /chat/interrupt",
   "POST /chat/pending/{prompt_id}/answer",
   "POST /chat/stream",
   "POST /heartbeat/{agent_id}/run",
