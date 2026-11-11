@@ -44,7 +44,8 @@ async def test_registered_file_intake_is_signed_typed_and_classified(tmp_path, m
     assert queued.payload["class"] == "agent_instructions"
     assert queued.payload["steers_future_runs"] is True
     assert "this file steers future runs" in queued.title
-    assert queued.payload["args"] == args
+    # G11 review B1: the signed card names the exact file — stored absolute at intake.
+    assert queued.payload["args"] == {**args, "path": str(root / "SOUL.md")}
     assert [action.kind for action in calls] == ["toolrpc." + tool]
     assert (root / "SOUL.md").read_text() == "before"
 

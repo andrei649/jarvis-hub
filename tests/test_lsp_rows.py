@@ -858,6 +858,35 @@ def test_the_sandbox_is_an_allowlist_home_and_data_root_stay_unreadable(tmp_path
     assert "TOP-SECRET-VALUE" not in out.stdout + out.stderr
 
 
+@pytest.mark.skipif(confine.isolation() != "bwrap", reason="bubblewrap cannot create namespaces here")
+def test_an_interpreter_spelled_through_a_symlinked_directory_still_runs(tmp_path):
+    """A ``#!`` venv reached through a symlinked directory (a worktree's ``.venv`` link):
+    the kernel execs the spelled path, so the resolved venv is bound there too."""
+    import subprocess
+
+    real = tmp_path / "real-venv"
+    (real / "bin").mkdir(parents=True)
+    (real / "bin" / "python").symlink_to(os.path.realpath(sys.executable))
+    (tmp_path / "tree").mkdir()
+    (tmp_path / "tree" / ".venv").symlink_to(real, target_is_directory=True)
+    binary = tmp_path / "srv" / "langserver"
+    binary.parent.mkdir()
+    binary.write_text(f"#!{tmp_path}/tree/.venv/bin/python\nprint('started')\n", encoding="utf-8")
+    binary.chmod(0o755)
+    (tmp_path / "tree" / "secret.txt").write_text("TREE-ONLY\n", encoding="utf-8")
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    state = tmp_path / "state"
+    state.mkdir()
+    assert confine.interpreter_aliases(str(binary)) == (
+        (real.resolve(), tmp_path / "tree" / ".venv"), (real.resolve() / "bin", tmp_path / "tree" / ".venv" / "bin"))
+    argv, _ = confine.wrap([str(binary)], root=ws, state_dir=state)
+    binds = [argv[i + 1] for i, a in enumerate(argv) if a in ("--ro-bind", "--bind")]
+    assert str(tmp_path / "tree") not in binds          # only the venv, never the tree around it
+    out = subprocess.run(argv, capture_output=True, text=True, timeout=20, check=False)
+    assert out.returncode == 0 and out.stdout.strip() == "started", out.stderr
+
+
 def test_a_workspace_holding_the_home_is_refused(tmp_path, monkeypatch):
     if confine.isolation() != "bwrap":
         pytest.skip("bubblewrap cannot create namespaces here")

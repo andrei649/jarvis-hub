@@ -169,34 +169,74 @@ def runtime_dirs(binary: str) -> tuple[Path, ...]:
         candidates += [(path.parent.resolve(), True), (real.parent, True)]
         if real.parent.name == "bin":
             candidates.append((real.parent.parent, False))
-        with real.open("rb") as handle:
-            head = handle.read(256)
-        if head.startswith(b"#!"):
-            parts = head[2:].split(b"\n", 1)[0].decode("utf-8", "replace").split()
-            interp = parts[0] if parts else ""
-            if interp.endswith("/env") and len(parts) > 1:
-                interp = shutil.which(parts[1]) or ""
-            if interp:
-                ip = Path(interp)
-                for one in dict.fromkeys((ip, ip.resolve())):
-                    candidates += [(one.parent.resolve(), True), (one.parent.parent.resolve(), False)]
-                cfg = ip.parent.parent / "pyvenv.cfg"
-                if cfg.is_file():
-                    for line in cfg.read_text(encoding="utf-8", errors="replace").splitlines():
-                        key, _, value = line.partition("=")
-                        if key.strip() == "home" and value.strip():
-                            base = Path(value.strip()).resolve()
-                            candidates += [(base, True), (base.parent, False)]
+        interp = _interpreter(real)
+        if interp:
+            ip = Path(interp)
+            for one in dict.fromkeys((ip, ip.resolve())):
+                candidates += [(one.parent.resolve(), True), (one.parent.parent.resolve(), False)]
+            cfg = ip.parent.parent / "pyvenv.cfg"
+            if cfg.is_file():
+                for line in cfg.read_text(encoding="utf-8", errors="replace").splitlines():
+                    key, _, value = line.partition("=")
+                    if key.strip() == "home" and value.strip():
+                        base = Path(value.strip()).resolve()
+                        candidates += [(base, True), (base.parent, False)]
     except (OSError, ValueError, RuntimeError):
         pass
     found: list[Path] = []
     for directory, exact in candidates:
-        if _contains_hidden(directory, hidden):
-            continue
-        if _under_hidden(directory, hidden) and not exact and not _is_install_prefix(directory):
-            continue
-        found.append(directory)
+        if _allowed_runtime(directory, exact, hidden):
+            found.append(directory)
     return tuple(dict.fromkeys(found))
+
+
+def _allowed_runtime(directory: Path, exact: bool, hidden: list[str]) -> bool:
+    if _contains_hidden(directory, hidden):
+        return False
+    return not (_under_hidden(directory, hidden) and not exact and not _is_install_prefix(directory))
+
+
+def _interpreter(real: Path) -> str:
+    """The interpreter a script's ``#!`` line names (``env NAME`` looked up on PATH), or ""."""
+    with real.open("rb") as handle:
+        head = handle.read(256)
+    if not head.startswith(b"#!"):
+        return ""
+    parts = head[2:].split(b"\n", 1)[0].decode("utf-8", "replace").split()
+    interp = parts[0] if parts else ""
+    if interp.endswith("/env") and len(parts) > 1:
+        interp = shutil.which(parts[1]) or ""
+    return interp
+
+
+def interpreter_aliases(binary: str) -> tuple[tuple[Path, Path], ...]:
+    """``(resolved, spelled)`` for a script's interpreter directories (its prefix, then
+    its ``bin``) whose spelled path runs through a symlinked directory.
+
+    The kernel execs the ``#!`` path exactly as written, but the sandbox binds only
+    resolved directories (:func:`runtime_dirs`), so a venv reached through a symlinked
+    directory (``<tree>/.venv -> /elsewhere/.venv``) has no interpreter inside and the
+    server cannot start. Each pair binds the same resolved directory, under the same
+    allowlist rules, read-only at its spelled location too."""
+    hidden = _hidden_roots()
+    try:
+        interp = _interpreter(Path(binary).resolve())
+    except (OSError, ValueError, RuntimeError):
+        return ()
+    if not interp or not os.path.isabs(interp):
+        return ()
+    ip = Path(os.path.normpath(interp))
+    pairs: list[tuple[Path, Path]] = []
+    for spelled, exact in ((ip.parent.parent, False), (ip.parent, True)):
+        try:
+            resolved = spelled.resolve(strict=True)
+        except (OSError, RuntimeError):
+            continue
+        if resolved == spelled or _contains_hidden(spelled, hidden):
+            continue
+        if _allowed_runtime(resolved, exact, hidden):
+            pairs.append((resolved, spelled))
+    return tuple(pairs)
 
 
 def _system_mounts() -> list[str]:
@@ -253,6 +293,15 @@ def wrap(argv: list[str], *, root: Path, state_dir: Path, read_only: tuple[Path,
         if text not in binds:
             binds.append(text)
             cmd += ["--ro-bind", text, text]
+    # A ``#!`` interpreter spelled through a symlinked directory: the same resolved
+    # directory, also at the spelled path (never inside a bind or a system directory).
+    fixed = (*SYSTEM_DIRS, "/etc", "/proc", "/dev")
+    for resolved, spelled in interpreter_aliases(argv[0]):
+        text = str(spelled)
+        if text in binds or any(Path(b) in spelled.parents for b in (*binds, *fixed)):
+            continue
+        binds.append(text)
+        cmd += ["--ro-bind", str(resolved), text]
     root_text = str(root_path)
     state_text = str(state_dir.resolve())
     cmd += ["--bind" if network else "--ro-bind", root_text, root_text]

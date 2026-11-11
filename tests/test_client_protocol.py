@@ -78,11 +78,15 @@ def test_openapi_schemas_media_and_handler_gaps_are_honest():
         stream["stream_events"]["end"]
     )
     schemas = payload["components"]["schemas"]
+    # ChatAttachment: G11 review M2's editor content beside the prompt (ChatRequest.attachments).
     assert set(schemas) == {
-        "ChatRequest", "ChatResponse", "TurnNotice", "TurnOutcome", "TurnCompletion",
+        "ChatRequest", "ChatAttachment", "ChatResponse", "TurnNotice", "TurnOutcome", "TurnCompletion",
         "TurnToolAccounting", "TurnOutputFlow", "TurnFileMutation", "TurnRecall", "TurnUsageDetail",
     }
     assert schemas["ChatRequest"] == source["components"]["schemas"]["ChatRequest"]
+    assert schemas["ChatAttachment"] == source["components"]["schemas"]["ChatAttachment"]
+    assert schemas["ChatAttachment"]["additionalProperties"] is False
+    assert set(schemas["ChatAttachment"]["required"]) == {"name", "text"}
     assert schemas["ChatResponse"] == source["components"]["schemas"]["ChatResponse"]
     assert schemas["TurnNotice"] == source["components"]["schemas"]["TurnNotice"]
     for name in ("TurnOutcome", "TurnCompletion", "TurnToolAccounting", "TurnOutputFlow", "TurnFileMutation",
