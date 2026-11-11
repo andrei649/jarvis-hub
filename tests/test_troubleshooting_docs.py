@@ -140,6 +140,7 @@ def test_every_python_script_and_flag_exists():
 NOT_SETTINGS = {
     "category.key": None,  # the placeholder in the intro
     "scheduler.timezone": ("agents/core/autonomy/jobs_health.py", '"timezone"'),  # jobs doctor output
+    "health.state": ("agents/core/channels/reconnect.py", '"state": self.state'),  # a channel's /status health row
 }
 
 
