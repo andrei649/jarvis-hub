@@ -12,7 +12,7 @@
    the key (an older hub) shows no catalog section at all — never an empty catalog. */
 import React, { useState } from 'react';
 import { useApi, arr, mono, asLive, Card, State, Row, Tag, Btn, actA, inpS, Json } from '../panel-kit';
-import { apiDelete, apiGet, apiPut } from '../api/client';
+import { apiDelete, apiGet, apiPost, apiPut } from '../api/client';
 
 const IMPORTED_PATH = '/skills/imported';
 const IMPORT_PATH = '/skills/import';
@@ -24,6 +24,12 @@ const CATALOG_INSTALL_PATH = '/api/skills/catalog/install';
 
 /* H342 — a skill's declared variables (admin). The value goes in and never comes back. */
 const SETUP_PATH = '/api/skills/setup';
+
+/* H025/H335 — skill taps: trusted sources, search across them, install through the pinned import. */
+const TAPS_PATH = '/api/skills/taps';
+const TAPS_SEARCH_PATH = '/api/skills/taps/search';
+const TAPS_INSTALL_PATH = '/api/skills/taps/install';
+const TRUST_COLOR: Record<string, string> = { official: 'var(--green)', trusted: 'var(--accent-light)', community: 'var(--amber)' };
 
 /* A local naming hint; the server validates the complete import request. */
 const SLUG_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
@@ -146,6 +152,164 @@ export function SkillSetup({ initial = '' }: { initial?: string }) {
             while a required one is missing.</Note>
         </>
       )}
+    </div>
+  );
+}
+
+/* H025/H335 — the owner's skill sources. A tap is a trust root: adding one only queues an
+   approval card (decision inbox) and nothing is fetched until a person accepts it; the ref is
+   an exact commit. Search ranks official > trusted > community. A tap install goes through
+   POST /skills/import's own pinned, kernel-gated, quarantined import; a catalog row keeps the
+   vendored catalog's install route. The two official pins differ on purpose; the panel says
+   which pin each row installs at. */
+export function SkillTaps({ onInstalled }: { onInstalled?: (skill: string) => void }) {
+  const { d, e, reload } = useApi(TAPS_PATH);
+  const rows: any[] = d && !e ? arr(d, 'taps') : [];
+  const align: any = d && !e ? (d as any).pin_alignment : null;
+  const [repo, setRepo] = useState('');
+  const [commit, setCommit] = useState('');
+  const [path, setPath] = useState('skills');
+  const [trust, setTrust] = useState('community');
+  const [q, setQ] = useState('');
+  const [results, setResults] = useState<any[] | null>(null);
+  const [busy, setBusy] = useState('');
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const addValid = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(repo.trim())
+    && /^[a-f0-9]{40}$/.test(commit.trim()) && !!path.trim();
+  const fail = (what: string) => (err: any) => {
+    const x = refusal(err);
+    setBusy('');
+    setNote({ ok: false, text: `${what}: refused · HTTP ${x.status || '?'} · ${x.text}` });
+  };
+  const add = () => {
+    if (!addValid || busy) return;
+    setBusy('add'); setNote(null);
+    actA(TAPS_PATH, { repo: repo.trim(), commit: commit.trim(), path: path.trim(), trust }, (r: any) => {
+      setBusy('');
+      setNote({ ok: true, text: `approval card #${String(r.task_id)} queued — accept it in the decision inbox to trust ${repo.trim()}@${commit.trim().slice(0, 8)}` });
+      reload();
+    }, fail('add tap'));
+  };
+  const refresh = (id: string) => {
+    if (busy) return;
+    setBusy(id); setNote(null);
+    actA(`/api/skills/taps/${encodeURIComponent(id)}/refresh`, {}, (r: any) => {
+      setBusy('');
+      setNote({ ok: true, text: `${id}: index read at its commit · ${Number(r?.tap?.skills) || 0} skills · ${Number(r?.tap?.refused) || 0} refused` });
+      reload();
+    }, fail(`refresh ${id}`));
+  };
+  const remove = (id: string) => {
+    if (busy) return;
+    setBusy(id); setNote(null);
+    apiDelete(`/api/skills/taps/${encodeURIComponent(id)}`, { admin: true })
+      .then(() => { setBusy(''); setNote({ ok: true, text: `${id} removed` }); reload(); })
+      .catch(fail(`remove ${id}`));
+  };
+  const search = () => {
+    apiGet(`${TAPS_SEARCH_PATH}?q=${encodeURIComponent(q.trim())}&limit=40`)
+      .then((r: any) => setResults(arr(r, 'results')))
+      .catch((err: any) => { setResults(null); setNote({ ok: false, text: `search: HTTP ${err?.status || '?'}` }); });
+  };
+  const install = (row: any) => {
+    if (busy || !row.installable) return;
+    const key = `${row.tap}/${row.slug}`;
+    setBusy(key); setNote(null);
+    const done = (r: any) => {
+      setBusy('');
+      const missing = arr(r?.setup, 'missing').map(String);
+      setNote({ ok: true, text: `${String(row.slug)} from ${String(row.tap)}: ${String(r?.status || (r?.ok ? 'installed' : '—'))}`
+        + (r?.quarantined ? ' · quarantined, pending your review' : '')
+        + (missing.length ? ` · needs ${missing.join(', ')} (Skill setup below)` : '') });
+      if (onInstalled) onInstalled(String(row.slug));
+    };
+    if (row.install === 'catalog') {
+      apiPost(CATALOG_INSTALL_PATH, { skill: String(row.slug), repair: false, force: false }, { admin: true })
+        .then(done).catch(fail(`install ${row.slug}`));
+    } else {
+      apiPost(TAPS_INSTALL_PATH, { tap: String(row.tap), skill: String(row.slug) }, { admin: true })
+        .then(done).catch(fail(`install ${row.slug}`));
+    }
+  };
+  return (
+    <div>
+      {e ? <Amber>taps unavailable · HTTP {statusOf(e) || '?'}</Amber> : rows.map((t: any) => (
+        <Row key={`tap-${t.id}`}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ ...mono, color: 'var(--accent-light)' }}>{String(t.id)}</span>
+              <Tag c={TRUST_COLOR[t.trust] || 'var(--ink-2)'}>{String(t.trust)}</Tag>
+              <Tag c={t.status === 'active' ? 'var(--green)' : 'var(--amber)'}>{t.status === 'pending' ? 'awaiting approval' : String(t.status)}</Tag>
+              {t.release_tag ? <Tag>{String(t.release_tag)}</Tag> : null}
+              {t.commit ? <Tag><span title={String(t.commit)}>@{String(t.commit).slice(0, 8)}</span></Tag> : null}
+              {t.skills != null ? <Tag>{Number(t.skills) || 0} skills</Tag> : null}
+              {t.refused ? <Tag c="var(--red)">{Number(t.refused)} refused</Tag> : null}
+            </div>
+            <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 2 }}>
+              {String(t.repo || '')}{t.path ? `/${String(t.path)}` : ''}{t.note ? ` · ${String(t.note)}` : ''}
+            </div>
+          </div>
+          {!t.builtin && t.status === 'active' && (
+            <button className="tool-btn" disabled={!!busy} aria-label={`refresh ${t.id}`} onClick={() => refresh(String(t.id))}>
+              {busy === t.id ? 'reading…' : 'refresh'}
+            </button>
+          )}
+          {!t.builtin && (
+            <button className="tool-btn" disabled={!!busy} aria-label={`remove ${t.id}`} onClick={() => remove(String(t.id))}>remove</button>
+          )}
+        </Row>
+      ))}
+      {align && align.available && (
+        <Note>
+          official pins: the import pin is {String(align.import_pin?.release_tag)} @{String(align.import_pin?.commit || '').slice(0, 8)};
+          the vendored catalog is @{String(align.catalog_pin?.commit || '').slice(0, 8)}. Of the import pin’s {Number(align.import_pin?.skills) || 0} skills,
+          {' '}{Number(align.same_bytes) || 0} have the same SKILL.md bytes in the catalog, {Number(align.changed) || 0} changed
+          and {Number(align.not_in_catalog) || 0} are not in it. {String(align.why || '')}
+        </Note>
+      )}
+      <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <input aria-label="tap repository" placeholder="owner/repo" value={repo} onChange={(ev) => setRepo(ev.target.value)} style={{ ...inpS, width: 150 }} />
+          <input aria-label="tap commit" placeholder="40-character commit SHA" value={commit} onChange={(ev) => setCommit(ev.target.value)} style={{ ...inpS, flex: 1, minWidth: 160 }} />
+          <input aria-label="tap path" placeholder="skills" value={path} onChange={(ev) => setPath(ev.target.value)} style={{ ...inpS, width: 90 }} />
+          <select aria-label="tap trust" value={trust} onChange={(ev) => setTrust(ev.target.value)} style={inpS}>
+            <option value="community">community</option>
+            <option value="trusted">trusted</option>
+          </select>
+          <button className="tool-btn" disabled={!addValid || !!busy} onClick={add}>{busy === 'add' ? 'asking…' : 'ask to add tap'}</button>
+        </div>
+        <Note>a tap is a trust root: this queues an approval card and does nothing else. Only an exact commit is
+          accepted (a branch or tag can move). After you accept the card, refresh reads the tap’s index at that
+          commit, through the kernel’s egress gate; entries that fail validation are listed as refused.</Note>
+      </div>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+        <input aria-label="search all skill sources" placeholder="search every source" value={q}
+          onChange={(ev) => setQ(ev.target.value)} style={{ ...inpS, flex: 1, minWidth: 120 }} />
+        <button className="tool-btn" onClick={search}>search</button>
+      </div>
+      {results && results.length === 0 && <Note>no source lists a match</Note>}
+      {results && results.map((r: any) => (
+        <Row key={`res-${r.tap}-${r.slug}`}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ ...mono, color: 'var(--accent-light)' }}>{String(r.slug)}</span>
+              <Tag c={TRUST_COLOR[r.trust] || 'var(--ink-2)'}>{String(r.trust)}</Tag>
+              <Tag>{String(r.tap)} @{String(r.commit || '').slice(0, 8)}</Tag>
+              {arr(r, 'required_env').map((k: any) => <Tag key={`renv-${k}`} c="var(--amber)">needs {String(k)}</Tag>)}
+              {arr(r, 'injection_flags').length ? <Tag c="var(--red)">injection-like text</Tag> : null}
+              {r.carries_code ? <Tag c="var(--amber)">has code (not copied)</Tag> : null}
+            </div>
+            {r.description ? <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 2 }}>{String(r.description)}</div> : null}
+            {!r.installable && r.reason ? <Note>not installable: {String(r.reason)}</Note> : null}
+          </div>
+          {r.installable && (
+            <button className="tool-btn" disabled={!!busy} aria-label={`install ${r.slug} from ${r.tap}`} onClick={() => install(r)}>
+              {busy === `${r.tap}/${r.slug}` ? 'installing…' : 'install'}
+            </button>
+          )}
+        </Row>
+      ))}
+      {note && (note.ok ? <Good>{note.text}</Good> : <Fail>{note.text}</Fail>)}
     </div>
   );
 }
@@ -533,6 +697,10 @@ export function SkillsImportPanel() {
             )}
         </>
       )}
+
+      {/* ── 4b · SKILL TAPS (H025/H335) ──────────────────────────────── */}
+      <H>SKILL SOURCES (TAPS) · GET {TAPS_PATH}</H>
+      <SkillTaps onInstalled={() => reload()} />
 
       {/* ── 5 · SKILL SETUP (H342) ────────────────────────────────────── */}
       <H>SKILL SETUP · GET {SETUP_PATH}/&lt;skill&gt;</H>

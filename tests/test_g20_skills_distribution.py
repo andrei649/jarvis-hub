@@ -10,8 +10,10 @@ card, pin a tap to a branch, or install a refused tap entry or bypass the pinned
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -19,10 +21,12 @@ from fastapi.testclient import TestClient
 
 import agents.web as web
 from agents.core import integration_keys
+from agents.core.autonomy import irreversible
 from agents.core.autonomy.policy import AutonomyPolicy
 from agents.core.code_env import CodeEnvRegistry
+from agents.core.routers import skill_taps as taps_router
 from agents.core.security.capability import KillSwitch
-from agents.core.skills import skill_secrets
+from agents.core.skills import skill_secrets, taps
 from agents.core.skills.loader import Skill
 
 ADMIN = {"X-Admin-Token": "owner-test"}
@@ -201,3 +205,198 @@ def test_skill_view_reports_setup_needed(monkeypatch):
     assert unset == ["G20_TOOL_KEY"]
     assert "Skill setup" in skill_secrets.setup_message(skill.name, unset)
     assert hasattr(skill_tools, "declare_skill_environment")
+
+
+# ── H025: taps ─────────────────────────────────────────────────────────────────
+
+def _skill_md(name, description="A tapped skill.", extra=""):
+    return (f"---\nname: {name}\ndescription: {description}\n{extra}---\n\n# {name}\n\nDo the thing.\n").encode()
+
+
+GOOD = _skill_md("good-skill", extra="required_environment_variables:\n  - G20_TOOL_KEY\n")
+REF = b"reference notes\n"
+FILES = {
+    "skills/good-skill/SKILL.md": GOOD,
+    "skills/good-skill/references/notes.md": REF,
+    "skills/good-skill/scripts/run.py": b"print(1)\n",
+    "skills/liar/SKILL.md": _skill_md("someone-else"),
+    "skills/Bad_Name/SKILL.md": _skill_md("Bad_Name"),
+    "skills/broken/SKILL.md": b"no frontmatter at all",
+    "skills/escape/../../etc/SKILL.md": _skill_md("escape"),
+    "docs/README.md": b"not a skill",
+}
+
+
+def _fake_fetcher(log, files=FILES):
+    @asynccontextmanager
+    async def opener(orch, gate):
+        async def fetch(url, limit):
+            from urllib.parse import urlparse
+
+            host = urlparse(url).hostname
+            assert gate("skill-import", "GET", url, host) is None
+            log.append(url)
+            assert COMMIT in url
+            if host == "api.github.com":
+                tree = [{"type": "blob", "path": p} for p in files]
+                return json.dumps({"sha": "t" * 40, "tree": tree, "truncated": False}).encode()
+            return files[url.split(f"/{COMMIT}/", 1)[1]]
+        yield fetch
+    return opener
+
+
+def _add_and_approve(client, orch, *, trust="trusted"):
+    response = client.post("/api/skills/taps", json={"repo": "acme/skills", "commit": COMMIT, "trust": trust},
+                           headers=ADMIN)
+    assert response.status_code == 202, response.text
+    task = orch.autonomy.tasks[response.json()["task_id"]]
+    task.decided_by, task.decision = "owner", "accept"
+    assert asyncio.run(irreversible.execute(task, orch=orch))["status"] == "ok"
+    return task
+
+
+def test_tap_add_needs_admin_a_pinned_commit_and_a_human_accepted_card(monkeypatch, tmp_path):
+    orch = _orch(monkeypatch, tmp_path)
+    client = TestClient(web.app)
+    body = {"repo": "acme/skills", "commit": COMMIT, "trust": "trusted"}
+    assert client.post("/api/skills/taps", json=body).status_code in (401, 403)
+    branch = client.post("/api/skills/taps", json={**body, "commit": "main".ljust(40, "x")}, headers=ADMIN)
+    assert branch.status_code == 422 and branch.json()["error"] == "commit_not_pinned"
+    assert client.post("/api/skills/taps", json={**body, "trust": "official"},
+                       headers=ADMIN).json()["error"] == "invalid_trust"
+    queued = client.post("/api/skills/taps", json=body, headers=ADMIN)
+    assert queued.status_code == 202 and queued.json()["status"] == "pending_approval"
+    task = orch.autonomy.tasks[queued.json()["task_id"]]
+    assert task.kind == taps.APPROVAL_KIND and task.risk_tier == irreversible.RISK_TIER
+    assert task.payload["source_url"] == f"https://github.com/acme/skills/tree/{COMMIT}/skills"
+    assert client.post("/api/skills/taps", json=body, headers=ADMIN).json()["error"] == "exists"
+    # Pending: not searchable, not refreshable.
+    assert all(r["tap"] != "acme--skills" for r in client.get("/api/skills/taps/search?q=good").json()["results"])
+    assert client.post("/api/skills/taps/acme--skills/refresh", json={}, headers=ADMIN).json()["error"] == "not_approved"
+    # A machine decision, or an edited card, does not activate it.
+    task.decided_by, task.decision = "policy", "accept"
+    assert asyncio.run(irreversible.execute(task, orch=orch))["reason"] == "human_decision_required"
+    task.decided_by, task.decision = "owner", "accept"
+    task.payload = {**task.payload, "commit": "d" * 40}
+    assert asyncio.run(irreversible.execute(task, orch=orch))["reason"] == "payload_changed"
+    task.payload = {**task.payload, "commit": COMMIT}
+    assert asyncio.run(irreversible.execute(task, orch=orch))["status"] == "ok"
+    listed = {t["id"]: t for t in client.get("/api/skills/taps").json()["taps"]}
+    assert listed["acme--skills"]["status"] == "active" and listed["acme--skills"]["approved_by"] == "owner"
+    assert any(r["action"] == "skill.tap.add" for r in orch.intent_log.records)
+    # Removing narrows trust at once; built-ins cannot be removed.
+    assert client.delete("/api/skills/taps/acme--skills", headers=ADMIN).json()["removed"] == "acme--skills"
+    assert asyncio.run(irreversible.execute(task, orch=orch))["reason"] == "not_requested"
+
+
+def test_refresh_crosses_egress_and_refuses_untrusted_tap_content(monkeypatch, tmp_path):
+    orch = _orch(monkeypatch, tmp_path)
+    client = TestClient(web.app)
+    _add_and_approve(client, orch)
+    log = []
+    monkeypatch.setattr(taps_router, "_open_fetcher", _fake_fetcher(log))
+    refreshed = client.post("/api/skills/taps/acme--skills/refresh", json={}, headers=ADMIN)
+    assert refreshed.status_code == 200, refreshed.text
+    assert refreshed.json()["egress_grants"] == len(log) >= 3
+    assert all(url.startswith(("https://api.github.com/", "https://raw.githubusercontent.com/")) for url in log)
+    index = {e["slug"]: e for e in taps._read()["taps"][0]["index"]}
+    good = index["good-skill"]
+    assert good["content_sha256"] == hashlib.sha256(GOOD).hexdigest()
+    assert good["references"] == [{"path": "skills/good-skill/references/notes.md",
+                                   "content_sha256": hashlib.sha256(REF).hexdigest()}]
+    assert good["carries_code"] is True and good["required_env"] == ["G20_TOOL_KEY"]
+    assert index["liar"]["refused"] == "name_mismatch"
+    assert index["Bad_Name"]["refused"] == "unsafe_name"
+    assert index["broken"]["refused"] == "invalid_skill_md"
+    assert index["escape"]["refused"] == "unsafe_path"
+    assert not any("escape" in url or "etc" in url for url in log)
+    refused = client.post("/api/skills/taps/install", json={"tap": "acme--skills", "skill": "liar"}, headers=ADMIN)
+    assert refused.status_code == 422 and refused.json()["error"] == "refused_entry"
+    assert orch.skill_importer.calls == []
+
+
+def test_egress_gate_refuses_hosts_outside_the_tap_hosts(monkeypatch, tmp_path):
+    orch = _orch(monkeypatch, tmp_path)
+    gate = taps_router._egress_gate(orch, [0])
+    assert gate("skill-import", "GET", "https://evil.example/x", "evil.example") == "host_not_allowed"
+
+
+def test_real_refresh_client_is_governed_and_follows_no_redirect(monkeypatch, tmp_path):
+    """The production fetcher: the egress client with the kernel gate, no redirects."""
+    import httpx
+
+    orch = _orch(monkeypatch, tmp_path)
+    seen = []
+
+    def transport_factory(_target):
+        def respond(request):
+            # The client pins the resolved address; the name it asked for is the Host header.
+            seen.append(request.headers["host"] + request.url.path)
+            if request.headers["host"] == "api.github.com":
+                return httpx.Response(200, json={"tree": [{"type": "blob", "path": "skills/good-skill/SKILL.md"}]})
+            if request.url.path.endswith("/good-skill/SKILL.md"):
+                return httpx.Response(302, headers={"location": "https://evil.example/x"})
+            return httpx.Response(404)
+        return httpx.MockTransport(respond)
+
+    orch.skill_importer._remote_resolver = lambda host, *, mode: (["93.184.216.34"], None)
+    orch.skill_importer._remote_transport_factory = transport_factory
+    client = TestClient(web.app)
+    _add_and_approve(client, orch)
+    refused = client.post("/api/skills/taps/acme--skills/refresh", json={}, headers=ADMIN)
+    assert refused.status_code == 502 and refused.json()["error"] == "fetch_failed"
+    assert len(seen) == 2 and not any("evil.example" in url for url in seen), seen
+    assert [r["action"] for r in orch.intent_log.records].count("authorize:plugin.egress") == 2
+
+
+def test_tap_install_goes_through_the_pinned_quarantined_import(monkeypatch, tmp_path):
+    orch = _orch(monkeypatch, tmp_path)
+    client = TestClient(web.app)
+    _add_and_approve(client, orch)
+    monkeypatch.setattr(taps_router, "_open_fetcher", _fake_fetcher([]))
+    assert client.post("/api/skills/taps/acme--skills/refresh", json={}, headers=ADMIN).status_code == 200
+    assert client.post("/api/skills/taps/install", json={"tap": "acme--skills", "skill": "good-skill"}
+                       ).status_code in (401, 403)
+    response = client.post("/api/skills/taps/install", json={"tap": "acme--skills", "skill": "good-skill"},
+                           headers=ADMIN)
+    assert response.status_code == 200, response.text
+    answer = response.json()
+    assert answer["quarantined"] is True and answer["status"] == "installed_review_required"
+    assert answer["tap"] == "acme--skills" and answer["trust"] == "trusted"
+    (source, name, pin), = orch.skill_importer.calls
+    assert source == "acme/skills" and name == "good-skill"
+    assert (pin.repo, pin.commit, pin.entry_path) == ("acme/skills", COMMIT, "skills/good-skill/SKILL.md")
+    assert pin.content_sha256 == hashlib.sha256(GOOD).hexdigest()
+    actions = [r["action"] for r in orch.intent_log.records]
+    assert actions.count("authorize:skill.install") == 2
+    # A tampered index on disk is not trusted: the entry no longer holds up, nothing is fetched.
+    data = taps._read()
+    entry = next(e for e in data["taps"][0]["index"] if e["slug"] == "good-skill")
+    entry["entry_path"] = "../../SKILL.md"
+    taps._write(data)
+    tampered = client.post("/api/skills/taps/install", json={"tap": "acme--skills", "skill": "good-skill"},
+                           headers=ADMIN)
+    assert tampered.status_code == 422 and len(orch.skill_importer.calls) == 1
+    assert client.post("/api/skills/taps/install", json={"tap": "hermes-catalog", "skill": "x"},
+                       headers=ADMIN).status_code == 409
+
+
+def test_search_ranks_by_trust_and_lists_pins(monkeypatch, tmp_path):
+    orch = _orch(monkeypatch, tmp_path)
+    client = TestClient(web.app)
+    _add_and_approve(client, orch, trust="community")
+    monkeypatch.setattr(taps_router, "_open_fetcher", _fake_fetcher([]))
+    client.post("/api/skills/taps/acme--skills/refresh", json={}, headers=ADMIN)
+    everything = client.get("/api/skills/taps/search?limit=100").json()["results"]
+    ranks = [taps.TRUST_RANK[r["trust"]] for r in everything]
+    assert ranks == sorted(ranks)
+    found = client.get("/api/skills/taps/search?q=good-skill").json()["results"]
+    assert [(r["tap"], r["slug"], r["installable"]) for r in found] == [("acme--skills", "good-skill", True)]
+    assert client.get("/api/skills/taps/search?q=good&tap=acme--skills").json()["matched"] >= 1
+    listing = client.get("/api/skills/taps").json()
+    ids = [t["id"] for t in listing["taps"]]
+    assert ids[:2] == ["hermes-catalog", "hermes"]
+    align = listing["pin_alignment"]
+    assert align["available"] is True and align["aligned"] is False
+    assert align["same_bytes"] + align["changed"] + align["not_in_catalog"] == align["import_pin"]["skills"]
+    assert client.delete("/api/skills/taps/hermes--x", headers=ADMIN).status_code == 404

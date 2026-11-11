@@ -860,14 +860,6 @@ async def skills_import(req: Request):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    from agents.core.action_origin import current_action_origin
-    from agents.core.kernel import Action, Verdict
-    from agents.core.kernel.binding import make_action_kernel
-    from agents.core.skills.importer import OPENCLAW_REPO
-    from agents.core.skills.remote_pin import (
-        RemoteImportAuthorization, RemoteImportRefused, RemoteSkillPin,
-    )
-
     try:
         body = await req.json()
     except Exception:
@@ -898,6 +890,22 @@ async def skills_import(req: Request):
             orch.skills.discover()
             return {"ok": True, "source": source, "skill": skill_name}
         return _import_refused(orch.skill_importer, skill_name, source)
+    return await _import_remote(orch, source, skill_name, body)
+
+
+async def _import_remote(orch, source: str, skill_name: str, body: dict):
+    """The one remote import: an exact pin, ``skill.install`` crossed before and after the
+    fetch, governed egress per request, a quarantined copy pending review. ``POST
+    /skills/import`` and a skill tap's install (H025, routers/skill_taps.py) both end here."""
+    from agents.core.action_origin import current_action_origin
+    from agents.core.kernel import Action, Verdict
+    from agents.core.kernel.binding import make_action_kernel
+    from agents.core.skills.importer import OPENCLAW_REPO
+    from agents.core.skills.remote_pin import (
+        RemoteImportAuthorization, RemoteImportRefused, RemoteSkillPin,
+    )
+
+    orch.skill_importer.last_refusal = []
     slug = _safe_slug(skill_name)
     if slug is None:
         return JSONResponse({"ok": False, "error": f"Skill '{skill_name}' not found in {source}"}, status_code=404)
