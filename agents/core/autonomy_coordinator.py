@@ -2433,9 +2433,21 @@ class AutonomyCoordinator:
         # mediation bridge: its intake is a separate card) as the member's own principal;
         # gated calls and invitations are approval cards on this hub. Off unless
         # JARVIS_ROOM_PEERS; the peer routes answer 404 until then.
-        from .room_peers import RoomPeerService
+        # A member is a guest here: its turn binds a non-admin `room_peer` principal and
+        # the inbound origin, so the H496 credential seams and the tool-profile posture
+        # treat it as one (`llm.guest_tools` read live), and revoking it withdraws its
+        # cards that have not run.
+        from .room_peers import RoomPeerService, withdraw_queued_task
 
         _orch = self._orch
+
+        def _room_setting(key, default):
+            getter = getattr(_orch, "get_setting", None)
+            try:
+                return getter(key, default) if callable(getter) else default
+            except Exception:
+                return default
+
         bind_external_orchestrator_attribute(
             self._orch,
             "room_peers",
@@ -2447,10 +2459,13 @@ class AutonomyCoordinator:
                 kill_switch=getattr(self._orch, "kill_switch", None),
                 enqueue=self._governed_enqueue,
                 task_reader=getattr(getattr(self._orch, "autonomy_queue", None), "get", None),
+                withdraw=lambda task_id, why: withdraw_queued_task(
+                    _orch.autonomy_queue, task_id, why),
+                settings=_room_setting,
                 audit=getattr(self._orch, "audit", None),
             ),
         )
-        executor.register("roompeer.", self._orch.room_peers.execute)
+        executor.register("roompeer.",self._orch.room_peers.execute)
 
         # H20.1 — governed Tool-RPC surface for sandboxed zero-context pipelines.
         # Read-only tools run inline; gated tools enqueue an ask-tier task (and

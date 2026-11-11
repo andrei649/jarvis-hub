@@ -9,7 +9,10 @@ Peer routes (``/api/room-peers/peer/*``) are the cross-machine transport. They t
 hub token: each request is authenticated by an Ed25519 signature against a key pinned
 at accept time and, after accept, by the ``Authorization: NervaRoom <grant>`` scheme
 (HMAC-signed by this hub). Unauthenticated failures answer a bare ``401 rejected``.
-Every peer response is signed by this hub over the request nonce, status and body.
+Every response to an authenticated peer request is signed by this hub over the request
+nonce, status and body; an unauthenticated refusal is not signed (this hub never signs a
+nonce a stranger chose). A body over the limit is refused on its Content-Length before
+it is read, and on its streamed size otherwise.
 All of it answers 404 while ``JARVIS_ROOM_PEERS`` is off.
 """
 
@@ -208,19 +211,42 @@ async def _peer(request: Request, path: str) -> Response:
     svc = _service(request)
     if svc is None or not svc.enabled():
         return nocache_json({"error": "room peers disabled"}, status_code=404)
-    from agents.core.room_peers import H_NONCE, H_SIG, MAX_BODY
+    from agents.core.room_peers import H_NONCE, H_SIG
 
-    raw = await request.body()
-    if len(raw) > MAX_BODY:
-        status, body = 413, {"error": "too_large"}
+    raw = await _bounded_body(request)
+    client = request.client.host if request.client else ""
+    if raw is None:
+        status, body, sign = 413, {"error": "too_large"}, False
     else:
-        status, body = await svc.handle_peer(path, dict(request.headers), raw)
+        status, body, sign = await svc.handle_peer(path, dict(request.headers), raw, client=client)
     content = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    nonce = request.headers.get(H_NONCE, "")
-    headers = {"Cache-Control": "no-cache, no-store, must-revalidate",
-               H_SIG: svc.sign_response(nonce, status, content)}
+    headers = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+    if sign:
+        # only an authenticated request's nonce is signed over (review n4)
+        headers[H_SIG] = svc.sign_response(request.headers.get(H_NONCE, ""), status, content)
     return Response(content=content, status_code=status, media_type="application/json",
                     headers=headers)
+
+
+async def _bounded_body(request: Request) -> bytes | None:
+    """The request body, or ``None`` past ``MAX_BODY``: refused on the declared
+    Content-Length before anything is read, and on the streamed size otherwise."""
+    from agents.core.room_peers import MAX_BODY
+
+    declared = request.headers.get("content-length")
+    if declared is not None:
+        try:
+            if int(declared) > MAX_BODY:
+                return None
+        except ValueError:
+            return None
+    chunks, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > MAX_BODY:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 @router.post("/api/room-peers/peer/accept")

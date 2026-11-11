@@ -422,7 +422,7 @@ HUB_ENV_SUFFIXES = frozenset({
     # G17: owner event hooks (H163/H021/H514/H408).
     "HOOKS", "HOOKS_MAX_TIMEOUT_S",
     # H658: remote room members across machines.
-    "ROOM_PEERS",
+    "ROOM_PEERS", "ROOM_PEERS_ALLOW_HTTP",
 })
 
 #: Name families built at run time (``JARVIS_ROLE_<NAME>_MODEL``, ``JARVIS_VLM_<PRESET>…``,
