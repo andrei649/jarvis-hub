@@ -625,3 +625,150 @@ def test_channel_secrets_never_reach_a_sandboxed_child(chub):
     from agents.core import channel_config, code_env
 
     assert channel_config.secret_names() <= code_env._MANAGED_NAMES
+
+
+# ══ slice 3 — restart and update check (H160 / H173 / H624) ══════════════════════
+
+def _run(cwd, *args):
+    import subprocess
+
+    env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.org",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.org", "GIT_CONFIG_NOSYSTEM": "1"}
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, env=env)
+
+
+@pytest.fixture
+def ops(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from agents import web
+    from agents.core import hub_restart, hub_update
+    from agents.core.routers import ops as ops_router
+
+    origin = tmp_path / "origin.git"
+    _run(tmp_path, "init", "--bare", "-b", "main", str(origin))
+    work = tmp_path / "work"
+    _run(tmp_path, "clone", str(origin), str(work))
+    (work / "README.md").write_text("one\n", encoding="utf-8")
+    _run(work, "add", "README.md")
+    _run(work, "commit", "-m", "one")
+    _run(work, "push", "-u", "origin", "HEAD:main")
+    _run(work, "branch", "--set-upstream-to=origin/main")
+    other = tmp_path / "other"
+    _run(tmp_path, "clone", str(origin), str(other))
+    (other / "CHANGES.md").write_text("two\n", encoding="utf-8")
+    _run(other, "add", "CHANGES.md")
+    _run(other, "commit", "-m", "two")
+    _run(other, "push", "origin", "HEAD:main")
+    monkeypatch.setattr(hub_update, "repo_root", lambda: work)
+    monkeypatch.setattr(hub_update, "_install_kind", lambda: "git")
+    hub_update.reset_for_tests()
+    hub_restart.reset()
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "adm-g21")
+    monkeypatch.setattr(web, "USER_TOKEN", "usr-g21")
+    monkeypatch.setattr(web.app, "dependency_overrides", {})
+    orch = SimpleNamespace(audit=FakeAudit())
+    monkeypatch.setattr(ops_router, "get_orch", lambda: orch)
+    yield SimpleNamespace(client=TestClient(web.app), work=work, orch=orch)
+    hub_restart.reset()
+    hub_update.reset_for_tests()
+
+
+def _wait_action(client, action_id):
+    import time
+
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        body = client.get(f"/api/admin/ops/actions/{action_id}", headers=ADMIN).json()
+        if body["status"] != "running":
+            return body
+        time.sleep(0.05)
+    raise AssertionError("the action did not finish")
+
+
+def test_every_ops_route_refuses_a_non_admin(ops):
+    calls = [("get", "/api/admin/ops/update", None), ("post", "/api/admin/ops/update/fetch", None),
+             ("get", "/api/admin/ops/actions/0123456789abcdef", None),
+             ("post", "/api/admin/ops/restart", {"confirm": "restart"})]
+    stopped = []
+    from agents.core import hub_restart
+
+    hub_restart.install(lambda: stopped.append(True))
+    for headers in ({}, USER):
+        for method, path, body in calls:
+            kwargs = {"headers": headers}
+            if body is not None:
+                kwargs["json"] = body
+            assert ops.client.request(method.upper(), path, **kwargs).status_code in (401, 403), (method, path)
+    import time
+
+    time.sleep(0.8)
+    assert stopped == []
+
+
+def test_the_update_check_is_honest_about_behind_count_dirty_tree_and_apply(ops):
+    body = ops.client.get("/api/admin/ops/update", headers=ADMIN).json()
+    assert body["install"] == "git" and body["branch"] == "main" and body["upstream"] == "origin/main"
+    assert body["behind"] == 0 and body["ahead"] == 0 and body["dirty"] is False
+    assert body["can_apply"] is False and any("signature" in r for r in body["apply_refused"])
+    started = ops.client.post("/api/admin/ops/update/fetch", headers=ADMIN, json={})
+    assert started.status_code == 202, started.text
+    done = _wait_action(ops.client, started.json()["id"])
+    assert done["status"] == "ok" and done["result"]["behind"] == 1
+    assert done["lines"][0] == "$ git fetch --prune origin"
+    after = ops.client.get("/api/admin/ops/update", headers=ADMIN).json()
+    assert after["behind"] == 1 and after["fetched_seconds_ago"] is not None
+    (ops.work / "README.md").write_text("edited\n", encoding="utf-8")
+    dirty = ops.client.get("/api/admin/ops/update", headers=ADMIN).json()
+    assert dirty["dirty"] is True and any("uncommitted" in r for r in dirty["apply_refused"])
+    assert dirty["can_apply"] is False
+    # nothing was pulled: the checkout still has its one commit
+    assert not (ops.work / "CHANGES.md").exists()
+
+
+def test_a_container_or_a_non_git_install_never_offers_an_apply(ops, monkeypatch):
+    from agents.core import hub_update
+
+    monkeypatch.setattr(hub_update, "_install_kind", lambda: "container")
+    body = ops.client.get("/api/admin/ops/update", headers=ADMIN).json()
+    assert body["can_apply"] is False and any("image" in r for r in body["apply_refused"])
+    refused = ops.client.post("/api/admin/ops/update/fetch", headers=ADMIN, json={})
+    assert refused.status_code == 409 and refused.json()["error"] == "not_a_git_checkout"
+
+
+def test_a_fetch_log_never_carries_url_credentials():
+    from agents.core import hub_update
+
+    line = hub_update.clean_line("From https://owner:ghp_secret0123@github.example.org/o/r\x1b[31m")
+    assert line == "From https://github.example.org/o/r[31m"
+    assert "ghp_secret" not in line
+
+
+def test_restart_needs_the_confirm_word_and_says_when_it_cannot_restart_itself(ops):
+    from agents.core import hub_restart
+
+    manual = ops.client.post("/api/admin/ops/restart", headers=ADMIN, json={"confirm": "restart"})
+    assert manual.status_code == 409 and manual.json()["error"] == "manual" and manual.json()["restart"] == "manual"
+    stopped = []
+    hub_restart.install(lambda: stopped.append(True))
+    wrong = ops.client.post("/api/admin/ops/restart", headers=ADMIN, json={"confirm": "yes"})
+    assert wrong.status_code == 400
+    cross = ops.client.post("/api/admin/ops/restart", headers={**ADMIN, "Sec-Fetch-Site": "cross-site"},
+                            json={"confirm": "restart"})
+    assert cross.status_code == 403
+    import time
+
+    time.sleep(0.8)
+    assert stopped == []
+    ok = ops.client.post("/api/admin/ops/restart", headers=ADMIN, json={"confirm": "restart"})
+    assert ok.status_code == 202 and ok.json()["restart"] == "requested"
+    deadline = time.monotonic() + 5
+    while not stopped and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert stopped == [True] and hub_restart.requested() == "owner restart from the HUD"
+    assert ("ops_restart", "hub restart requested from the HUD") in ops.orch.audit.rows
+
+
+def test_an_unknown_action_is_404(ops):
+    assert ops.client.get("/api/admin/ops/actions/0123456789abcdef", headers=ADMIN).status_code == 404
+    assert ops.client.get("/api/admin/ops/actions/../x", headers=ADMIN).status_code in (404, 422)

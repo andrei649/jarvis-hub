@@ -4,6 +4,18 @@
 
 ### What changed for you — 2026-11-11
 
+**Restart Nerva and see whether it is behind, from the HUD**
+- New Console panel **Restart / Update** (Admin group): the version, branch and commit Nerva
+  runs, whether its folder has uncommitted changes, and how many commits it is behind its
+  upstream, with how long ago that was last checked. "Check now" asks the upstream and shows
+  the log while it runs.
+- "Restart" asks once, restarts Nerva and waits until it answers again. If Nerva was not
+  started by `serve.py` (systemd, `START.bat`, the service do it), the panel says to restart
+  it that way instead.
+- Updating from the HUD is not offered yet: Nerva has no way to check that new code is code
+  you trust (no signed releases or pinned version), so the panel says why and the steps in
+  `docs/UPGRADE.md` stay the way to update.
+
 **Channel settings in the HUD**
 - New Console panel **Channels** (Admin group): Telegram, Discord, Slack, email, ntfy and SMS,
   each saying whether it is running. Open one to set its token or password, hosts, ports, your

@@ -29,6 +29,12 @@ From a **release bundle** instead of git: download `jarvis-<ver>.tar.gz`, verify
 (`sha256sum -c SHA256SUMS`, and `gpg --verify` if signed — see [RELEASE.md](RELEASE.md)),
 unpack, and re-run the install step.
 
+**From the HUD (check and restart only):** Console → Admin → **Restart / Update** shows the
+version, branch, commit, whether the tree has uncommitted changes and how many commits the
+checkout is behind its upstream as of the last fetch ("check now" fetches). It restarts Nerva
+when it was started by `serve.py`. It does **not** apply an update: this repository has no
+signature or pinned-ref check for its own code, so pulling new code stays the manual steps above.
+
 ## Database migrations — automatic
 
 Schema migrations apply **automatically** on first run after an upgrade: each local store

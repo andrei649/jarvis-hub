@@ -91,7 +91,7 @@ export function ChannelsConfigPanel() {
       </div>
       {waiting.length > 0 && (
         <div role="status" style={{ fontSize: 11, color: 'var(--amber)', marginBottom: 6 }}>
-          Restart Nerva to apply the changes to {waiting.join(', ')} (System → Restart / update).
+          Restart Nerva to apply the changes to {waiting.join(', ')} (Console → Admin → Restart / Update).
         </div>
       )}
       {note && <div role="status" style={{ fontSize: 11, color: 'var(--ink-2)', marginBottom: 4 }}>{note}</div>}

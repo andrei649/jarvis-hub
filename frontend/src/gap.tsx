@@ -52,6 +52,7 @@ import { CustomEndpointsPanel } from './panels/custom-endpoints';
 import { IntegrationsPanel } from './panels/integrations';
 import { FilesPanel } from './panels/files';
 import { ChannelsConfigPanel } from './panels/channels-config';
+import { SystemUpdatePanel } from './panels/system-update';
 import { WorkflowTracesPanel } from './panels/workflows-advanced';
 import { PresenceInboxPanel } from './panels/presence-inbox';
 import { ReviewQualityPanel } from './panels/review-quality';
@@ -5741,6 +5742,7 @@ const PANEL_COMPONENTS = {
   BackupPanel,
   FilesPanel,
   ChannelsConfigPanel,
+  SystemUpdatePanel,
   OAuthPanel,
   SettingsPanel,
   PromptsPanel,
