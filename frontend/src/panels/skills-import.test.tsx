@@ -1,21 +1,12 @@
 // @ts-nocheck
-/* SKILLS IMPORT panel — GET /skills/imported (user tier) + POST /skills/import (user tier,
-   DEV_MODE-gated). fetch is mocked, like src/panels/marketplace-admin.test.tsx.
-
-   The traps this file exists to pin:
-     · a 503 on the read must NOT render as an empty list or a "0 imported" count.
-     · the DEV_MODE 403 string must be rendered VERBATIM (em dash included) and must leave
-       the import control disabled — no button that always 403s.
-     · a 403 keyed `detail` is _user_guard, NOT the DEV_MODE gate: DEV_MODE was never
-       evaluated, so the panel must not report it as "DEV_MODE=0".
-     · the probe must never fire on mount — it is a real POST into the failure banner.
-     · the collapsed 404 must be printed as it arrived, never paraphrased into a cause. */
+/* The actual admin import request carries immutable pins; every import remains
+   pending owner review. Read/provenance regressions remain distinct from writes. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { SkillsImportPanel } from './skills-import';
 
-const COMMIT = '5fc308a70719a83cccdbba4c0e39c23f5a8239d5';
+const COMMIT = '29112bef099274229cadff79cdff7bf7b99c4b77';
 const DIGEST = 'a'.repeat(64);
 
 const HERMES_ROW = {
@@ -27,9 +18,10 @@ const HERMES_ROW = {
   source: 'hermes',
   imported: true,
   source_repository: 'NousResearch/hermes-agent',
-  source_release_tag: 'v2026.8.27',
+  source_release_tag: 'v2026.8.31',
   source_commit: COMMIT,
-  source_tree: '222ec43b5237deb643277bc2f64fa4b873dd7f28',
+  source_tree: 'daaffc303ae437041b7f76be17c5f61b14f2ce99',
+  source_tier: 'optional',
   source_path: 'skills/research/deep-research/SKILL.md',
   content_sha256: DIGEST,
 };
@@ -57,16 +49,22 @@ const gets = (fn) => fn.mock.calls.filter((c) => String((c[1] && c[1].method) ||
 const bodyOf = (call) => JSON.parse(call[1].body);
 const btn = (name) => screen.getByRole('button', { name });
 
-/* Press CHECK and let the backend's 400 unlock the import control. */
-async function enableImport() {
-  fireEvent.click(btn('check availability'));
-  // the gate is open; the button additionally needs a skill name, which each test types
-  await waitFor(() => expect(screen.getByText('import available')).toBeTruthy());
-}
-
 beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } vi.restoreAllMocks(); });
 
-describe('SkillsImportPanel — imported sidecars and the DEV_MODE-gated import', () => {
+describe('SkillsImportPanel — imported sidecars and governed pinned imports', () => {
+  it('uses the existing user token for the imported-manifest read', async () => {
+    localStorage.setItem('hud.user_token', 'owner-user');
+    const fn = mockRoutes(() => null);
+    render(<SkillsImportPanel />);
+    await waitFor(() => expect(screen.getByText(/no imported skills on disk yet/)).toBeTruthy());
+    const read = gets(fn).find(([url]) => String(url) === '/skills/imported');
+    expect(read).toBeTruthy();
+    expect(read[1].headers['X-User-Token']).toBe('owner-user');
+    expect(read[1].headers['X-Admin-Token']).toBeUndefined();
+    expect(screen.getByText(/GET \/skills\/imported is/).textContent).toContain('user tier');
+    expect(screen.queryByText(/unguarded/)).toBeNull();
+  });
+
   it('renders a hermes sidecar with its provenance, and a legacy row defensively', async () => {
     mockRoutes(() => null, { imported: [HERMES_ROW, LEGACY_ROW] });
     render(<SkillsImportPanel />);
@@ -74,8 +72,9 @@ describe('SkillsImportPanel — imported sidecars and the DEV_MODE-gated import'
     await waitFor(() => expect(screen.getByText('deep-research')).toBeTruthy());
     expect(screen.getByText('v1.4.0')).toBeTruthy();
     expect(screen.getByText('hermes')).toBeTruthy();
-    expect(screen.getByText('pin v2026.8.27')).toBeTruthy();
-    expect(screen.getByText('5fc308a7')).toBeTruthy();
+    expect(screen.getByText('pin v2026.8.31')).toBeTruthy();
+    expect(screen.getByText('29112bef')).toBeTruthy();
+    expect(screen.getByText('tier optional')).toBeTruthy();
     expect(screen.getByText(/sha256 aaaaaaaaaaaa…/)).toBeTruthy();
     expect(screen.getByText('multi-hop research loop')).toBeTruthy();
     // the full 64-hex digest is a title attribute, not inline text
@@ -85,12 +84,43 @@ describe('SkillsImportPanel — imported sidecars and the DEV_MODE-gated import'
     expect(screen.getByText('2 imported')).toBeTruthy();
   });
 
-  it('never fires the probe on mount — it is a real POST into the failure banner', async () => {
+  it('never submits an import on mount', async () => {
     const fn = mockRoutes(() => null);
     render(<SkillsImportPanel />);
     await waitFor(() => expect(gets(fn).length).toBeGreaterThan(0));
     expect(posts(fn)).toHaveLength(0);
     expect(btn('import').disabled).toBe(true);
+  });
+
+  it('offers an admin optional install and reports pending review after kernel queue', async () => {
+    const fn = mockRoutes((u, method) => {
+      if (u === '/api/skills/optional/catalog' && method === 'GET') return {
+        status: 200, body: { skills: [{ name: 'calendar', tier: 'optional', installed: false, available: true }] },
+      };
+      if (u === '/api/skills/optional/install' && method === 'POST') return {
+        status: 200, body: { status: 'installed_review_required', kernel: 'queue', quarantined: true },
+      };
+      return null;
+    });
+    render(<SkillsImportPanel />);
+    await waitFor(() => expect(screen.getByText('calendar')).toBeTruthy());
+    fireEvent.click(btn('install for review'));
+    await waitFor(() => expect(screen.getByText(/calendar: installed_review_required · kernel queue/)).toBeTruthy());
+    expect(bodyOf(posts(fn).find((c) => String(c[0]) === '/api/skills/optional/install'))).toEqual({ name: 'calendar' });
+  });
+
+  it('lists pinned upstream tiers and lets the owner choose an exact slug', async () => {
+    mockRoutes((u, method) => u === '/skills/hermes/catalog' && method === 'GET'
+      ? { status: 200, body: { release_tag: 'v2026.8.31', skills: [
+        { slug: 'github', tier: 'bundled', reference_count: 10 },
+        { slug: 'grill-me', tier: 'optional', reference_count: 0 },
+      ] } } : null);
+    render(<SkillsImportPanel />);
+    await waitFor(() => expect(screen.getByText('github')).toBeTruthy());
+    expect(screen.getByText('bundled')).toBeTruthy();
+    expect(screen.getByText('optional')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'choose github' }));
+    expect(screen.getByLabelText('skill name').value).toBe('github');
   });
 
   it('renders 200 {"imported": []} as an honest empty state, with no unavailable tag', async () => {
@@ -111,200 +141,96 @@ describe('SkillsImportPanel — imported sidecars and the DEV_MODE-gated import'
     expect(screen.queryByText('nothing yet')).toBeNull();
   });
 
-  it('CHECK against the DEV_MODE 403 prints it verbatim and leaves import disabled', async () => {
-    const fn = mockRoutes((u, method) => (u === '/skills/import' && method === 'POST'
-      ? { status: 403, body: { error: 'skill import disabled — set DEV_MODE=1 to enable' } } : null));
+  it.each([
+    [403, { reason: 'install_denied' }, 'install_denied'],
+    [403, { detail: 'admin token required' }, 'admin token required'],
+    [404, { error: "Skill 'github' not found in hermes" }, "Skill 'github' not found in hermes"],
+    [503, { error: 'not initialized' }, 'not initialized'],
+    [429, { error: 'rate limit exceeded' }, 'rate limit exceeded'],
+    [500, { message: 'Internal server error' }, 'POST /skills/import'],
+  ])('shows HTTP %s refusal without inventing availability or issuing a probe', async (status, body, text) => {
+    const fn = mockRoutes((u, method) => u === '/skills/import' && method === 'POST'
+      ? { status, body } : null);
     render(<SkillsImportPanel />);
     await waitFor(() => expect(screen.getByText(/no imported skills on disk yet/)).toBeTruthy());
-
-    fireEvent.click(btn('check availability'));
-
-    const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('skill import disabled — set DEV_MODE=1 to enable');
-    expect(alert.textContent).toContain('HTTP 403');
-    expect(screen.getByText('DEV_MODE=0 — import disabled by the server')).toBeTruthy();
-    expect(btn('import').disabled).toBe(true);
-    // the probe posts an EMPTY skill name — argument validation, no import
-    expect(bodyOf(posts(fn)[0])).toEqual({ skill: '' });
-  });
-
-  it('CHECK against the 400 "skill name required" unlocks the import control', async () => {
-    mockRoutes((u, method, body) => (u === '/skills/import' && method === 'POST' && body && body.skill === ''
-      ? { status: 400, body: { error: 'skill name required' } } : null));
-    render(<SkillsImportPanel />);
-    await waitFor(() => expect(screen.getByText(/no imported skills on disk yet/)).toBeTruthy());
-
-    await enableImport();
-    expect(screen.getByText(/skill name required/)).toBeTruthy();
-    expect(screen.getByText('import available')).toBeTruthy();
-  });
-
-  it('classifies a guard 403 keyed `detail` as blocked, NOT as DEV_MODE=0', async () => {
-    mockRoutes((u, method) => (u === '/skills/import' && method === 'POST'
-      ? { status: 403, body: { detail: 'user routes disabled from network — set JARVIS_USER_TOKEN to enable remote access' } } : null));
-    render(<SkillsImportPanel />);
-    await waitFor(() => expect(screen.getByText(/no imported skills on disk yet/)).toBeTruthy());
-
-    fireEvent.click(btn('check availability'));
-
-    const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('user routes disabled from network — set JARVIS_USER_TOKEN to enable remote access');
-    expect(screen.queryByText('DEV_MODE=0 — import disabled by the server')).toBeNull();
-    expect(screen.getByText(/the shape of a raised HTTPException/)).toBeTruthy();
-    expect(screen.getByText(/the DEV_MODE check was never evaluated/)).toBeTruthy();
-    expect(btn('import').disabled).toBe(true);
-  });
-
-  /* ── the blocked EXPLANATION must be read off the refusal, never asserted ──────────
-     A route-keyed refusal (503 from the handler's orchestrator check, 429 from the
-     throttle) is keyed `error` and is NOT the guard and NOT an unhandled error. The
-     panel used to print one fixed sentence for every blocked answer, which named a
-     fabricated origin on the most common failure state of this surface. */
-  const OLD_LIE = [
-    /it came from the user-route guard/,
-    /from an unhandled server error/,
-    /or no route body at all/,
-  ];
-  const assertNoInventedOrigin = () => OLD_LIE.forEach((re) => expect(screen.queryByText(re)).toBeNull());
-
-  it('CHECK against the route-keyed 503 names that refusal — not the guard, not an unhandled error', async () => {
-    mockRoutes((u, method) => (u === '/skills/import' && method === 'POST'
-      ? { status: 503, body: { error: 'not initialized' } } : null));
-    render(<SkillsImportPanel />);
-    await waitFor(() => expect(screen.getByText(/no imported skills on disk yet/)).toBeTruthy());
-
-    fireEvent.click(btn('check availability'));
-
-    const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('HTTP 503');
-    expect(alert.textContent).toContain('not initialized');
-    // NOT the guard / unhandled-error story the panel used to print for every blocked answer
-    assertNoInventedOrigin();
-    // keyed `error`, at 503 — the handler's own pre-DEV_MODE refusal
-    expect(screen.getByText(/which matches the handler/)).toBeTruthy();
-    expect(screen.getByText(/returned before the DEV_MODE check/)).toBeTruthy();
-    expect(screen.queryByText(/raised HTTPException/)).toBeNull();
-    expect(screen.queryByText(/user-tier guard/)).toBeNull();
-    expect(screen.getByText('import unavailable — see the server’s answer below')).toBeTruthy();
-    expect(btn('import').disabled).toBe(true);
-  });
-
-  it('CHECK against a throttle keyed `error` attributes nothing and never says guard', async () => {
-    mockRoutes((u, method) => (u === '/skills/import' && method === 'POST'
-      ? { status: 429, body: { error: 'rate limit exceeded', code: 429 } } : null));
-    render(<SkillsImportPanel />);
-    await waitFor(() => expect(screen.getByText(/no imported skills on disk yet/)).toBeTruthy());
-
-    fireEvent.click(btn('check availability'));
-
-    const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('HTTP 429');
-    expect(alert.textContent).toContain('rate limit exceeded');
-    expect(screen.getByText(/What produced it is not identified here/)).toBeTruthy();
-    expect(screen.queryByText(/raised HTTPException/)).toBeNull();
-    expect(screen.queryByText(/user-tier guard/)).toBeNull();
-    expect(screen.queryByText(/matches the handler/)).toBeNull();
-    assertNoInventedOrigin();
-    expect(btn('import').disabled).toBe(true);
-  });
-
-  it('CHECK against a body keyed neither `error` nor `detail` attributes nothing at all', async () => {
-    // the app's generic 500 handler answers with `message`, not `error`/`detail`
-    mockRoutes((u, method) => (u === '/skills/import' && method === 'POST'
-      ? { status: 500, body: { code: 'JARVIS-INTERNAL-001', category: 'internal', severity: 'error', message: 'Internal server error' } } : null));
-    render(<SkillsImportPanel />);
-    await waitFor(() => expect(screen.getByText(/no imported skills on disk yet/)).toBeTruthy());
-
-    fireEvent.click(btn('check availability'));
-
-    const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('HTTP 500');
-    expect(screen.getByText(/nothing in it to attribute/)).toBeTruthy();
-    expect(screen.queryByText(/user-tier guard/)).toBeNull();
-    expect(screen.queryByText(/matches the handler/)).toBeNull();
-    assertNoInventedOrigin();
-    expect(btn('import').disabled).toBe(true);
-  });
-
-  it('a 503 on the real import re-blocks availability with the same honest reason', async () => {
-    mockRoutes((u, method, body) => {
-      if (u !== '/skills/import' || method !== 'POST') return null;
-      if (body && body.skill === '') return { status: 400, body: { error: 'skill name required' } };
-      return { status: 503, body: { error: 'not initialized' } };
-    });
-    render(<SkillsImportPanel />);
-    await waitFor(() => expect(screen.getByText(/no imported skills on disk yet/)).toBeTruthy());
-    await enableImport();
-
-    fireEvent.change(screen.getByLabelText('skill name'), { target: { value: 'deep-research' } });
+    fireEvent.change(screen.getByLabelText('skill name'), { target: { value: 'github' } });
     fireEvent.click(btn('import'));
-
-    await waitFor(() => expect(screen.getByText(/refused · HTTP 503/)).toBeTruthy());
-    expect(screen.getByText(/which matches the handler/)).toBeTruthy();
-    expect(screen.queryByText(/user-tier guard/)).toBeNull();
-    assertNoInventedOrigin();
-    expect(screen.queryByText('import available')).toBeNull();
-    expect(btn('import').disabled).toBe(true);
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain(`HTTP ${status}`);
+    expect(alert.textContent).toContain(text);
+    expect(posts(fn)).toHaveLength(1);
+    expect(bodyOf(posts(fn)[0])).toEqual({ skill: 'github', source: 'hermes' });
+    expect(screen.queryByText(/DEV_MODE/)).toBeNull();
+    expect(screen.queryByText(/import available/)).toBeNull();
   });
 
-  it('renders the collapsed import 404 verbatim and reports no success', async () => {
-    const fn = mockRoutes((u, method, body) => {
-      if (u !== '/skills/import' || method !== 'POST') return null;
-      if (body && body.skill === '') return { status: 400, body: { error: 'skill name required' } };
-      return { status: 404, body: { ok: false, error: "Skill 'nope' not found in hermes" } };
-    });
+  it('reports kernel queue as a quarantined copy awaiting owner review, and reloads', async () => {
+    const fn = mockRoutes((u, method) => u === '/skills/import' && method === 'POST'
+      ? { status: 200, body: { ok: true, source: 'hermes', skill: 'github',
+          kernel: 'queue', quarantined: true, status: 'installed_review_required' } } : null);
     render(<SkillsImportPanel />);
     await waitFor(() => expect(screen.getByText(/no imported skills on disk yet/)).toBeTruthy());
-    await enableImport();
-
-    fireEvent.change(screen.getByLabelText('skill name'), { target: { value: 'nope' } });
-    fireEvent.click(btn('import'));
-
-    await waitFor(() => expect(screen.getByText(/Skill 'nope' not found in hermes/)).toBeTruthy());
-    expect(screen.getByText(/refused · HTTP 404/)).toBeTruthy();
-    expect(screen.queryByText(/^imported · skill=/)).toBeNull();
-    // the cause is left collapsed, exactly as the backend left it
-    expect(screen.getByText(/covers a name outside the pin allowlist/)).toBeTruthy();
-    const call = posts(fn).find((c) => bodyOf(c).skill === 'nope');
-    expect(bodyOf(call)).toEqual({ skill: 'nope', source: 'hermes' });
-  });
-
-  it('renders a 200 as the echoed skill/source only, and re-reads the imported list', async () => {
-    const fn = mockRoutes((u, method, body) => {
-      if (u !== '/skills/import' || method !== 'POST') return null;
-      if (body && body.skill === '') return { status: 400, body: { error: 'skill name required' } };
-      return { status: 200, body: { ok: true, source: 'openclaw', skill: 'Deep Research' } };
-    });
-    render(<SkillsImportPanel />);
-    await waitFor(() => expect(screen.getByText(/no imported skills on disk yet/)).toBeTruthy());
-    await enableImport();
-
-    fireEvent.change(screen.getByLabelText('import source'), { target: { value: 'openclaw' } });
-    fireEvent.change(screen.getByLabelText('skill name'), { target: { value: 'Deep Research' } });
+    fireEvent.change(screen.getByLabelText('skill name'), { target: { value: 'github' } });
     const before = gets(fn).length;
     fireEvent.click(btn('import'));
-
-    await waitFor(() => expect(screen.getByText('imported · skill=Deep Research · source=openclaw')).toBeTruthy());
-    // the echo is the RAW input, never presented as the directory that was written
-    expect(screen.getByText(/the raw input, not the directory it wrote/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/staged · skill=github · source=hermes · kernel queue · pending owner review/)).toBeTruthy());
     await waitFor(() => expect(gets(fn).length).toBeGreaterThan(before));
-    expect(bodyOf(posts(fn).slice(-1)[0])).toEqual({ skill: 'Deep Research', source: 'openclaw' });
+    expect(bodyOf(posts(fn)[0])).toEqual({ skill: 'github', source: 'hermes' });
+    expect(screen.queryByText(/activated/)).toBeNull();
   });
 
-  it('warns locally about a bare GitHub repo without pre-empting the backend', async () => {
-    mockRoutes((u, method, body) => (u === '/skills/import' && method === 'POST' && body && body.skill === ''
-      ? { status: 400, body: { error: 'skill name required' } } : null));
+  it('requires and sends an immutable generic source pin, including reference digests', async () => {
+    const fn = mockRoutes((u, method, body) => u === '/skills/import' && method === 'POST'
+      ? { status: 200, body: { ok: true, source: body.source, skill: body.skill,
+          kernel: 'grant', quarantined: true, status: 'installed_review_required' } } : null);
     render(<SkillsImportPanel />);
     await waitFor(() => expect(screen.getByText(/no imported skills on disk yet/)).toBeTruthy());
-    await enableImport();
-
     fireEvent.change(screen.getByLabelText('import source'), { target: { value: 'github' } });
-    fireEvent.change(screen.getByLabelText('github owner/repo'), { target: { value: 'openclaw' } });
+    fireEvent.change(screen.getByLabelText('github owner/repo'), { target: { value: 'owner/repo' } });
     fireEvent.change(screen.getByLabelText('skill name'), { target: { value: 'brief' } });
-
-    expect(screen.getByText(/local hint: owner\/repo required/)).toBeTruthy();
-    // the hint never blocks the POST — the backend still owns the answer
+    expect(btn('import').disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('source commit'), { target: { value: 'main' } });
+    fireEvent.change(screen.getByLabelText('source entry path'), { target: { value: 'skills/brief/SKILL.md' } });
+    fireEvent.change(screen.getByLabelText('source sha256'), { target: { value: DIGEST } });
+    expect(btn('import').disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('source commit'), { target: { value: COMMIT } });
+    fireEvent.change(screen.getByLabelText('reference pins'), { target: { value: `skills/brief/references/guide.md ${'b'.repeat(64)}` } });
     expect(btn('import').disabled).toBe(false);
+    fireEvent.click(btn('import'));
+    await waitFor(() => expect(posts(fn)).toHaveLength(1));
+    expect(bodyOf(posts(fn)[0])).toEqual({ skill: 'brief', source: 'owner/repo', pin: {
+      repo: 'owner/repo', commit: COMMIT, entry_path: 'skills/brief/SKILL.md', content_sha256: DIGEST,
+      references: [{ path: 'skills/brief/references/guide.md', content_sha256: 'b'.repeat(64) }],
+    } });
+    await waitFor(() => expect(screen.getByText(/kernel grant · pending owner review/)).toBeTruthy());
+  });
+
+  it('keeps malformed reference pins and mutable openclaw imports disabled', async () => {
+    const fn = mockRoutes(() => null);
+    render(<SkillsImportPanel />);
+    await waitFor(() => expect(screen.getByText(/no imported skills on disk yet/)).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('import source'), { target: { value: 'openclaw' } });
+    fireEvent.change(screen.getByLabelText('skill name'), { target: { value: 'brief' } });
+    expect(btn('import').disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('source commit'), { target: { value: COMMIT } });
+    fireEvent.change(screen.getByLabelText('source entry path'), { target: { value: 'skills/brief/SKILL.md' } });
+    fireEvent.change(screen.getByLabelText('source sha256'), { target: { value: DIGEST } });
+    fireEvent.change(screen.getByLabelText('reference pins'), { target: { value: 'guide.md bad-hash' } });
+    expect(btn('import').disabled).toBe(true);
+    expect(posts(fn)).toHaveLength(0);
+  });
+
+  it('uses admin credentials for the write and rejects an unexpected activation response', async () => {
+    localStorage.setItem('hud.admin_token', 'owner-admin');
+    const fn = mockRoutes((u, method) => u === '/skills/import' && method === 'POST'
+      ? { status: 200, body: { ok: true, status: 'active', quarantined: false } } : null);
+    render(<SkillsImportPanel />);
+    await waitFor(() => expect(screen.getByText(/no imported skills on disk yet/)).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('skill name'), { target: { value: 'github' } });
+    fireEvent.click(btn('import'));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('unexpected import response'));
+    expect(posts(fn)[0][1].headers['X-Admin-Token']).toBe('owner-admin');
+    expect(screen.queryByText(/staged · skill=/)).toBeNull();
   });
 });
 
@@ -329,10 +255,10 @@ describe('SkillsImportPanel — the vendored Hermes catalog', () => {
     mockRoutes(() => null, { imported: [] });
     render(<SkillsImportPanel />);
     await waitFor(() => expect(screen.getByText(/no imported skills on disk yet/)).toBeTruthy());
-    expect(screen.queryByText(/HERMES CATALOG/)).toBeNull();
+    expect(screen.queryByText(/HERMES CATALOG · vendored/)).toBeNull();
   });
 
-  it('installs a catalog row through the owner route, without the DEV_MODE check', async () => {
+  it('installs a catalog row through the owner route', async () => {
     const fn = mockRoutes((u, method) => {
       if (u === '/api/skills/catalog/install' && method === 'POST') {
         return { status: 200, body: { ok: true, action: 'install', status: 'installed', skill: 'agentmail',
@@ -346,7 +272,6 @@ describe('SkillsImportPanel — the vendored Hermes catalog', () => {
     expect(screen.getByText('agentmail')).toBeTruthy();
     expect(screen.getByText('needs AGENTMAIL_API_KEY')).toBeTruthy();
     expect(screen.getByText(/not read by Nerva: metadata.hermes.homepage/)).toBeTruthy();
-    // the owner's install does not wait for the DEV_MODE probe
     expect(btn('install agentmail').disabled).toBe(false);
     fireEvent.click(btn('install agentmail'));
     await waitFor(() => expect(posts(fn).length).toBe(1));
@@ -379,7 +304,8 @@ describe('SkillsImportPanel — the vendored Hermes catalog', () => {
     await waitFor(() => expect(screen.getByText('installed @9c0560f8')).toBeTruthy());
     expect(screen.queryByRole('button', { name: 'install agentmail' })).toBeNull();
     fireEvent.click(btn('repair agentmail'));
-    await waitFor(() => expect(screen.getByText(/HTTP 409 · the installed files of 'agentmail' were edited/)).toBeTruthy());
+    // the panel names a refusal by its reason key first (main's refusal(): reason ?? error ?? detail)
+    await waitFor(() => expect(screen.getByText(/HTTP 409 · local_edits/)).toBeTruthy());
     expect(bodyOf(posts(fn)[0])).toEqual({ skill: 'agentmail', repair: true, force: false });
     fireEvent.click(btn('force repair agentmail'));
     await waitFor(() => expect(calls).toBe(2));
@@ -390,10 +316,30 @@ describe('SkillsImportPanel — the vendored Hermes catalog', () => {
   it('shows a skill that carries code with its code files and no install button', async () => {
     mockRoutes(() => null, { imported: [], hermes_catalog: CATALOG });
     render(<SkillsImportPanel />);
-    await waitFor(() => expect(screen.getByText(/HERMES CATALOG/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/HERMES CATALOG · vendored/)).toBeTruthy());
     fireEvent.change(screen.getByLabelText('catalog kind'), { target: { value: 'upstream_only' } });
     expect(screen.getByText('comfyui')).toBeTruthy();
     expect(screen.getByText(/code it carries: scripts\/run.py/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'install comfyui' })).toBeNull();
+  });
+
+  it('imports through POST /skills/import with source hermes-catalog and no remote pin', async () => {
+    const fn = mockRoutes((u, method) => {
+      if (u === '/skills/import' && method === 'POST') {
+        return { status: 200, body: { ok: true, source: 'hermes-catalog', skill: 'agentmail' } };
+      }
+      return null;
+    }, { imported: [], hermes_catalog: CATALOG });
+    localStorage.setItem('hud.admin_token', 'owner-token');
+    render(<SkillsImportPanel />);
+    await waitFor(() => expect(screen.getByText(/HERMES CATALOG · vendored/)).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('import source'), { target: { value: 'hermes-catalog' } });
+    fireEvent.change(screen.getByLabelText('skill name'), { target: { value: 'agentmail' } });
+    expect(screen.queryByLabelText('source commit')).toBeNull();
+    fireEvent.click(btn('import'));
+    await waitFor(() => expect(posts(fn).length).toBe(1));
+    expect(String(posts(fn)[0][0])).toBe('/skills/import');
+    expect(bodyOf(posts(fn)[0])).toEqual({ skill: 'agentmail', source: 'hermes-catalog' });
+    await waitFor(() => expect(screen.getByText(/imported · skill=agentmail · source=hermes-catalog/)).toBeTruthy());
   });
 });

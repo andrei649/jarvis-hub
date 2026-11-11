@@ -42,6 +42,8 @@
     "/v2/console/",
     "/v2/console/command-center",
     "/v2/console/command-center/",
+    "/v2/console/usage",
+    "/v2/console/usage/",
     "/v2/console/today-receipt",
     "/v2/console/today-receipt/",
     "/v2/console/model-setup",

@@ -22,9 +22,15 @@ name: CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    # `labeled` is how a PR opts into the post-merge matrix (label `ci-full`)
+    # without a push to main. workflow_dispatch needs actions:write, which the
+    # cloud-agent integration does not have.
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
   push:
     branches: [main]
+  # Manual runs use the push matrix (including Windows) so a branch can prove
+  # the post-merge lanes without putting them back on every pull request.
+  workflow_dispatch:
 
 # Cancel superseded runs for the same ref only on pull requests (rapid pushes to
 # a PR). A push to main is never cancelled by a newer push: every merge gets a
@@ -43,14 +49,22 @@ permissions:
 
 jobs:
   test:
+    # A label other than ci-full must not rerun the suite. synchronize/push still run.
+    if: github.event.action != 'labeled' || github.event.label.name == 'ci-full'
+    # Observed on main, 2026-11: ubuntu finishes in ~25 min; a Windows run that
+    # actually exits (2026-10-29) took ~112 min. 60 and 180 leave headroom over
+    # those completions and still die long before GitHub's 6-hour default, which
+    # is what a hung worker was burning.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 180 || 60 }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        # PRs: ubuntu only (fast feedback). Post-merge pushes to main add the
-        # Windows lane — Jarvis runs on Windows, so the coverage stays, it just
-        # no longer sits on the PR critical path (~20 min per run).
-        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest", "windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
+        # PRs: ubuntu only (fast feedback). Post-merge pushes to main, a manual
+        # workflow_dispatch, or a PR labeled `ci-full` add the Windows lane —
+        # Jarvis runs on Windows, so the coverage stays, it just no longer sits
+        # on the PR critical path.
+        os: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'ci-full')) && fromJSON('["ubuntu-latest", "windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
@@ -73,6 +87,10 @@ jobs:
           --junitxml=pytest-junit.xml
         env:
           JARVIS_TESTING: "1"
+          # Match Linux text IO. Windows otherwise decodes source and pipes as
+          # cp1252 and fails tests on bytes that are valid UTF-8.
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: "utf-8"
       - name: Tracked backend test count matches this run
         # D1e — test-count drift became invisible once the in-suite release gate
         # switched to --reuse-test-counts (#988 was an 80-test drift). Compare the
@@ -96,8 +114,10 @@ jobs:
   sandbox-isolation:
     # Post-merge only. Proves the Docker sandbox actually CONTAINS code — no
     # network and a read-only filesystem (RUN_SANDBOX_ISOLATION=1 exercises the
-    # real containment test instead of letting it skip).
-    if: github.event_name == 'push'
+    # real containment test instead of letting it skip). The job itself is
+    # about a minute; 20 covers a cold image pull.
+    timeout-minutes: 20
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'ci-full')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -128,8 +148,9 @@ jobs:
   signal-layer-smoke:
     # Post-merge only. Proves the provider-neutral Signal Layer can run its
     # deterministic replay path without WorldMonitor, Docker, API keys, or
-    # network access.
-    if: github.event_name == 'push'
+    # network access. Observed under a minute; 15 is the bound.
+    timeout-minutes: 15
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'ci-full')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -147,7 +168,9 @@ jobs:
   frontend:
     # Post-merge only. HUD (React-via-globals) unit tests — runs the real
     # shipped static artifacts inside JSDOM; see tests/frontend/README.md.
-    if: github.event_name == 'push'
+    # Observed ~1 min; 20 covers npm ci plus coverage.
+    timeout-minutes: 20
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'ci-full')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -165,6 +188,9 @@ jobs:
     # TS) and verify the committed bundle is current — so agents/web/v2 (served
     # at /v2) can't silently go stale. Deterministic and ~1.7 min, in parallel
     # with `test`; it would have caught both stale-bundle reds of 2026-08-31.
+    # Observed ~4 min; 20 covers a cold npm ci.
+    timeout-minutes: 20
+    if: github.event.action != 'labeled' || github.event.label.name == 'ci-full'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -207,8 +233,10 @@ jobs:
   openapi-types:
     # Post-merge only. Generated TypeScript must match the live FastAPI OpenAPI
     # schema; boots the backend plus the frontend toolchain and reports a
-    # readable git diff on drift.
-    if: github.event_name == 'push'
+    # readable git diff on drift. Observed ~1 min when the server comes up;
+    # 20 covers the toolchain install plus the 90s readiness wait.
+    timeout-minutes: 20
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'ci-full')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1

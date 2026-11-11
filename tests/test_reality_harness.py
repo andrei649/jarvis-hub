@@ -46,9 +46,20 @@ async def test_boot_registry_reality_cases_hold_for_every_wired_capability():
     results = {item["capability_id"]: item["passed"] for item in out["results"]}
 
     # Six default-off image-provider manifests now have separate policy cases.
-    # 85: the A2A outbound plugin (plugin:a2a, Adopt lane slice 4) joined the wired set;
-    # 88: the three default-off cloud video providers (G19) joined the registry.
-    assert len(cases) == len(records) == 88
+    default_skills = {"skill:Brief", "skill:PM", "skill:Security Monitor",
+                      "skill:System Monitor", "skill:Weather Intel"}
+    optional_sources = {"skill:Calendar", "skill:Content", "skill:Email Triage",
+                        "skill:Family Store", "skill:Health", "skill:Spotify",
+                        "skill:Web Research"}
+    assert {capability_id for capability_id, record in records.items()
+            if record.kind == "skill"} == default_skills
+    assert default_skills.isdisjoint(optional_sources)
+    assert len(default_skills | optional_sources) == 12
+    # 52 plugins: the A2A outbound plugin (plugin:a2a, Adopt lane slice 4) and the three
+    # default-off cloud video providers (G19) joined the registry.
+    assert sum(record.kind == "plugin" for record in records.values()) == 52
+    assert sum(record.kind == "component" for record in records.values()) == 24
+    assert len(cases) == len(records) == 88 - len(optional_sources) == 81
     assert results["plugin:a2a"] is True
     assert results["plugin:ntfy"] is True
     # The six disabled cloud-image plugins still have real manifest egress rails;

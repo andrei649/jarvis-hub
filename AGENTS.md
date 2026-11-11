@@ -21,6 +21,15 @@ apply to unattended merge/deploy, not to this owner-authorized local work.
 Keep this sprint local: no push, merge, or deployment until the owner requests
 publication. Tests, truthful evidence, and preservation of existing work still apply.
 
+**Current Hermes campaign, 2026-11-04:** follow the active workflow in
+[`docs/hermes/autonomous-development-objective.md`](docs/hermes/autonomous-development-objective.md)
+and the cumulative `docs/hermes/CAMPAIGN_HANDOFF.md`. Integrate the current batch
+first, then complete the frozen 697-contract objective; interrupt only for a
+concrete blocking security, correctness, or build defect. This campaign is local
+only: **no stage, commit, push, merge, deploy, PR update, paid activation, or
+external schedule change**. Do not silently resume a paused schedule. The
+publication workflow below describes a separate, later owner-authorized lane.
+
 1. Inspect `git status`, the current branch, the requested scope, and changes already present.
 2. Preserve user and other-agent changes. Never reset, overwrite, stage, or reformat unrelated work.
 3. Identify overlapping open work when remote state matters. A draft PR is a visibility signal,
@@ -33,6 +42,10 @@ publication. Tests, truthful evidence, and preservation of existing work still a
    authorizes routine actions only inside the machine-readable self-development policy.
 
 ## ⚡ Max mode — protocolul de finisare
+
+Protocolul Max/PR/Spark de mai jos aparține lane-ului separat de publicare; nu
+schimbă fluxul local al campaniei Hermes din 2026-11-04 și nu introduce un Spark
+opțional sau un PR în lotul ei curent.
 
 Codename-ul **„Max"** (orice casing, oriunde în repo) pornește sau continuă **`MAX.md`** —
 protocolul care duce tot ce promit docurile în produsul final. Fără întrebări, fără explicații;
@@ -75,11 +88,19 @@ raportarea onestă a ceea ce s-a rulat rămâne.)*
 - Use `docs/AI_CONTEXT.md` to select task-specific bundles. Treat `.opencode/summary.md`,
   `.opencode/plans/dev-methodology.md`, and `docs/SPRINT.md` as historical context, never as live
   instructions or current delivery truth.
+- For the current Hermes checkpoint, verify the cumulative handoff against the
+  current checkout/SHA and query the relevant Hermes and BACKLOG records. The
+  historical build queue and Lean pick list are planning evidence, not active
+  priority orders. Checkbox counts alone do not cover BACKLOG work tables.
 - Plans and handoffs should include freshness fields: goal, base SHA, head SHA, changed paths,
   next action, and generation time. A stale capsule may inform investigation but cannot
   authorize action.
 
 ## Delivery workflow
+
+The remote branch/PR instructions in this section apply only when a separate
+publication request authorizes them. They do not override the local-only Hermes
+campaign above. Keep their trusted-policy, check and release protections intact.
 
 - Work on a feature branch and use a PR into `main`. The hourly auto-merge sweep may merge any
   **non-draft** PR only when the same head satisfies all three conditions: GitHub reports `CLEAN`,
@@ -130,8 +151,8 @@ raportarea onestă a ceea ce s-a rulat rămâne.)*
 
 - The owner authorizes the coordinator to delegate independent Nerva/Hermes work.
   Use at most two concurrent implementation agents, explicitly `gpt-6-sol` with
-  `high` reasoning. An optional narrowly scoped read-only investigator may use
-  `gpt-6-luna` with `medium` reasoning when a slot is available and it saves work.
+  `high` reasoning, with separate file ownership and no subdelegation in the
+  current Hermes campaign.
 - Keep the total at four active agents including the coordinator. Subagents must
   not delegate. The coordinator owns scope, shared interfaces, integration and
   critical review. Its model/effort stays as selected in the app; prefer Astra

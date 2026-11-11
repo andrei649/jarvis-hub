@@ -77,6 +77,11 @@ class BrowserPolicy:
             return False, "no hostname in URL"
         if not any(host == d or host.endswith("." + d) for d in self.allowlist):
             return False, f"{host} not in egress allowlist"
+        from .security.website_policy import website_refusal
+
+        website_reason = website_refusal(url)
+        if website_reason:
+            return False, website_reason
         try:
             from .security.ssrf import check_ssrf
             reason = check_ssrf(url)
@@ -101,6 +106,11 @@ class FixtureBrowserPolicy(BrowserPolicy):
         super().__init__(['fixture.browser.test', 'frame.other.test'])
 
     def domain_allowed(self, url: str) -> tuple[bool, str]:
+        from .security.website_policy import website_refusal
+
+        website_reason = website_refusal(url)
+        if website_reason:
+            return False, website_reason
         try:
             if type(url) is not str or any(ord(char) <= 32 or ord(char) == 127 for char in url):
                 return False, 'fixture_only'

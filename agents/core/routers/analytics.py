@@ -237,20 +237,21 @@ async def metrics_north_star(days: int = Query(7, ge=1, le=90)):
     return nocache_json(result)
 
 
-@router.get("/api/metrics/capabilities")
+@router.get("/api/metrics/capabilities", dependencies=[Depends(user_guard)])
 async def metrics_capabilities():
     """V2 — capability readiness registry: a SEAM/WIRED/VERIFIED/GA state per capability.
 
     Derived from the plugin/component/skill registries (ORIZONT 24 Track V); makes
-    "looks done, isn't wired" a visible state instead of a per-caller guess. Open like
-    the sibling north-star meter (non-sensitive aggregate; the app is localhost-only
-    until a token is set). 503 until the orchestrator is up. Nothing is VERIFIED until
-    the reality harness (V1) lands — `harness_pending` reflects that honestly."""
+    "looks done, isn't wired" a visible state instead of a per-caller guess.
+    Registered tool descriptions may contain connected server content, so this
+    full snapshot requires user authentication. 503 until the orchestrator is up.
+    Nothing is VERIFIED until the reality harness (V1) lands — `harness_pending`
+    reflects that honestly."""
     orch = get_orch()
     if not orch:
         return nocache_json({"error": "not initialized"}, status_code=503)
     from agents.core.observability.capability_registry import snapshot
-    # Open route: tool records carry their static schema, never the live H296 answer.
+    # Keep static H296 schemas; connected tool descriptions still need the user guard.
     return nocache_json(snapshot(orch, live_schemas=False))
 
 
@@ -318,13 +319,14 @@ async def client_protocol_capabilities(request: Request):
     return nocache_json(describe_client_protocol(request.app))
 
 
-@router.get("/api/metrics/kernel")
+@router.get("/api/metrics/kernel", dependencies=[Depends(user_guard)])
 async def metrics_kernel():
     """Live tally of Action-Kernel decisions — grant/deny/queue per action kind, deny-rate,
     and the recent denials (with reasons, so a halt / runaway / over-budget is visible).
 
     In-memory observability (resets on restart; the IntentLog audit chain is the durable
-    record). Open like the sibling meters. Empty until `JARVIS_ACTION_KERNEL` is on and
+    record). Owner-authenticated because denial reasons may contain private scopes.
+    Empty until `JARVIS_ACTION_KERNEL` is on and
     actions are actually mediated — no orchestrator dependency (a module-level meter)."""
     from agents.core.kernel.metrics import KERNEL_METRICS
     return nocache_json(KERNEL_METRICS.snapshot())

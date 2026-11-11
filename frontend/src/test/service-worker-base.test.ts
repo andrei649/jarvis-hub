@@ -32,10 +32,33 @@ it('intercepts only its prefixed HUD assets and navigation, never APIs or anothe
   const w = worker('/nerva');
   for (const path of ['/api/private','/nerva/api/private','/v2/assets/x.js','/other/v2/chat']) {
     const respondWith = vi.fn();
-    w.handlers.fetch({request:{method:'GET',url:'https://example.test'+path,mode:'navigate'},respondWith});
+    w.handlers.fetch({request:{method:'GET',url:'https://example.test'+path,mode:'navigate'},respondWith,waitUntil:vi.fn()});
     expect(respondWith).not.toHaveBeenCalled();
   }
   const respondWith = vi.fn();
-  w.handlers.fetch({request:{method:'GET',url:'https://example.test/nerva/v2/assets/x.js',mode:'cors'},respondWith});
+  w.handlers.fetch({request:{method:'GET',url:'https://example.test/nerva/v2/assets/x.js',mode:'cors'},respondWith,waitUntil:vi.fn()});
   expect(respondWith).toHaveBeenCalledOnce();
+});
+it('keeps a successful asset cache write alive after returning the response', async () => {
+  const w = worker('/nerva');
+  let releasePut!: () => void;
+  const write = new Promise<void>((resolve) => { releasePut = resolve; });
+  w.put.mockImplementation(() => write);
+  const lifetimes: Promise<unknown>[] = [];
+  let response!: Promise<Response>;
+  w.handlers.fetch({
+    request: new Request('https://example.test/nerva/v2/assets/index-hash.js'),
+    waitUntil: (promise: Promise<unknown>) => lifetimes.push(promise),
+    respondWith: (promise: Promise<Response>) => { response = promise; },
+  });
+  expect((await response).ok).toBe(true);
+  expect(w.put).toHaveBeenCalledOnce();
+  expect(lifetimes).toHaveLength(1);
+  let finished = false;
+  void lifetimes[0].then(() => { finished = true; });
+  await Promise.resolve();
+  expect(finished).toBe(false);
+  releasePut();
+  await lifetimes[0];
+  expect(finished).toBe(true);
 });

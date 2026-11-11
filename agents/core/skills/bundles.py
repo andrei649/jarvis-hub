@@ -63,6 +63,7 @@ logger = logging.getLogger("jarvis.skills.bundles")
 DIR_NAME = "skill-bundles"
 MAX_BUNDLES = 64
 MAX_MEMBERS = 64
+MAX_MEMBER_PATH_CHARS = 4096
 MAX_NAME_CHARS = 64
 MAX_DESCRIPTION_CHARS = 200
 MAX_INSTRUCTION_CHARS = 2000
@@ -130,7 +131,7 @@ def clean_name(value: Any) -> str:
 
 
 def clean_members(value: Any) -> list[str]:
-    """The member list as skill names (trimmed, de-duplicated ignoring case), or raise."""
+    """Bound names and path references separately, preserving exact path resolution."""
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise BundleError("bad_skills", "a bundle's skills are a list of skill names")
     distinct = {item.strip().casefold() for item in value if item.strip()}
@@ -138,9 +139,16 @@ def clean_members(value: Any) -> list[str]:
         raise BundleError("no_skills", "a bundle must name at least one skill")
     if len(distinct) > MAX_MEMBERS:
         raise BundleError("too_many", f"a bundle names at most {MAX_MEMBERS} skills")
-    members = switches.clean_names(value)
-    if len(members) != len(distinct):
-        raise BundleError("bad_skills", f"a skill name is at most {switches.MAX_NAME_CHARS} printable characters")
+    members, seen = [], set()
+    for item in value:
+        member = item.strip()
+        if not member or member.casefold() in seen:
+            continue
+        limit = MAX_MEMBER_PATH_CHARS if is_path(member) else switches.MAX_NAME_CHARS
+        if len(member) > limit or not member.isprintable():
+            raise BundleError("bad_skills", f"a skill reference is at most {limit} printable characters")
+        members.append(member)
+        seen.add(member.casefold())
     return members
 
 
@@ -551,7 +559,7 @@ def _hermes_parts(record: Any) -> tuple[str, ...] | None:
         parts = parts[starts[-1] + 2:]
     elif record.get("source_repository") == HERMES_REPO:
         parts = PurePosixPath(source).parts
-        if not parts or parts[0] != "skills":
+        if not parts or parts[0] not in ("skills", "optional-skills"):
             return None
         parts = parts[1:]
     else:

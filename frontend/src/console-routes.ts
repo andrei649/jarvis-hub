@@ -1,6 +1,7 @@
 // Public bookmark IDs are explicit literals. Never derive them from function names at runtime.
 export const CONSOLE_PANELS = [
   {"id": "command-center", "label": "Command Center", "group": "Start", "component": "CommandCenterPanel"},
+  {"id": "usage", "label": "Usage", "group": "Start", "component": "UsagePanel"},
   {"id": "today-receipt", "label": "Today Receipt", "group": "Start", "component": "TodayReceiptPanel"},
   {"id": "model-setup", "label": "Model Setup", "group": "Start", "component": "ModelSetupPanel"},
   {"id": "integrations", "label": "Integrations", "group": "Start", "component": "IntegrationsPanel"},

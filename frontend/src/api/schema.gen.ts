@@ -2993,6 +2993,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/security/dependencies/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Security Dependencies Audit
+         * @description OSV lookup through the hub's real PluginHTTPClient and egress kernel hook.
+         */
+        post: operations["security_dependencies_audit_api_security_dependencies_audit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/security/data-handling/ack": {
         parameters: {
             query?: never;
@@ -3119,7 +3139,7 @@ export interface paths {
         };
         /**
          * Kill Switch Status
-         * @description Out-of-band kill-switch status.
+         * @description Public content-free out-of-band kill-switch status.
          */
         get: operations["kill_switch_status_api_security_kill_switch_get"];
         put?: never;
@@ -3128,6 +3148,26 @@ export interface paths {
          * @description Engage/disengage the kill-switch (operator action; agent can't reach this).
          */
         post: operations["kill_switch_set_api_security_kill_switch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/security/kill-switch/details": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Kill Switch Details
+         * @description The existing full halt map for authenticated owner diagnostics.
+         */
+        get: operations["kill_switch_details_api_security_kill_switch_details_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3350,6 +3390,63 @@ export interface paths {
         get: operations["security_status_security_status_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/optional/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Optional Skills Catalog */
+        get: operations["optional_skills_catalog_api_skills_optional_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/skills/hermes/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pinned Hermes Catalog
+         * @description Read-only local pin inventory; listing it never fetches upstream bytes.
+         */
+        get: operations["pinned_hermes_catalog_skills_hermes_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/optional/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Optional Skills Install
+         * @description Owner-selected install; kernel can refuse the write, but cannot approve execution.
+         */
+        post: operations["optional_skills_install_api_skills_optional_install_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3634,10 +3731,11 @@ export interface paths {
          * @description H336 — the owner installs or repairs one skill of the vendored Hermes catalog
          *     (Hermes: ``hermes skills install official/<category>/<skill>``, ``repair-official``).
          *
-         *     An admin route with no DEV_MODE gate, for this catalog only: its skills are pinned to one
-         *     upstream commit, byte-verified against MANIFEST.json before every write, and carry
-         *     instructions and plain data only. ``POST /skills/import`` (every other source, and this
-         *     one for a user token) keeps its DEV_MODE gate. ``skill`` is a slug, ``<category>/<skill>``,
+         *     An admin route, for this catalog only: its skills are pinned to one upstream commit,
+         *     byte-verified against MANIFEST.json before every write, and carry instructions and
+         *     plain data only. ``POST /skills/import`` (admin too) takes the same catalog as source
+         *     ``hermes-catalog`` without repair; its remote sources cross the action kernel and
+         *     governed egress for each request. ``skill`` is a slug, ``<category>/<skill>``,
          *     the upstream path or ``official/<category>/<skill>``. A skill a catalog install already
          *     wrote, or ``repair: true``, is repaired: deleted files are restored from the vendored
          *     bytes, an edited file refuses the repair (409 ``local_edits``) unless ``force``, which
@@ -3990,6 +4088,142 @@ export interface paths {
         get: operations["skill_batches_api_skills_batches_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/curator/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_curator_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/curator/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Usage */
+        get: operations["usage_api_curator_usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/curator/list-unmanaged": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Unmanaged */
+        get: operations["list_unmanaged_api_curator_list_unmanaged_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/curator/list-archived": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Archived */
+        get: operations["list_archived_api_curator_list_archived_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/curator/ledger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ledger */
+        get: operations["ledger_api_curator_ledger_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/curator/backups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Backups */
+        get: operations["backups_api_curator_backups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/curator/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview */
+        post: operations["preview_api_curator_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/curator/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request Operation */
+        post: operations["request_operation_api_curator_request_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8364,10 +8598,11 @@ export interface paths {
          * @description V2 — capability readiness registry: a SEAM/WIRED/VERIFIED/GA state per capability.
          *
          *     Derived from the plugin/component/skill registries (ORIZONT 24 Track V); makes
-         *     "looks done, isn't wired" a visible state instead of a per-caller guess. Open like
-         *     the sibling north-star meter (non-sensitive aggregate; the app is localhost-only
-         *     until a token is set). 503 until the orchestrator is up. Nothing is VERIFIED until
-         *     the reality harness (V1) lands — `harness_pending` reflects that honestly.
+         *     "looks done, isn't wired" a visible state instead of a per-caller guess.
+         *     Registered tool descriptions may contain connected server content, so this
+         *     full snapshot requires user authentication. 503 until the orchestrator is up.
+         *     Nothing is VERIFIED until the reality harness (V1) lands — `harness_pending`
+         *     reflects that honestly.
          */
         get: operations["metrics_capabilities_api_metrics_capabilities_get"];
         put?: never;
@@ -8463,7 +8698,8 @@ export interface paths {
          *     and the recent denials (with reasons, so a halt / runaway / over-budget is visible).
          *
          *     In-memory observability (resets on restart; the IntentLog audit chain is the durable
-         *     record). Open like the sibling meters. Empty until `JARVIS_ACTION_KERNEL` is on and
+         *     record). Owner-authenticated because denial reasons may contain private scopes.
+         *     Empty until `JARVIS_ACTION_KERNEL` is on and
          *     actions are actually mediated — no orchestrator dependency (a module-level meter).
          */
         get: operations["metrics_kernel_api_metrics_kernel_get"];
@@ -9443,6 +9679,51 @@ export interface paths {
         get: operations["channels_send_rate_limit_api_channels_send_rate_limit_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Channels Deliveries
+         * @description H081 — delivery receipts: what happened to each outbound reply (sent, failed,
+         *     partial, unknown, skipped), the counts per state, the chats registered as gone, and
+         *     each channel's connection health (H100). No message text is stored or returned:
+         *     a row carries the channel, the chat it went to, its length and the failure kind.
+         *     ``state`` filters to one state (``unknown``, ``failed`` …).
+         */
+        get: operations["channels_deliveries_api_channels_deliveries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/dead-targets/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Channels Dead Target Clear
+         * @description H081 — lift a chat's "gone" flag so the next reply to it is tried again. The flag
+         *     also lifts by itself when that chat writes to the bot or a send to it succeeds.
+         */
+        post: operations["channels_dead_target_clear_api_channels_dead_targets_clear_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -14792,6 +15073,10 @@ export interface components {
             approved: boolean;
             /** Skills */
             skills?: string[];
+            /** Skill Fingerprints */
+            skill_fingerprints?: {
+                [key: string]: string;
+            };
             /** Proposals */
             proposals?: string[];
             /** Batches */
@@ -15322,6 +15607,33 @@ export interface components {
             /** Package Hash */
             package_hash: string;
         };
+        /** CuratorArgs */
+        CuratorArgs: {
+            /** Name */
+            name?: string | null;
+            /** Archive Id */
+            archive_id?: string | null;
+            /**
+             * All Unmanaged
+             * @default false
+             */
+            all_unmanaged: boolean;
+            /**
+             * Consolidate
+             * @default false
+             */
+            consolidate: boolean;
+            /** Days */
+            days?: number | null;
+            /** Reason */
+            reason?: string | null;
+            /** Ledger Id */
+            ledger_id?: string | null;
+            /** Backup Id */
+            backup_id?: string | null;
+            /** Archive Ids */
+            archive_ids?: string[];
+        };
         /** CurriculumBody */
         CurriculumBody: {
             /** Topics */
@@ -15352,6 +15664,13 @@ export interface components {
             /** Version */
             version?: number | null;
         };
+        /** DeadTargetClearBody */
+        DeadTargetClearBody: {
+            /** Channel */
+            channel: string;
+            /** Target */
+            target: string;
+        };
         /** DecisionBody */
         DecisionBody: {
             /** Approved */
@@ -15368,6 +15687,88 @@ export interface components {
         DeleteBody: {
             /** Expected Revision */
             expected_revision: number;
+        };
+        /**
+         * DependencyAuditComponent
+         * @description A bounded package identity, never a path, command, credential, or install request.
+         */
+        DependencyAuditComponent: {
+            /**
+             * Surface
+             * @enum {string}
+             */
+            surface: "installed" | "extension" | "mcp";
+            /** Name */
+            name: string;
+            /** Version */
+            version: string;
+            /** Origin */
+            origin: string;
+            /**
+             * Ecosystem
+             * @enum {string}
+             */
+            ecosystem: "PyPI" | "npm";
+        };
+        /** DependencyAuditError */
+        DependencyAuditError: {
+            /**
+             * Surface
+             * @enum {string}
+             */
+            surface: "installed" | "extension" | "mcp";
+            /** Reason */
+            reason: string;
+            /** Location */
+            location?: string | null;
+            /** Server */
+            server?: string | null;
+            /** Index */
+            index?: number | null;
+            /**
+             * Coverage Unavailable
+             * @default false
+             */
+            coverage_unavailable: boolean;
+        };
+        /** DependencyAuditRequest */
+        DependencyAuditRequest: {
+            /** Components */
+            components: components["schemas"]["DependencyAuditComponent"][];
+            /** Errors */
+            errors?: components["schemas"]["DependencyAuditError"][];
+            /**
+             * Fail On
+             * @default low
+             * @enum {string}
+             */
+            fail_on: "low" | "moderate" | "high" | "critical";
+            /** Ignore Vuln */
+            ignore_vuln?: string[];
+            /**
+             * Osv Url
+             * @default https://api.osv.dev
+             */
+            osv_url: string;
+            skip?: components["schemas"]["DependencyAuditSkip"];
+        };
+        /** DependencyAuditSkip */
+        DependencyAuditSkip: {
+            /**
+             * Venv
+             * @default false
+             */
+            venv: boolean;
+            /**
+             * Plugins
+             * @default false
+             */
+            plugins: boolean;
+            /**
+             * Mcp
+             * @default false
+             */
+            mcp: boolean;
         };
         /** DescribeAutoBody */
         DescribeAutoBody: {
@@ -16163,6 +16564,11 @@ export interface components {
              */
             allow_visual_fallback: boolean;
         };
+        /** OptionalSkillInstallBody */
+        OptionalSkillInstallBody: {
+            /** Name */
+            name: string;
+        };
         /** OrchestrationBody */
         OrchestrationBody: {
             /** Orchestrator Profile */
@@ -16351,6 +16757,15 @@ export interface components {
             /** Duration Seconds */
             duration_seconds?: number | null;
         };
+        /** PreviewBody */
+        PreviewBody: {
+            /**
+             * Operation
+             * @enum {string}
+             */
+            operation: "run" | "pause" | "resume" | "pin" | "unpin" | "adopt" | "restore" | "archive" | "prune" | "backup" | "rollback" | "purge";
+            args?: components["schemas"]["CuratorArgs"];
+        };
         /** PromoteRequest */
         PromoteRequest: {
             /** Bench Agent */
@@ -16480,6 +16895,17 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** RequestBody */
+        RequestBody: {
+            /**
+             * Operation
+             * @enum {string}
+             */
+            operation: "run" | "pause" | "resume" | "pin" | "unpin" | "adopt" | "restore" | "archive" | "prune" | "backup" | "rollback" | "purge";
+            args?: components["schemas"]["CuratorArgs"];
+            /** Preview Fingerprint */
+            preview_fingerprint: string;
+        };
         /** RequestPaymentBody */
         RequestPaymentBody: {
             /** Mandate Id */
@@ -16529,6 +16955,11 @@ export interface components {
             name: string;
             /** Status */
             status: string;
+        };
+        /** ReviewedSkillBody */
+        ReviewedSkillBody: {
+            /** Expected Fingerprint */
+            expected_fingerprint: string;
         };
         /** RotateTokensBody */
         RotateTokensBody: {
@@ -17039,6 +17470,7 @@ export interface components {
             compressions?: number;
             /** Total Tokens */
             total_tokens?: number;
+            usage_detail?: components["schemas"]["TurnUsageDetail"];
             /** Title */
             title?: string;
             /** Battery */
@@ -17107,6 +17539,25 @@ export interface components {
              * @enum {string}
              */
             basis: "observed" | "unknown";
+        };
+        /** TurnUsageDetail */
+        TurnUsageDetail: {
+            /** Input Tokens */
+            input_tokens: number | null;
+            /** Output Tokens */
+            output_tokens: number | null;
+            /** Estimated Cost Usd */
+            estimated_cost_usd: number | null;
+            /**
+             * Usage Basis
+             * @enum {string}
+             */
+            usage_basis: "provider_complete" | "measured_zero" | "unknown";
+            /**
+             * Cost Basis
+             * @enum {string}
+             */
+            cost_basis: "price_table" | "local_zero" | "measured_zero" | "unknown";
         };
         /** UninstallSkillBody */
         UninstallSkillBody: {
@@ -22375,6 +22826,39 @@ export interface operations {
             };
         };
     };
+    security_dependencies_audit_api_security_dependencies_audit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DependencyAuditRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     data_handling_ack_api_security_data_handling_ack_post: {
         parameters: {
             query?: never;
@@ -22541,6 +23025,26 @@ export interface operations {
         };
     };
     kill_switch_set_api_security_kill_switch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    kill_switch_details_api_security_kill_switch_details_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -22778,6 +23282,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    optional_skills_catalog_api_skills_optional_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    pinned_hermes_catalog_skills_hermes_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    optional_skills_install_api_skills_optional_install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OptionalSkillInstallBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -23445,7 +24022,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewedSkillBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -23631,6 +24212,250 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    status_api_curator_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    usage_api_curator_usage_get: {
+        parameters: {
+            query?: {
+                origin?: ("agent" | "import" | "bundled" | "unknown") | null;
+                sort?: ("activity" | "recent" | "name") | null;
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_unmanaged_api_curator_list_unmanaged_get: {
+        parameters: {
+            query?: {
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_archived_api_curator_list_archived_get: {
+        parameters: {
+            query?: {
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ledger_api_curator_ledger_get: {
+        parameters: {
+            query?: {
+                name?: string | null;
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backups_api_curator_backups_get: {
+        parameters: {
+            query?: {
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_api_curator_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    request_operation_api_curator_request_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -32177,6 +33002,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    channels_deliveries_api_channels_deliveries_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                state?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    channels_dead_target_clear_api_channels_dead_targets_clear_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeadTargetClearBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

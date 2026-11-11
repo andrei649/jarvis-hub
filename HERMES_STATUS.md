@@ -1,8 +1,8 @@
 # Sprint curent: echivalarea celor 697 de capabilități Hermes
 
-**156 / 697 = 22.4% echivalente complet în evaluarea documentată.**
+**161 / 697 = 23.1% echivalente complet în evaluarea documentată.**
 
-Din acestea, **156** au fost reevaluate pe cod în această livrare; **0** păstrează verdictul auditului din 7 septembrie.
+Din acestea, **161** au fost reevaluate pe cod în această livrare; **0** păstrează verdictul auditului din 7 septembrie.
 
 **Acesta este un status inițial conservator, nu o reauditare completă a celor 697.** Verdictele moștenite și cele actualizate sunt vizibile pentru fiecare rând. Procentul de 88% discutat anterior privea altă listă și nu se aplică aici.
 
@@ -10,13 +10,13 @@ Din acestea, **156** au fost reevaluate pe cod în această livrare; **0** păst
 
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
-| Echivalent | 156 | 22.4% |
-| Parțial | 473 | 67.9% |
+| Echivalent | 161 | 23.1% |
+| Parțial | 468 | 67.1% |
 | Lipsă | 36 | 5.2% |
 | Exclus intenționat | 32 | 4.6% |
 | De reverificat | 0 | 0.0% |
 
-**Ținta acceptată în produs:** 665 rânduri; progres 156/665 = **23.5%**. Excluderi active: 32. Readmise explicit din vechiul audit: 75; readmiterea nu acordă credit de implementare.
+**Ținta acceptată în produs:** 665 rânduri; progres 161/665 = **24.2%**. Excluderi active: 32. Readmise explicit din vechiul audit: 75; readmiterea nu acordă credit de implementare.
 
 **Acoperirea reevaluării curente:** 665/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
 
@@ -28,11 +28,11 @@ Fiecare rând aparține unui singur domeniu din [areas.json](docs/hermes/areas.j
 
 | Domeniu | Lane | Rânduri | Echiv. | Parțial | Lipsă | Exclus | Reverificare | Suită | Stare suită |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| [cli](docs/HERMES_CAPABILITIES.md#area-cli) — Command line: jobs done through the nerva CLI | own | 56 | 14 | 36 | 4 | 2 | 0 | 108 | seed din dovezi |
+| [cli](docs/HERMES_CAPABILITIES.md#area-cli) — Command line: jobs done through the nerva CLI | own | 56 | 15 | 35 | 4 | 2 | 0 | 108 | seed din dovezi |
 | [gateway](docs/HERMES_CAPABILITIES.md#area-gateway) — Always-on gateway and slash commands | own/run | 33 | 3 | 27 | 1 | 2 | 0 | 102 | seed din dovezi |
 | [platforms](docs/HERMES_CAPABILITIES.md#area-platforms) — Messaging platforms and channels | own | 39 | 3 | 28 | 4 | 4 | 0 | 39 | seed din dovezi |
 | [web](docs/HERMES_CAPABILITIES.md#area-web) — Web dashboard and HUD | own/run | 40 | 13 | 22 | 3 | 2 | 0 | 66 | seed din dovezi |
-| [desktop](docs/HERMES_CAPABILITIES.md#area-desktop) — Desktop app: jobs done in the HUD and Tauri shell | own | 54 | 4 | 42 | 6 | 2 | 0 | 50 | **subțire**, seed din dovezi |
+| [desktop](docs/HERMES_CAPABILITIES.md#area-desktop) — Desktop app: jobs done in the HUD and Tauri shell | own | 54 | 5 | 41 | 6 | 2 | 0 | 50 | **subțire**, seed din dovezi |
 | [tui](docs/HERMES_CAPABILITIES.md#area-tui) — Terminal UI: jobs done in the HUD and nerva CLI | own | 25 | 2 | 19 | 2 | 2 | 0 | 25 | **subțire**, seed din dovezi |
 | [config](docs/HERMES_CAPABILITIES.md#area-config) — Configuration and settings | own | 18 | 9 | 9 | 0 | 0 | 0 | 30 | seed din dovezi |
 | [env](docs/HERMES_CAPABILITIES.md#area-env) — Environment, install and execution targets | own | 28 | 6 | 21 | 0 | 1 | 0 | 157 | seed din dovezi |
@@ -42,15 +42,15 @@ Fiecare rând aparține unui singur domeniu din [areas.json](docs/hermes/areas.j
 | [agent-core](docs/HERMES_CAPABILITIES.md#area-agent-core) — Agent loop, context and sessions | own | 36 | 11 | 25 | 0 | 0 | 0 | 112 | seed din dovezi |
 | [memory](docs/HERMES_CAPABILITIES.md#area-memory) — Memory and recall | own | 27 | 9 | 18 | 0 | 0 | 0 | 69 | seed din dovezi |
 | [automation](docs/HERMES_CAPABILITIES.md#area-automation) — Automation: schedules, goals, delegation, kanban | own | 32 | 6 | 26 | 0 | 0 | 0 | 98 | seed din dovezi |
-| [security](docs/HERMES_CAPABILITIES.md#area-security) — Security: approvals, sandbox, secrets, egress | own | 34 | 7 | 25 | 1 | 1 | 0 | 211 | seed din dovezi |
+| [security](docs/HERMES_CAPABILITIES.md#area-security) — Security: approvals, sandbox, secrets, egress | own | 34 | 8 | 24 | 1 | 1 | 0 | 211 | seed din dovezi |
 | [media](docs/HERMES_CAPABILITIES.md#area-media) — Media: images, video, voice, vision | adopt/own | 27 | 7 | 20 | 0 | 0 | 0 | 100 | seed din dovezi |
 | [editor-acp](docs/HERMES_CAPABILITIES.md#area-editor-acp) — Editor agent over ACP | own/adopt | 6 | 0 | 0 | 5 | 1 | 0 | 2 | **subțire**, seed din dovezi |
 | [mcp](docs/HERMES_CAPABILITIES.md#area-mcp) — MCP client and server | own/run | 13 | 3 | 9 | 1 | 0 | 0 | 11 | seed din dovezi |
 | [agent-interop](docs/HERMES_CAPABILITIES.md#area-agent-interop) — OpenAI-compatible API and agent-to-agent (A2A) | own/adopt | 5 | 0 | 4 | 0 | 1 | 0 | 4 | **subțire**, seed din dovezi |
 | [extensions](docs/HERMES_CAPABILITIES.md#area-extensions) — Extensions, hooks and deployment packaging | own/adopt | 9 | 1 | 6 | 0 | 2 | 0 | 13 | seed din dovezi |
 | [feature-pages](docs/HERMES_CAPABILITIES.md#area-feature-pages) — Upstream feature pages (cross-cutting) | own/adopt/run | 48 | 5 | 37 | 3 | 3 | 0 | 172 | seed din dovezi |
-| [user-journeys](docs/HERMES_CAPABILITIES.md#area-user-journeys) — User journeys from the rest of the docs (cross-cutting) | own | 33 | 4 | 25 | 1 | 3 | 0 | 65 | seed din dovezi |
-| [upstream-delta](docs/HERMES_CAPABILITIES.md#area-upstream-delta) — Upstream delta v2026.8.27 to v2026.8.31 (cross-cutting) | own/adopt/run | 42 | 20 | 18 | 3 | 1 | 0 | 150 | seed din dovezi |
+| [user-journeys](docs/HERMES_CAPABILITIES.md#area-user-journeys) — User journeys from the rest of the docs (cross-cutting) | own | 33 | 5 | 24 | 1 | 3 | 0 | 65 | seed din dovezi |
+| [upstream-delta](docs/HERMES_CAPABILITIES.md#area-upstream-delta) — Upstream delta v2026.8.27 to v2026.8.31 (cross-cutting) | own/adopt/run | 42 | 21 | 17 | 3 | 1 | 0 | 150 | seed din dovezi |
 
 Suite subțiri: desktop, tui, editor-acp, agent-interop.
 

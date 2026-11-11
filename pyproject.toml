@@ -32,5 +32,5 @@ max-complexity = 12
 # Dead-code detection. Confidence < 80 is too noisy for a dynamic codebase
 # (FastAPI routes, plugin/skill loaders, dynamic dispatch).
 min_confidence = 80
-paths = ["agents", "skills"]
+paths = ["agents", "skills", "optional-skills"]
 exclude = ["tests/"]

@@ -76,7 +76,7 @@ async def arena_match(match_id: str):
     return nocache_json(m)
 
 
-@router.get("/api/arena/leaderboard")
+@router.get("/api/arena/leaderboard", dependencies=[Depends(user_guard)])
 async def arena_leaderboard():
     orch = get_orch()
     arena = getattr(orch, "arena", None) if orch else None

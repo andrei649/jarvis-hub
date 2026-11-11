@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import importlib.util
 import io
 import sqlite3
@@ -26,6 +27,7 @@ import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from agents.core.skills import loader as loader_mod
@@ -134,26 +136,45 @@ def test_a_registry_install_of_an_invalid_package_answers_422(market, tmp_path, 
 
 
 def test_an_import_refused_for_its_skill_md_answers_422(tmp_path, monkeypatch):
-    from agents import web
+    from agents.core.autonomy.policy import AutonomyPolicy
+    from agents.core.security.capability import KillSwitch
     from agents.core.skills.importer import SkillImporter
 
-    importer = SkillImporter(str(tmp_path / "skills"))
+    document = b"---\nname: notes\n---\nSteps here\n"
+    fetched = []
 
-    async def flat(*_args):
-        return "---\nname: notes\n---\nSteps here\n"
+    def answer(request):
+        fetched.append(request)
+        assert request.headers["host"] == "raw.githubusercontent.com"
+        assert request.url.path == f"/someuser/repo/{'a' * 40}/skills/notes/SKILL.md"
+        return httpx.Response(200, content=document)
 
-    monkeypatch.setattr(importer, "_fetch_skill_md_flat", flat)
-    monkeypatch.setattr(web, "DEV_MODE", True)
-    client = _client(monkeypatch, SimpleNamespace(skill_importer=importer,
-                                                  skills=SimpleNamespace(discover=lambda: None)))
-    got = client.post("/skills/import", json={"source": "someuser/repo", "skill": "notes"})
+    importer = SkillImporter(
+        str(tmp_path / "skills"), resolver=lambda host, *, mode: (["8.8.8.8"], None),
+        transport_factory=lambda target: httpx.MockTransport(answer),
+    )
+    orch = SimpleNamespace(skill_importer=importer, skills=SimpleNamespace(discover=lambda: None),
+                           autonomy_policy=AutonomyPolicy(), kill_switch=KillSwitch(tmp_path / "halt.json"),
+                           intent_log=SimpleNamespace(record=lambda *args, **kwargs: None), capabilities=None)
+    monkeypatch.setenv("JARVIS_ACTION_KERNEL", "0")
+    payload = {"source": "someuser/repo", "skill": "notes",
+               "pin": {"repo": "someuser/repo", "commit": "a" * 40,
+                       "entry_path": "skills/notes/SKILL.md",
+                       "content_sha256": hashlib.sha256(document).hexdigest()}}
+    client = _client(monkeypatch, orch)
+    got = client.post("/skills/import", json=payload,
+                      headers={"X-Admin-Token": "adm-h350b"})
     assert got.status_code == 422, got.text
     assert got.json()["ok"] is False and got.json()["reason"] == "invalid_skill_md"
     assert got.json()["problems"][0]["field"] == "description"
+    assert len(fetched) == 1
+    assert not (tmp_path / "skills" / "notes").exists()
     # A later refusal for another reason is not reported with the stale problems.
-    got = client.post("/skills/import", json={"source": "someuser/repo", "skill": "../notes"})
+    got = client.post("/skills/import", json={"source": "someuser/repo", "skill": "../notes"},
+                      headers={"X-Admin-Token": "adm-h350b"})
     assert got.status_code == 404, got.text
     assert importer.last_refusal == []
+    assert len(fetched) == 1
 
 
 def test_a_save_refused_before_the_check_clears_the_last_refusal(tmp_path):
@@ -334,10 +355,17 @@ def test_a_reinstall_is_known_by_its_name_in_any_case(market, tmp_path):
 
 def test_a_hermes_import_refused_by_its_name_clears_the_last_refusal(tmp_path):
     from agents.core.skills.importer import SkillImporter
+    from agents.core.skills.remote_pin import RemoteImportAuthorization, RemoteImportRefused
 
     importer = SkillImporter(str(tmp_path / "skills"))
     importer.last_refusal = ["an earlier import's problem"]
-    assert asyncio.run(importer.import_from_hermes("../notes")) is False
+    with pytest.raises(RemoteImportRefused) as missing:
+        asyncio.run(importer.import_from_hermes("../notes"))
+    assert missing.value.code == "authorization_unavailable"
+    assert importer.last_refusal == []
+    importer.last_refusal = ["an earlier import's problem"]
+    auth = RemoteImportAuthorization(lambda _payload: "grant", lambda *_: None)
+    assert asyncio.run(importer.import_from_hermes("../notes", authorization=auth)) is False
     assert importer.last_refusal == []
 
 

@@ -1,6 +1,6 @@
 """Tests for the Calendar skill (H2.1) — Pepper Google Calendar management.
 
-Converted from the HTTP-router stub to the loader pattern (skills/calendar/).
+Converted from the HTTP-router stub to the loader pattern (optional-skills/calendar/).
 """
 
 import importlib.util
@@ -15,7 +15,7 @@ sys.path.insert(0, str(repo_root / "agents"))
 
 
 def _load():
-    path = repo_root / "skills" / "calendar" / "main.py"
+    path = repo_root / "optional-skills" / "calendar" / "main.py"
     spec = importlib.util.spec_from_file_location("calendar_skill_test", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -83,7 +83,7 @@ async def test_handle_dispatch(skill, monkeypatch):
 def test_manifest_parses_via_loader(skill):
     from agents.core.skills.loader import SkillLoader
     sl = SkillLoader()
-    manifest = sl._parse_manifest(repo_root / "skills" / "calendar" / "SKILL.md")
+    manifest = sl._parse_manifest(repo_root / "optional-skills" / "calendar" / "SKILL.md")
     assert manifest["name"] == "Calendar"
     assert "pepper" in manifest["agents"]
     cmds = {c["command"] for c in manifest["commands"]}

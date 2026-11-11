@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from agents.core.routers._deps import user_guard, admin_guard
-from agents.core.routers._component import require_component
+from agents.core.routers._component import component_unavailable, require_component
 
 from agents.core.web_helpers import nocache_json
 from agents.core.app_state import get_orch
@@ -408,10 +408,11 @@ async def subagents_result(spawn_id: str):
     """G18 (H401) — the durable row of a sub-agent, its whole kept result included
     (the parent model is given at most 24 000 characters; the row keeps more). Reading
     it does not count as receiving it: delivery is the claim."""
-    orch = get_orch()
-    queue = getattr(orch, "autonomy_queue", None) if orch else None
-    if queue is None or not hasattr(queue, "delegation_by_spawn"):
-        return nocache_json({"error": "delegation record unavailable"}, status_code=503)
+    _, queue, err = require_component("autonomy_queue", "delegation record unavailable")
+    if err is None and not hasattr(queue, "delegation_by_spawn"):
+        err = component_unavailable("delegation record unavailable")
+    if err is not None:
+        return err
     # A delegation id (what the parent is pointed at) first, then a spawn id.
     row = await asyncio.to_thread(queue.delegation_get, spawn_id)
     if row is None:

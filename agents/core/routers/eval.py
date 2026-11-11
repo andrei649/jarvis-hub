@@ -36,19 +36,19 @@ class DatasetRunBody(BaseModel):
     version: Optional[int] = None
 
 
-@router.get("/api/eval/datasets")
+@router.get("/api/eval/datasets", dependencies=[Depends(user_guard)])
 async def list_eval_datasets():
     """List versioned eval datasets with their latest score (H9.3b)."""
     return nocache_json({"datasets": _get_dataset_store().list_datasets()})
 
 
-@router.get("/api/eval/datasets/{name}/runs")
+@router.get("/api/eval/datasets/{name}/runs", dependencies=[Depends(user_guard)])
 async def list_dataset_runs(name: str, limit: int = Query(20, ge=1, le=200)):
     """Recent run summaries for a dataset (most-recent first)."""
     return nocache_json({"name": name, "runs": _get_dataset_store().runs(name, limit)})
 
 
-@router.get("/api/eval/datasets/{name}/compare")
+@router.get("/api/eval/datasets/{name}/compare", dependencies=[Depends(user_guard)])
 async def compare_dataset_runs(name: str, a: str = Query(...), b: str = Query(...)):
     """Diff two runs (a=baseline, b=candidate): regressions + score delta."""
     return nocache_json(_get_dataset_store().compare(name, a, b))

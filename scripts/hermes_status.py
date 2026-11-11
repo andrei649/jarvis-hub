@@ -11,7 +11,7 @@ an `equivalent` row honest is its area's suite passing, not a hash of the files 
 failing suite demotes that area's equivalent rows to `needs_review` (basis `suite_failed`);
 moving or editing code changes no row. Citations (`path:line`) in summaries are prose pointers.
 
-  summary | list | show ID     read the records
+  summary | list | show ID     read the records; `show --recorded` adds the stored review
   write | check               regenerate / compare HERMES_STATUS.md and docs/HERMES_CAPABILITIES.md;
                               check also validates the area map and that every suite entry resolves
   verify [--junit FILE]       read a pytest JUnit result (CI reuses its own run) or run the suites
@@ -513,6 +513,18 @@ def _verify(ns: argparse.Namespace, ledger: dict, data: dict, areas: dict) -> in
     return 1 if failed else 0
 
 
+def show_payload(ledger: dict, data: dict, areas: dict, row: dict, *, recorded: bool = False) -> dict:
+    """One current row, its area and the frozen capability; with ``recorded``, also the stored
+    review (or None). The stored review is history: it never replaces the current assessment,
+    whose status a failing area suite may have demoted."""
+    area = next(a for a in areas["areas"] if a["id"] == row["area"])
+    payload = {"assessment": row, "area": {k: area[k] for k in ("id", "title", "lanes", "suite")},
+               "original": ledger["capabilities"][int(row["id"][1:]) - 1]}
+    if recorded:
+        payload["recorded_review"] = next((item for item in data["reviews"] if item["id"] == row["id"]), None)
+    return payload
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     subs = parser.add_subparsers(dest="command", required=True)
@@ -525,6 +537,8 @@ def main(argv: list[str] | None = None) -> int:
     listing.add_argument("--limit", type=int, default=20)
     show = subs.add_parser("show")
     show.add_argument("id")
+    show.add_argument("--recorded", action="store_true",
+                      help="also show the stored review; the current assessment is unchanged")
     subs.add_parser("write")
     subs.add_parser("check")
     verify = subs.add_parser("verify", help="judge the area acceptance suites")
@@ -557,9 +571,7 @@ def main(argv: list[str] | None = None) -> int:
             if row is None:
                 print(f"not found: {ns.id}", file=sys.stderr)
                 return 1
-            area = next(a for a in areas["areas"] if a["id"] == row["area"])
-            print(json.dumps({"assessment": row, "area": {k: area[k] for k in ("id", "title", "lanes", "suite")},
-                              "original": ledger["capabilities"][int(row["id"][1:]) - 1]},
+            print(json.dumps(show_payload(ledger, data, areas, row, recorded=ns.recorded),
                              ensure_ascii=False, indent=2))
         else:
             drift = []

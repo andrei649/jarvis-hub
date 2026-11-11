@@ -24,6 +24,7 @@ from agents.cli.nerva import (
     EXIT_FAILED,
     EXIT_NO_HUB,
     EXIT_OK,
+    EXIT_UNAVAILABLE,
     EXIT_USAGE,
     Context,
     build_parser,
@@ -89,8 +90,13 @@ def test_the_command_tree_is_discoverable_and_complete():
         "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "inspect", "logs", "estop", "jobs", "sessions", "chat", "send", "completion",
         "prompt-size", "desktop", "security", "todo", "skills", "company", "auth", "checkpoints", "kanban", "project", "secrets", "support",
         "uninstall", "backup", "pairing", "webhook", "provider", "goal", "memory", "agents",
-        "journey", "learning", "memory-graph", "mcp",
+        "journey", "learning", "memory-graph", "mcp", "curator",
     }
+    # H027: owner-governed skill curation. Reads (status, usage, ledger, lists) change nothing;
+    # every other verb previews or requests an owner-approved, recoverable change.
+    assert tree["curator"] == ["adopt", "archive", "backup", "ledger", "list-archived", "list-unmanaged",
+                               "pause", "pin", "prune", "purge", "restore", "resume", "rollback",
+                               "run", "status", "unpin", "usage"]
     # H202: Hermes's profile create/rename/delete beside the SOUL editor; retire deletes
     # nothing and restore brings an agent back.
     assert tree["agents"] == ["create", "list", "rename", "restore", "retire"]
@@ -1456,6 +1462,63 @@ def test_jobs_workdir_does_not_replace_options_implicitly():
 # ── security audit (H022) ─────────────────────────────────────────────────────
 
 
+def test_security_default_uses_admin_hub_and_honors_surface_selectors(monkeypatch):
+    """The default audit never dials OSV from the ungoverned CLI process."""
+    from agents.core.security import dep_audit
+
+    monkeypatch.setattr(dep_audit, "enumerate_installed",
+                        lambda distributions=None: ([dep_audit.Component("installed", "pkg", "1.0", "importlib.metadata")], []))
+    monkeypatch.setattr(dep_audit, "enumerate_mcp",
+                        lambda: ([dep_audit.Component("mcp", "@scope/server", "2.0", "search", "npm")], []))
+    monkeypatch.setattr(dep_audit, "enumerate_catalog", lambda: ([], []))
+    monkeypatch.setattr(dep_audit, "default_client", lambda url: (_ for _ in ()).throw(AssertionError("CLI network bypass")))
+    hub = _FakeHub({"POST /api/security/dependencies/audit": lambda body: {
+        "report": {"status": "clean", "findings": [], "errors": body["errors"]},
+        "human": "governed audit: no findings",
+    }})
+
+    code, out, _err, hub = _run(["security", "--skip-plugins"], hub)
+    assert code == EXIT_OK and "governed audit" in out
+    method, path, body = hub.calls[-1]
+    assert (method, path) == ("POST", "/api/security/dependencies/audit")
+    assert body["fail_on"] == "low"
+    assert {(row["surface"], row["ecosystem"]) for row in body["components"]} == {
+        ("installed", "PyPI"), ("mcp", "npm")
+    }
+    assert body["skip"] == {"venv": False, "plugins": True, "mcp": False}
+
+
+def test_security_hub_unavailable_returns_unknown_not_a_local_osv_fallback(monkeypatch):
+    from agents.cli.nerva import EXIT_UNAVAILABLE
+    from agents.core.security import dep_audit
+
+    monkeypatch.setattr(dep_audit, "enumerate_installed", lambda distributions=None: ([], []))
+    monkeypatch.setattr(dep_audit, "enumerate_mcp", lambda: ([], []))
+    monkeypatch.setattr(dep_audit, "enumerate_catalog", lambda: ([], []))
+    monkeypatch.setattr(dep_audit, "default_client", lambda url: (_ for _ in ()).throw(AssertionError("CLI network bypass")))
+    code, out, err, hub = _run(["security", "audit"], _FakeHub(raise_with=HubUnavailable("local", "stopped")))
+    assert code == EXIT_UNAVAILABLE and out == "" and "nothing is claimed" in err
+    assert hub.calls == [("POST", "/api/security/dependencies/audit", hub.calls[0][2])]
+
+
+def test_security_skip_flags_hold_before_or_after_audit_subcommand(monkeypatch):
+    from agents.core.security import dep_audit
+
+    monkeypatch.setattr(dep_audit, "enumerate_installed",
+                        lambda distributions=None: (_ for _ in ()).throw(AssertionError("venv must be skipped")))
+    monkeypatch.setattr(dep_audit, "enumerate_catalog", lambda: ([], []))
+    monkeypatch.setattr(dep_audit, "enumerate_mcp", lambda: ([], []))
+    hub = _FakeHub({"POST /api/security/dependencies/audit": lambda body: {
+        "report": {"status": "clean", "findings": [], "errors": body["errors"]},
+        "human": "empty selected audit",
+    }})
+    for argv in (["security", "--skip-venv", "audit"],
+                 ["security", "audit", "--skip-venv"]):
+        code, _out, err, hub = _run(argv, hub)
+        assert code == EXIT_OK, err
+        assert hub.calls[-1][2]["skip"]["venv"] is True
+
+
 class _FakeOSV:
     """Enough of an OSV client for the verb: hits per (name, version), advisory bodies by id."""
 
@@ -1475,6 +1538,19 @@ class _FakeOSV:
         return self.vulns[vuln_id]
 
 
+def _security_hub(osv):
+    from agents.core.security import dep_audit
+
+    def answer(body):
+        components = [dep_audit.Component(**row) for row in body["components"]]
+        report = dep_audit.audit(components, osv, fail_on=body["fail_on"],
+                                 ignore=body["ignore_vuln"], errors=body["errors"],
+                                 database=body["osv_url"], skipped=body["skip"])
+        return {"report": report.to_dict(), "human": dep_audit.render(report)}
+
+    return _FakeHub({"POST /api/security/dependencies/audit": answer})
+
+
 def _advisory(vid, package, severity, *, fixed=None, aliases=()):
     return {"id": vid, "aliases": list(aliases), "summary": "leaks credentials",
             "database_specific": {"severity": severity},
@@ -1492,32 +1568,36 @@ def audited_box(monkeypatch):
                     vulns={"GHSA-x": _advisory("GHSA-x", "pkg", "HIGH", fixed="1.1", aliases=("CVE-2026-1",))})
     monkeypatch.setattr(dep_audit, "enumerate_installed",
                         lambda distributions=None: ([dep_audit.Component("installed", "pkg", "1.0", "importlib.metadata")], []))
-    monkeypatch.setattr(dep_audit, "default_client", lambda url: fake)
+    monkeypatch.setattr(dep_audit, "enumerate_catalog", lambda: ([], []))
+    monkeypatch.setattr(dep_audit, "enumerate_mcp", lambda: ([], []))
+    monkeypatch.setattr(dep_audit, "default_client", lambda url: (_ for _ in ()).throw(AssertionError("CLI network bypass")))
+    fake.hub = _security_hub(fake)
     return fake
 
 
 def test_security_audit_finds_the_advisory_and_says_what_left_the_machine(audited_box):
     from agents.cli.nerva import EXIT_UNAVAILABLE  # noqa: F401 - the ladder must expose it
 
-    code, out, err, _hub = _run(["security", "audit"])
+    code, out, err, _hub = _run(["security", "audit"], audited_box.hub)
     assert code == EXIT_FAILED
     assert "HIGH" in out and "pkg 1.0" in out and "GHSA-x" in out and "CVE-2026-1" in out and "fixed in 1.1" in out
-    assert "sending 1 package name+version pairs to api.osv.dev" in err and "nothing else leaves this machine" in err
+    assert "requesting governed hub audit of 1 package name+version pairs" in err
+    assert "only those pairs go to api.osv.dev" in err
     assert audited_box.calls == 1
 
 
 def test_security_audit_threshold_and_ignore_change_the_verdict_not_the_listing(audited_box):
-    code, out, _err, _hub = _run(["security", "audit", "--fail-on", "critical"])
+    code, out, _err, _hub = _run(["security", "audit", "--fail-on", "critical"], audited_box.hub)
     assert code == EXIT_OK and "GHSA-x" in out          # listed, below the bar
-    code, out, _err, _hub = _run(["security", "audit", "--ignore-vuln", "cve-2026-1"])
+    code, out, _err, _hub = _run(["security", "audit", "--ignore-vuln", "cve-2026-1"], audited_box.hub)
     assert code == EXIT_OK and "ignored" in out and "GHSA-x" in out
 
 
 def test_security_audit_json_is_the_machine_report(audited_box):
-    code, out, _err, _hub = _run(["security", "audit", "--json"])
+    code, out, _err, _hub = _run(["security", "audit", "--json"], audited_box.hub)
     payload = json.loads(out)
     assert code == EXIT_FAILED and payload["status"] == "findings"
-    assert payload["surfaces"]["mcp"]["count"] == 0 and "HTTP" in payload["surfaces"]["mcp"]["reason"]
+    assert payload["surfaces"]["mcp"]["count"] == 0 and "pinned npx/uvx" in payload["surfaces"]["mcp"]["reason"]
     assert payload["findings"][0]["id"] == "GHSA-x" and payload["findings"][0]["severity"] == "high"
 
 
@@ -1535,8 +1615,9 @@ def test_security_audit_unreachable_database_is_exit_5_never_clean(monkeypatch):
     from agents.cli.nerva import EXIT_UNAVAILABLE
     from agents.core.security import dep_audit
 
-    monkeypatch.setattr(dep_audit, "default_client", lambda url: _FakeOSV(fail_batch="connection refused"))
-    code, out, _err, _hub = _run(["security", "audit"])
+    monkeypatch.setattr(dep_audit, "enumerate_catalog", lambda: ([], []))
+    monkeypatch.setattr(dep_audit, "enumerate_mcp", lambda: ([], []))
+    code, out, _err, _hub = _run(["security", "audit"], _security_hub(_FakeOSV(fail_batch="connection refused")))
     assert code == EXIT_UNAVAILABLE
     assert "could not consult" in out and "connection refused" in out and "nothing is claimed" in out.lower()
     assert "clean" not in out.lower()
@@ -1550,25 +1631,27 @@ def test_security_audit_refuses_a_non_https_database():
 def test_security_audit_reports_a_bad_descriptor_and_still_audits(audited_box, tmp_path):
     bad = tmp_path / "bad.json"
     bad.write_text("{", encoding="utf-8")
-    code, out, _err, _hub = _run(["security", "audit", "--json", "--extension", str(bad)])
+    code, out, _err, _hub = _run(["security", "audit", "--json", "--extension", str(bad)], audited_box.hub)
     payload = json.loads(out)
-    assert code == EXIT_FAILED
-    assert payload["errors"] == [{"index": 0, "reason": "manifest_unreadable"}]
+    assert code == EXIT_UNAVAILABLE
+    assert payload["errors"] == [{"surface": "extension", "index": 0, "reason": "manifest_unreadable",
+                                  "coverage_unavailable": True}]
+    assert payload["findings"][0]["id"] == "GHSA-x"
     assert str(tmp_path) not in out                       # descriptor paths are not echoed
 
 
-def test_security_audit_names_a_skipped_distribution_without_changing_the_verdict(monkeypatch, audited_box):
+def test_security_audit_names_a_skipped_distribution_as_unavailable(monkeypatch, audited_box):
     """A distribution whose metadata cannot be read is reported as skipped, not dropped."""
     from agents.core.security import dep_audit
 
     error = {"surface": "installed", "location": "bad-1.0.dist-info",
-             "reason": "metadata_unreadable: UnicodeDecodeError"}
+             "reason": "metadata_unreadable: UnicodeDecodeError", "coverage_unavailable": True}
     monkeypatch.setattr(dep_audit, "enumerate_installed",
                         lambda distributions=None: ([dep_audit.Component("installed", "pkg", "1.0", "importlib.metadata")], [error]))
-    code, out, _err, _hub = _run(["security", "audit", "--fail-on", "critical"])
-    assert code == EXIT_OK
+    code, out, _err, _hub = _run(["security", "audit", "--fail-on", "critical"], audited_box.hub)
+    assert code == EXIT_UNAVAILABLE
     assert "installed distribution bad-1.0.dist-info: metadata_unreadable: UnicodeDecodeError — skipped, not audited" in out
-    code, out, _err, _hub = _run(["security", "audit", "--fail-on", "critical", "--json"])
+    code, out, _err, _hub = _run(["security", "audit", "--fail-on", "critical", "--json"], audited_box.hub)
     assert json.loads(out)["errors"] == [error]
 
 

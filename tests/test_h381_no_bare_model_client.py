@@ -259,6 +259,15 @@ NOT_A_MODEL_PROVIDER: dict[str, tuple[str, frozenset[str]]] = {
     "agents/web.py": (
         "constructs the Telegram channel (Bot API transport to the owner's chat) at hub start",
         frozenset({"lifespan"})),
+    "agents/core/channels/delivery_ledger.py": (
+        "classifies a channel send failure for the delivery receipt: reads the httpx exception "
+        "classes with isinstance and the error response's JSON body; it dials nothing and carries "
+        "no prompt",
+        frozenset({"classify_send_failure"})),
+    "agents/core/channels/reconnect.py": (
+        "classifies a channel connection failure for the reconnect backoff: reads the httpx "
+        "exception classes with isinstance; it dials nothing and carries no prompt",
+        frozenset({"classify_exception"})),
     "agents/core/channels/telegram.py": (
         "Telegram Bot API channel transport (messages to/from the owner's chat)",
         frozenset({"TelegramChannel.__init__", "TelegramChannel.start"})),
@@ -297,10 +306,6 @@ NOT_A_MODEL_PROVIDER: dict[str, tuple[str, frozenset[str]]] = {
         frozenset({"Neo4jGraph._check_connection", "Neo4jGraph._call_neo4j", "Neo4jGraph.clear"})),
     "agents/core/memory/qdrant_store.py": (
         "Qdrant vector database REST API", frozenset({"QdrantVectorStore.__init__"})),
-    "agents/core/skills/importer.py": (
-        "skill source fetch from GitHub/registries (no prompt)",
-        frozenset({"SkillImporter.import_from_hermes", "SkillImporter._import_from_github",
-                   "SkillImporter._sync_from_hermes", "SkillImporter.sync_source"})),
     "agents/core/voice/tts.py": (
         "speech synthesis of reply text, not a model prompt; its cloud vendors are a "
         "recorded, separate ledger gap (GET /api/admin/network/calls docstring)",

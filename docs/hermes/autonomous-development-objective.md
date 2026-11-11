@@ -5,6 +5,91 @@ anterioară în această conversație. Scopul final rămâne paritatea funcțion
 cele 697 de capabilități din referința Hermes fixată, inclusiv H277 și capabilitățile
 excluse anterior. Obiectivul persistent al aplicației a fost actualizat de owner în 2026-10-05.
 
+## Flux activ — 2026-11-04
+
+Acesta este fluxul canonic pentru campania locală Hermes. Integrează mai întâi
+lotul curent pe checkout-ul și SHA-ul real, apoi închide contractele din inventarul
+înghețat de 697 în loturi coerente. Întrerupe ordinea doar pentru un defect concret
+care blochează securitatea, corectitudinea sau build-ul curent. Nu deschide
+îmbunătățiri fără legătură.
+
+Pornește din `docs/hermes/CAMPAIGN_HANDOFF.md` (raportul cumulativ), verifică-l
+față de `git rev-parse HEAD` și `git status`, apoi interoghează rândurile relevante
+prin `scripts/hermes_status.py` și `scripts/backlog.py`. Folosește rezultatele
+curente și contractul complet, nu ordinea istorică din `docs/hermes/build-queue.md`
+sau `docs/prompts/LEAN_QUEUE.md`. O numărătoare de checkboxuri nu acoperă singură
+toate rândurile de lucru din BACKLOG.
+
+Campania rămâne **numai locală**: fără stage, commit, push, merge, deploy,
+actualizări de PR, activări cu costuri sau programări externe. Un program oprit nu
+se reactivează implicit. Cel mult doi implementeri Sol High pot lucra simultan pe
+fișiere distincte, fără subdelegare; coordonatorul integrează. Rulează probe
+focalizate pe schimbare, apoi verificările CI/release relevante la milestone;
+nu elimina gate-urile de securitate, paritate, ledger sau release. Autorizația
+generală din `selfdev-policy.json` pentru integrare automată nu este o instrucțiune
+de publicare în această campanie.
+
+### Checkpoint, pauză și reluare
+
+Instrucțiunea curentă a ownerului are prioritate față de un prompt, un raport sau
+un program mai vechi. `CAMPAIGN_HANDOFF.md` selectează lotul în curs, nu un branch
+ori un număr istoric dintr-un handoff arhivat. Verifică SHA-ul, modificările locale
+și probele terminale înainte de reluare; nu reporni explorarea generală.
+
+La o cerere explicită de pauză, păstrează schimbările și checkpointul, apoi
+oprește munca acelui obiectiv. Reluarea muncii locale nu reactivează un scheduler.
+O condiție externă lipsă blochează numai contractul care o cere: numește exact
+prerechizitul în raportul cumulativ și continuă un lot independent executabil.
+Nu micșora inventarul și nu închide un rând parțial pentru a evita blocajul.
+
+### Comenzi și dovezi curente
+
+Folosește Python-ul proiectului, nu un `python` ales implicit din PATH:
+
+```sh
+.venv/bin/python scripts/development_preflight.py --frontend --smoke --json
+.venv/bin/python scripts/hermes_status.py summary --ref origin/main --json
+.venv/bin/python scripts/hermes_status.py summary --json
+.venv/bin/python scripts/hermes_status.py impact-map --base HEAD --limit 25 --json
+.venv/bin/python scripts/hermes_restamp.py impact H022 --json
+.venv/bin/python scripts/hermes_restamp.py impact H022 H334 --context --json
+```
+
+Pe Windows, interpretul este `.venv/Scripts/python.exe`; suita completă care
+depinde de semantica permisiunilor se verifică non-root în mediul suportat
+Linux/WSL/CI. Preflightul verifică mediul și configurația de proces fără a afișa
+valori private. Smoke-ul existent folosește orchestratorul și `/readyz` reale cu
+un răspuns local sintetic; nu demonstrează furnizori reali, dispozitive native,
+configurația privată persistentă ori runtime-ul upstream Hermes.
+
+Schema de evaluare 3 separă verdictul înregistrat, prospețimea/impactul și
+acceptarea pe runtime/platform/provider. `needs_review` este compatibilitatea
+pentru dovadă în așteptarea analizei, nu un verdict de regresie funcțională.
+Contractul și lipsurile înregistrate rămân vizibile. Numărătoarea conservatoare
+nu acordă credit parțial și nu crește prin migrare.
+
+`impact-map` selectează rânduri prin dovezi și dependențe declarate; căile
+nemapate rămân necunoscute până la analiza dependențelor. `impact`/`cite` propun
+clasificarea și pozițiile actuale ale citărilor. O propunere nu acceptă impactul.
+`--context --json` atașează contractele înghețate și lipsurile înregistrate într-o
+singură citire, fără rescrierea istoricului sau credit nou; reutilizează această
+vedere pentru grupuri afectate de aceleași hunks, nu reporni un audit complet.
+Pentru o mutare sau editare fără legătură, `accept-impact` cere motivul concret,
+probe executate și dependențele citite. Modificările relevante, dovezile lipsă și
+impactul necunoscut cer rezolvarea contractului și un review nou; nu se acceptă
+prin actualizare oarbă de hash. Textul/citările vechi sunt păstrate la revizia
+review-ului; folosește `cite` pentru relocările curente.
+
+În campania fără staging/commit, `stamp --patch FILE --allow-uncommitted` poate
+înregistra numai dovezi locale explicite și sigure, inclusiv fișiere sursă/test
+noi. Receiptul păstrează hash-urile, HEAD-ul și starea necomisă; nu afirmă că acel
+HEAD ori CI conține noii octeți. Un receipt vechi rămâne istoric după înlocuire.
+Acceptarea externă `verified` cere mediu/scope, surse, probe executate și dovezi;
+o probă macOS nu stinge un prerechizit Windows și nimic nu se deduce din prose.
+Migrarea/rollback-ul au comenzi explicite și backup exact; nu se repetă ca rutină
+de livrare. Detaliile reviziei, rezultatele și rollback-ul curent stau într-un
+singur `CAMPAIGN_HANDOFF.md`.
+
 ## Text pentru obiectivul activ
 
 Dezvoltă autonom Nerva/Jarvis până la paritate funcțională cu cele 697 de
@@ -77,7 +162,13 @@ exact ce nu poate fi demonstrat, fără a inventa validare live.
 Finalizarea proiectului cere verificarea tuturor celor 697 de contracte;
 încheierea unui lot sau epuizarea timpului nu înseamnă finalizarea obiectivului.
 
-## Punct de reluare
+## Arhivă de checkpointuri — numai dovezi istorice
+
+Înregistrările de mai jos păstrează starea și deciziile la datele lor. Căile,
+SHA-urile, numărătorile și propozițiile „Next” de aici nu sunt selecția activă;
+folosește fluxul activ și handofful cumulativ de mai sus.
+
+### Punct de reluare — 2026-10-05
 
 Checkout: `/Users/andrei649/Projects/nerva-pr-worktrees/consent`.
 HEAD: `a7ffad6676cfb28e7ac374d495b4a5889e5f4646`. Lucrul rămâne local,

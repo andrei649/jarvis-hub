@@ -352,6 +352,10 @@ class WebSearchPlugin:
     async def search_detailed(self, query: str, max_results: int = 5, *,
                               allow_keyless_rescue: bool = False) -> SearchOutcome:
         """Search once: cache, primary, at most one rescue — and say what happened."""
+        from ..security.website_policy import website_refusal
+
+        if website_refusal() == "website_policy_unavailable":
+            return SearchOutcome([], reason="website_policy_unavailable")
         selection = self.selection(allow_keyless_rescue=allow_keyless_rescue)
         if selection.primary is None:
             return SearchOutcome([], reason=selection.reason, missing=selection.missing,
@@ -399,7 +403,10 @@ class WebSearchPlugin:
         ``web_search`` tool. ``search_detailed`` stays unfiltered: the tool counts what it
         drops and reports it as ``blocked``.
         """
-        rows = (await self.search_detailed(query, max_results)).rows
+        outcome = await self.search_detailed(query, max_results)
+        if outcome.reason == "website_policy_unavailable":
+            raise web_providers.PolicyBlock("website_policy_unavailable")
+        rows = outcome.rows
         return [r for r in rows if not web_providers.blocked_host(r.get("url", ""))]
 
     async def _legacy(self, name: str, query: str, max_results: int) -> list[dict]:
@@ -478,7 +485,12 @@ class WebSearchPlugin:
             client = temporary_client
         try:
             for _hop in range(6):  # initial request + up to 5 redirects
-                if web_providers.blocked_host(current):
+                from ..security.website_policy import website_refusal
+
+                policy_reason = website_refusal(current)
+                if policy_reason == "website_policy_unavailable":
+                    return PageRead(None, refusal=policy_reason)
+                if policy_reason == "website_blocked" or web_providers.blocked_host(current):
                     logger.info("Page fetch refused: operator-blocked site")
                     return PageRead(None, refusal=SITE_BLOCKED)
                 body = b""

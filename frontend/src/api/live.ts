@@ -386,16 +386,24 @@ export function useLiveModes(): LiveModes {
   const [live, setLive] = useState<Record<string, boolean>>({});
   useEffect(() => {
     let alive = true;
-    let changed = false;
     let loadGeneration = 0;
-    let pluginList: any[] = [];
-    const mark = (key: string) => { if (alive) setLive((p) => (p[key] ? p : { ...p, [key]: true })); };
-    const clearMark = (key: string) => { if (alive) setLive((p) => (p[key] ? { ...p, [key]: false } : p)); };
-    const set = (key: string, val: any) => { if (val !== undefined && val !== null) { (V2 as any)[key] = val; changed = true; } };
+    const invalidate = () => { loadGeneration++; };
+    const stop = () => { alive = false; invalidate(); };
+    const resume = (event: PageTransitionEvent) => {
+      if (event.persisted && !alive) { alive = true; void load(); }
+    };
+    window.addEventListener('beforeunload', invalidate);
+    window.addEventListener('pagehide', stop);
+    window.addEventListener('pageshow', resume);
+    const current = (id: number) => alive && id === loadGeneration;
 
     async function load() {
       const loadId = ++loadGeneration;
-      changed = false;
+      let changed = false;
+      let pluginList: any[] = [];
+      const mark = (key: string) => { if (current(loadId)) setLive((p) => (p[key] ? p : { ...p, [key]: true })); };
+      const clearMark = (key: string) => { if (current(loadId)) setLive((p) => (p[key] ? { ...p, [key]: false } : p)); };
+      const set = (key: string, val: any) => { if (current(loadId) && val !== undefined && val !== null) { (V2 as any)[key] = val; changed = true; } };
       // Model residency is current-cycle evidence. Clear seed/stale rows and
       // their proof before any request from this cycle can complete. Same rule
       // for the rest of the ADMIN corpus: plugins/keys/backups/channels/system
@@ -403,7 +411,7 @@ export function useLiveModes(): LiveModes {
       // this cycle's backend supplies them.
       set('ADMIN', honestAdminSeed());
       clearMark('ADMIN_MODELS');
-      if (alive) setVer((v) => v + 1);
+      if (current(loadId)) setVer((v) => v + 1);
 
       // MEMORY — flatten /memory/stats {sessions:{total}, vectors:{stored}, knowledge_graph:{entities,relations}}
       await apiGet('/memory/stats').then((s: any) => {
@@ -416,6 +424,7 @@ export function useLiveModes(): LiveModes {
         });
         mark('MEMORY_STATS');
       }).catch(() => {});
+      if (!current(loadId)) return;
 
       // OBSERVE — compose from several Jarvis endpoints. Seed traces/arena/
       // by_agent are stripped first: an empty leaderboard or a silent
@@ -440,6 +449,7 @@ export function useLiveModes(): LiveModes {
         set('OBSERVE', O);
         if (observeEvidence(bench, quality, resil, al, tl)) mark('OBSERVE');
       }).catch(() => {});
+      if (!current(loadId)) return;
 
       // INTEROP — a2a peers / mcp servers / widgets / webhooks. All four are
       // admin-only routes. When nothing answers, the corpus is left alone: the mode
@@ -454,6 +464,7 @@ export function useLiveModes(): LiveModes {
         const I = hydrateInterop(a2a, mcp, widgets, webhooks, receiver);
         if (I) { set('INTEROP', I); mark('INTEROP'); }
       }).catch(() => {});
+      if (!current(loadId)) return;
 
       // AUTONOMY — morning brief + observer log
       await Promise.all([
@@ -466,17 +477,20 @@ export function useLiveModes(): LiveModes {
         set('AUTONOMY', A);
         if (bi || oe) mark('AUTONOMY');
       }).catch(() => {});
+      if (!current(loadId)) return;
 
       // TRUST — audit chain + payments ledger
       await apiGet('/api/security/audit/intent').then((a: any) => {
         const acts = arr(a, 'actions', 'records', 'entries');
         if (acts && acts.length) { set('AUDIT_CHAIN', acts.slice(0, 6).map((r: any, i: number) => ({ verb: String(r.action || r.verb || 'ACTION').toUpperCase().slice(0, 6), x: r.why || r.detail || r.action || '', hash: String(r.hash || '').slice(0, 4) || String(i), prev: String(r.prev || '').slice(0, 4) || '0000', t: r.t || r.ts || '' }))); mark('AUDIT_CHAIN'); }
       }).catch(() => {});
+      if (!current(loadId)) return;
       await apiGet('/api/payments').then((p: any) => {
         const list = arr(p, 'payments');
         // Keep the broker `id` so TrustMode can POST /api/payments/{id}/approve|reject|settle.
         if (list && list.length) { set('PAYMENTS', list.map((x: any) => ({ id: x.id || x.payment_id || '', pcap: x.mandate_id || x.payee || '', desc: x.memo || x.desc || '', amt: String(x.currency || '') + (x.amount != null ? x.amount : ''), state: x.state || x.status || 'pending' }))); mark('PAYMENTS'); }
       }).catch(() => {});
+      if (!current(loadId)) return;
 
       // ADMIN — local models + plugin registry
       await apiGet('/plugins').then((p: any) => {
@@ -496,6 +510,7 @@ export function useLiveModes(): LiveModes {
           degradedNeeds: Array.isArray(x.degraded_needs) ? x.degraded_needs : [],
         })) }); mark('ADMIN'); }
       }).catch(() => { pluginList = []; });
+      if (!current(loadId)) return;
       await apiGet('/api/models/local').then((m: any) => {
         if (!alive || loadId !== loadGeneration) return;
         const models = arr(m, 'models');
@@ -509,6 +524,7 @@ export function useLiveModes(): LiveModes {
         set('ADMIN', { ...V2.ADMIN, models: [] });
         clearMark('ADMIN_MODELS');
       });
+      if (!current(loadId)) return;
 
       // API KEYS & SECRETS — what the server actually has in its environment,
       // already masked server-side. Absent or empty → the panel stays "not
@@ -522,6 +538,7 @@ export function useLiveModes(): LiveModes {
         set('ADMIN', { ...V2.ADMIN, keys });
         if (keys.length) mark('ADMIN');
       }).catch(() => {});
+      if (!current(loadId)) return;
 
       // P3.1 PREVIEW MODES — real endpoints or honest plugin-gated empty states.
       await Promise.all([
@@ -540,6 +557,7 @@ export function useLiveModes(): LiveModes {
         });
         mark('BUILD');
       }).catch(() => {});
+      if (!current(loadId)) return;
 
       await Promise.all([
         apiGet('/api/rooms').catch(() => null),
@@ -555,6 +573,7 @@ export function useLiveModes(): LiveModes {
           mark('COMMS');
         }
       }).catch(() => {});
+      if (!current(loadId)) return;
 
       await Promise.all([
         apiGet('/api/market/watchlist/saved').catch(() => null),
@@ -569,11 +588,13 @@ export function useLiveModes(): LiveModes {
         });
         if (watches.length || pay.length) mark('FINANCE');
       }).catch(() => {});
+      if (!current(loadId)) return;
 
       await apiGet('/api/kg/entities?limit=8').then((kg: any) => {
         const entities = firstArr(kg, 'entities');
         if (entities.length && pluginReady(pluginList, 'websearch')) { set('KNOWLEDGE', kgToKnowledge(entities)); mark('KNOWLEDGE'); }
       }).catch(() => {});
+      if (!current(loadId)) return;
 
       if (pluginReady(pluginList, 'apple-health')) {
         set('HEALTH', { ...V2.HEALTH, rings: [], metrics: [], week: [], plan: [], sync: 'Apple Health · configured LAN bridge' });
@@ -584,12 +605,12 @@ export function useLiveModes(): LiveModes {
         mark('FAMILY');
       }
 
-      if (alive && changed) setVer((v) => v + 1);
+      if (current(loadId) && changed) setVer((v) => v + 1);
     }
 
     load();
     const iv = setInterval(load, 30000);
-    return () => { alive = false; clearInterval(iv); };
+    return () => { stop(); window.removeEventListener('beforeunload', invalidate); window.removeEventListener('pagehide', stop); window.removeEventListener('pageshow', resume); clearInterval(iv); };
   }, []);
   return { ver, live };
 }

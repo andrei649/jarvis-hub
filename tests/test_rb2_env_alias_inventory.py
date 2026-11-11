@@ -102,9 +102,10 @@ def test_the_scan_reaches_beyond_the_python_tree(jarvis_tokens):
         text = (ROOT / path).read_text(encoding="utf-8")
         for name in both:
             assert name in text and name.replace("NERVA_", "JARVIS_", 1) in text, (path, name)
-    # the calendar skill is a signed, shipped source: it keeps its one read of JARVIS_TZ, in
-    # the hub's own process, where the fold has already brought NERVA_TZ to that name
-    assert 'os.environ.get("JARVIS_TZ"' in (ROOT / "skills/calendar/main.py").read_text(encoding="utf-8")
+    # the calendar skill is a signed, shipped source (optional since H696, main #1346): it
+    # keeps its one read of JARVIS_TZ, in the hub's own process, where the fold has already
+    # brought NERVA_TZ to that name
+    assert 'os.environ.get("JARVIS_TZ"' in (ROOT / "optional-skills/calendar/main.py").read_text(encoding="utf-8")
     env = {"NERVA_TZ": "Europe/Paris"}
     env_alias.normalize(env)
     assert env["JARVIS_TZ"] == "Europe/Paris" and "NERVA_TZ" not in env

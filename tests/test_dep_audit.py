@@ -83,6 +83,96 @@ def _installed(*pairs):
     return [Component("installed", name, version, "importlib.metadata") for name, version in pairs]
 
 
+def test_pinned_mcp_commands_are_audited_in_their_osv_ecosystems():
+    configs = [
+        {"name": "search", "transport": "stdio", "command": "npx --yes @scope/server@2.3.4"},
+        {"name": "files", "transport": "stdio", "command": "uvx fileserver==1.2.0"},
+        {"name": "floating", "transport": "stdio", "command": "npx newest-server"},
+        {"name": "local", "transport": "stdio", "command": "python local_server.py"},
+    ]
+    components, errors = dep_audit.enumerate_mcp(configs)
+    assert {(c.name, c.version, c.ecosystem, c.origin) for c in components} == {
+        ("@scope/server", "2.3.4", "npm", "search"),
+        ("fileserver", "1.2.0", "PyPI", "files"),
+    }
+    assert {row["server"] for row in errors} == {"floating", "local"}
+    assert all("command" not in row for row in errors)
+    assert all(row["coverage_unavailable"] is True for row in errors)
+
+    class RecordingOSV(FakeOSV):
+        def query_batch(self, queries):
+            self.batches.append(list(queries))
+            return [[] for _ in queries]
+
+    osv = RecordingOSV()
+    report = audit(components, osv, errors=errors)
+    assert {(q["package"]["name"], q["package"]["ecosystem"]) for q in osv.batches[0]} == {
+        ("@scope/server", "npm"), ("fileserver", "PyPI")
+    }
+    assert report.status == "unavailable"
+
+
+def test_mcp_dist_tags_and_unversioned_uvx_are_not_claimed_as_exact_pins():
+    configs = [
+        {"name": "npm-tag", "command": "npx @scope/server@latest"},
+        {"name": "npm-range", "command": "npx server@^2.0.0"},
+        {"name": "npm-exact", "command": "npx server@2.0.0-beta.1+build.4"},
+        {"name": "pypi-tag", "command": "uvx server==latest"},
+        {"name": "pypi-exact", "command": "uvx server==2.0rc1"},
+    ]
+    components, errors = dep_audit.enumerate_mcp(configs)
+    assert {(c.origin, c.version) for c in components} == {
+        ("npm-exact", "2.0.0-beta.1+build.4"), ("pypi-exact", "2.0rc1")
+    }
+    assert {e["server"] for e in errors} == {"npm-tag", "npm-range", "pypi-tag"}
+    assert all(e["reason"] == "unpinned_package_not_audited" for e in errors)
+
+
+def test_mcp_pinned_valued_flags_enumerate_every_declared_package():
+    configs = [
+        {"name": "npx-equals", "command": "npx --package=@scope/server@1.2.3 cli"},
+        {"name": "npx-separated", "command": "npx -p first@2.0.0 --package second@3.0.0 cli"},
+        {"name": "uvx-equals", "command": "uvx --from=core==1.2.3 --with=extra==2.0 command"},
+        {"name": "uvx-separated", "command": "uvx --from main==3.1 --with helper==4.0 command"},
+        {"name": "mixed", "command": "npx -p pinned@1.0.0 -p floating@latest cli"},
+    ]
+    components, errors = dep_audit.enumerate_mcp(configs)
+    assert {(c.origin, c.name, c.version, c.ecosystem) for c in components} == {
+        ("npx-equals", "@scope/server", "1.2.3", "npm"),
+        ("npx-separated", "first", "2.0.0", "npm"),
+        ("npx-separated", "second", "3.0.0", "npm"),
+        ("uvx-equals", "core", "1.2.3", "PyPI"),
+        ("uvx-equals", "extra", "2.0", "PyPI"),
+        ("uvx-separated", "main", "3.1", "PyPI"),
+        ("uvx-separated", "helper", "4.0", "PyPI"),
+        ("mixed", "pinned", "1.0.0", "npm"),
+    }
+    assert errors == [{"surface": "mcp", "server": "mixed", "reason": "unpinned_package_not_audited",
+                       "coverage_unavailable": True}]
+
+
+@pytest.mark.parametrize("command,package,ecosystem", [
+    (r'"C:\Tools\uvx.exe" real-server==1.2.3', "real-server", "PyPI"),
+    (r'"C:\Program Files\nodejs\npx.cmd" @example/server@1.2.3', "@example/server", "npm"),
+])
+def test_mcp_pinned_windows_launchers_are_identified_without_executing(command, package, ecosystem):
+    components, errors = dep_audit.enumerate_mcp([{"name": "windows-server", "command": command}])
+    assert errors == []
+    assert [(c.name, c.version, c.ecosystem) for c in components] == [(package, "1.2.3", ecosystem)]
+
+
+def test_mcp_program_arguments_cannot_replace_the_actual_launcher_package():
+    components, errors = dep_audit.enumerate_mcp([
+        {"name": "npm", "command": "npx real-server@1.2.3 --package benign@9.9.9"},
+        {"name": "python", "command": "uvx real-server==1.2.3 --with benign==9.9.9"},
+        {"name": "python-from", "command": "uvx real-server==1.2.3 --from benign==9.9.9"},
+    ])
+    assert errors == []
+    assert {(row.ecosystem, row.name, row.version) for row in components} == {
+        ("npm", "real-server", "1.2.3"), ("PyPI", "real-server", "1.2.3"),
+    }
+
+
 # ── enumeration ───────────────────────────────────────────────────────────────
 
 
@@ -93,14 +183,15 @@ def test_installed_enumeration_normalizes_names_and_dedupes():
     assert errors == []
 
 
-def test_installed_enumeration_skips_nameless_or_versionless_distributions():
+def test_installed_enumeration_marks_nameless_or_versionless_distributions_unavailable():
     comps, errors = enumerate_installed([
         SimpleNamespace(metadata={}, version="1.0"),
         SimpleNamespace(metadata={"Name": "ok"}, version=None),
         _dist("keep", "3.0"),
     ])
     assert [(c.name, c.version) for c in comps] == [("keep", "3.0")]
-    assert errors == []
+    assert len(errors) == 2
+    assert all(error["surface"] == "installed" and error["coverage_unavailable"] for error in errors)
 
 
 def test_installed_enumeration_skips_undecodable_metadata_and_names_it(tmp_path):
@@ -117,7 +208,7 @@ def test_installed_enumeration_skips_undecodable_metadata_and_names_it(tmp_path)
     comps, errors = enumerate_installed(_metadata.distributions(path=[str(tmp_path)]))
     assert [(c.name, c.version) for c in comps] == [("good", "2.0")]
     assert errors == [{"surface": "installed", "location": "bad-1.0.dist-info",
-                       "reason": "metadata_unreadable: UnicodeDecodeError"}]
+                       "reason": "metadata_unreadable: UnicodeDecodeError", "coverage_unavailable": True}]
 
 
 def test_a_distribution_location_is_reduced_to_a_safe_token():
@@ -128,11 +219,11 @@ def test_a_distribution_location_is_reduced_to_a_safe_token():
     assert _dist_location(SimpleNamespace()) == "unknown"
 
 
-def test_a_skipped_distribution_is_rendered_and_serialised_but_does_not_flip_the_verdict():
+def test_a_skipped_distribution_is_rendered_and_makes_coverage_unavailable():
     error = {"surface": "installed", "location": "bad-1.0.dist-info",
-             "reason": "metadata_unreadable: UnicodeDecodeError"}
+             "reason": "metadata_unreadable: UnicodeDecodeError", "coverage_unavailable": True}
     report = audit(_installed(("pkg", "1.0")), FakeOSV(), errors=[error])
-    assert report.status == "clean"
+    assert report.status == "unavailable"
     text = render(report)
     assert "installed distribution bad-1.0.dist-info: metadata_unreadable: UnicodeDecodeError — skipped, not audited" in text
     assert report.to_dict()["errors"] == [error]
@@ -171,14 +262,41 @@ def test_an_invalid_manifest_is_reported_not_fatal(tmp_path):
 
 
 def test_mcp_surface_is_listed_as_not_audited_with_its_reason():
-    """Nerva's MCP is stdio-first (agents/core/mcp/client.py); the surface exists and is
-    *not audited* here — the reason must say so, not claim there is nothing to audit."""
+    """No pinned MCP component is auditable when the selected inventory is empty."""
     surface = mcp_surface()
     assert surface["count"] == 0 and surface["audited"] is False
-    assert "stdio" in surface["reason"] and "not audited" in surface["reason"]
-    assert "HTTP transport" not in surface["reason"]
+    assert "pinned npx/uvx" in surface["reason"]
     header = render(audit([], FakeOSV())).splitlines()[0]
-    assert "MCP: not audited" in header
+    assert "0 MCP pin(s)" in header
+
+
+def test_incomplete_selected_inventory_is_unavailable_with_named_reason():
+    report = audit(_installed(("pkg", "1.0")), FakeOSV(), errors=[
+        {"surface": "extension", "reason": "legacy_manifest_metadata_missing", "coverage_unavailable": True},
+    ])
+    assert report.status == "unavailable"
+    assert report.unavailable == "dependency inventory incomplete"
+    text = render(report)
+    assert "legacy_manifest_metadata_missing" in text
+    assert "dependency inventory incomplete" in text
+    assert "None" not in text
+
+
+def test_incomplete_inventory_still_prints_known_osv_findings():
+    osv = FakeOSV(hits={("pkg", "1.0"): ["GHSA-known"]},
+                  vulns={"GHSA-known": _vuln("GHSA-known", "pkg", severity="HIGH")})
+    report = audit(_installed(("pkg", "1.0")), osv, errors=[
+        {"surface": "extension", "reason": "legacy_manifest_metadata_missing", "coverage_unavailable": True},
+    ])
+    assert report.status == "unavailable" and len(report.findings) == 1
+    text = render(report)
+    assert "GHSA-known" in text and "coverage incomplete" in text
+
+
+def test_requested_surface_skip_is_visible_in_human_and_json_report():
+    report = audit([], FakeOSV(), skipped={"venv": True, "plugins": False, "mcp": True})
+    assert report.to_dict()["skipped"] == {"venv": True, "plugins": False, "mcp": True}
+    assert "skipped: venv, mcp" in render(report)
 
 
 # ── severity ──────────────────────────────────────────────────────────────────
@@ -327,6 +445,7 @@ def test_report_round_trips_to_json_and_names_every_surface():
     assert payload["errors"] == [{"reason": "manifest_unreadable"}]
     f = payload["findings"][0]
     assert f == {"surface": "installed", "name": "pkg", "version": "1.0", "origin": "importlib.metadata",
+                 "ecosystem": "PyPI",
                  "id": "GHSA-x", "aliases": ["CVE-1"], "severity": "high",
                  "severity_source": "database_specific", "fixed_in": "1.1", "summary": "something bad"}
 

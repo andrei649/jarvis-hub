@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
@@ -19,6 +20,31 @@ from agents.core.observability.reality_harness import (
     run_reality,
 )
 from agents.core.tool_rpc import ToolRPCServer
+
+H696_DEFAULT_SKILL_IDS = {
+    "skill:Brief", "skill:PM", "skill:Security Monitor",
+    "skill:System Monitor", "skill:Weather Intel",
+}
+H696_OPTIONAL_SKILL_TITLES = {
+    "calendar": "Calendar", "content": "Content", "email_triage": "Email Triage",
+    "family_store": "Family Store", "health": "Health", "spotify": "Spotify",
+    "web_research": "Web Research",
+}
+
+
+def _assert_h696_boot_skill_split(records):
+    """Seven preserved optional sources account for the seven removed boot IDs."""
+    root = Path(__file__).resolve().parents[1]
+    optional_ids = {f"skill:{title}" for title in H696_OPTIONAL_SKILL_TITLES.values()}
+    assert len(optional_ids) == 7
+    for slug, title in H696_OPTIONAL_SKILL_TITLES.items():
+        source = root / "optional-skills" / slug / "SKILL.md"
+        assert source.read_text(encoding="utf-8").splitlines()[0] == f"# {title}"
+        assert not (root / "skills" / slug).exists()
+    boot_skill_ids = {record.id for record in records if record.kind == "skill"}
+    assert boot_skill_ids == H696_DEFAULT_SKILL_IDS
+    assert boot_skill_ids.isdisjoint(optional_ids)
+    assert len(boot_skill_ids | optional_ids) == 12
 
 
 def teardown_function():
@@ -262,10 +288,12 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
     cases = registry_reality_cases(orch)
     by_ref = {case.ref: case for case in cases}
 
+    _assert_h696_boot_skill_split(records)
     # Six independent, default-off image-provider manifests each need a policy case, and so
     # does the G14 ``a2a`` egress manifest.
-    # 88: + plugin:a2a (A2A outbound) and the three default-off cloud video providers (G19).
-    assert len(records) == len(cases) == len(by_ref) == 88
+    # 88 before H696: + plugin:a2a (A2A outbound) and the three default-off cloud video
+    # providers (G19); H696 moved the optional skills out of the boot registry.
+    assert len(records) == len(cases) == len(by_ref) == 88 - len(H696_OPTIONAL_SKILL_TITLES) == 81
     assert by_ref["reality-v1:plugin:cloud-image"].capability_id == "plugin:cloud-image"
     assert by_ref["reality-v1:plugin:kanban-attachments"].capability_id == "plugin:kanban-attachments"
     assert by_ref["reality-v1:plugin:ntfy"].capability_id == "plugin:ntfy"
@@ -275,16 +303,16 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
     } == {
         "plugin": 52,
         "component": 24,
-        "skill": 12,
+        "skill": 5,
     }
-    assert len({case.capability_id for case in cases}) == 88
+    assert len({case.capability_id for case in cases}) == 81
     for record in records:
         assert record.verification in by_ref
         assert by_ref[record.verification].capability_id == record.id
 
     combined = all_reality_cases(orch)
     assert combined[: len(CASES)] == CASES
-    assert len(combined) == len(CASES) + 88
+    assert len(combined) == len(CASES) + 81
     all_refs = [case.ref for case in combined]
     assert len(all_refs) == len(set(all_refs))
 
@@ -297,7 +325,10 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
     assert ("reality-v1:action-provider-selection-kernel-halt", "action:provider.selection") in verification_pairs
     assert ("reality-v1:action-provider-custom_endpoint-owner-receipt-unavailable",
             "action:provider.custom_endpoint") in verification_pairs
-    assert len(verification_pairs) == 132  # + the three default-off cloud video providers
+    assert len(ACTION_CAPABILITY_MANIFESTS) == 42
+    assert len(tool_records) == 2
+    # + the three default-off cloud video providers
+    assert len(verification_pairs) == 42 + 2 + 81 == 125
     for verification_ref, capability_id in verification_pairs:
         matches = [case for case in combined if case.ref == verification_ref]
         assert len(matches) == 1
@@ -314,8 +345,9 @@ async def test_registry_policy_cases_pass_while_default_off_plugins_remain_seams
     result = await run_reality(cases, promote=False)
     by_id = {item["capability_id"]: item for item in result["results"]}
 
-    assert result["total"] == 88
-    assert result["passed"] == 87
+    _assert_h696_boot_skill_split(records.values())
+    assert result["total"] == 81
+    assert result["passed"] == 80
     assert by_id["plugin:ntfy"]["passed"] is True
     assert result["skipped"] == 0
     assert all(

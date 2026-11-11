@@ -8,7 +8,7 @@
    backup-panel.test.tsx. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { KillSwitchPanel } from '../gap';
 
 beforeEach(() => { try { localStorage.clear(); } catch { /* ignore */ } });
@@ -27,13 +27,13 @@ function mockFetch(status, postStatus = 403) {
 
 describe('KillSwitchPanel — a refused halt is reported, not hidden', () => {
   it('reads ARMED when nothing is halted', async () => {
-    mockFetch({ global: false, halted: {} });
+    mockFetch({ global: false, any_halted: false, halted_count: 0 });
     render(<KillSwitchPanel />);
     await waitFor(() => expect(screen.getByText(/ARMED · operational/)).toBeTruthy());
   });
 
   it('says HALT REFUSED and keeps the true state when the POST is denied', async () => {
-    mockFetch({ global: false, halted: {} }, 403);
+    mockFetch({ global: false, any_halted: false, halted_count: 0 }, 403);
     render(<KillSwitchPanel />);
     await waitFor(() => expect(screen.getByText('HALT ALL')).toBeTruthy());
     fireEvent.click(screen.getByText('HALT ALL'));
@@ -47,7 +47,7 @@ describe('KillSwitchPanel — a refused halt is reported, not hidden', () => {
   });
 
   it('re-reads state after a refusal, so the card can never drift from the server', async () => {
-    const fn = mockFetch({ global: false, halted: {} }, 403);
+    const fn = mockFetch({ global: false, any_halted: false, halted_count: 0 }, 403);
     render(<KillSwitchPanel />);
     await waitFor(() => expect(screen.getByText('HALT ALL')).toBeTruthy());
     const getsBefore = fn.mock.calls.filter((c) => (c[1]?.method || 'GET') === 'GET').length;
@@ -58,20 +58,20 @@ describe('KillSwitchPanel — a refused halt is reported, not hidden', () => {
   });
 
   it('shows ENGAGED when the switch really is engaged', async () => {
-    mockFetch({ global: true, halted: { global: { reason: 'hud' } } });
+    mockFetch({ global: true, any_halted: true, halted_count: 1 });
     render(<KillSwitchPanel />);
     await waitFor(() => expect(screen.getByText(/ENGAGED · all agents halted/)).toBeTruthy());
     expect(screen.getByText('disengage')).toBeTruthy();
   });
 
   it('halts on one click, but disengages only once DISENGAGE is typed (H168)', async () => {
-    const fn = mockFetch({ global: false, halted: {} }, 200);
+    const fn = mockFetch({ global: false, any_halted: false, halted_count: 0 }, 200);
     render(<KillSwitchPanel />);
     await waitFor(() => expect(screen.getByText('HALT ALL')).toBeTruthy());
     fireEvent.click(screen.getByText('HALT ALL'));
     await waitFor(() => expect(fn.mock.calls.filter(([, i]) => i?.method === 'POST').length).toBe(1));
     expect(JSON.parse(fn.mock.calls.find(([, i]) => i?.method === 'POST')[1].body).engage).toBe(true);
-    const engaged = mockFetch({ global: true, halted: { global: { reason: 'hud' } } }, 200);
+    const engaged = mockFetch({ global: true, any_halted: true, halted_count: 1 }, 200);
     render(<KillSwitchPanel />);
     await waitFor(() => expect(screen.getByText('disengage')).toBeTruthy());
     fireEvent.click(screen.getByText('disengage'));
@@ -87,12 +87,12 @@ describe('KillSwitchPanel — a refused halt is reported, not hidden', () => {
   });
 
   it('does not show a stale refusal banner on a later successful toggle', async () => {
-    mockFetch({ global: false, halted: {} }, 403);
+    mockFetch({ global: false, any_halted: false, halted_count: 0 }, 403);
     render(<KillSwitchPanel />);
     await waitFor(() => expect(screen.getByText('HALT ALL')).toBeTruthy());
     fireEvent.click(screen.getByText('HALT ALL'));
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
-    mockFetch({ global: false, halted: {} }, 200);   // now permitted
+    mockFetch({ global: false, any_halted: false, halted_count: 0 }, 200);   // now permitted
     fireEvent.click(screen.getByText('HALT ALL'));
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
   });
@@ -125,8 +125,41 @@ describe('KillSwitchPanel — an unread state is never reported as ARMED', () =>
   });
 
   it('reports ENGAGED normally once a real halted state is read', async () => {
-    mockFetch({ global: true, halted: {} });
+    mockFetch({ global: true, any_halted: true, halted_count: 1 });
     render(<KillSwitchPanel />);
     await waitFor(() => expect(screen.getByText(/ENGAGED · all agents halted/)).toBeTruthy());
+  });
+
+  it('shows a scoped halt as engaged and never operational', async () => {
+    const fn = mockFetch({ global: false, any_halted: true, halted_count: 1 });
+    render(<KillSwitchPanel />);
+    await waitFor(() => expect(screen.getByText(/ENGAGED/)).toBeTruthy());
+    expect(screen.queryByText(/ARMED · operational/)).toBeNull();
+    fireEvent.click(screen.getByText('HALT ALL'));
+    await waitFor(() => expect(fn.mock.calls.some(([, i]) => i?.method === 'POST')).toBe(true));
+    expect(JSON.parse(fn.mock.calls.find(([, i]) => i?.method === 'POST')[1].body).engage).toBe(true);
+  });
+
+  it('shows UNKNOWN for an incomplete projection', async () => {
+    mockFetch({ global: false, halted: {} });
+    render(<KillSwitchPanel />);
+    await waitFor(() => expect(screen.getByText(/UNKNOWN/)).toBeTruthy());
+    expect(screen.queryByText(/ARMED · operational/)).toBeNull();
+  });
+
+  it.each([
+    { global: false, any_halted: false, halted_count: 1 },
+    { global: false, any_halted: true, halted_count: 0 },
+    { global: true, any_halted: false, halted_count: 0 },
+  ])('keeps contradictory state UNKNOWN and offers safe engage: %j', async (state) => {
+    const fn = mockFetch(state, 200);
+    render(<KillSwitchPanel />);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByText(/UNKNOWN/)).toBeTruthy();
+    expect(screen.queryByText(/ARMED · operational/)).toBeNull();
+    fireEvent.click(screen.getByText('HALT ALL'));
+    await waitFor(() => expect(fn.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(true));
+    const post = fn.mock.calls.find(([, init]) => init?.method === 'POST');
+    expect(JSON.parse(post[1].body).engage).toBe(true);
   });
 });

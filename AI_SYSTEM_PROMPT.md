@@ -7,6 +7,14 @@
 > (module index + lifecycle), `NERVA.md` (architecture overview), `MOONSHOT.md` §5 (non-negotiables),
 > `docs/AI_CONTEXT.md` (context-loading tiers), `BACKLOG.md` (priority truth). When this file and
 > those disagree, **the canonical sources win** — fix this file.
+> **Current Hermes campaign (2026-11-04):** the execution workflow is
+> `docs/hermes/autonomous-development-objective.md`; resume from the cumulative
+> `docs/hermes/CAMPAIGN_HANDOFF.md` after verifying checkout/SHA. Integrate the
+> current batch before another frozen 697-contract slice. Interrupt only for a
+> concrete blocking security, correctness or build defect. This campaign is
+> local only: no stage, commit, push, merge, deploy, PR update, paid activation
+> or schedule reactivation. Older PR procedures below are historical delivery
+> guidance, not permission to publish now.
 
 ---
 
@@ -160,10 +168,11 @@ inbox/channels within the interrupt budget → executor dispatch, all kernel-med
    path; unrestricted self-modification is permanently out.
 8. **Autonomy is budgeted:** reversible work may act silently; interrupts respect the ≤4/day
    budget (`BudgetLedger`); money/locks/security actions never rise above the approval queue.
-9. **Workflow:** feature branch + PR into `main` (direct push disabled); classify risk R0–R3 per the
-   `docs/AGENT_WORKFLOW.md` risk table (advisory convention, not an enforced gate); evidence receipts bind to the exact head SHA; never
-   describe an unrun suite as passing. Don't touch `BACKLOG.md`/generated status in
-   inspection-only tasks; **do** sync `BACKLOG.md` in the same PR that delivers roadmap items.
+9. **Workflow:** current Hermes work stays local under the canonical objective and
+   cumulative handoff above. Classify risk R0–R3 per `docs/AGENT_WORKFLOW.md`
+   (advisory convention); bind evidence to the actual checkout/SHA and never
+   describe an unrun suite as passing. A later authorized publication retains
+   the separate branch/PR, BACKLOG sync and trusted-policy gates.
 10. **Generated counters are generated:** test/route counts in `STATUS.md`/`NERVA.md` are synced
     by `scripts/status_sync.py` — don't hand-edit them.
 
@@ -199,9 +208,11 @@ python scripts/install_smoke.py                # fast real-boot smoke (fake loca
 
 ## 4. Task Execution Checklist
 
-Standard workflow for any feature or refactor in this repository:
+Current local Hermes workflow for a feature or refactor (publication steps below
+apply only after a separate owner request):
 
 1. **Load context by tier, not raw** (repo ≈ 2M tokens): `CLAUDE.md` → `AGENTS.md` →
+   the canonical objective and cumulative handoff →
    `docs/ARCHITECTURE.md` → `MOONSHOT.md` → `STATUS.md` → `NERVA.md`, then **one** task bundle from
    `docs/AI_CONTEXT.md` (backend module + router + matching tests / frontend / voice / security /
    WorldView). `BACKLOG.md` is the priority truth when docs disagree.
@@ -210,8 +221,9 @@ Standard workflow for any feature or refactor in this repository:
 3. **Classify risk** (`R0`–`R3` per the `docs/AGENT_WORKFLOW.md` risk table — advisory since
    #981) — it guides tests, review, and merge care. Record goal, non-goals, likely paths, tests, rollback before
    non-trivial implementation.
-4. **Branch:** create a feature branch; one coherent, independently revertible slice per PR
-   (security/authority changes always separate).
+4. **Scope:** finish current integration before another frozen contract; use
+   one coherent, independently revertible local unit. Keep security/authority
+   changes separate and file ownership explicit.
 5. **TDD where a regression is demonstrable:** write the failing test first
    (`tests/test_<module>.py`, sys.path header pattern, fake backends, offline); for orchestrator
    units use `Orchestrator.__new__(Orchestrator)` + manual attributes, not full init.
@@ -219,14 +231,15 @@ Standard workflow for any feature or refactor in this repository:
    `routers/_deps.py` (`_user_guard`/`_admin_guard`), shared env parsers, settings in
    `settings_db.py:DEFAULTS`, append-only migrations, contract + kernel + audit gates on any
    mutating effect, taint/rag-guard on any untrusted text.
-7. **Sync the coupled surfaces in the same PR:** route-parity snapshot (`--update`),
+7. **Sync coupled surfaces in the authorized delivery unit:** route-parity snapshot (`--update`),
    OpenAPI→TS typegen if the API changed, `mobile/PARITY.md` or HUD-V2 ledger for user-facing
    capabilities, `scripts/status_sync.py` for counters, `BACKLOG.md` checkboxes for delivered
    roadmap items.
-8. **Validate before push:** targeted pytest → adjacent sweep → ruff/`code_health` →
-   frontend/mobile typecheck+tests when touched. Never report an unrun suite as passing.
-9. **PR with evidence:** exact commands + exit codes bound to the head SHA, risk tier, changed
-   paths, rollback note. Any new commit stales prior evidence — re-establish it.
-10. **Review & merge:** max two consolidated review rounds, then escalate; `R3` requires separate
-    builder/reviewer/integrator; finish with explicit states
-    (`delivery=… ci=… governance=… lease=none head=<sha> next=…`).
+8. **Validate:** focused pytest → affected regression → ruff/`code_health` →
+   frontend/mobile checks when touched; run milestone CI/release gates when due.
+   Never report an unrun suite as passing.
+9. **Record evidence locally:** exact commands/results, checkout SHA, risk,
+   changed paths, rollback and remaining limits in the cumulative handoff.
+10. **Review and integration:** separate builder/reviewer/integrator for high-risk
+    work; preserve security and release gates. No stage, commit, push, merge,
+    deploy or PR update in the current campaign.

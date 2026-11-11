@@ -24,9 +24,11 @@ billed — the same distinction `llm/cost_estimator.py` already draws.
 """
 import json
 import logging
+import math
 import threading
 import time
 from collections import defaultdict
+from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -124,6 +126,26 @@ def route_bills_nothing(route: str) -> bool:
         return False
     return not (name.startswith("cloud") or name in _CLOUD_ROUTE_NAMES)
 
+
+def _route_locality(route: str) -> str:
+    """Classify the measured route, never the model id or its quoted price."""
+    name = str(route or "").strip().lower()
+    if name in {"local", "local-deep", "local-fallback", "ollama-howard"}:
+        return "local"
+    if name.startswith("cloud") or name in _CLOUD_ROUTE_NAMES:
+        return "cloud"
+    return "unknown"
+
+
+def _valid_locality_slot(slot) -> bool:
+    if not isinstance(slot, dict):
+        return False
+    counts = ("calls", "input_tokens", "output_tokens", "unpriced_calls")
+    return (all(type(slot.get(key)) is int and slot[key] >= 0 for key in counts)
+            and type(slot.get("cost_usd")) in (int, float)
+            and math.isfinite(slot["cost_usd"]) and slot["cost_usd"] >= 0)
+
+
 _lock = threading.RLock()
 _usage: dict[str, dict] = defaultdict(
     # `unpriced_calls` counts the calls whose model this table could not price. It is a
@@ -140,7 +162,7 @@ _usage: dict[str, dict] = defaultdict(
     # call was dispatched whose usage the provider never certified (a review cancelled or
     # failed mid-call) — spent, size unknown. See `record_unmeasured`.
     lambda: {"input_tokens": 0, "output_tokens": 0, "calls": 0, "model": "default",
-             "cost_usd": 0.0, "unpriced_calls": 0, "models": {}}
+             "cost_usd": 0.0, "unpriced_calls": 0, "models": {}, "localities": {}}
 )
 # Spend per UTC day, so a daily cap has something to read and last month is answerable.
 _daily: dict[str, float] = defaultdict(float)
@@ -182,7 +204,14 @@ def _load_unlocked() -> None:
         return
     for agent, data in (raw.get("agents") or {}).items():
         if isinstance(data, dict):
-            _usage[agent].update({k: v for k, v in data.items() if k in _usage[agent]})
+            restored = {k: v for k, v in data.items() if k in _usage[agent]}
+            if "localities" in restored:
+                localities = restored["localities"]
+                restored["localities"] = ({name: slot for name, slot in localities.items()
+                                            if name in ("local", "cloud", "unknown")
+                                            and _valid_locality_slot(slot)}
+                                           if isinstance(localities, dict) else {})
+            _usage[agent].update(restored)
             if _unmeasured(data):
                 _usage[agent][UNMEASURED] = _unmeasured(data)
     for day, spend in (raw.get("daily") or {}).items():
@@ -314,7 +343,7 @@ def _price_for(model: str, route: str = "") -> dict | None:
     request for a placeholder rate, not a failed lookup. An empty/missing model id is a
     failed lookup, not a request, so it resolves to `UNPRICED_MODEL`.
     """
-    if route_bills_nothing(route):
+    if _route_locality(route) == "local":
         # The route is the only thing that actually knows whether money moved, and it
         # outranks every id-shaped guess below: `deepseek/deepseek-chat` is a paid
         # OpenRouter model and `deepseek-r1:7b` is an Ollama tag, and no amount of
@@ -332,10 +361,13 @@ def _price_for(model: str, route: str = "") -> dict | None:
     per_model_table = _exact_prices()
     for candidate in candidates:
         exact = MODEL_PRICES.get(candidate)
-        if exact is not None:
+        if exact is not None and (candidate not in _ZERO_FAMILIES
+                                  or _route_locality(route) == "local"):
             return exact
         per_model = per_model_table.get(candidate)
-        if per_model is not None:
+        if (per_model is not None
+                and ((per_model["input"] or per_model["output"])
+                     or _route_locality(route) == "local")):
             return per_model
     matches = [k for k in _PAID_FAMILIES if k in key]
     if not matches:
@@ -372,6 +404,14 @@ def record(agent_name: str, input_tokens: int, output_tokens: int,
     with _lock:
         _load_unlocked()
         entry = _usage[agent_name]
+        if entry["calls"] and not entry.get("models"):
+            # The pre-model rollup named only its last model. Preserve that
+            # approximate bucket before this call replaces `entry["model"]`.
+            entry["models"] = {entry.get("model", UNPRICED_MODEL): {
+                "calls": entry["calls"], "input_tokens": entry["input_tokens"],
+                "output_tokens": entry["output_tokens"], "cost_usd": entry["cost_usd"],
+                "unpriced_calls": entry.get("unpriced_calls", 0),
+                "estimated_from_last_model": True}}
         entry["input_tokens"] += input_tokens
         entry["output_tokens"] += output_tokens
         entry["calls"] += 1
@@ -399,6 +439,17 @@ def record(agent_name: str, input_tokens: int, output_tokens: int,
         slot["cost_usd"] = round(slot["cost_usd"] + call_cost, 6)
         if price is None:
             slot["unpriced_calls"] += 1
+        location = entry.setdefault("localities", {}).setdefault(
+            _route_locality(route),
+            {"calls": 0, "input_tokens": 0, "output_tokens": 0,
+             "cost_usd": 0.0, "unpriced_calls": 0},
+        )
+        location["calls"] += 1
+        location["input_tokens"] += input_tokens
+        location["output_tokens"] += output_tokens
+        location["cost_usd"] = round(location["cost_usd"] + call_cost, 6)
+        if price is None:
+            location["unpriced_calls"] += 1
         if call_cost:
             _daily[_today()] = round(_daily[_today()] + call_cost, 6)
         _record_session_unlocked(session_id, purpose, input_tokens, output_tokens, call_cost)
@@ -496,7 +547,7 @@ def get_summary() -> dict:
             total_unpriced += unpriced
             # `models` is an internal tally, not part of this surface's published
             # shape — `apm_summary` reads `_usage` for it.
-            result[agent] = {k: v for k, v in data.items() if k != "models"}
+            result[agent] = {k: v for k, v in data.items() if k not in ("models", "localities")}
             result[agent].update(cost_usd=cost, priced=unpriced == 0)
         return {"agents": result, "total_cost_usd": round(total_cost, 6),
                 "unpriced_calls": total_unpriced}
@@ -527,21 +578,30 @@ def apm_summary() -> dict:
     row is marked `estimated_from_last_model` so a reader is not told the localisation
     holds for it.
     """
-    summary = get_summary()
-    agents = summary["agents"]
     with _lock:
-        tallies = {agent: dict(data.get("models") or {}) for agent, data in _usage.items()}
+        _load_unlocked()
+        # One immutable point-in-time copy: record() can update the same agent and
+        # model while a dashboard read is running. Totals and every split use this.
+        snapshot = {agent: deepcopy(data) for agent, data in _usage.items()}
+    agents = snapshot
+    tallies = {agent: data.get("models") or {} for agent, data in snapshot.items()}
+    locality_tallies = {agent: data.get("localities") for agent, data in snapshot.items()}
 
     totals = {"runs": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0,
               "unpriced_calls": 0}
     by_model: dict[str, dict] = {}
     by_agent = []
+    by_locality = {
+        name: {"runs": 0, "input_tokens": 0, "output_tokens": 0,
+               "cost_usd": 0.0, "unpriced_calls": 0}
+        for name in ("local", "cloud", "unknown")
+    }
 
     for agent, data in agents.items():
         runs = data.get("calls", 0)
         in_tok = data.get("input_tokens", 0)
         out_tok = data.get("output_tokens", 0)
-        cost = data.get("cost_usd", 0.0)
+        cost = round(data.get("cost_usd", 0.0), 6)
         model = data.get("model", "default")
         unpriced = int(data.get("unpriced_calls", 0))
 
@@ -557,11 +617,51 @@ def apm_summary() -> dict:
             "unpriced_calls": unpriced, "priced": unpriced == 0,
         })
 
-        per_model = tallies.get(agent) or {
+        # Old rollups have no route evidence. Corrupt or overfull locality data
+        # cannot turn old tokens into a local/cloud claim; keep its remainder unknown.
+        known = {}
+        raw_localities = locality_tallies.get(agent)
+        if isinstance(raw_localities, dict):
+            for name in ("local", "cloud", "unknown"):
+                slot = raw_localities.get(name)
+                if not isinstance(slot, dict):
+                    continue
+                fields = {"runs": slot.get("calls"), "input_tokens": slot.get("input_tokens"),
+                          "output_tokens": slot.get("output_tokens"),
+                          "cost_usd": slot.get("cost_usd"),
+                          "unpriced_calls": slot.get("unpriced_calls")}
+                if _valid_locality_slot(slot):
+                    known[name] = fields
+        limits = {"runs": runs, "input_tokens": in_tok, "output_tokens": out_tok,
+                  "cost_usd": cost, "unpriced_calls": unpriced}
+        if any(sum(slot[key] for slot in known.values()) > limit + (1e-6 if key == "cost_usd" else 0)
+               for key, limit in limits.items()):
+            known = {}
+        remainder = {key: max(0, limit - sum(slot[key] for slot in known.values()))
+                     for key, limit in limits.items()}
+        for name, slot in (*known.items(), ("unknown", remainder)):
+            target = by_locality[name]
+            for key, value in slot.items():
+                target[key] += value
+                if key == "cost_usd":
+                    target[key] = round(target[key], 6)
+
+        per_model = dict(tallies.get(agent) or {
             model: {"calls": runs, "input_tokens": in_tok, "output_tokens": out_tok,
                     "cost_usd": cost, "unpriced_calls": unpriced,
                     "estimated_from_last_model": True},
-        }
+        })
+        if tallies.get(agent):
+            residual = {
+                "calls": runs - sum(int(slot.get("calls", 0)) for slot in per_model.values()),
+                "input_tokens": in_tok - sum(int(slot.get("input_tokens", 0)) for slot in per_model.values()),
+                "output_tokens": out_tok - sum(int(slot.get("output_tokens", 0)) for slot in per_model.values()),
+                "cost_usd": round(cost - sum(float(slot.get("cost_usd", 0.0)) for slot in per_model.values()), 6),
+                "unpriced_calls": unpriced - sum(int(slot.get("unpriced_calls", 0)) for slot in per_model.values()),
+            }
+            if any(value > 0 for value in residual.values()) and all(value >= 0 for value in residual.values()):
+                residual["legacy_unattributed"] = True
+                per_model["unknown legacy model"] = residual
         for model_id, slot in per_model.items():
             m = by_model.setdefault(
                 model_id, {"model": model_id, "runs": 0, "input_tokens": 0,
@@ -574,10 +674,13 @@ def apm_summary() -> dict:
             m["unpriced_calls"] += int(slot.get("unpriced_calls", 0))
             if slot.get("estimated_from_last_model"):
                 m["estimated_from_last_model"] = True
+            if slot.get("legacy_unattributed"):
+                m["legacy_unattributed"] = True
 
     by_agent.sort(key=lambda r: r["cost_usd"], reverse=True)
     by_model_list = sorted(by_model.values(), key=lambda r: r["cost_usd"], reverse=True)
-    return {"totals": totals, "by_agent": by_agent, "by_model": by_model_list}
+    return {"totals": totals, "by_agent": by_agent, "by_model": by_model_list,
+            "by_locality": by_locality}
 
 
 def reset():
