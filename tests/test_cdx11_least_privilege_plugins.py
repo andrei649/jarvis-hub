@@ -95,6 +95,8 @@ def test_all_external_write_wildcards_are_restricted_under_hardening():
         "channel_sms",
         # A2A outbound (Adopt lane slice 4): sends owner text to configured peer agents.
         "a2a",
+        # H658: a remote room member's calls and their results cross to the peer machine.
+        "room-peers",
     }
     assert targets == expected
     for pid in targets:
