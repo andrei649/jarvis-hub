@@ -3128,6 +3128,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/security/credential-shares": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Credential Share */
+        post: operations["credential_share_api_security_credential_shares_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/security/spotlight": {
         parameters: {
             query?: never;
@@ -16264,6 +16281,21 @@ export interface components {
              */
             value: string;
         };
+        /**
+         * CredentialShare
+         * @description H496: share (or stop sharing) one of the owner's integrations with guest turns.
+         */
+        CredentialShare: {
+            /** Integration */
+            integration: string;
+            /** Shared */
+            shared: boolean;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+        };
         /** CredentialTarget */
         CredentialTarget: {
             /** Provider */
@@ -23695,6 +23727,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DataHandlingAck"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    credential_share_api_security_credential_shares_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CredentialShare"];
             };
         };
         responses: {

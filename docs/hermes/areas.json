@@ -1956,6 +1956,7 @@
         "tests/test_h487_terminal_consent_categories.py",
         "tests/test_h487_terminal_consent_provenance.py",
         "tests/test_h490_safe_mode_posture.py",
+        "tests/test_h496_identity_credentials.py",
         "tests/test_h501_host_posture.py",
         "tests/test_h504_tls_trust.py",
         "tests/test_h507_code_guidance.py",

@@ -317,6 +317,14 @@ class WebSearchPlugin:
 
     async def _ask(self, provider: web_providers.SearchProvider, query: str,
                    max_results: int) -> list[dict]:
+        if not provider.keyless:
+            # H496: a configured backend answers with the owner's key or server; a guest
+            # turn may use it only when the owner shared that backend with guests.
+            from ..security.credential_scope import KIND_WEB_SEARCH, CredentialNotShared, check
+            try:
+                check(KIND_WEB_SEARCH, provider.name)
+            except CredentialNotShared as exc:
+                raise web_providers.PolicyBlock(exc.reason) from None
         try:
             raw = await provider.search(
                 self._egress(provider.plugin_id), self._view(), query, max_results)

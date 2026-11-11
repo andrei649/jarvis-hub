@@ -831,6 +831,16 @@ class Skill:
                             self.name, len(unset), command)
                 return skill_secrets.setup_message(self.name, unset)
             stored = skill_secrets.skill_env(self)
+            if stored:
+                # H496: the stored values are the owner's; a guest turn runs this skill
+                # with them only when the owner shared the skill with guests.
+                from agents.core.security.credential_scope import KIND_SKILL, allowed
+
+                if not allowed(KIND_SKILL, self.name):
+                    logger.warning("Skill '%s' refused: its setup values are not shared with "
+                                   "guests", self.name)
+                    return (f"[skill:{self.name}] uses the owner's setup values, which are "
+                            "not shared with guests")
             secrets = tuple(stored.values())
             if stored and (context or not cmd_fn):
                 # Its own stored values only, read-only, for this call; never os.environ.

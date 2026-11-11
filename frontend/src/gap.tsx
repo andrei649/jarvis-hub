@@ -73,6 +73,7 @@ import { QuickbarPanel } from './panels/quickbar';
 import { MemoryConsolidatePanel } from './panels/memory-consolidate';
 import { PermissionsPanel } from './panels/permissions';
 import { DataHandling } from './panels/data-handling';
+import { CredentialShares } from './panels/credential-shares';
 import { UsagePanel } from './panels/usage';
 
 import { useApi, arr, mono, asLive, PanelChip, Card, State, Row, Tag, Btn, act, actA, refusalReason, inpS, taS, Json } from './panel-kit';
@@ -1062,6 +1063,7 @@ export function PosturePanel() {
             </span>
           </Row>
           <DataHandling value={d.data_handling} reload={reload} />
+          <CredentialShares value={d.credential_shares} reload={reload} />
         </>
       )}
       {/* H165 — each switch above has a price; the flags doc names it. */}

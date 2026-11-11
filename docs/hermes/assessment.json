@@ -9522,13 +9522,19 @@
     {
       "id": "H496",
       "row_sha256": "a555a2fbca90b24aef13cde172e6d59d008bc67fd4d99486d5174cc8f81173c5",
-      "status": "missing",
-      "summary": "Fresh assessment 2026-10-13 (9f92d937): Credentials resolve from one process-wide encrypted store: SecretStore (agents/core/secrets.py:92) keyed by a single master key from JARVIS_SECRET_KEY (agents/core/secrets.py:111), plus an env-fallback vault resolver (agents/core/secrets_vault.py:16). The external password-manager registry keeps per-owner session tokens (agents/core/security/secret_sources/registry.py:25) but names resolve against one shared cache, not a per-profile scope. There is no contextvar-installed profile scope, no UnscopedSecretError, no authoritative-miss mode under multiplexing, no audited global-name list and no profile allowlist.",
-      "remaining": "- get_secret-style resolver reading a contextvar-installed per-profile scope\n- Authoritative scope under multiplexing (miss returns default) and UnscopedSecretError for unscoped reads\n- Fall-through to process env when multiplexing is off\n- Explicit audited list of genuinely global env names vs credentials\n- Profile allowlist restricting which profiles load, with tests",
+      "status": "partial",
+      "summary": "Reopened (owner decision 2026-11-11, docs/decisions/2026-11-10-hermes-integration-by-feature.md §5) and built 2026-11-11 in Nerva's shape. Nerva has one credential holder per hub, the owner (provider keys, Integrations-panel keys, MCP OAuth tokens and secrets, skill setup values, secret-broker handles, keyed web-search backends), plus the Workspace pilot's organisation, whose one credential (SMTP) lives in its own store under business/ and is never read by a hub turn. Guests (a non-admin HUD token, a paired chat sender who is not the owner, a non-owner OpenAI-API key, the widget) hold none. agents/core/security/credential_scope.py resolves every credential use through the turn's principal: turn_identity places the bound principal and action origin with tool_profiles.classify_turn (owner / guest / system; a classifier error reads as guest), and check(kind, name) raises CredentialNotShared for a guest turn unless the owner shared that one integration. The scope is authoritative: a guest's miss never falls through to the owner's store. Seams that ask it: llm/data_handling.authorize (a non-local provider route; loopback models need no share), the mcp/model_bridge handler (an owner-configured server; an editor's session-scoped server keeps its G11 rule), plugins/websearch._ask (a keyed backend; keyless DuckDuckGo needs none), skills/loader Skill.execute (stored H342 setup values) and security/secret_broker.inject (a {{secret:NAME}} handle). Shares are recorded with who and when in <data>/security/credential_shares.json and audited (an audit that cannot record refuses the share); an unreadable or malformed ledger shares nothing. Owner surface: POST /api/security/credential-shares (admin) and the shares in /api/security/posture, shown by the HUD Trust card's 'credentials shared with guests' panel (frontend/src/panels/credential-shares.tsx). Already in place and pinned by the same suite: guest turns get no plugin data, core memory or recall (G12), gated tools are never offered to guests, execute_code passes declared env names only for an owner principal (H595), a skill's stored values never reach an interpreter (H342), and a task spawned inside a guest turn keeps the guest identity. Tests: tests/test_h496_identity_credentials.py attempts each cross-identity use from web, Telegram and OpenAI-API guests.",
+      "remaining": "- guests cannot hold credentials of their own (no per-identity provider key or integration): a guest turn uses local models unless the owner shares a provider\n- a share covers every guest at once; no per-guest or per-channel share\n- plugins still read their keys from the process environment; they are guarded at the turn seams (no plugin data for guests, gated tools never offered), not at the read, so a new seam must call credential_scope.check\n- Hermes' multiplexed profiles and multiplex_profile_allowlist have no counterpart: one hub serves one data root (JARVIS_PROFILE selects a separate root)\n- no audited global-name list for the process environment (the UnscopedSecretError shape)",
       "evidence": [
-        "agents/core/secrets.py",
-        "agents/core/secrets_vault.py",
-        "agents/core/security/secret_sources/registry.py"
+        "agents/core/security/credential_scope.py",
+        "agents/core/llm/data_handling.py",
+        "agents/core/mcp/model_bridge.py",
+        "agents/core/plugins/websearch.py",
+        "agents/core/skills/loader.py",
+        "agents/core/security/secret_broker.py",
+        "agents/core/routers/security.py",
+        "frontend/src/panels/credential-shares.tsx",
+        "tests/test_h496_identity_credentials.py"
       ]
     },
     {

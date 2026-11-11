@@ -454,6 +454,16 @@ def authorize(router, backend, model, route="", *, principal=None, origin=None, 
         from agents.core.orchestrator import current_principal
         principal = current_principal()
     resolved = resolve(router, backend, model, route)
+    if resolved.policy != "local":
+        # H496: a cloud route spends the owner's provider credential; a guest turn may
+        # use it only when the owner shared that provider with guests.
+        from agents.core.security.credential_scope import KIND_PROVIDER, CredentialNotShared, check
+        try:
+            check(KIND_PROVIDER, resolved.provider, principal=principal, origin=origin)
+        except CredentialNotShared as exc:
+            raise DataHandlingRefused(
+                f"{exc.reason}: the owner has not shared the {resolved.provider} provider with "
+                "guests; guest turns use local models") from None
     selected = getattr(_unwrap(backend), '_selected_provider_runtime', None)
     custom = getattr(_unwrap(backend), '_custom_endpoint_runtime', None)
     if custom is not None:

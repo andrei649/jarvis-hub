@@ -4,6 +4,15 @@
 
 ### What changed for you — 2026-11-11
 
+**Guests never spend your keys**
+- A turn from someone other than you (a household token in the HUD, a paired Telegram sender,
+  another OpenAI-API key) uses none of your credentials: no cloud model key, no MCP server's
+  login, no paid web-search key, no skill's setup values, no stored secret. Local models still
+  answer them.
+- To let guests use one integration, share it in the HUD (Trust card, "credentials shared with
+  guests") or with `POST /api/security/credential-shares`. Each share is recorded with when you
+  made it and written to the audit log; stopping a share takes effect on the next call.
+
 **Nerva in your code editor (Agent Client Protocol)**
 - `nerva acp` makes Nerva the coding agent of Zed, JetBrains IDEs and other ACP editors.
   Each editor thread is a Nerva conversation of its own, working in the folder the editor
