@@ -192,6 +192,32 @@ input { font-family: inherit; }
   position:sticky; bottom:0; width:100%; background:var(--void); z-index:1; }
 .rail-gw .rl { font-size:7.5px; letter-spacing:.04em; text-transform:uppercase; font-family:var(--font-mono); }
 .rail-gw-dot { width:8px; height:8px; border-radius:50%; box-shadow:0 0 6px currentColor; }
+/* H132 — owner collapse/expand: expanded puts the labels beside the icons in a wider rail. */
+.rail-toggle { width:46px; height:22px; border:1px solid transparent; border-radius:var(--radius); background:transparent; color:var(--ink-2); font-family:var(--font-mono); font-size:12px; flex:none; }
+.rail-toggle:hover { color:var(--ink); background:var(--surface); }
+.main[data-ia="rail"][data-rail="expanded"] { grid-template-columns:156px minmax(0,1fr); }
+.rail[data-collapsed="false"] { align-items:stretch; }
+.rail[data-collapsed="false"] .rail-toggle { width:100%; text-align:right; padding-right:8px; }
+.rail[data-collapsed="false"] .rail-btn { width:100%; height:36px; flex-direction:row; justify-content:flex-start; gap:10px; padding:0 10px; flex:none; }
+.rail[data-collapsed="false"] .rail-btn .rl { font-size:10px; display:inline; }
+.rail[data-collapsed="false"] .rail-sep { width:auto; margin:4px 10px; }
+.rail[data-collapsed="false"] .rail-gw { flex-direction:row; justify-content:flex-start; padding:6px 12px; }
+/* H132 — phone width: the docked rail gives way to a menu button and a drawer over a backdrop. */
+.rail-menu-btn { display:none; align-self:flex-start; }
+.rail-drawer-root { position:fixed; inset:0; z-index:60; }
+.rail-backdrop { position:absolute; inset:0; background:rgba(0,0,0,.55); }
+.rail-drawer { position:absolute; top:0; left:0; bottom:0; width:min(240px, 80vw); background:var(--void-2, var(--void)); border-right:1px solid var(--panel-line); padding:10px 8px; display:flex; flex-direction:column; gap:6px; overflow-y:auto; }
+.rail-drawer .rail { flex:1; min-height:0; overflow-y:auto; }
+.rail-drawer-close { align-self:flex-end; }
+@media (max-width: 760px) {
+  .main[data-ia="rail"], .main[data-ia="rail"][data-rail="expanded"] { grid-template-columns:minmax(0,1fr); }
+  .main[data-ia="rail"] > .rail { display:none; }
+  .rail-menu-btn { display:inline-flex; }
+}
+/* H132 — the page header: the page title and the toolbar the current page registered. */
+.page-head { display:flex; align-items:center; gap:10px; padding:2px 4px; min-height:30px; }
+.page-head-title { font-family:var(--font-mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-2); }
+.page-head-actions { margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
 
 /* TOP TABS */
 .tabs { display:flex; gap:4px; padding:0 2px 4px; overflow-x:auto; }

@@ -4,6 +4,14 @@
 
 ### What changed for you — 2026-11-11
 
+**The mode rail folds, and becomes a menu on a phone**
+- The `»` / `«` button at the top of the rail widens it with labels beside the icons or
+  folds it back; the choice is remembered in this browser.
+- On a phone-width screen the rail is replaced by a **☰ modes** button that opens the modes
+  in a drawer; tap a mode, the dark backdrop or press Escape to close it.
+- Pages can put their own buttons beside the page title (Automations has **refresh
+  automations**); they disappear when you switch pages.
+
 **Backups: restore, download and upload from the Backup panel**
 - Each backup in the Console **Backup** panel has **restore…** and **download**. A restore
   asks first (type RESTORE), then waits as a card in your decision inbox; nothing is restored

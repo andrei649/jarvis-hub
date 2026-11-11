@@ -11,7 +11,15 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, lazy 
 import { V2, restoreDemoCorpora } from './data';
 import { localityFigure } from './locality';
 import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
-import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambient, CinemaMesh } from './shell';
+import { TopBar, Ticker, Rail, RailDrawer, Tabs, RosterColumn, ContextColumn, Palette, Ambient, CinemaMesh, MODES, useRailCollapsed } from './shell';
+import { PageHeaderBar, PageHeaderProvider } from './page-header';
+
+/** H132 — the page header's title: the mode's own label from the rail. */
+function modeTitle(mode: string, t: any): string {
+  if (mode === 'jobs') return 'Automations';
+  const m = MODES.find((x) => x.id === mode);
+  return (m && m.tkey && t[m.tkey]) || mode;
+}
 import {
   type Overrides, bindings as shortcutBindings, chordOf, displayChord, firesInInputs, matchAction, useShortcutOverrides,
 } from './shortcuts';
@@ -107,6 +115,7 @@ function App({ floating = false, shortcuts, onWorld }: {
   const lang = appearance.preferences.lang;
   const setLang = useCallback((value: string) => appearance.setPreference('lang', value), [appearance.setPreference]);
   const ia = 'rail' as 'rail' | 'tabs';
+  const [railCollapsed, toggleRail] = useRailCollapsed();
   // DEMO mode (opt-in, watermarked): OFF by default → the HUD shows ONLY real
   // backend data + honest empty states; ON → fills the seeded demo corpus.
   const [demo, setDemo] = useDemoMode();
@@ -712,11 +721,14 @@ function App({ floating = false, shortcuts, onWorld }: {
         <DesktopControls />
         <Ticker items={ticker} t={t} hidden={mode === 'chat'} />
 
-        <div className="main" data-ia={ia}>
-          {ia === 'rail' && <Rail mode={mode} setMode={setMode} gateway={statusChrome.gateway} t={t} />}
+        <div className="main" data-ia={ia} data-rail={railCollapsed ? 'collapsed' : 'expanded'}>
+          {ia === 'rail' && <Rail mode={mode} setMode={setMode} gateway={statusChrome.gateway} t={t} collapsed={railCollapsed} onToggle={toggleRail} />}
           <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column', gap: 'var(--gap)' }}>
             {ia === 'tabs' && <Tabs mode={mode} setMode={setMode} t={t} />}
+            {ia === 'rail' && <RailDrawer mode={mode} setMode={setMode} gateway={statusChrome.gateway} t={t} />}
 
+            <PageHeaderProvider routeKey={mode}>
+            <PageHeaderBar title={modeTitle(mode, t)} />
             <RouteBoundary routeKey={`${route.path}:${demo}`}>
             {mode === 'cockpit' ? (
               <div className="workzone cockpit" style={{ flex: 1, minHeight: 0 }}>
@@ -768,6 +780,7 @@ function App({ floating = false, shortcuts, onWorld }: {
               </div>
             )}
             </RouteBoundary>
+            </PageHeaderProvider>
           </div>
         </div>
       </div>

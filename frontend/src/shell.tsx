@@ -221,15 +221,39 @@ function Ticker({ items, t, hidden }){
   );
 }
 
-function Rail({ mode, setMode, gateway = STATUS_CHROME_UNKNOWN.gateway, t }: any){
+/* H132 — the rail can be expanded (labels beside the icons) or collapsed (the compact icon
+   column); the choice is the owner's and is remembered in this browser (`hud.rail`). On a
+   phone-width screen the rail is hidden and opens as a drawer over a backdrop (RailDrawer). */
+export const RAIL_PREF_KEY = 'hud.rail';
+export function useRailCollapsed(): [boolean, () => void] {
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem(RAIL_PREF_KEY) !== 'expanded'; } catch { return true; }
+  });
+  const toggle = () => setCollapsed((c) => {
+    const next = !c;
+    try { localStorage.setItem(RAIL_PREF_KEY, next ? 'collapsed' : 'expanded'); } catch { /* private mode */ }
+    return next;
+  });
+  return [collapsed, toggle];
+}
+
+function Rail({ mode, setMode, gateway = STATUS_CHROME_UNKNOWN.gateway, t, collapsed = true, onToggle, onNavigate }: any){
   const gw = gateway || STATUS_CHROME_UNKNOWN.gateway;
   const GW = gatewayView(gw);
+  const go = (id) => { setMode(id); if (onNavigate) onNavigate(id); };
   return (
-    <div className="rail">
+    <div className="rail" role="navigation" aria-label="modes" data-collapsed={collapsed ? 'true' : 'false'}>
+      {onToggle && (
+        <button className="rail-toggle" onClick={onToggle} aria-expanded={!collapsed}
+          aria-label={collapsed ? 'expand the rail' : 'collapse the rail'} title={collapsed ? 'expand the rail' : 'collapse the rail'}>
+          {collapsed ? '»' : '«'}
+        </button>
+      )}
       {MODES.map((m,i)=> m.sep
         ? <div className="rail-sep" key={i}></div>
         : <button key={m.id} data-anchor={'mode.'+m.id} className={'rail-btn'+(mode===m.id?' active':'')+(m.locked?' locked':'')}
-            onClick={()=>!m.locked&&setMode(m.id)} title={t[m.tkey]+(m.locked?' (soon)':'')}>
+            aria-current={mode===m.id ? 'page' : undefined}
+            onClick={()=>!m.locked&&go(m.id)} title={t[m.tkey]+(m.locked?' (soon)':'')}>
             <Icon d={ICONS[m.icon]} size={19}/><span className="rl">{t[m.tkey]}</span>
           </button>
       )}
@@ -241,6 +265,36 @@ function Rail({ mode, setMode, gateway = STATUS_CHROME_UNKNOWN.gateway, t }: any
         <span className="rail-gw-dot" style={{background:GW.c}}></span><span className="rl">GW {gw.state === 'running' ? gw.running.length : '—'}</span>
       </div>
     </div>
+  );
+}
+
+/* H132 — the phone-width rail: a menu button opens the modes as a drawer over a backdrop.
+   Choosing a mode, the backdrop, Escape or the close button shuts it, and focus returns to
+   the menu button. CSS shows the button (and hides the docked rail) only at phone width. */
+function RailDrawer({ mode, setMode, gateway, t }: any){
+  const [open, setOpen] = useState(false);
+  const menu = useRef<HTMLButtonElement>(null);
+  const close = () => { setOpen(false); menu.current?.focus(); };
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <>
+      <button ref={menu} className="tool-btn rail-menu-btn" aria-haspopup="dialog" aria-expanded={open}
+        aria-label="open the modes menu" onClick={() => setOpen(true)}>☰ modes</button>
+      {open && (
+        <div className="rail-drawer-root">
+          <div className="rail-backdrop" data-testid="rail-backdrop" onClick={close}></div>
+          <div className="rail-drawer" role="dialog" aria-modal="true" aria-label="modes menu">
+            <button className="tool-btn rail-drawer-close" aria-label="close the modes menu" onClick={close}>✕</button>
+            <Rail mode={mode} setMode={setMode} gateway={gateway} t={t} collapsed={false} onNavigate={close} />
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -587,4 +641,4 @@ export function CinemaMesh({ agents = [], tasks = [], llm, trust, sources, demo 
   );
 }
 
-export { MODES, TopBar, Ticker, Rail, Tabs, ContextColumn, RosterColumn, Palette, Ambient };
+export { MODES, TopBar, Ticker, Rail, RailDrawer, Tabs, ContextColumn, RosterColumn, Palette, Ambient };

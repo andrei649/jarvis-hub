@@ -71,7 +71,7 @@ export function StagedRestore({ staged, onDone }: { staged: Staged; onDone: (s: 
     .catch((x: any) => onDone(`not withdrawn · ${why(x)}`));
   const state = staged.state || 'waiting';
   return (
-    <div role="status" style={{ fontSize: 10, marginTop: 6, color: state === 'expired' ? 'var(--ink-3)' : 'var(--amber)' }}>
+    <div role="status" style={{ fontSize: 10, marginTop: 6, color: state === 'expired' ? 'var(--ink-2)' : 'var(--amber)' }}>
       staged restore · <span style={mono}>{staged.name}</span> · {state === 'waiting' ? 'applied at the next hub start'
         : state === 'deferred' ? `deferred${staged.deferred_reason ? ` (${staged.deferred_reason})` : ''}` : 'expired, never applied'}
       {staged.action_needed ? ` · ${staged.action_needed}` : ''}
@@ -118,19 +118,19 @@ export function CheckpointList() {
   const items: any[] = Array.isArray((d as any)?.items) ? (d as any).items : [];
   return (
     <div style={{ marginTop: 10 }}>
-      <div style={{ fontSize: 10, color: 'var(--ink-3)', letterSpacing: 1 }}>CHECKPOINTS</div>
-      {e ? <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>checkpoints unavailable · {why(e)}</div>
-        : loading && !d ? <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>loading…</div>
-        : !items.length ? <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>no file checkpoints</div>
+      <div style={{ fontSize: 10, color: 'var(--ink-2)', letterSpacing: 1 }}>CHECKPOINTS</div>
+      {e ? <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>checkpoints unavailable · {why(e)}</div>
+        : loading && !d ? <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>loading…</div>
+        : !items.length ? <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>no file checkpoints</div>
         : items.map((it, i) => (
           <div key={it.id ?? i} style={{ display: 'flex', gap: 6, fontSize: 10, alignItems: 'center' }}>
             <span style={{ ...mono, color: 'var(--ink-2)' }}>{String(it.id ?? '')}</span>
-            <span style={{ color: 'var(--ink-3)' }}>{String(it.path ?? it.root ?? '')}</span>
+            <span style={{ color: 'var(--ink-2)' }}>{String(it.path ?? it.root ?? '')}</span>
             <span style={{ marginLeft: 'auto' }}>{it.type && <Tag>{String(it.type)}</Tag>}</span>
           </div>
         ))}
       {(d as any)?.truncated && items.length > 0 && (
-        <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>more in /checkpoints list or nerva checkpoints list</div>
+        <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>more in /checkpoints list or nerva checkpoints list</div>
       )}
     </div>
   );
