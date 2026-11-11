@@ -3,7 +3,9 @@
    The hub reads its own checkout (agents/core/hub_update.py): version, branch, commit,
    whether the tree has uncommitted changes, and how far behind its upstream it is as of the
    last fetch, with the fetch's age. "Check now" fetches the upstream and shows the log as
-   it runs. Applying an update is not offered here: the hub says why, and the steps are in
+   it runs. With update trust pinned (H624) it plans and requests an update to the default
+   target (the pinned commit, else the upstream) or to a tag or commit the owner types, showing
+   the target's signature status; otherwise the hub says why, and the steps are in
    docs/UPGRADE.md. "Restart" asks the hub to restart itself, then waits until it answers
    again; a hub that was not started by serve.py says it cannot. */
 import React, { useEffect, useRef, useState } from 'react';
@@ -20,9 +22,11 @@ type Receipt = { id: string; kind: string; from: string | null; to: string | nul
   reason?: string | null; action_id?: string | null; log?: string[] };
 type Trust = { configured: boolean; mode: string | null; fingerprints?: string[]; commit?: string };
 type Plan = { can_apply: boolean; refused: string[]; from: string | null; to: string | null; from_version: string | null;
-  to_version: string | null; commit_count: number; file_count: number; migrations: string[];
-  dependencies: { changed: boolean; command: string | null }; commits: { sha: string; subject?: string }[] };
-type UpdateCheck = Check & { trust?: Trust; in_progress?: Receipt | null; last_receipt?: Receipt | null };
+  to_version: string | null; commit_count: number; file_count: number; migrations: string[]; migrations_uncertain?: boolean;
+  dependencies: { changed: boolean; command: string | null; refused?: string | null };
+  commits: { sha: string; subject?: string }[]; verdict?: { trusted: boolean; how?: string; signer?: string; reason?: string } | null };
+type Target = { ref: string | null; commit: string | null; signature: string; signer?: string | null; reason?: string | null };
+type UpdateCheck = Check & { trust?: Trust; target?: Target; in_progress?: Receipt | null; last_receipt?: Receipt | null };
 const short = (sha: string | null | undefined) => (sha ? sha.slice(0, 12) : '—');
 
 export function ago(s: number | null | undefined): string {
@@ -47,6 +51,7 @@ export function SystemUpdatePanel({ pollMs = 1000 }: { pollMs?: number }) {
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [ref, setRef] = useState('');
   const timer = useRef<any>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
@@ -87,7 +92,8 @@ export function SystemUpdatePanel({ pollMs = 1000 }: { pollMs?: number }) {
 
   const showPlan = () => {
     setBusy(true); setNote(null);
-    apiGet<Plan>('/api/admin/ops/update/plan', { admin: true })
+    const wanted = ref.trim();
+    apiGet<Plan>(`/api/admin/ops/update/plan${wanted ? `?ref=${encodeURIComponent(wanted)}` : ''}`, { admin: true })
       .then((p) => { setPlan(p); setBusy(false); })
       .catch((x: any) => { setBusy(false); setNote(`no plan · ${why(x)}`); });
   };
@@ -112,6 +118,8 @@ export function SystemUpdatePanel({ pollMs = 1000 }: { pollMs?: number }) {
           <dt>Working tree</dt><dd style={{ margin: 0 }}>{c.dirty == null ? 'unknown' : c.dirty ? <Tag c="var(--amber)">uncommitted changes</Tag> : 'clean'}</dd>
           <dt>Restart</dt><dd style={{ margin: 0 }}>{c.restart === 'self' ? 'Nerva can restart itself' : 'restart it the way it was started'}</dd>
           <dt>Trust</dt><dd style={{ margin: 0, ...mono }}>{c.trust?.configured ? `${c.trust.mode} · ${c.trust.commit ? short(c.trust.commit) : (c.trust.fingerprints || []).join(', ')}` : 'none pinned (nerva update trust)'}</dd>
+          {c.target?.commit && <><dt>Target</dt><dd style={{ margin: 0 }}><span style={mono}>{short(c.target.commit)}</span> ({c.target.ref}) · signature {c.target.signature === 'verified'
+            ? <Tag c="var(--green)">verified</Tag> : <Tag c="var(--amber)">{c.target.signature}{c.target.reason ? `: ${c.target.reason}` : ''}</Tag>}</dd></>}
           {flight && <><dt>In progress</dt><dd style={{ margin: 0 }}><Tag c="var(--amber)">{flight.kind} {flight.phase}</Tag> {short(flight.from)} → {short(flight.to)}</dd></>}
           {last && <><dt>Last</dt><dd style={{ margin: 0 }}>{last.kind} {short(last.from)} → {short(last.to)} · {last.result || last.phase}{last.reason ? ` (${last.reason})` : ''}</dd></>}
         </dl>
@@ -128,10 +136,12 @@ export function SystemUpdatePanel({ pollMs = 1000 }: { pollMs?: number }) {
             </span>
           )}
       </div>
-      {c?.can_apply && (
-        <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+      {(c?.can_apply || (c?.trust?.configured && c?.install === 'git')) && (
+        <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input aria-label="update target" placeholder="tag or commit (blank: default target)" value={ref}
+            onChange={(ev) => { setRef(ev.target.value); setPlan(null); }} style={{ ...mono, fontSize: 11, minWidth: 0, flex: '1 1 160px' }} />
           <button className="tool-btn" disabled={busy} onClick={showPlan}>plan</button>
-          {plan?.can_apply && <button className="tool-btn" disabled={busy} onClick={() => queueCard('/api/admin/ops/update/apply', {}, `update to ${short(plan.to)}`)}>request update</button>}
+          {plan?.can_apply && <button className="tool-btn" disabled={busy} onClick={() => queueCard('/api/admin/ops/update/apply', ref.trim() ? { ref: ref.trim() } : {}, `update to ${short(plan.to)}`)}>request update</button>}
         </div>
       )}
       {last?.kind === 'update' && last.result === 'verified' && !flight && (
@@ -140,7 +150,10 @@ export function SystemUpdatePanel({ pollMs = 1000 }: { pollMs?: number }) {
       {plan && (
         <div aria-label="update plan" style={{ fontSize: 11, marginTop: 6 }}>
           <div>{short(plan.from)} ({plan.from_version || '?'}) → {short(plan.to)} ({plan.to_version || '?'}) · {plan.commit_count} commit(s), {plan.file_count} file(s)</div>
-          <div>dependencies: {plan.dependencies.command || 'lock unchanged'} · migrations: {plan.migrations.join(', ') || 'none expected'}</div>
+          <div>signature: {plan.verdict?.trusted ? `verified (${plan.verdict.how}${plan.verdict.signer ? ` · ${plan.verdict.signer}` : ''})` : `unverified${plan.verdict?.reason ? ` (${plan.verdict.reason})` : ''}`}</div>
+          <div>dependencies: {plan.dependencies.refused ? `lock refused: ${plan.dependencies.refused}` : plan.dependencies.command || 'lock unchanged'} · data: {plan.migrations_uncertain
+            ? 'possible data migration (the changed files could not be scanned)'
+            : plan.migrations.length ? `possible data migration in: ${plan.migrations.join(', ')}` : 'none expected: no store code changed'}</div>
           {plan.commits.slice(0, 10).map((x) => <div key={x.sha} style={mono}>{short(x.sha)} {x.subject}</div>)}
           {plan.refused.length > 0 && <div style={{ color: 'var(--amber)' }}>refused: {plan.refused.join(', ')}</div>}
         </div>

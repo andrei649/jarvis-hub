@@ -99,6 +99,31 @@ describe('Restart / Update panel', () => {
     expect(calls.find((c) => c.url.includes('/update/apply')).body).toEqual({});
   });
 
+  it('shows the target signature and plans a typed tag even when the upstream is not ahead (H624 review)', async () => {
+    const PINNED = { ...CHECK, dirty: false, behind: 0, can_apply: false, apply_refused: ['nothing to apply'],
+      trust: { configured: true, mode: 'ssh', fingerprints: ['SHA256:abc'] },
+      target: { ref: '@{u}', commit: 'c'.repeat(40), signature: 'unverified', reason: 'signature_not_trusted' },
+      in_progress: null, last_receipt: null };
+    const PLAN = { can_apply: true, refused: [], from: 'a'.repeat(40), to: 'd'.repeat(40), from_version: '1.0.0', to_version: '1.2.0',
+      commit_count: 2, file_count: 3, migrations: ['agents/core/security/audit.py'], dependencies: { changed: false, command: null },
+      commits: [], verdict: { trusted: true, how: 'signed_tag', signer: 'SHA256:abc' } };
+    const calls = hub((url) => {
+      if (url.includes('/api/admin/ops/update/plan')) return { status: 200, body: PLAN };
+      if (url.includes('/api/admin/ops/update/apply')) return { status: 202, body: { task_id: 8 } };
+      return { status: 200, body: PINNED };
+    });
+    render(<SystemUpdatePanel />);
+    expect(await screen.findByText(/unverified: signature_not_trusted/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('update target'), { target: { value: 'v1.2.0' } });
+    fireEvent.click(screen.getByText('plan'));
+    expect(await screen.findByText(/possible data migration in: agents\/core\/security\/audit.py/)).toBeTruthy();
+    expect(screen.getByText(/verified \(signed_tag · SHA256:abc\)/)).toBeTruthy();
+    expect(calls.find((c) => c.url.includes('/update/plan')).url).toContain('ref=v1.2.0');
+    fireEvent.click(screen.getByText('request update'));
+    expect(await screen.findByText(/approval card #8 queued/)).toBeTruthy();
+    expect(calls.find((c) => c.url.includes('/update/apply')).body).toEqual({ ref: 'v1.2.0' });
+  });
+
   it('offers a rollback card after a verified update and shows one in flight', async () => {
     const DONE = { ...CHECK, dirty: false, behind: 0, trust: { configured: true, mode: 'pinned', commit: 'c'.repeat(40) },
       in_progress: null, last_receipt: { id: 'r1', kind: 'update', from: 'a'.repeat(40), to: 'b'.repeat(40), result: 'verified' } };

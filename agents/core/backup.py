@@ -76,6 +76,7 @@ import logging
 import os
 import re
 import secrets
+import shutil
 import sqlite3
 import stat
 import tarfile
@@ -120,6 +121,14 @@ _PROCESS_MARKS = frozenset({_RUNTIME_PID, "hub.lock"})
 # every respawned coordinator refused to boot (PR #1321). They are never archived and a
 # restore drops any an older archive carries; the next acquire recreates them 0600.
 _SELECTION_LEASE_SUFFIX = ".selection.lock"
+# Live state an in-place restore never replaces (H624 review): ``update/`` holds the update
+# trust the owner pinned (trust.json, allowed_signers, gnupg/), the update receipts and the
+# cards in flight. Restoring an older archive (the pre-update backup an update rollback
+# stages, or any older backup) must not silently swap the pinned trust for the one the
+# archive carries, nor erase the receipts of the update being rolled back. The live copy (or
+# its absence) is put back after the extract; trust changes only through its own
+# ``hub.update_trust`` card. A restore into a new, empty directory keeps the archive's copy.
+_LIVE_STATE_DIRS = ("update",)
 
 
 def _is_selection_lease(name: str) -> bool:
@@ -881,7 +890,9 @@ def restore_backup(archive: str, target_root: str, force: bool = False,
     Deliberately requires an *explicit* target (never silently overwrites the live
     data root). Into the live root it runs only with the hub stopped: the staged path
     below (``apply_pending_restore``) is how the hub does that to itself. Encrypted
-    archives are decrypted first.
+    archives are decrypted first. Into a non-empty root the live update state
+    (:data:`_LIVE_STATE_DIRS`: the pinned update trust and the update receipts) is kept
+    as it is, never replaced by the archive's copy.
     """
     arc = Path(archive)
     if not arc.exists():
@@ -891,10 +902,50 @@ def restore_backup(archive: str, target_root: str, force: bool = False,
         raise NotADirectoryError(
             f"target {target} is a dangling symlink, nothing restored — "
             "restore into a new, empty directory")
-    if target.exists() and any(target.iterdir()) and not force:
+    in_place = target.exists() and any(target.iterdir())
+    if in_place and not force:
         raise FileExistsError(
             f"target {target} is not empty — pass force=True to overwrite")
     target.mkdir(parents=True, exist_ok=True)
+    keep = _keep_live_state(target) if in_place else None
+    try:
+        result = _restore_into(arc, target, key)
+    finally:
+        if keep is not None:
+            _put_back_live_state(target, *keep)
+    if keep is not None:
+        result["kept_live"] = list(_LIVE_STATE_DIRS)
+    return result
+
+
+def _keep_live_state(target: Path) -> tuple[Path, dict[str, bool]]:
+    """Copy the live :data:`_LIVE_STATE_DIRS` aside before an in-place extract."""
+    aside = Path(tempfile.mkdtemp(prefix="nerva-restore-keep-"))
+    present: dict[str, bool] = {}
+    for name in _LIVE_STATE_DIRS:
+        live = target / name
+        present[name] = live.is_dir() and not live.is_symlink()
+        if present[name]:
+            shutil.copytree(live, aside / name, symlinks=True)
+    return aside, present
+
+
+def _put_back_live_state(target: Path, aside: Path, present: dict[str, bool]) -> None:
+    """Replace whatever the archive wrote under each kept dir with the live copy (or nothing)."""
+    try:
+        for name, was in present.items():
+            dest = target / name
+            if dest.is_symlink() or dest.is_file():
+                dest.unlink()
+            elif dest.exists():
+                shutil.rmtree(dest)
+            if was:
+                shutil.copytree(aside / name, dest, symlinks=True)
+    finally:
+        shutil.rmtree(aside, ignore_errors=True)
+
+
+def _restore_into(arc: Path, target: Path, key: Optional[str]) -> dict:
     stale: list[tuple[str, ...]] = []
     # An archive made before process marks were left out may carry one: the live root's
     # own mark (or its absence) is put back after the extract, never the archive's pid.
@@ -1639,6 +1690,8 @@ def restore_request(name: str) -> dict:
                       "not hold are kept); a "
                       + ("quick" if mode == "quick" else "full")
                       + " rollback snapshot of the current state is taken first",
+            "kept": "the update trust and update receipts (update/) stay as they are now; "
+                    "update trust changes only through its own card",
         },
     }
 

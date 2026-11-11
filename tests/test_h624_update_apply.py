@@ -531,3 +531,266 @@ def test_status_reads_without_a_receipt(upd):
     body = hub_update_apply.status()
     assert body["in_progress"] is None and body["last_receipt"] is None
     assert json.dumps(body)
+
+
+# ── security review (2026-11-11) ──────────────────────────────────────────────
+
+def _pin(commit):
+    hub_update_apply._write_trust({"mode": "pinned", "commit": commit}, "owner", None)
+
+
+def test_a_store_migration_declared_inline_is_flagged_on_the_card(upd):
+    # the stores declare their migrations in their own module (security/audit.py, ...): the
+    # file name says nothing, its contents do
+    target = _publish(upd, files={"agents/core/security/audit.py":
+                                  "MIGRATIONS = [lambda c: c.execute('ALTER TABLE audit ADD COLUMN x TEXT')]\n",
+                                  "agents/core/notes_store.py": "import sqlite3\ncon = sqlite3.connect(p)\n",
+                                  "agents/core/helpers.py": "def f():\n    return 1\n"})
+    _pin(target)
+    p = hub_update_apply.plan()
+    assert p["migrations"] == ["agents/core/notes_store.py", "agents/core/security/audit.py"]
+    assert p["migrations_uncertain"] is False
+    task = upd.orch.autonomy.tasks[_request_apply(upd)["task_id"]]
+    assert task.payload["migrations"] is True
+    assert task.payload["preview"]["migrations"].startswith("possible data migration in: agents/core/notes_store.py")
+    assert task.payload["preview"]["limits"]
+
+
+def test_an_update_that_touches_no_store_code_says_none_expected(upd):
+    target = _publish(upd, files={"docs/notes.md": "CREATE TABLE in prose\n", "agents/core/helpers.py": "x = 1\n"})
+    _pin(target)
+    assert hub_update_apply.plan()["migrations"] == []
+    task = upd.orch.autonomy.tasks[_request_apply(upd)["task_id"]]
+    assert task.payload["preview"]["migrations"].startswith("none expected")
+
+
+def test_a_scan_that_cannot_run_assumes_a_migration(upd, monkeypatch):
+    target = _publish(upd, files={"agents/core/helpers.py": "x = 1\n"})
+    _pin(target)
+    monkeypatch.setattr(hub_update_apply, "_store_code", lambda commit, paths: (set(), False))
+    p = hub_update_apply.plan()
+    assert p["migrations_uncertain"] is True
+    assert hub_update_apply._plan_payload(p)["migrations"] is True
+
+
+def test_a_failed_dependency_reinstall_ends_the_rollback_incomplete_with_the_command(upd, monkeypatch):
+    before = _head(upd)
+    target = _publish(upd, files={"requirements-beta.lock": "pkg==2.0 --hash=sha256:" + "0" * 64 + "\n"})
+    _pin(target)
+    calls = []
+
+    def fake_install(log):
+        calls.append(True)
+        return len(calls) == 1
+
+    monkeypatch.setattr(hub_update_apply, "install_dependencies", fake_install)
+    assert _accept(upd, _request_apply(upd)["task_id"])["status"] == "ok"
+    out = hub_update_apply.verify_after_restart(
+        lambda: {"ready": False, "version": "1.1.0", "commit": target}, deadline=0, sleep=lambda s: None)
+    assert _head(upd) == before and len(calls) == 2
+    assert out["dependencies_restored"] is False and "pip" in out["action_needed"]
+    hub_update_apply._BOOT["commit"] = None
+    final = hub_update_apply.on_boot()
+    assert final["result"] == "rollback_incomplete" and final["rollback_problem"] == "dependency_reinstall_failed"
+    assert hub_update_apply.status()["last_receipt"]["action_needed"].startswith("the previous dependency lock")
+
+
+def test_a_failed_install_during_the_update_whose_reinstall_also_fails_is_not_a_plain_failure(upd, monkeypatch):
+    target = _publish(upd, files={"requirements-beta.lock": "pkg==2.0 --hash=sha256:" + "0" * 64 + "\n"})
+    _pin(target)
+    monkeypatch.setattr(hub_update_apply, "install_dependencies", lambda log: False)
+    done = _accept(upd, _request_apply(upd)["task_id"])
+    assert done["status"] == "failed" and done["result"] == "rollback_incomplete"
+    assert hub_update_apply.receipts()[-1]["dependencies_restored"] is False
+
+
+def test_the_rollback_removes_the_packages_the_new_lock_added(upd, monkeypatch):
+    h = "--hash=sha256:" + "0" * 64
+    first = _publish(upd, version="1.0.1", files={"requirements-beta.lock": f"base==1.0 {h}\n"})
+    _run(upd.work, "merge", "-q", "--ff-only", first, env=upd.env)
+    before = _head(upd)
+    target = _publish(upd, files={"requirements-beta.lock": f"base==1.1 {h}\nNew_Pkg==2.0 {h}\npip==99 {h}\n"})
+    _pin(target)
+    assert hub_update_apply.plan()["dependencies"]["added"] == ["new-pkg", "pip"]
+    removed = []
+    monkeypatch.setattr(hub_update_apply, "install_dependencies", lambda log: True)
+    monkeypatch.setattr(hub_update_apply, "uninstall_packages", lambda names, log: removed.append(names) or True)
+    assert _accept(upd, _request_apply(upd)["task_id"])["status"] == "ok"
+    hub_update_apply.verify_after_restart(lambda: {"ready": False, "version": "1.1.0", "commit": target},
+                                          deadline=0, sleep=lambda s: None)
+    assert _head(upd) == before and removed == [["new-pkg"]]          # never pip itself
+    hub_update_apply._BOOT["commit"] = None
+    assert hub_update_apply.on_boot()["result"] == "rolled_back"
+
+
+def test_restoring_an_older_backup_keeps_the_live_update_trust_and_receipts(upd, tmp_path):
+    _pin("a" * 40)
+    (upd.data / "update" / "receipts.jsonl").write_text('{"id": "old"}\n', encoding="utf-8")
+    (upd.data / "notes.txt").write_text("v1\n", encoding="utf-8")
+    made = backup.create_backup(label="older")
+    _pin("b" * 40)                                                        # the owner re-pins later
+    (upd.data / "update" / "receipts.jsonl").write_text('{"id": "old"}\n{"id": "new"}\n', encoding="utf-8")
+    (upd.data / "notes.txt").write_text("v2\n", encoding="utf-8")
+    result = backup.restore_backup(made["archive"], str(upd.data), force=True)
+    assert result["ok"] and result["kept_live"] == ["update"]
+    assert (upd.data / "notes.txt").read_text(encoding="utf-8") == "v1\n"   # the data came back
+    assert hub_update_apply.trust_status()["commit"] == "b" * 40          # the trust did not
+    assert len(hub_update_apply.receipts()) == 2
+    fresh = tmp_path / "fresh"
+    backup.restore_backup(made["archive"], str(fresh))                    # a new root keeps the archive's
+    assert json.loads((fresh / "update" / "trust.json").read_text())["commit"] == "a" * 40
+
+
+def test_the_pre_update_backup_restored_by_a_rollback_keeps_the_trust_pinned_since(upd):
+    import sys
+
+    target = _publish(upd, files={"agents/core/persistence/migrations.py": "# v2\n"})
+    _pin(target)
+    assert _accept(upd, _request_apply(upd)["task_id"])["status"] == "ok"
+    hub_update_apply.verify_after_restart(lambda: {"ready": True, "version": "1.1.0", "commit": target},
+                                          deadline=1, sleep=lambda s: None)
+    _pin("c" * 40)
+    queued = upd.client.post("/api/admin/ops/update/rollback", headers=ADMIN, json={"restore_data": True})
+    assert queued.status_code == 202, queued.text
+    task = upd.orch.autonomy.tasks[queued.json()["task_id"]]
+    assert "kept as they are now" in task.payload["preview"]["data"]
+    assert _accept(upd, task.id)["status"] == "ok"
+    # the restart applies the stage before the hub loads (serve.apply_staged_restore): a fresh process
+    done = subprocess.run([sys.executable, "-c", "from agents.core import backup; "
+                           "r = backup.apply_pending_restore(runtime_wait=0); print(r and r['status'])"],
+                          cwd=str(Path(__file__).resolve().parents[1]), capture_output=True, text=True,
+                          env={**os.environ, "JARVIS_HOME": str(upd.data)}, timeout=300)
+    assert done.stdout.startswith("restored"), (done.stdout, done.stderr[-2000:])
+    assert hub_update_apply.trust_status()["commit"] == "c" * 40
+    assert any(r.get("kind") == "rollback" for r in hub_update_apply.receipts())
+
+
+def test_a_checkout_that_moves_while_the_backup_runs_is_not_fast_forwarded(upd, monkeypatch):
+    before = _head(upd)
+    target = _publish(upd)
+    _pin(target)
+    queued = _request_apply(upd)
+    real = hub_update_apply._backup
+
+    def backup_then_commit(log, label):
+        made = real(log, label)
+        (upd.work / "late.txt").write_text("x\n", encoding="utf-8")
+        _run(upd.work, "add", "late.txt", env=upd.env)
+        _run(upd.work, "commit", "-q", "-m", "late", env=upd.env)
+        return made
+
+    monkeypatch.setattr(hub_update_apply, "_backup", backup_then_commit)
+    done = _accept(upd, queued["task_id"])
+    assert done["status"] == "refused" and done["reason"] == "head_moved"
+    assert _head(upd) != target and _run(upd.work, "rev-parse", "HEAD~1", env=upd.env) == before
+    assert upd.restarts == []
+
+
+def test_a_lock_with_pip_options_is_refused_and_never_handed_to_pip(upd, monkeypatch):
+    target = _publish(upd, files={"requirements-beta.lock":
+                                  "--no-binary :all:\npkg==2.0 --hash=sha256:" + "0" * 64 + "\n"})
+    _pin(target)
+    p = hub_update_apply.plan()
+    assert "lock_refused" in p["refused"] and "--no-binary" in p["dependencies"]["refused"]
+    good = "pkg==2.0 ; python_version >= '3.8' \\\n    --hash=sha256:" + "0" * 64 + "\n"
+    assert hub_update_apply.lock_problem(good) is None
+    for bad in ("pkg==2.0 --no-build-isolation --hash=sha256:" + "0" * 64,
+                "pkg @ https://example.org/pkg.whl --hash=sha256:" + "0" * 64,
+                "-e .", "--index-url https://example.org/simple", "pkg==2.0"):
+        assert hub_update_apply.lock_problem(bad), bad
+    (upd.work / "requirements-beta.lock").write_text("-e .\n", encoding="utf-8")
+    ran = []
+    monkeypatch.setattr(hub_update_apply, "_run_command", lambda argv, timeout: ran.append(argv) or (0, ""))
+    assert hub_update_apply.install_dependencies(lambda line: None) is False and ran == []
+    repo_lock = Path(__file__).resolve().parents[1] / "requirements-beta.lock"
+    assert hub_update_apply.lock_problem(repo_lock.read_text(encoding="utf-8")) is None
+
+
+@needs_gpg
+def test_a_signed_tag_under_another_name_is_refused(upd, keys):
+    _trust_gpg(upd, keys)
+    target = _publish(upd, sign_home=keys.owner_home, sign_key=keys.owner, tag="v1.1.0")
+    tag_object = _run(upd.work, "rev-parse", "refs/tags/v1.1.0", env=upd.env)
+    _run(upd.work, "update-ref", "refs/tags/v9.9.9", tag_object, env=upd.env)
+    assert hub_update_apply.verify_target(target, "v1.1.0")["trusted"] is True
+    verdict = hub_update_apply.verify_target(target, "v9.9.9")
+    assert verdict["trusted"] is False and verdict["reason"] == "tag_name_mismatch"
+
+
+@needs_gpg
+def test_openpgp_trust_is_pinned_under_a_long_data_root(upd, keys, monkeypatch):
+    # gpg exits 2 after a good import when its agent socket path is too long (a deep data
+    # root); the key list, not the exit status, decides
+    deep = upd.tmp / ("d" * 90) / "data"
+    deep.mkdir(parents=True)
+    monkeypatch.setenv("JARVIS_HOME", str(deep))
+    _trust_gpg(upd, keys)
+    assert hub_update_apply.trust_status()["fingerprints"] == [keys.owner]
+    target = _publish(upd, sign_home=keys.owner_home, sign_key=keys.owner)
+    assert hub_update_apply.verify_target(target)["trusted"] is True
+
+
+def test_the_post_restart_probe_never_goes_through_a_proxy(upd, monkeypatch):
+    import http.server
+    import threading
+
+    class Ready(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            body = b'{"ready": true}'
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Ready)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        for name in ("no_proxy", "NO_PROXY"):
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv("http_proxy", "http://127.0.0.1:9")              # nothing listens there
+        monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
+        monkeypatch.setenv("JARVIS_HOST", "127.0.0.1")
+        monkeypatch.setenv("JARVIS_PORT", str(server.server_address[1]))
+        assert hub_update_apply.http_probe()["ready"] is True
+    finally:
+        server.shutdown()
+
+
+def test_check_reports_the_target_signature_and_offers_a_pinned_commit(upd):
+    target = _publish(upd)
+    _pin(target)
+    check = upd.client.get("/api/admin/ops/update", headers=ADMIN).json()
+    assert check["target"]["commit"] == target and check["target"]["signature"] == "verified"
+    assert check["can_apply"] is True, check["apply_refused"]
+    _pin("d" * 40)                                                       # not in the checkout
+    check = upd.client.get("/api/admin/ops/update", headers=ADMIN).json()
+    assert check["can_apply"] is False and any("pinned commit" in r for r in check["apply_refused"])
+
+
+def test_status_states_what_the_automatic_rollback_cannot_do(upd):
+    limits = hub_update_apply.status()["auto_rollback_limits"]
+    assert "serve.py" in limits and "--offline" in limits
+
+
+def test_serve_counts_boots_when_the_update_guard_does_not_import(upd, monkeypatch):
+    import serve
+
+    receipt = {"id": "r1", "kind": "update", "phase": "restarting", "from": "e" * 40, "to": "f" * 40,
+               "boots": 0, "dependencies_changed": True, "migrations": True, "backup": "b.tar.gz"}
+    hub_update_apply._save_current(dict(receipt))
+    ran = []
+    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: ran.append(argv) or SimpleNamespace(
+        returncode=0, stdout="", stderr=""))
+    monkeypatch.setenv("JARVIS_UPDATE_MAX_BOOTS", "1")
+    assert serve._update_guard_fallback(ImportError("broken")) is False and ran == []
+    assert hub_update_apply.current()["boots"] == 1
+    assert serve._update_guard_fallback(ImportError("broken")) is True
+    assert ran and ran[0][-3:] == ["reset", "--keep", "e" * 40]
+    after = hub_update_apply.current()
+    assert after["phase"] == "rolled_back_restarting" and after["dependencies_restored"] is False
+    hub_update_apply._BOOT["commit"] = None
+    monkeypatch.setattr(hub_update_apply, "head", lambda: "e" * 40)
+    assert hub_update_apply.on_boot()["result"] == "rollback_incomplete"

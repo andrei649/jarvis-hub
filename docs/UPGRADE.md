@@ -44,25 +44,53 @@ nerva update rollback                                     # queues a card that r
   file and OpenPGP keys into a dedicated keyring, both under `<data root>/update/`; your global
   git and gpg configuration is not used, and the repository's own git config cannot choose the
   program that verifies. With no trust pinned every apply is refused. Changing trust is itself an
-  approval card at the irreversible tier.
+  approval card at the irreversible tier. A signed tag must carry its own name: a tag object
+  re-pointed under another tag name is refused. The trust and the receipts under
+  `<data root>/update/` are live state a backup restore never replaces (an older archive's copy is
+  ignored); re-pin trust through its own card.
 - **Apply.** After you accept the card: HEAD, the target and its signature are re-checked, a full
   backup is created and verified, a receipt is written (`<data root>/update/receipts.jsonl`), the
   checkout is fast-forwarded to the verified sha (never a merge), `requirements-beta.lock` is
   installed with `--require-hashes --only-binary :all: --no-deps` if it changed (wheels only, so
-  no package build script runs), and Nerva restarts. Schema migrations run as each store opens.
+  no package build script runs; a lock line with any pip option other than `--hash`, such as
+  `--no-binary`, `--no-build-isolation`, `--index-url`, `-e`, or a direct URL, refuses the update —
+  what still runs is the installed code itself, including any `.pth` file a wheel ships), and
+  Nerva restarts. HEAD and the tree are re-read right before the fast-forward: a checkout that
+  moved while the backup ran is not updated. Schema migrations run as each store opens.
   The log is shown in Console → Restart / Update and kept in the receipt.
 - **Check after restart.** The restarted hub polls its own `/readyz` and checks it booted from the
   target commit and reports the target's version (`JARVIS_UPDATE_VERIFY_SECONDS`, default 180).
-  If not, it returns to the previous commit, reinstalls the previous lock if it had changed,
-  stages the pre-update backup for restore when a migration may have run, and restarts. If the
+  The probe goes straight to loopback, never through `HTTP_PROXY`.
+  If not, it returns to the previous commit, reinstalls the previous lock if it had changed and
+  removes the packages the new lock added, stages the pre-update backup for restore when a
+  migration may have run, and restarts. If the
   new code cannot start at all, `serve.py` does the same after `JARVIS_UPDATE_MAX_BOOTS`
-  (default 3) failed starts.
+  (default 3) failed starts. A rollback whose dependency reinstall fails (or whose backup could
+  not be staged) ends **`rollback_incomplete`**, never `rolled_back`, and the receipt's
+  `action_needed` names the exact command to run.
+- **Possible migrations.** The plan and the card list every changed file that may migrate data:
+  a migration-shaped name, a changed `.sql`, or a changed Python file under `agents/` whose
+  contents (read from the target commit) hold `ALTER TABLE`/`CREATE TABLE`/`CREATE INDEX`,
+  `user_version`, a schema-version constant, a migrations list or an SQLite connect — the stores
+  declare their migrations inline. When the scan cannot run, a migration is assumed. The card
+  says "none expected" only when no store code changed.
+- **What the automatic rollback cannot do.** It runs in the release it rolls back from. A release
+  whose `serve.py`, or whose `agents/core/hub_update_apply.py` and its imports, break before the
+  boot guard runs cannot roll itself back through that module: `serve.py` then counts the boots
+  with the standard library and, past `JARVIS_UPDATE_MAX_BOOTS`, runs `git reset --keep <from>`
+  (no data restore, no dependency reinstall; the receipt ends `rollback_incomplete` when either was
+  needed). When even `serve.py` does not run: stop Nerva and run
+  `nerva update rollback --offline --yes`; if that does not import either, run
+  `git reset --keep <from>` in the checkout (the receipt's `from`), reinstall
+  `requirements-beta.lock`, and restore the pre-update backup if a migration ran.
+  `nerva update status` shows this as `auto_rollback_limits`.
 - **Dirty tree.** Uncommitted changes refuse the update; `nerva update apply --stash` stashes them
   first (never discards them) and the receipt names the stash.
 - **Requirements.** The hub must be able to restart itself (started by `serve.py`, a service with
   the restart marker) so the new code can be checked; containers update by image.
 - **Not done by the updater:** rebuilding the HUD when `frontend/` changed (the plan says so),
-  channel `/update` commands, and release bundles (below).
+  channel `/update` commands, release bundles (below), and binding targets to a branch or tag
+  pattern the owner pins (any trusted commit that fast-forwards HEAD is accepted).
 
 ## Database migrations — automatic
 

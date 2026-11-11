@@ -25,8 +25,11 @@ exist), so a repository can never choose what runs during verification. Nothing 
 working tree is executed to verify it.
 
 **Apply** (:func:`plan`, :func:`request_apply`, :func:`apply_approved`). ``plan`` says what
-would change: the commits, the files, whether the pinned dependency lock changed, files that
-may carry a schema migration, the version from → to, the trust verdict and every refusal.
+would change: the commits, the files, whether the pinned dependency lock changed (and whether
+:func:`lock_problem` refuses it), files that may carry a schema migration
+(:func:`_possible_migrations`: a migration-shaped name, or store code by content — the stores
+declare their migrations inline; a scan that cannot run assumes one), the version from → to,
+the trust verdict and every refusal.
 ``request_apply`` queues a ``hub.update`` card showing that plan and the exact target commit.
 Only a person's plain accept of the unchanged card runs the pipeline, as an ops action whose
 log the HUD polls (``GET /api/admin/ops/actions/{id}``) and which is copied into the receipt:
@@ -36,7 +39,8 @@ log the HUD polls (``GET /api/admin/ops/actions/{id}``) and which is copied into
 2. a fresh full backup of the data root, created and verified immediately before;
 3. a receipt (``<data root>/update/current.json`` + ``receipts.jsonl``): from, to, backup,
    who approved, when;
-4. ``git merge --ff-only <target sha>`` — never a merge commit, never a ref that could move;
+4. HEAD and the tree re-read (the backup took time), then ``git merge --ff-only <target sha>``
+   — never a merge commit, never a ref that could move;
 5. when the dependency lock changed: ``pip install --require-hashes --only-binary :all:
    --no-deps -r requirements-beta.lock`` (hash-pinned, wheels only, so no build script runs);
 6. the hub restarts through ``hub_restart``; schema migrations run as each store opens in
@@ -47,8 +51,12 @@ polls its own ``/readyz`` on loopback and checks that it booted from the target 
 reports the target's version. On success the receipt says ``verified``. On failure — or
 when the new code cannot even start: ``serve.py`` counts the boots (:func:`boot_guard`) —
 the update is rolled back: git back to ``from`` (``git reset --keep``, which never discards
-uncommitted changes), the old lock reinstalled when it had changed, the pre-update backup
-staged for an in-place restore when a migration may have run, and the hub restarted again.
+uncommitted changes), the old lock reinstalled when it had changed and the packages the new
+lock added removed, the pre-update backup staged for an in-place restore when a migration may
+have run (the restore keeps the live ``update/`` state: trust and receipts), and the hub
+restarted again. A rollback whose reinstall failed or whose backup could not be staged ends
+``rollback_incomplete`` with the command to run, never ``rolled_back``. The probe opens
+loopback with no proxy. What the automatic rollback cannot do is :data:`AUTO_ROLLBACK_LIMITS`.
 
 **Rollback** (:func:`request_rollback`): the last update, as a ``hub.update_rollback`` card
 (the same steps), and :func:`rollback_offline` for a hub that is not running.
@@ -101,6 +109,23 @@ _SSH_FPR = re.compile(r"SHA256:[A-Za-z0-9+/]{43}")
 _VERSION = re.compile(r"""^__version__\s*=\s*["']([^"'\s]{1,40})["']""", re.M)
 #: Changed paths that may carry a schema migration (the stores migrate when they open).
 _MIGRATION = re.compile(r"(^|/)(migrations?|persistence)(/|\.py$)|(^|/)(db|schema|store)\.py$|migrat", re.I)
+#: Contents that mark a changed file as store code that may migrate data when it opens: DDL,
+#: SQLite's schema version, a schema-version constant or migration list, an SQLite connect.
+#: POSIX ERE for ``git grep -E -i`` (run against the commit, never the working tree).
+_STORE_CODE = (r"alter[[:space:]]+table|create[[:space:]]+(temp(orary)?[[:space:]]+)?(virtual[[:space:]]+)?table|"
+               r"create[[:space:]]+(unique[[:space:]]+)?index|user_version|schema_?version|_?migrations?[[:space:]]*[=:(]|"
+               r"apply_migrations|sqlite3?\.connect|executescript")
+_LOCK_REQ = re.compile(r"([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[A-Za-z0-9._,-]+\])?==[A-Za-z0-9._+!-]+")
+_LOCK_HASH = re.compile(r"^--hash=sha(256|384|512):[0-9a-f]{64,128}$")
+#: What the automatic rollback cannot do (status, the apply card, docs/UPGRADE.md).
+AUTO_ROLLBACK_LIMITS = (
+    "the automatic rollback runs in the code it rolls back from: a release whose serve.py, or whose "
+    "agents/core/hub_update_apply.py and its imports, break before the boot guard runs cannot roll "
+    "itself back through this module. serve.py then still counts the boots with the standard library "
+    "and, past JARVIS_UPDATE_MAX_BOOTS, moves the checkout back with plain git (no data restore, no "
+    "dependency reinstall); when even serve.py does not run, stop Nerva and run "
+    "`nerva update rollback --offline --yes` (or, if that does not import either, `git reset --keep "
+    "<from>` in the checkout and reinstall requirements-beta.lock)")
 MAX_KEYS = 8
 MAX_ARMOR_BYTES = 64_000
 MAX_COMMITS = 200
@@ -269,6 +294,76 @@ def _version_at(commit: str) -> str | None:
     return match.group(1) if match else None
 
 
+def _tag_name_matches(tag: str) -> bool:
+    """An annotated tag object carries its own name (``tag <name>`` in its header); a signed
+    tag re-pointed under another ref name is refused. A lightweight tag has no object (and no
+    signature: ``verify-tag`` refuses it anyway)."""
+    code, kind, _ = _git("cat-file", "-t", f"refs/tags/{tag}")
+    if code != 0 or kind != "tag":
+        return True
+    code, out, _ = _git("cat-file", "tag", f"refs/tags/{tag}")
+    if code != 0:
+        return False
+    for line in out.split("\n\n", 1)[0].splitlines():
+        if line.startswith("tag "):
+            return line[4:] == tag
+    return False
+
+
+def lock_problem(text: str) -> str | None:
+    """Why a dependency lock is refused, or None. The installer runs pip with
+    ``--require-hashes --only-binary :all: --no-deps``: only wheels whose sha256 the lock pins
+    are installed, nothing is built (no ``setup.py`` or build backend runs) and no dependency
+    is resolved. What still runs is the installed code itself (imported by the restarted hub,
+    including any ``.pth`` file a wheel ships, at interpreter start). A lock line can carry
+    pip options that loosen this, so only ``name==version [; marker]`` requirements with
+    ``--hash=`` options are accepted: any option line (``--no-binary``, ``--no-build-isolation``,
+    ``--index-url``, ``-r``/``-c``/``-e``, …), any other per-requirement option, and any direct
+    URL or path reference refuse the lock."""
+    logical: list[str] = []
+    buf = ""
+    for raw in text.splitlines():
+        line = raw.split(" #", 1)[0] if not raw.lstrip().startswith("#") else ""
+        if line.rstrip().endswith("\\"):
+            buf += line.rstrip()[:-1] + " "
+            continue
+        buf += line
+        if buf.strip():
+            logical.append(buf.strip())
+        buf = ""
+    if buf.strip():
+        logical.append(buf.strip())
+    if not logical:
+        return "the lock lists no requirement"
+    for line in logical:
+        if line.startswith("-"):
+            return f"the lock carries a pip option line ({line.split()[0][:60]})"
+        tokens = re.sub(r";.*?(?=\s--|$)", " ", line).split()   # an environment marker is not an option
+        if not tokens or not _LOCK_REQ.fullmatch(tokens[0]):
+            return f"not a pinned name==version requirement: {tokens[0][:60] if tokens else line[:60]}"
+        for token in tokens[1:]:
+            if not _LOCK_HASH.match(token):
+                return f"an option other than --hash on {tokens[0][:60]}: {token[:60]}"
+        if not any(_LOCK_HASH.match(t) for t in tokens[1:]):
+            return f"{tokens[0][:60]} has no --hash"
+    return None
+
+
+def lock_names(text: str) -> set[str]:
+    """The normalised project names a lock pins (PEP 503 normalisation)."""
+    names = set()
+    for raw in text.splitlines():
+        match = _LOCK_REQ.match(raw.strip())
+        if match:
+            names.add(re.sub(r"[-_.]+", "-", match.group(1)).lower())
+    return names
+
+
+def _file_at(commit: str, path: str) -> str | None:
+    code, out, _ = _git("show", f"{commit}:{path}")
+    return out if code == 0 else None
+
+
 # ── trust ──────────────────────────────────────────────────────────────────────
 
 def ssh_fingerprint(key_line: str) -> str:
@@ -337,8 +432,10 @@ def _new_gnupg_home(path: Path) -> None:
 def _import_gpg(home: Path, armored: str) -> set[str]:
     """Import ``armored`` into the fresh keyring ``home``; the primary fingerprints in it."""
     _new_gnupg_home(home)
-    code, _out, err = _gpg(home, "--import", data=armored)
-    if code != 0:
+    code, out, err = _gpg(home, "--status-fd", "1", "--import", data=armored)
+    # gpg exits 2 after a good import when it cannot reach an agent (a socket path too long
+    # under a deep data root): the import's own status line, then the key list below, decide.
+    if code != 0 and "[GNUPG:] IMPORT_OK" not in out:
         raise UpdateRefused("invalid_key", f"gpg could not import the key block ({err.strip()[-200:]})")
     code, out, _ = _gpg(home, "--with-colons", "--fixed-list-mode", "--list-keys")
     primaries: set[str] = set()
@@ -466,16 +563,22 @@ def verify_target(commit: str, tag: str | None = None) -> dict:
     allowed = {k.get("fingerprint") for k in record.get("keys") or []}
     cfg, env = _verify_cfg(record["mode"])
     good = ("G",) if record["mode"] == "ssh" else ("G", "U")   # gpg: our keyring holds only trusted keys
-    code, out, _ = _git("log", "-1", "--format=%G?%x1f%GF%x1f%GP", commit, "--", cfg=cfg, isolated=True,
+    # A closing field keeps the split stable: str.strip() treats \x1f as whitespace, so an empty
+    # last field (%GP is empty for an SSH signature) would otherwise vanish with it.
+    code, out, _ = _git("log", "-1", "--format=%G?%x1f%GF%x1f%GP%x1fend", commit, "--", cfg=cfg, isolated=True,
                         env_extra=env)
     parts = out.split("\x1f") if code == 0 else []
-    if len(parts) == 3:
+    if len(parts) == 4 and parts[3] == "end":
         status, fpr, primary = parts[0], parts[1].upper() if record["mode"] == "gpg" else parts[1], parts[2].upper()
         signer = next((f for f in (fpr, primary) if f in allowed), None)
         if status in good and signer:
             return {"trusted": True, "how": "signed_commit", "signer": signer, "reason": None}
     if tag:
         tag_commit = _rev(f"refs/tags/{tag}")
+        if tag_commit == commit and not _tag_name_matches(tag):
+            return {"trusted": False, "reason": "tag_name_mismatch",
+                    "detail": f"the signed tag object behind refs/tags/{tag} names another tag: a signed "
+                              "tag moved to a different name is not trusted under the new name"}
         if tag_commit == commit:
             code, out, err = _git("verify-tag", "--raw", "--end-of-options", f"refs/tags/{tag}", cfg=cfg,
                                   isolated=True, env_extra=env)
@@ -492,6 +595,27 @@ def verify_target(commit: str, tag: str | None = None) -> dict:
     return {"trusted": False, "reason": "signature_not_trusted",
             "detail": "the target carries no good signature by a pinned key (unsigned, signed by another "
                       "key, or the signature does not verify)"}
+
+
+def default_target_status() -> dict:
+    """The default target (the pinned commit in ``pinned`` mode, else the tracked upstream)
+    and its signature status against the pinned trust, for ``hub_update.check``:
+    ``{"ref", "commit", "signature": "verified"|"unverified"|"no_trust"|"unknown", …}``."""
+    try:
+        commit, _tag, label = _target(None)
+    except UpdateRefused:
+        commit, label = None, None
+    view: dict[str, Any] = {"ref": label, "commit": commit, "signature": "unknown", "how": None,
+                            "signer": None, "reason": None}
+    if commit is None:
+        return view
+    if trust() is None:
+        view["signature"] = "no_trust"
+        return view
+    verdict = verify_target(commit)
+    view.update(signature="verified" if verdict["trusted"] else "unverified", how=verdict.get("how"),
+                signer=verdict.get("signer"), reason=verdict.get("reason"))
+    return view
 
 
 # ── the plan ───────────────────────────────────────────────────────────────────
@@ -523,6 +647,41 @@ def _changed(src: str, dst: str) -> list[dict]:
     return rows
 
 
+def _store_code(commit: str, paths: list[str]) -> tuple[set[str], bool]:
+    """Which of ``paths`` hold store code at ``commit`` (:data:`_STORE_CODE`), read from the
+    commit's tree with ``git grep`` — nothing from the working tree. ``(matches, ok)``: ``ok``
+    is False when git could not answer, and the caller then assumes a migration."""
+    if not paths:
+        return set(), True
+    found: set[str] = set()
+    for i in range(0, len(paths), 200):
+        chunk = paths[i:i + 200]
+        code, out, _ = _git("grep", "-l", "-I", "-i", "-E", "--no-textconv", "-e", _STORE_CODE, commit, "--",
+                            *[f":(literal){p}" for p in chunk], timeout=120)
+        if code not in (0, 1):
+            return found, False
+        prefix = f"{commit}:"
+        found.update(line[len(prefix):] if line.startswith(prefix) else line for line in out.splitlines() if line)
+    return found, True
+
+
+def _possible_migrations(src: str, dst: str, files: list[dict]) -> tuple[list[str], bool]:
+    """Changed files that may migrate data when the restarted hub opens its stores: a name that
+    looks like a migration, any changed ``.sql``, and any changed Python file under ``agents/``
+    whose contents (at the target; at the source for a deleted file) hold DDL, a schema
+    version, a migration list or an SQLite connect — the stores declare their migrations
+    inline. ``(paths, certain)``: ``certain`` is False when the scan could not run, and the
+    update is then treated as migrating (fail safe: the backup is restored on rollback)."""
+    named = {r["path"] for r in files if r["path"].endswith(".py") and _MIGRATION.search(r["path"])}
+    named |= {r["path"] for r in files if r["path"].endswith(".sql")}
+    code_files = [r for r in files if r["path"].startswith("agents/") and r["path"].endswith(".py")]
+    present = [r["path"] for r in code_files if r["status"] != "D"]
+    gone = [r["path"] for r in code_files if r["status"] == "D"]
+    hits_new, ok_new = _store_code(dst, present)
+    hits_old, ok_old = _store_code(src, gone)
+    return sorted(named | hits_new | hits_old), ok_new and ok_old
+
+
 def _restart_ready() -> bool:
     return hub_update.restart_mode() == "self"
 
@@ -532,8 +691,8 @@ def plan(ref: str | None = None, dirty_policy: str = "refuse") -> dict:
     body: dict[str, Any] = {"can_apply": False, "refused": [], "from": None, "to": None, "target_ref": ref,
                             "tag": None, "commits": [], "commit_count": 0, "files": [], "file_count": 0,
                             "dependencies": {"lock": DEPENDENCY_LOCK, "changed": False, "loose_changed": [],
-                                             "command": None},
-                            "migrations": [], "frontend_changed": False, "from_version": None, "to_version": None,
+                                             "command": None, "refused": None, "added": []},
+                            "migrations": [], "migrations_uncertain": False, "frontend_changed": False, "from_version": None, "to_version": None,
                             "trust": trust_status(), "verdict": None, "dirty": None, "dirty_policy": dirty_policy,
                             "restart": hub_update.restart_mode()}
     refused: list[str] = body["refused"]
@@ -584,7 +743,15 @@ def plan(ref: str | None = None, dirty_policy: str = "refuse") -> dict:
     deps["loose_changed"] = sorted(p for p in paths if re.match(r"^requirements[^/]*\.txt$", p))
     if deps["changed"]:
         deps["command"] = " ".join(_pip_argv(hub_update.repo_root() / DEPENDENCY_LOCK))
-    body["migrations"] = sorted(p for p in paths if p.endswith(".py") and _MIGRATION.search(p))
+        lock_text = _file_at(dst, DEPENDENCY_LOCK)
+        deps["refused"] = lock_problem(lock_text) if lock_text is not None else "the target has no lock"
+        if deps["refused"]:
+            refused.append("lock_refused")
+        old_lock = _file_at(src, DEPENDENCY_LOCK)
+        if lock_text is not None and old_lock is not None:
+            deps["added"] = sorted(lock_names(lock_text) - lock_names(old_lock))
+    body["migrations"], certain = _possible_migrations(src, dst, files)
+    body["migrations_uncertain"] = not certain
     body["frontend_changed"] = any(p.startswith(("frontend/", "package-lock.json")) for p in paths)
     body["from_version"], body["to_version"] = _version_at(src), _version_at(dst)
     verdict = verify_target(dst, tag)
@@ -599,11 +766,24 @@ def _plan_payload(p: dict) -> dict:
     return {"operation": APPROVAL_KIND, "from": p["from"], "to": p["to"], "target_ref": p["target_ref"],
             "tag": p["tag"], "dirty_policy": p["dirty_policy"], "from_version": p["from_version"],
             "to_version": p["to_version"], "dependencies_changed": p["dependencies"]["changed"],
-            "migrations": bool(p["migrations"]), "signer": (p["verdict"] or {}).get("signer")}
+            "migrations": bool(p["migrations"]) or bool(p.get("migrations_uncertain")),
+            "signer": (p["verdict"] or {}).get("signer")}
 
 
 _APPLY_KEYS = ("operation", "from", "to", "target_ref", "tag", "dirty_policy", "from_version", "to_version",
                "dependencies_changed", "migrations", "signer")
+
+
+def _migration_line(p: dict) -> str:
+    if p.get("migrations_uncertain"):
+        return ("possible data migration: the changed files could not be scanned, so one is assumed (the "
+                "pre-update backup is restored if the update is rolled back automatically)")
+    if p["migrations"]:
+        shown = ", ".join(p["migrations"][:20]) + (f" (+{len(p['migrations']) - 20} more)"
+                                                   if len(p["migrations"]) > 20 else "")
+        return (f"possible data migration in: {shown} (the pre-update backup is restored if the update is "
+                "rolled back automatically)")
+    return "none expected: the update changes no store code"
 
 
 def request_apply(orch: Any, ref: str | None = None, dirty_policy: str = "refuse", *,
@@ -623,14 +803,17 @@ def request_apply(orch: Any, ref: str | None = None, dirty_policy: str = "refuse
         "first_commits": [f"{c['sha'][:12]} {c.get('subject', '')}" for c in p["commits"][:10]],
         "files": p["file_count"],
         "dependencies": p["dependencies"]["command"] or "unchanged",
-        "migrations": p["migrations"][:20] or "none expected",
+        "migrations": _migration_line(p),
         "frontend": "changed: rebuild the HUD (npm ci && npm run build in frontend/) after the update"
         if p["frontend_changed"] else "unchanged",
         "dirty_tree": "stash the uncommitted changes first" if p["dirty"] else "clean",
         "effect": ("takes and verifies a full backup, fast-forwards the checkout to the target commit, "
                    "installs the hash-pinned lock if it changed, restarts Nerva and checks that it serves "
-                   "the new version; if that check fails it returns to the current commit (and restores "
-                   "the backup when a migration may have run) and restarts again"),
+                   "the new version; if that check fails it returns to the current commit (the previous "
+                   "lock reinstalled and the packages the new lock added removed; the backup restored "
+                   "when a migration may have run, keeping the update trust and receipts as they are) "
+                   "and restarts again"),
+        "limits": AUTO_ROLLBACK_LIMITS,
     }
     queued = irreversible.enqueue(orch, APPROVAL_KIND, title=f"Update Nerva to {p['to'][:12]}",
                                   payload=payload, preview=preview)
@@ -663,8 +846,16 @@ def _run_command(argv: list[str], timeout: float) -> tuple[int, str]:
 
 
 def install_dependencies(log) -> bool:
-    """Install the hash-pinned lock now on disk (wheels only, no dependency resolution)."""
+    """Install the hash-pinned lock now on disk (wheels only, no dependency resolution); a lock
+    :func:`lock_problem` refuses is never handed to pip."""
     lock = hub_update.repo_root() / DEPENDENCY_LOCK
+    try:
+        problem = lock_problem(lock.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as exc:
+        problem = f"unreadable ({type(exc).__name__})"
+    if problem:
+        log(f"{DEPENDENCY_LOCK} refused: {problem}")
+        return False
     argv = _pip_argv(lock)
     log("$ " + " ".join(argv))
     code, out = _run_command(argv, PIP_TIMEOUT_S)
@@ -702,15 +893,75 @@ def _backup(log, label: str) -> dict:
     return {"name": name, "ok": bool(report.get("ok")), "problem": report.get("problem")}
 
 
-def _return_to(commit: str, log, *, reinstall: bool) -> bool:
+_KEEP_PACKAGES = frozenset({"pip", "setuptools", "wheel"})
+
+
+def _uninstall_argv(names: list[str]) -> list[str]:
+    return [sys.executable, "-m", "pip", "uninstall", "--disable-pip-version-check", "--no-input", "-y", *names]
+
+
+def uninstall_packages(names: list[str], log) -> bool:
+    """Remove the packages a rolled-back lock added (names come from the lock, validated)."""
+    argv = _uninstall_argv(names)
+    log("$ " + " ".join(argv))
+    code, out = _run_command(argv, PIP_TIMEOUT_S)
+    for line in out.splitlines()[-20:]:
+        if line.strip():
+            log(line)
+    return code == 0
+
+
+def _reinstall_command() -> str:
+    return f"cd {hub_update.repo_root()} && " + " ".join(_pip_argv(hub_update.repo_root() / DEPENDENCY_LOCK))
+
+
+def _return_to(commit: str, log, *, reinstall: bool, leaving: str | None = None) -> dict:
+    """Move the checkout back to ``commit`` (``git reset --keep``); when the lock changed,
+    reinstall the lock now on disk and remove the packages the lock of ``leaving`` added
+    (pip-sync style). ``{"git": bool, "deps": True|False|None, "reason", "remaining"}``:
+    ``deps`` False means the previous dependencies are NOT in place."""
+    out: dict[str, Any] = {"git": False, "deps": None, "reason": None, "remaining": []}
     code, _, err = _git("reset", "--keep", commit)
     log(f"git reset --keep {commit[:12]}: {'ok' if code == 0 else err[-200:]}")
     if code != 0:
-        return False
-    if reinstall:
-        log("reinstalling the previous dependency lock")
-        install_dependencies(log)
-    return True
+        out["reason"] = "git_reset_failed"
+        return out
+    out["git"] = True
+    if not reinstall:
+        return out
+    log("reinstalling the previous dependency lock")
+    if not install_dependencies(log):
+        out.update(deps=False, reason="dependency_reinstall_failed")
+        log("the previous dependency lock did NOT reinstall: the previous code now runs on the new "
+            f"dependencies until it does — with Nerva stopped, run: {_reinstall_command()}")
+        return out
+    out["deps"] = True
+    old_lock = _file_at(commit, DEPENDENCY_LOCK)
+    new_lock = _file_at(leaving, DEPENDENCY_LOCK) if leaving else None
+    if old_lock is None or new_lock is None or not lock_names(old_lock):
+        if leaving:
+            log("could not read both locks: packages the new lock added (if any) are left installed")
+            out["remaining"] = ["(unknown: a lock could not be read)"]
+        return out
+    extras = sorted(lock_names(new_lock) - lock_names(old_lock) - _KEEP_PACKAGES)
+    if extras:
+        log(f"removing the packages the new lock added: {', '.join(extras)}")
+        if not uninstall_packages(extras, log):
+            out["remaining"] = extras
+            log(f"could not remove {', '.join(extras)}: they stay installed (unused by the previous code); "
+                f"remove them with: {' '.join(_uninstall_argv(extras))}")
+    return out
+
+
+def _record_return(receipt: dict, back: dict) -> None:
+    """Copy what :func:`_return_to` did into the receipt, with what the owner must run."""
+    if back["deps"] is not None:
+        receipt["dependencies_restored"] = back["deps"]
+    if back["remaining"]:
+        receipt["packages_left_installed"] = back["remaining"]
+    if back["deps"] is False:
+        receipt["action_needed"] = ("the previous dependency lock did not reinstall: with Nerva stopped, run "
+                                    f"`{_reinstall_command()}`, then start Nerva")
 
 
 def _restore_stash(stash: str | None, log) -> None:
@@ -768,7 +1019,17 @@ def _run_pipeline(payload: dict, approved_by: str, task_id: Any, action_record: 
             return _close_current(receipt, "failed", reason="stash_failed")
         receipt["stash"] = stash
         log(f"uncommitted changes stashed as {stash[:12]}")
-    # 4. fast-forward only, to the verified sha
+    # 4. fast-forward only, to the verified sha — HEAD and the tree re-read now: the backup took
+    # time, and nothing may have moved the checkout in the meantime.
+    moved = None
+    if head() != payload["from"]:
+        moved = "head_moved"
+    elif _dirty() is not False:
+        moved = "tree_changed"
+    if moved:
+        log(f"the checkout changed while the backup ran ({moved}): nothing applied")
+        _restore_stash(receipt["stash"], log)
+        return _close_current(receipt, "refused", reason=moved)
     code, _, err = _git("merge", "--ff-only", "--no-edit", "--no-verify-signatures", payload["to"], timeout=300)
     if code != 0:
         log(f"fast-forward failed: {err[-300:]}")
@@ -781,8 +1042,12 @@ def _run_pipeline(payload: dict, approved_by: str, task_id: Any, action_record: 
     if receipt["dependencies_changed"]:
         if not install_dependencies(log):
             log("dependency install failed: returning to the previous commit")
-            _return_to(payload["from"], log, reinstall=True)
+            back = _return_to(payload["from"], log, reinstall=True, leaving=payload["to"])
+            _record_return(receipt, back)
             _restore_stash(receipt["stash"], log)
+            if not back["git"] or back["deps"] is False:
+                return _close_current(receipt, "rollback_incomplete", reason="dependency_install_failed",
+                                      rollback_problem=back["reason"])
             return _close_current(receipt, "failed", reason="dependency_install_failed")
         _phase(receipt, "dependencies_installed")
     log("schema migrations run as each store opens in the restarted hub"
@@ -795,8 +1060,12 @@ def _run_pipeline(payload: dict, approved_by: str, task_id: Any, action_record: 
 
     if not hub_restart.request(f"update to {payload['to'][:12]}"):
         log("this hub cannot restart itself: returning to the previous commit")
-        _return_to(payload["from"], log, reinstall=receipt["dependencies_changed"])
+        back = _return_to(payload["from"], log, reinstall=receipt["dependencies_changed"], leaving=payload["to"])
+        _record_return(receipt, back)
         _restore_stash(receipt["stash"], log)
+        if not back["git"] or back["deps"] is False:
+            return _close_current(receipt, "rollback_incomplete", reason="restart_unavailable",
+                                  rollback_problem=back["reason"])
         return _close_current(receipt, "failed", reason="restart_unavailable")
     log("restart requested; the restarted hub checks /readyz and its version, and rolls back if not")
     return receipt
@@ -853,8 +1122,8 @@ async def apply_approved(task: Any, orch: Any) -> dict:
                f"{result or 'restarting'}", {"receipt": receipt["id"], "result": result, "task_id": task_id})
         if result is None:
             return {"status": "ok", "kind": APPROVAL_KIND, "receipt": receipt["id"], "restart": "requested"}
-        return {"status": "failed" if result == "failed" else "refused", "reason": receipt.get("reason"),
-                "receipt": receipt["id"]}
+        return {"status": "refused" if result == "refused" else "failed", "reason": receipt.get("reason"),
+                "result": result, "receipt": receipt["id"]}
     if kind == ROLLBACK_KIND:
         payload, why = _take_card(ROLLBACK_KIND, task, _ROLLBACK_KEYS)
         if payload is None:
@@ -893,7 +1162,9 @@ def http_probe() -> dict:
 
     ready = False
     try:
-        with urllib.request.urlopen(_probe_url(), timeout=3) as resp:  # nosec B310 - loopback, fixed path
+        # loopback: never through a proxy the environment names (HTTP_PROXY and friends)
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(_probe_url(), timeout=3) as resp:  # nosec B310 - loopback, fixed path
             ready = resp.status == 200 and bool(json.loads(resp.read(65536) or b"{}").get("ready"))
     except Exception:  # noqa: BLE001 — not answering yet is "not ready", never a crash
         ready = False
@@ -971,11 +1242,20 @@ def _auto_rollback(receipt: dict, reason: str, *, restart: bool) -> dict:
     _phase(receipt, "rolling_back")
     receipt["rollback_reason"] = reason
     _save_current(receipt)
-    if not _return_to(receipt["from"], log, reinstall=bool(receipt.get("dependencies_changed"))):
+    back = _return_to(receipt["from"], log, reinstall=bool(receipt.get("dependencies_changed")),
+                      leaving=receipt["to"])
+    _record_return(receipt, back)
+    if not back["git"]:
         return _close_current(receipt, "rollback_failed", reason="git_reset_failed")
     planned = "self" if restart and hub_restart.available() else "manual"
     if receipt.get("migrations"):
+        # fail safe: when a migration may have run, the pre-update data comes back (the update
+        # trust and receipts under update/ are kept as they are: backup.restore_backup)
         receipt["data_restored"] = _stage_data_restore(receipt, log, planned)
+        if not receipt["data_restored"]:
+            receipt["action_needed"] = _join_needed(
+                receipt.get("action_needed"),
+                f"the pre-update backup {receipt.get('backup')} was not staged: restore it (`nerva backup restore`)")
     _restore_stash(receipt.get("stash"), log)
     _phase(receipt, "rolled_back_restarting")
     _save_current(receipt)
@@ -984,9 +1264,27 @@ def _auto_rollback(receipt: dict, reason: str, *, restart: bool) -> dict:
         log("restart requested to run the previous commit")
         return receipt
     log("restart Nerva to run the previous commit")
-    receipt["action_needed"] = "restart Nerva the way it was started"
+    receipt["action_needed"] = _join_needed(receipt.get("action_needed"), "restart Nerva the way it was started")
     _save_current(receipt)
     return receipt
+
+
+def _join_needed(before: str | None, more: str) -> str:
+    return f"{before}; {more}" if before else more
+
+
+def _rollback_result(receipt: dict, booted_from: str | None) -> tuple[str, str | None]:
+    """How a rollback ends once the previous code has booted: never ``rolled_back`` while the
+    previous dependencies or the pre-update data the rollback needed are not in place."""
+    target = receipt["to"] if receipt.get("kind") == "rollback" else receipt["from"]
+    if booted_from != target:
+        return "rollback_incomplete", "booted_from_another_commit"
+    if receipt.get("dependencies_restored") is False:
+        return "rollback_incomplete", "dependency_reinstall_failed"
+    wanted_data = receipt.get("restore_data") if receipt.get("kind") == "rollback" else receipt.get("migrations")
+    if wanted_data and receipt.get("data_restored") is False:
+        return "rollback_incomplete", "data_restore_not_staged"
+    return "rolled_back", None
 
 
 def on_boot() -> dict | None:
@@ -997,11 +1295,15 @@ def on_boot() -> dict | None:
         if not receipt:
             return None
         if receipt.get("phase") == "rolled_back_restarting":
-            target = receipt["to"] if receipt.get("kind") == "rollback" else receipt["from"]
-            ok = _BOOT["commit"] == target
-            logger.warning("update %s: %s", receipt["id"], "rolled back" if ok else "rollback incomplete")
-            return _close_current(receipt, "rolled_back" if ok else "rollback_incomplete",
-                                  booted_from=_BOOT["commit"])
+            result, problem = _rollback_result(receipt, _BOOT["commit"])
+            extra: dict[str, Any] = {"booted_from": _BOOT["commit"]}
+            if problem:
+                extra["rollback_problem"] = problem
+                logger.error("update %s: rollback incomplete (%s): %s", receipt["id"], problem,
+                             receipt.get("action_needed") or "see the receipt")
+            else:
+                logger.warning("update %s: rolled back", receipt["id"])
+            return _close_current(receipt, result, **extra)
         if receipt.get("kind") == "update" and receipt.get("phase") in ("restarting", "verifying"):
             threading.Thread(target=verify_after_restart, name="hub-update-verify", daemon=True).start()
             return receipt
@@ -1076,9 +1378,12 @@ def request_rollback(orch: Any, restore_data: bool | None = None, *, requested_b
     payload = {"operation": ROLLBACK_KIND, **{k: rp[k] for k in _ROLLBACK_KEYS if k != "operation"}}
     preview = {"action": f"Roll Nerva back {rp['from_version'] or '?'} → {rp['to_version'] or '?'}",
                "from": rp["from"], "to": rp["to"],
-               "data": f"restore the pre-update backup {rp['backup']} (data written since the update is lost)"
+               "data": f"restore the pre-update backup {rp['backup']} (data written since the update is lost); "
+                       "the update trust and the update receipts under update/ are kept as they are now"
                if rp["restore_data"] else "kept as it is",
-               "dependencies": "the previous lock is reinstalled" if rp["dependencies_changed"] else "unchanged",
+               "dependencies": "the previous lock is reinstalled and the packages the update's lock added are "
+                               "removed (reported incomplete, with the command to run, if the reinstall fails)"
+               if rp["dependencies_changed"] else "unchanged",
                "effect": "moves the checkout back to the commit before the update and restarts Nerva"}
     queued = irreversible.enqueue(orch, ROLLBACK_KIND, title=f"Roll Nerva back to {str(rp['to'])[:12]}",
                                   payload=payload, preview=preview)
@@ -1108,7 +1413,10 @@ def _rollback_command(payload: dict, approved_by: str, task_id: Any, action_reco
     if _dirty():
         return _close_current(receipt, "refused", reason="dirty_tree")
     _save_current(receipt)
-    if not _return_to(payload["to"], log, reinstall=bool(payload.get("dependencies_changed"))):
+    back = _return_to(payload["to"], log, reinstall=bool(payload.get("dependencies_changed")),
+                      leaving=payload["from"])
+    _record_return(receipt, back)
+    if not back["git"]:
         return _close_current(receipt, "failed", reason="git_reset_failed")
     planned = "self" if restart and hub_restart.available() else "manual"
     if receipt["restore_data"]:
@@ -1119,7 +1427,7 @@ def _rollback_command(payload: dict, approved_by: str, task_id: Any, action_reco
     if planned == "self" and hub_restart.request("update rollback"):
         log("restart requested to run the previous commit")
         return receipt
-    receipt["action_needed"] = "restart Nerva the way it was started"
+    receipt["action_needed"] = _join_needed(receipt.get("action_needed"), "restart Nerva the way it was started")
     _save_current(receipt)
     log("restart Nerva to run the previous commit")
     return receipt
@@ -1160,7 +1468,8 @@ def status() -> dict:
     """Trust, the update in flight and the last receipts (the HUD and ``nerva update status``)."""
     in_flight = current()
     last = receipts(20)
-    return {"trust": trust_status(), "in_progress": _public(in_flight) if in_flight else None,
+    return {"trust": trust_status(), "auto_rollback_limits": AUTO_ROLLBACK_LIMITS,
+            "in_progress": _public(in_flight) if in_flight else None,
             "last_receipt": _public(last[-1]) if last else None,
             "receipts": [_public(r) for r in last], "rollback": {
                 k: v for k, v in rollback_plan().items() if k in ("can_rollback", "refused", "to", "restore_data")}}
@@ -1170,7 +1479,8 @@ def _public(row: dict) -> dict:
     keep = ("id", "kind", "from", "to", "of", "target_ref", "from_version", "to_version", "signer", "backup",
             "migrations", "dependencies_changed", "restore_data", "data_restored", "approved_by", "task_id",
             "started_at", "ended_at", "phase", "result", "reason", "rollback_reason", "action_id", "boots",
-            "stash", "action_needed", "log")
+            "stash", "action_needed", "dependencies_restored", "packages_left_installed", "rollback_problem",
+            "booted_from", "log")
     return {k: row.get(k) for k in keep if k in row}
 
 

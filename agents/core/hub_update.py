@@ -183,8 +183,21 @@ def check() -> dict:
         reasons.append("the branch tracks no upstream")
     if body["dirty"]:
         reasons.append("the working tree has uncommitted changes")
-    if body["behind"] == 0:
+    target = hub_update_apply.default_target_status()
+    body["target"] = target
+    if trust.get("mode") == "pinned":
+        # the target is the owner's pinned commit, not the upstream
+        if target["commit"] is None:
+            reasons.append("the pinned commit is not in this checkout yet: fetch it first")
+        elif target["commit"] == hub_update_apply.head():
+            reasons.append("nothing to apply: the checkout already runs the pinned commit")
+        if "the branch tracks no upstream" in reasons:
+            reasons.remove("the branch tracks no upstream")      # a pinned commit needs none
+    elif body["behind"] == 0:
         reasons.append("nothing to apply: the checkout is not behind its upstream as of the last fetch")
+    if trust["configured"] and target["commit"] and target["signature"] != "verified":
+        reasons.append(f"the target {target['commit'][:12]} is not verified against the pinned trust "
+                       f"({target.get('reason') or 'unverified'})")
     if body["restart"] != "self":
         reasons.append("this hub cannot restart itself, so the new code could not be checked after the update")
     body["apply_refused"] = reasons
