@@ -63,6 +63,8 @@ from ..owner_once_context import OwnerReplySource, bind_owner_reply_source, clos
 logger = logging.getLogger("jarvis.channels.telegram")
 
 TELEGRAM_MAX_MESSAGE_LENGTH = 4096
+#: G16: the longest one attachment's checks may take before it is refused.
+MEDIA_RESOLVE_TIMEOUT_S = 10.0
 #: The file suffix a spoken reply is posted with, by its audio type ("bin" for any other).
 VOICE_SUFFIX = {"audio/mpeg": "mp3", "audio/ogg": "ogg", "audio/wav": "wav", "audio/mp4": "m4a",
                 "audio/flac": "flac"}
@@ -77,11 +79,14 @@ _STREAM_CURSOR = " ▍"
 class _TurnScope:
     """One turn of one chat while it runs (see :data:`_RUNNING_TURN`)."""
 
-    __slots__ = ("channel", "chat_id", "running", "message_thread_id")
+    __slots__ = ("channel", "chat_id", "running", "message_thread_id", "turn_id")
 
     def __init__(self, channel, chat_id, message_thread_id=None) -> None:
         self.channel, self.chat_id, self.running = channel, chat_id, True
         self.message_thread_id = message_thread_id
+        #: G16: keys this turn's attachments, so a retry within the turn sends a file once
+        #: and the owner asking for it again in a later turn gets it again.
+        self.turn_id = uuid.uuid4().hex
 
     def answers(self, channel, chat_id) -> bool:
         """Is a reply to *chat_id* on *channel*, sent in this scope, this turn's own reply?"""
@@ -207,7 +212,8 @@ class TelegramDraft:
     def _preview_source(self) -> str:
         footer = ("\n\n" + "\n".join(self._footer)) if self._footer else ""
         budget = self._cap - len(_STREAM_CURSOR) - 1 - len(footer)
-        source = self._text
+        # G16: a `MEDIA: /path` line is never streamed; finish() attaches the file.
+        source = media_delivery.strip_partial(self._text)
         if len(source) > budget:
             source = source[:budget] + "…"
         return source + _STREAM_CURSOR + footer
@@ -726,8 +732,11 @@ class TelegramChannel(ChannelAdapter):
             from ..orchestrator import current_principal
 
             principal = current_principal()
+            # The owner's private chat only: in a group every member would receive the file.
+            # Telegram private chats have positive ids equal to the user's; groups are negative.
             return (principal.admin is True and principal.channel == "telegram"
-                    and (principal.chat is None or str(principal.chat) == str(cid)))
+                    and principal.scope == "dm" and str(principal.chat or "") == str(cid)
+                    and str(cid).isdigit())
         except Exception:
             return False
 
@@ -766,9 +775,11 @@ class TelegramChannel(ChannelAdapter):
         lines: list[str] = []
         delivered_all = True
         if not self._media_recipient_allowed(cid):
-            await self.send("Files are sent only to the owner; none were attached.",
+            await self.send("Files are sent only to the owner, in a private chat; none were attached.",
                             chat_id=cid, voice=False, plain=True)
             return False
+        scope = _RUNNING_TURN.get()
+        turn = getattr(scope, "turn_id", None) or uuid.uuid4().hex
         store = delivery_ledger.store()
         for index, path in enumerate(paths, start=1):
             if index > media_delivery.MAX_FILES_PER_REPLY:
@@ -776,7 +787,11 @@ class TelegramChannel(ChannelAdapter):
                     media_delivery.REASON_TOO_MANY)))
                 delivered_all = False
                 break
-            item = await asyncio.to_thread(media_delivery.resolve, path)
+            try:
+                item = await asyncio.wait_for(asyncio.to_thread(media_delivery.resolve, path),
+                                              timeout=MEDIA_RESOLVE_TIMEOUT_S)
+            except TimeoutError:
+                item = media_delivery.Refusal(media_delivery.REASON_TIMEOUT)
             if isinstance(item, media_delivery.Refusal):
                 logger.info("Telegram attachment %d refused: %s", index, item.reason)
                 lines.append(media_delivery.refusal_line(index, item))
@@ -793,11 +808,16 @@ class TelegramChannel(ChannelAdapter):
             if store is not None:
                 try:
                     delivery = store.open_delivery("telegram", cid, f"[file {item.mime} {len(item.data)}]",
-                                                   key=f"media:{cid}:{item.sha256}")
+                                                   key=f"media:{cid}:{turn}:{item.sha256}")
                 except Exception:
                     logger.warning("Delivery ledger unavailable for an attachment", exc_info=True)
             if delivery is not None and not delivery.send:
-                continue   # already delivered in this conversation
+                if not delivery.already_sent:
+                    # In flight, unknown or given up: say so, never claim it was delivered.
+                    lines.append(f"Attachment {index} was not sent again: an earlier try may "
+                                 "still arrive.")
+                    delivered_all = False
+                continue   # this turn already delivered it
             outcome, token = delivery_ledger.begin_outcome()
             try:
                 if delivery is not None:
@@ -844,6 +864,11 @@ class TelegramChannel(ChannelAdapter):
         """sendVoice for a voice-ready clip (one sendAudio retry on a 400); sendAudio with
         the reason as caption when it could not be made a voice note."""
         topic = {k: str(v) for k, v in self._topic_args(cid).items()}
+        if clip.mode == "document":
+            # Not audio by its bytes: never handed to a converter, sent as a plain file.
+            resp = await self.client.post(f"{self.api_base}/sendDocument", data={"chat_id": str(cid), **topic},
+                                          files={"document": (clip.filename, clip.data, clip.mime)})
+            return self._scheduled_ack(resp)
         if clip.mode == "voice":
             resp = await self.client.post(f"{self.api_base}/sendVoice", data={"chat_id": str(cid), **topic},
                                           files={"voice": (clip.filename, clip.data, clip.mime)})

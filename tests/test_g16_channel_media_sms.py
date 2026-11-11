@@ -340,9 +340,9 @@ def test_without_ffmpeg_a_wav_is_sent_as_audio_with_a_note():
 
 def test_with_ffmpeg_a_wav_becomes_an_opus_voice_note():
     converted = audio_container.prepare_voice(_wav(), ffmpeg="/bin/ffmpeg",
-                                              convert=lambda data, binary: OGG_OPUS)
+                                              convert=lambda data, binary, container: OGG_OPUS)
     assert (converted.mode, converted.mime, converted.converted) == ("voice", "audio/ogg", True)
-    failed = audio_container.prepare_voice(_wav(), ffmpeg="/bin/ffmpeg", convert=lambda d, b: None)
+    failed = audio_container.prepare_voice(_wav(), ffmpeg="/bin/ffmpeg", convert=lambda d, b, c: None)
     assert (failed.mode, failed.note) == ("audio", audio_container.NOTE_CONVERT_FAILED)
 
 
@@ -385,7 +385,6 @@ def sms_env(monkeypatch, data_root):
     monkeypatch.setenv(sms.FROM_NUMBER_ENV, OURS)
     monkeypatch.setenv(sms.ALLOWED_NUMBERS_ENV, OWNER)
     monkeypatch.setenv(sms.WEBHOOK_URL_ENV, URL)
-    sms._MEMORY_SIDS.clear()
     return data_root
 
 
@@ -660,13 +659,22 @@ async def test_the_adapter_refuses_to_send_while_sms_is_off(sms_env, monkeypatch
     assert twilio.calls == []
 
 
-async def test_a_long_reply_is_plain_text_in_bounded_parts(sms_env):
+async def test_a_long_reply_is_plain_text_capped_by_billed_segments(sms_env):
     twilio = _Twilio()
     ch = sms.SmsChannel(transport=twilio)
     assert await ch.send("**bold** " + "word " * 1500, sms_to=OWNER)
     bodies = [kw["data"]["Body"] for _m, _u, kw in twilio.calls]
-    assert len(bodies) == sms.MAX_PARTS and all(len(b) <= sms.MAX_MESSAGE_LENGTH for b in bodies)
-    assert "**" not in bodies[0]
+    assert all(len(b) <= sms.MAX_MESSAGE_LENGTH for b in bodies) and "**" not in bodies[0]
+    assert sum(sms.segments(b) for b in bodies) <= sms.MAX_SEGMENTS
+    assert bodies[-1].endswith("(cut: the full reply is in the HUD)")
+
+
+def test_segments_are_counted_the_way_the_carrier_bills_them():
+    assert sms.segments("a" * 160) == 1 and sms.segments("a" * 161) == 2
+    assert sms.segments("ă" * 70) == 1 and sms.segments("ă" * 71) == 2   # UCS-2: 70 / 67
+    assert sms.segments("{" * 80) == 1 and sms.segments("{" * 81) == 2   # GSM-7 escapes cost 2
+    cut = sms.fit_segments("ăş " * 1500)
+    assert sms.segments(cut) <= sms.MAX_SEGMENTS and len(cut) < 700
 
 
 def test_the_generic_send_path_cannot_reach_sms():
@@ -682,3 +690,156 @@ def test_redaction_and_the_integrations_entry():
     entry = integrations_catalog.find("channel.sms")
     assert entry is not None and entry.keys == ("JARVIS_SMS_AUTH_TOKEN",) and not entry.selectable
     assert "JARVIS_SMS_AUTH_TOKEN" in integrations_catalog.managed_keys()
+
+
+# ── G16 security review: regressions (R1–R4 Major, M1–M4 Minor, nits) ────────
+
+
+async def test_review_r1_strangers_cannot_flush_the_owners_replay_record(sms_env):
+    ch, seen = _sms_channel()
+    owner_msg = {k: [v] for k, v in _params(sid="SM" + "f" * 32).items()}
+    assert await ch.accept(owner_msg) == "routed"
+    for i in range(400):
+        stranger = {k: [v] for k, v in _params(frm=STRANGER, sid=f"SM{i:032x}").items()}
+        assert await ch.accept(stranger) == "unknown_sender"
+    assert await ch.accept(owner_msg) == "replay"
+    # strangers are never recorded at all; the owner's id is one row
+    rows = delivery_ledger.store()._conn.execute("SELECT COUNT(*) FROM seen_ids").fetchone()[0]
+    assert rows == 1 and len(seen) == 1
+
+
+async def test_review_r1_many_owner_messages_stay_replay_protected(sms_env):
+    ch, seen = _sms_channel()
+    msgs = [{k: [v] for k, v in _params(sid=f"SM{i:032x}").items()} for i in range(600)]
+    for m in msgs:
+        assert await ch.accept(m) == "routed"
+    assert all([await ch.accept(m) == "replay" for m in msgs[:5] + msgs[-5:]])
+
+
+async def test_review_r1_a_broken_replay_store_fails_closed(sms_env, monkeypatch):
+    ch, seen = _sms_channel()
+    monkeypatch.setattr(delivery_ledger, "store", lambda: None)
+    assert await ch.accept({k: [v] for k, v in _params().items()}) == "replay"
+
+    class Broken:
+        def remember_once(self, *a, **k):
+            raise OSError("disk")
+
+    monkeypatch.setattr(delivery_ledger, "store", lambda: Broken())
+    assert await ch.accept({k: [v] for k, v in _params(sid="SM" + "9" * 32).items()}) == "replay"
+    assert seen == []
+
+
+async def test_review_r2_the_owner_in_a_group_gets_the_refusal_not_the_file(outputs):
+    from agents.core.commands import Principal
+    from agents.core.orchestrator import bind_turn_principal, reset_turn_principal
+
+    group = -1001234567890
+    (outputs / "q3.png").write_bytes(PNG)
+    ch = _telegram()
+    t1 = telegram_module._RUNNING_TURN.set(telegram_module._TurnScope(ch, group))
+    t2 = bind_turn_principal(Principal(channel="telegram", sender="42", admin=True,
+                                       chat=str(group), scope="group"))
+    try:
+        await ch.send(f"Here:\nMEDIA: {outputs / 'q3.png'}", chat_id=group)
+    finally:
+        reset_turn_principal(t2)
+        telegram_module._RUNNING_TURN.reset(t1)
+    assert "sendPhoto" not in ch.client.methods()
+    assert "private chat" in ch.client.texts()[-1]
+
+
+def test_review_r3_a_fifo_is_refused_without_opening_it(outputs):
+    os.mkfifo(outputs / "report.txt")
+    assert media_delivery.resolve(str(outputs / "report.txt")).reason == media_delivery.REASON_NOT_FILE
+
+
+def test_review_r4_a_non_audio_body_never_reaches_ffmpeg():
+    calls = []
+    mpd = b'<?xml version="1.0"?><MPD><BaseURL>http://127.0.0.1:9/beacon</BaseURL></MPD>'
+    clip = audio_container.prepare_voice(mpd, declared_mime="audio/flac", ffmpeg="/bin/ffmpeg",
+                                         convert=lambda *a: calls.append(a))
+    assert calls == [] and clip.mode == "document" and clip.mime == "application/octet-stream"
+
+
+def test_review_r4_ffmpeg_gets_a_forced_demuxer_and_the_pipe_only(monkeypatch):
+    seen = {}
+
+    def fake_run(argv, **kw):
+        seen["argv"] = argv
+        return SimpleNamespace(returncode=1, stdout=b"")
+
+    monkeypatch.setattr(audio_container.subprocess, "run", fake_run)
+    audio_container.prepare_voice(_wav(), ffmpeg="/bin/ffmpeg")
+    argv = seen["argv"]
+    assert argv[argv.index("-protocol_whitelist") + 1] == "pipe" and "-nostdin" in argv
+    assert argv[argv.index("-i") - 2:argv.index("-i")] == ["-f", "wav"]
+
+
+async def test_review_r4_a_fake_audio_file_goes_out_as_a_document(outputs):
+    (outputs / "podcast.flac").write_bytes(b"<MPD>not audio at all</MPD>")
+    ch = _telegram()
+    with _Turn(ch):
+        await ch.send(f"MEDIA: {outputs / 'podcast.flac'}", chat_id=42)
+    assert ch.client.methods() == ["sendDocument"]
+
+
+def test_review_m1_a_hard_link_is_refused(outputs, data_root):
+    (data_root / "security").mkdir()
+    (data_root / "security" / "audit.log").write_text("secret")
+    os.link(data_root / "security" / "audit.log", outputs / "summary.txt")
+    assert media_delivery.resolve(str(outputs / "summary.txt")).reason == media_delivery.REASON_HARDLINK
+
+
+def test_review_m2_a_folder_swapped_for_a_link_mid_check_is_refused(outputs, data_root, monkeypatch):
+    (data_root / "security").mkdir()
+    (data_root / "security" / "audit.log").write_text("secret")
+    (outputs / "run").mkdir()
+    (outputs / "run" / "audit.log").write_text("harmless")
+    real_fn, state = media_delivery._real, {"n": 0}
+
+    def racing(path):
+        result = real_fn(path)
+        if not state["n"] and str(path).endswith("audit.log"):
+            state["n"] = 1
+            os.rename(outputs / "run", outputs / "run.old")
+            os.symlink(data_root / "security", outputs / "run")
+        return result
+
+    monkeypatch.setattr(media_delivery, "_real", racing)
+    got = media_delivery.resolve(str(outputs / "run" / "audit.log"), roots=[outputs])
+    assert isinstance(got, media_delivery.Refusal)
+
+
+async def test_review_m3_a_streamed_reply_never_shows_the_path(outputs):
+    (outputs / "chart.png").write_bytes(PNG)
+    ch = _telegram()
+    with _Turn(ch):
+        draft = telegram_module.TelegramDraft(ch, 42, interval=0)
+        await draft.push("Here you go\nMEDI")
+        await draft.push(f"A: {outputs / 'chart.png'}\nand more")
+        await draft.finish()
+    shown = " ".join(str(c.get("json") or c.get("data") or "") for _, c in ch.client.calls)
+    assert str(outputs) not in shown and "MEDIA" not in shown
+    assert "sendPhoto" in ch.client.methods()
+
+
+async def test_review_m4_asking_again_in_a_new_turn_sends_again(outputs):
+    (outputs / "chart.png").write_bytes(PNG)
+    ch = _telegram()
+    with _Turn(ch):
+        await ch.send(f"one\nMEDIA: {outputs / 'chart.png'}", chat_id=42)
+        await ch.send(f"again\nMEDIA: {outputs / 'chart.png'}", chat_id=42)   # same turn: once
+    with _Turn(ch):
+        await ch.send(f"later\nMEDIA: {outputs / 'chart.png'}", chat_id=42)   # a new request
+    assert ch.client.methods().count("sendPhoto") == 2
+
+
+def test_review_nits_fenced_examples_and_private_home_folders(tmp_path, monkeypatch, data_root):
+    text = "Use it like this:\n```\nMEDIA: /tmp/example.png\n```\n> MEDIA: /tmp/q.png\nDone."
+    assert media_delivery.extract_directives(text) == (text, [])
+    home = tmp_path / "home"
+    (home / ".ssh" / "keys").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv(media_delivery.DIRS_ENV, str(home / ".ssh" / "keys"))
+    assert media_delivery.allowed_roots() == []

@@ -252,6 +252,10 @@ class ReliabilityStore:
             self._conn.execute(
                 "CREATE TABLE IF NOT EXISTS cursors (name TEXT PRIMARY KEY, value TEXT NOT NULL, "
                 "updated REAL NOT NULL)")
+            # G16 (H098): inbound message ids seen, one row each (the SMS replay window).
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS seen_ids (scope TEXT NOT NULL, id TEXT NOT NULL, "
+                "seen REAL NOT NULL, PRIMARY KEY (scope, id))")
         self._dead: set[tuple[str, str]] = {
             (c, t) for c, t in self._conn.execute("SELECT channel, target FROM dead_targets")}
 
@@ -428,6 +432,24 @@ class ReliabilityStore:
         with self._lock:
             row = self._conn.execute("SELECT value FROM cursors WHERE name=?", (name,)).fetchone()
         return row[0] if row else None
+
+    def remember_once(self, scope: str, item: str, *, ttl_s: float, max_rows: int,
+                      now: float | None = None) -> bool:
+        """True when *item* was not seen in *scope* within *ttl_s* (it is now recorded);
+        False for a repeat. Rows older than the TTL are pruned; past *max_rows* the oldest
+        go. Raises on a storage error — the caller decides (G16 SMS fails closed)."""
+        now = time.time() if now is None else now
+        scope, item = _clip(scope, 64), _clip(item, 128)
+        with self._lock, self._conn:
+            self._conn.execute("DELETE FROM seen_ids WHERE scope=? AND seen<?", (scope, now - ttl_s))
+            if self._conn.execute("SELECT 1 FROM seen_ids WHERE scope=? AND id=?",
+                                  (scope, item)).fetchone():
+                return False
+            self._conn.execute("INSERT INTO seen_ids (scope, id, seen) VALUES (?,?,?)", (scope, item, now))
+            self._conn.execute(
+                "DELETE FROM seen_ids WHERE scope=? AND id NOT IN (SELECT id FROM seen_ids WHERE "
+                "scope=? ORDER BY seen DESC LIMIT ?)", (scope, scope, int(max_rows)))
+        return True
 
     def set_cursor(self, name: str, value: str) -> None:
         with self._lock, self._conn:

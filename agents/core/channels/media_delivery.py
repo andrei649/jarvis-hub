@@ -13,19 +13,28 @@ leave is an exfiltration policy, not a convenience, so every rule here refuses b
   lists in ``JARVIS_MEDIA_DELIVERY_DIRS`` (``os.pathsep``-separated, absolute, existing).
   A listed directory that is, or contains, a protected place (the filesystem root, the
   home directory, the data root, its ``security``/``tokens``/``vault`` folders, the code
-  checkout) is ignored and named in the log; it can never widen the policy that far.
+  checkout) or lies inside a private home folder (``~/.ssh``, ``~/.gnupg``, ``~/.config`` …)
+  is ignored and named in the log; it can never widen the policy that far.
 * **No escape.** The path must be absolute. ``..`` is refused before anything is
   resolved, the fully resolved path must still be under a resolved root (a symlink inside
   a root that points out of it is refused), the final component may not be a symlink at
-  all, and the file is opened with ``O_NOFOLLOW`` and checked with ``fstat`` on the open
-  descriptor, so a swap between the check and the read reads nothing it should not.
+  all. The file is then opened one component at a time from the root, each with
+  ``O_NOFOLLOW`` relative to the folder opened before it, so a folder swapped for a link
+  between the check and the open fails the walk; the opened file must be the very file
+  that was checked (inode and device), and a file with more than one name (a hard link,
+  which could carry a protected file into an approved folder) is refused.
 * **Never secrets, config or data stores.** A hidden component (``.ssh``, ``.env``), a
   name that looks like a credential or a key (``*.pem``, ``*.key``, ``id_rsa``,
   ``secrets*``, ``credentials*``, ``*token*``), a database or settings file (``*.db``,
   ``*.sqlite``, ``*.enc``, ``*.json`` config in a protected tree) or anything under the
   protected folders above is refused even inside an approved root.
-* **Regular files of bounded size.** ``JARVIS_MEDIA_DELIVERY_MAX_BYTES`` (20 MiB by
-  default, never above 50 MiB — Telegram's bot upload limit); an empty file is refused.
+* **Regular files of bounded size.** The path must be a regular file before anything is
+  opened (a FIFO or device would block), and it is opened non-blocking and checked again;
+  the adapter also bounds the whole check in time. ``JARVIS_MEDIA_DELIVERY_MAX_BYTES``
+  (20 MiB by default, never above 50 MiB — Telegram's bot upload limit); an empty file is
+  refused.
+* **Directives.** Only a ``MEDIA:`` line of its own, outside a fenced code block, counts;
+  while a reply streams, those lines are held back (:func:`strip_partial`).
 * **At most** :data:`MAX_FILES_PER_REPLY` files per reply.
 
 A refusal is a short reason (``outside_allowed_dirs``, ``symlink``, ``too_large`` …) that
@@ -76,6 +85,8 @@ REASON_TOO_LARGE = "too_large"
 REASON_EMPTY = "empty"
 REASON_UNREADABLE = "unreadable"
 REASON_TOO_MANY = "too_many_files"
+REASON_HARDLINK = "hard_link"
+REASON_TIMEOUT = "timed_out"
 
 #: What the chat is told for each refusal (never the path).
 REFUSAL_TEXT = {
@@ -91,6 +102,8 @@ REFUSAL_TEXT = {
     REASON_EMPTY: "it is empty",
     REASON_UNREADABLE: "it could not be read",
     REASON_TOO_MANY: "a reply carries at most four files",
+    REASON_HARDLINK: "it has other names (hard links), so where it really lives cannot be checked",
+    REASON_TIMEOUT: "checking it took too long",
 }
 
 
@@ -147,6 +160,17 @@ def protected_roots() -> list[Path]:
     return [r for r in (_real(p) for p in roots) if r is not None]
 
 
+#: Folders in the home directory that hold credentials or settings: a delivery root may
+#: never be inside one either.
+_HOME_PRIVATE = (".ssh", ".gnupg", ".config", ".aws", ".kube", ".docker", ".netrc",
+                 ".password-store", ".local/share/keyrings")
+
+
+def _private_home_dirs() -> list[Path]:
+    home = _real(Path.home())
+    return [home / name for name in _HOME_PRIVATE] if home is not None else []
+
+
 def _forbidden_root_parents() -> list[Path]:
     """A delivery root that is or contains any of these is refused outright."""
     from ..paths import data_root
@@ -178,7 +202,8 @@ def allowed_roots() -> list[Path]:
         if any(real == bad or _within(bad, real) for bad in forbidden):
             logger.warning("%s: an entry is or contains a protected folder; ignored", DIRS_ENV)
             continue
-        if any(_within(real, bad) for bad in protected_roots()):
+        if any(_within(real, bad) for bad in protected_roots() + _private_home_dirs()):
+            logger.warning("%s: an entry is inside a protected or private folder; ignored", DIRS_ENV)
             continue
         if real not in roots:
             roots.append(real)
@@ -186,13 +211,44 @@ def allowed_roots() -> list[Path]:
 
 
 def _guess_mime(name: str, head: bytes) -> str:
+    """The type the bytes prove, else the name's guess. A name-guessed audio type only
+    labels the file: ``audio_container.prepare_voice`` decides from the bytes whether it is
+    audio at all, and hands ffmpeg nothing it did not recognise (a ``.flac`` that is a
+    DASH manifest goes out as a plain document)."""
     from ..artifact_store import sniff
+    from .audio_container import MIME as AUDIO_MIME
+    from .audio_container import sniff as sniff_audio
 
     try:
         return sniff(head)
-    except Exception:  # noqa: BLE001 — sniff knows a short list; fall back to the name
+    except Exception:  # noqa: BLE001 — sniff knows a short list; try audio, then the name
+        container = sniff_audio(head)
+        if container in AUDIO_MIME:
+            return AUDIO_MIME[container]
         guessed, _ = mimetypes.guess_type(name)
         return guessed or "application/octet-stream"
+
+
+_DIR_FLAGS = (os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+              | getattr(os, "O_CLOEXEC", 0))
+_FILE_FLAGS = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+               | getattr(os, "O_CLOEXEC", 0))
+
+
+def _open_beneath(root: Path, parts: tuple[str, ...]) -> int:
+    """Open ``root/parts…`` one component at a time, each relative to the directory
+    opened before it and with ``O_NOFOLLOW``: a folder swapped for a link at any moment
+    fails the walk instead of being followed (openat2 RESOLVE_BENEATH, portably). The
+    file itself opens non-blocking, so a FIFO or device cannot hold the call."""
+    fd = os.open(root, _DIR_FLAGS)
+    try:
+        for part in parts[:-1]:
+            nxt = os.open(part, _DIR_FLAGS, dir_fd=fd)
+            os.close(fd)
+            fd = nxt
+        return os.open(parts[-1], _FILE_FLAGS, dir_fd=fd)
+    finally:
+        os.close(fd)
 
 
 def resolve(path: str, *, roots: list[Path] | None = None) -> DeliverableFile | Refusal:
@@ -223,31 +279,39 @@ def resolve(path: str, *, roots: list[Path] | None = None) -> DeliverableFile | 
         return Refusal(REASON_UNREADABLE)
     if stat.S_ISLNK(st.st_mode):
         return Refusal(REASON_SYMLINK)
+    if not stat.S_ISREG(st.st_mode):   # a FIFO, socket or device is never opened
+        return Refusal(REASON_NOT_FILE)
     root = next(r for r in roots if _within(real, r))
     rel_parts = real.relative_to(root).parts
+    if not rel_parts:
+        return Refusal(REASON_NOT_FILE)
     if any(part.startswith(".") for part in rel_parts):
         return Refusal(REASON_PROTECTED)
     if _SECRET_NAME.search(real.name.lower()):
         return Refusal(REASON_SECRET_NAME)
     limit = max_bytes()
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
     try:
-        fd = os.open(real, flags)
+        fd = _open_beneath(root, rel_parts)
     except FileNotFoundError:
         return Refusal(REASON_MISSING)
     except OSError:
-        return Refusal(REASON_SYMLINK if os.path.islink(real) else REASON_UNREADABLE)
+        # ELOOP / ENOTDIR: a component became a link (or something else) on the way.
+        return Refusal(REASON_SYMLINK)
     try:
         fst = os.fstat(fd)
         if not stat.S_ISREG(fst.st_mode):
             return Refusal(REASON_NOT_FILE)
         if (fst.st_ino, fst.st_dev) != (st.st_ino, st.st_dev):
-            # A folder on the way was swapped between the check and the open.
+            # The path checked and the file opened are not the same file.
             return Refusal(REASON_SYMLINK)
+        if fst.st_nlink > 1:
+            # A hard link can carry a protected file into an approved folder.
+            return Refusal(REASON_HARDLINK)
         if fst.st_size > limit:
             return Refusal(REASON_TOO_LARGE)
         if fst.st_size == 0:
             return Refusal(REASON_EMPTY)
+        os.set_blocking(fd, True)   # a regular file: ordinary reads from here
         chunks, total = [], 0
         while True:
             block = os.read(fd, 1 << 16)
@@ -270,19 +334,45 @@ def resolve(path: str, *, roots: list[Path] | None = None) -> DeliverableFile | 
 
 
 def extract_directives(text: str) -> tuple[str, list[str]]:
-    """Split a reply into its words and the ``MEDIA:`` paths it names (in order, unique)."""
+    """Split a reply into its words and the ``MEDIA:`` paths it names (in order, unique).
+
+    Only a line of its own outside a fenced code block counts: an example in a code
+    block or a quoted line (``> MEDIA: …``) is text and stays as it is."""
     if not isinstance(text, str) or "MEDIA:" not in text:
         return text, []
     paths: list[str] = []
-    for match in _DIRECTIVE.finditer(text):
+    kept: list[str] = []
+    fenced = False
+    for line in text.split("\n"):
+        if line.lstrip().startswith(("```", "~~~")):
+            fenced = not fenced
+            kept.append(line)
+            continue
+        match = None if fenced else _DIRECTIVE.fullmatch(line.rstrip("\r"))
+        if match is None:
+            kept.append(line)
+            continue
         found = match.group("path").strip().strip("`'\"")
         if found and found not in paths:
             paths.append(found)
     if not paths:
         return text, []
-    cleaned = _DIRECTIVE.sub("", text)
-    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    cleaned = re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
     return cleaned, paths
+
+
+def strip_partial(text: str) -> str:
+    """For a reply still being written: drop finished ``MEDIA:`` lines and hold back a
+    last line that may become one, so a path is never shown while streaming."""
+    if not isinstance(text, str):
+        return text
+    lines = text.split("\n")
+    last = lines.pop()
+    shown = [line for line in lines if not _DIRECTIVE.fullmatch(line.rstrip("\r"))]
+    head = last.lstrip()
+    if not head or not ("MEDIA:".startswith(head) or head.startswith("MEDIA:")):
+        shown.append(last)
+    return "\n".join(shown)
 
 
 def refusal_line(index: int, refusal: Refusal) -> str:
@@ -292,5 +382,5 @@ def refusal_line(index: int, refusal: Refusal) -> str:
 __all__ = [
     "DIRS_ENV", "DeliverableFile", "MAX_BYTES_ENV", "MAX_FILES_PER_REPLY", "REFUSAL_TEXT",
     "Refusal", "allowed_roots", "extract_directives", "max_bytes", "protected_roots",
-    "refusal_line", "resolve",
+    "refusal_line", "resolve", "strip_partial",
 ]

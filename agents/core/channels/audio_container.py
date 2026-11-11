@@ -71,7 +71,8 @@ class VoiceClip:
     data: bytes
     mime: str
     filename: str
-    #: ``voice`` — send as a native voice note; ``audio`` — as an audio file.
+    #: ``voice`` — a native voice note; ``audio`` — an audio file; ``document`` — not
+    #: audio by its bytes, sent as a plain file.
     mode: str
     note: str = ""
     converted: bool = False
@@ -81,10 +82,24 @@ def ffmpeg_path() -> str | None:
     return shutil.which("ffmpeg")
 
 
-def _convert(data: bytes, ffmpeg: str) -> bytes | None:
-    """Re-encode to Ogg/Opus mono 48 kHz. Fixed argv, stdin/stdout only, bounded."""
-    argv = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
-            "-i", "pipe:0", "-vn", "-ac", "1", "-ar", "48000", "-c:a", "libopus",
+#: The ffmpeg demuxer forced for each container Nerva converts. Nothing else is ever
+#: handed to ffmpeg: its format probing would otherwise open playlists and manifests
+#: (HLS, DASH, concat) that fetch from the network or read local files.
+DEMUXER = {"wav": "wav", "flac": "flac", "ogg": "ogg", "ogg_vorbis": "ogg"}
+
+NOTE_NOT_AUDIO = "Sent as a file: its bytes are not a recognised audio format."
+
+
+def _convert(data: bytes, ffmpeg: str, container: str) -> bytes | None:
+    """Re-encode to Ogg/Opus mono 48 kHz. The input demuxer is forced from the sniffed
+    container, the only protocol allowed is the pipe, stdin is never read as commands;
+    fixed argv, no shell, bounded time and output."""
+    demuxer = DEMUXER.get(container)
+    if demuxer is None:
+        return None
+    argv = [ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
+            "-protocol_whitelist", "pipe", "-f", demuxer, "-i", "pipe:0",
+            "-vn", "-sn", "-dn", "-ac", "1", "-ar", "48000", "-c:a", "libopus",
             "-b:a", "32k", "-f", "ogg", "pipe:1"]
     try:
         proc = subprocess.run(  # nosec B603 — argv list, no shell; ffmpeg from PATH lookup
@@ -103,23 +118,28 @@ def prepare_voice(data: bytes, *, declared_mime: str = "", stem: str = "reply",
                   convert=None, ffmpeg: str | None | bool = None) -> VoiceClip:
     """What to post for *data* as a voice message.
 
+    Only bytes recognised as audio are ever converted (``DEMUXER``); anything else —
+    whatever its name or declared type — is sent as a plain document (``mode="document"``).
     ``ffmpeg``: ``None`` looks it up on PATH; ``False`` behaves as if it were missing
-    (tests); a string is used as the binary. ``convert`` replaces the converter (tests).
+    (tests); a string is used as the binary. ``convert(data, binary, container)`` replaces
+    the converter (tests).
     """
     container = sniff(data)
     if container in VOICE_READY:
         return VoiceClip(bytes(data), MIME[container], f"{stem}.{SUFFIX[container]}", "voice")
+    if container not in DEMUXER:
+        return VoiceClip(bytes(data), "application/octet-stream", f"{stem}.bin", "document",
+                         NOTE_NOT_AUDIO)
     binary = ffmpeg_path() if ffmpeg is None else (ffmpeg or None)
-    mime = MIME.get(container) or (declared_mime if declared_mime.startswith("audio/") else
-                                   "application/octet-stream")
-    suffix = SUFFIX.get(container, "bin")
+    mime = MIME[container]
+    suffix = SUFFIX[container]
     if binary is None:
         return VoiceClip(bytes(data), mime, f"{stem}.{suffix}", "audio", NOTE_NO_FFMPEG)
-    converted = (convert or _convert)(bytes(data), binary)
+    converted = (convert or _convert)(bytes(data), binary, container)
     if converted is None:
         return VoiceClip(bytes(data), mime, f"{stem}.{suffix}", "audio", NOTE_CONVERT_FAILED)
     return VoiceClip(converted, "audio/ogg", f"{stem}.ogg", "voice", converted=True)
 
 
-__all__ = ["NOTE_CONVERT_FAILED", "NOTE_NO_FFMPEG", "VoiceClip", "ffmpeg_path",
+__all__ = ["DEMUXER", "NOTE_CONVERT_FAILED", "NOTE_NOT_AUDIO", "NOTE_NO_FFMPEG", "VoiceClip", "ffmpeg_path",
            "prepare_voice", "sniff"]

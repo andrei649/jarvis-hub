@@ -21,15 +21,17 @@ encrypted secret store; ``.env`` also works) are configured. Every value is read
    ``JARVIS_SMS_WEBHOOK_URL`` when set (the public URL behind a proxy), else the request
    URL. Unsigned or mis-signed requests get 403 and nothing else happens;
 3. ``AccountSid`` must be this hub's account;
-4. **replay**: Twilio signs no timestamp, so the replay window is the ``MessageSid``. Every
-   SID taken is remembered for 24 hours in the channel reliability store (G15's cursor
-   table, so it survives a restart); a request repeating one is answered and dropped;
-5. a message from this hub's own number is an echo and is dropped;
-6. the sender must be the owner's: listed in ``JARVIS_SMS_ALLOWED_NUMBERS`` or explicitly
+4. a message from this hub's own number is an echo and is dropped;
+5. the sender must be the owner's: listed in ``JARVIS_SMS_ALLOWED_NUMBERS`` or explicitly
    paired (``pairing`` status *allowed*). SMS never opens to strangers, even with
    ``JARVIS_CHANNEL_PAIRING=0``. An unknown number is recorded as a pairing request (the
    owner can approve it from the HUD) and is **never answered** — an answer would cost
-   money and confirm the number reaches someone.
+   money and confirm the number reaches someone;
+6. **replay**: Twilio signs no timestamp, so the replay window is the ``MessageSid``. An
+   admitted sender's SID is one row of the reliability store's ``seen_ids`` table for 24
+   hours (up to 20,000 rows; it survives a restart), and a repeat is answered and dropped.
+   Strangers never reach this step, so they cannot evict the owner's ids, and a store that
+   cannot be read or written drops the message (fail closed).
 
 The webhook replies with empty TwiML at once; the turn runs in the background. The
 sender's number appears in logs only redacted (``+1…4567``).
@@ -43,7 +45,8 @@ and budgets first. Only the approved task reaches :meth:`SmsChannel.send`, throu
 of the task id so a retried task never sends twice. At execution the reply must still go
 to the exact number that wrote the inbound message, and a per-number hourly cap
 (``JARVIS_SMS_REPLY_MAX_PER_HOUR``, 10) applies. A reply is rendered to plain text and
-split into at most :data:`MAX_PARTS` messages of 1,600 characters.
+cut to at most :data:`MAX_SEGMENTS` billed segments (GSM-7 153 characters a segment,
+UCS-2 67 — the carrier's count, not characters), sent in parts of 1,600 characters.
 """
 
 from __future__ import annotations
@@ -51,10 +54,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
-import json
 import logging
 import re
-import time
 from collections.abc import Callable
 from urllib.parse import urlsplit, urlunsplit
 
@@ -75,10 +76,16 @@ WEBHOOK_URL_ENV = "JARVIS_SMS_WEBHOOK_URL"
 MAX_BODY_BYTES = 65_536
 MAX_MESSAGE_LENGTH = 1_600
 MAX_PARTS = 3
+#: The most billed SMS segments one reply may cost (GSM-7: 153 characters a segment,
+#: UCS-2 — any character outside GSM-7, such as most emoji or diacritics: 67 UTF-16 units).
+MAX_SEGMENTS = 10
+_GSM7 = frozenset("@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                  "ÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà")
+_GSM7_EXT = frozenset("^{}\\[~]|€\f")
 #: How long a MessageSid is remembered against replay.
 REPLAY_WINDOW_S = 24 * 3600
-REPLAY_MAX_SIDS = 1_000
-_REPLAY_CURSOR = "sms.seen_message_sids"
+REPLAY_MAX_SIDS = 20_000
+_REPLAY_SCOPE = "sms.message_sid"
 
 EMPTY_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
 TWILIO_HOST = "api.twilio.com"
@@ -103,6 +110,30 @@ def redact_phone(number: object) -> str:
     if len(digits) < 6:
         return "+…"
     return f"+{digits[:1]}…{digits[-4:]}"
+
+
+def segments(text: str) -> int:
+    """How many billed SMS segments *text* costs as one concatenated message."""
+    if all(ch in _GSM7 or ch in _GSM7_EXT for ch in text):
+        units = sum(2 if ch in _GSM7_EXT else 1 for ch in text)
+        return 1 if units <= 160 else -(-units // 153)
+    units = len(text.encode("utf-16-le")) // 2
+    return 1 if units <= 70 else -(-units // 67)
+
+
+def fit_segments(text: str, limit: int = MAX_SEGMENTS) -> str:
+    """*text* cut (with a note) so that it costs at most *limit* segments."""
+    if segments(text) <= limit:
+        return text
+    tail = "... (cut: the full reply is in the HUD)"
+    lo, hi = 0, len(text)
+    while lo < hi:          # the longest prefix that fits with the tail
+        mid = (lo + hi + 1) // 2
+        if segments(text[:mid] + tail) <= limit:
+            lo = mid
+        else:
+            hi = mid - 1
+    return text[:lo] + tail
 
 
 def target_ref(number: object) -> str:
@@ -203,43 +234,28 @@ def valid_signature(token: str, url: str, params: dict[str, list[str]], signatur
 # ── replay window (MessageSid) ───────────────────────────────────────────────────
 
 
+class ReplayStoreUnavailable(RuntimeError):
+    """The replay record cannot be read or written: the message is dropped (fail closed)."""
+
+
 def remember_sid(sid: str, *, now: float | None = None) -> bool:
-    """True when *sid* is new (and is now remembered); False for a replay. The record
-    lives in the G15 reliability store; without it the check runs in memory."""
-    now = time.time() if now is None else now
+    """True when *sid* is new (and is now remembered); False for a replay.
+
+    One row per MessageSid in the G15 reliability store (``seen_ids``), 24-hour TTL,
+    at most :data:`REPLAY_MAX_SIDS` rows. Only admitted senders' messages are recorded
+    (``accept`` checks the sender first), so strangers cannot evict the owner's ids. A
+    store that cannot be opened, read or written raises :class:`ReplayStoreUnavailable`:
+    the message is dropped, never let through unchecked."""
     from . import delivery_ledger
 
     store = delivery_ledger.store()
-    seen: dict[str, float] = {}
-    if store is not None:
-        try:
-            raw = store.cursor(_REPLAY_CURSOR)
-            loaded = json.loads(raw) if raw else {}
-            if isinstance(loaded, dict):
-                seen = {k: float(v) for k, v in loaded.items()
-                        if isinstance(k, str) and isinstance(v, (int, float))}
-        except Exception:
-            logger.warning("SMS replay record unreadable; starting it again")
-    else:
-        seen = _MEMORY_SIDS
-    seen = {k: v for k, v in seen.items() if now - v < REPLAY_WINDOW_S}
-    if sid in seen:
-        return False
-    seen[sid] = now
-    if len(seen) > REPLAY_MAX_SIDS:
-        seen = dict(sorted(seen.items(), key=lambda kv: kv[1])[-REPLAY_MAX_SIDS:])
-    if store is not None:
-        try:
-            store.set_cursor(_REPLAY_CURSOR, json.dumps(seen, separators=(",", ":")))
-        except Exception:
-            logger.warning("SMS replay record not saved", exc_info=True)
-    else:
-        _MEMORY_SIDS.clear()
-        _MEMORY_SIDS.update(seen)
-    return True
-
-
-_MEMORY_SIDS: dict[str, float] = {}
+    if store is None:
+        raise ReplayStoreUnavailable("reliability store unavailable")
+    try:
+        return store.remember_once(_REPLAY_SCOPE, sid, ttl_s=REPLAY_WINDOW_S,
+                                   max_rows=REPLAY_MAX_SIDS, now=now)
+    except Exception as exc:
+        raise ReplayStoreUnavailable(type(exc).__name__) from exc
 
 
 # ── the adapter ──────────────────────────────────────────────────────────────────
@@ -304,10 +320,12 @@ class SmsChannel(ChannelAdapter):
             values = params.get(name) or [""]
             return str(values[0] or "")
 
+        # Order: identity first (echo, sender), then the replay window, so a stranger's
+        # message never touches the replay record and cannot evict the owner's ids.
         sid = one("MessageSid") or one("SmsMessageSid")
-        if not _SID.fullmatch(sid) or not remember_sid(sid):
-            self.counts["replay"] += 1
-            return "replay"
+        if not _SID.fullmatch(sid):
+            self.counts["empty"] += 1
+            return "empty"
         number = e164(one("From"))
         own = from_number()
         if number is None:
@@ -322,6 +340,15 @@ class SmsChannel(ChannelAdapter):
                         redact_phone(number))
             self._knock(number)
             return "unknown_sender"
+        try:
+            fresh = remember_sid(sid)
+        except ReplayStoreUnavailable:
+            logger.warning("SMS dropped: the replay record is unavailable (fail closed)")
+            self.counts["replay"] += 1
+            return "replay"
+        if not fresh:
+            self.counts["replay"] += 1
+            return "replay"
         text = one("Body")[:MAX_BODY_BYTES].strip()
         media = int(one("NumMedia") or 0) if one("NumMedia").isdigit() else 0
         if media:
@@ -373,11 +400,8 @@ class SmsChannel(ChannelAdapter):
         text = to_plain(str(message or "")).strip()
         if not text:
             return False
-        parts = chunk(text, MAX_MESSAGE_LENGTH)
-        if len(parts) > MAX_PARTS:
-            parts = parts[:MAX_PARTS]
-            tail = "… (cut: the full reply is in the HUD)"
-            parts[-1] = parts[-1][:MAX_MESSAGE_LENGTH - len(tail)] + tail
+        # The cost cap is in billed segments, not characters (UCS-2 text costs more).
+        parts = chunk(fit_segments(text), MAX_MESSAGE_LENGTH)[:MAX_PARTS]
         transport = await self._get_transport()
         url = f"https://{TWILIO_HOST}/2010-04-01/Accounts/{sid}/Messages.json"
         for index, part in enumerate(parts):
@@ -409,6 +433,6 @@ __all__ = [
     "ACCOUNT_SID_ENV", "ALLOWED_NUMBERS_ENV", "AUTH_TOKEN_ENV", "CHANNEL_ID", "EMPTY_TWIML",
     "ENABLED_ENV", "FROM_NUMBER_ENV", "MAX_BODY_BYTES", "SmsChannel", "WEBHOOK_URL_ENV",
     "account_sid", "allowed_numbers", "auth_token", "compute_signature", "configured", "e164",
-    "enabled", "from_number", "missing_config", "redact_phone", "remember_sid", "sender_id",
+    "enabled", "from_number", "missing_config", "redact_phone", "remember_sid", "segments", "sender_id",
     "target_ref", "valid_signature",
 ]

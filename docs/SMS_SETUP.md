@@ -45,8 +45,9 @@ The HUD's Integrations **Test** button checks the settings without sending anyth
   for another Twilio account, is refused with 403. The URL is tried with and without its
   default port, as Twilio may sign either.
 - **Size.** Bodies over 65,536 bytes are refused (413).
-- **Replays.** Twilio signs no timestamp, so Nerva remembers every message id for 24 hours; a
-  replayed request is answered and dropped.
+- **Replays.** Twilio signs no timestamp, so Nerva remembers the message id of every text
+  from an allowed number for 24 hours; a replayed request is answered and dropped. If that
+  record cannot be read or written, the text is dropped rather than let through.
 - **Who.** A text from a number that is neither allowed nor paired is ignored and **never
   answered** (an answer would cost money and confirm the number). It shows up as a pairing
   request in the HUD, where you can approve it. Turning pairing off does not open SMS.
@@ -59,7 +60,9 @@ The HUD's Integrations **Test** button checks the settings without sending anyth
 - Each reply is an approval card at the money tier: it waits for you in every autonomy mode,
   even when the Action Kernel is on. The emergency stop and plan mode still apply first.
 - An approved reply goes only to the number that wrote the message it answers. It is plain
-  text, in parts of 1,600 characters, at most three parts; a longer reply is cut and says so.
+  text and costs at most 10 billed SMS segments (about 1,530 plain characters, or 670 when
+  it has accents or emoji, which Twilio bills at 67 characters a segment); a longer reply is
+  cut and says so.
 - A retried approval never sends the same reply twice (delivery receipt keyed by the task).
 - Picture messages (MMS) are not read; Nerva is told how many pictures came with the text.
 
