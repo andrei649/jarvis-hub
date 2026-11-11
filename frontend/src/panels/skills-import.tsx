@@ -12,6 +12,7 @@
    the key (an older hub) shows no catalog section at all — never an empty catalog. */
 import React, { useState } from 'react';
 import { useApi, arr, mono, asLive, Card, State, Row, Tag, Btn, actA, inpS, Json } from '../panel-kit';
+import { apiDelete, apiGet, apiPut } from '../api/client';
 
 const IMPORTED_PATH = '/skills/imported';
 const IMPORT_PATH = '/skills/import';
@@ -20,6 +21,9 @@ const OPTIONAL_CATALOG_PATH = '/api/skills/optional/catalog';
 const OPTIONAL_INSTALL_PATH = '/api/skills/optional/install';
 /* H336 — the owner's catalog install/repair (admin). */
 const CATALOG_INSTALL_PATH = '/api/skills/catalog/install';
+
+/* H342 — a skill's declared variables (admin). The value goes in and never comes back. */
+const SETUP_PATH = '/api/skills/setup';
 
 /* A local naming hint; the server validates the complete import request. */
 const SLUG_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
@@ -64,6 +68,87 @@ const Good = ({ children }) => (
 const Amber = ({ children }) => (
   <div role="status" style={{ ...mono, fontSize: 10.5, marginTop: 6, color: 'var(--amber)' }}>{children}</div>
 );
+
+/* H342 — which environment variables a skill declares, which are set (stored for this skill,
+   or in the hub's environment) and which are missing. A value is typed into a password field,
+   sent once with PUT and cleared from the field; the hub never sends any part of it back. */
+export function SkillSetup({ initial = '' }: { initial?: string }) {
+  const [name, setName] = useState(initial);
+  const [view, setView] = useState<any>(null);
+  const [err, setErr] = useState('');
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState('');
+  const load = (skillName = name) => {
+    const target = String(skillName || '').trim();
+    if (!target) return;
+    setErr('');
+    apiGet(`/api/skills/setup/${encodeURIComponent(target)}`, { admin: true })
+      .then((v: any) => setView(v))
+      .catch((e: any) => { setView(null); setErr(`HTTP ${e?.status || '?'} · ${String(e?.body?.error || e?.message || 'failed')}`); });
+  };
+  const save = (variable: string) => {
+    const value = values[variable] || '';
+    if (!value || busy) return;
+    setBusy(variable);
+    apiPut(`/api/skills/setup/${encodeURIComponent(view.skill)}/${encodeURIComponent(variable)}`, { value }, { admin: true })
+      .then((v: any) => { setView(v); setErr(''); })
+      .catch((e: any) => setErr(`${variable}: refused · HTTP ${e?.status || '?'} · ${String(e?.body?.error || 'failed')}`))
+      .finally(() => { setBusy(''); setValues((cur) => ({ ...cur, [variable]: '' })); });
+  };
+  const clear = (variable: string) => {
+    if (busy) return;
+    setBusy(variable);
+    apiDelete(`/api/skills/setup/${encodeURIComponent(view.skill)}/${encodeURIComponent(variable)}`, { admin: true })
+      .then((v: any) => setView(v))
+      .catch((e: any) => setErr(`${variable}: HTTP ${e?.status || '?'}`))
+      .finally(() => setBusy(''));
+  };
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        <input aria-label="skill to set up" placeholder="installed skill name" value={name}
+          onChange={(ev) => setName(ev.target.value)} style={{ ...inpS, flex: 1, minWidth: 120 }} />
+        <button className="tool-btn" disabled={!name.trim()} onClick={() => load()}>show setup</button>
+      </div>
+      {err && <Fail>{err}</Fail>}
+      {view && (
+        <>
+          <Note>{view.skill}: {view.ready ? 'ready' : `missing ${arr(view, 'missing').join(', ')}`}</Note>
+          {arr(view, 'requirements').length === 0 && <Note>this skill declares no environment variables</Note>}
+          {arr(view, 'requirements').map((r: any) => (
+            <Row key={`setup-${r.name}`}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ ...mono, color: 'var(--accent-light)' }}>{String(r.name)}</span>
+                  {r.set ? <Tag c="var(--green)">set · {r.source === 'skill' ? 'for this skill' : 'hub environment'}</Tag>
+                    : <Tag c={r.optional ? 'var(--ink-2)' : 'var(--amber)'}>{r.optional ? 'optional' : 'missing'}</Tag>}
+                  {r.refused ? <Tag c="var(--red)">reserved name</Tag> : null}
+                </div>
+                <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 2 }}>{String(r.prompt || '')}{r.help ? ` · ${String(r.help)}` : ''}</div>
+              </div>
+              {r.settable && (
+                <>
+                  <input type="password" autoComplete="off" aria-label={`value for ${r.name}`} placeholder="value"
+                    value={values[r.name] || ''} onChange={(ev) => setValues((cur) => ({ ...cur, [r.name]: ev.target.value }))}
+                    style={{ ...inpS, width: 140 }} />
+                  <button className="tool-btn" disabled={!!busy || !values[r.name]} aria-label={`save ${r.name}`}
+                    onClick={() => save(String(r.name))}>save</button>
+                  {r.source === 'skill' && (
+                    <button className="tool-btn" disabled={!!busy} aria-label={`clear ${r.name}`}
+                      onClick={() => clear(String(r.name))}>clear</button>
+                  )}
+                </>
+              )}
+            </Row>
+          ))}
+          <Note>values are stored encrypted on the hub, never shown again (not even in part), and handed only
+            to this skill’s own code — never to the hub’s environment or another skill. A runnable skill refuses
+            while a required one is missing.</Note>
+        </>
+      )}
+    </div>
+  );
+}
 
 export function SkillsImportPanel() {
   /* Imported-manifest reads use the existing user token. */
@@ -448,6 +533,10 @@ export function SkillsImportPanel() {
             )}
         </>
       )}
+
+      {/* ── 5 · SKILL SETUP (H342) ────────────────────────────────────── */}
+      <H>SKILL SETUP · GET {SETUP_PATH}/&lt;skill&gt;</H>
+      <SkillSetup />
 
       <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 10, lineHeight: 1.5, borderTop: '1px solid var(--panel-line)', paddingTop: 6 }}>
         GET {IMPORTED_PATH} is <b>user tier</b> and reads skills/&lt;slug&gt;/manifest.json sidecars ·

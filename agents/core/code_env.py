@@ -282,6 +282,28 @@ class CodeEnvRegistry:
                     if not entries:
                         self._entries.pop(scope, None)
 
+    def resolve_skill_names(
+        self,
+        *,
+        agent: str,
+        principal: str,
+        session_id: str,
+    ) -> dict[str, frozenset[str]]:
+        """H342 — which skill declared which names in this exact scope (still-valid
+        declarations only). The spawn path reads a skill's own stored values with it, so a
+        value set for one skill never reaches a name another skill declared."""
+        if principal != "owner":
+            return {}
+        scope = self._scope(agent, principal, session_id)
+        with self._lock:
+            try:
+                now = self._now()
+            except (TypeError, ValueError, OverflowError):
+                self._entries.clear()
+                return {}
+            self._sweep(now)
+            return {skill_id: entry.names for skill_id, entry in self._entries.get(scope, {}).items()}
+
     def resolve_names(
         self,
         *,

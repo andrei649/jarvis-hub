@@ -730,8 +730,17 @@ class Skill:
             "environments": self.environments,
             "requires_apps": self.requires_apps,
             "required_env": self.required_env,
+            # H342: the required names set nowhere (never a value).
+            "setup_needed": self._setup_needed(),
             "hermes": self.hermes_meta,
         }
+
+    def _setup_needed(self) -> list[str]:
+        if not self.required_env:
+            return []
+        from . import skill_secrets
+
+        return skill_secrets.missing(self)
 
     @property
     def description(self) -> str:
@@ -802,6 +811,20 @@ class Skill:
         if ready != "ready":
             logger.info("Skill '%s' is %s; command '%s' refused", self.name, why, command)
             return f"[skill:{self.name}] is {why}"
+        if runnable and self.required_env:
+            # H342: a runnable skill whose required variables are set nowhere does not run.
+            from . import skill_secrets
+
+            unset = skill_secrets.missing(self)
+            if unset:
+                logger.info("Skill '%s' needs setup (%d variable(s)); command '%s' refused",
+                            self.name, len(unset), command)
+                return skill_secrets.setup_message(self.name, unset)
+            stored = skill_secrets.skill_env(self)
+            if stored and (context or not cmd_fn):
+                # Its own stored values only, read-only, for this call; never os.environ.
+                # (A command called without a context keeps its one-argument call.)
+                context = {**(context or {}), "skill_env": stored}
         if self.usage_hook is not None:
             try:
                 self.usage_hook(self.name, "use")

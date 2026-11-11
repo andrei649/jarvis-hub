@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { SkillsImportPanel } from './skills-import';
+import { SkillsImportPanel, SkillSetup } from './skills-import';
 
 const COMMIT = '29112bef099274229cadff79cdff7bf7b99c4b77';
 const DIGEST = 'a'.repeat(64);
@@ -341,5 +341,34 @@ describe('SkillsImportPanel — the vendored Hermes catalog', () => {
     expect(String(posts(fn)[0][0])).toBe('/skills/import');
     expect(bodyOf(posts(fn)[0])).toEqual({ skill: 'agentmail', source: 'hermes-catalog' });
     await waitFor(() => expect(screen.getByText(/imported · skill=agentmail · source=hermes-catalog/)).toBeTruthy());
+  });
+});
+
+describe('SkillSetup — H342 declared variables, values never shown', () => {
+  it('lists missing names, PUTs a value once and never renders it', async () => {
+    const SECRET = 'sk-live-0123456789abcdefWXYZ';
+    const view = (set) => ({ skill: 'weather-tool', ready: set, missing: set ? [] : ['WEATHER_KEY'],
+      requirements: [{ name: 'WEATHER_KEY', prompt: 'Enter WEATHER_KEY', optional: false, set,
+        source: set ? 'skill' : null, settable: true }] });
+    const fn = mockRoutes((u, method) => {
+      if (u === '/api/skills/setup/weather-tool' && method === 'GET') return { status: 200, body: view(false) };
+      if (u === '/api/skills/setup/weather-tool/WEATHER_KEY' && method === 'PUT') {
+        return { status: 200, body: { ok: true, ...view(true) } };
+      }
+      return null;
+    });
+    localStorage.setItem('hud.admin_token', 'owner-token');
+    const { container } = render(<SkillSetup />);
+    fireEvent.change(screen.getByLabelText('skill to set up'), { target: { value: 'weather-tool' } });
+    fireEvent.click(btn('show setup'));
+    await waitFor(() => expect(screen.getByText(/missing WEATHER_KEY/)).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('value for WEATHER_KEY'), { target: { value: SECRET } });
+    fireEvent.click(btn('save WEATHER_KEY'));
+    await waitFor(() => expect(screen.getByText(/set · for this skill/)).toBeTruthy());
+    const put = fn.mock.calls.find((c) => String((c[1] && c[1].method) || '').toUpperCase() === 'PUT');
+    expect(bodyOf(put)).toEqual({ value: SECRET });
+    expect(put[1].headers['X-Admin-Token']).toBe('owner-token');
+    expect(container.innerHTML).not.toContain(SECRET);
+    expect(screen.getByLabelText('value for WEATHER_KEY').value).toBe('');
   });
 });

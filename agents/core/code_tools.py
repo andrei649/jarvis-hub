@@ -363,7 +363,22 @@ class CodeExecutionTool:
                 agent=invocation.agent, principal=invocation.principal,
                 session_id=invocation.session_id,
                 machine_allowlist=lambda: self._settings("llm.execute_code_env_passthrough", ()))
-            env = prepare_code_env(self._environment_source, allowed_names=names)
+            # H342: a name a viewed skill declared reads that skill's own stored value
+            # first (never a value set for another skill); anything else reads the hub's
+            # environment as before.
+            source = self._environment_source
+            per_skill = getattr(self._environment_registry, "resolve_skill_names", None)
+            if callable(per_skill):
+                from .skills.skill_secrets import scoped_source
+
+                try:
+                    declared = per_skill(agent=invocation.agent, principal=invocation.principal,
+                                         session_id=invocation.session_id)
+                except (TypeError, ValueError):
+                    declared = {}
+                if declared:
+                    source = scoped_source(self._environment_source, declared)
+            env = prepare_code_env(source, allowed_names=names)
             for name in ("VIRTUAL_ENV", "CONDA_PREFIX"):
                 value = (self._environment_source(name) if callable(self._environment_source)
                          else self._environment_source.get(name))

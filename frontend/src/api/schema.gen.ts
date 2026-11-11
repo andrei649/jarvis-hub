@@ -4230,6 +4230,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills/setup/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Skill Setup */
+        get: operations["skill_setup_api_skills_setup__name__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/setup/{name}/{var}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Skill Setup Put */
+        put: operations["skill_setup_put_api_skills_setup__name___var__put"];
+        post?: never;
+        /** Skill Setup Delete */
+        delete: operations["skill_setup_delete_api_skills_setup__name___var__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health/components": {
         parameters: {
             query?: never;
@@ -17172,6 +17207,14 @@ export interface components {
              */
             max_reviews: number;
         };
+        /** SetupValueBody */
+        SetupValueBody: {
+            /**
+             * Value
+             * Format: password
+             */
+            value: string;
+        };
         /**
          * SkillBatchBody
          * @description Hermes's skill_manage ``operations`` array: ordered, across several skills.
@@ -24459,6 +24502,105 @@ export interface operations {
                 "application/json": components["schemas"]["RequestBody"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    skill_setup_api_skills_setup__name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    skill_setup_put_api_skills_setup__name___var__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                var: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupValueBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    skill_setup_delete_api_skills_setup__name___var__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                var: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

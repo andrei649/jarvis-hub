@@ -38,6 +38,7 @@
   "DELETE /api/satellites/{satellite_id}",
   "DELETE /api/secrets/broker/{name}",
   "DELETE /api/skills/bundles/{name}",
+  "DELETE /api/skills/setup/{name}/{var}",
   "DELETE /api/vault/{vault_id}",
   "DELETE /api/webhooks/{hook_id}",
   "DELETE /api/workflows/{pipeline_id}",
@@ -305,6 +306,7 @@
   "GET /api/skills/pending",
   "GET /api/skills/pending/{name}",
   "GET /api/skills/proposals",
+  "GET /api/skills/setup/{name}",
   "GET /api/status",
   "GET /api/status/slots",
   "GET /api/subagents",
@@ -802,6 +804,7 @@
   "PUT /api/kanban/orchestration",
   "PUT /api/notes",
   "PUT /api/preferences/appearance",
+  "PUT /api/skills/setup/{name}/{var}",
   "PUT /api/workflows/{pipeline_id}",
   "PUT /api/workspace/admin/smtp",
   "PUT /plugins/{plugin_id}/toggle"
