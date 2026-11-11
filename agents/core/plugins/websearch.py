@@ -369,7 +369,18 @@ class WebSearchPlugin:
             return SearchOutcome([], reason=selection.reason, missing=selection.missing,
                                  backend=selection.backend)
         primary = selection.primary
-        key = (selection.key, query, int(max_results))
+        # H496 (review): the cache is per identity class, and a guest's use of a keyed
+        # backend is share-checked before the cache is read — a guest never reads what the
+        # owner's key bought unless that backend is shared with guests.
+        from ..security.credential_scope import KIND_WEB_SEARCH, allowed, turn_identity
+
+        identity = turn_identity().kind
+        if (identity == "guest" and not primary.keyless
+                and not allowed(KIND_WEB_SEARCH, primary.name)):
+            logger.warning("web search refused for a guest turn: %s is not shared", primary.name)
+            return SearchOutcome([], provider=primary.name, reason="policy_blocked",
+                                 backend=selection.backend)
+        key = (selection.key, query, int(max_results), identity == "guest")
         now = self._clock()
         cached = self._cache_get(key, now)
         if cached is not None:

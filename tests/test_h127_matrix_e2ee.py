@@ -84,7 +84,10 @@ class _Transport:
         if "/state/m.room.encryption" in url:
             if self.fail:
                 raise OSError("down")
-            return _Resp(self.state_status, self.state_body)
+            body = self.state_body
+            if body is None and self.state_status == 404:
+                body = {"errcode": "M_NOT_FOUND", "error": "Event not found."}
+            return _Resp(self.state_status, body)
         return _Resp(200, {"event_id": "$e"})
 
 
@@ -266,3 +269,71 @@ def test_status_reports_no_backend_and_the_cli_works(tmp_path, monkeypatch, caps
     assert e2ee.main(["devices"]) == 0
     assert "DEV1" in capsys.readouterr().out
     assert e2ee.main(["verify", "nobody", "DEV1", key]) == 2
+
+
+# ── review fixes ─────────────────────────────────────────────────────────────
+
+class _Raw:
+    def __init__(self, status, body):
+        self.status_code, self._body = status, body
+
+    def json(self):
+        if isinstance(self._body, Exception):
+            raise self._body
+        return self._body
+
+
+class _Fixed:
+    def __init__(self, resp):
+        self.resp, self.urls = resp, []
+
+    async def request(self, method, url, headers=None, json=None):
+        self.urls.append(url)
+        return self.resp
+
+
+def test_review_only_m_not_found_404_means_not_encrypted():
+    for body in ({"errcode": "M_UNRECOGNIZED", "error": "Unrecognized request"},
+                 ValueError("<html>404 Not Found</html>"), {}, ["x"]):
+        e2ee.reset_for_tests()
+        state = asyncio.run(e2ee.room_encryption(_Fixed(_Raw(404, body)), "https://hs", "t", ROOM))
+        assert not e2ee.send_decision(state, {}).allowed, body
+        assert not e2ee.send_decision(state, {"encrypted_rooms": "allow_plaintext"}).allowed
+    e2ee.reset_for_tests()
+    state = asyncio.run(e2ee.room_encryption(_Fixed(_Raw(404, {"errcode": "M_NOT_FOUND"})),
+                                             "https://hs", "t", ROOM))
+    assert state.known and not state.encrypted
+
+
+def test_review_unencrypted_answer_is_rechecked_after_thirty_seconds():
+    t = _Transport(404)
+    first = asyncio.run(e2ee.room_encryption(t, "https://hs", "T", ROOM, now=0))
+    assert not first.encrypted
+    t.state_status, t.state_body = 200, {"algorithm": "m.megolm.v1.aes-sha2"}
+    assert not asyncio.run(e2ee.room_encryption(t, "https://hs", "T", ROOM, now=10)).encrypted
+    assert asyncio.run(e2ee.room_encryption(t, "https://hs", "T", ROOM, now=31)).encrypted
+
+
+def test_review_room_ids_are_strict_and_quoted_the_same_in_check_and_send():
+    assert not e2ee.valid_room_id(None)
+    for bad in ("!a/b:hs", "!../x:hs", "!..:hs", "!.:hs", "!a\\b:hs", "#alias:hs", "!a b:hs"):
+        assert not e2ee.valid_room_id(bad), bad
+        t = _Transport(404)
+        assert asyncio.run(_channel(t).send("x", room_id=bad)) is False
+        assert t.calls == []
+    weird = "!a?b#c%:hs.example"
+    assert e2ee.valid_room_id(weird)
+    t = _Transport(404)
+    assert asyncio.run(_channel(t).send("x", room_id=weird)) is True
+    check, send = t.calls[0][1], t.calls[1][1]
+    quoted = e2ee.quote_room(weird)
+    assert "?" not in quoted and "#" not in quoted
+    assert f"/rooms/{quoted}/state/" in check and f"/rooms/{quoted}/send/" in send
+
+
+def test_review_status_cli_does_not_claim_counts_it_cannot_see(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path))
+    e2ee.note_undecryptable(ROOM)
+    assert e2ee.main(["status"]) == 0
+    out = capsys.readouterr().out
+    assert ROOM not in out and "running hub" in out

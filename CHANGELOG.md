@@ -11,6 +11,9 @@
 - Nothing changes until you approve the card. Approving creates the umbrella skill and
   archives the skills it replaces (they can be moved back); rejecting changes nothing.
   Nerva never runs this on its own.
+- Only skills your model can already see are merged. The umbrella is recorded as written by
+  the model and unsigned; scripts or references of the replaced skills are archived with them,
+  not copied, and the card and the umbrella say which.
 
 **Matrix: no plain text into encrypted rooms**
 - Before Nerva writes to a Matrix room it checks whether the room is end-to-end encrypted.
@@ -21,15 +24,23 @@
 - Encrypted messages Nerva cannot read are counted and logged instead of vanishing.
 - Device and cross-signing trust you compared out of band is kept encrypted on disk:
   `python -m agents.core.channels.matrix_e2ee verify …` (see `docs/FLAGS.md`).
+- Only a homeserver's "no such state" answer counts as an unencrypted room, and that answer
+  is re-checked after 30 seconds; malformed room ids are never sent to.
 
 **Guests never spend your keys**
 - A turn from someone other than you (a household token in the HUD, a paired Telegram sender,
-  another OpenAI-API key) uses none of your credentials: no cloud model key, no MCP server's
-  login, no paid web-search key, no skill's setup values, no stored secret. Local models still
-  answer them.
+  another OpenAI-API key) is refused your credentials at these points: a cloud model route,
+  an MCP server you configured, a keyed web-search backend (and its cached results), a skill
+  that declares credentials (stored for it or taken from the hub's `.env`), a stored secret
+  handle, and the ElevenLabs / Fish Audio voices. Local models and voices still answer them.
+  Plugins read their keys from the hub's environment; they are guarded only where a guest's
+  turn would reach them (no plugin data for guests, gated tools never offered), not at the
+  key itself.
+- Your own voice at the hub's microphone (wake word) counts as you for credentials, as before.
 - To let guests use one integration, share it in the HUD (Trust card, "credentials shared with
-  guests") or with `POST /api/security/credential-shares`. Each share is recorded with when you
-  made it and written to the audit log; stopping a share takes effect on the next call.
+  guests") or with `POST /api/security/credential-shares`. Each share and each stop is written
+  to the audit log first (if that fails nothing changes) and recorded with when you made it;
+  the ledger is signed with the hub's key, so a copy edited by hand shares nothing.
 
 **Nerva in your code editor (Agent Client Protocol)**
 - `nerva acp` makes Nerva the coding agent of Zed, JetBrains IDEs and other ACP editors.

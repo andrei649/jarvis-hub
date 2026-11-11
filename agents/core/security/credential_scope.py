@@ -43,6 +43,8 @@ reach an interpreter (H342).
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import logging
 import re
@@ -110,6 +112,28 @@ def parse_integration(text: str) -> tuple[str, str]:
     return kind, name
 
 
+#: The hub machine's own voice pipeline (wake word -> STT on the host microphone,
+#: ``channels/voice.VoiceChannel``) binds ``Principal(channel="voice")`` with no sender.
+LOCAL_VOICE_CHANNEL = "voice"
+
+
+def _local_voice(principal: Any, origin: str | None) -> bool:
+    """Review M2: the local voice pipeline speaks for the owner, for credentials only.
+
+    ``Orchestrator._channel_principal`` marks no voice turn admin (the tool posture keeps
+    operator/guest for the room microphone: anyone near it is heard), but the owner's
+    provider keys, search backends and MCP servers were always used for it before H496, and
+    it is the owner's own machine. So credentials treat it as the owner. Only the local
+    pipeline: channel ``voice``, no sender (the pipeline names none), and not an inbound
+    turn. A voice note arriving through a chat channel keeps that channel's principal
+    (``telegram`` etc.) and is judged as that sender."""
+    from agents.core.action_origin import INBOUND_ACTION_ORIGIN
+
+    channel = str(getattr(principal, "channel", "") or "").strip().lower()
+    return (channel == LOCAL_VOICE_CHANNEL and getattr(principal, "sender", None) is None
+            and str(origin or "").strip().lower() != INBOUND_ACTION_ORIGIN)
+
+
 def turn_identity(principal: Any = None, origin: str | None = None) -> TurnIdentity:
     """Who this turn speaks for, from the bound principal and the action origin.
 
@@ -126,10 +150,14 @@ def turn_identity(principal: Any = None, origin: str | None = None) -> TurnIdent
         if principal is None:
             from agents.core.orchestrator import _turn_principal
             principal = _turn_principal.get()
-        posture = classify_turn(principal, current_action_origin() if origin is None else origin)
-        kind = (IDENTITY_OWNER if posture.principal == PRINCIPAL_OWNER
-                else IDENTITY_GUEST if posture.principal == PRINCIPAL_GUEST
-                else IDENTITY_SYSTEM)
+        origin_text = current_action_origin() if origin is None else origin
+        if _local_voice(principal, origin_text):
+            kind = IDENTITY_OWNER
+        else:
+            posture = classify_turn(principal, origin_text)
+            kind = (IDENTITY_OWNER if posture.principal == PRINCIPAL_OWNER
+                    else IDENTITY_GUEST if posture.principal == PRINCIPAL_GUEST
+                    else IDENTITY_SYSTEM)
     except Exception:
         logger.warning("turn identity unavailable; treated as a guest", exc_info=True)
         kind = IDENTITY_GUEST
@@ -173,13 +201,16 @@ def _read() -> dict[str, dict]:
         rows = raw.get("shares") if isinstance(raw, dict) else None
         if not isinstance(rows, dict):
             raise ValueError("shares must be an object")
+        mac = raw.get("mac")
+        if not isinstance(mac, str) or not hmac.compare_digest(mac, _mac(rows)):
+            raise ValueError("share ledger integrity check failed")
         shares: dict[str, dict] = {}
         for integration, row in list(rows.items())[:MAX_SHARES]:
             parse_integration(integration)
             if isinstance(row, dict):
                 shares[integration] = {k: row[k] for k in ("at", "by", "note") if k in row}
     except Exception:
-        logger.warning("credential share ledger malformed; nothing is shared")
+        logger.warning("credential share ledger malformed or not written by this hub; nothing is shared")
         return {}
     with _LOCK:
         _cache.update(key=key, shares=shares)
@@ -207,10 +238,36 @@ def _audit(audit: Any, action: str, integration: str, by: str) -> None:
                             content_preview=f"H496 {action}: {integration} (by {by})"))
 
 
+def _default_mac_key() -> bytes:
+    from agents.core.secrets import SecretStore
+
+    return SecretStore()._key_b64
+
+
+#: Where the ledger's MAC key comes from: the hub's protected secret-store key (tests
+#: substitute one). A key that cannot be read makes the ledger unreadable: nothing shared.
+_mac_key_source = _default_mac_key
+
+
+def set_mac_key_for_tests(source) -> None:
+    global _mac_key_source
+    with _LOCK:
+        _mac_key_source = source or _default_mac_key
+        _cache.update(key=None, shares={})
+
+
+def _mac(rows: dict) -> str:
+    """Nit (review): a ledger edited outside the hub is not honoured. Domain-separated HMAC
+    with the hub's secret-store key over the canonical shares."""
+    key = hmac.digest(_mac_key_source(), b"nerva:H496:credential-shares:v1", "sha256")
+    body = json.dumps(rows, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    return hmac.new(key, body, hashlib.sha256).hexdigest()
+
+
 def _write(shares: dict[str, dict]) -> None:
     from agents.core.persistence.json_store import atomic_write_json
 
-    atomic_write_json(ledger_path(), {"version": 1, "shares": shares})
+    atomic_write_json(ledger_path(), {"version": 2, "shares": shares, "mac": _mac(shares)})
     with _LOCK:
         _cache.update(key=None, shares={})
 
@@ -236,8 +293,9 @@ def unshare(kind: str, name: str, *, by: str = "owner", audit: Any = None) -> di
     with _WRITE_LOCK:
         shares = _read()
         existed = shares.pop(integration, None) is not None
+        # Audit first, as for a share: an unshare the audit could not record changes nothing.
+        _audit(audit, "credential_unshared", integration, by)
         _write(shares)
-    _audit(audit, "credential_unshared", integration, by)
     return {"integration": integration, "shared": False, "changed": existed}
 
 

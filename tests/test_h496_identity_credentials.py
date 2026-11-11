@@ -340,3 +340,137 @@ def test_share_route_is_admin_only_and_records(monkeypatch):
     assert [e.action_taken for e in audit.events
             if e.action_taken.startswith("credential_")] == ["credential_shared_with_guests",
                                                              "credential_unshared"]
+
+
+# ── review fixes ─────────────────────────────────────────────────────────────
+
+def test_review_m1_guest_does_not_run_a_skill_on_the_owners_env_key(monkeypatch, tmp_path):
+    """A declared credential satisfied from the hub's process environment (not the skill
+    store) is still the owner's: the guest turn is refused, the owner's runs. Plain-text
+    skill commands dispatched by the orchestrator go through the same Skill.execute."""
+    import os
+
+    from agents.core import integration_keys
+    from agents.core.skills import skill_secrets
+    from agents.core.skills.loader import Skill
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(integration_keys, "_store_path", lambda: tmp_path / "secrets.enc")
+    monkeypatch.setenv("H496_ENV_TOOL_KEY", "sk-owner-env-value-0123456789")
+    seen = []
+
+    async def handle(command, args, context):
+        seen.append(os.environ.get("H496_ENV_TOOL_KEY"))
+        return "ran"
+
+    skill = Skill("paid-tool", None, {"name": "paid-tool", "required_environment_variables": [
+        {"name": "H496_ENV_TOOL_KEY", "prompt": "key"}]})
+    skill.module = SimpleNamespace(handle=handle)
+    assert skill_secrets.skill_env(skill) == {} and skill_secrets.missing(skill) == []
+    for guest in GUESTS:
+        with _as(guest):
+            out = asyncio.run(skill.execute("go", "", {"channel": guest.channel}))
+        assert "not shared with guests" in out
+    assert seen == []
+    with _as(OWNER_WEB):
+        assert asyncio.run(skill.execute("go", "", {"channel": "web"})) == "ran"
+    cs.share(cs.KIND_SKILL, "paid-tool")
+    with _as(TELEGRAM_GUEST):
+        assert asyncio.run(skill.execute("go", "", {"channel": "telegram"})) == "ran"
+
+
+def test_review_m1_skill_without_declared_credentials_still_runs_for_guests():
+    from agents.core.skills.loader import Skill
+
+    async def handle(command, args, context):
+        return "ran"
+
+    skill = Skill("free-tool", None, {"name": "free-tool"})
+    skill.module = SimpleNamespace(handle=handle)
+    with _as(GUEST_WEB):
+        assert asyncio.run(skill.execute("go", "", {"channel": "web"})) == "ran"
+
+
+def test_review_m2_local_voice_pipeline_is_the_owner_voice_notes_keep_their_channel():
+    from agents.core.orchestrator import Orchestrator
+
+    hub = Orchestrator.__new__(Orchestrator)
+    hub.__dict__["channels"] = {}
+    local = Orchestrator._channel_principal(hub, "voice", None, None)
+    assert local.admin is False                                    # tool posture unchanged
+    assert cs.turn_identity(local, "generated").kind == cs.IDENTITY_OWNER
+    assert cs.allowed(cs.KIND_PROVIDER, "openai", principal=local, origin="generated")
+    # A sender on the voice channel, or an inbound voice turn, is not the local pipeline.
+    assert cs.turn_identity(Principal(channel="voice", sender="x"), "generated").is_guest
+    assert cs.turn_identity(Principal(channel="voice"), "inbound").is_guest
+    # A voice note sent through Telegram by someone who is not the owner stays a guest.
+    tg_note = Orchestrator._channel_principal(hub, "telegram", "7", "7")
+    assert cs.turn_identity(tg_note, "inbound").is_guest
+
+
+def test_review_web_search_cache_is_per_identity_class():
+    from agents.core.plugins import web_providers
+    from agents.core.plugins.websearch import WebSearchPlugin
+
+    keyed = _Provider("tavily")
+    plugin = WebSearchPlugin.__new__(WebSearchPlugin)
+    plugin._client = object()
+    plugin._view = lambda: SimpleNamespace()
+    plugin._search_cache = {}
+    plugin._clock = lambda: 100.0
+    plugin.selection = lambda **kw: web_providers.Selection("auto", "any", keyed)
+    with _as(OWNER_WEB):
+        assert asyncio.run(plugin.search_detailed("q", 3)).rows
+    assert keyed.calls == 1
+    with _as(GUEST_WEB):
+        out = asyncio.run(plugin.search_detailed("q", 3))
+    assert out.rows == [] and out.reason == "policy_blocked" and keyed.calls == 1
+    cs.share(cs.KIND_WEB_SEARCH, "tavily")
+    with _as(GUEST_WEB):
+        out = asyncio.run(plugin.search_detailed("q", 3))
+    assert out.rows and not out.cached and keyed.calls == 2       # its own cache entry
+
+
+def test_review_cloud_tts_voice_not_spoken_with_owner_key_for_guest(monkeypatch):
+    from agents.core.voice import tts
+
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "owner-eleven-key")
+    monkeypatch.setenv("FISH_AUDIO_API_KEY", "owner-fish-key")
+    engine = tts.TTSEngine.__new__(tts.TTSEngine)
+
+    def boom(*a, **k):
+        raise AssertionError("no request may be made")
+
+    monkeypatch.setattr("httpx.AsyncClient", boom)
+    with _as(GUEST_WEB):
+        assert asyncio.run(engine._speak_elevenlabs("hi", "elevenlabs")) is None
+        assert asyncio.run(engine._speak_fish("hi", "fish")) is None
+    assert tts._credential_allowed("elevenlabs") is True           # no turn: the owner's job
+    cs.share(cs.KIND_PROVIDER, "elevenlabs")
+    with _as(GUEST_WEB):
+        assert tts._credential_allowed("elevenlabs") is True
+        assert tts._credential_allowed("fish_audio") is False
+
+
+def test_review_ledger_edited_outside_the_hub_shares_nothing():
+    cs.share(cs.KIND_MCP, "github")
+    assert cs.is_shared(cs.KIND_MCP, "github")
+    path = cs.ledger_path()
+    raw = json.loads(path.read_text())
+    raw["shares"]["mcp:gmail"] = {"at": 1, "by": "owner"}
+    path.write_text(json.dumps(raw))
+    assert not cs.is_shared(cs.KIND_MCP, "gmail") and not cs.is_shared(cs.KIND_MCP, "github")
+    cs.set_mac_key_for_tests(lambda: b"another-hub-key")
+    try:
+        cs.share(cs.KIND_MCP, "x")
+        assert cs.is_shared(cs.KIND_MCP, "x")
+    finally:
+        cs.set_mac_key_for_tests(None)
+    assert not cs.is_shared(cs.KIND_MCP, "x")                      # signed with another key
+
+
+def test_review_unshare_the_audit_cannot_record_changes_nothing():
+    cs.share(cs.KIND_MCP, "github")
+    with pytest.raises(RuntimeError):
+        cs.unshare(cs.KIND_MCP, "github", audit=_Audit(fail=True))
+    assert cs.is_shared(cs.KIND_MCP, "github")

@@ -135,6 +135,20 @@ def voice_persona_consent_status(
     }
 
 
+def _credential_allowed(provider: str) -> bool:
+    """H496: a cloud voice is spoken with the owner's key; a guest turn uses it only when the
+    owner shared ``provider:<name>`` with guests (otherwise the next voice answers)."""
+    try:
+        from agents.core.security.credential_scope import KIND_PROVIDER, allowed
+
+        if allowed(KIND_PROVIDER, provider):
+            return True
+    except Exception:
+        logger.debug("credential scope unavailable; cloud voice not used", exc_info=True)
+    logger.info("cloud voice %s skipped: not shared with this turn's identity", provider)
+    return False
+
+
 class TTSEngine:
     VOICE_MAP = {
         "ro": "ro-RO-EmilNeural",
@@ -383,6 +397,8 @@ class TTSEngine:
     async def _speak_elevenlabs(self, text: str, voice: str) -> Optional[str]:
         import httpx
         import os
+        if not _credential_allowed("elevenlabs"):
+            return None
         api_key = os.environ.get("ELEVENLABS_API_KEY")
         if not api_key:
             logger.warning("ELEVENLABS_API_KEY not configured. Falling back to edge-tts.")
@@ -430,6 +446,8 @@ class TTSEngine:
         import os
 
         import httpx
+        if not _credential_allowed("fish_audio"):
+            return None
         api_key = os.environ.get("FISH_AUDIO_API_KEY")
         if not api_key:
             logger.warning("FISH_AUDIO_API_KEY not configured. Falling back to edge-tts.")

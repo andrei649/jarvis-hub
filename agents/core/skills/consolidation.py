@@ -12,7 +12,9 @@ Nerva does the same work with none of it unattended:
    candidate skill's name, description and body, computed in-process — no embedding
    service, nothing leaves the machine. Pairs at or above the threshold are joined into
    groups (at most :data:`MAX_GROUP` skills each). Candidates are the skills a batch may
-   delete: not shipped with the product, not pinned by the owner, not awaiting review.
+   delete and the model may already see: not shipped with the product, not pinned by the
+   owner, not awaiting review, and not hidden by the catalog (untrusted signature,
+   sandboxed, switched off, unsupported).
 3. **Umbrella drafted by the local model** (:func:`draft_umbrella`): the auxiliary rail's
    strict-local one-shot (``llm.auxiliary_text.run_oneshot``, purpose
    ``skill_consolidation``). Every skill's text goes into the prompt as fenced untrusted
@@ -24,7 +26,11 @@ Nerva does the same work with none of it unattended:
    one H665 batch — ``create`` the umbrella, then ``delete`` each member with
    ``absorbed_into`` the umbrella — dry-run against staging copies (its diffs and the
    H330 reference migrations are what the owner reviews) and recorded in the
-   ``SkillBatchStore`` with one ``skill.batch_proposal`` card. Only the owner's decision
+   ``SkillBatchStore`` with one ``skill.batch_proposal`` card, origin ``agent:consolidation``
+   (recorded agent-made, like every model-written skill). The umbrella gets no signature
+   or approval standing of its members: it is a new, unsigned, agent-made skill — the
+   lowest standing any member could have. Members' supporting files (scripts, references)
+   are not carried over; the card and the umbrella name them. Only the owner's decision
    on that card applies it (``routers/actions.py``), whole or not at all, against the
    trees it was checked on. Deleted members go to ``<data>/skills/batch-archive``
    (reversible: move the folder back); references the batch cannot migrate are listed.
@@ -56,7 +62,10 @@ MAX_GROUPS = 3
 MAX_SKILL_CHARS = 8000
 MAX_CANDIDATES = 500
 PURPOSE = "skill_consolidation"
-ORIGIN = "curator:consolidation"
+#: An agent origin (review M3): the umbrella is model-written, so it is recorded like every
+#: other model-written skill (agent_created, write origin the model's tool): the curator
+#: manages it and the learning journey lists it; the owner's pin still stops a delete.
+ORIGIN = "agent:consolidation"
 _TOKEN = re.compile(r"[a-z0-9]{3,}")
 _STOP = frozenset(["the", "and", "for", "with", "that", "this", "from", "your", "you", "are", "use", "when", "into", "what", "which", "will", "have", "has", "can", "not", "but", "all", "any", "its", "our", "out", "was", "were", "how", "why", "who", "skill", "skills", "step", "steps", "then", "also", "each", "only", "must", "should", "would", "could", "about", "using", "used", "make", "made", "more", "most", "such", "than", "them", "they", "their", "there", "these", "those", "here", "just", "like", "some"])
 _NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
@@ -166,12 +175,22 @@ def find_overlaps(texts: dict[str, str], *, threshold: float = DEFAULT_THRESHOLD
 
 def candidates(loader: Any, usage: Any = None) -> dict[str, str]:
     """``{name: text}`` of the skills a consolidation may absorb."""
-    from .loader import _shipped_location
+    from .loader import SkillLoader, _shipped_location
 
     out: dict[str, str] = {}
     for name, skill in sorted((getattr(loader, "skills", None) or {}).items())[:MAX_CANDIDATES]:
         path = getattr(skill, "path", None)
         if not path or _shipped_location(Path(path)):
+            continue
+        try:
+            # Review M3: only skills the model may already see are merged. A skill the
+            # catalog hides — a signature that does not verify (tampered), sandboxed,
+            # switched off, unsupported here — never has its text laundered into an
+            # umbrella the catalog would advertise.
+            if SkillLoader.catalog_gate(skill):
+                continue
+        except Exception:  # nosec B112 — a gate that cannot answer excludes the skill
+            logger.debug("catalog gate unavailable for %s; not a candidate", name)
             continue
         if any((Path(path) / marker).exists() for marker in ("PENDING_REVIEW", "ACQUIRED_SANDBOX_ONLY")):
             continue                         # awaiting the owner's review / sandbox-only (CDX-8)
@@ -321,6 +340,36 @@ async def analyze(loader: Any, *, usage: Any = None, batches: Any = None, queue:
     return {"ok": True, **run}
 
 
+def supporting_files(loader: Any, members: Iterable[str]) -> list[str]:
+    """``member/relative/path`` of every file a member has besides SKILL.md. None of them is
+    carried into the umbrella (a script or reference the model never read would gain the
+    umbrella's standing); they are archived with their skill and named on the card."""
+    out: list[str] = []
+    skills = getattr(loader, "skills", None) or {}
+    for member in members:
+        path = getattr(skills.get(member), "path", None)
+        if not path:
+            continue
+        root = Path(path)
+        try:
+            for item in sorted(root.rglob("*")):
+                if item.is_file() and not item.is_symlink() and item.relative_to(root).as_posix() != "SKILL.md":
+                    out.append(f"{member}/{item.relative_to(root).as_posix()}")
+        except OSError:
+            out.append(f"{member}/(unreadable)")
+    return out[:200]
+
+
+def _note_archived(content: str, files: list[str]) -> str:
+    if not files:
+        return content
+    lines = "\n".join(f"- `{f}`" for f in files[:50])
+    more = f"\n- … and {len(files) - 50} more" if len(files) > 50 else ""
+    return (content.rstrip("\n") + "\n\n## Archived with the absorbed skills\n\n"
+            "These supporting files were not carried into this skill; they are archived with "
+            "the skills it replaced:\n\n" + lines + more + "\n")
+
+
 def _propose(name: str, content: str, members: list[str], loader: Any, batches: Any, queue: Any,
              *, run_batch_fn: Callable[..., dict] | None = None) -> dict:
     from agents.core.security.quarantine import detect_injection_normalized
@@ -328,6 +377,8 @@ def _propose(name: str, content: str, members: list[str], loader: Any, batches: 
     from .batch import fingerprints, run_batch
 
     run_batch_fn = run_batch_fn or run_batch
+    left_behind = supporting_files(loader, members)
+    content = _note_archived(content, left_behind)
     operations = ([{"name": name, "action": "create", "content": content}]
                   + [{"name": m, "action": "delete", "absorbed_into": name} for m in members])
     expect = fingerprints(operations, loader)
@@ -346,17 +397,21 @@ def _propose(name: str, content: str, members: list[str], loader: Any, batches: 
         try:
             card = batches.queue_card(
                 record["id"], queue, agent="curator",
-                summary=(f"Consolidate {', '.join(members)} into umbrella skill {name}; the "
-                         f"originals are archived (reversible)")[:300])
+                summary=(f"Umbrella skill {name}, written by the local model from the text of "
+                         f"{', '.join(members)}, replaces them; the originals are archived "
+                         f"(reversible)"
+                         + (f"; {len(left_behind)} supporting file(s) archived, not carried over"
+                            if left_behind else ""))[:300])
         except Exception:
             logger.warning("skill consolidation card could not be queued", exc_info=True)
     left = [ref for ref in (checked.get("references") or []) if ref.get("left")]
     return {"status": "proposed", "batch_id": record["id"], "card": card,
+            **({"not_carried_over": left_behind} if left_behind else {}),
             "diff": checked.get("skills") or [], **({"references_left": left} if left else {})}
 
 
 __all__ = [
-    "ConsolidationLedger", "DEFAULT_THRESHOLD", "MAX_GROUP", "ORIGIN", "PURPOSE", "SYSTEM", "analyze",
+    "ConsolidationLedger", "DEFAULT_THRESHOLD", "supporting_files", "MAX_GROUP", "ORIGIN", "PURPOSE", "SYSTEM", "analyze",
     "build_prompt", "candidates", "check_draft", "draft_umbrella", "find_overlaps", "similarity_matrix",
     "skill_text",
 ]

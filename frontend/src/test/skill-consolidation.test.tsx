@@ -35,6 +35,6 @@ describe('SkillConsolidation', () => {
   });
 
   it('labels a consolidation batch', () => {
-    expect(originLabel('curator:consolidation')).toBe('skill consolidation');
+    expect(originLabel('agent:consolidation')).toBe('skill consolidation (local model)');
   });
 });

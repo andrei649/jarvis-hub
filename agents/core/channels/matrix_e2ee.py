@@ -29,6 +29,8 @@ What this module adds, with the ``cryptography`` package the hub already pins:
   (``<data>/matrix/crypto_store.enc``, the hub's ``SecretStore``: Fernet, key in the
   protected key file), never in ``.env`` and never readable through a secret handle.
   A key that changed for a verified device is *not* trusted (``changed``).
+  Without ``JARVIS_SECRET_KEY`` the store's key file sits beside it (``.key``, 0600), so the
+  encryption protects a copied store, not a reader of the data dir.
 * **Encrypted inbound is visible** (:func:`note_undecryptable`): an ``m.room.encrypted``
   event is counted per room and logged once per room, instead of disappearing.
 
@@ -62,7 +64,9 @@ from urllib.parse import quote
 
 logger = logging.getLogger("jarvis.channels.matrix_e2ee")
 
-ROOM_CACHE_SECONDS = 300.0
+#: How long an *unencrypted* answer is trusted: a room can be switched to encrypted at any
+#: time, so this is short (review); an encrypted answer never expires.
+ROOM_CACHE_SECONDS = 30.0
 ENCRYPTED_ROOMS_REFUSE = "refuse"
 ENCRYPTED_ROOMS_ALLOW_PLAINTEXT = "allow_plaintext"
 #: The homeserver URL is a local E2EE proxy (pantalaimon) that encrypts and decrypts for
@@ -283,6 +287,23 @@ class DeviceTrustStore:
 
 # ── per-room state and the send decision ─────────────────────────────────────
 
+def valid_room_id(room: Any) -> bool:
+    """A Matrix room id as the spec bounds it, and safe in a URL path: ``!local:server``,
+    printable, no whitespace, no ``/`` or ``\\`` and no dot segment (review)."""
+    from .webhook_channels import _matrix_id
+
+    if not _matrix_id(room, "!") or "/" in room or "\\" in room:
+        return False
+    local = room[1:].split(":", 1)[0]
+    return local not in ("", ".", "..")
+
+
+def quote_room(room: str) -> str:
+    """The one quoting used for a room id in every request path (the encryption check and
+    the send), so both name the same room."""
+    return quote(room, safe="!:")
+
+
 @dataclass(frozen=True)
 class RoomEncryption:
     encrypted: bool
@@ -307,13 +328,25 @@ async def room_encryption(transport: Any, homeserver: str, token: str, room: str
     cached = _room_cache.get(room)
     if cached and cached[0] > now and cached[1].known:
         return cached[1]
-    url = (f"{homeserver.rstrip('/')}/_matrix/client/v3/rooms/{quote(room, safe='')}"
+    if not valid_room_id(room):
+        return RoomEncryption(True, known=False)
+    url = (f"{homeserver.rstrip('/')}/_matrix/client/v3/rooms/{quote_room(room)}"
            "/state/m.room.encryption/")
     try:
         resp = await transport.request("GET", url, headers={"Authorization": f"Bearer {token}"}, json=None)
         status = getattr(resp, "status_code", None)
         if status == 404:
-            state = RoomEncryption(False)
+            # Only the spec's "no such state event" (404 M_NOT_FOUND, JSON) means the room
+            # is not encrypted. 404 M_UNRECOGNIZED (an endpoint the server or a proxy does
+            # not route), an HTML error page, or anything else is unknown (review).
+            try:
+                body = resp.json()
+            except Exception:
+                body = None
+            if isinstance(body, dict) and body.get("errcode") == "M_NOT_FOUND":
+                state = RoomEncryption(False)
+            else:
+                state = RoomEncryption(True, known=False)
         elif status == 200:
             body = resp.json()
             algorithm = body.get("algorithm") if isinstance(body, dict) else None
@@ -417,7 +450,10 @@ def main(argv: list[str] | None = None) -> int:
     store = DeviceTrustStore()
     try:
         if args.cmd == "status":
-            out: Any = status()
+            # The undecryptable counters live in the running hub's process; this command
+            # cannot see them (they are logged there), so it does not claim any.
+            out: Any = {k: v for k, v in status().items() if k != "undecryptable"}
+            out["undecryptable"] = "logged by the running hub (one warning per room)"
         elif args.cmd == "devices":
             out = store.listing()
         elif args.cmd == "verify":

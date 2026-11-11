@@ -137,7 +137,11 @@ Reality notes per channel:
   this client. Encrypted inbound events are counted and logged, never answered.
   `"allow_unverified_devices": true` will relax the device check once encryption exists.
   Device and cross-signing trust: `python -m agents.core.channels.matrix_e2ee
-  verify|verify-master|revoke|devices|status` (encrypted store `<data>/matrix/crypto_store.enc`).
+  verify|verify-master|revoke|devices|status` (encrypted store `<data>/matrix/crypto_store.enc`;
+  without `JARVIS_SECRET_KEY` its key file sits beside it — `crypto_store.enc.key`, 0600 — so
+  the encryption protects a copy of the store, not someone who can read the data dir; set
+  `JARVIS_SECRET_KEY` to keep the key off disk). Only a 404 `M_NOT_FOUND` answer means
+  "not encrypted", re-checked after 30 s; room ids with `/`, `\\` or dot segments are refused.
 - **Governance applies regardless:** inbound senders thread through the pairing
   gate (`agents/core/channels/gateway.py:65`); outbound is rate-limited only if
   you opt in (`webhook_channels.py:66`, unlimited by default). iMessage is

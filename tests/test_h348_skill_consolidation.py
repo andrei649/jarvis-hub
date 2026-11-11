@@ -254,3 +254,68 @@ def test_route_is_admin_only(monkeypatch, hub):
     got = client.post(url, json={"draft": False}, headers={"X-Admin-Token": "owner-test"})
     assert got.status_code == 200 and got.json()["groups"][0]["members"] == ["docker-build", "docker-push"]
     assert client.post(url, json={"threshold": 0.01}, headers={"X-Admin-Token": "owner-test"}).status_code == 422
+
+
+# ── review fixes ─────────────────────────────────────────────────────────────
+
+def test_review_m3_untrusted_signature_skill_is_not_a_candidate(hub):
+    hub.write("docker-build", DOCKER_A)
+    hub.write("docker-push", DOCKER_B)
+    # Tampered after signing: its signature no longer verifies, the catalog hides it.
+    (hub.root / "docker-push" / "SKILL.sig").write_text("sha256:" + "0" * 64 + "\n")
+    hub.load()
+    assert SkillLoader.catalog_gate(hub.loader.skills["docker-push"]) == "untrusted"
+    assert "docker-push" not in sc.candidates(hub.loader)
+    out = asyncio.run(sc.analyze(hub.loader, batches=SkillBatchStore(None), generate=_umbrella()))
+    assert out["groups"] == []
+
+
+def test_review_m3_umbrella_is_recorded_agent_made_and_unsigned(hub, tmp_path):
+    from agents.core.skills import batch
+
+    assert sc.ORIGIN.startswith("agent:")
+    seen = {}
+
+    class Usage:
+        def settle_created(self, name, fingerprint="", *, agent_created=False, write_origin=""):
+            seen[name] = (agent_created, write_origin)
+            return {"name": name}
+
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    (staged / "SKILL.md").write_text(_md("docker-workflow", DOCKER_A))
+    target = SimpleNamespace(existing=False, deleted=False, staged=staged, name="docker-workflow", live=staged)
+    batch._settle_created(SimpleNamespace(_usage=Usage()), [target], sc.ORIGIN)
+    assert seen["docker-workflow"][0] is True and seen["docker-workflow"][1]
+    # Applied for real: the umbrella carries no signature or approval of its members.
+    hub.write("docker-build", DOCKER_A)
+    hub.write("docker-push", DOCKER_B)
+    hub.load()
+    store = SkillBatchStore(hub.tmp / "b.json")
+    queue = ActionApprovalQueue(path=str(hub.tmp / "q2.json"))
+    group = asyncio.run(sc.analyze(hub.loader, batches=store, queue=queue, generate=_umbrella()))["groups"][0]
+    assert store.get(group["batch_id"])["origin"] == "agent:consolidation"
+    card = queue.get(group["card"])
+    assert "written by the local model" in card["summary"]
+    queue.decide(group["card"], True)
+    assert store.decide(group["batch_id"], group["card"], queue, hub.loader, backup_dir=hub.archive)["ok"]
+    assert not (hub.root / "docker-workflow" / "SKILL.sig").exists()
+
+
+def test_review_supporting_files_are_named_not_carried_over(hub):
+    hub.write("docker-build", DOCKER_A)
+    hub.write("docker-push", DOCKER_B)
+    (hub.root / "docker-push" / "scripts").mkdir()
+    (hub.root / "docker-push" / "scripts" / "push.sh").write_text("echo push\n")
+    hub.load()
+    store = SkillBatchStore(hub.tmp / "b.json")
+    queue = ActionApprovalQueue(path=str(hub.tmp / "q3.json"))
+    group = asyncio.run(sc.analyze(hub.loader, batches=store, queue=queue, generate=_umbrella()))["groups"][0]
+    assert group["not_carried_over"] == ["docker-push/scripts/push.sh"]
+    create = store.get(group["batch_id"])["operations"][0]
+    assert "docker-push/scripts/push.sh" in create["content"] and "not carried" in create["content"]
+    assert "1 supporting file(s) archived, not carried over" in queue.get(group["card"])["summary"]
+    queue.decide(group["card"], True)
+    assert store.decide(group["batch_id"], group["card"], queue, hub.loader, backup_dir=hub.archive)["ok"]
+    assert not (hub.root / "docker-workflow" / "scripts").exists()
+    assert any(p.name == "push.sh" for p in hub.archive.rglob("push.sh"))

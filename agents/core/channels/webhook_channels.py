@@ -225,13 +225,15 @@ class MatrixChannel(WebhookChannel):
     _own_user_id: Optional[str] = None
 
     def build_send(self, message, kwargs):
+        from .matrix_e2ee import quote_room, valid_room_id
+
         room = kwargs.get("room_id") or self.config.get("default_room")
         hs = (self.config.get("homeserver", "") or "").rstrip("/")
         token = self.config.get("token", "")
-        if not room or not hs:
+        if not hs or not valid_room_id(room):
             return None
         return {"method": "POST",
-                "url": f"{hs}/_matrix/client/v3/rooms/{room}/send/m.room.message",
+                "url": f"{hs}/_matrix/client/v3/rooms/{quote_room(room)}/send/m.room.message",
                 "headers": {"Authorization": f"Bearer {token}",
                             "Content-Type": "application/json"},
                 "json": {"msgtype": "m.text", "body": message}}
@@ -315,7 +317,7 @@ class MatrixChannel(WebhookChannel):
         room = kwargs.get("room_id") or self.config.get("default_room")
         hs = (self.config.get("homeserver", "") or "").rstrip("/")
         token = self.config.get("token", "")
-        if not (_matrix_id(room, "!") and hs):
+        if not (matrix_e2ee.valid_room_id(room) and hs):
             logger.warning("matrix send refused: room id is not a Matrix room id")
             return False
         state = await matrix_e2ee.room_encryption(await self._get_transport(), hs, token, room)
