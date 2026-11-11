@@ -480,8 +480,15 @@ installable skill, another commit), `DRIFT` for a catalog row with a rewrite, an
   `POST /skills/import` keeps the gate for every source.
 - The 55 skills that carry code are still refused; a scanned, approved package path for them
   is open.
-- The older network import (`source: "hermes"`, pin `v2026.8.27`) is unchanged. A catalog install
-  over a folder that import wrote is an update of the same source, in place.
+- The network import (`source: "hermes"`) stays on its own pin, the release `v2026.8.31`
+  (`29112bef`), because `hermes_pin_v2.json` must name a release; the catalog is at main
+  `9c0560f8`. `GET /api/skills/taps` reports how far apart they are (`pin_alignment`) and the HUD
+  shows which pin each row installs at (docs/SKILLS_CATALOG.md, "Two official pins"). A catalog
+  install over a folder that import wrote is an update of the same source, in place.
+- G20 (skill taps) did not adopt `tools/skills_hub_sources.py`: its well-known, URL, LobeHub and
+  browse.sh adapters fetch mutable URLs with redirects and a disk memo cache through
+  `skills_hub_models.hub()` and import `utils`, none of which fits the exact-pin import, and
+  wrapping it would need edits to vendored text. Taps are native (`agents/core/skills/taps.py`).
 - Injection flags in the index are computed when the catalog is built; the loader and
   `skill_view` scan again when a skill loads and is read.
 - About 3.9 MB of upstream Markdown is now in the repository.

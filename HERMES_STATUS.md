@@ -28,7 +28,7 @@ Fiecare rând aparține unui singur domeniu din [areas.json](docs/hermes/areas.j
 
 | Domeniu | Lane | Rânduri | Echiv. | Parțial | Lipsă | Exclus | Reverificare | Suită | Stare suită |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| [cli](docs/HERMES_CAPABILITIES.md#area-cli) — Command line: jobs done through the nerva CLI | own | 56 | 15 | 35 | 4 | 2 | 0 | 108 | seed din dovezi |
+| [cli](docs/HERMES_CAPABILITIES.md#area-cli) — Command line: jobs done through the nerva CLI | own | 56 | 15 | 35 | 4 | 2 | 0 | 109 | seed din dovezi |
 | [gateway](docs/HERMES_CAPABILITIES.md#area-gateway) — Always-on gateway and slash commands | own/run | 33 | 3 | 27 | 1 | 2 | 0 | 103 | seed din dovezi |
 | [platforms](docs/HERMES_CAPABILITIES.md#area-platforms) — Messaging platforms and channels | own | 39 | 3 | 29 | 3 | 4 | 0 | 40 | seed din dovezi |
 | [web](docs/HERMES_CAPABILITIES.md#area-web) — Web dashboard and HUD | own/run | 40 | 13 | 22 | 3 | 2 | 0 | 66 | seed din dovezi |
@@ -37,7 +37,7 @@ Fiecare rând aparține unui singur domeniu din [areas.json](docs/hermes/areas.j
 | [config](docs/HERMES_CAPABILITIES.md#area-config) — Configuration and settings | own | 18 | 9 | 9 | 0 | 0 | 0 | 30 | seed din dovezi |
 | [env](docs/HERMES_CAPABILITIES.md#area-env) — Environment, install and execution targets | own | 28 | 6 | 21 | 0 | 1 | 0 | 157 | seed din dovezi |
 | [tools](docs/HERMES_CAPABILITIES.md#area-tools) — Agent-callable tools and toolsets | adopt/own | 32 | 9 | 22 | 0 | 1 | 0 | 81 | seed din dovezi |
-| [skills](docs/HERMES_CAPABILITIES.md#area-skills) — Skills: authoring, catalogue and curation | adopt/own | 33 | 14 | 17 | 1 | 1 | 0 | 78 | seed din dovezi |
+| [skills](docs/HERMES_CAPABILITIES.md#area-skills) — Skills: authoring, catalogue and curation | adopt/own | 33 | 14 | 17 | 1 | 1 | 0 | 79 | seed din dovezi |
 | [providers](docs/HERMES_CAPABILITIES.md#area-providers) — Model providers, routing and fallback | adopt/own | 27 | 6 | 17 | 1 | 3 | 0 | 82 | seed din dovezi |
 | [agent-core](docs/HERMES_CAPABILITIES.md#area-agent-core) — Agent loop, context and sessions | own | 36 | 11 | 25 | 0 | 0 | 0 | 112 | seed din dovezi |
 | [memory](docs/HERMES_CAPABILITIES.md#area-memory) — Memory and recall | own | 27 | 9 | 18 | 0 | 0 | 0 | 69 | seed din dovezi |
