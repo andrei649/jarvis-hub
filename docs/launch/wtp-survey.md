@@ -1,4 +1,4 @@
-# WTP survey + design-partner interview guide — Jarvis Hub
+# WTP survey + design-partner interview guide — Nerva
 
 > Purpose: close the two evidence gaps the GTM research flagged (no public data exists for either):
 > **(1)** the "privacy-concerned → willing to self-host on my own GPU" conversion, and

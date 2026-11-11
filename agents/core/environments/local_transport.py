@@ -51,6 +51,8 @@ from .terminal_contract import (
 DEFAULT_MAX_OUTPUT_BYTES = 16_000
 _MAX_OUTPUT_CEILING = 1_000_000
 _CHECKPOINT_CANCEL_OBSERVE_S = 0.25
+#: How long a killed process group may take to be reaped before the kill is reported.
+_GROUP_REAP_S = 3.0
 
 Spawn = Callable[..., Awaitable[Any]]
 
@@ -225,8 +227,18 @@ class LocalHostTransport:
         timeout: int | None = None,
         max_output: int | None = None,
         checkpoint_intent: TerminalCheckpointIntent | None = None,
+        stdin_data: bytes | None = None,
+        process_group: bool = False,
     ) -> dict[str, Any]:
-        """Execute ``argv`` verbatim; every refusal is a named reason, never an exception."""
+        """Execute ``argv`` verbatim; every refusal is a named reason, never an exception.
+
+        ``stdin_data`` (G17 owner hooks) is written to the child's stdin, which is then
+        closed; without it stdin is ``/dev/null`` as before. It is data, never argv: no byte
+        of it reaches the command line. ``process_group`` (G17 owner hooks; off for every other
+        caller) starts the child in its own session, and a timeout or a cancellation kills
+        that whole process group, so nothing the child started outlives it."""
+        if stdin_data is not None and (not isinstance(stdin_data, bytes) or checkpoint_intent is not None):
+            return {"ok": False, "reason": "invalid_stdin"}
         invalid = self.validate_argv(argv)
         if invalid is not None:
             return {"ok": False, "reason": invalid}
@@ -392,9 +404,10 @@ class LocalHostTransport:
                 *argv_list,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                stdin=asyncio.subprocess.DEVNULL,
+                stdin=asyncio.subprocess.DEVNULL if stdin_data is None else asyncio.subprocess.PIPE,
                 cwd=str(workdir),
                 env=env,
+                **({"start_new_session": True} if process_group and os.name == "posix" else {}),
             )
         except FileNotFoundError:
             if checkpoint is not None:
@@ -422,23 +435,39 @@ class LocalHostTransport:
             raise
 
         if asyncio.current_task().cancelling():
-            reaped = await self._kill(proc)
+            reaped = await self._kill(proc, group=process_group)
             await finalize(reaped=reaped)
             raise asyncio.CancelledError
 
         from .output_capture import OutputCapture
         capture = OutputCapture()
+
+        async def feed_stdin() -> None:
+            # Written alongside the reads, so a child that prints before it reads (or never
+            # reads) cannot deadlock on a full pipe; a child that exits early is not an error.
+            if stdin_data is None or getattr(proc, "stdin", None) is None:
+                return
+            try:
+                proc.stdin.write(stdin_data)
+                await proc.stdin.drain()
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
+            finally:
+                with contextlib.suppress(Exception):
+                    proc.stdin.close()
+
         try:
-            (out_head, out_tail, out_total), (err_head, err_tail, err_total) = await asyncio.wait_for(
+            (out_head, out_tail, out_total), (err_head, err_tail, err_total), _fed = await asyncio.wait_for(
                 asyncio.gather(
                     read_capped_stream(proc.stdout, max_content_bytes=cap, sink=capture.feed),
                     read_capped_stream(proc.stderr, max_content_bytes=cap),
+                    feed_stdin(),
                 ),
                 timeout=bounded,
             )
             await asyncio.wait_for(proc.wait(), timeout=bounded)
         except TimeoutError:
-            reaped = await self._kill(proc)
+            reaped = await self._kill(proc, group=process_group)
             terminal_checkpoint = await finalize(reaped=reaped)
             return {
                 "ok": False,
@@ -450,7 +479,7 @@ class LocalHostTransport:
                 **({"checkpoint": terminal_checkpoint} if terminal_checkpoint else {}),
             }
         except asyncio.CancelledError:
-            reaped = await self._kill(proc)
+            reaped = await self._kill(proc, group=process_group)
             await finalize(reaped=reaped)
             raise
         terminal_checkpoint = await finalize(reaped=True)
@@ -471,7 +500,28 @@ class LocalHostTransport:
         }
 
     @staticmethod
-    async def _kill(proc: Any) -> bool:
+    async def _kill(proc: Any, *, group: bool = False) -> bool:
+        if group and os.name == "posix" and isinstance(getattr(proc, "pid", None), int):
+            import signal
+
+            with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
+                os.killpg(proc.pid, signal.SIGKILL)
+            with contextlib.suppress(ProcessLookupError, OSError):
+                proc.kill()
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=5)
+            except (TimeoutError, OSError):
+                return False
+            # The group's other members were re-parented when the leader died; wait (bounded)
+            # until the system has reaped them too, so "killed" means gone.
+            deadline = time.monotonic() + _GROUP_REAP_S
+            while time.monotonic() < deadline:
+                try:
+                    os.killpg(proc.pid, 0)
+                except (ProcessLookupError, PermissionError, OSError):
+                    return True
+                await asyncio.sleep(0.05)
+            return True
         with contextlib.suppress(ProcessLookupError, OSError):
             proc.kill()
         try:

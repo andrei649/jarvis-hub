@@ -47,8 +47,9 @@ Safe mode only takes things away. It leaves out, at boot and at every later relo
   conversation or as the hub-wide default (``personality_overlays.json``); the choices
   are kept for the next normal boot, and ``/personality`` refuses to change them.
 
-There are no shell hooks to leave out: Nerva runs no owner-configured hook commands (the
-voice command providers above are the one owner-configured program, and they stay off).
+- (G17) owner hooks: no owner hook runs, on any event (the ``owner_hooks`` layer); a
+  ``tool.before`` guard does not block either. The definitions are kept for the next
+  normal boot.
 
 Nothing is relaxed: the kernel, the approval floor, the plugin gate and the egress
 policy do not read this flag. It is said on ``/healthz``, ``/readyz``, ``/status``,
@@ -88,6 +89,8 @@ LAYERS = (
     "company_mode",
     # H592 — the /personality style overlays (owner files and persisted choices).
     "personality_overlays",
+    # G17 — owner event hooks (H163/H021/H514/H408): none runs in safe mode.
+    "owner_hooks",
 )
 #: H490 — settings an owner can set looser than the shipped default (an approval that
 #: stops being asked, a wider tool offer, a bigger budget), each with how to take the
@@ -122,6 +125,9 @@ FORCED_SETTINGS: dict[str, object] = {
     "security.sandbox_timeout": _MORE_LOOSENS,
     "security.sandbox_memory": _UNCAPPED_UNDER_1,              # Docker reads --memory 0m as none
     "autonomy.max_subagent_spawns_per_boot": _UNCAPPED_UNDER_1,
+    "autonomy.subagent_timeout_seconds": _MORE_LOOSENS,
+    "llm.delegate_task": _ON_LOOSENS,
+    "autonomy.worktree_auto_reclaim": _ON_LOOSENS,          # G18: removes worktrees on the tick
     "channels.rate_limit": _MORE_LOOSENS,
     "learning.review_daily_budget": _MORE_LOOSENS,
     # H378: a higher line, or 0 (never ask), asks before fewer expensive models.
@@ -135,8 +141,30 @@ FORCED_SETTINGS: dict[str, object] = {
 #: Loosening settings with no shipped row: in safe mode they are absent, so the code's
 #: own default applies.
 UNSEEDED_SETTINGS: tuple[str, ...] = (
-    "autonomy.agent_modes", "learning.auto_promote", "security.sandbox_max_tool_calls",
+    "learning.auto_promote", "security.sandbox_max_tool_calls",
 )
+#: H484 — the per-agent approval overrides (``autonomy.agent_modes``): a map whose entries
+#: can ask less than the global mode (``auto``) or more (``ask``, ``off``). Safe mode
+#: relaxes no gate and an owner who tightened one keeps it: it serves only the entries
+#: that ask more, each normalised (an unknown value reads as ``ask``), and drops ``auto``.
+ABSENT_SETTINGS: tuple[str, ...] = ("autonomy.agent_modes",)
+
+
+def stricter_overrides(value) -> dict:
+    """The per-agent overrides safe mode serves from a stored *value*: the entries whose
+    normalised mode is ``ask`` or ``off``. Anything that is not a map serves none."""
+    from .autonomy.mode import is_unset, normalize_mode
+
+    if not isinstance(value, dict):
+        return {}
+    kept = {}
+    for agent, raw in value.items():
+        if is_unset(raw):
+            continue
+        mode = normalize_mode(raw)[0]
+        if mode != "auto":
+            kept[str(agent)] = mode
+    return kept
 #: The refusal a write that would need a skipped layer answers with.
 REASON = "safe_mode"
 
@@ -221,6 +249,14 @@ def override_settings(flat: dict) -> dict:
         out[key] = value
     for key in UNSEEDED_SETTINGS:
         moved = out.pop(key, None) is not None or moved
+    for key in ABSENT_SETTINGS:
+        if key in out:
+            kept = stricter_overrides(out[key])
+            moved = moved or kept != out[key]
+            if kept:
+                out[key] = kept
+            else:
+                del out[key]
     if moved:
         note("settings_overrides")
     return out
@@ -232,8 +268,13 @@ def get_value(category: str, key: str, default=None):
     orchestrator's sandbox and autonomy caps are read this way)."""
     from .settings_db import get_value as stored
 
-    value = stored(category, key, default)
     full = f"{category}.{key}"
+    value = stored(category, key, default)
+    if full in ABSENT_SETTINGS and enabled():
+        kept = stricter_overrides(value)
+        if kept != value:
+            note("settings_overrides")
+        return kept if isinstance(value, dict) else default
     if enabled() and full in FORCED_SETTINGS:
         safe = stricter(full, value, shipped_default(full))
         if safe != value:

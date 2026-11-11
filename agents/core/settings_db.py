@@ -18,6 +18,7 @@ from typing import Any
 from agents.core import settings_interpolation as _interp
 from agents.core.config_read_errors import report_unreadable
 from agents.core.llm import provider_routing as _routing
+from agents.core.llm.hermes_provider_table import ADOPTED_MODEL_PROVIDER_IDS
 from agents.core.llm.model_config import (
     DEFAULT_CLAUDE_MODEL,
     RETIRED_CLAUDE_DEFAULT,
@@ -273,7 +274,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm", key="platform_toolsets", value={}, label="Scheduled model toolset defaults by platform", kind="json"),
     dict(category="llm", key="ollama_num_ctx", value=0, label="Ollama context tokens (0 = probe model parameters)", kind="number"),
     dict(category="llm", key="gemini_effort_declarations", value="", label='Gemini effort vocabularies: JSON {"exact-model": ["low", "high"]}', kind="text"),
-    dict(category="llm", key="compatible_provider", value="", label="Compatible cloud provider (empty = Gemini)", kind="select", opts=["", "openrouter", "openai-compatible", "deepinfra", "openai-responses", "xai"]),
+    dict(category="llm", key="compatible_provider", value="", label="Compatible cloud provider (empty = Gemini)", kind="select", opts=["", "openrouter", "openai-compatible", "deepinfra", "openai-responses", "xai", *ADOPTED_MODEL_PROVIDER_IDS]),
     # H583 — which upstream provider may serve an OpenRouter request (sent as its
     # `provider` object, to OpenRouter only). data_collection is a privacy control:
     # seeded "deny" so a cloud turn never lands on a provider that stores or trains
@@ -310,6 +311,8 @@ DEFAULTS: list[dict[str, Any]] = [
     # Native execute_code remains owner opt-in. Sessions follow that switch by default;
     # the image is needed only for persistent Docker kernels, not one-shot execution.
     dict(category="llm", key="execute_code", value=False, label="Offer native code execution to the owner", kind="toggle"),
+    # H400: off = delegate_task is not registered (read at composition: restart to apply).
+    dict(category="llm", key="delegate_task", value=False, label="Offer delegate_task to the owner's operator turns: the model starts isolated sub-agents (on: restart to apply; off: at once; refused while the Action Kernel is on)", kind="toggle"),
     dict(category="llm", key="execute_code_sessions", value=True, label="Keep native code variables across cells when enabled", kind="toggle"),
     dict(category="llm", key="execute_code_image", value="", label="Digest-pinned Docker image for persistent code sessions", kind="text"),
     dict(category="llm", key="execute_code_mode", value="project", label="Native code context mode", kind="select", opts=["project", "strict"]),
@@ -320,7 +323,11 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="llm",     key="tool_loop_per_tool_cap", value=0,                 label="Agent tool-loop calls per tool per turn (0 = no cap; todo is not capped)", kind="number"),
     # H486 — Hermes' two named per-turn ceilings ship on at 50 (0 = this ceiling off).
     dict(category="llm",     key="tool_loop_web_search_cap", value=50,              label="Web searches per turn (0 = no ceiling)", kind="number"),
-    dict(category="llm",     key="tool_loop_subagent_spawn_cap", value=50,          label="Sub-agent spawns per tool-loop turn (0 = no ceiling; dormant: the model has no spawn tool, HTTP spawns are not in a turn)", kind="number"),
+    dict(category="llm",     key="tool_loop_subagent_spawn_cap", value=50,          label="Sub-agents one tool-loop turn may start through delegate_task (0 = no ceiling; HTTP spawns are not in a turn)", kind="number"),
+    # G8 (H585): progressive tool disclosure — a large offer's MCP tools go behind tool_search.
+    dict(category="llm",     key="tool_search", value="auto",                       label="Tool search: defer MCP tools behind tool_search (auto = when their schemas exceed the budget)", kind="select", opts=["auto", "on", "off"]),
+    dict(category="llm",     key="tool_search_threshold_pct", value=5,              label="Tool search budget (% of the model's context window)", kind="number"),
+    dict(category="llm",     key="tool_search_max_tokens", value=4000,              label="Tool search budget ceiling (tokens)", kind="number"),
     dict(category="llm",     key="tool_loop_stall_halt_enabled", value=False,        label="Stop stalled tool loops at failure/no-progress thresholds (off = guidance only)", kind="toggle"),
     dict(category="llm",     key="skills_in_prompt", value=True,                    label="List skill commands in the model prompt", kind="toggle"),
     # H594: read the project's AGENTS.md / CLAUDE.md / .cursorrules into the turn (scanned, bounded, tainting).
@@ -432,6 +439,10 @@ DEFAULTS: list[dict[str, Any]] = [
     # disk. Its own row, so no product posture overrides it (the wave-1 postures force
     # cognition.memory_enabled on); only POST /api/memory/switch writes it (ROUTE_ONLY).
     dict(category="memory",  key="core_enabled",     value=True,                  label="Curated memory in prompts: the agent notes and the user profile (nerva memory off|on)", kind="toggle"),
+    # H443 (Hermes memory.write_approval, default false): the post-turn review's and
+    # /refine's memory writes wait for the owner. The model's memory tool and
+    # POST /api/memory/remember are not held by it (H424).
+    dict(category="memory",  key="write_approval",   value=False,                 label="Hold the post-turn review's and /refine's memory writes for my approval (the memory tool and /api/memory/remember still write at once)", kind="toggle"),
     # O26-P0.3 (F2): the H21 cognition subsystem read cognition.* flags that were
     # never seeded — un-toggleable from the product. Master OFF (default-off
     # discipline); sub-flags ON so flipping the single master wakes the layer
@@ -471,7 +482,22 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="channels",key="streaming_replies", value=True,                 label="Write chat replies in place as they are produced (channels that can edit a message)", kind="toggle"),
     dict(category="channels",key="pending_inputs_enabled", value=False, label="Chat clarification preview (restart to apply)", kind="toggle"),
     dict(category="channels", key="owner_senders", value={}, label="Command owners: Slack team:user, Discord user ID or ntfy receive topic; current pairing required", kind="json"),
+    dict(category="channels", key="config", value={}, label="Channel settings set in the HUD Channels panel (no secrets; .env wins; restart to apply)", kind="json"),
+    # G12 (H560/H614) — the OpenAI-compatible API (/v1/chat/completions, /v1/responses,
+    # /v1/models). Off by default; an administrator can pin it (managed config.yaml).
+    # Keys are issued with `python -m agents.core.openai_api keys issue`.
+    dict(category="openai_api", key="enabled", value=False, label="OpenAI-compatible API for other chat apps (/v1/chat/completions; needs an API key)", kind="toggle"),
+    dict(category="openai_api", key="rate_limit_per_min", value=20, label="OpenAI-compatible API: requests per minute per key (1-600)", kind="number"),
+    dict(category="openai_api", key="max_concurrent", value=2, label="OpenAI-compatible API: turns one key may run at once (1-16)", kind="number"),
+    dict(category="openai_api", key="max_request_kb", value=256, label="OpenAI-compatible API: largest request body in KB (4-4096)", kind="number"),
+    dict(category="openai_api", key="max_input_chars", value=16000, label="OpenAI-compatible API: largest text one turn may send (256-200000 characters)", kind="number"),
     dict(category="display", key="ephemeral_system_ttl", value=0, label="Seconds before temporary system notices are removed (0 keeps them)", kind="number"),
+    # H443 (Hermes display.memory_notifications, default on): only the line beside a
+    # reply. Off does not stop the review or its writes; memory.write_approval holds those.
+    # H443 (Hermes display.platforms.<platform>.memory_notifications): a platform's own
+    # mode, e.g. {"telegram": "off"}; a platform not named uses the line above.
+    dict(category="display", key="platform_memory_notifications", value={}, label="Review notification line per platform: {\"telegram\": \"off\"} (off, on or verbose; unnamed platforms use the setting above)", kind="json"),
+    dict(category="display", key="memory_notifications", value="on", label="Line beside a reply when the post-turn review wrote or proposed something (off: no line, the review still runs and writes; verbose: with a preview of each fact)", kind="select", opts=["off", "on", "verbose"]),
     # H063: reset routing context without deleting stored conversations.
     dict(category="sessions", key="reset_mode", value="none", label="Automatic conversation reset policy", kind="select", opts=["none", "idle", "daily", "both"]),
     dict(category="sessions", key="idle_minutes", value=1440, label="Idle minutes before a fresh conversation (idle/both)", kind="number"),
@@ -575,6 +601,10 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="loadset", key="mcp_only",         value="", label="Load only these saved MCP servers (comma list; empty = all; applies at the next start)", kind="text"),
     # autonomy — Proactive Cortex (ORIZONT 6)
     dict(category="autonomy", key="mode",            value="auto", label="Autonomy mode (AUTO/ASK/OFF)", kind="select", opts=["auto","ask","off"]),
+    # H484: the per-agent overrides of the mode above. Undeclared before, so the store
+    # silently dropped every write and an override lasted one coordinator tick. A global
+    # "off" is a floor no override loosens; an unknown value reads as "ask".
+    dict(category="autonomy", key="agent_modes",     value={},     label="Per-agent autonomy mode overrides — JSON {\"agent\": \"auto|ask|off\"}; none applies while the mode is off", kind="json"),
     dict(category="autonomy", key="allow_agent_scheduling", value=False, label="Permit scheduled models to see the cronjob tool (loop prevention only)", kind="toggle"),
     dict(category="autonomy", key="earned_autonomy_enabled", value=False, label="Earn autonomy from proven outcomes", kind="toggle"),
     dict(category="autonomy", key="owner_chat_id",   value="",     label="Owner Telegram chat ID", kind="text"),
@@ -589,6 +619,15 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="autonomy", key="night_start",     value=23,     label="Night window start (h)", kind="number"),
     dict(category="autonomy", key="night_end",       value=6,      label="Night window end (h)", kind="number"),
     dict(category="autonomy", key="max_subagent_spawns_per_boot", value=50, label="Max sub-agent spawns per boot (0 = unbounded)", kind="number"),
+    # H400: one sub-agent's wall clock; past it the child is cancelled and its spawn fails.
+    dict(category="autonomy", key="subagent_timeout_seconds", value=300, label="Sub-agent time limit (5–3600 s)", kind="number"),
+    # G18: a running sub-agent with no activity this long is marked stalled (H401); each
+    # delegated child gets its own git worktree of the project (H402); the tick reclaims
+    # clean, pushed worktrees older than the age below (H474).
+    dict(category="autonomy", key="subagent_stall_seconds", value=120, label="Sub-agent stall warning after (10–3600 s)", kind="number"),
+    dict(category="autonomy", key="subagent_worktrees", value=False, label="Give each sub-agent its own git worktree of the project", kind="toggle"),
+    dict(category="autonomy", key="worktree_auto_reclaim", value=False, label="Reclaim clean, pushed git worktrees automatically", kind="toggle"),
+    dict(category="autonomy", key="worktree_reclaim_max_age_hours", value=72, label="Reclaim worktrees older than (1–8760 h)", kind="number"),
     # H681: the model a delegated sub-agent runs on when its spawn names none (empty =
     # the agent's own route), and the provider that serves it (empty = the routed one).
     dict(category="autonomy", key="subagent_model", value="", label="Sub-agent model (empty = the agent's own)", kind="text"),
@@ -859,6 +898,96 @@ def value_source(category: str, key: str, value, raw=None) -> str:
 _NO_OVERLAY = object()
 
 
+# ── G1 (H249/H267/H629): operator-pinned (managed) settings ──────────────
+# An administrator's ``<managed dir>/config.yaml`` pins settings leaf by leaf
+# (agents/core/managed_scope.py). Every reader here sees the pinned value, applied last
+# (over the stored row and the product posture); every writer refuses to change one
+# (``put_category``) or leaves it out of a bulk write and says so (import, reset, undo).
+
+
+def _managed():
+    from agents.core import managed_scope
+
+    return managed_scope
+
+
+def _pin_for(category: str, key: str, current=None):
+    """``(value a reader sees, source, problems)`` inputs for one setting, or None when
+    nothing pins it. Never raises: a reader must not fail on the managed layer."""
+    try:
+        return _managed().setting_pin(category, key, current)
+    except Exception:  # noqa: BLE001
+        logger.warning("managed settings: could not read the pin for %s.%s", _logsafe(category), _logsafe(key),
+                       exc_info=True)
+        return None
+
+
+#: G1 — the last pin of each setting its declaration accepted, in this process.
+_LAST_VALID_PIN: dict[tuple[str, str], Any] = {}
+
+
+def _pinned_value(category: str, key: str, value: Any, pin) -> tuple[Any, list[str]]:
+    """*value* with *pin* applied, and why the pin is not applied. A pinned value its
+    declaration refuses is never handed to the hub; the last pin it accepted stays in force
+    (an administrator's typo while the hub runs must not hand the setting back to the
+    owner), and only with none the stored value is used. Either way the managed scope
+    lists the problem and refuses every write."""
+    merged = _managed().overlay(value, pin[0])
+    errors = validate_category(category, {key: merged}, references=False) if (category, key) in _SPEC else []
+    if not errors:
+        _LAST_VALID_PIN[(category, key)] = pin[0]
+        return merged, []
+    last = _LAST_VALID_PIN.get((category, key))
+    return (_managed().overlay(value, last) if last is not None else value), errors
+
+
+def _pinned(category: str, key: str, value: Any) -> Any:
+    """*value* as a reader sees it: the administrator's pin, if any, applied over it."""
+    pin = _pin_for(category, key)
+    if pin is None:
+        return value
+    return _pinned_value(category, key, value, pin)[0]
+
+
+def _mark_managed(category: str, row: dict, current) -> dict:
+    """A view's row of a pinned setting: the value in effect and ``managed`` (the file
+    that pins it, the pinned leaves below the key, and ``invalid`` when its declaration
+    refuses the pinned value, which is then not applied)."""
+    pin = _pin_for(category, row["key"], current)
+    if pin is None:
+        return row
+    value, errors = _pinned_value(category, row["key"], row["value"], pin)
+    settings = getattr(current, "settings", None) or {}
+    raw = settings.get(category, {}).get(row["key"])
+    if raw is not None and _managed()._has_reference(raw) and not errors:
+        # a view shows a pinned ${NAME} as written, never its value from the administrator's
+        # environment (as a stored ${env:...} is shown, H255); readers get the expansion
+        value = _managed().overlay(row["value"], raw)
+    row["value"] = value
+    row["managed"] = {"source": pin[1],
+                      "leaves": [".".join(str(p) for p in path) for path in _managed().leaves(pin[0]) if path]}
+    if errors:
+        row["managed"]["invalid"] = errors
+    return row
+
+
+def _managed_scope_now():
+    try:
+        return _managed().scope()
+    except Exception:  # noqa: BLE001
+        logger.warning("managed settings: the managed scope could not be read", exc_info=True)
+        return None
+
+
+def managed_setting_names(cat: str | None = None) -> list[str]:
+    """The pinned settings, as ``category.key`` (every category when *cat* is None)."""
+    current = _managed_scope_now()
+    if current is None:
+        return []
+    return [name for name in _managed().pinned_setting_names(current)
+            if cat is None or name.split(".", 1)[0] == cat]
+
+
 def _posture_overlay(stored) -> tuple[str, dict]:
     """The selected product posture and the settings it forces while selected (the
     runtime applies them over the stored rows: product_posture.apply_to_runtime_settings).
@@ -887,7 +1016,7 @@ def _mark_overlay(category: str, row: dict, posture: tuple[str, dict]) -> dict:
         row["written_by"] = ROUTE_ONLY[(category, row["key"])]
     name, applies = posture
     forced = applies.get(f"{category}.{row['key']}", _NO_OVERLAY)
-    if forced is not _NO_OVERLAY:
+    if forced is not _NO_OVERLAY and "managed" not in row:      # G1: a pin beats the posture
         row["in_effect"] = forced
         row["overlay"] = f"product.posture:{name}"
     return row
@@ -914,20 +1043,21 @@ def get_all() -> dict[str, list[dict]]:
     groups: dict[str, list[dict]] = {}
     posture = _posture_overlay(next((r["value"] for r in rows
                                      if r["category"] == "product" and r["key"] == "posture"), None))
+    current = _managed_scope_now()
     for r in rows:
         cat = r["category"]
         if cat not in groups:
             groups[cat] = []
         raw = json.loads(r["value"])
         value = _decrypt_if_secret(raw)
-        groups[cat].append(_mark_overlay(cat, _with_env_refs(cat, {
+        groups[cat].append(_mark_overlay(cat, _mark_managed(cat, _with_env_refs(cat, {
             "key": r["key"],
             "value": value,
             "label": r["label"],
             "kind": r["kind"],
             "opts": json.loads(r["opts"]),
             "source": value_source(cat, r["key"], value, raw),
-        }), posture))
+        }), current), posture))
     return groups
 
 def get_value(category: str, key: str, default=None):
@@ -944,15 +1074,16 @@ def get_value(category: str, key: str, default=None):
         finally:
             conn.close()
         if row is None:
-            return default
+            return _pinned(category, key, default)
         raw = json.loads(row["value"])
         _last_good_values.setdefault(_db_path_key(), {})[(category, key)] = raw
         # H255 — a value is read for use: its ${env:…} references expanded, the row unchanged.
-        return _interpolated(category, key, _decrypt_if_secret(raw))
+        # G1 — an administrator's pin applied last.
+        return _pinned(category, key, _interpolated(category, key, _decrypt_if_secret(raw)))
     except SettingsUnreadable as exc:
-        return _recover_value(category, key, exc)
+        return _pinned(category, key, _recover_value(category, key, exc))
     except (OSError, sqlite3.Error, ValueError, TypeError) as exc:
-        return _recover_value(category, key, exc)
+        return _pinned(category, key, _recover_value(category, key, exc))
 
 
 def read_setting(category: str, key: str, *, readonly: bool = False) -> tuple[bool, Any]:
@@ -980,13 +1111,15 @@ def read_setting(category: str, key: str, *, readonly: bool = False) -> tuple[bo
         report_unreadable(DB_PATH, exc)
         raise SettingsUnreadable(f"{type(exc).__name__}: {exc}") from exc
     if row is None:
-        return False, None
+        pin = _pin_for(category, key)                    # G1: a pinned setting is found
+        return (False, None) if pin is None else (True, _pinned(category, key, None))
     try:
         value = _decrypt_if_secret(json.loads(row["value"]))
     except Exception as exc:
         report_unreadable(DB_PATH, exc)
         raise SettingsUnreadable(f"{type(exc).__name__}: {exc}") from exc
-    return True, _interpolated(category, key, value)   # H255: read for use, references expanded
+    # H255: read for use, references expanded; G1: an administrator's pin applied last
+    return True, _pinned(category, key, _interpolated(category, key, value))
 
 
 def read_job_tool_policy() -> dict[str, Any]:
@@ -1009,6 +1142,9 @@ def read_job_tool_policy() -> dict[str, Any]:
             values = dict(defaults)
             for _category, key, raw in rows:
                 values[key] = json.loads(raw)
+            for category, key in (("llm", "platform_toolsets"), ("agents", "disabled_toolsets"),
+                                  ("autonomy", "allow_agent_scheduling")):
+                values[key] = _pinned(category, key, values[key])       # G1
             from .job_toolsets import validate_policy_setting
 
             validate_policy_setting('platform_toolsets', values['platform_toolsets'])
@@ -1039,10 +1175,14 @@ def read_telegram_owner_binding() -> dict[str, Any]:
             ).fetchall()
         finally:
             conn.close()
-        return {f"autonomy.{key}": json.loads(value) for key, value in rows}
+        binding = {f"autonomy.{key}": json.loads(value) for key, value in rows}
     except Exception as exc:
         report_unreadable(DB_PATH, exc)
         raise SettingsUnreadable(f"{type(exc).__name__}: {exc}") from exc
+    for key in ("owner_chat_id", "owner_user_ids"):                       # G1
+        if _pin_for("autonomy", key) is not None:
+            binding[f"autonomy.{key}"] = _pinned("autonomy", key, binding.get(f"autonomy.{key}"))
+    return binding
 
 
 _change_listeners: list = []
@@ -1085,17 +1225,18 @@ def get_category(cat: str) -> list[dict]:
     conn.close()
     out = []
     posture = _posture_overlay(stored["value"] if stored is not None else None)
+    current = _managed_scope_now()
     for r in rows:
         raw = json.loads(r["value"])
         value = _decrypt_if_secret(raw)
-        out.append(_mark_overlay(cat, _with_env_refs(cat, {
+        out.append(_mark_overlay(cat, _mark_managed(cat, _with_env_refs(cat, {
             "key": r["key"],
             "value": value,
             "label": r["label"],
             "kind": r["kind"],
             "opts": json.loads(r["opts"]),
             "source": value_source(cat, r["key"], value, raw),
-        }), posture))
+        }), current), posture))
     return out
 
 
@@ -1172,6 +1313,11 @@ def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
             not isinstance(value, str) or len(value) > 2048 or "\x00" in value
             or (value != "" and (value != value.strip() or not os.path.isabs(value)))):
         return f"{key}: expected an absolute project folder path or empty"
+    if key == "platform_memory_notifications" and (
+            not isinstance(value, dict) or len(value) > 32
+            or any(not isinstance(name, str) or re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", name) is None
+                   or mode not in ("off", "on", "verbose") for name, mode in value.items())):
+        return f"{key}: expected up to 32 platform names, each mapped to off, on or verbose"
     if key == "status_bar_fields" and selected_status_fields(value) is None:
         return f"{key}: expected up to twenty distinct declared status fields"
     if key == "execute_code_env_passthrough":
@@ -1193,6 +1339,12 @@ def _validate_value(key: str, value: Any, kind: str, opts: list) -> str | None:
         return f"{key}: expected an integer between 1 and 300 seconds"
     if key == "run_timeout_seconds" and (type(value) is not int or not 0 <= value <= 86_400):
         return f"{key}: expected an integer between 0 (unbounded) and 86400 seconds"
+    if key == "subagent_timeout_seconds" and (type(value) is not int or not 5 <= value <= 3600):
+        return f"{key}: expected an integer between 5 and 3600 seconds"
+    if key == "subagent_stall_seconds" and (type(value) is not int or not 10 <= value <= 3600):
+        return f"{key}: expected an integer between 10 and 3600 seconds"
+    if key == "worktree_reclaim_max_age_hours" and (type(value) is not int or not 1 <= value <= 8760):
+        return f"{key}: expected an integer between 1 and 8760 hours"
     if key == "task_max_seconds" and (type(value) is not int or not 1 <= value <= 86_400):
         return f"{key}: expected an integer between 1 and 86400 seconds"
     if key == "sandbox_temp_dir":
@@ -1302,6 +1454,9 @@ ROUTE_ONLY: dict[tuple[str, str], str] = {
     # H422 — the curated memory's owner switch: its route records it in the intent log and
     # applies it to the running hub at once, and reports whether memory is then on.
     ("memory", "core_enabled"): "Console → Memory → Long-Term Memory, or nerva memory off|on (POST /api/memory/switch)",
+    # H443 — switching the gate off lets the review write memory on its own again: its
+    # route records that in the intent log first, and refuses when it cannot.
+    ("memory", "write_approval"): "Console → Memory → Long-Term Memory (POST /api/memory/approval)",
 }
 
 
@@ -1422,6 +1577,10 @@ def interpolated(groups: dict[str, list[dict]]) -> dict[str, list[dict]]:
     load this way; a view never does."""
     def used(cat: str, row: dict) -> dict:
         value = _interpolated(cat, str(row.get("key", "")), row.get("value"))
+        if "managed" in row:
+            # G1 — for use, the pin again (expanded from the process environment only): a
+            # reference the owner's .env supplies never reaches a pinned leaf
+            value = _pinned(cat, str(row.get("key", "")), value)
         return row if value is row.get("value") else {**row, "value": value}
 
     return {cat: [used(cat, row) for row in rows] for cat, rows in groups.items()}
@@ -1476,6 +1635,10 @@ def validate_category(cat: str, data: dict[str, Any], *, references: bool = True
         err = _validate_value(key, value, spec.get("kind", "text"), spec.get("opts", []) or [])
         if err is None and cat == "sessions":
             err = _session_setting_problem(key, value)
+        if err is None and (cat, key) == ("autonomy", "agent_modes"):
+            from .autonomy.mode import overrides_problem
+
+            err = overrides_problem(value)     # H484: agent id → auto|ask|off, bounded
         if err is None and (cat, key) == ("commands", "quick_commands"):
             from .quick_commands import configuration_problem
 
@@ -1610,8 +1773,16 @@ def compatible_pair_state() -> tuple[int, str, str]:
 
 def put_category(cat: str, data: dict[str, Any], *,
                  expected_pair_revision: int | None = None) -> tuple[int, list[str]]:
+    """Write *data* into *cat*: ``(how many rows were written, the keys left out)``.
+
+    G1 — a key an administrator pinned is refused (``managed_scope.ManagedRefused``,
+    nothing written) when the value would change a pinned leaf, and left out (named in
+    the second list) when it keeps them; every key is refused while the managed
+    configuration cannot be read or the managed-mode marker is present."""
+    data, managed = _managed().split_setting_write(cat, data)
     with _selection_write_gate({cat: data}):
-        return _put_category_fenced(cat, data, expected_pair_revision=expected_pair_revision)
+        updated, skipped = _put_category_fenced(cat, data, expected_pair_revision=expected_pair_revision)
+    return updated, [*skipped, *managed]
 
 
 def _put_category_fenced(cat: str, data: dict[str, Any], *,
@@ -1857,6 +2028,8 @@ def describe_changes(changes: dict[str, dict[str, Any]]) -> list[dict[str, Any]]
 
 def apply_import(changes: dict[str, dict[str, Any]], *,
                  expected_pair_revision: int | None = None) -> int:
+    # G1 — a bulk write leaves every pinned setting out (``strip_managed`` names them first)
+    changes, _managed_left = _managed().strip_settings(changes)
     with _selection_write_gate(changes):
         return _apply_import_fenced(changes, expected_pair_revision=expected_pair_revision)
 
@@ -1920,11 +2093,13 @@ def _reset_specs(cat: str | None, extra_kept: frozenset[str] = frozenset()) -> l
     delete deeper than approved). None for a category nothing declares."""
     if cat is not None and not any(spec["category"] == cat for spec in DEFAULTS):
         return None
+    pinned = frozenset(managed_setting_names(cat))      # G1: a reset leaves a pin alone
     return [spec for spec in DEFAULTS
             if (cat is None or spec["category"] == cat)
             and not is_secret_setting(spec["category"], spec["key"])
             and (spec["category"], spec["key"]) not in ROUTE_ONLY
-            and f"{spec['category']}.{spec['key']}" not in extra_kept]
+            and f"{spec['category']}.{spec['key']}" not in extra_kept
+            and f"{spec['category']}.{spec['key']}" not in pinned]
 
 
 def plan_reset(cat: str | None, extra_kept: frozenset[str] = frozenset()) -> dict[str, dict[str, Any]] | None:
@@ -1984,6 +2159,7 @@ def _reset_settings_fenced(cat: str | None,
     plan = plan_reset(cat, extra_kept)
     if plan is None:
         return None
+    plan = _managed().strip_settings(plan)[0]       # G1: refuses while the managed layer is unreadable
     if not plan:
         return {}, None
     _require_readable_store()
@@ -2049,6 +2225,10 @@ def _undo_last_reset_fenced(gate: Callable[[dict[str, dict[str, Any]]], list[str
     those names}``, the reset still undoable."""
     _ensure_init()
     _require_readable_store()
+    managed = _managed()
+    current = managed.check_writable()               # G1: fail closed, or managed mode
+    pinned = {name: current.setting_sources.get(tuple(name.split(".", 1)), "")
+              for name in managed.pinned_setting_names(current)}
     conn = get_conn()
     try:
         with conn:
@@ -2065,6 +2245,9 @@ def _undo_last_reset_fenced(gate: Callable[[dict[str, dict[str, Any]]], list[str
                     name = f"{cat}.{key}"
                     if (cat, key) not in _SPEC:
                         skipped.append({"setting": name, "reason": "no longer declared"})
+                    elif name in pinned:
+                        skipped.append({"setting": name,
+                                        "reason": f"{managed.ADMINISTRATOR} ({pinned[name]})"})
                     elif (cat, key) in ROUTE_ONLY:        # only its own route writes it (H613)
                         skipped.append({"setting": name, "reason": f"changed only in {ROUTE_ONLY[(cat, key)]}"})
                     elif not _same_value(stored.get((cat, key)), after.get(cat, {}).get(key)):

@@ -560,7 +560,8 @@ def test_the_shell_exposes_one_read_only_listening_command_to_its_own_windows():
     assert "indicator::parse(&state)?" in body and "board.report(window.label()" in body
     assert "set_tooltip(Some(shown.tooltip()))" in body and "set_title(shown.title())" in body
     assert ".manage(indicator::Board::default())" in main
-    assert "desktop_listening\n" in main.split("generate_handler![", 1)[1].split("]", 1)[0] + "\n"
+    handlers = main.split("generate_handler![", 1)[1].split("]", 1)[0]
+    assert "desktop_listening" in [h.strip() for h in handlers.split(",")]
     assert "TrayIconBuilder::with_id(TRAY_ID)" in main and 'const TRAY_ID: &str = "nerva";' in main
     build = (tauri / "build.rs").read_text(encoding="utf-8")
     assert '"desktop_listening"' in build

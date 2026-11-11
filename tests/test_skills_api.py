@@ -461,14 +461,17 @@ def test_skills_list_carries_usage_counters_and_last_used(monkeypatch, tmp_path)
         "use_count": 2, "view_count": 0, "patch_count": 1,
         "last_used_at": rec["last_used_at"], "last_viewed_at": rec["last_viewed_at"],
         "last_patched_at": rec["last_patched_at"],
-        "origin": "bundled", "state": "active", "pinned": False,
+        # H349: this loader is a stand-in that never registered the skill, so no origin
+        # was recorded: the row says "unknown" (it used to claim "bundled" on no evidence).
+        "origin": "unknown", "source": "", "agent_created": False, "write_origin": "",
+        "state": "active", "pinned": False, "pinnable": False,
     }
     # `view` is counted by the real skill_view tool: see tests/test_h318_skill_tools.py.
     assert weather["last_used_at"] and weather["last_patched_at"] and weather["last_viewed_at"] is None
     # A skill the sidecar never saw is reported with zeros — not omitted, not an error.
     spotify = body["skills"]["Spotify"]["usage"]
     assert spotify["use_count"] == spotify["view_count"] == spotify["patch_count"] == 0
-    assert spotify["last_used_at"] is None and spotify["origin"] == "bundled"
+    assert spotify["last_used_at"] is None and spotify["origin"] == "unknown" and spotify["pinnable"] is False
     # Reading the listing writes nothing: the untouched skill still has no record.
     assert store.get("Spotify") is None
 

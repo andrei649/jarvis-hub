@@ -37,7 +37,7 @@ for arg in "$@"; do
 done
 
 echo "============================================================"
-echo "  JARVIS HUB — uninstall (Linux/macOS)"
+echo "  NERVA — uninstall (Linux/macOS)"
 echo "============================================================"
 
 if [ "$CONFIRM" != "1" ] && [ "$DRY_RUN" != "1" ] && [ "$GUI_SUMMARY" != "1" ]; then

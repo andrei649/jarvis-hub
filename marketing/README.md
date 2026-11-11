@@ -1,6 +1,6 @@
 # marketing/ — the launch & growth suite
 
-Everything a marketing team, a coworker, or Claude Design needs to take Jarvis Hub to market.
+Everything a marketing team, a coworker, or Claude Design needs to take Nerva to market.
 All material is grounded in the repo's own research and verified facts; all visual direction
 inherits from [`../docs/BRAND_BOOK.md`](../docs/BRAND_BOOK.md).
 

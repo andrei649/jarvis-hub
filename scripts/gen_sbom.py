@@ -64,7 +64,7 @@ def build_sbom(components, project_version: str) -> dict:
 
 def build_notice(components, project_version: str) -> str:
     lines = [
-        f"Jarvis Hub {project_version} — third-party Python dependencies",
+        f"Nerva {project_version} — third-party Python dependencies",
         "=" * 60,
         "",
         "This product depends on the following packages, each under its own",

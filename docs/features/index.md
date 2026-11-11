@@ -1,4 +1,4 @@
-# Jarvis Hub v0.5-beta — Feature Reference
+# Nerva v0.5-beta — Feature Reference
 
 > Cum folosești și testezi fiecare feature. Toate presupun serverul pornit (`python serve.py`).
 

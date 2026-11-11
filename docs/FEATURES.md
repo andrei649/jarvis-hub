@@ -1,4 +1,4 @@
-# Jarvis Hub — Features, Install & What's Next
+# Nerva — Features, Install & What's Next
 
 > The one-page product sheet: everything that ships today, how to get it running, and what comes
 > next on the road to 1.0. Numbers verified against `project-status.json` / `STATUS.md` on

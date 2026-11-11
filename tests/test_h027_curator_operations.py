@@ -180,10 +180,13 @@ def test_bulk_adopt_does_not_rewrite_origin(tmp_path):
 def test_unmanaged_pin_records_owner_choice_without_adopting(tmp_path):
     loader, usage, approvals, ops = setup(tmp_path)
     loader.add("owner", tmp_path / "owner")
+    # The real loader registers every discovered skill with the H349 usage sidecar (origin
+    # from its folder); a pin needs a skill that is installed and registered.
+    usage.reconcile_origins({"owner": (None, "")})
     authorize, _ = gate("queue")
     assert decide_and_apply(ops, approvals, "pin", {"name": "owner"}, authorize)["status"] == "applied"
     assert usage.get("owner")["pinned"] is True
-    assert usage.get("owner")["origin"] == "bundled"  # legacy telemetry default, not authorship
+    assert usage.get("owner")["origin"] == "local"  # H349: the owner's own folder, read from disk
     assert ops.read("usage")["items"][0]["origin"] == "unknown"
     assert [item["name"] for item in ops.read("list-unmanaged")["items"]] == ["owner"]
 
@@ -379,6 +382,9 @@ def test_snapshot_rollback_refuses_new_managed_skill_without_losing_activity(tmp
 def test_pin_rollback_preserves_later_telemetry_on_unmanaged_skill(tmp_path):
     loader, usage, approvals, ops = setup(tmp_path)
     loader.add("owner", tmp_path / "owner")
+    # The real loader registers every discovered skill with the H349 usage sidecar (origin
+    # from its folder); a pin needs a skill that is installed and registered.
+    usage.reconcile_origins({"owner": (None, "")})
     authorize, _ = gate("queue")
     pinned = decide_and_apply(ops, approvals, "pin", {"name": "owner"}, authorize)
     usage.bump("owner", "use")

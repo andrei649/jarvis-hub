@@ -1,11 +1,11 @@
-# Jarvis Hub — your AI cabinet
+# Nerva — your AI cabinet
 
 **Current sprint → [Hermes equivalence: status of all 697 capabilities](HERMES_STATUS.md)**
 
 ![Python 3.12](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 ![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue)
 <!-- project-status:badges:start -->
-![Backend tests](https://img.shields.io/badge/backend_tests-31836-brightgreen?logo=pytest)
+![Backend tests](https://img.shields.io/badge/backend_tests-34046-brightgreen?logo=pytest)
 ![Version](https://img.shields.io/badge/version-1.0.0-orange)
 <!-- project-status:badges:end -->
 
@@ -98,7 +98,7 @@ The **Jarvis Signal Layer** is the provider-neutral situational-awareness API at
 ## Run
 
 <!-- project-status:run:start -->
-Generated test matrix: backend **31,836** · frontend **2,805** · mobile **363**. Route surface: **767**.
+Generated test matrix: backend **34,046** · frontend **2,936** · mobile **365**. Route surface: **853**.
 <!-- project-status:run:end -->
 
 **One step per OS.** Every path ends the same way: a `.venv` with the **hash-pinned**
@@ -166,7 +166,7 @@ Your data is never touched unless you also pass `--purge-data`.
 - **`docs/RELEASE.md`** — how a release is cut (tag → source bundle + SBOM + checksums + optional signatures) and how to verify a download.
 - **`SECURITY.md`** · **`docs/THREAT_MODEL.md`** · **`docs/PRIVACY.md`** — the trust trio: disclosure policy, what Jarvis defends against (with the mechanism for each threat), and the local-first data/telemetry stance.
 - **`docs/USER_GUIDE.md`** · **`docs/FAQ.md`** · **`docs/UPGRADE.md`** — the user docs: install/run/daily-use, quick answers, and how to upgrade safely.
-- **`JARVIS.md`** — architecture & directory structure · **`AGENTS.md`** — assistant conventions · **`BACKLOG.md`** — priorities & tasks.
+- **`NERVA.md`** — architecture & directory structure · **`AGENTS.md`** — assistant conventions · **`BACKLOG.md`** — priorities & tasks.
 - **`GO_LIVE_PLAN.md`** — features + marketing brief + v1.0 launch checklist · **`docs/VALUATION_AND_PRICING.md`** — valuation, pricing & unit economics.
 - **`docs/MANUAL_TESTING.md`** — human pre-release checklist: everything the offline test suite can't verify (real LLMs, channels, services, HUD rendering).
 - **`docs/2026-06-08-future-developments-report.md`** — forward roadmap: remaining v1.0 gate, WorldView follow-ups, audit-debt hardening, post-1.0 horizons (Hermes, Cognition), and recommended sequencing.
@@ -174,7 +174,7 @@ Your data is never touched unless you also pass `--purge-data`.
 ## Status
 
 <!-- project-status:readme-status:start -->
-Generated status: **v1.0.0** · backend **31,836** · frontend **2,805** · mobile **363** · **767** routes · **18** active agents · open release gates: **A1, A3, A4, A6** · backlog: **289 done · 24 open or blocked of 313 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · source commit `14ca282221a9`. Full data: [`project-status.json`](project-status.json).
+Generated status: **v1.0.0** · backend **34,046** · frontend **2,936** · mobile **365** · **853** routes · **18** active agents · open release gates: **A1, A3, A4, A6** · backlog: **289 done · 24 open or blocked of 313 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · source commit `a3ec0364d271`. Full data: [`project-status.json`](project-status.json).
 <!-- project-status:readme-status:end -->
 
 **v1.0.0 — the proof track is closed** (the version line is the roadmap — see [BACKLOG.md](BACKLOG.md#version-roadmap): productionization done, the 72h soak now grades itself, design partners running on non-owner installs, owner-host proof passed. The AI-OS capability program, [`NERVA_VISION.md`](NERVA_VISION.md), continues past 1.0 as roadmap rather than as a gate). 18 specialist agents (incl. **Argus** for evidence-based situational awareness, **Howard**, the emerging digital twin, and **Hestia**, the House Brain; + 14 bench) across 4 tiers; real-embeddings recall (LM Studio) + fused recall +

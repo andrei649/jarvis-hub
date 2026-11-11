@@ -1,4 +1,4 @@
-# Jarvis Hub — User Guide
+# Nerva — User Guide
 
 > Get Jarvis running and learn the daily flow. Jarvis is a **local-first, self-hosted
 > personal AI cabinet**: it runs on your machine, binds to loopback, and keeps your data
@@ -67,10 +67,38 @@ the **Admin panel → settings**, or opt a specific agent into a cloud provider 
 API key there. **Strict-local agents are never forced to make a cloud hop.** If the local
 server is down, Jarvis degrades gracefully with a clear message rather than hanging.
 
+### Integrations: keys for search and cloud models, in the HUD
+
+**Console → Start → Integrations** is the one place for what needs your setup: the search
+services (Tavily, Exa, Brave Search, Parallel), the cloud model providers that take a key
+(native and the ones adopted from Hermes Agent) and a link to the Hermes skills catalog.
+
+- **Key.** Open a line, type the key, save. It is stored encrypted in Nerva's secret store
+  (`<data>/security/secrets.enc`) and works at once, without a restart. It is never shown
+  again: only "set" and its last four characters. "remove key" takes it out at once.
+- **`.env` still works and wins.** A key or search choice set in `.env` (or the hub's
+  environment) is shown as "set in .env" and cannot be changed or removed from the panel.
+  At start, a key stored from the panel is used only when `.env` does not set that name.
+- **Shared key names.** A name several providers read (`DASHSCOPE_API_KEY`) is one key: the
+  panel asks whether it is the same key for all of them, shows it as "shared key" on the
+  others, does not test it there, and removing it from one provider keeps it for the rest.
+- **Gemini** answers as soon as its key is set, so its key asks for your consent when saved.
+- **Search services from Hermes** (Exa, Brave Search, Parallel) answer only when chosen
+  ("Use", or `NERVA_WEB_BACKEND` in `.env`); automatic search never picks or falls back to them.
+- **Test** asks that one provider or search service whether the key works, in plain words.
+- **Use** picks the search service or the cloud model provider (with its model). If the
+  choice needs your acknowledgement (data handling not verified, no known price), one card
+  shows the facts and "I understand, use it" records your consent in the audit log.
+- Only an admin token opens the panel.
+
 ## 6. Daily use
 
 - **Chat** in the HUD (or the CLI). Replies stream; conversation memory + real-embeddings
   recall give continuity across sessions.
+- **Session commands** in any chat: `/plan` (plan without changing anything), `/loop`
+  (repeat a prompt on a cadence), `/btw` (a side question), `/context` and `/compress`
+  (what fills the model's window), `/verify` (detect and run a project's tests and build,
+  with an evidence ledger). See [SESSION_COMMANDS.md](SESSION_COMMANDS.md).
 - **Voice** (optional): push-to-talk dictation + spoken replies.
 - **Autonomy:** Jarvis can work proactively (watchers → proposals → an **approval queue**
   for anything reversible/irreversible). Proactive pushes are capped (**≤4/day** interrupt

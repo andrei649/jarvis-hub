@@ -129,7 +129,7 @@ import threading
 import time
 import uuid
 from collections import OrderedDict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -758,6 +758,21 @@ def _bounded_int(value: object, default: int, *, minimum: int, maximum: int) -> 
     return max(minimum, min(maximum, value))
 
 
+def _lsp_old_text(target: Path) -> str | None | bool:
+    """The text a language server's baseline sees: the file's, None for a new file, or
+    False (no baseline) when it is too large, not UTF-8 or not a regular file."""
+    from .codeintel.lsp.manager import MAX_EDIT_BYTES
+
+    try:
+        if target.is_file():
+            if target.stat().st_size > MAX_EDIT_BYTES:
+                return False
+            return target.read_bytes().decode("utf-8")
+        return False if target.exists() else None
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
 def _valid_offset(value: object) -> bool:
     """An int in ``0..MAX_OFFSET`` — not a bool, not a float, not a string of digits."""
     return (not isinstance(value, bool) and isinstance(value, int)
@@ -913,7 +928,10 @@ class FileTools:
         The store writes nothing nested and no document types there, so a subfolder or
         a document read through the extractor is not covered (and not reachable today).
         """
-        return target.parent in self._spill_dirs or target.parent.name == _SPILL_DIRNAME
+        # H552: a binary block an MCP server sent is cached under <data>/mcp_cache/<server>/
+        # and is third-party content in exactly the same sense.
+        return (target.parent in self._spill_dirs or target.parent.name == _SPILL_DIRNAME
+                or target.parent.parent.name == "mcp_cache")
 
     def reaches(self, raw_path: object) -> bool:
         """True when ``file_read`` would open *raw_path* now — the probe a notice asks
@@ -1326,7 +1344,42 @@ class FileTools:
         data = content.encode("utf-8")
         if len(data) > self.max_bytes:
             return {"ok": False, "reason": "too_large"}
-        result = await self._mutate(args.get("path"), "write", data, approved=approved)
+        lsp = self._lsp_target(args.get("path"))
+        if lsp is None:
+            result = await self._mutate(args.get("path"), "write", data, approved=approved)
+        else:
+            # H564/H597: baseline the running language server, write, re-query, and hand
+            # the model only the diagnostics its own edit introduced. The baseline (and
+            # so any server start) happens only once the write has passed its contract,
+            # kernel and approval checks — inside _mutate, just before the effect. Any
+            # failure on the server's side leaves the write's own result as it was.
+            from .codeintel.lsp import manager as lsp_manager
+
+            target, root = lsp
+            tickets: list[Any] = []
+
+            async def baseline() -> None:
+                try:
+                    old_text = await asyncio.to_thread(_lsp_old_text, target)
+                    if old_text is not False:
+                        tickets.append(await lsp_manager.get_manager().before_edit(target, old_text, root))
+                except Exception:
+                    logger.warning("language-server baseline failed", exc_info=True)
+
+            result = await self._mutate(args.get("path"), "write", data, approved=approved,
+                                        before_effect=baseline)
+            ticket = tickets[0] if tickets else None
+            if ticket is not None and result.get("ok") is True:
+                try:
+                    report = await lsp_manager.get_manager().after_edit(ticket, content)
+                except Exception:
+                    logger.warning("language-server diagnostics failed", exc_info=True)
+                    report = {"server": ticket.server, "status": "unavailable", "reason": "internal_error",
+                              "notice": lsp_manager.NOTICE}
+                result["lsp_diagnostics"] = report
+                if report.get("new"):
+                    # Third-party text: the loop fences a declared-tainted result as data.
+                    result["tainted"] = True
         if result.get("ok") is True:
             # H507: warn-only — the model reads what it just wrote that looks dangerous.
             from .code_guidance import result_fields
@@ -1337,10 +1390,31 @@ class FileTools:
                 logger.warning("code guidance for a file write failed", exc_info=True)
         return result
 
+    def _lsp_target(self, raw_path: object) -> tuple[Path, Path] | None:
+        """``(target, scope root)`` when a language server could check this write; None (no
+        cost, nothing started) when LSP is off or nothing serves the file's type.
+        Refusals are left for :meth:`_mutate` to report."""
+        from .codeintel.lsp import manager as lsp_manager
+        from .codeintel.lsp.registry import candidates_for
+
+        if not lsp_manager.enabled():
+            return None
+        try:
+            target = self.scope.resolve(raw_path)
+        except FileScopeError:
+            return None
+        root = self.scope.root_for(target)
+        if root is None or target == root or not candidates_for(target):
+            return None
+        if lsp_manager.get_manager().server_for(target) is None:
+            return None
+        return target, root
+
     async def delete_file(self, args: Mapping[str, Any], *, approved: bool = False) -> dict:
         return await self._mutate(args.get("path"), "delete", b"", approved=approved)
 
-    async def _mutate(self, raw_path: object, op: str, data: bytes, *, approved: bool) -> dict:
+    async def _mutate(self, raw_path: object, op: str, data: bytes, *, approved: bool,
+                      before_effect: Callable[[], Awaitable[None]] | None = None) -> dict:
         try:
             target = self.scope.resolve(raw_path)
         except FileScopeError as exc:
@@ -1348,6 +1422,13 @@ class FileTools:
         root = self.scope.root_for(target)
         if root is None or target == root:
             return {"ok": False, "reason": "outside_scope"}
+        # G17: the owner's hook definitions are written only by the hooks store, behind an
+        # approval card. No model file write may create or change one, whatever the roots.
+        from .hooks.store import is_store_path
+
+        if is_store_path(target) or is_store_path(os.path.join(str(root), str(raw_path or ""))):
+            self._record("file.hooks_store_protected", f"{op} {target}", ok=False)
+            return {"ok": False, "reason": "hooks_store_protected"}
         attempt_id: str | None = None
         target_key = hashlib.sha256(str(target).encode('utf-8')).hexdigest()
         reported: list[bool] = []
@@ -1449,6 +1530,10 @@ class FileTools:
                 "class": INSTRUCTION_CLASS,
                 "snapshot_ref": snap.ref,
             }, target, op, "refused")
+
+        if before_effect is not None:
+            # H564: the language-server baseline, only now that every fence has passed.
+            await before_effect()
 
         # The distinct physical attempt begins only after the existing contract,
         # Kernel and approval fences passed; the history worker rechecks scope
@@ -1632,6 +1717,8 @@ class FileTools:
         shape = spec["preflight"]
 
         def _bound(args: dict) -> Mapping:
+            if name in ("file_write", "file_delete"):
+                return self._preflight_mutation(name, shape, args)
             clean = dict(shape(args))
             path = clean.get("path")
             if path is None and name in ("file_list", "file_search"):
@@ -1648,6 +1735,59 @@ class FileTools:
             return clean
 
         return _bound
+
+    def _preflight_mutation(self, name: str, shape: Callable[[dict], Mapping], args: dict) -> Mapping:
+        """G11 review B1 — the card names the exact file that is written.
+
+        A gated write is approved in a turn and executed later by the autonomy worker,
+        outside any turn. A relative path used to be stored as the model spelled it and
+        resolved again at execution against whatever scope was current there, so a turn
+        bound to a tree (an editor's folder, a ``/worktree new`` session) could show the
+        owner ``<tree>/a.txt`` and write ``<first root>/a.txt``. Now the path is resolved
+        once, at intake, in the turn's own scope and stored **absolute**; the tree the turn
+        was bound to is stored beside it (``tree``), and an execution outside any binding
+        is held to that tree again: a path that is no longer inside it is refused. A
+        ``tree`` a caller supplies only ever narrows (it must lie inside the scope), and
+        inside a bound turn the binding wins.
+        """
+        from . import worktrees
+
+        raw = dict(args)
+        recorded = raw.pop("tree", None)
+        clean = dict(shape(raw))
+        bound = worktrees.bound_tree()
+        scope = self.scope
+        tree: Path | None = bound
+        if bound is None and recorded is not None:
+            if not isinstance(recorded, str) or not recorded or "\x00" in recorded:
+                raise ToolRPCValidationError("outside_scope")
+            candidate = Path(recorded)
+            try:
+                resolved_tree = candidate.resolve(strict=True)
+            except (OSError, RuntimeError):
+                raise ToolRPCValidationError("outside_scope") from None
+            if (not candidate.is_absolute() or not resolved_tree.is_dir()
+                    or scope.root_for(resolved_tree) is None):
+                raise ToolRPCValidationError("outside_scope")
+            tree, scope = resolved_tree, FileScope([resolved_tree])
+        try:
+            target = scope.resolve(clean.get("path"))
+        except FileScopeError as exc:
+            raise ToolRPCValidationError(exc.reason) from None
+        if tree is not None and target != tree and tree not in target.parents:
+            raise ToolRPCValidationError("outside_scope")
+        # Stored as the absolute *spelling* (lexical, not symlink-followed): the name the
+        # caller wrote still classes the card (H506), and the scope re-resolves it at
+        # execution exactly as here.
+        spelled = Path(clean["path"]).expanduser()
+        if not spelled.is_absolute():
+            spelled = scope.roots[0] / spelled
+        clean["path"] = os.path.normpath(str(spelled))
+        if tree is not None:
+            clean["tree"] = str(tree)
+        if name == "file_write" and len(clean["content"].encode("utf-8")) > self.max_bytes:
+            raise ToolRPCValidationError("too_large")
+        return clean
 
     def _record(self, action: str, why: str, **meta) -> None:
         if self._audit is None:
@@ -3041,14 +3181,28 @@ def register_file_tools(
     async def _search(args: dict) -> dict:
         return await _current_instance().search_files(args)
 
+    async def _in_recorded_tree(args: dict, run):
+        # G11 review B1: the card carries the tree its turn was bound to (preflight
+        # already held the absolute path to it); the write runs confined to that tree.
+        call = dict(args)
+        tree = call.pop("tree", None)
+        if tree is None:
+            return await run(_current_instance(), call)
+        from . import worktrees
+
+        if worktrees.bound_tree() is not None:
+            return await run(_current_instance(), call)
+        with worktrees.tree_scope(tree):
+            return await run(_current_instance(), call)
+
     async def _write(args: dict) -> dict:
         # Reached only through ToolRPCServer.execute after durable approval
         # (gated tools never run inline from handle()), and only after that
         # execute matched the call's H506 class against the approved card.
-        return await _current_instance().write_file(args, approved=True)
+        return await _in_recorded_tree(args, lambda tools, call: tools.write_file(call, approved=True))
 
     async def _delete(args: dict) -> dict:
-        return await _current_instance().delete_file(args, approved=True)
+        return await _in_recorded_tree(args, lambda tools, call: tools.delete_file(call, approved=True))
 
     def _classify(args: dict) -> Mapping[str, Any] | None:
         # H506 — server-owned, registered here, never selectable by call data: a

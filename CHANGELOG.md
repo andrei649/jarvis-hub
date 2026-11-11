@@ -2,6 +2,704 @@
 
 ## [Unreleased]
 
+### What changed for you — 2026-11-11
+
+**Merge overlapping skills, only when you say so**
+- In the Decision Inbox, "find overlaps" shows which of your skills cover the same ground
+  (measured on this machine). "draft umbrellas" asks your local model to write one umbrella
+  skill per group; each becomes a skill batch with every diff, waiting for your approval.
+- Nothing changes until you approve the card. Approving creates the umbrella skill and
+  archives the skills it replaces (they can be moved back); rejecting changes nothing.
+  Nerva never runs this on its own.
+- Only skills your model can already see are merged. The umbrella is recorded as written by
+  the model and unsigned; scripts or references of the replaced skills are archived with them,
+  not copied, and the card and the umbrella say which.
+
+**Matrix: no plain text into encrypted rooms**
+- Before Nerva writes to a Matrix room it checks whether the room is end-to-end encrypted.
+  Nerva cannot encrypt Matrix messages yet, so it no longer posts plain text into an
+  encrypted room (other members would see "not encrypted"). You can allow it per channel
+  (`"encrypted_rooms": "allow_plaintext"`), or run a local encryption proxy such as
+  pantalaimon and set `"encrypted_rooms": "proxy"`.
+- Encrypted messages Nerva cannot read are counted and logged instead of vanishing.
+- Device and cross-signing trust you compared out of band is kept encrypted on disk:
+  `python -m agents.core.channels.matrix_e2ee verify …` (see `docs/FLAGS.md`).
+- Only a homeserver's "no such state" answer counts as an unencrypted room, and that answer
+  is re-checked after 30 seconds; malformed room ids are never sent to.
+
+**Guests never spend your keys**
+- A turn from someone other than you (a household token in the HUD, a paired Telegram sender,
+  another OpenAI-API key) is refused your credentials at these points: a cloud model route,
+  an MCP server you configured, a keyed web-search backend (and its cached results), a skill
+  that declares credentials (stored for it or taken from the hub's `.env`), a stored secret
+  handle, and the ElevenLabs / Fish Audio voices. Local models and voices still answer them.
+  Plugins read their keys from the hub's environment; they are guarded only where a guest's
+  turn would reach them (no plugin data for guests, gated tools never offered), not at the
+  key itself.
+- Your own voice at the hub's microphone (wake word) counts as you for credentials, as before.
+- To let guests use one integration, share it in the HUD (Trust card, "credentials shared with
+  guests") or with `POST /api/security/credential-shares`. Each share and each stop is written
+  to the audit log first (if that fails nothing changes) and recorded with when you made it;
+  the ledger is signed with the hub's key, so a copy edited by hand shares nothing.
+
+**Nerva in your code editor (Agent Client Protocol)**
+- `nerva acp` makes Nerva the coding agent of Zed, JetBrains IDEs and other ACP editors.
+  Each editor thread is a Nerva conversation of its own, working in the folder the editor
+  opened (it must be inside your file roots). Answers stream in; tool calls appear as cards;
+  Nerva's checklist fills the editor's plan panel; Nerva's slash commands autocomplete.
+- When a turn needs your OK, the editor shows the real diff of the file change or the exact
+  command. Your answer is the same decision as the approval card in the HUD. If you do not
+  answer, cancel, or close the editor, the card is rejected. Nerva never writes files through
+  the editor.
+- MCP servers your editor passes along are asked about first, run for that thread only,
+  are never saved, and are removed when the thread ends.
+- Setup for Zed and JetBrains: `docs/ACP_EDITORS.md`; check it with `nerva acp --check`.
+  `--token-file` reads your admin token from a private file, so the editor's settings
+  hold no token.
+- **Security fixes (same day):** the file written after you accept is now always the file
+  whose diff you saw (a relative path used to be resolved again later, against your first
+  file root; this also affected `/worktree` sessions). The diff is drawn against the file on
+  disk, and unsaved editor changes are named. Pages or buffers the editor attaches are
+  handed to Nerva as attached content, never as your own words. An editor session the hub
+  no longer holds (after a restart, or once `nerva acp` stopped renewing it for five
+  minutes) is refused instead of running outside its folder; the editor then opens a new
+  one and tells you. Editor MCP servers stop within five minutes of the editor going away.
+**The agent sees the type errors its own edit just introduced (language servers)**
+- When the agent writes a file that a language server understands (Python, TypeScript/
+  JavaScript, Go, Rust, C/C++, shell, YAML, JSON, CSS, HTML, Dockerfile and more), Nerva asks
+  the server for its errors before and after the write and hands the agent only the new
+  ones — at most 20, each pointing at the line the edit changed — so it can fix them in
+  the next step. Errors that were already there are left out. If no server is installed for
+  that kind of file, nothing changes. `JARVIS_LSP=0` turns this off.
+- Language servers already on your machine (on `PATH`) are found automatically. To add one,
+  press **install…** in the HUD's Code Intel panel or run `nerva lsp install pyright`
+  (`nerva lsp install-all` for every one Nerva knows how to install): this only puts an
+  approval card in front of you, showing the exact package, version and registry. Nothing
+  is downloaded until you accept it, and it lands in Nerva's own tools folder.
+- A server only starts in a project (a git repository) you have trusted for this, in the
+  Code Intel panel or with `nerva lsp trust <folder>`: a language server reads what the
+  project ships, and some can be led by it into running the project's own code.
+  `nerva lsp untrust <folder>` takes it back and stops its servers.
+- Servers are third-party code, so they run in a sandbox that sees only the system, the
+  server itself and your project (read-only): no network, and your home folder and Nerva's
+  data folder are not there at all. Each server uses its own bundled copy of its runtime
+  (TypeScript's own tsserver, a fixed Python), never one the project ships. Where the
+  sandbox is unavailable no server starts, unless you set `JARVIS_LSP_REQUIRE_SANDBOX=0`.
+  They have memory and CPU limits and are stopped after 10 idle minutes. The Code Intel
+  panel and `nerva lsp status` show what is running, the sandbox in force, the trusted
+  projects and any server that answers but never reports.
+  `nerva lsp list | which | start | stop | restart | clear` manage them; a failed install
+  can be cleared and asked for again.
+**Your own programs on agent events, each behind an approval card (hooks)**
+- Console → **Hooks** (or `nerva hooks add <event> -- /path/to/program …`) runs a program of yours when something happens: before or after a tool call, when a message arrives or a turn ends, when a session starts or ends, after a slash command, when an approval is asked or decided. The event reaches the program as JSON on its stdin, in the same shape Hermes uses, so hook scripts carry over.
+- Adding a hook only puts a card in your decision inbox showing the exact command and the fingerprint of every file it runs. Nothing runs until you accept that card. If you edit the script afterwards, the hook stops until you approve it again. Switching a hook off or removing it is immediate.
+- A hook on `tool.before` can stop a tool call (exit code 2, or `{"decision": "block"}`). It can never let through a call that would otherwise wait for you or be refused, and it cannot change the call. Mark it a **guard** and a hook that crashes or times out blocks the call too; otherwise the call goes ahead and the failure is logged.
+- Hooks run without the hub's keys in their environment, in a private folder, with a timeout. They need an admin token on the hub, and none run in safe mode or while the emergency stop is on. `NERVA_HOOKS=0` switches them all off. Details: `docs/HOOKS.md`.
+- **Security fixes (same day):** a hook now runs only while the approval queue still holds your
+  acceptance of exactly that hook — a line written into the hooks file by anything else never
+  runs, and editing a hook's guard flag, tool matcher or timeout there stops it. The hooks folder
+  is closed to the file browser and to the assistant's file writes. With hooks switched off, in
+  safe mode or during an emergency stop, a guard no longer blocks every tool call. A hook that
+  times out (or is switched off while it runs) is killed together with everything it started.
+  Keys in a tool call's arguments are masked before a hook sees them, a hook's block reason
+  reaches the model as untrusted text, a damaged hooks file blocks tool calls instead of
+  silently dropping your guards, and a hook whose script you edited can be re-approved in one
+  step (**re-approve…** in the HUD, `nerva hooks enable <id>`).
+
+**The desktop app starts Nerva, a hotkey from anywhere, notifications and `nerva://` links**
+- The desktop app now starts the hub itself when none is running (from your checkout's
+  `.venv`, like `start.sh`) and opens the HUD only once the hub says it is ready. Quitting
+  the app stops the hub it started, and only that one: a hub you started yourself keeps
+  running. If the app crashed, the next launch picks up the hub it left behind instead of
+  starting a second one. `NERVA_DESKTOP_HUB=external` makes it only wait for yours.
+- **Quick Entry:** press CommandOrControl+Shift+Space anywhere to bring up the floating
+  chat with the cursor in it; press it again to hide it. Nothing is sent until you press
+  Enter. `NERVA_DESKTOP_QUICK_ENTRY` picks another shortcut or `off`. If another program
+  already uses the shortcut, Quick Entry stays off rather than take it.
+- **Notifications:** when something new waits for your decision and the HUD is not in
+  front, you get a system notification. Clicking it (or "Review in Nerva" on Linux) opens
+  the Decision Inbox; you approve or deny there, as always — a notification never decides
+  anything. `NERVA_DESKTOP_NOTIFICATIONS=off` silences them.
+- **`nerva://` links** open a page of the HUD: `nerva://open/chat`,
+  `nerva://open/decision-inbox`, `nerva://open/mcp`, and `nerva://mcp/install?name=…`
+  (optionally `&config=…` from a vendor), which opens the MCP install card showing exactly
+  what would run. Nothing is installed until you read it, tick the box and press Install.
+  Malformed or oversized links do nothing.
+- **Which Nerva folder the app may start (security fix, same day):** the app no longer
+  looks for a Nerva folder above itself or in the folder it was started from — an
+  AppImage runs from the shared temp folder, where another user could leave a fake one.
+  Name your folder with `NERVA_DESKTOP_HUB_DIR` or put its path in `hub-dir.txt` in the
+  app's settings folder (a development build still finds the checkout it was built in).
+  The app starts it only if that folder and every folder above it belong to you or the
+  system and nobody else can write to them; otherwise it starts nothing and tells you to
+  start the hub yourself. Notifications also drop `<`, `>` and `&` (they could carry
+  links on Linux) and are limited to six a minute.
+
+**Skills that need a key ask for it, and skill sources you trust**
+- A skill can say which keys or settings it needs (an API key, an account name). Skills Import →
+  **Skill setup** lists them, which are set and which are missing. A value you type there is
+  stored encrypted on the hub and never shown again, not even its last characters. It goes only
+  to that skill's own commands — never into the hub's environment, never into the code
+  interpreter (which runs code the model writes), and never to another skill, even one installed
+  later under the same name. Removing the skill clears it, and an error message from the skill
+  has the value blanked out. A skill that needs a missing value refuses to run and says which one.
+- **Skill sources (taps).** Next to the two official Hermes sources (the catalog shipped with
+  Nerva, and the pinned network import), you can add a GitHub repository at an exact commit as a
+  source, marked trusted or community. Adding one only puts an approval card in your inbox;
+  nothing is read from it until you accept. Then you can search every source at once (official
+  first) and install from it: each install is fetched at that commit, checked byte for byte,
+  approved by the Action Kernel and lands quarantined for your review, as every import does.
+  Skills in a source that fail the checks are listed as refused and cannot be installed.
+- The panel says which upstream commit each source installs at. The two official ones differ on
+  purpose (the network import must be a release); `docs/SKILLS_CATALOG.md` explains it.
+**Restart Nerva and see whether it is behind, from the HUD**
+- New Console panel **Restart / Update** (Admin group): the version, branch and commit Nerva
+  runs, whether its folder has uncommitted changes, and how many commits it is behind its
+  upstream, with how long ago that was last checked. "Check now" asks the upstream and shows
+  the log while it runs.
+- "Restart" asks once, restarts Nerva and waits until it answers again. If Nerva was not
+  started by `serve.py` (systemd, `START.bat`, the service do it), the panel says to restart
+  it that way instead.
+- Updating from the HUD is not offered yet: Nerva has no way to check that new code is code
+  you trust (no signed releases or pinned version), so the panel says why and the steps in
+  `docs/UPGRADE.md` stay the way to update.
+
+**Channel settings in the HUD**
+- New Console panel **Channels** (Admin group): Telegram, Discord, Slack, email, ntfy and SMS,
+  each saying whether it is running. Open one to set its token or password, hosts, ports, your
+  owner ids or numbers. No more editing `.env` for a channel.
+- Tokens and passwords are stored encrypted by Nerva and never shown again, not even their last
+  characters. A value set in `.env` wins and is changed there; a value your administrator pinned
+  cannot be changed here.
+- Channels start with Nerva, so the panel tells you when a change waits for a restart. SMS
+  account, numbers and token apply at once.
+- A token or password stays with the server it was typed for: change the ntfy server or the
+  mail host or port and the token or password is cleared, so you type it again for the new
+  server. The ntfy server must use `https://` (plain `http://` only on this machine).
+- Email now checks the mail servers' certificates (before, the IMAP and SMTP connections
+  accepted any certificate). A mail server on your own network with a self-signed certificate
+  keeps working only if you name it (or `email`) in `JARVIS_TLS_INSECURE_TARGETS`.
+
+**Your files in the HUD**
+- New Console panel **Files** (Admin group): browse the folders you approve, read a text file,
+  download a file, upload new files (pick them or drop them on the list) and make folders. By
+  default it shows Nerva's own `workspace`, `outputs` and `reports` folders; list others in
+  `JARVIS_FILE_BROWSER_DIRS`. Your home folder, `/`, Nerva's data folder and code, and anything
+  holding keys or settings can never be one of them.
+- Keys, passwords, tokens, `.env`, SSH and GPG folders, databases and hidden files are never
+  shown, read or written, even inside an approved folder; the list says how many it hid. Links
+  are never followed and a file with a second name (a hard link) is never read. Up to 100 MB per
+  file (`JARVIS_FILE_BROWSER_MAX_BYTES`). An upload never replaces an existing file.
+- Rename and delete are never done on the click: each becomes a card in your decision inbox and
+  happens only when you accept it, and only if the file is still the one on the card.
+
+**Files and voice notes in Telegram replies, and SMS as a channel**
+- When Nerva makes a file for you (a chart, an image, a report, a recording), it can now send it
+  in the Telegram chat after its answer, instead of telling you where it saved it. Only files in
+  Nerva's own output folders (`outputs`, `media/generated`, `reports` in its data folder) and
+  folders you list in `JARVIS_MEDIA_DELIVERY_DIRS` can be sent, up to 20 MB
+  (`JARVIS_MEDIA_DELIVERY_MAX_BYTES`), four per answer. Links, `..`, hidden folders, anything
+  that looks like a key, a password file, a database or settings are refused, and the chat is
+  told why without the path. Files go only to you (the owner), never to a paired guest, and the
+  same file is not sent to a chat twice. With the Action Kernel on, each file asks it first.
+- Audio arrives as a real voice note. Nerva checks what the audio really is; if Telegram cannot
+  play it as a voice note, it converts it with ffmpeg, and if ffmpeg is not installed it sends
+  an audio file with a line saying why.
+- New: text Nerva by **SMS** through Twilio — off until you switch it on. Only your own numbers
+  (`JARVIS_SMS_ALLOWED_NUMBERS`) and numbers you pair are heard; a stranger is never answered.
+  Every request must carry Twilio's signature and replays are dropped. Because every SMS costs
+  money, each reply waits for your approval, goes only to the number that wrote, and at most
+  10 per number per hour. The Twilio auth token is set in Integrations → channels. Setup:
+  `docs/SMS_SETUP.md`.
+**Sign in to a networked Nerva from your browser**
+- Open the HUD from your phone or another computer and Nerva now asks you to sign in, once,
+  with the owner secret (your admin token). It no longer pops up a token prompt or keeps the
+  token in the browser: the hub gives the browser a session cookie the page itself cannot read.
+- Owner sign-in from another device needs HTTPS (put the hub behind an HTTPS proxy). Over
+  plain HTTP a browser hands the session to every service on that machine, so it is refused
+  unless you set `JARVIS_ALLOW_INSECURE_SIGNIN=1` for a network you trust. Meanwhile the
+  sign-in screen still lets you use a token, as before.
+- Signed in from another device, you reach the same routes your admin token reaches there:
+  the assistant's user routes need `JARVIS_USER_TOKEN` to be set, as they always did.
+- A session lasts up to 7 days and ends after a day without use. "OWNER · SIGNED IN" in the
+  bottom-left corner signs this browser out, or every browser at once. Rotating or revoking
+  the admin token also signs out every browser that used it.
+- Five wrong secrets from one address lock sign-in from that address for 15 minutes. Wrong
+  guesses from many addresses only slow every further wrong guess down: nobody can lock you
+  out by failing on purpose, your right secret always gets in. A browser on the hub's own
+  machine is never throttled, and the token in a header keeps working.
+- Another web site cannot act with your session: writes must come from the HUD's own page.
+  A guest's user token never becomes the owner, also when used in the owner's browser.
+- On the hub's own machine nothing changes: with no admin token set, a local browser is the
+  owner without signing in.
+
+### What changed for you — 2026-11-09
+
+**Your conversations and approval cards from an MCP client**
+- An MCP client you authorise (Claude Desktop, Cursor, another Nerva) can list your recent
+  conversations and read one, list the approval cards waiting for you, and approve or deny one.
+  The answer goes through the same decision as the HUD and `nerva approvals`, is recorded the
+  same way, and a card answered once cannot be answered again.
+- Only your own credential opens these tools: your admin token, or an MCP token you mint with
+  the `mcp:owner` scope (`POST /api/mcp/token`). A user or guest token sees nothing.
+  Only conversations Nerva knows are yours alone are shown: one where a guest spoke (also
+  in the shared HUD chat), a message came in from a chat door or an API key, a web page or
+  file was read, or that was imported or predates the trust record is left out. Reading a
+  conversation never switches the one you have open, and what it returns is marked as data.
+- An `mcp:owner` token lasts at most 30 days (other MCP tokens 90) and is recorded at the
+  admin level when it is minted.
+- Answering is offered only while the MCP write switches are on (`JARVIS_MCP_ROUTE_TOOLS` and
+  `JARVIS_MCP_MUTATING_TOOLS`; never in the hardened profile). A card marked IRREVERSIBLE can
+  be denied from the client but approved only in the HUD or with `nerva approvals accept`.
+
+**Worktrees, background helpers that survive a restart, and an independent reviewer**
+- `/review` starts a second-opinion reviewer on what this conversation produced and on the
+  project's uncommitted changes (`/review --branch <name>` reviews a branch). The reviewer can
+  only read the project's files: anything that would write, search the web, reach the network or
+  run is refused, so nothing it reads can leave the box. It works in plan mode too.
+  It runs in the background; `/review --wait` waits for the findings instead.
+- Helpers the assistant hands work to can now run in the background
+  ("do these three in the background"). Each result reaches you exactly once, also after a
+  restart: `/delegations` lists them, `/delegations collect` shows the new results. A helper
+  that was running when the hub stopped is reported as lost, never silently re-run. A helper
+  that goes quiet is flagged as stalled, one that runs out of time leaves a note of what it was
+  doing, and you can follow a running one live (`GET /api/subagents/<id>/transcript`).
+- `/worktree new` moves this conversation into its own git worktree of the project, so its
+  edits stay on their own branch; `/worktree off` moves it back. `/worktree list` shows every
+  tree with its age, size and whether it is safe to remove, and `/worktree prune --apply`
+  removes only trees that are clean and pushed. Untracked scratch files are archived first,
+  never deleted; protected branches and trees in use are never touched.
+- Off by default, in Settings → Autonomy: "Give each sub-agent its own git worktree" (each
+  helper works on its own branch and you get back the branch and the files it changed), and
+  "Reclaim clean, pushed git worktrees automatically".
+- Git is only ever run on a repository whose settings cannot make it start a program.
+
+**Many MCP tools no longer crowd out the conversation (tool search)**
+- When the MCP servers you connected bring more tools than fit comfortably in the model's
+  window (by default more than 5% of it, at most 4000 tokens), Nerva sends the model its own
+  built-in tools plus a small search tool instead of every MCP tool. The model looks a tool up
+  by what it does, reads its arguments, and calls it.
+- A tool called this way is checked exactly like one called directly: the same approval card,
+  plan mode, emergency stop and limits. A guest on Telegram or another chat can only find the
+  tools a guest may use. Tool descriptions written by an MCP server are cleaned before the
+  model reads them, and one that reads like an instruction is withheld.
+- What a tool search turns up counts as outside text: like an MCP tool's own answer, it makes
+  the rest of that turn ask before acting.
+- Change it in Settings → LLM: "Tool search" `auto` (default), `on` or `off`, plus the budget.
+
+**Make videos (FAL, xAI Grok Imagine or DeepInfra)**
+- Nerva can now make a short video from a prompt, animate an image it generated, follow
+  reference images (xAI), and edit or extend a video it made with xAI. Ask in chat; you get
+  one approval card that names the provider, the model, the seconds and the most it can cost.
+  Nothing is sent until you approve, and nothing at all while the emergency stop is on or the
+  conversation is in plan mode.
+- Turn it on in Integrations: filter "video", save the provider's key, press "use for videos"
+  and confirm the consent card. "turn video off" turns it off again.
+- The cost on the card comes from verified list prices only; a model or setting Nerva has no
+  verified price for is refused instead of guessed. If the provider later reports a higher
+  price, you are told and the daily spend counts the real amount.
+- The finished video (MP4, QuickTime or WebM, up to 16 MiB) appears in the media gallery. A video that
+  stops after the provider got the request is never sent again on its own, so you are never
+  billed twice. How it works: `docs/video-generation.md`.
+
+**Use Nerva from other chat apps (Open WebUI, LibreChat, the openai libraries)**
+- Nerva now answers apps that speak OpenAI's API. Point the app at `http://<nerva>:8765/v1`
+  with a key you issue on the box (`python -m agents.core.openai_api keys issue NAME`), pick
+  the model `nerva` (or `nerva/<agent>`), and each message becomes a normal Nerva turn with
+  its memory and tools. Streaming, stored responses (`/v1/responses`) and the model list work.
+- It is off until you turn on `openai_api.enabled` in Settings, and an administrator can pin
+  it off. Your HUD tokens do not open it, and an API key opens nothing else.
+- A key is a guest unless you issue it with `--owner`. Anything a guest key's turn wants to
+  change waits in your approval queue. A system prompt sent by the app cannot change that.
+- Anyone who is not you (a guest API key, a non-admin HUD token, a non-owner on Telegram or
+  another chat, the embedded widget) no longer gets your calendar, mail, money or social data,
+  your core memory or your long-term recall in their answers, and what they say is no longer
+  learned into your knowledge graph. This closes a gap on all of those doors, not only the API.
+- Each key has its own conversations, a rate limit, a limit on turns running at once and a
+  size cap. Images, app-defined tools and HUD key management are not there yet. How to set it
+  up: [docs/OPENAI_COMPATIBLE_API.md](docs/OPENAI_COMPATIBLE_API.md).
+
+**Plan first, repeat on a cadence, see what fills the window**
+- `/plan <task>` puts the conversation in plan mode: only reads run, nothing is written, sent
+  or executed, and the model writes a step-by-step plan that Nerva saves as a markdown file.
+  Plan mode stays on, also after a restart, until you send `/plan off`. Only you can turn it
+  on or off.
+- `/loop 5m <prompt>` repeats a prompt in the same conversation; without an interval it paces
+  itself, waiting longer while nothing changes. It stops on `--times N`, on `--until <condition>`,
+  or when the model says the task is done; after 100 runs it pauses. Each run is checked like
+  any action, and the emergency stop, the kill switch, plan mode or approval mode `off` pause it.
+  On Telegram and similar chats each answer is sent to the chat, and before every run Nerva checks
+  again that the chat is still yours; `/loop resume` gives a paused loop a fresh allotment.
+- `/btw` now reads the whole conversation (as much as the local model holds), not only the last
+  few messages, and what it uses is counted against the conversation.
+- `/context` shows what fills the model's window (system prompt, tools, skills, memory, history,
+  attachments) as a grid and a table; the HUD has the same meter (Console → Context Meter).
+  `/compress` tells you what compaction will do on the next turn. Details:
+  [docs/SESSION_COMMANDS.md](docs/SESSION_COMMANDS.md).
+
+**Messages you send while Nerva restarts are no longer lost, and lost replies are no longer silent**
+- What you send on Telegram or ntfy while Nerva is down for an update or a power cut, or while
+  its connection is out, is read when it comes back, once, and goes through the same checks as
+  a live message: a stranger is still held for pairing. Only the last 6 hours and at most 20
+  messages are caught up (`JARVIS_CHANNEL_BACKFILL_WINDOW_S`, `JARVIS_CHANNEL_BACKFILL_MAX`, or
+  the `NERVA_` spelling); on Telegram the newest 20 are kept, older ones are skipped.
+- A command you typed while Nerva was offline (`/resume`, `/approve`, `/stop` …) is **not run**
+  when it comes back — an old `/resume` must never undo a newer emergency stop. Nerva tells you
+  "sent while Nerva was offline — send it again". A button you tapped while it was offline is
+  answered "not applied"; tap it again on the card. A caught-up message never answers a
+  question Nerva asked after it came back.
+- Messages are taken at most once: a crash no longer makes Nerva answer the same message twice.
+  The flip side: a message whose answer had not started when Nerva crashed is not re-run (no
+  action is ever replayed) — send it again.
+- Every reply now leaves a receipt: sent, failed, partly sent, or "unknown" when Nerva cannot
+  tell whether it arrived (it is then never resent, so you never get it twice). The receipts,
+  without the reply text, are at `GET /api/channels/deliveries` (admin token). Approval cards
+  have no receipt yet.
+- A chat that has blocked or removed the bot is remembered and no longer retried on every
+  reminder; it is listed with the receipts and clears itself when that chat writes again
+  (or with `POST /api/channels/dead-targets/clear`).
+- When a connection drops, Telegram, ntfy and the email inbox now wait 1, 2, 5, 10, 30 then
+  60 seconds (a little randomised) instead of retrying every 3 seconds, and start over once
+  the connection has been fine for a minute. A revoked or wrong token stops the retries,
+  `/status` says why (`health`: `fatal`, `unauthorized`), Nerva tells you on your other channel
+  (ntfy, or your Telegram chat), and it looks again every 10 minutes, so a fixed token works
+  without a restart. A temporary sign-in failure of the mail server is retried normally.
+  Slack and Discord report their connection the same way.
+
+**Check that a project still builds and passes its tests, and keep the proof**
+- `/verify` tells you how a project in your file roots is built and tested: its test, lint and
+  build commands and its run recipe (Node, Python, Go, Rust, Maven, Gradle, Make, docker
+  compose), detected by Hermes Agent's own code. `/verify save` writes the recipe to the
+  project's `.hermes/environment.json`, which you can edit; it then wins over detection.
+- `/verify run` runs the build and test commands one by one. Each is an ordinary terminal
+  command: you approve it, your approval mode and the command denylist apply, and nothing is
+  queued while the emergency stop is on or the conversation is in plan mode. Nerva does not
+  start the app itself.
+- Every finished test, lint or build run of a project, yours or the model's, is kept in an
+  evidence ledger that cannot be back-dated (`/verify ledger` checks it). Any change to the
+  project's files makes earlier results stale, and a run of one test file never counts as the
+  whole suite.
+- `/verify on-stop on` (off by default): when the model is about to say it is done after code
+  in this conversation changed and nothing has passed since, it is asked once to run the
+  project's check first, and told that a check still waiting for you has not passed.
+- When the model works on code in a project, it now gets a short coding brief and a snapshot of
+  the repository (branch, ahead/behind, changed files, last commits, the project's commands).
+  Git is only run on a repository whose config cannot make it run a program; otherwise the
+  snapshot says so and leaves the git part out. `/verify coding off` turns it off.
+**Set up search services and cloud model providers from one HUD panel, no `.env` edit, no restart**
+- A new Console panel, Start → **Integrations**, lists everything that needs your setup: the four
+  search services (Tavily, plus Exa, Brave Search and Parallel from Hermes Agent), the cloud model
+  providers that take a key (Gemini, Anthropic, OpenRouter, DeepInfra, xAI, OpenAI, plus the
+  twenty-four from Hermes Agent), and the Hermes skills catalog. Each line says what it is, where
+  it comes from, whether it is set up, active or failing, its address, its country when Nerva
+  knows it, whether its data handling was checked and whether Nerva knows its price.
+- Type a key there and it works right away. Nerva keeps it encrypted in its own secret store,
+  never in the browser or in settings, and never shows it again: only "set" and its last four
+  characters (none for a short key). You can remove it the same way. A key you already have in
+  `.env` keeps working and wins; the panel shows it as "set in .env" and leaves it alone. If the
+  panel still holds an older copy of that key, you can remove the copy so it never comes back.
+- A key name that several providers read (Alibaba's `DASHSCOPE_API_KEY`, for example) asks you
+  once whether it is the same key for all of them. Another provider that reads it shows
+  "shared key": the panel does not test it there, and using that provider asks for its own
+  consent. Removing a key from one provider leaves the others' keys alone.
+- Gemini answers as soon as its key is set, so saving a Gemini key shows the consent card
+  first (Google's handling depends on your plan). Anthropic's terms say no training, so it
+  does not ask.
+- Exa, Brave Search and Parallel now answer only when you choose them ("Use", or
+  `NERVA_WEB_BACKEND` in `.env`). Before, a key alone was enough for automatic search to send
+  your queries there, or to fall back to them; now automatic search and fallback never use them.
+- "Test" tries that one service and tells you in plain words whether the key works. For a
+  model provider it checks only that provider, and only with a key given for it; for a search
+  service it runs one search through Nerva's network rules.
+- "Use" picks the provider or the search service. When a choice needs your say-so (its data
+  handling has not been checked, or Nerva has no price for it), one card shows who receives
+  your conversations or searches, the address, the data policy and the price, and one button,
+  "I understand, use it", records your consent in the audit log, as Settings does. The choice
+  takes effect without a restart.
+- Admins only: a user token cannot read the list or change anything, and a web page you
+  visit cannot make changes for you (a change must come from the HUD itself).
+- The Tavily key is now kept from skills and code-running tools, like the other provider keys.
+
+**The product says Nerva everywhere you look (#1347)**
+- The HUD top bar, page titles, the installable web app, installers and the desktop app now
+  carry the Nerva name. An existing desktop install keeps its data, and uninstall finds the app
+  under either name.
+
+**Chats that name themselves, and stay together (#1347)**
+- A new chat gets a short title from your first words, then a better one from the local model.
+  Rename it yourself in the Sessions panel and the model never changes it back.
+- When you continue a long chat, the continuation is called "Title #2", "#3" and so on. The list
+  shows the newest part of each conversation and hides the earlier ones; a chat you continued
+  twice from the same point shows both branches. Archive and pin act on the whole conversation.
+  Delete asks to remove the whole conversation and keeps a backup of every part.
+  `nerva chat -r "Title"` opens the part you used last.
+- If an earlier part of a conversation gets new messages after it was continued, it shows up
+  in the list again, marked "earlier part · in use", so nothing you wrote is out of reach.
+- Session backups are kept per conversation: `JARVIS_SESSION_BACKUP_KEEP` now counts
+  conversations, not files, so a deleted conversation's backups are never cut in half.
+- Two chats that start with the same words are named "hello" and "hello (2)".
+
+**The approval mode does what it says (#1347)**
+- `/approvals` in chat and `nerva approvals mode` show and set the mode (auto, ask, off); only
+  you can change it, and every change is in the audit log.
+- After a restart your stored mode applies from the first decision. Before, Nerva ran in auto
+  until its first check a minute later, and for as long as the emergency stop was engaged.
+- `off` now overrides every per-agent setting, and anything a machine approved (the policy, the
+  smart reviewer, a standing consent) comes back to your inbox instead of running. Those tasks
+  keep waiting there after you leave `off`; `/approvals` says how many.
+- Approving a terminal command, a checkpoint operation, a browser step or a provider change
+  only takes effect while the mode is `auto`. Under `ask` or `off` such a task is now shown as
+  failed with that reason; before, it was shown as done although nothing had run.
+- Per-agent modes are now saved (they used to be lost within a minute), checked and audited.
+  Under `ask` a per-agent `auto` still applies; the command names those agents. Safe mode keeps
+  the per-agent settings that ask more and ignores the ones that ask less.
+- If a mode change does not take effect, the HUD and the CLI show the mode actually in force
+  and why, instead of a success message.
+- Approval cards show the mode a task was asked under. The wording no longer says the
+  irreversible tier always asks: in auto, a payment inside your spending caps runs.
+
+**Settings can be spelled `NERVA_…` (#1347)**
+- Every `JARVIS_…` environment variable now also works as `NERVA_…`, which is the preferred
+  spelling; your existing `JARVIS_…` lines keep working unchanged. New installs get a
+  `NERVA_`-spelled `.env`.
+- If the same setting is given under both spellings with different values in one place, Nerva
+  refuses to start and names the setting, instead of guessing which one you meant.
+- Docker, compose, systemd and the Windows service still pin host, port and home as
+  `JARVIS_…`; to change one of those, use that spelling or edit the launcher's line.
+- A `.env` path or credential built from a `${NAME}` that nothing sets now stops the start with
+  a clear message; before, it silently became an empty or wrong value. `nerva doctor` and the
+  token recovery tool still run and tell you what is wrong.
+
+**See where each skill came from, and pin the ones you want kept (#1347)**
+- The Skill Switches panel and `nerva skills list` show each skill's origin (ships with Nerva,
+  imported and from where, your own, made by the agent) and how often it was used.
+- Pin a skill (the panel, or `nerva skills pin NAME`) and the nightly curator leaves it alone
+  and an agent cannot delete it. You can still delete, uninstall or reject it yourself.
+- Only skills Nerva learned on its own are aged out; a skill the assistant made for you in a
+  conversation is kept.
+- An import or marketplace package is refused when a skill of that name is already installed,
+  instead of quietly replacing it.
+- The list of imported skills now needs your user token (it showed local folder paths).
+
+**Sub-agents you can pause, with a time limit (#1347)**
+- The assistant can hand work to sub-agents itself with a new `delegate_task` tool. It is off
+  until you turn it on in settings.
+- Pause new sub-agents from the HUD or with `POST /api/subagents/pause` (and `/resume`); the
+  pause survives a restart. While the emergency stop is engaged no sub-agent starts either.
+- Each sub-agent stops after 5 minutes by default (adjustable from 5 seconds to an hour).
+- A sub-agent only gets the tools its parent had, minus the risky ones (more delegation,
+  memory writes, sending messages, writing skills), and that is enforced on every call.
+- When a sub-agent asks for your approval, the card names the action first and then says which
+  sub-agent asked and for what.
+
+**See what the background memory review learned, and approve it first if you like (#1347)**
+- After a reply, a short line says when the background review saved or proposed a memory. Set
+  `display.memory_notifications` to off, on or verbose (verbose previews each fact), and per
+  platform with `display.platform_memory_notifications`.
+- Turn on `memory.write_approval` to hold the review's writes. Decide them in the HUD or with
+  `/memory pending`, `/memory approve` and `/memory reject` in your own DM or on the machine.
+- The review is never more trusted than the conversation it reviews: text from someone else, a
+  group chat, a guest or a web page is never written to memory without your approval.
+- When the assistant searches a past conversation that held someone else's text, the actions of
+  that turn wait for your approval. Searching your own past conversations changes nothing.
+
+**Three more web search services (#1347)**
+- Web search can now use Exa, Brave Search or Parallel. Each stays off until you put
+  its key in `.env` (`EXA_API_KEY`, `BRAVE_SEARCH_API_KEY`, `PARALLEL_API_KEY`); pick one with
+  `NERVA_WEB_BACKEND=exa`, `brave-free` or `parallel`.
+- They are Hermes Agent's own code, run as-is, but every request still goes through Nerva's network
+  rules: only those services' addresses are allowed, local-network addresses are refused, the
+  emergency stop applies, and each request shows in the Network Monitor. Keys are never logged.
+- All three count as paid, Brave included, because a Brave key may be on a paid plan. With
+  `NERVA_WEB_PROVIDER_TIER=free` none of them answers.
+
+**Twenty-four more cloud model providers (#1347)**
+- The cloud model slot can now use DeepSeek, Z.AI (GLM), Kimi (Moonshot, global and China),
+  Fireworks AI, Hugging Face, NVIDIA NIM, Ollama Cloud, Nebius Token Factory, Upstage Solar,
+  Novita AI, GMI Cloud, Vercel AI Gateway, Kilo Code, CommandCode, Arcee AI, StepFun, Xiaomi
+  MiMo, and Alibaba Cloud (DashScope global and China, Token Plan global and China, Coding Plan
+  global and China).
+- To turn one on, put its key in `.env` (for example `DEEPSEEK_API_KEY`, `ZAI_API_KEY`,
+  `KIMI_API_KEY`, `FIREWORKS_API_KEY`, `HF_TOKEN`; the full list is in `.env.example`), then
+  choose it in the HUD under Settings → LLM → "Compatible cloud provider" and set the model, or
+  run `nerva config set llm.compatible_provider deepseek` and
+  `nerva config set llm.compatible_model deepseek-v4-pro`. Each stays off until its key is set.
+- The per-provider settings come from Hermes Agent's own provider files, run as-is: the address,
+  the model names, and how each one asks for more or less thinking. The request itself is
+  Nerva's: it goes only to that provider's address, local-network addresses are refused, and it
+  shows in the Network Monitor. With "Cloud reasoning effort" set and reasoning turned on for the
+  compatible provider, Nerva picks the nearest level the model accepts, never a stronger one.
+  A provider whose model cannot turn thinking off says so instead of thinking anyway.
+- How these providers handle your data has not been checked yet, and Nerva has no price for most
+  of their models, so choosing one asks you to acknowledge both, the way a custom endpoint does.
+- For Fireworks, Vercel AI Gateway and Ollama Cloud, Nerva only sends a thinking level for a model
+  you listed in "Compatible effort declarations", since those services cannot say which models
+  reason. Models that only have thinking on or off get it off for "minimal" and "low".
+- A Kimi Code key (it starts with `sk-kimi-`) is refused with a message: it works only on Kimi
+  Code's own address, which this route does not use. Use a Moonshot platform key.
+- "Check keys" only checks the provider you picked from this list, so a key shared between two
+  of them (Alibaba's `DASHSCOPE_API_KEY`) or used elsewhere (`HF_TOKEN`) is never sent to the
+  other one. A provider package you signed yourself with the same name keeps working as before.
+
+**Hermes Agent's skill catalog, browsable and installable**
+- The Skills Import panel now lists all 185 skills that ship with Hermes Agent: 125 you can
+  install, 55 that come with scripts, and 5 left out. You can filter the list and see what each
+  skill needs (for example an API key) before you install it.
+- Installing one is a single click, the same import as before (it still needs `DEV_MODE=1`).
+  It works offline, from a copy shipped with Nerva and checked against its recorded fingerprint.
+  The installed skill says it was "imported from Hermes @9c0560f8".
+- Nothing from the catalog is used until you install it. An installed skill is treated like
+  any other import: Nerva reads its text as information, not as orders, until you vouch for it,
+  and it gets no API key until then. A skill whose text looks like it tries to give the model
+  orders is marked in the list and kept out of the model's skill list.
+- Skills that come with scripts are listed with the names of their scripts and cannot be
+  installed from the catalog. Five more are left out because they carry web pages or files too
+  large to read.
+- A skill whose name is already used by one of yours is refused, as with any import.
+
+**Install and repair catalog skills yourself, no DEV_MODE needed**
+- As the owner you can now install a skill from the Hermes catalog without turning on
+  `DEV_MODE`: the panel's install button, or `nerva skills catalog install email/agentmail`.
+  This only applies to the catalog, whose files are pinned and checked before every install;
+  every other skill import still needs `DEV_MODE=1`, and a user token cannot install.
+- `nerva skills catalog` lists the catalog from the terminal (`--search`, `--category`,
+  `--kind`), at most 100 rows at a time, and tells you when it left some out.
+- If an installed catalog skill loses a file, `nerva skills catalog repair <skill>` (or the
+  panel's repair button) puts it back. If you edited one of its files, repair stops and tells
+  you which; `--force` (or "replace my edits") replaces them and keeps a copy of your version.
+  A skill the catalog did not install is never touched.
+- Installs and repairs are recorded in the intent log. Skills that come with scripts still
+  cannot be installed from the catalog. The full list by category is in
+  `docs/SKILLS_CATALOG.md`.
+
+**Nerva can now ask your other agents for help (A2A)**
+- Give one of your A2A peers an address (`PUT /api/a2a/peers/<id>/outbound` with its URL and,
+  if it needs one, a token) and Nerva gets five tools: look up the peer's card, send it a task,
+  send one task to every peer with a tag (for example "research"), list your peers and read back
+  an earlier conversation. These are Hermes Agent's own A2A tools, run inside Nerva.
+- Sending a task shares your text with another agent, so every send waits for your approval.
+  While the emergency stop is on, nothing is sent. Nerva only ever contacts peers you set up.
+- A peer on your home network has to be named by its IP address and marked as a home-network
+  peer; anything on the internet must use https. A peer's token is kept in the secret store
+  and only ever sent to that peer; a peer cannot redirect your message or its token elsewhere.
+- What a peer answers is treated as information, not instructions: it is labelled as coming
+  from another agent, and anything Nerva proposes after reading it waits for your approval.
+- Off unless `JARVIS_A2A_ENABLED=1`. Tested against a simulated peer only; no live peer yet.
+
+**The optional Hermes runtime moves to a newer Hermes, and future updates are one command**
+- If you installed the optional Hermes runtime (Admin → Hermes Runtime), Nerva now expects the
+  Hermes version of 10 November instead of the one from October. Run
+  `python scripts/hermes_runtime.py install` again to download and verify it; until you do,
+  `status` reports the old install as out of date and the runtime does not start on it.
+- That version has 18 new actions and drops 7. Two new ones only read (your machine's hardware
+  summary, and which chats still have helpers running). The other 16 (spending settings, the
+  free trial, first-run setup, group-chat files and notes, saved-login fill, showing a local
+  image, the plugin catalogue lookup, renaming a connected account) wait for your approval,
+  like every other action that changes something.
+- Maintainers update the version with `python scripts/hermes_runtime.py bump --commit <id>`. It
+  downloads and checks the new version and lists every action that was added, removed or
+  changed. Nerva refuses all Hermes actions until someone has reviewed the new ones.
+- Not tested yet: the new version has not been installed and run end to end, because that needs
+  a large download. The checks above were run against its source code.
+
+**Answer the turn's questions, secrets and approvals in the terminal**
+- `nerva chat`, run from a terminal, now asks you the turn's questions while it runs: pick
+  a numbered choice, type your own answer, or `/cancel`. A batch of questions comes one at a
+  time. Your answer reaches the same turn, read as data, just like an answer typed in the HUD.
+- When a turn needs a missing key, it asks you for it there. What you type is not shown, goes
+  only to Nerva's encrypted secret store and never into the conversation, the logs or the
+  receipt. Only the owner is asked; a terminal with only the user token is not. A turn can ask
+  only for a key a skill you installed declares, never for one of Nerva's own keys, and not at
+  all once it has read a web page or other outside content. What the turn writes is shown behind
+  a `│` bar, so it cannot pass itself off as a Nerva prompt, and an answer that looks like a key
+  is never sent as an ordinary answer. Storing a secret is refused while your administrator
+  manages the configuration.
+- After a turn that queued approvals, each card is shown with its exact command and rollback,
+  and you can accept, reject, defer or leave it queued, through the same route as the HUD.
+- Scripts are unaffected: with piped input, `--json` or `--no-prompts`, nothing is asked.
+- Questions and secret prompts still need the clarification preview turned on
+  (`nerva config set channels.pending_inputs_enabled true`, then restart). It stays off by
+  default until you decide otherwise, so the clarify tool is not yet always available as it is
+  in Hermes Agent. Details: [docs/cli-chat-receipts.md](docs/cli-chat-receipts.md).
+
+**Settings an administrator pins stay pinned**
+- Whoever administers the box can now pin single settings and environment values in a folder
+  you cannot write (`/etc/nerva`, or the folder `NERVA_MANAGED_DIR` names): `config.yaml` for
+  settings, `.env` for environment values. Everything they did not pin stays yours to change.
+- A pinned value is what Nerva uses, over your own value, the product posture and your `.env`
+  files. Settings shows it with "🔒 managed by your administrator" and no edit box,
+  `nerva config list` marks it, and `nerva config managed` lists what is pinned and from which
+  file (never an environment value).
+- Changing a pinned value is refused and says which file pins it: the Settings save, the
+  approval-mode switch, `nerva config set`, `unset` and `edit`, and the Integrations panel (a pinned
+  key or search choice shows "managed by your administrator" and cannot be saved, removed or
+  replaced by a key stored earlier). Import, reset and undo skip the pinned settings and list them.
+  Each refusal is in the audit log.
+- A `.managed` file in that folder turns on managed mode: every change is refused and the
+  message says how to change the configuration instead (for example a NixOS rebuild).
+- If a managed file is broken or unreadable, pins a value its setting does not accept, or could
+  be rewritten by someone other than root (on Windows: other than Administrators), Nerva refuses
+  every change and will not start, rather than quietly drop the pins. How to set it up: "Settings an administrator pins" in
+  `docs/INSTALL.md`.
+
+**Three status pages now need your user token (#1347)**
+- An independent security review found that the Oracle status, learning stats and local-docs
+  status pages answered anyone on the network with personal details. They now ask for the same
+  user token as the rest of your data. On the machine itself, with no token set, nothing changes.
+
+**Install MCP servers from a reviewed catalog, and sign in to the ones that need an account**
+- A new Console panel, Interop → **MCP Servers**, lists your MCP servers and a catalog of 66
+  reviewed servers from Hermes Agent (Linear, Notion, Stripe, Sentry, Hugging Face, Context7 and
+  more), with a search. `nerva mcp catalog` lists the same in the terminal.
+- Installing one shows exactly what will run first: the command it starts on your hub, or the
+  address it connects to, the settings it gets, and the names of the secrets it needs. Nothing is
+  installed until you tick "I have read what will run" (in the terminal, `nerva mcp install <name>`
+  asks you), and Nerva installs exactly what you read or nothing. Nothing starts until you press
+  connect. A server name that is taken is never overwritten.
+- Secrets you type for a server are kept encrypted in Nerva's secret store, given only to that
+  server, never written into its settings and never shown again. Removing the server deletes them.
+- Servers that need an account: press **sign in**, approve in your browser, and Nerva keeps the
+  token encrypted, sends it only to that server, renews it before it runs out (and once more if
+  the server refuses it mid-way), and revokes and deletes it when you sign out or remove the
+  server. Each sign-in is written to the audit log.
+- If your browser is on another machine than the hub, sign-in still finishes: the browser comes
+  back to the hub's own address, or `nerva mcp login <server>` on your laptop catches the return
+  and passes it to the hub, or you paste the address your browser ended on into the panel.
+- A vendor can give you an install link (`/v2/console/mcp?install=<name>`); it only opens the
+  install card for you to read. A link cannot set a secret's value, add headers or pick
+  variables that change how a program loads code.
+- The emergency stop, safe mode and administrator-pinned settings stop installs as they stop
+  adding a server by hand. Details: [docs/MCP_CATALOG.md](docs/MCP_CATALOG.md).
+
+**Connected MCP servers can share documents and prompt templates, and stay connected**
+- If an MCP server you added publishes documents ("resources") or prompt templates, Nerva can
+  now list and read them, next to the server's own tools. What they contain is treated like a
+  web page: checked for hidden instructions, shown to the model as data, and any action Nerva
+  proposes after reading one waits for your approval. Pictures and other files are saved to
+  disk instead of being pasted into the conversation.
+- A server that stops answering no longer stays dead until you press connect: Nerva retries it
+  with growing pauses and checks idle servers every minute. One slow server no longer holds up
+  the others. The MCP admin list shows each server's state, its last error and when the next
+  retry is due. Set `JARVIS_MCP_AUTOCONNECT=1` to connect your saved servers at start.
+- A server may now ask Nerva for a short model answer, but only if you allow it for that server
+  (`sampling`: off by default, "ask" for an approval card each time, or "auto"). It runs on your
+  local model, without tools, within a daily allowance (`JARVIS_MCP_SAMPLING_DAILY_TOKENS`,
+  20 000 by default) and at most 10 requests a minute per server.
+- If you allow it for a server (off by default), a server that needs information from you
+  mid-task asks through an approval card. Nerva never answers it for you: you fill it in,
+  decline it, or it lapses after five minutes. The card shows the server's words cleaned of
+  hidden characters, so it cannot pass itself off as a message from Nerva; if the task that
+  asked ends first, the card is withdrawn. Filling it in is done through the admin API for
+  now; the HUD shows the card but has no form yet.
+- The daily allowance for server requests is kept in memory and starts again after a restart.
+- One answer from a server is capped (100 parts, about 2 million characters), so a server
+  cannot flood the conversation or freeze Nerva with a huge reply; a server that floods Nerva
+  while idle is disconnected, and a server that keeps crashing right after it starts is set
+  aside instead of being restarted over and over. Questions from servers can hold up one
+  answer for at most 15 minutes in total.
+- The emergency stop and the kill switch refuse all of this: no reconnects, no model answers,
+  no questions.
+
 ### What changed for you — 2026-11-01 to 2026-11-02
 
 A plain-language summary of the last two days. The technical detail for each item is in its PR.

@@ -5,7 +5,7 @@ shot reads best as the lead image; demo-mode badge stays visible, which is the p
 
 ## Post Caption
 
-Caut 2-3 oameni care vor sa testeze Jarvis Hub pe bune, 2-4 saptamani.
+Caut 2-3 oameni care vor sa testeze Nerva pe bune, 2-4 saptamani.
 
 E un asistent AI local-first care ruleaza pe calculatorul tau sau cu cheia ta API. Diferenta importanta: actiunile serioase se opresc pentru aprobare, iar sistemul pastreaza un audit log tamper-evident. Nu e o lansare publica. E alpha testing cu feedback sincer si suport direct de la mine.
 
@@ -15,7 +15,7 @@ Daca vrei sa intri in test, trimite-mi mesaj cu: `Jarvis alpha`.
 
 ## Short Personal Post
 
-De un an construiesc Jarvis Hub: un asistent AI personal, local-first, care poate lucra proactiv dar nu actioneaza orbeste. Cand apare ceva important, iti cere aprobare. Ce face ramane intr-un audit log verificabil.
+De un an construiesc Nerva: un asistent AI personal, local-first, care poate lucra proactiv dar nu actioneaza orbeste. Cand apare ceva important, iti cere aprobare. Ce face ramane intr-un audit log verificabil.
 
 Caut 2-3 alpha testeri care chiar il pot folosi 2-4 saptamani si imi pot spune unde doare.
 
@@ -25,7 +25,7 @@ Interesat? Scrie-mi `Jarvis alpha`.
 
 ## LinkedIn Version
 
-Caut 2-3 alpha testeri pentru Jarvis Hub, un proiect personal la care lucrez de un an: un AI operating system local-first, cu agenti specializati, memorie, aprobare pentru actiuni importante si audit log tamper-evident.
+Caut 2-3 alpha testeri pentru Nerva, un proiect personal la care lucrez de un an: un AI operating system local-first, cu agenti specializati, memorie, aprobare pentru actiuni importante si audit log tamper-evident.
 
 Nu fac o lansare publica inca. Caut oameni care il pot rula 2-4 saptamani ca daily-driver partial si pot da feedback structurat, saptamanal.
 
@@ -53,7 +53,7 @@ Daca raspunsurile se potrivesc, iti trimit ghidul si facem prima instalare supra
 
 ## English Backup
 
-I am looking for 2-3 serious alpha testers for Jarvis Hub, a local-first personal AI system I have been building for the last year.
+I am looking for 2-3 serious alpha testers for Nerva, a local-first personal AI system I have been building for the last year.
 
 It is pre-1.0, so this is not a public launch. I need people who can run it for 2-4 weeks, use it regularly, and give direct feedback on installation, onboarding, and daily use.
 

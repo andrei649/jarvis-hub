@@ -79,8 +79,9 @@ UPDATE_HINT = ("If the change is intended, run `python tests/test_tool_surface.p
 
 #: Every default-off tool switched on: the snapshot pins every tool a host can register.
 #: A tool that is off on a fresh install is not a tool whose schema may drift.
-ENV = {"JARVIS_FILE_TOOLS": "1", "JARVIS_MEDIA_DIRECTOR": "1", "JARVIS_VIDEO_ANALYSIS": "1"}
-SETTINGS = {"llm.execute_code": True, "channels.pending_inputs_enabled": True}
+ENV = {"JARVIS_FILE_TOOLS": "1", "JARVIS_MEDIA_DIRECTOR": "1", "JARVIS_VIDEO_ANALYSIS": "1",
+       "JARVIS_A2A_ENABLED": "1"}
+SETTINGS = {"llm.execute_code": True, "channels.pending_inputs_enabled": True, "llm.delegate_task": True}
 #: Host settings that make an already-registered tool offer another description or schema
 #: (H325 review r1). Each is pinned as the rows it changes against the base registry.
 #: ``session_kernels``: an image pinned by digest composes the K2 kernel manager
@@ -170,7 +171,11 @@ RETIRED_TOOL_MENTIONS: dict[tuple[str, str], str] = {}
 #: only (``_row_vocabulary``); a backticked ``test_…`` name is a test that exists (``cited_tests``).
 VOCABULARY_ROOTS = ("agents", "scripts", "frontend")
 VOCABULARY_FILES = ("docker-compose.yml", "docker-compose.quickstart.yml", "requirements.txt", "pyproject.toml")
-VOCABULARY_SKIP = ("agents/web/",)
+VOCABULARY_SKIP = ("agents/web/",
+                   # Adopt lane slice 3: Hermes's skill catalog is third-party text, data only.
+                   "agents/vendor/hermes/skills/", "agents/vendor/hermes/optional-skills/")
+#: Generated data files read by no code path as names (the catalog index of third-party text).
+VOCABULARY_SKIP_FILES = ("agents/vendor/hermes/SKILLS_CATALOG.json",)
 #: The frontend's test lanes: the HUD vitest setup and fixtures (``vite.config.ts``), the
 #: native vitest project (``vitest.native.config.ts``) and every Playwright ``testDir``
 #: (``test_every_frontend_test_lane_is_outside_the_vocabulary`` keeps this exhaustive).
@@ -183,8 +188,6 @@ NON_CODE_NAMES = {
                        "(agents/core/autonomy/jobs_health.py)",
     "last_run_max_instances": "a jobs doctor code composed at run time: \"last_run_\" + the run's status "
                               "(agents/core/autonomy/jobs_health.py)",
-    "http_403": "one value of the provider failure composed as f\"http_{status}\" "
-                "(agents/core/plugins/web_providers.py)",
     "evil_key": "a made-up settings key the test manual sends to show an out-of-spec key is skipped",
     # H325 review r6: what the guides and manual-test books added to CLAIM_DOCS write that
     # is not code. Fields composed at run time:
@@ -519,6 +522,11 @@ def _register_tool_calls():
     for path in sorted((REPO / "agents").rglob("*.py")):
         rel = path.relative_to(REPO)
         if rel.parts[:2] == ("agents", "web"):
+            continue
+        if rel.parts[:3] == ("agents", "vendor", "hermes"):
+            # Upstream text (Adopt lane): its ``ctx.register_tool`` targets Hermes's own
+            # plugin context and is never called here; Nerva registers the adopted tools
+            # itself (e.g. ``agents/core/a2a_outbound.py``), and those calls are walked.
             continue
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
@@ -1089,7 +1097,7 @@ def _vocabulary_paths() -> list[Path]:
                              and not (rel + d + "/").startswith(VOCABULARY_SKIP + VOCABULARY_TEST_LANES))
             paths += [Path(folder, name) for name in sorted(files)
                       if Path(name).suffix in _VOCABULARY_SUFFIXES and name != "package-lock.json"
-                      and not is_test_path(rel + name)]
+                      and not is_test_path(rel + name) and rel + name not in VOCABULARY_SKIP_FILES]
     return paths
 
 

@@ -589,6 +589,25 @@ def extract_tar_path(path: Path, dest: Path, *, limits: ArchiveLimits = DEFAULT_
         raise ArchiveRejected(f"archive is corrupt or truncated: {exc}") from exc
 
 
+def tar_listing(path: Path, *, compression: str = "gz",
+                limits: ArchiveLimits = DEFAULT_LIMITS) -> tuple[dict[str, str], list[tuple[str, str, int]]]:
+    """Read a tar's headers without writing anything: its PAX global header and, for each
+    member, ``(name, kind, mode)`` with *kind* ``"file"`` or ``"dir"``. The same member
+    refusals as extraction apply (links, devices, sparse files, oversized headers), plus
+    the member-count cap. Names are as stored; extraction still normalizes them."""
+    members: list[tuple[str, str, int]] = []
+    try:
+        with tarfile.open(path, f"r:{compression}", tarinfo=_GuardedTarInfo) as tar:
+            for member in tar:
+                if len(members) >= limits.max_members:
+                    raise ArchiveRejected(f"more than {limits.max_members} members")
+                members.append((member.name, _tar_kind(member), member.mode))
+            _drain_padding(tar.fileobj)
+            return dict(tar.pax_headers), members
+    except _CORRUPT as exc:
+        raise ArchiveRejected(f"archive is corrupt or truncated: {exc}") from exc
+
+
 # ── zip ────────────────────────────────────────────────────────────
 _ZIP_ENCRYPTED = 0x1
 

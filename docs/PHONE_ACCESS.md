@@ -103,9 +103,10 @@ wrote; check that path, since a mistyped `JARVIS_USER_HOME` gets a new, empty da
 
 A packaged build ships no Python to run either. To recover from a lost or expired admin token
 there, stop the app and follow `docs/PACKAGING.md` → "Recovering a lost admin token": **first**
-remove every `JARVIS_ADMIN_TOKEN`/`JARVIS_USER_TOKEN` from the data home's `.env`
+remove every `JARVIS_ADMIN_TOKEN`/`JARVIS_USER_TOKEN` — under **both** spellings, so also
+`NERVA_ADMIN_TOKEN`/`NERVA_USER_TOKEN`, which is how a new install's `.env` spells them — from the data home's `.env`
 (`~/Documents/Nerva/.env`, or `<JARVIS_USER_HOME>/.env`) **and from the environment the app
-starts from** (step 2 above puts the phone's token there), unset `JARVIS_HOST` for the restart,
+starts from** (step 2 above puts the phone's token there), unset `JARVIS_HOST` (and `NERVA_HOST`) for the restart,
 then remove `security/tokens.db` under the data root. The order matters: that file also records
 which env tokens were rotated away or revoked, and a token left in either place works again
 without it, a lost phone's included (review-H273h m2, review-H273i m1). With no admin token

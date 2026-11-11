@@ -115,6 +115,7 @@ Then, depending on what the tool is:
 | `max_result_bytes` | How much of the context window one result may take before it is spilled to a file the model can page back with `file_read` (`agents/core/tool_result_store.py`). |
 | `parallel_safe` | `False` makes every call a barrier the loop runs alone (a writer two concurrent calls could interleave on). Undeclared stays concurrent for an ungated tool and fails closed (barrier) for a gated one. |
 | `schema_overrides` | A zero-argument hook that narrows the advertised schema to what this install can do now (registered targets, rooms with a speaker). The handler still checks every call. |
+| `visible` | A zero-argument predicate (G11): when given, the tool is left out of the offer and refused at `handle` unless it answers `True`. The model bridge uses it to offer an editor's session-only MCP server to that conversation's turns only. An approved card still runs through `execute`. |
 | `classifier`, `gated_intake`, `gated_review`, `trusted_execution`, `consent_revision` | Gated-tool refinements: label a class of call on the approval card, or take over intake for a trusted tool. Read the docstring before using them; `register_tool` refuses inconsistent combinations. |
 
 **The handler.** `async def handler(args: dict) -> dict` (a sync function runs on a

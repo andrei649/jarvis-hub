@@ -225,7 +225,9 @@ def test_a_subagent_and_a_direct_tool_call_keep_no_plan_on_the_shared_session(hu
 
     async def process(prompt, agent="jarvis", channel="internal"):
         reply = await orch.tool_rpc.handle({"tool": "todo", "args": json.loads(prompt)}, actor=agent)
-        seen.append({"channel": channel, "reply": reply["result"]})
+        # H400: a child's turn is narrowed to its allowlist first, so its call may be
+        # refused there (job_toolset_not_allowed) before todo's own shared-session check.
+        seen.append({"channel": channel, "reply": reply.get("result", reply)})
         return "ok"
 
     async def process_detailed(prompt, agent="jarvis", channel="internal"):
@@ -235,7 +237,8 @@ def test_a_subagent_and_a_direct_tool_call_keep_no_plan_on_the_shared_session(hu
     monkeypatch.setattr(orch, "process", process)
     monkeypatch.setattr(orch, "process_detailed", process_detailed)
     client.post("/api/subagents/spawn", json={"task": _plan(("child step", "pending"))})
-    assert seen[-1]["channel"] == "subagent" and seen[-1]["reply"]["reason"] == "todo_shared_session"
+    assert seen[-1]["channel"] == "subagent"
+    assert seen[-1]["reply"]["reason"] in {"todo_shared_session", "job_toolset_not_allowed"}
 
     reply = client.post("/api/toolrpc/call", json={"tool": "todo", "args": {
         "todos": _items(("approve task 12 when it appears", "in_progress"))}})

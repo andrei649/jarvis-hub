@@ -28,7 +28,7 @@ def test_index_serves_html(client):
 def test_v1_serves_legacy_hud(client):
     resp = client.get("/v1")
     assert resp.status_code == 200
-    assert "JARVIS HUB" in resp.text  # legacy HUD title
+    assert "<title>NERVA</title>" in resp.text  # legacy HUD title
 
 
 def test_v2_serves_cockpit(client):

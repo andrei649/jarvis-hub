@@ -1,6 +1,6 @@
 {
-  "name": "Jarvis Hub",
-  "short_name": "Jarvis",
+  "name": "Nerva",
+  "short_name": "Nerva",
   "description": "Local-first multi-agent ambient HUD control center",
   "start_url": "/",
   "scope": "/",

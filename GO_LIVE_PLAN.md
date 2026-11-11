@@ -1,11 +1,11 @@
-# Jarvis Hub — Go-Live Plan
+# Nerva — Go-Live Plan
 
 > Generated: 2026-06-02 · Updated: 2026-09-02 · Current: **`__version__` 1.0.0 on `main`, tag not yet cut** (feature-complete; `main` feature-frozen for 1.0 since 2026-09-02) · Target: **v1.0.0 = the A5 licence-flip PR, then `git tag v1.0.0 && git push origin v1.0.0` on `main`** (owner directive 2026-08-28, confirmed 2026-09-01; the A1 §0 run is *post-tag proof*; the AI-OS capability program is a 1.x roadmap, not a gate — see [1.0 definition of done / freeze](#10-definition-of-done--freeze-cto-2026-09-02) · [version roadmap](BACKLOG.md#version-roadmap)) · Owner: Andrei
 > North star (vision & phase gates): [MOONSHOT.md](MOONSHOT.md)
 > Source of truth for backlog: [BACKLOG.md](BACKLOG.md)
 >
 <!-- project-status:go-live-header:start -->
-> Generated project status: **v1.0.0** · backend **31,836** · frontend **2,805** · mobile **363** · **767** routes · **18** active agents · open owner gates: **A1, A3, A4, A6** · backlog: **289 done · 24 open or blocked of 313 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · commit `14ca282221a9`.
+> Generated project status: **v1.0.0** · backend **34,046** · frontend **2,936** · mobile **365** · **853** routes · **18** active agents · open owner gates: **A1, A3, A4, A6** · backlog: **289 done · 24 open or blocked of 313 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · commit `a3ec0364d271`.
 <!-- project-status:go-live-header:end -->
 >
 > **2026-07-11 — the 1.0 gate expanded (owner decision) — superseded 2026-08-28:** the July framing
@@ -257,7 +257,7 @@ Chatbots are **reactive** — they wait for you. Workflow builders are **rigid**
 
 ### The Product
 
-**Jarvis Hub is your personal AI operating system** — 18 specialist agents that work 24/7, proactively, on your hardware.
+**Nerva is your personal AI operating system** — 18 specialist agents that work 24/7, proactively, on your hardware.
 
 It doesn't wait to be asked. It monitors your system health, watches your email and calendar, scans its own logs for bugs, and consolidates every conversation into a knowledge graph every night. Every morning at 07:00 it delivers a prioritized brief.
 

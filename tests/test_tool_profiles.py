@@ -31,7 +31,7 @@ DEFAULTS = lambda key, default: default  # noqa: E731 — the settings a fresh i
 #: Settings the snapshot resolves under: every default-off tool switched ON, so the
 #: snapshot pins the widest registry a host can present. A tool that is off on a fresh
 #: install is not a tool whose postures may go unreviewed.
-SNAPSHOT_SETTINGS = {"llm.execute_code": True}
+SNAPSHOT_SETTINGS = {"llm.execute_code": True, "llm.delegate_task": True}
 
 
 def _live_registry(root: str) -> list[dict]:
@@ -211,7 +211,7 @@ def test_postures_over_the_live_registry_match_the_snapshot(tmp_path, monkeypatc
     )
     gated = {t["name"] for t in _live_registry(str(tmp_path)) if t["gated"]}
     assert gated == {"desktop_run", "terminal_run", "osint_enrich", "file_write", "file_delete",
-                     "image_generate", "speak"}
+                     "image_generate", "speak", "video_generate"}
     for key, names in snap["postures"].items():
         if key != "operator/owner":
             assert not gated & set(names), f"{key} offers actuation by default: {names}"

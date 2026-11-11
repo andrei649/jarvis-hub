@@ -41,6 +41,9 @@ _MCP_SURFACE_KINDS = {
 _REASONS = {
     "credential", "admin_credential", "local_bypass", "missing", "invalid",
     "network_disabled", "issue", "rotate", "revoke",
+    # H509 owner browser sign-in: a request admitted by the session cookie, a cookie
+    # write without its CSRF token, a sign-in / sign-out, a throttled sign-in.
+    "session", "csrf", "sign_in", "sign_out", "throttled",
 }
 
 

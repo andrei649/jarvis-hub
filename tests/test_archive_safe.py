@@ -598,6 +598,7 @@ _ARCHIVE_IMPORTS_ALLOWED = {
     "agents/core/skills/marketplace.py",      # writes the published skill zip
     "agents/core/routers/artifact_store.py",  # writes a download zip
     "agents/core/media_export.py",            # writes a media bundle zip
+    "agents/core/worktrees.py",               # writes the untracked-scratch archive before a prune
 }
 _ARCHIVE_MODULES = {"tarfile", "zipfile"}
 _THIRD_PARTY_EXTRACTORS = {"py7zr", "rarfile", "patoolib", "libarchive", "pyunpack"}

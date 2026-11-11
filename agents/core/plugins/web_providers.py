@@ -182,6 +182,12 @@ class SearchProvider(ABC):
     keyless: bool = False
     #: ``(module, package)`` of an optional import the provider needs, or None.
     requires: tuple[str, str] | None = None
+    #: True for a backend that answers only when the owner named it
+    #: (``JARVIS_WEB_BACKEND``): never ``auto``'s pick and never a rescue target. The
+    #: backends adopted from Hermes are such (their data handling is unverified), so a
+    #: key alone never sends a query there; the HUD's Integrations panel names one only
+    #: after an audited consent, and a ``.env`` naming is the owner's own explicit choice.
+    explicit_only: bool = False
 
     def missing(self) -> str:
         """The package to install when the provider's optional import is absent."""
@@ -348,6 +354,27 @@ for _builtin in (TavilyProvider(), SearxngProvider(), DuckDuckGoProvider()):
     register_search_provider(_builtin)
 del _builtin
 _BUILTINS_LOCKED = True
+
+
+def _load_adopted() -> tuple[str, ...]:
+    """Register the Hermes web search providers Nerva runs as vendored code (Adopt lane).
+
+    Exa, Brave Search (free tier) and Parallel come from ``agents/vendor/hermes`` through
+    the compat layer (``docs/hermes/ADOPT_LANE.md``): they register here like any
+    first-party backend, dial as ``websearch`` through the client they are handed, and are
+    configured only when their key is set. A failure to load them never touches the
+    built-ins.
+    """
+    try:
+        from agents.vendor.hermes_compat.plugin_ctx import load_web_providers
+    except Exception as exc:
+        logger.warning("adopted Hermes web providers unavailable (type=%s)", type(exc).__name__)
+        return ()
+    return load_web_providers(sys.modules[__name__])
+
+
+#: Names of the adopted Hermes providers that registered (after the built-ins).
+ADOPTED_PROVIDERS = _load_adopted()
 
 
 # ── configuration, read per call ─────────────────────────────────────────────
@@ -558,7 +585,7 @@ def resolve(plugin: Any, *, backend: str | None = None, tier: str | None = None,
     tier = configured_tier(tier)
     if tier not in TIERS:
         return Selection(backend, tier, None, reason=REASON_INVALID_TIER)
-    ordered = auto_order()
+    ordered = [p for p in auto_order() if not p.explicit_only]
     candidates = [p for p in ordered
                   if _tier_ok(p, tier) and _configured(p, plugin) and not p.missing()]
     rescue_on = rescue_setting(rescue)
@@ -614,7 +641,7 @@ def describe(plugin: Any = None) -> dict:
         providers.append({
             "name": p.name, "plugin_id": p.plugin_id, "tier": p.tier, "keyless": p.keyless,
             "configured": _configured(p, plugin), "eligible": _tier_ok(p, selection.tier),
-            "missing": p.missing(),
+            "missing": p.missing(), "named_only": p.explicit_only,
         })
     return {
         "backend": selection.backend,
@@ -653,6 +680,8 @@ def _text_report(report: dict) -> str:
         if p["keyless"]:
             state = "keyless"
         flags = [state, p["tier"], f"egress={p['plugin_id']}"]
+        if p.get("named_only"):
+            flags.append(f"only when named in {BACKEND_ENV}")
         if not p["eligible"]:
             flags.append("outside tier pin")
         if p["missing"]:

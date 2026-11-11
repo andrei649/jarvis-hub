@@ -196,13 +196,35 @@ class SlackChannel(ChannelAdapter):
                     self._running = False
                 await _finish_cleanup(self._shutdown_after(startup_task))
                 raise
-            except Exception:
+            except Exception as exc:
                 logger.warning("Slack Socket Mode startup failed; channel stopped")
+                # H100: an auth refusal is fatal and named; anything else is a failed start.
+                text = str(getattr(getattr(exc, "response", None), "data", "") or "")
+                self.health.failed_fatally(
+                    "unauthorized" if any(code in text for code in (
+                        "invalid_auth", "not_authed", "token_revoked", "account_inactive"))
+                    else "startup_failed")
                 await _finish_cleanup(self._shutdown())
 
     async def stop(self):
         async with self._lifecycle_lock:
             await _finish_cleanup(self._shutdown())
+            self.health.stopped()
+
+    def health_snapshot(self) -> dict:
+        """H100 — Socket Mode's own monitor reconnects; this reports what it sees: connected
+        (healthy), running but disconnected (retrying, the SDK is reconnecting), or the
+        fatal reason a start failed with."""
+        row = super().health_snapshot()
+        client = self._socket_client
+        if self._running and client is not None and row["state"] != "fatal":
+            try:
+                connected = bool(client.is_connected())
+            except Exception:
+                connected = False
+            row["state"] = "healthy" if connected else "retrying"
+            row["error"] = None if connected else "disconnected"
+        return row
 
     async def _shutdown_after(self, startup_task):
         if startup_task is not None:

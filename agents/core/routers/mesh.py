@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from agents.core.routers._deps import user_guard, admin_guard
-from agents.core.routers._component import require_component
+from agents.core.routers._component import component_unavailable, require_component
 
 from agents.core.web_helpers import nocache_json
 from agents.core.app_state import get_orch
@@ -275,6 +275,17 @@ _SPAWN_GATE_REASONS = frozenset({
 })
 
 
+def _spawn_refusal_status(reason) -> int:
+    """The status of a spawn that did not start: 409 while new spawns are stopped (the
+    emergency stop, the kill switch, the owner's pause, or a state that cannot be read),
+    429 at a cap, 422 otherwise (it ran and failed, or the request cannot run)."""
+    from agents.core.subagents import HALT_REASONS
+
+    if reason in HALT_REASONS:
+        return 409
+    return 429 if reason in _SPAWN_GATE_REASONS else 422
+
+
 @router.get("/api/subagents", dependencies=[Depends(user_guard)])
 async def subagents_list():
     """H20.6 — spawned sub-agents + concurrency stats."""
@@ -282,7 +293,13 @@ async def subagents_list():
     m = getattr(orch, "subagents", None) if orch else None
     if m is None:
         return nocache_json({"spawns": [], "stats": {}})
-    return nocache_json({"spawns": m.list(), "stats": m.stats()})
+    out = {"spawns": m.list(), "stats": m.stats()}
+    gate_state = getattr(m, "gate_state", None)
+    if callable(gate_state):
+        # H400 — whether a new sub-agent would start now: the emergency stop, the kill
+        # switch and the owner's pause, read off the loop.
+        out["gate"] = await gate_state()
+    return nocache_json(out)
 
 
 @router.post("/api/subagents/spawn", dependencies=[Depends(user_guard)])
@@ -299,12 +316,7 @@ async def subagents_spawn(body: SubAgentSpawnBody):
         return guarded
     result = await m.spawn(body.task, agent=body.agent, output_schema=body.output_schema,
                            model=body.model, provider=body.provider, overrides=body.overrides)
-    if result.get("ok"):
-        status = 200
-    elif result.get("reason") in _SPAWN_GATE_REASONS:
-        status = 429
-    else:
-        status = 422        # ran and failed / schema violation / invalid schema
+    status = 200 if result.get("ok") else _spawn_refusal_status(result.get("reason"))
     return nocache_json(result, status_code=status)
 
 
@@ -325,7 +337,41 @@ async def subagents_batch(body: SubAgentBatchBody):
     if guarded is not None:
         return guarded
     result = await m.spawn_batch([t.model_dump(exclude_none=True) for t in body.tasks])
-    return nocache_json(result, status_code=200 if "children" in result else 422)
+    status = 200 if "children" in result else _spawn_refusal_status(result.get("reason"))
+    return nocache_json(result, status_code=status)
+
+
+class SubAgentPauseBody(BaseModel):
+    reason: str = Field("", max_length=200)
+
+
+async def _set_spawn_pause(paused: bool, reason: str):
+    _, m, err = require_component("subagents", "sub-agents unavailable")
+    if err is not None:
+        return err
+    try:
+        state = await m.set_paused(paused, reason=reason, actor="owner")
+    except OSError as exc:
+        # Nothing is claimed: the state is read again and answered as it is.
+        state = await m.gate_state()
+        return nocache_json({"error": "pause_state_not_saved", "detail": type(exc).__name__, **state},
+                            status_code=503)
+    return nocache_json(state)
+
+
+@router.post("/api/subagents/pause", dependencies=[Depends(admin_guard)])
+async def subagents_pause(body: SubAgentPauseBody | None = None):
+    """H400 — pause NEW sub-agent spawns (the HTTP routes and the model's delegate_task
+    alike). Running sub-agents are not touched. The pause is a file in the data root, so
+    it holds across a restart; the answer is the state read back after the write."""
+    return await _set_spawn_pause(True, body.reason if body is not None else "")
+
+
+@router.post("/api/subagents/resume", dependencies=[Depends(admin_guard)])
+async def subagents_resume():
+    """H400 — lift the spawn pause. The emergency stop, when engaged, still stops new
+    sub-agents: the answer's ``accepting`` says whether one would start now."""
+    return await _set_spawn_pause(False, "")
 
 
 class SubAgentSteerBody(BaseModel):
@@ -341,6 +387,51 @@ def _steer_status(result: dict) -> int:
     if reason == "not_running":
         return 409
     return 422
+
+
+@router.get("/api/subagents/{spawn_id}/transcript", dependencies=[Depends(admin_guard)])
+async def subagents_transcript(spawn_id: str, after: int = 0, limit: int = 200):
+    """G18 (H401) — a sub-agent's live transcript: its start, the tool loop's events for
+    it (tool names, status, call ids, sizes — never arguments or results), steers, a
+    stall and its end. Poll with ``after`` = the last ``next`` to tail a running child."""
+    _, m, err = require_component("subagents", "sub-agents unavailable")
+    if err is not None:
+        return err
+    found = await asyncio.to_thread(m.transcript, spawn_id, after=max(0, after), limit=limit)
+    if found is None:
+        return nocache_json({"ok": False, "reason": "unknown_spawn", "id": spawn_id}, status_code=404)
+    return nocache_json(found)
+
+
+@router.get("/api/subagents/{spawn_id}/result", dependencies=[Depends(admin_guard)])
+async def subagents_result(spawn_id: str):
+    """G18 (H401) — the durable row of a sub-agent, its whole kept result included
+    (the parent model is given at most 24 000 characters; the row keeps more). Reading
+    it does not count as receiving it: delivery is the claim."""
+    _, queue, err = require_component("autonomy_queue", "delegation record unavailable")
+    if err is None and not hasattr(queue, "delegation_by_spawn"):
+        err = component_unavailable("delegation record unavailable")
+    if err is not None:
+        return err
+    # A delegation id (what the parent is pointed at) first, then a spawn id.
+    row = await asyncio.to_thread(queue.delegation_get, spawn_id)
+    if row is None:
+        row = await asyncio.to_thread(queue.delegation_by_spawn, spawn_id)
+    if row is None:
+        return nocache_json({"ok": False, "reason": "unknown_spawn", "id": spawn_id}, status_code=404)
+    return nocache_json(row)
+
+
+@router.post("/api/subagents/completions/claim", dependencies=[Depends(admin_guard)])
+async def subagents_claim():
+    """G18 (H401) — receive the finished sub-agent results nobody has received yet. Each
+    is handed out exactly once, whichever consumer asks first (this route, /delegations,
+    the model's delegate_task collect), across restarts."""
+    _, m, err = require_component("subagents", "sub-agents unavailable")
+    if err is not None:
+        return err
+    rows = await m.claim_completions("http:claim")
+    return nocache_json({"ok": True, "claimed": len(rows), "results": rows})
 
 
 @router.post("/api/subagents/{spawn_id}/steer", dependencies=[Depends(user_guard)])

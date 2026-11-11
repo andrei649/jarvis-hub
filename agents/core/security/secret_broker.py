@@ -19,7 +19,15 @@ from agents.core.secrets import SecretStoreError
 logger = logging.getLogger("jarvis.security.secret_broker")
 
 _HANDLE = re.compile(r"\{\{\s*secret:([A-Za-z0-9_.\-]+)\s*\}\}")
-_INTERNAL_PREFIX = "h034."
+# ``h034.``: the external secret sources' own config and bootstrap tokens.
+# ``integration.``: keys the owner set in the HUD's Integrations panel (integration_keys);
+# they reach their provider through the process environment, never through a handle.
+# ``integration.skill.``: a skill's declared variables (H342, skills/skill_secrets); they reach
+# only that skill's code, never the process environment or a handle.
+# ``mcp.secret.`` / ``mcp.oauth.``: an MCP server's own secrets and OAuth tokens (G9); they
+# reach that server only (spawn env, connect header), never through a handle.
+_INTERNAL_PREFIX = ("h034.", "integration.", "mcp.secret.", "mcp.oauth.")
+_REDACT_INTERNAL = ("h034.token.", "integration.key.", "integration.skill.", "mcp.secret.", "mcp.oauth.")
 
 
 class _DictStore:
@@ -39,6 +47,17 @@ class _DictStore:
 
     def names(self) -> list[str]:
         return sorted(self._d.keys())
+
+
+def _shared_with_turn(name: str) -> bool:
+    """H496: the broker's secrets are the owner's; a guest turn gets one only when the
+    owner shared that secret with guests. Undecidable reads as not shared."""
+    try:
+        from agents.core.security.credential_scope import KIND_SECRET, allowed
+
+        return allowed(KIND_SECRET, name)
+    except Exception:
+        return False
 
 
 class SecretBroker:
@@ -109,6 +128,9 @@ class SecretBroker:
             if not approved:
                 blocked.append(name)
                 return f"[secret:{name} blocked — approval required]"
+            if not _shared_with_turn(name):
+                blocked.append(name)
+                return f"[secret:{name} blocked — not shared with this identity]"
             value = self._safe_get(name, external=True, owner_id=owner_id, background=background)
             if value is None:
                 blocked.append(name)
@@ -129,7 +151,7 @@ class SecretBroker:
             names = list(self._store.names())
         for name in names:
             try:
-                value = (self._store.get(name) if name.startswith("h034.token.")
+                value = (self._store.get(name) if name.startswith(_REDACT_INTERNAL)
                          else self._safe_get(name))
             except SecretStoreError:
                 value = None

@@ -670,6 +670,9 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         # H277: the advisory approval judge is off in safe mode (and reads cloud_fallback's
         # stricter value).
         "agents/core/autonomy/approval_judge.py",
+        # H484: the approval dial reads the per-agent overrides through safe mode, which
+        # serves only the ones that ask more (ask, off) and drops a looser one (auto).
+        "agents/core/autonomy/mode.py",
         # H464c: a company sweep that finds safe mode on does nothing.
         "agents/core/autonomy/company_runtime.py",
         # Review-H275 F1: a job armed after the boot stays off the scheduler too.
@@ -679,6 +682,8 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         # H507: an owner's off for the code-pattern warnings reads as on in safe mode.
         "agents/core/code_guidance.py",
         "agents/core/heartbeat.py",
+        # G17: no owner hook runs in safe mode (a guard does not block either).
+        "agents/core/hooks/runner.py",
         # The managed Hermes service only refuses enablement while safe mode is on.
         "agents/core/hermes_runtime/service.py",
         # H490: the router's cloud fallback and the model pull cap read the stricter value.
@@ -694,9 +699,13 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         "agents/core/memory_tool.py",
         # H422: GET /api/memory only reports that safe mode keeps the curated memory out.
         "agents/core/routers/memory_kg.py",
+        # G12: the OpenAI-compatible API is a door the owner opened; safe mode keeps it shut.
+        "agents/core/openai_api/policy.py",
         "agents/core/orchestrator.py",
         "agents/core/plugin_gate.py",
         "agents/core/project_context.py",
+        # G11 (H545): an editor-supplied MCP server is refused in safe mode, like any added server.
+        "agents/core/routers/acp.py",
         "agents/core/routers/mcp.py",
         "agents/core/routers/ops.py",
         "agents/core/routers/plugins.py",

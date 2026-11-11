@@ -46,6 +46,9 @@ def test_snapshot_rollback_preserves_activity_recorded_after_backup(owner):
 
 def test_undo_of_pin_that_created_usage_never_erases_later_activity(owner):
     owner.orch.skill_usage.restore_record("local-curation", None)
+    # Under the H349 sidecar an installed skill always has a row: the next discover (the hub
+    # runs one at every start and after every curator change) makes a fresh one before a pin.
+    owner.orch.skills.discover()
     first = _apply(owner, "pin", "local-curation")
     owner.orch.skill_usage.bump("local-curation", "use")
     before = owner.orch.skill_usage.get("local-curation")

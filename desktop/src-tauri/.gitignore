@@ -1,0 +1,3 @@
+# Build output of cargo / tauri-build; never committed.
+/target/
+/gen/

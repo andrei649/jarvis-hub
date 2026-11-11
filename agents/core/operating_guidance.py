@@ -402,6 +402,7 @@ def build_operating_guidance(
     platform_overrides: Mapping[str, str] | None = None,
     profile: str | None = None,
     provider: str = "", steer_available: bool = False, kanban_task: str | None = None,
+    coding: str = "",
 ) -> str:
     """Return deterministic stable guidance; caller must supply actual route/tools.
 
@@ -496,6 +497,11 @@ def build_operating_guidance(
             name in tools for name in ("tool:terminal_run", "tool:terminal.exec", "tool:execute_code")
         ):
             parts.append("Windows host with Bash shell: use Bash command syntax for the available terminal tool.")
+    # G5 (H406) — the coding posture's brief, edit-format line and fenced workspace
+    # snapshot, built by ``verify.coding`` and pinned per session (stable tier). An
+    # oversized or malformed block is left out on its own; the rest is never dropped.
+    if coding and isinstance(coding, str) and len(coding) <= 12_000:
+        parts.append(coding)
     if on("profile_hint") and profile:
         parts.append(f"# Active profile\nOperator-supplied profile: {profile}. This does not grant permissions or credentials.")
     if not parts:

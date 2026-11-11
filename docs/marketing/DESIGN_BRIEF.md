@@ -1,4 +1,4 @@
-# Jarvis Hub — Marketing Design Brief
+# Nerva — Marketing Design Brief
 
 > A self-contained creative brief for producing launch visuals (with Claude Design, Canva, Figma, a
 > video tool, or a human designer). Everything needed to make on-brand assets is here — copy, exact
@@ -32,7 +32,7 @@ page. The product itself is the hero; real on-screen data is the texture. Restra
 - **Data / labels / code / micro-caps:** JetBrains Mono. Letter-spaced (`.12–.18em`), often UPPERCASE, small.
 - Numbers: tabular figures.
 
-**Logo:** wordmark `JARVIS HUB` in Space Grotesk, signal-cyan on void, with an optional mono sub-line
+**Logo:** wordmark `NERVA` in Space Grotesk, signal-cyan on void, with an optional mono sub-line
 (e.g. `PERSONAL · AI · OS`). No icon mark exists yet — wordmark is canonical.
 
 **Texture (optional, subtle):** faint dot-grid or a single thin scanline. Never busy. Glows are
@@ -53,7 +53,7 @@ thin and tight, never neon-soaked.
 
 ### A. Social preview / OG image — `1200 × 630`  ★ make first
 - Background: void `#04070E`, faint dot-grid.
-- Center-left: wordmark `JARVIS HUB` (cyan) + tagline in ink: **"The AI that works while you sleep."**
+- Center-left: wordmark `NERVA` (cyan) + tagline in ink: **"The AI that works while you sleep."**
 - Right third: a cropped, slightly-angled screenshot of the real HUD cockpit (the agent network brain).
 - Bottom mono strip (ink-3, small): `LOCAL-FIRST · 17 AGENTS · GOVERNED AUTONOMY · $0/MONTH`.
 - This doubles as the GitHub repo social preview and the README hero until a demo GIF exists.

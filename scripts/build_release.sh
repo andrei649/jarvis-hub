@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build_release.sh — build reproducible Jarvis Hub release artifacts (H23.13).
+# build_release.sh — build reproducible Nerva release artifacts (H23.13).
 #
 # Produces, into OUT_DIR (default ./dist):
 #   jarvis-<ver>.tar.gz, jarvis-<ver>.zip   source bundles — git-tracked files only,

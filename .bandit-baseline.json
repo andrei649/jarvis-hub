@@ -9360,6 +9360,90 @@
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html",
       "test_id": "B603",
       "test_name": "subprocess_without_shell_equals_true"
+    },
+    {
+      "code": "48             return frozenset(str(peer).strip() for peer in peers if str(peer).strip())\n49     except Exception:\n50         pass\n51     return frozenset()\n",
+      "col_offset": 4,
+      "end_col_offset": 12,
+      "filename": "agents/vendor/hermes/plugins/platforms/a2a/security.py",
+      "issue_confidence": "HIGH",
+      "issue_cwe": {
+        "id": 703,
+        "link": "https://cwe.mitre.org/data/definitions/703.html"
+      },
+      "issue_severity": "LOW",
+      "issue_text": "Try, Except, Pass detected.",
+      "line_number": 49,
+      "line_range": [
+        49,
+        50
+      ],
+      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
+      "test_id": "B110",
+      "test_name": "try_except_pass"
+    },
+    {
+      "code": "203 _BLOCKED_PREFIXES = (\"169.254.\", \"127.\", \"10.\", *(f\"172.{i}.\" for i in range(16, 32)), \"192.168.\",\n204                      \"0.0.0.0\", \"::1\", \"fe80:\", \"fc00:\", \"fd00:\")\n205 \n206 \n",
+      "col_offset": 21,
+      "end_col_offset": 30,
+      "filename": "agents/vendor/hermes/plugins/platforms/a2a/security.py",
+      "issue_confidence": "MEDIUM",
+      "issue_cwe": {
+        "id": 605,
+        "link": "https://cwe.mitre.org/data/definitions/605.html"
+      },
+      "issue_severity": "MEDIUM",
+      "issue_text": "Possible binding to all interfaces.",
+      "line_number": 204,
+      "line_range": [
+        203,
+        204
+      ],
+      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b104_hardcoded_bind_all_interfaces.html",
+      "test_id": "B104",
+      "test_name": "hardcoded_bind_all_interfaces"
+    },
+    {
+      "code": "460             fh.write(json.dumps(entry, ensure_ascii=False) + \"\\n\")\n461     except Exception:\n462         pass\n463 \n",
+      "col_offset": 4,
+      "end_col_offset": 12,
+      "filename": "agents/vendor/hermes/plugins/platforms/a2a/protocol.py",
+      "issue_confidence": "HIGH",
+      "issue_cwe": {
+        "id": 703,
+        "link": "https://cwe.mitre.org/data/definitions/703.html"
+      },
+      "issue_severity": "LOW",
+      "issue_text": "Try, Except, Pass detected.",
+      "line_number": 461,
+      "line_range": [
+        461,
+        462
+      ],
+      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
+      "test_id": "B110",
+      "test_name": "try_except_pass"
+    },
+    {
+      "code": "85                 args = json.loads(fn.get(\"arguments\") or \"{}\")\n86             except Exception:\n87                 continue\n88             # Only whole-skill loads seed the reviewer; a reference-file read is a detail\n",
+      "col_offset": 12,
+      "end_col_offset": 24,
+      "filename": "agents/vendor/hermes/agent/review_engine.py",
+      "issue_confidence": "HIGH",
+      "issue_cwe": {
+        "id": 703,
+        "link": "https://cwe.mitre.org/data/definitions/703.html"
+      },
+      "issue_severity": "LOW",
+      "issue_text": "Try, Except, Continue detected.",
+      "line_number": 86,
+      "line_range": [
+        86,
+        87
+      ],
+      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b112_try_except_continue.html",
+      "test_id": "B112",
+      "test_name": "try_except_continue"
     }
   ]
 }

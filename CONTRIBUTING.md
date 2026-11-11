@@ -1,4 +1,4 @@
-# Contributing to Nerva / Jarvis Hub
+# Contributing to Nerva
 
 Start with the [architecture overview](NERVA.md), then use the [request flow and module index](docs/ARCHITECTURE.md) and [codebase ownership map](docs/CODEBASE_OWNERSHIP.md) to find the relevant code and its governing document. [AGENTS.md](AGENTS.md) is the current workflow and authority source for both human and AI contributors. The [repo-local review checklists](.agents/checks/) are short prompts for reviewing a change; they do not replace tests or policy.
 

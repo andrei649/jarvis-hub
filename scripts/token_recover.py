@@ -29,9 +29,14 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 def main(argv: list[str] | None = None) -> int:
     if str(_REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(_REPO_ROOT))
-    from agents.core.env_provenance import load_hub_env
+    from agents.core.env_provenance import load_hub_env, problems
 
-    load_hub_env()
+    # This is the tool that gets an owner back in: a configuration the hub refuses to start
+    # on must not stop it too. It loads whatever is there and says what the hub will refuse.
+    load_hub_env(refuse=False)
+    for problem in problems():
+        print(f"warning: the hub will not start on this configuration.\n{problem['message']}\n",
+              file=sys.stderr)
     from agents.core.security import token_store
 
     store = token_store.get_token_store()

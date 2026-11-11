@@ -1,4 +1,8 @@
-"""Authenticated discovery/replies to live HTTP clarification; same model turn."""
+"""Authenticated discovery/replies to live HTTP clarification; same model turn.
+
+`nerva chat` uses these two routes to answer a turn's questions mid-turn (H226). A
+secret prompt is listed with its name only; its value is stored through the secret
+broker route, and the answer here is the marker ``"stored"``, never the value."""
 
 import asyncio
 import hashlib
@@ -25,6 +29,8 @@ def http_actor(request: Request):
             identity = f"admin\0{admin}"
         elif web._user_credential_ok(user_supplied=user, admin_supplied=""):
             identity = f"user\0{user}"
+        elif not (admin or user) and web._owner_session_ok(request):
+            identity = f"session\0{web._browser_session.cookie_token(request)}"   # H509
         else:
             return None
     else:
@@ -33,6 +39,16 @@ def http_actor(request: Request):
             return None
         identity = f"localhost\0{peer}\0{web._web_principal(request).admin}"
     return hashlib.sha256(identity.encode()).hexdigest()
+
+
+def http_owner(request: Request) -> bool:
+    """Whether this request is the owner's, by the web chat door's own predicate (an admin
+    credential, or a direct-localhost caller on a box that never configured one). Secret
+    prompts (H226) are offered to and answered by the owner only."""
+    try:
+        return _web()._web_principal(request).admin is True
+    except Exception:
+        return False
 
 
 @asynccontextmanager
@@ -53,7 +69,8 @@ async def http_chat_binding(orch, request: Request, session_id):
                 task.cancel()
                 return
 
-    with runtime.bind_http(actor, session_id, None, lambda: http_actor(request) == actor, poll=True):
+    with runtime.bind_http(actor, session_id, None, lambda: http_actor(request) == actor, poll=True,
+                           owner=lambda: http_owner(request)):
         watcher = asyncio.create_task(disconnect(), name="chat-pending-disconnect")
         try:
             yield
@@ -114,7 +131,8 @@ async def answer_pending(request: Request, body: PendingAnswer,
     orch = get_orch()
     runtime = getattr(orch, "__dict__", {}).get("_pending_inputs")
     actor = http_actor(request)
-    result = (runtime.answer_http(prompt_id, actor, body.answer, other=body.other, cancel=body.cancel)
+    result = (runtime.answer_http(prompt_id, actor, body.answer, other=body.other, cancel=body.cancel,
+                                  owner=http_owner(request))
               if runtime is not None and actor is not None else "unavailable")
     status = {"resolved": 200, "invalid": 422, "unavailable": 404}[result]
     return JSONResponse({"ok": result == "resolved", "status": result}, status_code=status,

@@ -1146,6 +1146,16 @@ def read_skill(target: Any, name: Any, *, agent: str = "", session: str = "",
     if warning:
         reply["tainted"] = True
         reply["warning"] = warning
+    if getattr(skill, "required_env", None):
+        # H342: the instructions are still served, but the model is told the skill cannot
+        # do its work yet and which names the owner must set (never a value).
+        from .skill_secrets import missing, setup_message
+
+        unset = missing(skill)
+        if unset:
+            reply["readiness"] = "setup_needed"
+            reply["setup_needed"] = unset
+            reply["setup_note"] = setup_message(skill.name, unset)
     return reply, skill, rendered
 
 
@@ -1471,7 +1481,9 @@ def register_skill_tools(
         actor = _actor() or "agent"
         if not patch:
             try:
-                created = target.generate_skill(actor, description.strip(), [s.strip() for s in steps])
+                # H349: written by the model's tool inside a turn, so never auto-curated.
+                created = target.generate_skill(actor, description.strip(), [s.strip() for s in steps],
+                                                write_origin="assistant_tool")
             except Exception:
                 logger.warning("skill_propose: generate_skill failed", exc_info=True)
                 created = None
@@ -1631,14 +1643,19 @@ def register_skill_tools(
         if queue is not None:
             try:
                 names = ", ".join(sorted(expect))
+                # H349: the owner approves on this card, so it says which of the skills it
+                # changes the owner has pinned (a patch of a pinned skill still goes through).
+                pinned = sorted(s["name"] for s in checked["skills"] if s.get("pinned"))
+                note = f" — pinned by the owner: {', '.join(pinned)}" if pinned else ""
                 store.queue_card(record["id"], queue, agent=actor,
-                                 summary=f"The agent proposes a batch of {len(operations)} change(s) to "
-                                         f"skills: {names}"[:300])
+                                 summary=(f"The agent proposes a batch of {len(operations)} change(s) to "
+                                          f"skills: {names}"[:300 - min(len(note), 150)] + note[:150]))
             except Exception:
                 logger.warning("skill_propose: the batch's approval card could not be queued", exc_info=True)
         _spend(today)
         reply = {"ok": True, "kind": "batch", "batch_id": record["id"], "pending": True,
                  "skills": [{"name": s["name"], "change": s["change"],
+                             **({"pinned": True} if s.get("pinned") else {}),
                              "files": [f"{f['change']} {f['file']}" for f in s["files"]],
                              **({"lint": s["lint"]} if s.get("lint") else {}),
                              **({"migrated_for": s["migrated_for"]} if s.get("migrated_for") else {})}

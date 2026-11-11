@@ -29,6 +29,7 @@ def apply_safe_mode_switch(argv=None) -> bool:
     hub is imported, so every loader sees it; the variable itself works the same way."""
     if SAFE_MODE_SWITCH in (sys.argv[1:] if argv is None else argv):
         os.environ.update({"JARVIS_SAFE_MODE": "1"})   # a write, not a read of the environment
+        os.environ.pop("NERVA_SAFE_MODE", None)        # RB-2: the switch wins over either spelling
         return True
     return False
 
@@ -126,7 +127,12 @@ def apply_staged_restore():
     from agents.core.env_provenance import load_hub_env
     from agents.core.sd_notify import keepalive
 
-    load_hub_env()   # an encrypted archive's key may live in .env (main() loads it anyway)
+    try:
+        load_hub_env()   # an encrypted archive's key may live in .env (main() loads it anyway)
+    except SystemExit as stopped:    # a refused configuration: the same way out as main()'s load
+        if not hasattr(stopped, "exit_status"):
+            raise
+        _leave_refused(stopped)
     with keepalive("applying a staged restore"):
         result = backup.apply_pending_restore()
     if result is None:
@@ -150,6 +156,15 @@ def apply_staged_restore():
               + (f", rollback point: {result['rollback']}" if result.get("rollback") else ""),
               file=sys.stderr)
     return result
+
+
+def _leave_refused(refused) -> None:
+    """RB-2: a refused configuration ends the start with the status the refusal carries —
+    78 for one variable under both spellings in the process environment (no restart can
+    cure it, and the service units do not restart on it), the ordinary failure status for
+    a refusal that comes from a .env file (the service manager tries again)."""
+    print(refused, file=sys.stderr)
+    raise SystemExit(refused.exit_status) from None
 
 
 apply_staged_restore()
@@ -434,13 +449,25 @@ def _successor_argv() -> list:
     return [sys.executable, *list(sys.orig_argv)[1:]]
 
 
+def _hand_over_spellings(env) -> None:
+    """RB-2: the next hub is this hub — it keeps the note of which variables were spelled
+    NERVA_<X> (names only; ``env_alias.hand_over``), so a restart does not forget it."""
+    from agents.core.env_alias import hand_over
+
+    hand_over(env)
+
+
 def _spawn_successor():
     """Start the next hub in its own console and process group (it outlives this one)."""
     import subprocess  # nosec B404 - this process's own command line, nothing from a request
 
     flags = (getattr(subprocess, "CREATE_NEW_CONSOLE", 0x00000010)
              | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200))
-    env = {**os.environ, RESTART_PREDECESSOR_ENV: str(os.getpid())}
+    from agents.core.env_provenance import successor_environ
+
+    # G1 review A4: the next hub gets the process environment, not what this one loaded
+    env = {**successor_environ(os.environ), RESTART_PREDECESSOR_ENV: str(os.getpid())}
+    _hand_over_spellings(env)
     return subprocess.Popen(_successor_argv(), env=env, cwd=os.getcwd(),  # nosec B603
                             close_fds=True, creationflags=flags)
 
@@ -500,14 +527,26 @@ def run_server(server) -> None:
             print(f"Could not start the next hub ({exc}): start Nerva again yourself — the "
                   f"staged restore is applied at that start", file=sys.stderr)
         return                                # this process exits; the successor waits for it
+    # The new image keeps systemd's watchdog fed from its first lines (sd_notify).
+    from agents.core.env_provenance import successor_environ
     from agents.core.sd_notify import RESTART_ENV
 
-    # The new image keeps systemd's watchdog fed from its first lines (sd_notify).
+    # G1 review A4: the new image gets the process environment, not the .env values, managed
+    # pins and panel keys this one loaded (it loads them again, each in its own layer)
+    keep = successor_environ(os.environ)
+    for name in [name for name in os.environ if name not in keep]:
+        os.environ.pop(name, None)
     os.environ.update({RESTART_ENV: "1"})
+    _hand_over_spellings(os.environ)
     _close_on_exec_all()
     # The interpreter and argv this process was started with; nothing from a request.
     os.execv(sys.executable, list(sys.orig_argv))  # nosec B606 - this process's own argv
 
 
 if __name__ == "__main__":
-    main()
+    from agents.core.env_alias import ConfigurationRefused
+
+    try:
+        main()
+    except ConfigurationRefused as refused:
+        _leave_refused(refused)

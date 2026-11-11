@@ -18,8 +18,9 @@ web. Behavior is unchanged from the inline versions.
 
 import time
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Path, Request
 from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel, ConfigDict, Field, StrictStr
 
 from agents.core.app_state import get_orch
 from agents.core.observability.http_metrics import HTTP_METRICS, PROM_CONTENT_TYPE
@@ -266,3 +267,94 @@ async def estop_resume():
     from agents.core import estop
     lifted = estop.disengage()
     return nocache_json({"engaged": estop.is_engaged(), "lifted": lifted})
+
+
+# ── G21 (H160/H173): restart the hub and check for an update, owner-only ──
+
+async def _same_origin(request: Request) -> None:
+    from agents.core.routers.integrations_setup import same_origin_write
+
+    await same_origin_write(request)
+
+
+_OPS_WRITE = [Depends(admin_guard), Depends(_same_origin)]
+
+
+async def _ops_audit(preview: str, action: str) -> None:
+    import asyncio
+
+    from agents.core.security.types import SecurityEvent, SecurityEventType
+
+    orch = get_orch()
+    audit = getattr(orch, "audit", None) if orch is not None else None
+    if audit is None:
+        return
+    try:
+        await asyncio.to_thread(audit.log, SecurityEvent(
+            event_type=SecurityEventType.AUDIT_LOG, timestamp=time.time(),
+            content_preview=preview[:500], action_taken=action))
+    except Exception:  # noqa: BLE001 — the action happened; a lost audit row is only logged
+        import logging
+
+        logging.getLogger("jarvis.routers.ops").warning("ops audit row lost (%s)", action)
+
+
+@router.get("/api/admin/ops/update", dependencies=[Depends(admin_guard)])
+async def ops_update_check():
+    """What the hub runs, how it stands against its upstream as of the last fetch, and why
+    applying an update from the HUD is not offered (``apply_refused``)."""
+    import asyncio
+
+    from agents.core import hub_update
+
+    return nocache_json(await asyncio.to_thread(hub_update.check))
+
+
+@router.post("/api/admin/ops/update/fetch", dependencies=_OPS_WRITE)
+async def ops_update_fetch():
+    """Fetch the tracked upstream in the background; poll the action by its id."""
+    import asyncio
+
+    from agents.core import hub_update
+
+    record, refused = await asyncio.to_thread(hub_update.start_fetch)
+    if record is None:
+        return nocache_json({"error": refused}, status_code=409)
+    await _ops_audit("update check: fetch of the tracked upstream started", "ops_update_fetch")
+    return nocache_json(record, status_code=202)
+
+
+@router.get("/api/admin/ops/actions/{action_id}", dependencies=[Depends(admin_guard)])
+async def ops_action(action_id: str = Path(..., pattern=r"^[0-9a-f]{16}$")):
+    """One ops action's status and its log lines (a fetch, a restart)."""
+    from agents.core import hub_update
+
+    record = hub_update.action(action_id)
+    if record is None:
+        return nocache_json({"error": "unknown_action"}, status_code=404)
+    return nocache_json(record)
+
+
+class RestartBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    confirm: StrictStr = Field(min_length=1, max_length=16)
+
+
+@router.post("/api/admin/ops/restart", dependencies=_OPS_WRITE)
+async def ops_restart(body: RestartBody):
+    """Restart the hub (``{"confirm": "restart"}``). 202 when this process will restart
+    itself in a moment; 409 ``manual`` when it was started some other way."""
+    from agents.core import hub_update
+
+    if body.confirm != hub_update.RESTART_CONFIRM:
+        return nocache_json({"error": "confirm_required", "detail": 'send {"confirm": "restart"}'},
+                            status_code=400)
+    record, refused = hub_update.restart()
+    if record is None:
+        detail = ("this hub was not started by serve.py, so it cannot restart itself; restart it the "
+                  "way it was started (systemd, START.bat, the service manager)"
+                  if refused == "manual" else "another ops action is running")
+        return nocache_json({"error": refused, "restart": hub_update.restart_mode(), "detail": detail},
+                            status_code=409)
+    await _ops_audit("hub restart requested from the HUD", "ops_restart")
+    return nocache_json({**record, "restart": "requested"}, status_code=202)

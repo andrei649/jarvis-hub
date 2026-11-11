@@ -47,7 +47,7 @@ provider data → evidence → signals → relevance → assessments → brief �
 
 ```text
 START.bat / start.sh
-→ Jarvis Hub (:8080)
+→ Nerva (:8080)
 → existing WorldView (:3000/:4000, when installed)
 → Signal Layer replay mode (:8787)
 → HUD Observe mode shows World Intelligence

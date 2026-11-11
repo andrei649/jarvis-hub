@@ -38,7 +38,7 @@ async def main():
     print(f"Checkpoints: {orch.checkpoints.info().get('checkpoints', 0)}")
     print(f"Sessions tracked: {orch.checkpoints.info().get('sessions_recorded', 0)}")
 
-    print("\nJarvis v0.2.0 ready. Type your query (or 'exit' to quit).\n")
+    print("\nNerva ready. Type your query (or 'exit' to quit).\n")
     print("Tip: End messages with '[learn: desc|step1,step2|cmd]' to save skills.")
     print("     Use '[handoff:agent_id]' to delegate between agents.\n")
 

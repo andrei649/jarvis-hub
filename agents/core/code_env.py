@@ -5,6 +5,11 @@ The registry stores names, never values. A fresh validator can bind a declaratio
 to the exact skill/catalog/trust snapshot that was viewed. The spawn path resolves
 names in its trusted invocation scope and supplies a scoped value reader to
 ``prepare_code_env`` before starting the interpreter.
+
+H342 (G20 review): the values the owner stores for a skill (``skills/skill_secrets``)
+never enter this environment. An interpreter runs code the model wrote, and a
+``skill_view`` that declares names can be the model's own call, so only the hub's
+environment (the owner's ``.env``) is read here, as before.
 """
 
 from __future__ import annotations
@@ -16,6 +21,8 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from itertools import islice
 from threading import RLock
+
+from agents.core.llm.hermes_provider_table import ADOPTED_MODEL_PROVIDER_KEYS
 
 _NAME = re.compile(r"[A-Z_][A-Z0-9_]{0,127}\Z")
 _MAX_ID_LENGTH = 256
@@ -39,7 +46,8 @@ _MANAGED_NAMES = frozenset({
     "VERTEX_CREDENTIALS_PATH", "GOOGLE_APPLICATION_CREDENTIALS", "DEEPSEEK_API_KEY",
     "MISTRAL_API_KEY", "GROQ_API_KEY", "TOGETHER_API_KEY", "PERPLEXITY_API_KEY",
     "COHERE_API_KEY", "FIREWORKS_API_KEY", "XAI_API_KEY", "HELICONE_API_KEY",
-    "PARALLEL_API_KEY", "FIRECRAWL_API_KEY", "FIRECRAWL_API_URL",
+    "PARALLEL_API_KEY", "EXA_API_KEY", "BRAVE_SEARCH_API_KEY", "FIRECRAWL_API_KEY",
+    "FIRECRAWL_API_URL",
     "TELEGRAM_HOME_CHANNEL", "TELEGRAM_HOME_CHANNEL_NAME", "DISCORD_HOME_CHANNEL",
     "DISCORD_HOME_CHANNEL_NAME", "DISCORD_REQUIRE_MENTION",
     "DISCORD_FREE_RESPONSE_CHANNELS", "DISCORD_AUTO_THREAD", "SLACK_HOME_CHANNEL",
@@ -58,7 +66,16 @@ _MANAGED_NAMES = frozenset({
     "GEMINI_API_KEY", "DEEPINFRA_API_KEY", "OPENROUTER_BASE_URL",
     "DEEPINFRA_BASE_URL", "JARVIS_NOUS_INFERENCE_BASE_URL",
     "JARVIS_LM_STUDIO_URL", "JARVIS_OLLAMA_URL", "GITHUB_TOKEN",
-})
+    # Nerva's native search key (the HUD's Integrations panel can set it).
+    "TAVILY_API_KEY",
+    # G19: the FAL key (cloud images and the adopted FAL video provider; the panel sets it).
+    "FAL_KEY",
+    # G16 (H098): the SMS channel's Twilio auth token (the panel sets it).
+    "JARVIS_SMS_AUTH_TOKEN",
+    # G21: the channels' secrets the HUD's Channels panel can set (channel_config.secret_names).
+    "TELEGRAM_BOT_TOKEN", "DISCORD_BOT_TOKEN", "SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "SMTP_PASS",
+    "IMAP_PASS", "NTFY_TOKEN", "NTFY_TOPIC", "NTFY_PUBLISH_TOPIC",
+}) | ADOPTED_MODEL_PROVIDER_KEYS  # the model providers adopted from Hermes (Adopt lane, slice 2)
 
 # These names either load code, alter the host's controlled child base, or carry
 # private RPC/control authority. They cannot be supplied by a skill or config.
@@ -69,6 +86,8 @@ _CONTROL_NAMES = frozenset({
     "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "VIRTUAL_ENV",
     "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "PATHEXT", "APPDATA",
     "LOCALAPPDATA", "USERPROFILE", "USERNAME", "HOMEDRIVE", "HOMEPATH",
+    # RB-2: the hub's own notes of which variables were spelled NERVA_ (env_alias)
+    "_NERVA_ENV_PREFERRED", "_NERVA_ENV_PREFERRED_PID",
 })
 _CONTROL_PREFIXES = (
     "PYTHON", "LD_", "DYLD_", "GIT_CONFIG", "JARVIS_RPC_", "HERMES_RPC_",
@@ -89,7 +108,32 @@ def _passable_name(name: object) -> bool:
         return False
     if upper.startswith(_CONTROL_PREFIXES):
         return False
-    return not upper.startswith(("AUXILIARY_", "JARVIS_", "HERMES_"))
+    if upper.startswith(("AUXILIARY_", "JARVIS_", "HERMES_")):
+        return False
+    if upper.startswith("NERVA_"):
+        return not _refused_nerva_name(upper)
+    return True
+
+
+#: NERVA_* variables that are credentials although their names do not say so.
+_NERVA_CREDENTIALS = frozenset({"NERVA_WORKSPACE_SETUP_CODE", "NERVA_WORKSPACE_JOB_NONCE",
+                                "NERVA_WS_SESSION", "NERVA_WS_ADMIN_SESSION"})
+
+
+def _refused_nerva_name(upper: str) -> bool:
+    """RB-2 — which ``NERVA_*`` names a skill or a config may not hand a child. A hub
+    variable's other spelling (``NERVA_<X>`` is ``JARVIS_<X>``) and the child's control
+    channel are refused like their ``JARVIS_`` names; a variable that was always
+    ``NERVA_*`` is refused only when it is a credential, by its name (the workspace's SSO
+    secret and setup code) — every other one stays passable, as it was."""
+    from .env_config import other_spelling
+    from .env_provenance import masked
+    from .environments import SECRET_ENV_SUBSTRINGS
+
+    if other_spelling(upper) is not None or upper.startswith(("NERVA_RPC_", "NERVA_TOOL_RPC_")):
+        return True
+    return (upper in _NERVA_CREDENTIALS or masked(upper)
+            or any(part in upper for part in SECRET_ENV_SUBSTRINGS))
 
 
 #: How long a skill view's declaration lasts unless the host sizes it otherwise (the

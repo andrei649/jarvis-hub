@@ -29,8 +29,11 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     JARVIS_HOST=127.0.0.1 \
     JARVIS_PORT=8080 \
-    JARVIS_HOME=/data \
-    JARVIS_HUD=v2
+    JARVIS_HOME=/data
+# RB-2: the three JARVIS_ lines above are pinned under that spelling: override one with
+# `-e JARVIS_<X>=...` (NERVA_<X> beside a pin is one variable set twice, and the hub refuses
+# to start). The HUD is not pinned any more: v2 is the code's own default, so NERVA_HUD=v1
+# and JARVIS_HUD=v1 both select the legacy HUD.
 
 WORKDIR /app
 

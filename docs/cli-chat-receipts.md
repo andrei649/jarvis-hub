@@ -112,3 +112,49 @@ null and appear in `breakdown`, capped at 16 rows; `breakdown_truncated` reports
 omitted rows. The top-level totals still cover all observed attempts unless a
 collector bound is exceeded, in which case they become unknown. No prompt, tool
 argument, credential or endpoint URL is copied into this telemetry.
+
+## Questions the turn asks while it runs (H226)
+
+Run from a terminal (stdin not piped), `nerva chat` answers the turn's own prompts
+right where you are, while the turn waits:
+
+- **A question (clarify).** The question and its numbered choices appear on stderr.
+  Type a number, a label, several numbers separated by commas when it allows more than
+  one, or your own answer. `/cancel` (or an empty input at end of file) declines and the
+  turn goes on without an answer. A batch of questions is asked one at a time; each
+  answer goes to its own question once. Your answer reaches the same turn as data the
+  model must not obey, exactly like an answer typed in the HUD, and it raises the
+  turn's taint, so an action built on it still asks for approval.
+- **A missing secret (an API key).** The turn names the secret and why it needs it. The
+  value is read without echo and sent only to the hub's secret store (the route the
+  HUD's Secrets panel uses); the conversation receives the name and its
+  `{{secret:NAME}}` handle, never the value. Nothing is printed, logged or written to
+  the receipt. An empty line declines. Only the owner is asked: a terminal holding a
+  user token, not the admin token, is never offered a secret prompt, and the store
+  refuses it. A hub reached over plain http on another machine is never sent a secret.
+  The turn can ask only for an upper-case key name (`WEATHER_API_KEY`) that a skill you
+  installed and vouched for declares as required — never a provider key, a hub token or
+  a key a Nerva component keeps (house, camera, peer and connector keys) — and never once
+  it has read a web page, a tool result from outside or another untrusted message. A key
+  your administrator manages, or any key in managed mode, is refused. A key already held,
+  in the store or in a vault source, is not asked for again.
+- **What is Nerva's and what is the turn's.** Lines Nerva prints start at the left edge.
+  Everything the model or the turn wrote (a question, a choice, a reason, a card's
+  title or command) is shown behind a `│` bar, with direction-changing and invisible
+  characters removed, so it cannot pose as a Nerva prompt. Nerva asks for a key only
+  with its own `! Nerva needs the key NAME …` line followed by a prompt that does not
+  show what you type; an answer that looks like a key or token is never sent as an
+  ordinary answer.
+- **Approvals (confirm and sudo-class commands).** In Nerva these are approval cards: a
+  turn that needs one queues it and stops. After the answer, `nerva chat` shows each
+  card the turn queued (tier, reversibility, the exact command or path, the rollback
+  plan) and asks `[a]ccept, [r]eject, [d]efer, or Enter to leave it queued`. The
+  decision goes through the same admin route as the HUD and `nerva approvals`; there is
+  no batch accept, and a terminal without the admin token leaves the card queued.
+
+A script never sees any of this: with stdin piped, `--json`, or `--no-prompts`, nothing
+is read from the terminal and the exit codes above are unchanged.
+
+Questions and secret prompts need the clarification preview to be on:
+`nerva config set channels.pending_inputs_enabled true`, then restart the hub. It is
+off by default; while it is off the model has no `clarify` or `request_secret` tool.

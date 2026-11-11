@@ -11,11 +11,16 @@ import { navigateHud, routeHref } from './hud-routing';
 import { apiGet, apiPost, apiPut, apiPatch, apiDelete, actionFailures, onActionFailure, clearActionFailures } from './api/client';
 import { isKillSwitchState } from './api/actions';
 import { localModelStatus } from './api/live';
+import { ownerSignedIn } from './api/owner-session';
+import { approvalModeNote } from './api/loaders';
+import { setAgentAutonomyMode, agentModeRefusalNote } from './api/actions';
 import { OperatorPanel } from './operator-panel';
 import { CoachPanel } from './panels/coach';
 import { DocsPanel, docHref, sectionIndex } from './panels/docs';
 import { WebhooksPanel } from './panels/webhooks';
+import { McpPanel } from './panels/mcp';
 import { LongTermMemoryPanel } from './panels/long-term-memory';
+import { SessionUsage } from './panels/session-usage';
 import { SkillSwitchesPanel } from './panels/skill-switches';
 import { ProviderCheckPanel } from './panels/provider-check';
 import { ProviderQuotaPanel } from './panels/provider-quota';
@@ -28,7 +33,7 @@ import { ResetAll, ResetCategory, SettingsSearch, SettingsTransfer, UndoReset, s
 import { useSelectionGuard, type GuardFlags } from './selection-guard';
 import { PLANS_PATH, PlansInFlight } from './panels/plans';
 import { SKILL_CHANGES_PATH, SkillChangesInbox } from './panels/skill-changes';
-import { BatchReferences, SKILL_BATCHES_PATH, SkillBatchEditor, SkillBatchesInbox } from './panels/skill-batches';
+import { BatchReferences, SKILL_BATCHES_PATH, SkillBatchEditor, SkillBatchesInbox, SkillConsolidation } from './panels/skill-batches';
 import { RETENTION_KIND, RetentionBanner, RetentionCard, refusedWhy, saveOrder, sentFor } from './panels/retention';
 import { VOICE_COMMAND_KIND, VoiceCommandCard, VoiceCommands } from './panels/voice-commands';
 import { CodeIntelPanel } from './panels/codeintel';
@@ -45,6 +50,11 @@ import { AutonomyControlPanel } from './panels/autonomy-legacy';
 import { DesktopAllowlistPanel } from './panels/desktop-allowlist';
 import { LlmRoutingPanel } from './panels/llm-routing';
 import { CustomEndpointsPanel } from './panels/custom-endpoints';
+import { IntegrationsPanel } from './panels/integrations';
+import { FilesPanel } from './panels/files';
+import { HooksPanel } from './panels/hooks';
+import { ChannelsConfigPanel } from './panels/channels-config';
+import { SystemUpdatePanel } from './panels/system-update';
 import { WorkflowTracesPanel } from './panels/workflows-advanced';
 import { PresenceInboxPanel } from './panels/presence-inbox';
 import { ReviewQualityPanel } from './panels/review-quality';
@@ -53,6 +63,7 @@ import { WritebackDigestPanel } from './panels/writeback-digest';
 import { SupportVoicePanel } from './panels/support-voice';
 import { AgentsArenaPanel } from './panels/agents-arena';
 import { MissionCanvasPanel } from './panels/mission-canvas';
+import { ContextMeterPanel } from './panels/context-meter';
 import { SkillsImportPanel } from './panels/skills-import';
 import { TodayReceiptPanel } from './panels/today-receipt';
 import { JobsPanel } from './panels/jobs';
@@ -63,6 +74,7 @@ import { QuickbarPanel } from './panels/quickbar';
 import { MemoryConsolidatePanel } from './panels/memory-consolidate';
 import { PermissionsPanel } from './panels/permissions';
 import { DataHandling } from './panels/data-handling';
+import { CredentialShares } from './panels/credential-shares';
 import { UsagePanel } from './panels/usage';
 
 import { useApi, arr, mono, asLive, PanelChip, Card, State, Row, Tag, Btn, act, actA, refusalReason, inpS, taS, Json } from './panel-kit';
@@ -1052,6 +1064,7 @@ export function PosturePanel() {
             </span>
           </Row>
           <DataHandling value={d.data_handling} reload={reload} />
+          <CredentialShares value={d.credential_shares} reload={reload} />
         </>
       )}
       {/* H165 — each switch above has a price; the flags doc names it. */}
@@ -1571,6 +1584,26 @@ export function SubAgentsPanel() {
   const [steerText, setSteerText] = useState('');
   const atCap = stats.cap != null && (stats.active ?? 0) >= stats.cap;
   const statusColor = (s) => (s === 'done' ? 'var(--green)' : s === 'failed' ? 'var(--red)' : 'var(--amber)');
+  // H400 — whether a NEW sub-agent would start now: the emergency stop, the kill switch and
+  // the owner's pause all refuse new spawns (the model's delegate_task included) and leave
+  // running ones alone. The pause routes answer the state read back; that is what is shown.
+  const gate = (d && d.gate) || null;
+  const HALTS = { estop_engaged: 'emergency stop', kill_switch_halted: 'kill switch', halt_state_unknown: 'stop state unreadable' };
+  const togglePause = () => {
+    if (!gate) return;
+    const pausing = !gate.paused;
+    setNote(null);
+    act(pausing ? '/api/subagents/pause' : '/api/subagents/resume', {},
+      (r) => {
+        const paused = !!(r && r.paused);
+        if (paused !== pausing) setNote(pausing ? 'refused · spawning was not paused' : 'refused · spawning is still paused');
+        else if (pausing) setNote('new sub-agents paused · running ones continue');
+        else if (r && r.accepting) setNote('new sub-agents resumed');
+        else setNote(`pause lifted · still stopped by the ${HALTS[r && r.halted] || 'emergency stop'}`);
+        reload();
+      },
+      (err) => { setNote(`refused · ${refusalReason(err, pausing ? 'pause failed' : 'resume failed')}`); reload(); });
+  };
   const spawn = () => {
     const t = task.trim();
     if (!t || pending) return;
@@ -1679,6 +1712,20 @@ export function SubAgentsPanel() {
               <Tag>{stats.total ?? spawns.length} total</Tag>
             </span>
           </Row>
+          {gate && (
+            <Row><span style={mono}>new sub-agents</span>
+              <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
+                {gate.halted && <Tag c="var(--red)">{HALTS[gate.halted] || 'stopped'}</Tag>}
+                {gate.paused && <Tag c="var(--amber)">paused</Tag>}
+                {gate.accepting && <Tag c="var(--green)">accepting</Tag>}
+                <button
+                  className="tool-btn"
+                  title={gate.paused ? 'let new sub-agents start again' : 'refuse new sub-agents; running ones continue'}
+                  onClick={togglePause}
+                >{gate.paused ? 'resume spawning' : 'pause spawning'}</button>
+              </span>
+            </Row>
+          )}
           {spawns.slice(0, 10).map((s, i) => (
             <React.Fragment key={s.id || i}>
               <Row>
@@ -2141,7 +2188,12 @@ export function ReviewPanel() {
   </Card>;
 }
 function APMPanel() {
-  return <UsagePanel />;
+  // Main's measured usage/billing view (totals, locality, agents, models) and, below it,
+  // H443's one conversation's usage by purpose — its turns and the reviews made for it.
+  return <>
+    <UsagePanel />
+    <Card title="SESSION USAGE" live="live"><SessionUsage /></Card>
+  </>;
 }
 
 /* ── Autonomy ──────────────────────────────────────────── */
@@ -3005,14 +3057,22 @@ export function SettingsPanel() {
               )}
               {/* H259: a setting that differs from its declared default says so, and ↺ stages the
                   default for the next save (a secret carries no default, so never). */}
-              {!it.written_by && 'default' in it && JSON.stringify(valOf(cat, it)) !== JSON.stringify(it.default) && <>
+              {!it.written_by && !it.managed && 'default' in it && JSON.stringify(valOf(cat, it)) !== JSON.stringify(it.default) && <>
                 <span title={`default: ${shownSetting(it.default)}`} style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--amber)' }}>changed</span>
                 <button className="tool-btn" style={{ padding: '0 5px', fontSize: 9.5 }} title={`default: ${shownSetting(it.default)}`}
                   aria-label={`put ${cat}.${it.key} back to its default`} onClick={() => setVal(cat, it.key, it.default)}>↺</button>
               </>}
               {/* review-H329 F1: a setting only its own route writes (the skill switches) is
                   shown, with where to change it; the hub refuses it in a settings save. */}
-              {it.written_by
+              {/* G1: a setting the administrator pinned shows its value and the file that pins
+                  it, never an edit box; the hub refuses a write that would change it. */}
+              {it.managed
+                ? <span data-testid="managed-setting" style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                    <span style={{ ...mono, fontSize: 11 }}>{shownSetting(it.value)}</span>
+                    <span style={{ display: 'block', fontSize: 9.5, color: 'var(--ink-2)' }}
+                      title={it.managed.source}>🔒 managed by your administrator{it.managed.leaves && it.managed.leaves.length ? ` (${it.managed.leaves.join(', ')})` : ''}</span>
+                  </span>
+                : it.written_by
                 ? <span style={{ marginLeft: 'auto', textAlign: 'right' }}>
                     <span style={{ ...mono, fontSize: 11 }}>{shownSetting(it.value)}</span>
                     <span style={{ display: 'block', fontSize: 9.5, color: 'var(--ink-2)' }}>change it in {it.written_by}</span>
@@ -3595,6 +3655,11 @@ export function DecisionInboxPanel() {
             <span style={{ ...mono, color: 'var(--ink-2)' }}>{t.title || t.kind || ('task ' + t.id)}</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
               {typeof t.risk_tier === 'number' && <Tag c={tierColor(t.risk_tier)}>tier {t.risk_tier}</Tag>}
+              {approvalModeNote(t.approval_mode, t.asked_under) &&
+                <span title={approvalModeNote(t.approval_mode, t.asked_under).why}
+                  aria-label={`Approval mode for ${t.title || t.kind || ('task ' + t.id)}`}
+                  style={{ ...mono, fontSize: 9.5, padding: '1px 5px', border: '1px solid var(--panel-line)', borderRadius: 3, color: 'var(--ink-2)' }}>
+                  {approvalModeNote(t.approval_mode, t.asked_under).label}</span>}
               {!isImageProposal(t) && <button className="tool-btn" title="dry-run preview" onClick={() => loadPreview(t.id)}>preview</button>}
               <button className="tool-btn" title="accept" onClick={() => decide(t.id, 'accept')}>{groupLeaders.has(t.id) ? 'approve once' : '✓'}</button>
               {!isImageProposal(t) && t.kind !== VOICE_COMMAND_KIND && <button className="tool-btn" title="edit" onClick={() => startEdit(t)}>edit</button>}
@@ -3741,6 +3806,7 @@ export function DecisionInboxPanel() {
       <SkillChangesInbox reply={changes.d} error={changes.e} onDecided={changes.reload} />
       <SkillBatchesInbox reply={batches.d} error={batches.e} onDecided={batches.reload} />
       <SkillBatchEditor onApplied={batches.reload} />
+      <SkillConsolidation onProposed={batches.reload} />
       <PlansInFlight reply={plans.d} error={plans.e} />
     </Card></div>
   );
@@ -3787,7 +3853,15 @@ export function AgentAutonomyPanel() {
   const entries = Object.keys(agents).map((k) => [k, agents[k]]);
   const [agent, setAgent] = useState('');
   const [mode, setMode] = useState('ask');
-  const setPolicy = (ag, m) => actA('/autonomy/policy', { agent: ag, mode: m }, reload);
+  // H484: a refused override write (422 invalid agent, 503 not saved / not in force) is
+  // shown with what the agent actually runs — it used to be ignored.
+  const [refusal, setRefusal] = useState(null);
+  const setPolicy = (ag, m) => {
+    setRefusal(null);
+    return setAgentAutonomyMode(ag, m)
+      .then((r) => { setRefusal(agentModeRefusalNote(ag, m, r)); reload(); })
+      .catch(() => { setRefusal(`${ag}: ${m} was not applied (the hub refused the request)`); });
+  };
   const modeColor = (m) => m === 'auto' ? 'var(--green)' : m === 'ask' ? 'var(--amber)' : m === 'off' ? 'var(--red)' : 'var(--ink-2)';
   return (
     <Card title="PER-AGENT AUTONOMY" live={asLive(d)} sub={d ? `global: ${globalMode}` : null} onReload={reload}>
@@ -3802,6 +3876,8 @@ export function AgentAutonomyPanel() {
         </Row>
       ))}
       {entries.length === 0 && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>no overrides · every agent follows the global mode ({globalMode})</div>}
+      {globalMode === 'off' && entries.length > 0 && <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>the global mode is off: no override applies</div>}
+      {refusal && <div role="alert" style={{ fontSize: 10, color: 'var(--amber)', marginTop: 6 }}>{refusal}</div>}
       <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
         <input value={agent} onChange={(ev) => setAgent(ev.target.value)} placeholder="agent" style={{ ...inpS, flex: 1 }} />
         <select value={mode} onChange={(ev) => setMode(ev.target.value)} style={{ ...inpS }}>
@@ -4265,7 +4341,7 @@ export function HousePanel() {
   const [confirmationText, setConfirmationText] = useState('');
   const [confirmationMessage, setConfirmationMessage] = useState('');
   let hasAdmin = false;
-  try { hasAdmin = !!localStorage.getItem('hud.admin_token'); } catch { /* unavailable */ }
+  try { hasAdmin = !!localStorage.getItem('hud.admin_token') || ownerSignedIn(); } catch { /* unavailable */ }
 
   const selectedLight = lightTarget || lights[0]?.entity_id || '';
   const selectedClimate = climateTarget || climates[0]?.entity_id || '';
@@ -4576,7 +4652,7 @@ export function CameraPanel() {
   const [discovery, setDiscovery] = useState(null);
   const [discoveryError, setDiscoveryError] = useState('');
   let hasAdmin = false;
-  try { hasAdmin = !!localStorage.getItem('hud.admin_token'); } catch { /* unavailable */ }
+  try { hasAdmin = !!localStorage.getItem('hud.admin_token') || ownerSignedIn(); } catch { /* unavailable */ }
 
   const source = searchResult || recent.d || {};
   const events = arr(source, 'events').slice(0, 100);
@@ -4701,7 +4777,7 @@ const PURGE_PHRASE = 'PURGE ACQUISITION DETAIL';
    Raw goals, research extracts, package paths, and receipt bodies never reach the HUD. */
 export function AcquisitionPanel() {
   let hasAdmin = false;
-  try { hasAdmin = !!localStorage.getItem('hud.admin_token'); } catch { /* unavailable */ }
+  try { hasAdmin = !!localStorage.getItem('hud.admin_token') || ownerSignedIn(); } catch { /* unavailable */ }
   const status = useApi('/api/acquisition/status');
   const audit = useApi('/api/acquisition/events?limit=100');
   // The drive control below needs a real request_id, and this list is the ONLY place
@@ -5555,8 +5631,10 @@ const PANEL_COMPONENTS = {
   UsagePanel,
   TodayReceiptPanel,
   ModelSetupPanel,
+  IntegrationsPanel,
   DocsPanel,
   WebhooksPanel,
+  McpPanel,
   LogsPanel,
   PresenceInboxPanel,
   AmbientWatchPanel,
@@ -5660,12 +5738,17 @@ const PANEL_COMPONENTS = {
   JobsPanel,
   LearningPanel,
   SessionsPanel,
+  ContextMeterPanel,
   HeartbeatPanel,
   TranscriptPanel,
   EscalationPanel,
   LlmRoutingPanel,
   SupportVoicePanel,
   BackupPanel,
+  FilesPanel,
+  HooksPanel,
+  ChannelsConfigPanel,
+  SystemUpdatePanel,
   OAuthPanel,
   SettingsPanel,
   PromptsPanel,

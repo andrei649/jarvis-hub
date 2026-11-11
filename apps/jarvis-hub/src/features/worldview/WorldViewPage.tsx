@@ -46,7 +46,7 @@ export function WorldViewPage() {
     <main className="min-h-screen bg-neutral-950 text-neutral-100">
       <div className="mx-auto flex max-w-7xl flex-col gap-4 p-6">
         <header className="flex flex-col gap-2">
-          <p className="text-sm uppercase tracking-[0.35em] text-neutral-500">Jarvis Hub</p>
+          <p className="text-sm uppercase tracking-[0.35em] text-neutral-500">Nerva</p>
           <h1 className="text-3xl font-semibold">WorldView</h1>
           <p className="max-w-3xl text-neutral-400">
             External-world signals, evidence, relevance, assessments, and approval-gated recommendations.

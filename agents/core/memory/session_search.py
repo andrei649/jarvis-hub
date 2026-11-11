@@ -433,8 +433,24 @@ def search_sessions(
 
 # ── the ToolRPC seam ─────────────────────────────────────────────────────────
 
-def register_session_search(server: Any, *, directory: Path | None = None) -> str:
-    """Expose ``session_search`` on a ToolRPC server (ungated, read-only)."""
+def register_session_search(server: Any, *, directory: Path | None = None,
+                            trust: Any = None, is_clean: Any = None) -> str:
+    """Expose ``session_search`` on a ToolRPC server (ungated, read-only). H443:
+    *trust* (``session_id -> "clean" | "unproven" | "unclean"``, the review ledger's
+    standing with the hub's evidence; *is_clean*, a clean-list-only check, is read as
+    clean / unproven) — a hit from a conversation known to be unclean (a stranger's, a
+    guest's, a channel's, an imported one) makes the result ``tainted``; a hit from one
+    merely not proven clean (the owner's own, older than the ledger) does not, and is
+    noted on the turn so its own conversation's automatic memory writes are held."""
+    from ..learning.memory_proposals import (
+        TRUST_UNCLEAN,
+        TRUST_UNPROVEN,
+        as_trust,
+        hits_trust,
+        note_unproven_read,
+    )
+
+    standing = as_trust(trust if trust is not None else is_clean)
 
     async def _handle(args: dict) -> dict:
         result = await asyncio.to_thread(
@@ -449,8 +465,12 @@ def register_session_search(server: Any, *, directory: Path | None = None) -> st
         # the turn; declare it on the result, as search_memory does, so the tool loop and
         # the ToolRPC broker raise the turn's origin (H586 image readings, SEC-B5 flags).
         if result.get("ok"):
-            result["tainted"] = any(hit.get("image_derived") or hit.get("injection_flagged")
-                                    for hit in result.get("hits", []))
+            hits = result.get("hits", [])
+            verdict = await asyncio.to_thread(hits_trust, hits, standing) if hits else "clean"
+            result["tainted"] = (any(hit.get("image_derived") or hit.get("injection_flagged") for hit in hits)
+                                 or verdict == TRUST_UNCLEAN)
+            if verdict == TRUST_UNPROVEN:
+                note_unproven_read()
         return result
 
     server.register_tool(

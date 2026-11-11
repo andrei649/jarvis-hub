@@ -134,9 +134,8 @@ Tabular numerals for metrics. Letter-spaced mono micro-labels are a signature el
 timelines). No mascots, no gradients-for-gradients'-sake, no stock-photo humans. WorldView's globe
 inherits the same void/cyan language.
 
-**Logo:** currently the wordmark "JARVIS HUB" set in Space Grotesk with the mono sub-line (see HUD
-top bar `brand-tx`). A dedicated mark is open work — until then, the wordmark + signal-cyan on void
-is canonical.
+**Logo:** the neural-N mark (`docs/brand/nerva-mark.svg`) with the wordmark "NERVA" set in Space
+Grotesk and the mono sub-line (see HUD top bar `brand-tx`), signal-cyan on void.
 
 ---
 
@@ -147,11 +146,11 @@ is canonical.
 > log, on your own GPU. $0/month.
 
 **25 words:**
-> Jarvis Hub is a personal AI operating system: 17 specialist agents working proactively on your
+> Nerva is a personal AI operating system: 17 specialist agents working proactively on your
 > hardware, with governed autonomy, living memory, and zero cloud dependency.
 
 **100 words:**
-> Jarvis Hub is a local-first personal AI operating system. Seventeen specialist agents — from
+> Nerva is a local-first personal AI operating system. Seventeen specialist agents — from
 > daily intel to family memory — run 24/7 on your own GPU, coordinated by Jarvis. The system finds
 > its own work: it monitors your world, consolidates every conversation into a knowledge graph
 > nightly, and delivers a prioritized brief each morning. Every autonomous action passes a
@@ -169,7 +168,7 @@ is canonical.
 
 | Field | Value |
 |---|---|
-| **Name** | `jarvis-hub` (keep — matches brand + existing links) |
+| **Name** | `jarvis-hub` today (engine codename, existing links); the rename to `nerva` is an owner task — see `docs/OWNER_TASKS.md` |
 | **Description** | `Local-first, governed personal AI OS — 17 specialist agents, proactive autonomy with approval queue & tamper-evident audit log, living memory (KG + fused recall), voice + 7 channels. Runs on your own GPU. $0/month.` |
 | **Website** | `http://www.andrei649.ro` (swap for a product page at launch) |
 | **Topics** | `ai`, `personal-assistant`, `multi-agent`, `local-first`, `self-hosted`, `privacy`, `llm`, `fastapi`, `lm-studio`, `ollama`, `autonomous-agents`, `knowledge-graph`, `voice-assistant`, `osint` |
@@ -185,7 +184,7 @@ tagline; same asset doubles as the README hero until the demo GIF lands.
 2. **It also proved the failure mode** — ungoverned autonomy + cloud memory = the #1 infostealer
    target. The "knows-you device" graveyard (Humane, Dot, Rewind, Pi) was uniformly cloud-bound.
 3. **The durable position is local + governed** — privacy promise *and* $0 COGS, in one move.
-4. **Jarvis Hub is that position, shipped** — the H1-H22 core is complete and the H23/O26
+4. **Nerva is that position, shipped** — the H1-H22 core is complete and the H23/O26
    productionization layer is actively landing, with every principle (local-first, opt-in cloud,
    inspectable, budgeted interrupts)
    enforced in code, not in a values page.

@@ -17,7 +17,16 @@ from typing import Callable, NamedTuple, Optional
 
 import httpx
 
+from . import audio_container, delivery_ledger, media_delivery
+from .backfill import (
+    COMMAND_REFUSED,
+    TAP_REFUSED,
+    BackfillBudget,
+    is_backlog,
+    looks_like_command,
+)
 from .base import ChannelAdapter
+from .reconnect import FATAL_REPROBE_S, Backoff, classify_exception
 from .descriptor import DIALECT_TELEGRAM_HTML, ChannelDescriptor
 from .ephemeral import EphemeralDeletes, EphemeralReply, ephemeral_ttl
 from .group_policy import ANSWER, OBSERVE, GroupPolicy, gate_message
@@ -54,6 +63,8 @@ from ..owner_once_context import OwnerReplySource, bind_owner_reply_source, clos
 logger = logging.getLogger("jarvis.channels.telegram")
 
 TELEGRAM_MAX_MESSAGE_LENGTH = 4096
+#: G16: the longest one attachment's checks may take before it is refused.
+MEDIA_RESOLVE_TIMEOUT_S = 10.0
 #: The file suffix a spoken reply is posted with, by its audio type ("bin" for any other).
 VOICE_SUFFIX = {"audio/mpeg": "mp3", "audio/ogg": "ogg", "audio/wav": "wav", "audio/mp4": "m4a",
                 "audio/flac": "flac"}
@@ -68,11 +79,14 @@ _STREAM_CURSOR = " ▍"
 class _TurnScope:
     """One turn of one chat while it runs (see :data:`_RUNNING_TURN`)."""
 
-    __slots__ = ("channel", "chat_id", "running", "message_thread_id")
+    __slots__ = ("channel", "chat_id", "running", "message_thread_id", "turn_id")
 
     def __init__(self, channel, chat_id, message_thread_id=None) -> None:
         self.channel, self.chat_id, self.running = channel, chat_id, True
         self.message_thread_id = message_thread_id
+        #: G16: keys this turn's attachments, so a retry within the turn sends a file once
+        #: and the owner asking for it again in a later turn gets it again.
+        self.turn_id = uuid.uuid4().hex
 
     def answers(self, channel, chat_id) -> bool:
         """Is a reply to *chat_id* on *channel*, sent in this scope, this turn's own reply?"""
@@ -198,7 +212,8 @@ class TelegramDraft:
     def _preview_source(self) -> str:
         footer = ("\n\n" + "\n".join(self._footer)) if self._footer else ""
         budget = self._cap - len(_STREAM_CURSOR) - 1 - len(footer)
-        source = self._text
+        # G16: a `MEDIA: /path` line is never streamed; finish() attaches the file.
+        source = media_delivery.strip_partial(self._text)
         if len(source) > budget:
             source = source[:budget] + "…"
         return source + _STREAM_CURSOR + footer
@@ -214,6 +229,17 @@ class TelegramDraft:
         text = self._text if final_text is None else str(final_text or "")
         if not text.strip():
             return False
+        # G16 (H070): MEDIA: lines in a streamed reply are attached after the final edit.
+        cleaned, media = self._channel._take_media(
+            self._chat_id, final_text if final_text is not None else text, plain=False)
+        if media:
+            if self._message_id is None:
+                if not str(cleaned or "").strip():
+                    return await self._channel._deliver_media(self._chat_id, media)
+                ok = await self._channel.send(cleaned, chat_id=self._chat_id)
+                await self._channel._deliver_media(self._chat_id, media)
+                return ok
+            final_text, text = cleaned, str(cleaned or "") or "\u2026"
         if self._message_id is None:
             # A FootedReply goes to send() whole, so its footer stays out of the voice note.
             return await self._channel.send(
@@ -235,6 +261,8 @@ class TelegramDraft:
             # the reply alone (the footer's status lines are for reading).
             await self._channel._after_reply(
                 self._chat_id, text if final_text is None else spoken_text(final_text))
+        if media:
+            await self._channel._deliver_media(self._chat_id, media)
         return ok
 
 
@@ -264,7 +292,32 @@ async def _bot_api_only(request: httpx.Request) -> None:
         raise TelegramHostRefused("telegram_host_refused")
 
 
+#: H100 — pause after an error while handling a page (not a transport failure).
+HANDLING_ERROR_PAUSE = 1.0
+#: H100 — how the poll loop waits out a rung of the reconnect ladder (a test seam).
+_backoff_sleep = asyncio.sleep
+_MESSAGE_KEYS = ("message", "edited_message", "channel_post", "edited_channel_post")
+
+
+def _update_message(up) -> Optional[dict]:
+    if not isinstance(up, dict):
+        return None
+    for key in _MESSAGE_KEYS:
+        value = up.get(key)
+        if isinstance(value, dict):
+            return value
+    return None
+
+
 class TelegramChannel(ChannelAdapter):
+    # H116 defaults, so a channel built without __init__ (tests) behaves as before.
+    _cursor_store = None
+    _cursor_name: Optional[str] = None
+    _catching_up = False
+    _backfill: Optional[BackfillBudget] = None
+    _started_wall: Optional[float] = None
+    _cutoff: Optional[float] = None
+    _held: tuple = ()
     descriptor = ChannelDescriptor(
         dialect=DIALECT_TELEGRAM_HTML,
         max_message_length=TELEGRAM_MAX_MESSAGE_LENGTH,
@@ -283,6 +336,9 @@ class TelegramChannel(ChannelAdapter):
                  pre_turn_interrupt: Optional[Callable] = None,
                  pre_turn_refused: Optional[Callable] = None):
         super().__init__("telegram", handler)
+        #: G16 (H070): the bound ``kernel.authorize`` a MEDIA: attachment crosses when the
+        #: Action Kernel is on (web.py binds it). None while the kernel is on refuses it.
+        self.media_kernel: Optional[Callable] = None
         self.pending_reply_handler = pending_reply_handler
         self.pending_callback_handler = pending_callback_handler
         self.pre_turn_interrupt = pre_turn_interrupt
@@ -306,6 +362,17 @@ class TelegramChannel(ChannelAdapter):
         self._bot_id: Optional[int] = None
         self._bot_username: Optional[str] = None
         self._offset = 0
+        # H116: the offset is kept in the reliability store while start() runs the channel,
+        # so a restart resumes where it stopped; a poll loop run without start() keeps it
+        # in memory only. While catching up after a start, old messages are bounded and
+        # queued button taps are refused (see backfill.py).
+        self._cursor_store = None
+        self._cursor_name: Optional[str] = None
+        self._catching_up = False
+        self._backfill: Optional[BackfillBudget] = None
+        self._started_wall: Optional[float] = None
+        # H100: the shared reconnect ladder (reconnect.py) instead of a flat 3 s.
+        self._backoff = Backoff()
         self._poll_task = None
         self._owner_once_generation: str | None = None
         self._owner_once_fast: dict[str, asyncio.Task] = {}
@@ -396,6 +463,9 @@ class TelegramChannel(ChannelAdapter):
             self._ephemeral_deletes = EphemeralDeletes()
         self._pending_callback_generation = object()
         self._owner_once_generation = uuid.uuid4().hex
+        self.health.starting()
+        self._ladder().reset()
+        self._resume_offset()
         self._running = True
         me = await self._get_me()
         if me:
@@ -410,8 +480,35 @@ class TelegramChannel(ChannelAdapter):
         self._poll_task = __import__("asyncio").create_task(self._poll_loop())
         logger.info("Telegram channel started")
 
+    def _resume_offset(self) -> None:
+        """H116 — read the saved offset (if any) and arm the bounded catch-up."""
+        import hashlib
+
+        self._cursor_store = delivery_ledger.store()
+        self._cursor_name = "telegram:" + hashlib.sha256(str(self.token).encode()).hexdigest()[:16]
+        saved = None
+        if self._cursor_store is not None:
+            try:
+                saved = self._cursor_store.cursor(self._cursor_name)
+            except Exception:
+                logger.warning("Telegram saved offset unreadable; resuming from Telegram's queue")
+        if saved is not None and saved.isdigit() and int(saved) > self._offset:
+            self._offset = int(saved)
+        self._started_wall = time.time()
+        self._enter_catch_up()
+
+    def _save_offset(self) -> None:
+        store, name = self._cursor_store, self._cursor_name
+        if store is None or name is None:
+            return
+        try:
+            store.set_cursor(name, str(self._offset))
+        except Exception:
+            logger.warning("Telegram offset not saved")
+
     async def stop(self):
         self._running = False
+        self.health.stopped()
         self._pending_callback_generation = None
         generation = getattr(self, "_owner_once_generation", None)
         self._owner_once_generation = None
@@ -492,15 +589,27 @@ class TelegramChannel(ChannelAdapter):
         if isinstance(message, EphemeralReply):
             default = get_value("display", "ephemeral_system_ttl", 0) if message.ttl_seconds is None else 0
             ttl = ephemeral_ttl(message, default=default)
-            for piece in chunk(message.text, self.descriptor.max_message_length):
+            for index, piece in enumerate(chunk(message.text, self.descriptor.max_message_length)):
                 if not await self._send_ephemeral_chunk(cid, piece, plain=plain, ttl=ttl):
+                    if index:
+                        delivery_ledger.note_partial()
                     return False
             # System notices neither speak nor consume a pending voice turn.
             return True
-        for piece in chunk(str(message or ""), self.descriptor.max_message_length):
+        # G16 (H070): a reply of this chat's running turn may name files it produced
+        # (`MEDIA: /path` lines); they are taken out of the words and attached after them.
+        message, media = self._take_media(cid, message, plain=plain)
+        if media and not str(message or "").strip():
+            return await self._deliver_media(cid, media)
+        for index, piece in enumerate(chunk(str(message or ""), self.descriptor.max_message_length)):
             sent = await self._send_plain_chunk(cid, piece) if plain else await self._send_chunk(cid, piece)
             if not sent:
+                if index:
+                    # H081: earlier parts arrived; the ledger records a partial delivery.
+                    delivery_ledger.note_partial()
                 return False
+        if media:
+            await self._deliver_media(cid, media)
         # The words are delivered; a voice note follows only if this chat asked.
         # `voice=False` marks a service line (a transcript echo, an unreadable-attachment
         # notice, a pairing reply, a reason acknowledgement) that is never spoken and
@@ -546,6 +655,7 @@ class TelegramChannel(ChannelAdapter):
             self._ephemeral_deletes.schedule(ttl, delete)
             return True
         except Exception as exc:
+            delivery_ledger.note_send_failure(exc=exc)
             logger.warning("Telegram system notice delivery failed: %s", type(exc).__name__)
             return False
 
@@ -590,11 +700,195 @@ class TelegramChannel(ChannelAdapter):
             data={'chat_id': str(chat_id)}, files={'document': (filename, data, mime)})
         return self._scheduled_ack(response)
 
+    # ── G16 (H070): files a turn produced, attached to its reply ─────────────────
+
+    def _take_media(self, cid, message, *, plain: bool):
+        """(the message without its ``MEDIA:`` lines, the paths they name).
+
+        Only a reply of *this chat's running turn* is read for directives: a notice from
+        outside (``plain``), an ephemeral system line, a digest or another chat's send
+        keeps its text exactly as written and attaches nothing."""
+        if plain or isinstance(message, EphemeralReply):
+            return message, []
+        scope = _RUNNING_TURN.get()
+        if scope is None or not scope.answers(self, cid):
+            return message, []
+        text = str(message or "")
+        if "MEDIA:" not in text:
+            return message, []
+        if isinstance(message, FootedReply):
+            reply, paths = media_delivery.extract_directives(message.spoken)
+            footer = text[len(message.spoken.rstrip()):].strip().splitlines()
+            if not paths:
+                return message, []
+            return (FootedReply(reply, footer) if reply.strip() else ""), paths
+        cleaned, paths = media_delivery.extract_directives(text)
+        return (cleaned if paths else message), paths
+
+    def _media_recipient_allowed(self, cid) -> bool:
+        """Files leave only to the owner, inside the owner's own turn (the turn principal
+        the orchestrator bound for this message is the owner's)."""
+        try:
+            from ..orchestrator import current_principal
+
+            principal = current_principal()
+            # The owner's private chat only: in a group every member would receive the file.
+            # Telegram private chats have positive ids equal to the user's; groups are negative.
+            return (principal.admin is True and principal.channel == "telegram"
+                    and principal.scope == "dm" and str(principal.chat or "") == str(cid)
+                    and str(cid).isdigit())
+        except Exception:
+            return False
+
+    def _media_kernel_denial(self, cid, item: "media_delivery.DeliverableFile") -> Optional[str]:
+        """Cross the Action Kernel as a reply into this chat (``channel.reply``) when it is
+        on. None = may send; otherwise why not. The kernel off leaves the allowlist and the
+        owner-only rule as the gates."""
+        from ..kernel import Action, Verdict, kernel_enabled
+
+        if not kernel_enabled():
+            return None
+        kernel = self.media_kernel
+        if not callable(kernel):
+            return "the Action Kernel is not bound here"
+        try:
+            from ..action_origin import current_action_origin
+
+            decision = kernel(Action(
+                kind="channel.reply", agent="jarvis", title=f"Attach {item.name} to a Telegram reply",
+                payload={"channel": "telegram", "reply": {"chat_id": cid},
+                         "attachment": {"name": item.name, "mime": item.mime, "bytes": len(item.data),
+                                        "sha256": item.sha256}},
+                origin=current_action_origin()))
+        except Exception:
+            logger.warning("Attachment kernel check failed; not sent", exc_info=True)
+            return "the Action Kernel could not decide"
+        if decision.verdict is Verdict.GRANT:
+            return None
+        if decision.verdict is Verdict.QUEUE:
+            return "attachments need your approval in the current autonomy mode"
+        return "the Action Kernel refused it"
+
+    async def _deliver_media(self, cid, paths: list) -> bool:
+        """Attach each allowed file after the words. Refusals are told as one line, never
+        with the path. True when every named file was delivered."""
+        lines: list[str] = []
+        delivered_all = True
+        if not self._media_recipient_allowed(cid):
+            await self.send("Files are sent only to the owner, in a private chat; none were attached.",
+                            chat_id=cid, voice=False, plain=True)
+            return False
+        scope = _RUNNING_TURN.get()
+        turn = getattr(scope, "turn_id", None) or uuid.uuid4().hex
+        store = delivery_ledger.store()
+        for index, path in enumerate(paths, start=1):
+            if index > media_delivery.MAX_FILES_PER_REPLY:
+                lines.append(media_delivery.refusal_line(index, media_delivery.Refusal(
+                    media_delivery.REASON_TOO_MANY)))
+                delivered_all = False
+                break
+            try:
+                item = await asyncio.wait_for(asyncio.to_thread(media_delivery.resolve, path),
+                                              timeout=MEDIA_RESOLVE_TIMEOUT_S)
+            except TimeoutError:
+                item = media_delivery.Refusal(media_delivery.REASON_TIMEOUT)
+            if isinstance(item, media_delivery.Refusal):
+                logger.info("Telegram attachment %d refused: %s", index, item.reason)
+                lines.append(media_delivery.refusal_line(index, item))
+                delivered_all = False
+                continue
+            denied = self._media_kernel_denial(cid, item)
+            if denied:
+                lines.append(f"Attachment {index} was not sent: {denied}.")
+                delivered_all = False
+                continue
+            # H081 x G16: one receipt per file, keyed so the same file is not sent twice to
+            # this chat (a retried or repeated reply attaches it once).
+            delivery = None
+            if store is not None:
+                try:
+                    delivery = store.open_delivery("telegram", cid, f"[file {item.mime} {len(item.data)}]",
+                                                   key=f"media:{cid}:{turn}:{item.sha256}")
+                except Exception:
+                    logger.warning("Delivery ledger unavailable for an attachment", exc_info=True)
+            if delivery is not None and not delivery.send:
+                if not delivery.already_sent:
+                    # In flight, unknown or given up: say so, never claim it was delivered.
+                    lines.append(f"Attachment {index} was not sent again: an earlier try may "
+                                 "still arrive.")
+                    delivered_all = False
+                continue   # this turn already delivered it
+            outcome, token = delivery_ledger.begin_outcome()
+            try:
+                if delivery is not None:
+                    delivery.attempting()
+                ok = await self.send_file(cid, item)
+            finally:
+                delivery_ledger.end_outcome(token)
+            if delivery is not None:
+                delivery.finished(ok, outcome)
+            if not ok:
+                lines.append(f"Attachment {index} could not be delivered.")
+                delivered_all = False
+        if lines:
+            await self.send("\n".join(lines), chat_id=cid, voice=False, plain=True)
+        return delivered_all
+
+    async def send_file(self, cid, item: "media_delivery.DeliverableFile") -> bool:
+        """Post one checked file: a photo, a voice note for audio, a video, else a document."""
+        topic = {k: str(v) for k, v in self._topic_args(cid).items()}
+        try:
+            if item.kind == "audio":
+                clip = await asyncio.to_thread(audio_container.prepare_voice, item.data,
+                                               declared_mime=item.mime, stem=item.name.rsplit(".", 1)[0])
+                return await self._post_clip(cid, clip)
+            method, field = {"image": ("sendPhoto", "photo"), "video": ("sendVideo", "video")}.get(
+                item.kind, ("sendDocument", "document"))
+            if method == "sendPhoto" and len(item.data) > 10 * 1024 * 1024:
+                method, field = "sendDocument", "document"   # Telegram's photo limit
+            resp = await self.client.post(f"{self.api_base}/{method}", data={"chat_id": str(cid), **topic},
+                                          files={field: (item.name, item.data, item.mime)})
+            if resp.status_code == 400 and method != "sendDocument":
+                resp = await self.client.post(f"{self.api_base}/sendDocument",
+                                              data={"chat_id": str(cid), **topic},
+                                              files={"document": (item.name, item.data, item.mime)})
+            if not resp.is_success:
+                delivery_ledger.note_send_failure(status=resp.status_code)
+            return self._scheduled_ack(resp)
+        except Exception as exc:
+            delivery_ledger.note_send_failure(exc=exc)
+            logger.warning("Telegram attachment failed: %s", type(exc).__name__)
+            return False
+
+    async def _post_clip(self, cid, clip: "audio_container.VoiceClip") -> bool:
+        """sendVoice for a voice-ready clip (one sendAudio retry on a 400); sendAudio with
+        the reason as caption when it could not be made a voice note."""
+        topic = {k: str(v) for k, v in self._topic_args(cid).items()}
+        if clip.mode == "document":
+            # Not audio by its bytes: never handed to a converter, sent as a plain file.
+            resp = await self.client.post(f"{self.api_base}/sendDocument", data={"chat_id": str(cid), **topic},
+                                          files={"document": (clip.filename, clip.data, clip.mime)})
+            return self._scheduled_ack(resp)
+        if clip.mode == "voice":
+            resp = await self.client.post(f"{self.api_base}/sendVoice", data={"chat_id": str(cid), **topic},
+                                          files={"voice": (clip.filename, clip.data, clip.mime)})
+            if resp.status_code != 400:
+                return self._scheduled_ack(resp)
+            logger.info("Telegram refused the clip as a voice message; sending it as audio")
+        data = {"chat_id": str(cid), **topic}
+        if clip.note:
+            data["caption"] = clip.note
+        resp = await self.client.post(f"{self.api_base}/sendAudio", data=data,
+                                      files={"audio": (clip.filename, clip.data, clip.mime)})
+        return self._scheduled_ack(resp)
+
     async def _send_chunk(self, cid, piece: str) -> bool:
         try:
             return await self._send_message(cid, to_telegram_html(piece), plain=to_plain(piece)) is not None
         except Exception as e:
-            logger.error(f"Telegram send error: {e}")
+            # H081: why it failed, for the delivery ledger and the dead-target registry.
+            delivery_ledger.note_send_failure(exc=e)
+            logger.error("Telegram send error: %s", type(e).__name__)
             return False
 
     async def _send_plain_chunk(self, cid, piece: str) -> bool:
@@ -607,6 +901,7 @@ class TelegramChannel(ChannelAdapter):
             resp.raise_for_status()
             return True
         except Exception as e:
+            delivery_ledger.note_send_failure(exc=e)
             logger.error("Telegram send error: %s", type(e).__name__)
             return False
 
@@ -873,27 +1168,56 @@ class TelegramChannel(ChannelAdapter):
         self._lanes = ChatLanes(name="telegram")
         while self._running:
             cut_short: Optional[_Page] = None
+            polled = False
             try:
                 # H117: while pieces of a burst are held, poll without the long wait so
                 # the batch flushes when its window closes, not 25 s later.
+                # H116: while catching up after a start, poll without the long wait too,
+                # so the catch-up ends (an empty page) before any live update is read.
                 wait = self._batch.wait()
-                if wait is None:
+                if self._catching_up:
+                    updates = await self._get_updates(timeout=0)
+                elif wait is None:
                     updates = await self._get_updates()
                 else:
                     if wait > 0:
                         await asyncio.sleep(wait)
                     updates = await self._get_updates(timeout=0)
+                polled = True
+                self._poll_succeeded()
                 # H117: when this page came back, read once, before any update in it is
                 # handled; a claimed reply in it is stamped from this reading.
                 page = cut_short = self._page_received()
-                for up in updates:
-                    self._offset = up["update_id"] + 1
-                    await self._handle_update(up, page)
+                if self._catching_up:
+                    # H116: read the whole backlog first (each update is taken and its
+                    # offset saved), then hand over what the bounds admit, newest kept.
+                    # Updates come in order: a live one ends the backlog.
+                    live = False
+                    for up in updates:
+                        self._offset = up["update_id"] + 1
+                        self._save_offset()
+                        live = await self._hold_backlog(up) or live
+                    if not updates or live:
+                        self._catching_up = False
+                        held, self._held = list(self._held), []
+                        for up in held:
+                            await self._handle_update(up, page)
+                else:
+                    for up in updates:
+                        self._offset = up["update_id"] + 1
+                        # H116: saved before the update is handled, so a crash never handles
+                        # it twice after the restart (inbound is at most once).
+                        self._save_offset()
+                        await self._handle_update(up, page)
                 cut_short = None
                 for key in self._batch.due():
                     await self._flush_turn(key)
             except Exception as e:
-                logger.warning(f"Telegram poll error: {e}")
+                if not polled:
+                    # H100: the Bot API did not answer; classify and climb the shared ladder.
+                    await self._poll_failed(e)
+                    continue
+                logger.warning("Telegram update handling error: %s", type(e).__name__)
                 if cut_short is not None:
                     # Handling this page raised before every update in it was handled. The
                     # updates after the failing one come again on the next page; this page
@@ -903,10 +1227,10 @@ class TelegramChannel(ChannelAdapter):
                     # lower bound for what comes again, and it is kept.
                     self._last_page_at = (cut_short.previous if cut_short.previous is not None
                                           else cut_short.now)
-                # Nothing can join a held batch during the back-off, three times the hard
-                # cap: what is held goes out now rather than when a poll next succeeds.
+                # Nothing can join a held batch during the pause: what is held goes out now
+                # rather than when a poll next succeeds.
                 await self._flush_all_turns()
-                await asyncio.sleep(3)
+                await asyncio.sleep(HANDLING_ERROR_PAUSE)
         # Stopping never drops what a sender already said: held pieces go out now, and
         # the turns already in their chats' lanes get a bounded time to finish.
         await self._flush_all_turns()
@@ -914,10 +1238,133 @@ class TelegramChannel(ChannelAdapter):
         if lanes is not None:
             await lanes.drain(LANE_DRAIN_BUDGET)
 
+    def _ladder(self) -> Backoff:
+        backoff = self.__dict__.get("_backoff")
+        if backoff is None:
+            backoff = self._backoff = Backoff()
+        return backoff
+
+    def _poll_succeeded(self) -> None:
+        self._ladder().success()
+        self.health.ok()
+        if self._catching_up and self._cutoff is None:
+            # H116: the backlog is what was dated before the channel was reading again.
+            self._cutoff = time.time()
+        if self._backfill is not None:
+            self.health.backfill = self._backfill.counts()
+
+    def _enter_catch_up(self) -> None:
+        """H116 — the next pages are a backlog (after a start, or an outage while running):
+        bounded, commands and taps refused. Only for a channel run by start()."""
+        if self._started_wall is None:
+            return
+        self._catching_up = True
+        self._cutoff = None
+        self._held = []
+        self._backfill = BackfillBudget()
+        self.health.backfill = self._backfill.counts()
+
+    async def _poll_failed(self, exc: Exception) -> None:
+        """H100 — one failed getUpdates. A fatal answer (the token is wrong or revoked) is
+        shown on the status surface, the owner is told on another channel, and the channel
+        looks again only every ``FATAL_REPROBE_S`` (so a fixed token heals by itself);
+        anything else waits the next rung of the ladder (or the server's retry_after).
+        Logged by kind only: the request URL holds the bot token."""
+        failure = classify_exception(exc)
+        # Nothing can join a held batch while the API is unreachable: send it now.
+        await self._flush_all_turns()
+        # H116: what queues up during the outage is a backlog too.
+        self._enter_catch_up()
+        if failure.fatal:
+            self.health.failed_fatally(failure.kind, reprobe_in=FATAL_REPROBE_S)
+            # FP: logs the failure kind and the env-var name only; the token itself is never logged.
+            # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
+            logger.error("Telegram channel stopped: the Bot API refused the bot token (%s). "
+                         "Fix TELEGRAM_BOT_TOKEN; Nerva looks again every %.0f min.",
+                         failure.kind, FATAL_REPROBE_S / 60)
+            await _backoff_sleep(FATAL_REPROBE_S)
+            return
+        delay = self._ladder().failure()
+        if failure.retry_after is not None:
+            delay = max(delay, failure.retry_after)
+        self.health.retrying(failure.kind, delay)
+        logger.warning("Telegram poll failed (%s); retrying in %.0f s", failure.kind, delay)
+        await _backoff_sleep(delay)
+
+    def _answers_sender(self, uid) -> bool:
+        """Whether Nerva already answers this sender (paired or allowlisted): only they are
+        told a backfilled command was not run; anyone else hears nothing."""
+        if self.allowed_users and uid in self.allowed_users:
+            return True
+        pairing = getattr(self, "_pairing", None)
+        try:
+            return bool(pairing is not None and pairing.is_allowed("telegram", str(uid)))
+        except Exception:
+            return False
+
+    async def _hold_backlog(self, up) -> bool:
+        """H116 — one update read while catching up. A queued tap is answered "not
+        applied"; a message dated before the cutoff is a backfill: too old is skipped, a
+        command is refused (never dispatched), the rest is held and marked so it takes the
+        live path but never answers a pending prompt. Later updates are held as they are.
+        At most the budget's newest backfilled messages are kept. True for a live update."""
+        budget = self._backfill if self._backfill is not None else BackfillBudget()
+        cb = up.get("callback_query") if isinstance(up, dict) else None
+        if cb is not None:
+            budget.refused_taps += 1
+            callback_id = cb.get("id") if isinstance(cb, dict) else None
+            if type(callback_id) is str and 0 < len(callback_id) <= 128:
+                await self._answer_callback(callback_id, TAP_REFUSED)
+            self.health.backfill = budget.counts()
+            return False
+        msg = _update_message(up)
+        date = msg.get("date") if isinstance(msg, dict) else None
+        if not is_backlog(date, self._cutoff if self._cutoff is not None else time.time()):
+            self._held.append(up)
+            return True
+        if not budget.fresh(date, time.time()):
+            self.health.backfill = budget.counts()
+            return False
+        text = msg.get("text") if isinstance(msg.get("text"), str) else msg.get("caption")
+        if looks_like_command(text):
+            budget.refused_commands += 1
+            self.health.backfill = budget.counts()
+            sender = (msg.get("from") or {}).get("id")
+            chat_id = (msg.get("chat") or {}).get("id")
+            if type(chat_id) is int and self._answers_sender(sender):
+                await self.send(COMMAND_REFUSED, chat_id=chat_id, voice=False, plain=True)
+            return False
+        key = next(k for k in _MESSAGE_KEYS if up.get(k) is msg)
+        self._held.append({**up, key: {**msg, "_backfilled": True}})
+        backfilled = [i for i, held in enumerate(self._held) if (_update_message(held) or {}).get("_backfilled")]
+        if len(backfilled) > budget.limit:
+            # Over budget: the oldest backfilled message goes.
+            self._held.pop(backfilled[0])
+            budget.skipped_over_budget += 1
+        budget.processed = min(len(backfilled), budget.limit)
+        self.health.backfill = budget.counts()
+        return False
+
+    def _heal_dead_target(self, up) -> None:
+        """H081 — a chat that writes to the bot is reachable again: lift its dead flag so
+        the next reply is tried. Cheap when nothing is flagged (an in-memory check)."""
+        msg = _update_message(up)
+        chat = msg.get("chat") if isinstance(msg, dict) else None
+        chat_id = chat.get("id") if isinstance(chat, dict) else None
+        if type(chat_id) is not int:
+            return
+        store = delivery_ledger.store() if self._cursor_store is None else self._cursor_store
+        try:
+            if store is not None and store.is_dead("telegram", chat_id):
+                store.clear_dead("telegram", chat_id)
+        except Exception:
+            logger.debug("Telegram dead-target heal skipped", exc_info=True)
+
     async def _handle_update(self, up: dict, page: Optional[_Page] = None) -> None:
         """One update: a button tap, an ignored message, a rejection's reason (H487), or a
         turn piece to batch (H117). *page* is when the update's getUpdates page came back
         (see ``_reason_arrival``); None for an update handled outside the poll loop."""
+        self._heal_dead_target(up)
         # Decision-inbox button taps arrive as callback_query updates.
         cb = up.get("callback_query")
         if cb:
@@ -1007,6 +1454,11 @@ class TelegramChannel(ChannelAdapter):
             # This narrowing marker also follows the ordinary queued path; otherwise
             # a forwarded/edited reply could be intercepted later by the gateway.
             msg = {**msg, "_pending_input_ineligible": True}
+        # H116: a backfilled message takes the live path but never answers a pending
+        # question or a decision-reason prompt (one may have been raised after the restart).
+        backfilled = msg.get("_backfilled") is True
+        if backfilled:
+            msg = {**msg, "_pending_input_ineligible": True}
         uid = msg["from"]["id"]
         if self.allowed_users and uid not in self.allowed_users:
             logger.info("Ignored message from user %s", log_safe(uid))
@@ -1087,7 +1539,7 @@ class TelegramChannel(ChannelAdapter):
         # A delivered clarification may be awaited by this chat's current lane.
         # Only fresh, directly authored, group-authorized text may bypass that lane.
         if (callable(self.pending_reply_handler) and up.get("message") is not None
-                and text and attachment is None
+                and not backfilled and text and attachment is None
                 and not any(msg.get(field) for field in (
                     "forward_origin", "forward_from", "forward_from_chat", "forward_sender_name"))):
             chat = msg.get("chat") or {}
@@ -1123,7 +1575,7 @@ class TelegramChannel(ChannelAdapter):
         # Only a fresh, directly authored reply can explain a decision. Edited,
         # forwarded, attachment and command messages retain their existing paths.
         if (self.on_decision_reason and up.get("message") is not None and text
-                and attachment is None and not is_command(text)
+                and not backfilled and attachment is None and not is_command(text)
                 and not any(msg.get(key) for key in ("forward_origin", "forward_from", "forward_from_chat", "forward_sender_name"))):
             reply_id = (msg.get("reply_to_message") or {}).get("message_id")
             if reply_id is not None and (self._reason_prompts_posting.get(chat_id)
@@ -1813,30 +2265,21 @@ class TelegramChannel(ChannelAdapter):
         return await speaker(text, lang=lang)
 
     async def _send_voice(self, chat_id, audio: Audio) -> bool:
-        """POST the clip as a voice message; as an audio file if Telegram refuses the format.
+        """POST the clip as a voice message; as an audio file if it cannot be one.
 
-        Telegram plays an ``.ogg``/OPUS, ``.mp3`` or ``.m4a`` body inline as a voice
-        message; anything it refuses with a 400 is sent once more as a plain audio
-        file rather than dropped. True only when Telegram acknowledged a message.
+        G16 (H528): the real container is sniffed from the bytes, not taken from the
+        engine's MIME. Ogg/Opus, MP3 and M4A go to ``sendVoice`` as they are; anything
+        else is converted to Ogg/Opus with ffmpeg first, and without ffmpeg (or when the
+        conversion fails) it is sent with ``sendAudio`` and a one-line caption saying why
+        it is not a voice note. A 400 on ``sendVoice`` is retried once as ``sendAudio``.
+        True only when Telegram acknowledged a message.
         """
-        suffix = VOICE_SUFFIX.get(audio.mime, "bin")
-        filename = f"reply.{suffix}"
         try:
-            resp = await self.client.post(
-                f"{self.api_base}/sendVoice",
-                data={"chat_id": str(chat_id), **{k: str(v) for k, v in self._topic_args(chat_id).items()}},
-                files={"voice": (filename, audio.data, audio.mime)},
-            )
-            if resp.status_code == 400:
-                logger.info("Telegram refused the clip as a voice message; sending it as audio")
-                resp = await self.client.post(
-                    f"{self.api_base}/sendAudio",
-                    data={"chat_id": str(chat_id), **{k: str(v) for k, v in self._topic_args(chat_id).items()}},
-                    files={"audio": (filename, audio.data, audio.mime)},
-                )
-            return self._scheduled_ack(resp)
+            clip = await asyncio.to_thread(audio_container.prepare_voice, audio.data,
+                                           declared_mime=audio.mime, stem="reply")
+            return await self._post_clip(chat_id, clip)
         except Exception as e:
-            logger.warning("Telegram sendVoice failed: %s", e)
+            logger.warning("Telegram sendVoice failed: %s", type(e).__name__)
             return False
 
     async def _read_image(self, attachment) -> Description:

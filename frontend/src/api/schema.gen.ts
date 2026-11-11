@@ -1182,6 +1182,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/a2a/peers/{peer_id}/outbound": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * A2A Set Peer Outbound
+         * @description Let this hub call the peer (G14): URL, optional bearer token, LAN opt-in, tags.
+         *
+         *     A LAN address is refused unless ``allow_lan`` is set, and then only as a private IP
+         *     literal or ``localhost``; an internet peer must use https. The token is never echoed.
+         */
+        put: operations["a2a_set_peer_outbound_api_a2a_peers__peer_id__outbound_put"];
+        post?: never;
+        /** A2A Clear Peer Outbound */
+        delete: operations["a2a_clear_peer_outbound_api_a2a_peers__peer_id__outbound_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/a2a/card": {
         parameters: {
             query?: never;
@@ -1388,6 +1412,104 @@ export interface paths {
          *     approval — the same shape as revoking a permission.
          */
         post: operations["pairing_revoke_links_api_channels_pairing_link_revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Auth Session
+         * @description Whether this browser holds a live owner session (and its CSRF token if so).
+         *
+         *     Open by design: an anonymous caller learns only ``signed_in: false``, whether the hub
+         *     has an owner credential to sign in with, and whether this transport allows browser
+         *     sign-in. The CSRF token comes back solely for a valid session cookie sent with
+         *     positive same-origin evidence. Reading it counts as use (the HUD reads it on load),
+         *     so it refreshes the idle clock.
+         */
+        get: operations["auth_session_api_auth_session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Login
+         * @description Exchange the owner secret for a browser session cookie.
+         *
+         *     Same-origin and ``application/json`` only (a cross-site form cannot send either);
+         *     over plain HTTP from another device only with ``JARVIS_ALLOW_INSECURE_SIGNIN=1``.
+         *     Throttled per address before the secret is checked; the hub-wide failure count
+         *     never refuses a correct secret (anyone could otherwise lock the owner out), it only
+         *     slows and refuses wrong ones. Loopback is exempt from both. The secret is compared
+         *     in constant time. Each sign-in rotates the session: the one the browser presented
+         *     is revoked.
+         */
+        post: operations["auth_login_api_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Logout
+         * @description Sign this browser out: revoke the session it presents and expire the cookie.
+         *
+         *     Needs no other credential — it can only end the session it is shown — but a
+         *     cross-origin request is refused so another site cannot sign the owner out.
+         */
+        post: operations["auth_logout_api_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/logout-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Logout All
+         * @description Sign out everywhere: revoke every owner browser session (owner only; a cookie
+         *     caller must send its CSRF token, which the admin guard checks).
+         */
+        post: operations["auth_logout_all_api_auth_logout_all_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2643,6 +2765,127 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/codeintel/lsp/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lsp Status
+         * @description Language servers: known, found (Nerva's tools dir or PATH), running, broken.
+         */
+        get: operations["lsp_status_api_codeintel_lsp_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/codeintel/lsp/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lsp Install
+         * @description Queue an approval card for a pinned install; nothing is downloaded yet.
+         */
+        post: operations["lsp_install_api_codeintel_lsp_install_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/codeintel/lsp/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lsp Start
+         * @description Start (or reuse) a server for a workspace root inside the file scope.
+         */
+        post: operations["lsp_start_api_codeintel_lsp_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/codeintel/lsp/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lsp Stop
+         * @description Stop running servers: every one, one server's, or one root's.
+         */
+        post: operations["lsp_stop_api_codeintel_lsp_stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/codeintel/lsp/trust": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lsp Trust
+         * @description The owner's action: allow (or stop allowing) language servers in one git workspace
+         *     inside the file roots. Revoking also stops every server running there.
+         */
+        post: operations["lsp_trust_api_codeintel_lsp_trust_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/codeintel/lsp/install/{server}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Lsp Install Clear
+         * @description Forget a failed install record, so the next request starts clean.
+         */
+        delete: operations["lsp_install_clear_api_codeintel_lsp_install__server__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/actions": {
         parameters: {
             query?: never;
@@ -3000,6 +3243,23 @@ export interface paths {
         put?: never;
         /** Data Handling Ack */
         post: operations["data_handling_ack_api_security_data_handling_ack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/security/credential-shares": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Credential Share */
+        post: operations["credential_share_api_security_credential_shares_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3475,6 +3735,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills/pin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pin Skill
+         * @description H349 — pin or unpin one installed skill (Hermes: ``hermes curator pin|unpin``).
+         *
+         *     A pin stops automation: the curator's lifecycle pass leaves a pinned skill alone
+         *     (never marked stale or archived) and a batch the agent proposed does not delete it;
+         *     it can still be patched. The journey's forget refuses it too, as Hermes's does. The
+         *     owner's own removals are not blocked — the owner's batch delete, an uninstall, a
+         *     reject from review — and retire the pin with the skill. A skill that ships with Nerva
+         *     is not pinned (409 ``not_pinnable``): nothing ages it out or deletes it. Only a skill
+         *     installed and loaded now can be pinned (404 ``not_found``).
+         *
+         *     An admin route like the skill switch, applied at once like switching off (a pin only
+         *     narrows what automation may do), and written to the intent log when it changed
+         *     something. The one write is ``SkillUsageStore.pin``, which makes the same checks under
+         *     the sidecar's lock, so the answer is what the sidecar file now holds.
+         */
+        post: operations["pin_skill_api_skills_pin_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/skills/bundles": {
         parameters: {
             query?: never;
@@ -3654,6 +3947,38 @@ export interface paths {
         get: operations["skills_imported_skills_imported_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/catalog/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Catalog Install
+         * @description H336 — the owner installs or repairs one skill of the vendored Hermes catalog
+         *     (Hermes: ``hermes skills install official/<category>/<skill>``, ``repair-official``).
+         *
+         *     An admin route, for this catalog only: its skills are pinned to one upstream commit,
+         *     byte-verified against MANIFEST.json before every write, and carry instructions and
+         *     plain data only. ``POST /skills/import`` (admin too) takes the same catalog as source
+         *     ``hermes-catalog`` without repair; its remote sources cross the action kernel and
+         *     governed egress for each request. ``skill`` is a slug, ``<category>/<skill>``,
+         *     the upstream path or ``official/<category>/<skill>``. A skill a catalog install already
+         *     wrote, or ``repair: true``, is repaired: deleted files are restored from the vendored
+         *     bytes, an edited file refuses the repair (409 ``local_edits``) unless ``force``, which
+         *     keeps a copy first. A write is recorded in the intent log as ``skill.install`` or
+         *     ``skill.repair``.
+         */
+        post: operations["catalog_install_api_skills_catalog_install_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3983,6 +4308,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills/consolidation/analyze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Skills Consolidation Analyze
+         * @description H348 — find overlapping skills locally (TF-IDF similarity) and, with ``draft``, have the
+         *     local model draft one umbrella skill per group. Each draft becomes one skill batch
+         *     (create the umbrella, delete each member ``absorbed_into`` it) with one approval card;
+         *     nothing changes until the owner approves that card. Only ever runs when the owner asks.
+         */
+        post: operations["skills_consolidation_analyze_api_skills_consolidation_analyze_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/skills/batches": {
         parameters: {
             query?: never;
@@ -4135,6 +4483,138 @@ export interface paths {
         put?: never;
         /** Request Operation */
         post: operations["request_operation_api_curator_request_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/setup/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Skill Setup */
+        get: operations["skill_setup_api_skills_setup__name__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/setup/{name}/{var}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Skill Setup Put */
+        put: operations["skill_setup_put_api_skills_setup__name___var__put"];
+        post?: never;
+        /** Skill Setup Delete */
+        delete: operations["skill_setup_delete_api_skills_setup__name___var__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/taps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Taps List */
+        get: operations["taps_list_api_skills_taps_get"];
+        put?: never;
+        /**
+         * Taps Add
+         * @description Queue an approval card for a new trusted source; nothing is fetched or trusted yet.
+         */
+        post: operations["taps_add_api_skills_taps_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/taps/{tap_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Taps Remove */
+        delete: operations["taps_remove_api_skills_taps__tap_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/taps/{tap_id}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Taps Refresh
+         * @description Read an approved tap's index at its pinned commit (every request crosses the kernel).
+         */
+        post: operations["taps_refresh_api_skills_taps__tap_id__refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/taps/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Taps Search */
+        get: operations["taps_search_api_skills_taps_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/taps/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Taps Install
+         * @description Install one skill a tap lists, through ``POST /skills/import``'s own remote import
+         *     (exact pin, ``skill.install`` before and after the fetch, governed egress, quarantine).
+         *     The vendored catalog keeps its own owner route (``POST /api/skills/catalog/install``).
+         */
+        post: operations["taps_install_api_skills_taps_install_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5034,6 +5514,115 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/subagents/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subagents Pause
+         * @description H400 — pause NEW sub-agent spawns (the HTTP routes and the model's delegate_task
+         *     alike). Running sub-agents are not touched. The pause is a file in the data root, so
+         *     it holds across a restart; the answer is the state read back after the write.
+         */
+        post: operations["subagents_pause_api_subagents_pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subagents/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subagents Resume
+         * @description H400 — lift the spawn pause. The emergency stop, when engaged, still stops new
+         *     sub-agents: the answer's ``accepting`` says whether one would start now.
+         */
+        post: operations["subagents_resume_api_subagents_resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subagents/{spawn_id}/transcript": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Subagents Transcript
+         * @description G18 (H401) — a sub-agent's live transcript: its start, the tool loop's events for
+         *     it (tool names, status, call ids, sizes — never arguments or results), steers, a
+         *     stall and its end. Poll with ``after`` = the last ``next`` to tail a running child.
+         */
+        get: operations["subagents_transcript_api_subagents__spawn_id__transcript_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subagents/{spawn_id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Subagents Result
+         * @description G18 (H401) — the durable row of a sub-agent, its whole kept result included
+         *     (the parent model is given at most 24 000 characters; the row keeps more). Reading
+         *     it does not count as receiving it: delivery is the claim.
+         */
+        get: operations["subagents_result_api_subagents__spawn_id__result_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/subagents/completions/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Subagents Claim
+         * @description G18 (H401) — receive the finished sub-agent results nobody has received yet. Each
+         *     is handed out exactly once, whichever consumer asks first (this route, /delegations,
+         *     the model's delegate_task collect), across restarts.
+         */
+        post: operations["subagents_claim_api_subagents_completions_claim_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/subagents/{spawn_id}/steer": {
         parameters: {
             query?: never;
@@ -5397,7 +5986,8 @@ export interface paths {
         put?: never;
         /**
          * Autonomy Set Mode
-         * @description Set the global autonomy mode. Persists the setting and applies it live:
+         * @description Set the global autonomy mode. Persists the setting, applies it live and records
+         *     the change in the audit log (H484 — the same path ``/approvals`` in chat takes):
          *     auto = balanced; ask = side-effects wait for approval; off = nothing auto-runs
          *     and the proactive loop is paused.
          */
@@ -5417,17 +6007,20 @@ export interface paths {
         };
         /**
          * Autonomy Get Policy
-         * @description Per-agent autonomy modes (HUD v3) — the global default + any per-agent overrides.
+         * @description Per-agent autonomy modes (HUD v3) — the global default + any per-agent overrides,
+         *     as the policy reads them (H484: an unknown value is ``ask``, never shown raw).
          *
-         *     An agent absent from ``agents`` runs at the global mode; one present runs at its
-         *     own AUTO/ASK/OFF.
+         *     An agent absent from ``agents`` runs at the global mode; one present runs at its own
+         *     AUTO/ASK/OFF — except under a global OFF, which no override loosens. ``looser`` names
+         *     the agents whose override lets them ask less than the global mode.
          */
         get: operations["autonomy_get_policy_autonomy_policy_get"];
         put?: never;
         /**
          * Autonomy Set Policy
          * @description Set (or clear) one agent's autonomy mode. ``mode=default`` removes the override
-         *     so the agent falls back to the global mode. Persists + applies live.
+         *     so the agent falls back to the global mode. Persists, applies live and records the
+         *     change in the audit log (H484 — ``autonomy.mode.set_agent_mode``).
          */
         post: operations["autonomy_set_policy_autonomy_policy_post"];
         delete?: never;
@@ -6865,6 +7458,117 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/integrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Integrations List */
+        get: operations["integrations_list_api_admin_integrations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/integrations/{entry_id}/key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Integration Key Put */
+        put: operations["integration_key_put_api_admin_integrations__entry_id__key_put"];
+        post?: never;
+        /**
+         * Integration Key Delete
+         * @description Remove what THIS entry set: its claim on each stored key. A key another entry also
+         *     vouched for stays for that one; a ``.env`` key stays in effect (an older stored copy
+         *     of it is purged, so it cannot come back when the ``.env`` line goes).
+         */
+        delete: operations["integration_key_delete_api_admin_integrations__entry_id__key_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/integrations/{entry_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Integration Test */
+        post: operations["integration_test_api_admin_integrations__entry_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/integrations/{entry_id}/use": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Integration Use */
+        post: operations["integration_use_api_admin_integrations__entry_id__use_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/integrations/video-choice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Integration Video Off
+         * @description Turn video generation off: no provider is chosen any more.
+         */
+        delete: operations["integration_video_off_api_admin_integrations_video_choice_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/integrations/search-choice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Integration Search Auto */
+        delete: operations["integration_search_auto_api_admin_integrations_search_choice_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/llm/custom-endpoints": {
         parameters: {
             query?: never;
@@ -7004,6 +7708,31 @@ export interface paths {
         put?: never;
         /** Oauth Callback */
         post: operations["oauth_callback_api_oauth_callback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/oauth/mcp/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mcp Oauth Callback
+         * @description G9 / H550, H692 — where the browser returns after signing in to an MCP server.
+         *
+         *     No admin token rides a browser redirect, so the owner is recognised by the binding the
+         *     start set as an HttpOnly cookie on this path (``SameSite=Lax``: sent on this top-level
+         *     return, not on a cross-site sub-request). State and binding are checked in constant time,
+         *     once, before anything is redeemed. The page never redirects: it says what happened.
+         */
+        get: operations["mcp_oauth_callback_api_oauth_mcp_callback_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -7965,6 +8694,79 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/memory/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Memory Proposals
+         * @description H443 — the memory writes the post-turn review (or a ``/refine``) holds for the
+         *     owner (Hermes's ``/memory pending``): each with its facts, the ring each would go to,
+         *     why it waits (``memory.write_approval``, a conversation that read untrusted content,
+         *     the approval dial) and its approval card. Admin-only: a held fact is not yet the
+         *     owner's memory. ``write_approval`` is the gate as the settings store holds it now.
+         */
+        get: operations["memory_proposals_api_memory_proposals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory/proposals/{proposal_id}/decide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Memory Proposal Decide
+         * @description H443 — approve or reject one held memory write (Hermes's ``/memory approve|reject``).
+         *     It decides the proposal's own approval card, and what the card then says is what
+         *     happens: approved, each fact goes through the ring's own checks (the owner's memory
+         *     switch, the injection scan, the budget) and the reply says what landed; rejected,
+         *     nothing is written. Deciding the card in the Decision Inbox does the same.
+         */
+        post: operations["memory_proposal_decide_api_memory_proposals__proposal_id__decide_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory/approval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Memory Write Approval
+         * @description H443 — the owner turns ``memory.write_approval`` on or off (Hermes's ``/memory
+         *     approval on|off``). On, the post-turn review's and a ``/refine``'s memory writes wait
+         *     for the owner; the model's ``memory`` tool and ``POST /api/memory/remember`` are not
+         *     held by it. The gate is read from the settings store on every review pass, so it
+         *     holds from the next pass on. Recorded in the intent log as ``memory.write_approval``;
+         *     switching it **off** is refused when that record cannot be written.
+         */
+        post: operations["memory_write_approval_api_memory_approval_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/memory/reset": {
         parameters: {
             query?: never;
@@ -8073,6 +8875,30 @@ export interface paths {
          * @description Return per-agent LLM usage and cost summary (H7.10).
          */
         get: operations["get_analytics_cost_api_analytics_cost_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/session-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Usage
+         * @description H403/H443 — what one conversation has used, in all and by purpose: its turns
+         *     (``turn``) and the post-turn learning reviews made for it (``background_review``, a
+         *     ``/refine`` included), each with calls, tokens, cost and ``unmeasured_calls`` (calls
+         *     that were dispatched and never certified by the provider: a review cancelled or
+         *     failed mid-call). ``found`` is false for a conversation the ledger has no row for.
+         */
+        get: operations["get_session_usage_api_analytics_session_usage_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -8655,6 +9481,12 @@ export interface paths {
          *
          *     Names and layers only, at the same boundary as /api/admin/env: no value is
          *     returned, and ``masked`` says whether /api/admin/env masks the key's value.
+         *
+         *     RB-2: a hub variable has two spellings, ``NERVA_<X>`` (preferred) and ``JARVIS_<X>``
+         *     (deprecated). Its row is keyed by the ``JARVIS_`` name the hub reads and says which
+         *     spelling supplied the value (``spelling``), the one to use (``preferred``) and
+         *     whether the deprecated one was used (``deprecated``). ``masked`` holds for the
+         *     variable under either spelling.
          */
         get: operations["admin_env_sources_api_admin_env_sources_get"];
         put?: never;
@@ -9244,6 +10076,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/channels/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Channels Deliveries
+         * @description H081 — delivery receipts: what happened to each outbound reply (sent, failed,
+         *     partial, unknown, skipped), the counts per state, the chats registered as gone, and
+         *     each channel's connection health (H100). No message text is stored or returned:
+         *     a row carries the channel, the chat it went to, its length and the failure kind.
+         *     ``state`` filters to one state (``unknown``, ``failed`` …).
+         */
+        get: operations["channels_deliveries_api_channels_deliveries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/dead-targets/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Channels Dead Target Clear
+         * @description H081 — lift a chat's "gone" flag so the next reply to it is tried again. The flag
+         *     also lifts by itself when that chat writes to the bot or a send to it succeeds.
+         */
+        post: operations["channels_dead_target_clear_api_channels_dead_targets_clear_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/channels/targets": {
         parameters: {
             query?: never;
@@ -9680,6 +10557,167 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/mcp/elicitations/{card_id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Mcp Elicitation Answer
+         * @description H553 — the owner's typed answer to an MCP server's request for input.
+         *
+         *     The card stays in the ordinary approval queue; this fills its fields (checked against
+         *     the schema the server sent) and approves it in one step. Rejecting the card there
+         *     declines; a card nobody answers is cancelled when it times out.
+         */
+        post: operations["admin_mcp_elicitation_answer_api_admin_mcp_elicitations__card_id__answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/mcp/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Mcp Catalog
+         * @description H549 — the reviewed MCP servers Nerva can install (vendored Hermes manifests, each
+         *     re-checked against MANIFEST.json), next to the owner's own servers.
+         */
+        get: operations["admin_mcp_catalog_api_admin_mcp_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/mcp/catalog/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Mcp Catalog Preview
+         * @description H549 — exactly what an install would write and run, with its digest. Writes nothing.
+         *     A deep link opens this (``/v2/console/mcp?install=<name>`` or ``?link=…&config=…``).
+         */
+        post: operations["admin_mcp_catalog_preview_api_admin_mcp_catalog_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/mcp/catalog/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Mcp Catalog Install
+         * @description H549 — install a catalog entry (or a deep link's server) through the add path.
+         *
+         *     Refused unless ``confirm`` is the digest of the plan as it is now (428 with the plan
+         *     when missing, 409 ``plan_changed`` when it differs), under the e-stop, in safe mode, for
+         *     a name the load set holds, when the managed configuration pins ``mcp.servers``, and for
+         *     a name already taken (never overwritten). Secrets go to the encrypted store; the saved
+         *     config keeps their names. Nothing starts: the owner connects (and signs in) after.
+         */
+        post: operations["admin_mcp_catalog_install_api_admin_mcp_catalog_install_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/mcp/{name}/oauth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Mcp Oauth Status
+         * @description H550 — whether this server holds a token (never the token), until when, from whom.
+         */
+        get: operations["admin_mcp_oauth_status_api_admin_mcp__name__oauth_get"];
+        put?: never;
+        post?: never;
+        /**
+         * Admin Mcp Oauth Sign Out
+         * @description H550 — sign out: revoke the tokens at the server (best effort) and delete them, and
+         *     drop a waiting sign-in.
+         */
+        delete: operations["admin_mcp_oauth_sign_out_api_admin_mcp__name__oauth_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/mcp/{name}/oauth/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Mcp Oauth Start
+         * @description H550 — begin the sign-in: discovery, client registration, PKCE. Answers the address
+         *     to open in the browser and a ``binding`` only this caller holds (also set as an
+         *     HttpOnly cookie on the hub's callback path). Refused under the e-stop.
+         */
+        post: operations["admin_mcp_oauth_start_api_admin_mcp__name__oauth_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/mcp/{name}/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Admin Mcp Oauth Relay
+         * @description H692 — the relay: code and state captured on the owner's machine (a loopback listener,
+         *     or the address the browser ended on) handed back with the start's ``binding``. Only the
+         *     hub redeems; state and binding are checked in constant time, once.
+         */
+        post: operations["admin_mcp_oauth_relay_api_admin_mcp__name__oauth_callback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/mcp/server": {
         parameters: {
             query?: never;
@@ -9758,6 +10796,87 @@ export interface paths {
          */
         post: operations["mcp_server_rpc_api_mcp_server_rpc_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Acp Open Session
+         * @description Open a conversation for an editor folder (``session/new``).
+         */
+        post: operations["acp_open_session_api_acp_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/sessions/{session_id}/lease": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Acp Renew Session
+         * @description `nerva acp` renews its sessions' lease while the editor is connected; a session
+         *     whose lease runs out is reaped (its MCP servers removed) and refused from then on.
+         */
+        post: operations["acp_renew_session_api_acp_sessions__session_id__lease_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/sessions/{session_id}/mcp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Acp Add Session Mcp
+         * @description Register an editor-supplied MCP server for this conversation only (H545).
+         */
+        post: operations["acp_add_session_mcp_api_acp_sessions__session_id__mcp_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Acp Close Session
+         * @description The editor closed the session: remove its MCP servers, forget its folder.
+         */
+        delete: operations["acp_close_session_api_acp_sessions__session_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -11331,6 +12450,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/{session_id}/title": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Rename Session
+         * @description H440 — the owner names a conversation. A human title is never replaced by the
+         *     first-words title or the local model's upgrade.
+         *
+         *     Reach: as the pin and the archive routes, any user-token holder may rename any native
+         *     session (an imported one is the owner's alone). A reserved name (``latest``, an ``@``
+         *     selector, a session id) answers 400 ``title_reserved``; a name another conversation
+         *     already goes by answers 409 ``title_taken``.
+         */
+        patch: operations["rename_session_sessions__session_id__title_patch"];
+        trace?: never;
+    };
     "/sessions/{session_id}": {
         parameters: {
             query?: never;
@@ -11344,6 +12489,14 @@ export interface paths {
         /**
          * Delete Session
          * @description H218 — delete one conversation for good, backup first. Needs ``?confirm=DELETE``.
+         *
+         *     H440 review: a chat that others continue still answers 409 ``has_continuations`` — its
+         *     continuations are never deleted in silence. ``&lineage=true`` says the whole
+         *     conversation: every member — every branch — is deleted, newest first, each with its
+         *     own lease and backup (``deleted``, ``backups`` in the answer; older backups are pruned
+         *     once afterwards, never the ones just written); none when a chat is on any of them,
+         *     and a run that stops part way says which are gone. A row's ``continuations`` in
+         *     ``GET /sessions`` is how many sessions that removes besides the row itself.
          *
          *     Holds the session's turn lease, as ``create_continuation`` does: a turn on it
          *     finishes first (it would write the transcript back, or add a turn the backup never
@@ -11414,6 +12567,28 @@ export interface paths {
          * @description H315 — one session's checklist; a session with none answers an empty list.
          */
         get: operations["get_session_plan_sessions__session_id__todo_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{session_id}/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Context
+         * @description H412 — the context meter: what fills the model's window for this conversation
+         *     (system, tools, skills, memory, history, attachments), against the window and the
+         *     compaction tiers of the policy the loop itself uses. Read-only; estimates.
+         */
+        get: operations["get_session_context_sessions__session_id__context_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -11679,6 +12854,88 @@ export interface paths {
          * @description Lift the emergency stop; autonomous dispatch resumes on the next tick.
          */
         post: operations["estop_resume_api_ops_estop_resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ops/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ops Update Check
+         * @description What the hub runs, how it stands against its upstream as of the last fetch, and why
+         *     applying an update from the HUD is not offered (``apply_refused``).
+         */
+        get: operations["ops_update_check_api_admin_ops_update_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ops/update/fetch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ops Update Fetch
+         * @description Fetch the tracked upstream in the background; poll the action by its id.
+         */
+        post: operations["ops_update_fetch_api_admin_ops_update_fetch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ops/actions/{action_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ops Action
+         * @description One ops action's status and its log lines (a fetch, a restart).
+         */
+        get: operations["ops_action_api_admin_ops_actions__action_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ops/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ops Restart
+         * @description Restart the hub (``{"confirm": "restart"}``). 202 when this process will restart
+         *     itself in a moment; 409 ``manual`` when it was started some other way.
+         */
+        post: operations["ops_restart_api_admin_ops_restart_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -12786,6 +14043,413 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Openai Models */
+        get: operations["openai_models_v1_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chat/completions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Openai Chat Completions */
+        post: operations["openai_chat_completions_v1_chat_completions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/responses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Openai Create Response */
+        post: operations["openai_create_response_v1_responses_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/responses/{response_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Openai Get Response */
+        get: operations["openai_get_response_v1_responses__response_id__get"];
+        put?: never;
+        post?: never;
+        /** Openai Delete Response */
+        delete: operations["openai_delete_response_v1_responses__response_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/sms/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sms Webhook
+         * @description Inbound SMS from Twilio: signature, account, replay and sender checks, then the turn.
+         */
+        post: operations["sms_webhook_api_channels_sms_webhook_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/files/roots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Files Roots
+         * @description The approved folders the browser may show, and its limits.
+         */
+        get: operations["files_roots_api_files_roots_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/files/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Files List */
+        get: operations["files_list_api_files_list_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/files/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Files Read */
+        get: operations["files_read_api_files_read_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/files/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Files Download */
+        get: operations["files_download_api_files_download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/files/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Files Upload
+         * @description A new file from the raw request body; never replaces an existing name.
+         */
+        put: operations["files_upload_api_files_upload_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/files/mkdir": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Files Mkdir */
+        post: operations["files_mkdir_api_files_mkdir_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/files/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Files Delete
+         * @description Queue a delete for the owner's decision; nothing is deleted on this request.
+         */
+        post: operations["files_delete_api_files_delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/files/rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Files Rename
+         * @description Queue a rename (same folder) for the owner's decision; nothing moves on this request.
+         */
+        post: operations["files_rename_api_files_rename_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hooks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Hooks List
+         * @description The hooks, the event catalogue, whether hooks can run here, and the latest runs.
+         */
+        get: operations["hooks_list_api_hooks_get"];
+        put?: never;
+        /**
+         * Hooks Define
+         * @description Validate a hook and queue its approval card; nothing runs until a person accepts.
+         */
+        post: operations["hooks_define_api_hooks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hooks/{hook_id}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Hooks Disable */
+        post: operations["hooks_disable_api_hooks__hook_id__disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hooks/{hook_id}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hooks Enable
+         * @description Turning a hook back on is an approval card again (the files as they are now).
+         */
+        post: operations["hooks_enable_api_hooks__hook_id__enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hooks/{hook_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Hooks Remove */
+        delete: operations["hooks_remove_api_hooks__hook_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hooks/{hook_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hooks Test
+         * @description Run one active hook once against a synthetic event, through the same gates, payload
+         *     builder and evaluation as a live run (audited as a test). Its output is shown masked.
+         */
+        post: operations["hooks_test_api_hooks__hook_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/channels/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Channels Config
+         * @description Every channel's settings; a secret only as set / where.
+         */
+        get: operations["channels_config_api_admin_channels_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/channels/{channel_id}/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Channel Config Put */
+        put: operations["channel_config_put_api_admin_channels__channel_id__config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/channels/{channel_id}/secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Channel Secret Put */
+        put: operations["channel_secret_put_api_admin_channels__channel_id__secret_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/channels/{channel_id}/secret/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Channel Secret Delete */
+        delete: operations["channel_secret_delete_api_admin_channels__channel_id__secret__name__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -13960,6 +15624,38 @@ export interface components {
             /** Approve */
             approve: boolean;
         };
+        /**
+         * A2AOutboundBody
+         * @description Where and how this hub calls a peer (G14). The token is stored in the secret store.
+         */
+        A2AOutboundBody: {
+            /** Url */
+            url: string;
+            /** Token */
+            token?: string | null;
+            /**
+             * Keep Token
+             * @default false
+             */
+            keep_token: boolean;
+            /**
+             * Allow Lan
+             * @default false
+             */
+            allow_lan: boolean;
+            /**
+             * Timeout
+             * @default 60
+             */
+            timeout: number;
+            /** Capabilities */
+            capabilities?: string[];
+            /**
+             * Tenant
+             * @default
+             */
+            tenant: string;
+        };
         /** A2APeerBody */
         A2APeerBody: {
             /** Peer Id */
@@ -13969,6 +15665,24 @@ export interface components {
              * @default
              */
             name: string;
+        };
+        /** AcpMcpBody */
+        AcpMcpBody: {
+            /** Name */
+            name: string;
+            /** Command */
+            command: string;
+            /** Args */
+            args?: string[];
+            /** Env */
+            env?: {
+                [key: string]: string;
+            };
+        };
+        /** AcpSessionBody */
+        AcpSessionBody: {
+            /** Cwd */
+            cwd: string;
         };
         /** AcquisitionCaseBody */
         AcquisitionCaseBody: {
@@ -14398,6 +16112,53 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** CatalogInstall */
+        CatalogInstall: {
+            /** Name */
+            name: string;
+            /** Server Name */
+            server_name?: string | null;
+            /** Link Config */
+            link_config?: string | null;
+            /** Inputs */
+            inputs?: {
+                [key: string]: string;
+            } | null;
+            /** Confirm */
+            confirm?: string | null;
+            /** Secrets */
+            secrets?: {
+                [key: string]: string;
+            } | null;
+        };
+        /** CatalogInstallBody */
+        CatalogInstallBody: {
+            /** Skill */
+            skill: string;
+            /**
+             * Repair
+             * @default false
+             */
+            repair: boolean;
+            /**
+             * Force
+             * @default false
+             */
+            force: boolean;
+        };
+        /** CatalogRequest */
+        CatalogRequest: {
+            /** Name */
+            name: string;
+            /** Server Name */
+            server_name?: string | null;
+            /** Link Config */
+            link_config?: string | null;
+            /** Inputs */
+            inputs?: {
+                [key: string]: string;
+            } | null;
+        };
         /** ChannelReplyBody */
         ChannelReplyBody: {
             /** Text */
@@ -14427,6 +16188,13 @@ export interface components {
              */
             source: string;
         };
+        /** ChatAttachment */
+        ChatAttachment: {
+            /** Name */
+            name: string;
+            /** Text */
+            text: string;
+        };
         /** ChatRequest */
         ChatRequest: {
             /** Message */
@@ -14440,6 +16208,13 @@ export interface components {
             reasoning?: ("none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra") | null;
             /** Session Id */
             session_id?: string | null;
+            /**
+             * Tool Events
+             * @default false
+             */
+            tool_events: boolean;
+            /** Attachments */
+            attachments?: components["schemas"]["ChatAttachment"][] | null;
         };
         /** ChatResponse */
         ChatResponse: {
@@ -14749,6 +16524,21 @@ export interface components {
              */
             value: string;
         };
+        /**
+         * CredentialShare
+         * @description H496: share (or stop sharing) one of the owner's integrations with guest turns.
+         */
+        CredentialShare: {
+            /** Integration */
+            integration: string;
+            /** Shared */
+            shared: boolean;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+        };
         /** CredentialTarget */
         CredentialTarget: {
             /** Provider */
@@ -14812,6 +16602,13 @@ export interface components {
             name: string;
             /** Version */
             version?: number | null;
+        };
+        /** DeadTargetClearBody */
+        DeadTargetClearBody: {
+            /** Channel */
+            channel: string;
+            /** Target */
+            target: string;
         };
         /** DecisionBody */
         DecisionBody: {
@@ -14996,6 +16793,13 @@ export interface components {
             /** Boot Id */
             boot_id: string;
         };
+        /** ElicitationAnswer */
+        ElicitationAnswer: {
+            /** Content */
+            content: {
+                [key: string]: unknown;
+            };
+        };
         /** EmptyBody */
         EmptyBody: Record<string, never>;
         /** EstimateBody */
@@ -15103,6 +16907,34 @@ export interface components {
             /** Session Id */
             session_id?: string | null;
         };
+        /** FilesMkdirBody */
+        FilesMkdirBody: {
+            /** Root */
+            root: string;
+            /**
+             * Path
+             * @default
+             */
+            path: string;
+            /** Name */
+            name: string;
+        };
+        /** FilesRenameBody */
+        FilesRenameBody: {
+            /** Root */
+            root: string;
+            /** Path */
+            path: string;
+            /** New Name */
+            new_name: string;
+        };
+        /** FilesTargetBody */
+        FilesTargetBody: {
+            /** Root */
+            root: string;
+            /** Path */
+            path: string;
+        };
         /** FunnelBody */
         FunnelBody: {
             /** Step */
@@ -15130,6 +16962,41 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HookBody */
+        HookBody: {
+            /** Event */
+            event: string;
+            /** Argv */
+            argv: string[];
+            /** Matcher */
+            matcher?: string | null;
+            /**
+             * Guard
+             * @default false
+             */
+            guard: boolean;
+            /** Timeout S */
+            timeout_s?: number | null;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /** Replaces */
+            replaces?: string | null;
+        };
+        /** HookTestBody */
+        HookTestBody: {
+            /**
+             * Tool
+             * @default terminal_run
+             */
+            tool: string;
+            /** Tool Input */
+            tool_input?: {
+                [key: string]: unknown;
+            };
         };
         /** ImageArtifactView */
         ImageArtifactView: {
@@ -15305,6 +17172,24 @@ export interface components {
              */
             limit: number;
         };
+        /** KeyBody */
+        KeyBody: {
+            /**
+             * Value
+             * Format: password
+             */
+            value: string;
+            /**
+             * Same Key
+             * @default false
+             */
+            same_key: boolean;
+            /**
+             * Acknowledge Training
+             * @default false
+             */
+            acknowledge_training: boolean;
+        };
         /** LMLoad */
         LMLoad: {
             /** Model */
@@ -15346,6 +17231,35 @@ export interface components {
             /** Provider */
             provider?: ("lm-studio" | "ollama") | null;
         };
+        /** LspServerBody */
+        LspServerBody: {
+            /** Server */
+            server: string;
+        };
+        /** LspStartBody */
+        LspStartBody: {
+            /** Server */
+            server: string;
+            /** Root */
+            root?: string | null;
+        };
+        /** LspStopBody */
+        LspStopBody: {
+            /** Server */
+            server?: string | null;
+            /** Root */
+            root?: string | null;
+        };
+        /** LspTrustBody */
+        LspTrustBody: {
+            /** Root */
+            root: string;
+            /**
+             * Trusted
+             * @default true
+             */
+            trusted: boolean;
+        };
         /** MCPServerConfig */
         MCPServerConfig: {
             /** Name */
@@ -15368,6 +17282,16 @@ export interface components {
             tools_allow?: string[] | null;
             /** Tools Deny */
             tools_deny?: string[] | null;
+            /** Sampling */
+            sampling?: string | null;
+            /** Elicitation */
+            elicitation?: boolean | null;
+            /** Auth */
+            auth?: string | null;
+            /** Oauth */
+            oauth?: {
+                [key: string]: string;
+            } | null;
         };
         /** MapBody */
         MapBody: {
@@ -15466,6 +17390,18 @@ export interface components {
             /** Valid */
             valid: boolean;
             stats: components["schemas"]["MediationCounts"] | null;
+        };
+        /** MemoryApprovalBody */
+        MemoryApprovalBody: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** MemoryProposalDecision */
+        MemoryProposalDecision: {
+            /** Approved */
+            approved: boolean;
+            /** Reason */
+            reason?: string | null;
         };
         /** MemorySwitchBody */
         MemorySwitchBody: {
@@ -15622,6 +17558,29 @@ export interface components {
              */
             state: string;
         };
+        /** OAuthRelay */
+        OAuthRelay: {
+            /** State */
+            state: string;
+            /** Binding */
+            binding: string;
+            /** Code */
+            code?: string | null;
+            /** Error */
+            error?: string | null;
+            /** Iss */
+            iss?: string | null;
+        };
+        /** OAuthStart */
+        OAuthStart: {
+            /**
+             * Redirect
+             * @default hub
+             */
+            redirect: string;
+            /** Redirect Uri */
+            redirect_uri?: string | null;
+        };
         /** OperatorPlanBody */
         OperatorPlanBody: {
             /** Goal */
@@ -15712,6 +17671,13 @@ export interface components {
              * @default false
              */
             cancel: boolean;
+        };
+        /** PlainBody */
+        PlainBody: {
+            /** Values */
+            values: {
+                [key: string]: string | number | boolean | null;
+            };
         };
         /** PlaybookBody */
         PlaybookBody: {
@@ -15962,6 +17928,11 @@ export interface components {
             /** Expected Revision */
             expected_revision: number;
         };
+        /** RenameSessionRequest */
+        RenameSessionRequest: {
+            /** Title */
+            title: string;
+        };
         /** RequestBody */
         RequestBody: {
             /**
@@ -16001,6 +17972,11 @@ export interface components {
              * @default false
              */
             latest_mode: boolean;
+        };
+        /** RestartBody */
+        RestartBody: {
+            /** Confirm */
+            confirm: string;
         };
         /** ReviewBody */
         ReviewBody: {
@@ -16119,6 +18095,16 @@ export interface components {
              */
             mode: string;
         };
+        /** SecretBody */
+        SecretBody: {
+            /** Name */
+            name: string;
+            /**
+             * Value
+             * Format: password
+             */
+            value: string;
+        };
         /** SecurityControlBody */
         SecurityControlBody: {
             /** Entity Id */
@@ -16219,6 +18205,14 @@ export interface components {
              */
             max_reviews: number;
         };
+        /** SetupValueBody */
+        SetupValueBody: {
+            /**
+             * Value
+             * Format: password
+             */
+            value: string;
+        };
         /**
          * SkillBatchBody
          * @description Hermes's skill_manage ``operations`` array: ordered, across several skills.
@@ -16252,6 +18246,34 @@ export interface components {
              * @default false
              */
             overwrite: boolean;
+        };
+        /**
+         * SkillConsolidationBody
+         * @description H348: the owner asks which skills overlap and, with ``draft``, for umbrella proposals.
+         */
+        SkillConsolidationBody: {
+            /**
+             * Threshold
+             * @default 0.35
+             */
+            threshold: number;
+            /**
+             * Max Groups
+             * @default 3
+             */
+            max_groups: number;
+            /**
+             * Draft
+             * @default true
+             */
+            draft: boolean;
+        };
+        /** SkillPinBody */
+        SkillPinBody: {
+            /** Skill */
+            skill: string;
+            /** Pinned */
+            pinned: boolean;
         };
         /** SkillSwitchBody */
         SkillSwitchBody: {
@@ -16331,6 +18353,14 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** SubAgentPauseBody */
+        SubAgentPauseBody: {
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+        };
         /** SubAgentSpawnBody */
         SubAgentSpawnBody: {
             /** Task */
@@ -16406,6 +18436,30 @@ export interface components {
             lang: string;
             /** Voice */
             voice?: string | null;
+        };
+        /** TapAddBody */
+        TapAddBody: {
+            /** Repo */
+            repo: string;
+            /** Commit */
+            commit: string;
+            /**
+             * Path
+             * @default skills
+             */
+            path: string;
+            /**
+             * Trust
+             * @default community
+             */
+            trust: string;
+        };
+        /** TapInstallBody */
+        TapInstallBody: {
+            /** Tap */
+            tap: string;
+            /** Skill */
+            skill: string;
         };
         /** TasksResponse */
         TasksResponse: {
@@ -16659,6 +18713,24 @@ export interface components {
              * @default false
              */
             clear_reasoning_effort: boolean;
+        };
+        /** UseBody */
+        UseBody: {
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /**
+             * Confirm Expensive
+             * @default false
+             */
+            confirm_expensive: boolean;
+            /**
+             * Acknowledge Training
+             * @default false
+             */
+            acknowledge_training: boolean;
         };
         /** VLMDescribeBody */
         VLMDescribeBody: {
@@ -18992,6 +21064,72 @@ export interface operations {
             };
         };
     };
+    a2a_set_peer_outbound_api_a2a_peers__peer_id__outbound_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                peer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["A2AOutboundBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    a2a_clear_peer_outbound_api_a2a_peers__peer_id__outbound_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                peer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     a2a_set_card_api_a2a_card_post: {
         parameters: {
             query?: never;
@@ -19275,6 +21413,86 @@ export interface operations {
         };
     };
     pairing_revoke_links_api_channels_pairing_link_revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    auth_session_api_auth_session_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    auth_login_api_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    auth_logout_api_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    auth_logout_all_api_auth_logout_all_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -21366,6 +23584,189 @@ export interface operations {
             };
         };
     };
+    lsp_status_api_codeintel_lsp_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    lsp_install_api_codeintel_lsp_install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LspServerBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lsp_start_api_codeintel_lsp_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LspStartBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lsp_stop_api_codeintel_lsp_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LspStopBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lsp_trust_api_codeintel_lsp_trust_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LspTrustBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lsp_install_clear_api_codeintel_lsp_install__server__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     actions_list_api_actions_get: {
         parameters: {
             query?: {
@@ -21837,6 +24238,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DataHandlingAck"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    credential_share_api_security_credential_shares_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CredentialShare"];
             };
         };
         responses: {
@@ -22380,6 +24814,39 @@ export interface operations {
             };
         };
     };
+    pin_skill_api_skills_pin_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillPinBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_skill_bundles_api_skills_bundles_get: {
         parameters: {
             query?: never;
@@ -22644,6 +25111,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    catalog_install_api_skills_catalog_install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CatalogInstallBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -23098,6 +25598,39 @@ export interface operations {
             };
         };
     };
+    skills_consolidation_analyze_api_skills_consolidation_analyze_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillConsolidationBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     skill_batches_api_skills_batches_get: {
         parameters: {
             query?: never;
@@ -23339,6 +25872,286 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RequestBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    skill_setup_api_skills_setup__name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    skill_setup_put_api_skills_setup__name___var__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                var: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupValueBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    skill_setup_delete_api_skills_setup__name___var__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                var: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    taps_list_api_skills_taps_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    taps_add_api_skills_taps_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TapAddBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    taps_remove_api_skills_taps__tap_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tap_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    taps_refresh_api_skills_taps__tap_id__refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tap_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    taps_search_api_skills_taps_search_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                tap?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    taps_install_api_skills_taps_install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TapInstallBody"];
             };
         };
         responses: {
@@ -24694,6 +27507,144 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subagents_pause_api_subagents_pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SubAgentPauseBody"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subagents_resume_api_subagents_resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    subagents_transcript_api_subagents__spawn_id__transcript_get: {
+        parameters: {
+            query?: {
+                after?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                spawn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subagents_result_api_subagents__spawn_id__result_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spawn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    subagents_claim_api_subagents_completions_claim_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -28110,6 +31061,198 @@ export interface operations {
             };
         };
     };
+    integrations_list_api_admin_integrations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    integration_key_put_api_admin_integrations__entry_id__key_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KeyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    integration_key_delete_api_admin_integrations__entry_id__key_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    integration_test_api_admin_integrations__entry_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    integration_use_api_admin_integrations__entry_id__use_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UseBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    integration_video_off_api_admin_integrations_video_choice_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    integration_search_auto_api_admin_integrations_search_choice_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     list_custom_api_admin_llm_custom_endpoints_get: {
         parameters: {
             query?: never;
@@ -28502,6 +31645,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mcp_oauth_callback_api_oauth_mcp_callback_get: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+                error?: string;
+                iss?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
                 };
             };
             /** @description Validation Error */
@@ -29805,6 +32982,94 @@ export interface operations {
             };
         };
     };
+    memory_proposals_api_memory_proposals_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    memory_proposal_decide_api_memory_proposals__proposal_id__decide_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryProposalDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    memory_write_approval_api_memory_approval_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemoryApprovalBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     memory_reset_api_memory_reset_post: {
         parameters: {
             query?: never;
@@ -29940,6 +33205,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_session_usage_api_analytics_session_usage_get: {
+        parameters: {
+            query?: {
+                session_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -31425,6 +34721,71 @@ export interface operations {
             };
         };
     };
+    channels_deliveries_api_channels_deliveries_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                state?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    channels_dead_target_clear_api_channels_dead_targets_clear_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeadTargetClearBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     channels_targets_api_channels_targets_get: {
         parameters: {
             query?: never;
@@ -32098,6 +35459,270 @@ export interface operations {
             };
         };
     };
+    admin_mcp_elicitation_answer_api_admin_mcp_elicitations__card_id__answer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                card_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ElicitationAnswer"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_mcp_catalog_api_admin_mcp_catalog_get: {
+        parameters: {
+            query?: {
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_mcp_catalog_preview_api_admin_mcp_catalog_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CatalogRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_mcp_catalog_install_api_admin_mcp_catalog_install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CatalogInstall"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_mcp_oauth_status_api_admin_mcp__name__oauth_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_mcp_oauth_sign_out_api_admin_mcp__name__oauth_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_mcp_oauth_start_api_admin_mcp__name__oauth_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthStart"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_mcp_oauth_relay_api_admin_mcp__name__oauth_callback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthRelay"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     mcp_server_status_api_mcp_server_get: {
         parameters: {
             query?: never;
@@ -32172,6 +35797,136 @@ export interface operations {
                 };
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acp_open_session_api_acp_sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcpSessionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acp_renew_session_api_acp_sessions__session_id__lease_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acp_add_session_mcp_api_acp_sessions__session_id__mcp_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcpMcpBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acp_close_session_api_acp_sessions__session_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -34385,10 +38140,46 @@ export interface operations {
             };
         };
     };
+    rename_session_sessions__session_id__title_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     delete_session_sessions__session_id__delete: {
         parameters: {
             query?: {
                 confirm?: string;
+                lineage?: boolean;
             };
             header?: never;
             path: {
@@ -34475,6 +38266,37 @@ export interface operations {
         };
     };
     get_session_plan_sessions__session_id__todo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_session_context_sessions__session_id__context_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -34769,6 +38591,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    ops_update_check_api_admin_ops_update_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    ops_update_fetch_api_admin_ops_update_fetch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    ops_action_api_admin_ops_actions__action_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ops_restart_api_admin_ops_restart_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestartBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -36338,6 +40264,699 @@ export interface operations {
             header?: never;
             path: {
                 audit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    openai_models_v1_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    openai_chat_completions_v1_chat_completions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    openai_create_response_v1_responses_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    openai_get_response_v1_responses__response_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                response_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    openai_delete_response_v1_responses__response_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                response_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sms_webhook_api_channels_sms_webhook_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    files_roots_api_files_roots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    files_list_api_files_list_get: {
+        parameters: {
+            query: {
+                root: string;
+                path?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    files_read_api_files_read_get: {
+        parameters: {
+            query: {
+                root: string;
+                path?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    files_download_api_files_download_get: {
+        parameters: {
+            query: {
+                root: string;
+                path?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    files_upload_api_files_upload_put: {
+        parameters: {
+            query: {
+                root: string;
+                path?: string;
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    files_mkdir_api_files_mkdir_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FilesMkdirBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    files_delete_api_files_delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FilesTargetBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    files_rename_api_files_rename_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FilesRenameBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hooks_list_api_hooks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    hooks_define_api_hooks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HookBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hooks_disable_api_hooks__hook_id__disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hooks_enable_api_hooks__hook_id__enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hooks_remove_api_hooks__hook_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hooks_test_api_hooks__hook_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hook_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HookTestBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    channels_config_api_admin_channels_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    channel_config_put_api_admin_channels__channel_id__config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                channel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlainBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    channel_secret_put_api_admin_channels__channel_id__secret_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                channel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    channel_secret_delete_api_admin_channels__channel_id__secret__name__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                channel_id: string;
+                name: string;
             };
             cookie?: never;
         };

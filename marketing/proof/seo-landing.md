@@ -1,4 +1,4 @@
-# SEO landing content — Jarvis Hub
+# SEO landing content — Nerva
 
 > **Purpose:** search-optimized copy and metadata for the public landing surface
 > ([`marketing/landing/index.html`](../landing/index.html)). This is the *content spec* — the
@@ -30,7 +30,7 @@ ownership, privacy-by-architecture, governance, and $0 cost.
 
 ## Page metadata
 
-- **Title tag** (≤60 chars): `Jarvis Hub — Local-First, Governed Personal AI`
+- **Title tag** (≤60 chars): `Nerva — Local-First, Governed Personal AI`
 - **Meta description** (≤155 chars): `The always-on personal AI that runs on your hardware — governed
   autonomy, an audit log, and a knowledge-graph memory. $0/mo, your data trains no one.`
 - **Canonical H1:** `The personal AI that lives on your machine, not someone's cloud.`
@@ -60,12 +60,12 @@ ownership, privacy-by-architecture, governance, and $0 cost.
 ## FAQ (schema-ready — grounded in the brief's objection handling)
 
 **Q: Is my data sent to the cloud?**
-No. Jarvis Hub runs on your hardware; local-only agents never make network calls, and the family
+No. Nerva runs on your hardware; local-only agents never make network calls, and the family
 agent never touches the internet. Cloud escalation for heavy tasks is explicit, per-agent, and audited.
 
 **Q: How is it different from getjarvis.eu / OpenClaw?**
 Same always-on thesis, opposite architecture. getjarvis.eu is cloud SaaS that holds your data and the
-model keys; OpenClaw ships without action governance. Jarvis Hub is local-first and governed — approval
+model keys; OpenClaw ships without action governance. Nerva is local-first and governed — approval
 queue, encrypted secrets, audit log — with the brain running on your machine.
 
 **Q: Is local AI worse than GPT or Gemini?**

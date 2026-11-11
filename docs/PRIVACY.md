@@ -1,4 +1,4 @@
-# Privacy Policy — Jarvis Hub
+# Privacy Policy — Nerva
 
 > How Jarvis handles your data. The short version: **it's your machine, your data, and
 > nothing leaves it unless you opt a specific agent or channel into the cloud.** Grounded
@@ -6,7 +6,7 @@
 
 ## The principle: local-first
 
-Jarvis Hub is **self-hosted and single-user**. It runs on your own machine and binds to
+Nerva is **self-hosted and single-user**. It runs on your own machine and binds to
 **loopback (`127.0.0.1`) by default** — there is no Jarvis-operated server, account, or
 cloud backend. Your conversations, memory, and knowledge graph live on **your disk**.
 

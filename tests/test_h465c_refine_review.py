@@ -55,7 +55,7 @@ class _Skills:
     def __init__(self):
         self.made = []
 
-    def generate_skill(self, agent_id, task, steps):
+    def generate_skill(self, agent_id, task, steps, **kw):
         self.made.append(agent_id)
         return f"skill_{len(self.made)}"
 
@@ -121,6 +121,7 @@ def test_the_orchestrators_per_turn_task_is_refused_while_refine_runs(monkeypatc
     bind_native(orch, monkeypatch, session_ids=("web-1",))
     orch.reviewer = reviewer
     orch._session_id_default = "web-1"
+    orch._runtime_settings, orch._last_channel = {}, "web"   # H443: a local turn, nobody signed in
 
     async def scenario():
         refine = asyncio.create_task(orch.refine())

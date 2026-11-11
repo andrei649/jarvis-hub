@@ -141,6 +141,17 @@ def api_call(origin: str, token: str, path: str, body: dict | None = None) -> ob
         raise OperatorError("Hub response was not JSON") from exc
 
 
+def _admin_token() -> str:
+    """The admin token under either spelling (RB-2: ``NERVA_ADMIN_TOKEN`` is preferred,
+    ``JARVIS_ADMIN_TOKEN`` deprecated). Two different values are refused, never guessed."""
+    new = os.environ.get("NERVA_ADMIN_TOKEN", "").strip()
+    old = os.environ.get("JARVIS_ADMIN_TOKEN", "").strip()
+    if new and old and new != old:
+        raise OperatorError("NERVA_ADMIN_TOKEN and JARVIS_ADMIN_TOKEN are both set, with different "
+                            "values: keep one")
+    return new or old
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://127.0.0.1:8080",
@@ -156,9 +167,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         origin = base_url(args.base_url)
-        token = os.environ.get("JARVIS_ADMIN_TOKEN", "").strip()
+        token = _admin_token()
         if not token:
-            raise OperatorError("set JARVIS_ADMIN_TOKEN in the environment")
+            raise OperatorError("set NERVA_ADMIN_TOKEN (or JARVIS_ADMIN_TOKEN) in the environment")
         if args.command == "rpc":
             result = api_call(origin, token, "/api/hermes/rpc",
                               {"method": args.method, "params": read_params(args.params_file)})

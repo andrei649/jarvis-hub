@@ -1,7 +1,9 @@
-"""Ephemeral, identity-bound clarification and confirmation state.
+"""Ephemeral, identity-bound clarification, confirmation and secret-entry state.
 
 This module only parses and resolves answers. The caller owns delivery, authority
-checks and every effect that may follow a confirmation.
+checks and every effect that may follow a confirmation. A ``secret`` prompt never
+carries a value: it waits for the owner to store the named secret through the
+secret broker, and resolves only to the marker ``"stored"`` (H226).
 """
 
 from __future__ import annotations
@@ -42,6 +44,12 @@ class Prompt:
     awaiting_text: bool = False
     command: str | None = None
     deadline: float | None = None
+    secret_name: str | None = None
+
+
+#: A secret prompt resolves to this marker, never to the secret itself.
+SECRET_STORED = "stored"  # nosec B105 — a status marker, not a credential
+_KINDS = ("clarify", "confirmation", "secret")
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,7 +254,7 @@ class PendingInputs:
         state = _State()
         self._active[prompt.id] = prompt
         self._states[prompt] = state
-        self._order.setdefault(prompt.key, {"clarify": [], "confirmation": []})[prompt.kind].append(
+        self._order.setdefault(prompt.key, {kind: [] for kind in _KINDS})[prompt.kind].append(
             prompt.id
         )
         if prompt.deadline is not None:
@@ -339,10 +347,31 @@ class PendingInputs:
             )
         )
 
-    def pending(self, key: PendingKey, kind: str | None = None) -> Prompt | None:
+    def register_secret(
+        self, key: PendingKey, name: str, question: str, timeout_seconds: float = 600
+    ) -> Prompt:
+        """Wait for the owner to store secret *name*; the value never passes through here."""
         key = self._key(key)
-        if kind not in (None, "clarify", "confirmation"):
-            raise ValueError("kind must be clarify or confirmation")
+        name = self._text(name, "name", 128)
+        question = self._text(question, "question", 1024)
+        duration = self._duration(timeout_seconds, clarify=False)
+        return self._register(
+            Prompt(
+                id=uuid.uuid4().hex,
+                key=key,
+                kind="secret",
+                question=question,
+                secret_name=name,
+                deadline=self._deadline(duration),
+            )
+        )
+
+    def pending(self, key: PendingKey, kind: str | None = None) -> Prompt | None:
+        """The oldest live prompt of *kind*. Without a kind only clarify and
+        confirmation are considered: typed channel text can never reach a secret prompt."""
+        key = self._key(key)
+        if kind not in (None, *_KINDS):
+            raise ValueError("kind must be clarify, confirmation or secret")
         self._expire_all()
         buckets = self._order.get(key, {})
         for candidate in (kind,) if kind else ("clarify", "confirmation"):
@@ -381,6 +410,11 @@ class PendingInputs:
             if not isinstance(value, str) or value not in ("once", "always", "cancel"):
                 return False
             answer = Answer(value, value)
+        elif prompt.kind == "secret":
+            # The caller has checked that the broker now holds the secret.
+            if value != SECRET_STORED:
+                return False
+            answer = Answer(SECRET_STORED)
         elif isinstance(value, str):
             parsed = parse_clarify(value, prompt.choices, prompt.multi_select, prompt.awaiting_text)
             if parsed.status != "resolved":

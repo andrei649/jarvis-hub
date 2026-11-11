@@ -47,6 +47,9 @@ def owner(monkeypatch, tmp_path):
     loader._load_skill(skill, discovery_root=root)
     assert "local-curation" in loader.skills
     usage.note_created("local-curation", ORIGIN_AGENT)
+    # The hub's boot discover after the creation: with the H349 usage sidecar attached it records
+    # the folder's fingerprint on the row, as every later rediscover (a rollback's) does.
+    loader.discover()
     approvals = ActionApprovalQueue(tmp_path / "approval-cards.json")
     curator = SkillCurator(loader, usage, approvals=approvals, archive_dir=tmp_path / "archive")
     settings_db.ensure_initialized()

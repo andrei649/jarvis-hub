@@ -1,4 +1,4 @@
-# Jarvis Hub landing page
+# Nerva landing page
 
 Static, self-contained dev half for O26-P3.6 / M3.3.
 

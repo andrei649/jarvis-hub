@@ -54,6 +54,14 @@ INTENTIONALLY_OPEN = {
     "POST /api/widget/{token}/message",     # widget capability token in the path
     "POST /api/channels/pairing/request",   # inbound pairing; lands in approval, mints nothing
     "POST /api/analytics/event",            # H22 public privacy-first beacon; bounded INSERT, mints nothing
+    # G12 (H560/H614) OpenAI-compatible API: 404 unless openai_api.enabled, then a bearer key
+    # the owner issued (routers/openai_compat.py:_admit); a guest key's turns are inbound.
+    "POST /v1/chat/completions",
+    "POST /v1/responses",
+    "DELETE /v1/responses/{response_id}",
+    # G16 (H098): Twilio's inbound SMS. 404 unless SMS is configured; X-Twilio-Signature
+    # (HMAC-SHA1 over URL + sorted params, constant-time) and the account SID in the handler.
+    "POST /api/channels/sms/webhook",
     # Nerva Workspace public entry points (spec §6/§7). Each answers 404 while
     # NERVA_WORKSPACE is off, requires a same-origin Origin/Sec-Fetch-Site and a JSON
     # body (check_public_origin), and is throttled by the workspace itself.
@@ -62,6 +70,11 @@ INTENTIONALLY_OPEN = {
     "POST /api/workspace/login/sso",        # trusted-proxy peer + shared secret (compare_digest) + active user only
     "POST /api/workspace/invites/lookup",   # 32-byte single-use token authenticates; 30 tries/h/IP
     "POST /api/workspace/invites/accept",   # same token; consumes it, sets the password, mints the session
+    # H509 owner browser sign-in (routers/browser_auth.py): same-origin + JSON only, the
+    # owner secret checked in constant time after a per-IP and global failure throttle;
+    # sign-out can only revoke the session cookie it is shown, same-origin only.
+    "POST /api/auth/login",
+    "POST /api/auth/logout",
 }
 
 # Open mutating routes still awaiting a guard — SEC-3 backlog. Listed explicitly
@@ -146,7 +159,6 @@ PUBLIC_READS = {
     "GET /api/oauth/status",
     "GET /api/oauth/auth-url",
     "GET /api/oauth/callback",   # provider redirect; verify_state() gates the exchange, page shows only the service name
-    # WorldView liveness booleans; the overview (recon/alerts) is guarded.
     # Nerva Workspace (spec §7). The SPA shell serves the built markup with no user data
     # (404 while NERVA_WORKSPACE is off); the session probe tells an anonymous caller
     # only the setup/SSO booleans — the user, org and CSRF token come back solely for a
@@ -155,6 +167,9 @@ PUBLIC_READS = {
     "GET /workspace/",
     "GET /workspace/{path:path}",
     "GET /api/workspace/session",
+    # H509: signed_in false + whether an owner credential exists for an anonymous caller;
+    # the CSRF token only for a live same-origin owner session cookie.
+    "GET /api/auth/session",
 }
 # (The widget capability-token reads are open too, but their handler checks a
 # credential, so they are listed in IN_HANDLER_GUARDED below and folded in there.)
@@ -174,9 +189,19 @@ IN_HANDLER_GUARDED = {
     "POST /api/a2a/task": "allowlisted peer's HMAC x-signature-256",
     "POST /api/mcp/server/rpc": "OAuth bearer, or the HF-1 user/admin token posture",
     "POST /api/oauth/callback": "a state minted by this hub (verify_state)",
+    # G9 / H692: a browser redirect carries no admin token; the start's binding cookie and
+    # a waiting flow's state, both compared in constant time and redeemed once.
+    "GET /api/oauth/mcp/callback": "a waiting MCP sign-in's state plus its owner-binding cookie",
     "POST /api/widget/{token}/message": "widget capability token in the path",
     "GET /api/widget/{token}": "widget capability token in the path",
     "GET /api/widget/{token}/config": "widget capability token in the path",
+    # G12: an OpenAI-compatible API key (Authorization: Bearer), never the hub tokens.
+    "POST /v1/chat/completions": "OpenAI-compatible API key (bearer), API switched on",
+    "POST /v1/responses": "OpenAI-compatible API key (bearer), API switched on",
+    "GET /v1/responses/{response_id}": "OpenAI-compatible API key (bearer), the key that stored it",
+    "DELETE /v1/responses/{response_id}": "OpenAI-compatible API key (bearer), the key that stored it",
+    "GET /v1/models": "OpenAI-compatible API key (bearer), API switched on",
+    "POST /api/channels/sms/webhook": "Twilio X-Twilio-Signature (HMAC-SHA1, the SMS auth token)",
 }
 
 # H511 review: the read half is partitioned exactly like the mutators — an open GET
@@ -197,6 +222,11 @@ PUBLIC_BY_DESIGN = {
     "POST /api/workspace/login/sso",
     "POST /api/workspace/invites/lookup",
     "POST /api/workspace/invites/accept",
+    # H509: the owner's browser sign-in and sign-out. Login checks the owner secret (an
+    # admin credential only; a guest token is refused), logout revokes only the presented
+    # cookie's session — both proved in tests/test_g13_browser_signin.py.
+    "POST /api/auth/login",
+    "POST /api/auth/logout",
 }
 
 # WebSocket upgrades whose guard runs in the handler body (an upgrade has no
@@ -280,12 +310,19 @@ IN_HANDLER_TIER_SITES = {
     "agents/core/routers/sessions.py:get_sessions": (
         _H441 + "test_import_and_resolve_are_owner_only_and_guest_cannot_enumerate_title",
         _H441 + "test_guest_list_is_not_emptied_by_twenty_newer_foreign_sessions"),
+    # H440: resume by title resolves among native sessions only for anyone but the owner.
+    "agents/core/routers/sessions.py:resume_session": (
+        "tests/test_h440_title_lineage.py::test_a_guest_cannot_resume_an_imported_session_by_its_title",),
     "agents/core/routers/sessions.py:get_recent_plans": (
         _H441 + "test_recent_todo_omits_foreign_plans_and_native_stamps_remain_usable",),
     "agents/core/routers/canvas.py:canvas_post": (
         "tests/test_h309_pointer.py::test_a_tip_through_the_http_route_is_marked_unless_the_owner_sent_it",),
     "agents/core/routers/actions.py:actions_request": (
         "tests/test_h487_approval_groups.py::test_owner_http_producer_and_optional_projection_with_legacy_complete_actions",),
+    # H226: a secret prompt is offered to, and answered by, the owner only.
+    "agents/core/routers/chat_pending.py:http_owner": (
+        "tests/test_h226_cli_governance_prompts.py::test_non_owner_turn_is_never_asked_for_a_secret",
+        "tests/test_h226_cli_governance_prompts.py::test_secret_prompt_answer_requires_owner_and_a_stored_value"),
     "agents/core/routers/commands.py:command_catalog": (
         "tests/test_commands_catalog.py::test_user_catalog_contains_only_commands_visible_to_that_chat_principal",),
     "agents/core/routers/skills.py:_request_principal": (_INH + "test_sandbox_principal_follows_the_credential",),
@@ -293,6 +330,10 @@ IN_HANDLER_TIER_SITES = {
         "tests/test_pending_input_http_poll.py::test_revocation_retires_polled_or_unpolled_wait",
         _INH + "test_pending_input_actor_follows_the_credential"),
     "agents/core/routers/autonomy.py:_consent_admin_current": (_INH + "test_consent_recheck_follows_the_credential",),
+    # H509: the owner browser sign-in opens a session only for an admin credential.
+    "agents/core/routers/browser_auth.py:auth_login": (
+        "tests/test_g13_browser_signin.py::test_wrong_secret_is_refused_and_opens_nothing",
+        "tests/test_g13_browser_signin.py::test_guest_token_cannot_sign_in_or_escalate"),
     # Round 3: `_request_is_authed` / `_user_credential_required` / the MCP identity
     # checks are credential decisions too.
     "agents/web.py:_rate_limit": (

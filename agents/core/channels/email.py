@@ -14,6 +14,43 @@ from email.mime.text import MIMEText
 from typing import Optional
 
 from .base import ChannelAdapter
+from .reconnect import FATAL_REPROBE_S, Backoff, classify_exception
+
+#: H100 — the IMAP poll's own rungs on the shared ladder (it polls once a minute when well).
+IMAP_LADDER = (30.0, 60.0, 120.0, 300.0, 600.0)
+_AUTH_WORDS = ("authenticationfailed", "authentication failed", "invalid credentials",
+               "login failed", "logon failure", "auth")
+#: RFC 5530 codes (and plain wording) that say an auth failure is temporary: retry.
+_TRANSIENT_WORDS = ("[unavailable]", "temporary", "temporarily", "try again", "[inuse]",
+                    "[serverbug]", "[limit]")
+
+
+def _tls_context(host: str):
+    """G21 review M1: a VERIFIED TLS context for the mail servers (the stdlib default for
+    ``IMAP4_SSL`` and ``starttls`` checks no certificate, so a password went to whoever
+    answered). The owner's CA anchor (``JARVIS_CA_BUNDLE``) is honoured; a self-signed
+    local server is reachable only when the owner names ``email`` or its host in
+    ``JARVIS_TLS_INSECURE_TARGETS`` (never in the hardened profile, logged as a WARNING)."""
+    import ssl
+
+    from agents.core.tls_trust import verify_for
+
+    verdict = verify_for("email", f"imaps://{host}")
+    if verdict is False:
+        # Owner's explicit, logged opt-in (JARVIS_TLS_INSECURE_TARGETS); refused in the hardened profile.
+        # nosemgrep: python.lang.security.unverified-ssl-context.unverified-ssl-context
+        return ssl._create_unverified_context()  # nosec B323 - the owner's explicit, logged opt-in
+    return verdict
+
+
+def _login_refused(exc: BaseException) -> bool:
+    """A refused login for good (bad password, revoked app password); not a server that
+    says the failure is temporary."""
+    if not isinstance(exc, imaplib.IMAP4.error):
+        return False
+    text = str(exc).lower()
+    return (any(word in text for word in _AUTH_WORDS)
+            and not any(word in text for word in _TRANSIENT_WORDS))
 
 logger = logging.getLogger("jarvis.channels.email")
 
@@ -50,6 +87,7 @@ class EmailChannel(ChannelAdapter):
 
     async def stop(self):
         self._running = False
+        self.health.stopped()
         if self._poll_task:
             self._poll_task.cancel()
 
@@ -82,17 +120,35 @@ class EmailChannel(ChannelAdapter):
             timeout=10,
         ) as server:
             if self.smtp.get("tls", True):
-                server.starttls()
+                server.starttls(context=_tls_context(self.smtp["host"]))
             if self.smtp.get("user"):
                 server.login(self.smtp["user"], self.smtp.get("password", ""))
             server.send_message(msg)
 
     async def _poll_loop(self):
+        backoff = Backoff(IMAP_LADDER)
         while self._running:
             try:
                 await self._check_imap()
             except Exception as e:
-                logger.warning(f"IMAP poll error: {e}")
+                if _login_refused(e):
+                    # H100: a refused login does not heal by asking again every minute:
+                    # say so on the status surface and try the login again only every
+                    # FATAL_REPROBE_S, so fixed credentials heal by themselves.
+                    self.health.failed_fatally("unauthorized", reprobe_in=FATAL_REPROBE_S)
+                    logger.error("Email channel: the IMAP server refused the login. Fix the "
+                                 "IMAP credentials; Nerva tries again every %.0f min.",
+                                 FATAL_REPROBE_S / 60)
+                    await asyncio.sleep(FATAL_REPROBE_S)
+                    continue
+                kind = classify_exception(e).kind
+                delay = backoff.failure()
+                self.health.retrying(kind, delay)
+                logger.warning("IMAP poll failed (%s); retrying in %.0f s", kind, delay)
+                await asyncio.sleep(delay)
+                continue
+            backoff.success()
+            self.health.ok()
             await asyncio.sleep(self.imap.get("poll_interval", 60))
 
     async def _check_imap(self):
@@ -107,7 +163,8 @@ class EmailChannel(ChannelAdapter):
 
     def _imap_fetch(self) -> list[tuple[str, str, str]]:
 
-        mail = imaplib.IMAP4_SSL(self.imap["host"], self.imap.get("port", 993))
+        mail = imaplib.IMAP4_SSL(self.imap["host"], self.imap.get("port", 993),
+                                 ssl_context=_tls_context(self.imap["host"]))
         # Always log out (closing the SSL socket) even if login/select/fetch
         # raises — otherwise a bad login or server error leaks one socket per
         # poll interval.

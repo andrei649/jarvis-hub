@@ -84,6 +84,10 @@ KEEP_FILES: frozenset[str] = frozenset({
     # H694: the kill switch every profile of the install obeys sits in the default root.
     # It is a safety control, not owner content: a forget must never resume the hubs.
     _estop.SENTINEL_NAME,
+    # H400: the owner's pause on new sub-agents (under ``subagents/``). A safety control
+    # like the kill switch: a forget must never resume spawning. Its body is at most a
+    # short reason the owner typed when pausing.
+    _estop.SPAWN_PAUSE_SENTINEL,
 })
 # H423 review: the core rings' cross-process lock files (``<ring>.json.lock``). They hold
 # no content (empty, or one placeholder byte for the Windows byte-range lock), and a
@@ -169,7 +173,8 @@ PURGE_MEMORY_FILES: tuple[str, ...] = (
     "house/private_graph.cipher.salt",
 )
 # Directories removed wholesale (embedded recall cache derived from user content).
-PURGE_MEMORY_DIRS: tuple[str, ...] = ("embedding_cache",)
+# G14: the A2A transcripts and outbound audit (peer replies and the owner's messages).
+PURGE_MEMORY_DIRS: tuple[str, ...] = ("embedding_cache", "a2a_hermes")
 # Top-level files that are NOT conversation transcripts — never treated as sessions.
 # Shared with retention and memory.persistence (agents/core/session_files.py).
 _NON_SESSION_JSONL: frozenset[str] = NON_SESSION_STEMS
@@ -680,6 +685,19 @@ async def _clear_live_stores(orch, mem, cleared: list[str], _note_failure) -> No
             cleared.append("memory_undo")
     except Exception as exc:
         _note_failure("memory_undo", exc)
+    # H443: the memory writes held for the owner carry facts about the owner. The final
+    # sweep erases their ledger file; the live store is emptied here (in memory only, so
+    # the pre-forget backup still snapshots the file) or an approval given after the
+    # forget would write a forgotten fact back into the rings.
+    proposals = getattr(orch, "memory_proposals", None)
+    if proposals is not None and hasattr(proposals, "clear_memory"):
+        try:
+            # Off the event loop: it takes the store's apply lock and withdraws the held
+            # writes' cards from the Decision Inbox (a save of the queue).
+            if await asyncio.to_thread(proposals.clear_memory, getattr(orch, "action_approvals", None)):
+                cleared.append("memory_proposals")
+        except Exception as exc:
+            _note_failure("memory_proposals", exc)
     # H315: the agent's checklists are process-wide and carry conversation text
     # ("book the flight for Ana"), so a forget drops every one of them. Named in
     # `cleared` only when there was a plan to drop.
@@ -869,7 +887,7 @@ def purge_data(source_root: Optional[str] = None, *, backup_first: bool = True,
 # ── CLI ───────────────────────────────────────────────────────────
 def _main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="python -m agents.core.data_purge",
-                                 description="Jarvis 'forget me' — erase user content at rest")
+                                 description="Nerva 'forget me' — erase user content at rest")
     ap.add_argument("--confirm", action="store_true",
                     help="required: acknowledge that this irreversibly erases user content")
     ap.add_argument("--no-backup", action="store_true",

@@ -1,4 +1,4 @@
-# Jarvis Hub — Upgrade Guide
+# Nerva — Upgrade Guide
 
 > How to move to a newer version safely, and what to watch per release. See
 > [`COMPATIBILITY.md`](COMPATIBILITY.md) for the SemVer contract + supported-version window
@@ -28,6 +28,12 @@ python -m pytest                           # optional: confirm green before rely
 From a **release bundle** instead of git: download `jarvis-<ver>.tar.gz`, verify it
 (`sha256sum -c SHA256SUMS`, and `gpg --verify` if signed — see [RELEASE.md](RELEASE.md)),
 unpack, and re-run the install step.
+
+**From the HUD (check and restart only):** Console → Admin → **Restart / Update** shows the
+version, branch, commit, whether the tree has uncommitted changes and how many commits the
+checkout is behind its upstream as of the last fetch ("check now" fetches). It restarts Nerva
+when it was started by `serve.py`. It does **not** apply an update: this repository has no
+signature or pinned-ref check for its own code, so pulling new code stays the manual steps above.
 
 ## Database migrations — automatic
 

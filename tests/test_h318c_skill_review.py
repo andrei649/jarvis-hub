@@ -351,7 +351,7 @@ def test_the_same_text_from_another_origin_queues_no_second_card(hub):
 def test_a_new_skill_counts_toward_the_daily_limit(hub, monkeypatch):
     hub.load()
     made = iter(range(100))
-    monkeypatch.setattr(hub.loader, "generate_skill", lambda actor, description, steps: f"new_{next(made)}")
+    monkeypatch.setattr(hub.loader, "generate_skill", lambda actor, description, steps, **kw: f"new_{next(made)}")
     for _ in range(MAX_PROPOSALS_PER_DAY):
         assert _call(hub.server, TOOL_PROPOSE, {"description": "a thing", "steps": ["do it"]})["ok"] is True
     got = _call(hub.server, TOOL_PROPOSE, {"description": "a thing", "steps": ["do it"]})

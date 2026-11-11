@@ -97,10 +97,10 @@ WorldMonitorProvider
 
 ## Integration target
 
-Use this service behind Jarvis Hub:
+Use this service behind Nerva:
 
 ```text
-Jarvis Hub UI / Argus → Signal Layer HTTP API → WorldMonitorProvider → WorldMonitor /api/mcp
+Nerva UI / Argus → Signal Layer HTTP API → WorldMonitorProvider → WorldMonitor /api/mcp
 ```
 
 The current React scaffold under `apps/jarvis-hub/src/features/worldview` is not yet the active Vite HUD surface. The next UI step is to mount or port this cockpit into the real `frontend/` app.

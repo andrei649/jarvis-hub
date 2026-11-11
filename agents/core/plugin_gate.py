@@ -126,6 +126,28 @@ BUILTIN_PLUGINS = {
         network_access=NetworkAccess.RESTRICTED, data_scope=DataScope.TRANSMITTED,
         allowed_domains=["api.deepinfra.com"], agents_served=["jarvis"], enabled=False,
     ),
+    # G19 (H516): adopted Hermes video providers. Shipped disabled like the cloud-image
+    # manifests; the video runtime treats one as on only while the owner has chosen that
+    # provider with consent (JARVIS_VIDEO_PROVIDER). Each reaches its own hosts only.
+    "cloud-video-fal": PluginManifest(
+        id="cloud-video-fal", name="Approved FAL video generation", version="0.1.0",
+        description="One approved FAL queue job (submit, status polls, result) and a capped video download",
+        network_access=NetworkAccess.RESTRICTED, data_scope=DataScope.TRANSMITTED,
+        allowed_domains=["queue.fal.run", "fal.media"], agents_served=["jarvis"], enabled=False,
+    ),
+    "cloud-video-xai": PluginManifest(
+        id="cloud-video-xai", name="Approved xAI video generation", version="0.1.0",
+        description="One approved xAI Imagine video job (generate, edit or extend) and a capped download",
+        network_access=NetworkAccess.RESTRICTED, data_scope=DataScope.TRANSMITTED,
+        # The REST reference serves finished videos from vidgen.x.ai.
+        allowed_domains=["api.x.ai", "vidgen.x.ai"], agents_served=["jarvis"], enabled=False,
+    ),
+    "cloud-video-deepinfra": PluginManifest(
+        id="cloud-video-deepinfra", name="Approved DeepInfra video generation", version="0.1.0",
+        description="One approved DeepInfra video job and a capped download from api.deepinfra.com",
+        network_access=NetworkAccess.RESTRICTED, data_scope=DataScope.TRANSMITTED,
+        allowed_domains=["api.deepinfra.com"], agents_served=["jarvis"], enabled=False,
+    ),
     "cloud-llm": PluginManifest(
         id="cloud-llm",
         name="Cloud LLM Fallback",
@@ -314,11 +336,13 @@ BUILTIN_PLUGINS = {
         id="websearch",
         name="Web Search",
         version="0.1.0",
-        description="Web search via Tavily / DuckDuckGo / (optional) SearXNG",
+        description="Web search via Tavily / DuckDuckGo / (optional) SearXNG, Exa, Brave, Parallel",
         network_access=NetworkAccess.RESTRICTED,
         data_scope=DataScope.PROCESSED,
-        # SearXNG host is config-driven (SEARXNG_URL) → registered dynamically.
-        allowed_domains=["api.tavily.com", "html.duckduckgo.com"],
+        # SearXNG host is config-driven (SEARXNG_URL) → registered dynamically. The last
+        # three are the adopted Hermes providers (agents/vendor/hermes, ADOPT_LANE.md).
+        allowed_domains=["api.tavily.com", "html.duckduckgo.com",
+                         "api.exa.ai", "api.search.brave.com", "api.parallel.ai"],
         agents_served=["all"],
     ),
     # Hermes absorption 5a: the page reader (``web_extract``) gets its own egress
@@ -341,6 +365,21 @@ BUILTIN_PLUGINS = {
         description="Read one public web page named by the model or a task (web_extract)",
         network_access=NetworkAccess.FULL,
         data_scope=DataScope.PROCESSED,
+        agents_served=["all"],
+    ),
+    # G14 — the adopted Hermes A2A client tools call the owner's configured peers. The
+    # allowlist is empty here and filled at call time with the configured peers' hosts
+    # (``set_dynamic_domains``); the outbound runtime then pins each request to the exact
+    # origin of a peer the call targets. A message is the owner's text sent to another
+    # agent, so the scope is TRANSMITTED.
+    "a2a": PluginManifest(
+        id="a2a",
+        name="A2A Peers (outbound)",
+        version="0.1.0",
+        description="Call the owner's configured A2A peer agents (discover, call, fan out)",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.TRANSMITTED,
+        allowed_domains=[],
         agents_served=["all"],
     ),
     "kanban-attachments": PluginManifest(
@@ -485,6 +524,18 @@ BUILTIN_PLUGINS = {
         allowed_domains=["api.telnyx.com"],
         agents_served=["all"],
     ),
+    # G16 (H098): SMS replies through Twilio's Messages API (channels/sms.py). Only an
+    # approved channel.reply task at the money tier reaches this egress.
+    "channel_sms": PluginManifest(
+        id="channel_sms",
+        name="Channel: SMS (Twilio)",
+        version="0.1.0",
+        description="Approved SMS replies via the Twilio Messages API",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.TRANSMITTED,
+        allowed_domains=["api.twilio.com"],
+        agents_served=["all"],
+    ),
     # Governed webhook channels (channels/webhook_channels.py) — id per channel.
     "channel_whatsapp": PluginManifest(
         id="channel_whatsapp",
@@ -581,6 +632,21 @@ def register_dynamic_domain(plugin_id: str, url_or_host: str) -> None:
     host = (parsed.hostname or "").lower().strip().rstrip(".")
     if host:
         _DYNAMIC_DOMAINS.setdefault(plugin_id, set()).add(host)
+
+
+def set_dynamic_domains(plugin_id: str, urls_or_hosts) -> None:
+    """Replace *plugin_id*'s runtime hosts with exactly these (an owner-edited list such as
+    the A2A peers: a removed peer's host must stop being reachable)."""
+    if not plugin_id:
+        return
+    hosts: set[str] = set()
+    for raw in urls_or_hosts or ():
+        raw = str(raw or "").strip()
+        parsed = urlparse(raw if "//" in raw else "//" + raw)
+        host = (parsed.hostname or "").lower().strip().rstrip(".")
+        if host:
+            hosts.add(host)
+    _DYNAMIC_DOMAINS[plugin_id] = hosts
 
 
 def dynamic_domains(plugin_id: str) -> list[str]:

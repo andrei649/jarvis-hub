@@ -1,16 +1,16 @@
 @echo off
 REM ============================================================
-REM  JARVIS HUB - UPDATE & TEST  (Windows 11, double-click)
+REM  NERVA - UPDATE & TEST  (Windows 11, double-click)
 REM  Pulls latest from GitHub, installs deps (Nerva), runs the tests.
 REM  No terminal knowledge needed - just double-click this file.
 REM ============================================================
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
-title JARVIS HUB - Update ^& Test
+title NERVA - Update ^& Test
 
 echo.
 echo ============================================================
-echo   JARVIS HUB - UPDATE ^& TEST
+echo   NERVA - UPDATE ^& TEST
 echo ============================================================
 echo.
 

@@ -433,7 +433,26 @@ BUILTIN_PROFILES: tuple[ProviderProfile, ...] = (
 )
 
 BUILTIN_PROVIDER_IDS = tuple(profile.id for profile in BUILTIN_PROFILES)
-DEFAULT_REGISTRY = ProviderRegistry(BUILTIN_PROFILES)
+
+
+def _adopted_profiles() -> tuple[ProviderProfile, ...]:
+    """Model providers Nerva runs from Hermes's vendored profiles (Adopt lane, slice 2;
+    ``agents/core/llm/hermes_profiles.py``). Each is off until its key is set and the
+    owner picks it. A vendored module that fails to load leaves the built-ins as they are."""
+    try:
+        from ..hermes_profiles import adopted_profiles
+
+        return adopted_profiles()
+    except Exception as exc:  # noqa: BLE001 — never let an adopted file take the registry down
+        import logging
+
+        logging.getLogger("jarvis.llm.providers").warning(
+            "Hermes model-provider profiles not loaded (%s)", type(exc).__name__)
+        return ()
+
+
+ADOPTED_PROFILES: tuple[ProviderProfile, ...] = _adopted_profiles()
+DEFAULT_REGISTRY = ProviderRegistry((*BUILTIN_PROFILES, *ADOPTED_PROFILES))
 
 
 def get_profile(provider_id: str) -> ProviderProfile:
@@ -453,11 +472,12 @@ def custom_provider_registry() -> ProviderRegistry:
     from ..custom_endpoint_service import profile_for
     from ..custom_endpoints import list_endpoints
 
-    return ProviderRegistry([*BUILTIN_PROFILES,
+    return ProviderRegistry([*BUILTIN_PROFILES, *ADOPTED_PROFILES,
                              *(profile_for(endpoint) for endpoint in list_endpoints())])
 
 
 __all__ = [
+    "ADOPTED_PROFILES",
     "BUILTIN_PROFILES",
     "DATA_POLICIES",
     "BUILTIN_PROVIDER_IDS",

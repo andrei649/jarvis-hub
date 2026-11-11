@@ -1,4 +1,4 @@
-# Trademark policy — "Jarvis Hub"
+# Trademark policy — "Nerva"
 
 > Part of the recorded license decision ([docs/LICENSE_DECISION.md](docs/LICENSE_DECISION.md),
 > 2026-06-04): the code is permissively licensed, the **name and identity are not**.
@@ -7,23 +7,24 @@
 ## The short version
 
 The source code is free to use, modify, and redistribute under the repository
-license. The names **"Jarvis Hub"** and the project's logo/brand assets
+license. The names **"Nerva"** and **"Jarvis Hub"** (the product's name before the 2026-07-19
+rename, still the repository codename) and the project's logo/brand assets
 (`docs/BRAND_BOOK.md`) identify *this* project and its official builds — they
 are not covered by the code license.
 
 ## You MAY, without asking
 
 - State truthfully that your software *is based on*, *is a fork of*, or
-  *is compatible with* Jarvis Hub.
+  *is compatible with* Nerva.
 - Use the name in articles, reviews, tutorials, benchmarks, and package
   descriptions to refer to this project.
 - Keep the name in unmodified redistributions of official releases.
 
 ## You MAY NOT, without written permission
 
-- Name a fork, derived product, or hosted service "Jarvis Hub" or anything
-  confusingly similar (e.g. "Jarvis Hub Pro", "JarvisHub Cloud") — pick your
-  own name and note the ancestry ("based on Jarvis Hub").
+- Name a fork, derived product, or hosted service "Nerva" or "Jarvis Hub" or
+  anything confusingly similar (e.g. "Nerva Pro", "JarvisHub Cloud") — pick your
+  own name and note the ancestry ("based on Nerva").
 - Use the logo or brand assets for a modified version or a commercial offering.
 - Imply endorsement, affiliation, or official status for builds this project
   did not release.

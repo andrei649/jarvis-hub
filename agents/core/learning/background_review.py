@@ -7,9 +7,13 @@ proposes: bounded **user/agent core facts**, **correction-ledger** entries
 (H21.4), and **skill updates**. Code — not the model — then dispatches each
 proposal through jarvis governance:
 
-  * core facts     → injection-scanned, deduped, capped, then CoreMemory ring
-                     (autonomous: bounded, user-visible, user-forgettable);
-  * corrections    → LearningModule.record_correction (pure signal);
+  * core facts     → injection-scanned, deduped, capped, then — as the turn the pass
+                     reviews allows (H443, ``review_policy``) — written to the
+                     CoreMemory ring, or held as a memory proposal the owner
+                     decides (``memory.write_approval``, a turn that read untrusted
+                     content, an approval dial on ask), or not kept at all;
+  * corrections    → LearningModule.record_correction (pure signal, kept in process
+                     memory only: it is not a durable write and is not held);
   * new skills     → SkillLoader.generate_skill → CDX-8 quarantine
                      (PENDING_REVIEW; owner approves via existing endpoint);
   * skill patches  → SkillProposalStore (pending) + optional
@@ -142,6 +146,11 @@ MAX_CORRECTIONS = 3
 _BACKEND_ERROR = re.compile(r'\[(?:[A-Za-z][^\]\[{"\n]{0,80})?error[^\]\[\n]*\]', re.IGNORECASE)
 
 
+#: H443 — what a skill proposal from a conversation that is not clean carries, on its
+#: approval card and in the pass's action line.
+_UNCLEAN = ", from a conversation that read untrusted content or was not watched from its start"
+
+
 def _shipped(path) -> bool:
     try:
         from agents.core.skills.loader import _shipped_location
@@ -244,9 +253,23 @@ class BackgroundReviewer:
                  get_setting: Callable | None = None,
                  detect: Callable[[str], list] | None = None,
                  now: Callable[[], float] = time.monotonic,
-                 audit=None):
+                 audit=None, memory_proposals=None,
+                 write_approval: Callable[[], bool] | None = None,
+                 require_scope: bool = False):
         self._llm = llm_call
         self._living = living
+        #: H443 — the ledger of memory writes held for the owner (or a callable returning
+        #: it); None: a write that must be held is not kept at all.
+        self._memory_proposals = memory_proposals
+        #: H443 — whether ``memory.write_approval`` is on, read per pass off the event
+        #: loop. The hub passes the settings store's own read; a reviewer built without
+        #: one that requires a scope reads the store too, and only a bare unit reads off.
+        if write_approval is None and require_scope:
+            from .memory_proposals import write_approval_required as write_approval
+        self._write_approval = write_approval or (lambda: False)
+        #: H443 — the hub's reviewer refuses a pass that names no turn scope: what the
+        #: review may write is inherited from the turn, never assumed.
+        self._require_scope = bool(require_scope)
         #: H422 — the intent log (or a callable returning it) that records a fact a curated
         #: ring refused (``memory.write_refused``); None records nothing, the log line stays.
         self._audit = audit
@@ -336,7 +359,7 @@ class BackgroundReviewer:
 
     # ── the review pass ──────────────────────────────────────────────────────
 
-    async def run_on_demand(self, history: str, *, focus: str = "") -> dict:
+    async def run_on_demand(self, history: str, *, focus: str = "", scope=None) -> dict:
         """H465 — the review the owner asked for (``/refine [focus]``), over a snapshot.
 
         It skips the cadence gate (the owner asked now) but spends the daily budget like
@@ -345,6 +368,8 @@ class BackgroundReviewer:
         while it runs is skipped (``run`` refuses it, ``on_demand``). The review is bounded
         at REFINE_TIMEOUT_S, below the turn lease's wait. A review that times out or is
         cancelled costs no budget."""
+        if (refused := self._scope_refusal(scope)):
+            return {"ran": False, "reason": refused, "actions": []}
         if self._on_demand or self._in_flight:
             return {"ran": False, "reason": "busy", "actions": []}
         self._roll_day()
@@ -365,7 +390,7 @@ class BackgroundReviewer:
             # neither resets it nor delays the next one (review-H465 nit 3).
             return await asyncio.wait_for(
                 self.run("", "", history=history, focus=focus, context_chars=REFINE_SNAPSHOT_CHARS,
-                         cadence=False, on_demand=True),
+                         cadence=False, on_demand=True, scope=scope),
                 timeout=REFINE_TIMEOUT_S)
         except TimeoutError:
             self._refund_demand_unit()                              # no review was had
@@ -386,25 +411,36 @@ class BackgroundReviewer:
         if day is not None and day == self._day:
             self._day_count = max(0, self._day_count - 1)
 
+    def _scope_refusal(self, scope) -> str:
+        """H443 — why this pass may not run at all for the turn it names, or "": the hub's
+        reviewer needs a scope, and a turn that is not the owner's is not reviewed (no
+        model call, no budget spent)."""
+        if scope is None:
+            return "no_scope" if self._require_scope else ""
+        return "" if getattr(scope, "admitted", False) is True else "not_owner"
+
     async def run(self, user_text: str, assistant_text: str, history: str = "", *,
                   focus: str = "", context_chars: int = 6000, cadence: bool = True,
-                  on_demand: bool = False) -> dict:
+                  on_demand: bool = False, scope=None) -> dict:
         """One review pass. Never raises — failures return a summary dict.
 
         The exclusion is taken here, not only where a pass is spawned (review-H465b m-1):
         a per-turn pass spawned before a /refine started waits on the memory lock and can
         enter only after the /refine set its flag, so it is refused ``on_demand`` then."""
+        if (refused := self._scope_refusal(scope)):
+            return {"ran": False, "reason": refused, "actions": []}
         if self._on_demand and not on_demand:
             return {"ran": False, "reason": "on_demand", "actions": []}
         self._in_flight += 1
         try:
             return await self._run(user_text, assistant_text, history, focus=focus,
-                                   context_chars=context_chars, cadence=cadence, on_demand=on_demand)
+                                   context_chars=context_chars, cadence=cadence, on_demand=on_demand,
+                                   scope=scope)
         finally:
             self._in_flight -= 1
 
     async def _run(self, user_text: str, assistant_text: str, history: str, *,
-                   focus: str, context_chars: int, cadence: bool, on_demand: bool) -> dict:
+                   focus: str, context_chars: int, cadence: bool, on_demand: bool, scope=None) -> dict:
         # Who the pass's proposals and approval cards name, passed down rather than kept
         # on the instance, so no other pass can read it (review-H465b m-1).
         label = "refine" if on_demand else "background_review"
@@ -472,7 +508,11 @@ class BackgroundReviewer:
             return self._cut_off("review_unparsed", on_demand, spent_day)
         actions: list[str] = []
         counts = {"facts": 0, "blocked": 0, "corrections": 0,
-                  "skills_new": 0, "skill_patches": 0}
+                  "skills_new": 0, "skill_patches": 0, "proposed": 0}
+        #: H443 — what a verbose notification previews (the facts written or held) and
+        #: what was found and not kept. The facts' text lives here only: never in
+        #: ``actions``, and ``status()`` leaves it out.
+        details: dict = {"written": [], "proposed": [], "skipped": []}
         max_facts = self._number("learning.review_max_facts", 3)
 
         living = self._living() if callable(self._living) else self._living
@@ -492,14 +532,24 @@ class BackgroundReviewer:
                 actions.append(f"{found} fact(s) found but not kept: {why}")
         if switched_off:
             living = None
-        # H423: a ring put waits for the ring file's lock (up to LOCK_TIMEOUT_S per fact),
-        # so the writes run in a worker thread and never stall the event loop.
-        await asyncio.to_thread(self._put_facts, review["user_facts"][:max_facts],
-                                getattr(living, "user_core", None),
-                                "User profile", actions, counts, label, on_demand)
-        await asyncio.to_thread(self._put_facts, review["agent_facts"][:max_facts],
-                                getattr(living, "core", None),
-                                "Core memory", actions, counts, label, on_demand)
+        # H443: what the memory leg may do is inherited from the turn (and read from the
+        # settings store, off the event loop, after the model answered): write, hold for
+        # the owner, or keep nothing.
+        disposition, why_held = await asyncio.to_thread(self._memory_disposition, scope)
+        rings = (("user", review["user_facts"][:max_facts], getattr(living, "user_core", None), "User profile"),
+                 ("memory", review["agent_facts"][:max_facts], getattr(living, "core", None), "Core memory"))
+        if disposition == "write":
+            # H423: a ring put waits for the ring file's lock (up to LOCK_TIMEOUT_S per
+            # fact), so the writes run in a worker thread and never stall the event loop.
+            for target, facts, store, ring_label in rings:
+                await asyncio.to_thread(self._put_facts, facts, store, ring_label, actions, counts,
+                                        label, on_demand, details, target)
+        elif disposition == "stage":
+            await asyncio.to_thread(self._stage_facts, rings, scope, why_held, label, actions, counts, details)
+        else:
+            dropped = sum(len(facts) for _target, facts, _store, _label in rings)
+            if dropped:
+                details["skipped"].append({"count": dropped, "why": "the turn is not the owner's"})
 
         if not max_facts and on_demand:
             found = sum(1 for fact in review["user_facts"] + review["agent_facts"] if not self._detect(fact))
@@ -517,17 +567,31 @@ class BackgroundReviewer:
                 logger.debug("correction record skipped", exc_info=True)
         if counts["corrections"]:
             actions.append(f"{counts['corrections']} correction(s) recorded")
+        if counts["blocked"]:
+            # Facts and corrections the injection scan refused: neither written nor held.
+            details["skipped"].append({"count": counts["blocked"], "why": "flagged as a prompt injection"})
 
-        for update in review["skill_updates"][:2]:
+        skill_updates = review["skill_updates"][:2]
+        if scope is not None and getattr(scope, "skills_offered", False) is not True:
+            # H443: the turn's posture was not offered the skill tools, so its review
+            # proposes no skill either.
+            if skill_updates:
+                details["skipped"].append({"count": len(skill_updates),
+                                           "why": "the turn was not offered the skill tools"})
+            skill_updates = []
+        # H443: a skill change proposed from a conversation that is not clean says so
+        # where the owner decides it (it is quarantined or waits for approval either way).
+        unclean = scope is not None and getattr(scope, "tainted", True) is not False
+        for update in skill_updates:
             if update["kind"] == "new":
-                if self._dispatch_new_skill(update, actions, label):
+                if self._dispatch_new_skill(update, actions, label, unclean):
                     counts["skills_new"] += 1
             else:
-                if self._dispatch_patch(update, actions, label):
+                if self._dispatch_patch(update, actions, label, unclean):
                     counts["skill_patches"] += 1
 
         result = {"ran": True, "nothing": review["nothing"] and not actions,
-                  "actions": actions, "counts": counts, "ts": time.time()}
+                  "actions": actions, "counts": counts, "ts": time.time(), "details": details}
         self.last_result = result
         return result
 
@@ -578,8 +642,96 @@ class BackgroundReviewer:
                 return None
         return audit
 
+    def _memory_disposition(self, scope) -> tuple[str, str]:
+        """H443 — ``(write | stage | drop, why)`` for this pass's facts. Blocking (the
+        gate is read from the settings store). A gate that cannot be read is on."""
+        from .review_policy import memory_disposition
+
+        try:
+            gate = self._write_approval() is not False
+        except Exception:
+            logger.warning("review: memory.write_approval could not be read; writes are held", exc_info=True)
+            gate = True
+        return memory_disposition(scope, write_approval=gate)
+
+    def _stage_facts(self, rings, scope, why: str, actor: str, actions, counts, details) -> None:
+        """H443 — hold this pass's facts for the owner instead of writing them: one
+        proposal, one approval card. Checked before it is staged as a write is before it
+        lands (the injection scan, the fact's length, a fact the ring already holds or
+        that already waits), so the owner is not asked about a write that would be
+        refused. Blocking: run off the event loop. Nothing is written to a ring here."""
+        from .memory_proposals import TARGET_LABELS
+        from .review_policy import STAGE_REASONS
+
+        store = self._memory_proposals() if callable(self._memory_proposals) else self._memory_proposals
+        operations: list[dict] = []
+        skipped = {"memory_off": 0, "too_long": 0}
+        try:
+            waiting = store.pending_texts() if store is not None else set()
+        except Exception:
+            waiting = set()
+        for target, facts, ring, _label in rings:
+            for fact in facts:
+                text = " ".join(str(fact or "").split())
+                if not text:
+                    continue
+                if self._detect(text):
+                    counts["blocked"] += 1
+                    logger.warning("review fact blocked (injection-flagged): %.60s…", text)
+                    continue
+                if ring is None or not hasattr(ring, "put"):
+                    skipped["memory_off"] += 1
+                    continue
+                limit = getattr(ring, "fact_max_chars", None)
+                if isinstance(limit, int) and len(text) > limit:
+                    skipped["too_long"] += 1
+                    continue
+                try:
+                    if text in ring.list() or (target, text) in waiting:
+                        continue                  # already kept, or already waiting
+                except Exception:
+                    logger.debug("review: a ring could not be listed before staging", exc_info=True)
+                operations.append({"target": target, "text": text})
+        if skipped["too_long"]:
+            details["skipped"].append({"count": skipped["too_long"], "why": "longer than one fact may be"})
+        if skipped["memory_off"] and scope is not None:
+            details["skipped"].append({"count": skipped["memory_off"], "why": "memory is off"})
+        if not operations:
+            return
+        queue = self._approvals
+        if store is None or queue is None:
+            details["skipped"].append({"count": len(operations),
+                                       "why": "they need your approval and the approval queue is not available"})
+            actions.append(f"{len(operations)} fact(s) found but not kept: they need approval and "
+                           "the approval queue is not available")
+            return
+        try:
+            record = store.propose(operations, origin=actor,
+                                   session_id=str(getattr(scope, "session_id", "") or ""),
+                                   reason=why, tainted=bool(getattr(scope, "tainted", False)))
+        except Exception:
+            logger.warning("review: the held memory write could not be saved; nothing was kept", exc_info=True)
+            record = None
+        if record is None:
+            details["skipped"].append({"count": len(operations), "why": "the approval list is full or unavailable"})
+            actions.append(f"{len(operations)} fact(s) found but not kept: the list of memory writes "
+                           "waiting for approval is full or could not be saved")
+            return
+        try:
+            store.queue_card(record["id"], queue, agent=actor)
+        except Exception:
+            # The proposal is saved; it gets its card at the next settle.
+            logger.warning("review: the approval card for %s could not be queued yet", record["id"], exc_info=True)
+        held = record["operations"]
+        counts["proposed"] += len(held)
+        for op in held:
+            details["proposed"].append({"target": op["target"], "label": TARGET_LABELS.get(op["target"], op["target"]),
+                                        "text": op["text"]})
+        actions.append(f"{len(held)} memory write{'s' if len(held) != 1 else ''} proposed "
+                       f"(pending approval: {STAGE_REASONS.get(why, why)})")
+
     def _put_facts(self, facts, store, label, actions, counts, actor: str = "background_review",
-                   on_demand: bool = False) -> None:
+                   on_demand: bool = False, details: dict | None = None, target: str = "") -> None:
         from agents.core.cognition.memory import CoreMemoryOverBudget
         from agents.core.memory_tool import note_ring_refusal
 
@@ -601,10 +753,14 @@ class BackgroundReviewer:
                     # H423: put rereads the ring file first, so only its own answer says
                     # whether this fact changed it.
                     added += int(changed)
+                    if changed and details is not None:
+                        details["written"].append({"target": target, "label": label, "text": str(fact)})
                     continue
                 after = store.list() if hasattr(store, "list") else None
                 if before is None or after != before:
                     added += 1
+                    if details is not None:
+                        details["written"].append({"target": target, "label": label, "text": str(fact)})
             except CoreMemoryOverBudget as exc:
                 # H422: the ring refuses a fact past its character budget, its cap or the
                 # per-fact limit, as Hermes's store refuses its own background review; no
@@ -619,6 +775,9 @@ class BackgroundReviewer:
         if added:
             counts["facts"] += added
             actions.append(f"{label} updated (+{added})")
+        if refused and details is not None:
+            details["skipped"].append({"count": len(refused),
+                                       "why": f"the {label.lower()} ring is full or the fact too long"})
         if refused and on_demand:
             # Said to the owner who asked (/refine); the per-turn pass stays quiet, as it
             # does for a switched-off memory (the log line and the intent log keep it).
@@ -632,21 +791,24 @@ class BackgroundReviewer:
                 actions.append(f"{len(long)} fact(s) found but not kept: longer than the "
                                f"{long[0].fact_max_chars:,}-character limit for one fact")
 
-    def _dispatch_new_skill(self, update, actions, label: str = "background_review") -> bool:
+    def _dispatch_new_skill(self, update, actions, label: str = "background_review",
+                            unclean: bool = False) -> bool:
         """New skills ride the existing CDX-8 quarantine pipeline unchanged."""
         if self._skills is None or not hasattr(self._skills, "generate_skill"):
             return False
         try:
+            # H349: the background review is the agent's own initiative (curated).
             name = self._skills.generate_skill(
-                label, update["task"], update["steps"] or ["(captured from review)"])
+                label, update["task"], update["steps"] or ["(captured from review)"],
+                write_origin="background_review")
             if name:
-                actions.append(f"Skill '{name}' proposed (quarantined, pending review)")
+                actions.append(f"Skill '{name}' proposed (quarantined, pending review)" + (_UNCLEAN if unclean else ""))
                 return True
         except Exception:
             logger.debug("skill generation from review skipped", exc_info=True)
         return False
 
-    def _dispatch_patch(self, update, actions, label: str = "background_review") -> bool:
+    def _dispatch_patch(self, update, actions, label: str = "background_review", unclean: bool = False) -> bool:
         """Patches never touch the live skill — they land as pending proposals."""
         if self._proposals is None:
             return False
@@ -694,17 +856,23 @@ class BackgroundReviewer:
                     self._proposals.queue_card(
                         prop["id"], self._approvals, agent=label,
                         summary=(f"/refine proposes a patch to skill '{name}'" if label == "refine"
-                                 else f"Background review proposes a patch to skill '{name}'"))
+                                 else f"Background review proposes a patch to skill '{name}'")
+                        + (_UNCLEAN if unclean else ""))
                 except Exception:
                     logger.debug("approval request for patch skipped", exc_info=True)
-            actions.append(f"Skill '{name}' patch proposed (pending approval)")
+            actions.append(f"Skill '{name}' patch proposed (pending approval)" + (_UNCLEAN if unclean else ""))
             return True
         except Exception:
             logger.debug("skill patch proposal skipped", exc_info=True)
             return False
 
     def status(self) -> dict:
-        return {"available": True, "last_result": self.last_result,
+        # H443: the facts a pass wrote or held are not part of the status (it is read by
+        # routes a user token reaches); the counts and the action lines are.
+        last = self.last_result
+        if isinstance(last, dict) and "details" in last:
+            last = {key: value for key, value in last.items() if key != "details"}
+        return {"available": True, "last_result": last,
                 "reviews_today": self._day_count, "cut_offs_today": self._day_cut_offs, "day": self._day}
 
 

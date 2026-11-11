@@ -122,6 +122,11 @@ async def actions_reject_group(group_id: str, req: Request):
         return JSONResponse({'error': str(exc)}, status_code=400)
     if decided is None:
         return JSONResponse({'error': 'approval group changed'}, status_code=409)
+    if any(item.get('tool') == 'memory.write_proposal' for item in decided):
+        # H443 — a rejected card closes the memory write it held.
+        settle = getattr(get_orch(), 'settle_memory_proposals', None)
+        if callable(settle):
+            await settle()
     return nocache_json({'ok': True, 'actions': decided})
 
 
@@ -144,6 +149,22 @@ async def actions_decide(action_id: str, req: Request):
         return JSONResponse({"error": str(exc)}, status_code=400)
     if item is None:
         return JSONResponse({"error": "not found"}, status_code=404)
+    if item.get("tool") == "memory.write_proposal":
+        # H443 — a held memory write lands, or is dropped, now. What the card itself
+        # says in the queue decides (never this request's body), and only the card the
+        # proposal queued: a card that merely names a proposal changes nothing.
+        orch = get_orch()
+        store = getattr(orch, "memory_proposals", None)
+        proposal_id = str((item.get("args") or {}).get("proposal_id") or "")
+        # The ledger's lock is held across its disk writes: read it off the event loop.
+        rec = await asyncio.to_thread(store.get, proposal_id) if store is not None else None
+        if rec is None or rec.get("card") != action_id:
+            return nocache_json({"ok": True, "action": {
+                **item, "note": "this card is not a held memory write's own approval card: nothing was written"}})
+        outcome = await orch.settle_memory_proposals(proposal_id)
+        if outcome.get("applied") and getattr(orch, "_core_rings_reread", None) is not None:
+            orch._core_rings_reread = None
+        return nocache_json({"ok": True, "action": {**item, "applied": outcome}})
     if str(item.get("tool", "")).startswith("skill.curator."):
         operations = getattr(orch, "curator_operations", None) if orch else None
         if operations is None:

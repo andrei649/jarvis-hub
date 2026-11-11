@@ -335,7 +335,8 @@ def test_the_allowlist_is_per_channel(monkeypatch, tmp_path):
     store = SenderPairing(path=str(tmp_path / "p.json"))
     assert pairing_mod.sender_allowlisted("discord", "42") is False
     assert store.is_allowed("discord", "42") is False
-    assert pairing_mod.CHANNEL_ALLOWLIST_ENVS == {"telegram": "TELEGRAM_ALLOWED_USER_IDS"}
+    assert pairing_mod.CHANNEL_ALLOWLIST_ENVS == {"telegram": "TELEGRAM_ALLOWED_USER_IDS",
+                                                  "sms": "JARVIS_SMS_ALLOWED_NUMBERS"}
 
 
 def test_an_empty_allowlist_names_nobody(tmp_path):

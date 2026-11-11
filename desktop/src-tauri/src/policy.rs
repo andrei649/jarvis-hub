@@ -154,8 +154,22 @@ mod tests {
         assert_eq!(cap["windows"], serde_json::json!(["main", "floating"]));
         assert_eq!(
             cap["permissions"],
-            serde_json::json!(["allow-desktop-action", "allow-desktop-capabilities"])
+            serde_json::json!([
+                "allow-desktop-action",
+                "allow-desktop-capabilities",
+                "allow-desktop-listening",
+                "allow-desktop-notify"
+            ])
         );
+        // G22: the plugins the shell uses (global shortcut, deep link, single instance)
+        // are driven from Rust only; the webview gets none of their JavaScript APIs and
+        // no shell, filesystem, opener or process permission.
+        for permission in cap["permissions"].as_array().unwrap() {
+            assert!(
+                permission.as_str().unwrap().starts_with("allow-desktop-"),
+                "{permission}"
+            );
+        }
         assert_eq!(
             cap["remote"]["urls"],
             serde_json::json!(["http://127.0.0.1:8080/v2", "http://127.0.0.1:8080/v2/*"])

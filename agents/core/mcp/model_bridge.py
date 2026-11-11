@@ -58,9 +58,23 @@ class MCPBridgeError(RuntimeError):
 def _fingerprint(row: dict[str, Any]) -> str:
     return json.dumps(
         [bool(row.get("gated")), row.get("description") or "", row.get("input_schema"),
-         row.get("qualified_name")],
+         row.get("qualified_name"), row.get("session_scope")],
         sort_keys=True, default=str,
     )
+
+
+def _session_visibility(scope: Any) -> Callable[[], bool] | None:
+    """G11 (H545) — a tool of a server an editor handed over for one conversation is
+    offered, and callable from a model turn, only while that conversation's turn runs."""
+    if not isinstance(scope, str) or not scope:
+        return None
+
+    def visible() -> bool:
+        from agents.core.llm.request_context import current_session
+
+        return current_session() == scope
+
+    return visible
 
 
 def _description(row: dict[str, Any]) -> str:
@@ -98,11 +112,25 @@ class MCPModelBridge:
             if isinstance(row, dict) and str(row.get("name") or "").startswith(PROVIDER_NAME_PREFIX)
         ]
 
-    def _handler(self, name: str):
+    def _handler(self, name: str, server: str = "", session_scope: Any = None):
         async def handler(args: dict) -> Any:
             manager = self._manager()
             if manager is None:
                 raise MCPBridgeError("mcp_unavailable")
+            if not session_scope:
+                # H496: an owner-configured server connects with the owner's OAuth token
+                # and secrets; a guest turn reaches it only when the owner shared it. A
+                # server an editor handed over for one conversation is that
+                # conversation's own (G11 visibility rule).
+                from agents.core.security.credential_scope import (
+                    KIND_MCP,
+                    CredentialNotShared,
+                    check,
+                )
+                try:
+                    check(KIND_MCP, server or name)
+                except CredentialNotShared as exc:
+                    raise MCPBridgeError(exc.reason) from None
             result = await manager.call_tool(name, args)
             if result is None or result == {}:
                 # ``{}`` is what a server that is not connected, timed out or closed its
@@ -141,7 +169,7 @@ class MCPModelBridge:
                 try:
                     self._rpc.register_tool(
                         name,
-                        self._handler(name),
+                        self._handler(name, str(row.get("server") or ""), row.get("session_scope")),
                         gated=gated,
                         description=_description(row),
                         input_schema=row.get("input_schema"),
@@ -153,6 +181,8 @@ class MCPModelBridge:
                         # as "no mutation". A gated one keeps the gated contract.
                         risk=None if gated else "sensitive",
                         rollback=None if gated else UNGATED_ROLLBACK,
+                        **({"visible": visible}
+                           if (visible := _session_visibility(row.get("session_scope"))) else {}),
                     )
                 except Exception:
                     logger.warning("MCP tool %s could not be offered", name, exc_info=True)

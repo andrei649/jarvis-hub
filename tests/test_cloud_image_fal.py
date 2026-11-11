@@ -5,7 +5,7 @@ import json
 import httpx
 import pytest
 
-from tests.test_cloud_image import cloud, png  # noqa: F401: shared mediated worker fixture
+from tests.test_cloud_image import cloud, png  # noqa: F401 -- shared mediated worker fixture
 
 
 @pytest.fixture

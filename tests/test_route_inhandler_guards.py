@@ -205,6 +205,36 @@ def _probe_oauth_callback(client, monkeypatch, tmp_path):
     return denied, allowed
 
 
+def _probe_mcp_oauth_callback(client, monkeypatch, tmp_path):
+    """G9 / H692: a waiting MCP sign-in redeemed with its binding cookie vs without it."""
+    from agents.core.mcp import oauth_client as oc
+    from agents.core.routers.mcp import _cookie_name
+
+    class _NoNet:
+        async def close(self):
+            return None
+
+    async def token(client_, url, data, auth=None):
+        return 200, {"access_token": "a", "token_type": "Bearer"}  # nosec
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(oc, "HTTP_FACTORY", lambda server: _NoNet())
+    monkeypatch.setattr(oc, "_post_form", token)
+    oc.reset_for_tests()
+    flow = oc.Flow(state="s" * 40, binding="b" * 40, verifier="v" * 50, server="probe",
+                   server_url="https://mcp.example.test/mcp", redirect_uri="http://127.0.0.1/api/oauth/mcp/callback",
+                   relay=False, token_endpoint="https://auth.example.test/token", issuer="https://auth.example.test",
+                   revocation_endpoint=None, client_id="cid", client_secret=None, auth_method="none",
+                   resource="https://mcp.example.test/mcp", scope=None)
+    oc._FLOWS[flow.state] = flow
+    denied = client.get(f"/api/oauth/mcp/callback?code=c&state={flow.state}")
+    client.cookies.set(_cookie_name(flow.state), flow.binding, path=oc.HUB_CALLBACK_PATH)
+    allowed = client.get(f"/api/oauth/mcp/callback?code=c&state={flow.state}")
+    client.cookies.clear()
+    oc.reset_for_tests()
+    return denied, allowed
+
+
 def _real_widgets(monkeypatch, tmp_path):
     from agents.core.routers import secrets
     from agents.core.widget import WidgetStore
@@ -245,6 +275,83 @@ def _probe_widget_config(client, monkeypatch, tmp_path):
     return client.get("/api/widget/guess/config"), client.get(f"/api/widget/{token}/config")
 
 
+class _ApiOrch:
+    """A stand-in hub for the OpenAI-compatible API probes: one agent, a fixed answer."""
+
+    agents = {"jarvis": None}
+
+    async def handle_input(self, text, **_kwargs):
+        return "probe answer"
+
+
+def _openai_api(monkeypatch, tmp_path):
+    """The real key store on a temp file, the API switched on, one issued key and one
+    response stored for it. The switch is not the credential under test, so it is forced on."""
+    from agents import web
+    from agents.core.openai_api import policy
+    from agents.core.openai_api import store as api_store
+
+    store = api_store.OpenAIApiStore(tmp_path / "openai_api.db")
+    monkeypatch.setattr(api_store, "_store", store)
+    monkeypatch.setattr(policy, "enabled", lambda: True)
+    monkeypatch.setattr(web, "orch", _ApiOrch())
+    policy.GATE.reset()
+    key, record = store.issue("h511 probe")
+    store.save_response("resp_probe", record.key_id, "oai-probe", {"id": "resp_probe", "object": "response"})
+    revoked, revoked_record = store.issue("h511 revoked")
+    store.revoke(revoked_record.key_id)
+    return key, revoked
+
+
+def _api_probe(method, path, body=None):
+    def probe(client, monkeypatch, tmp_path):
+        key, revoked = _openai_api(monkeypatch, tmp_path)
+        kwargs = {"json": body} if body is not None else {}
+        call = getattr(client, method)
+        assert call(path, headers={"Authorization": f"Bearer {revoked}"}, **kwargs).status_code == 401
+        assert call(path, headers={"x-admin-token": ADMIN}, **kwargs).status_code == 401   # hub tokens never open it
+        return (call(path, headers={"Authorization": "Bearer nrv-guess"}, **kwargs),
+                call(path, headers={"Authorization": f"Bearer {key}"}, **kwargs))
+    return probe
+
+
+_CHAT = {"model": "nerva", "messages": [{"role": "user", "content": "h511"}]}
+
+
+def _probe_sms_webhook(client, monkeypatch, tmp_path):
+    """G16 (H098): the real Twilio signature check (channels/sms.py) on a configured SMS
+    channel whose turn is a recorder: a wrong signature, then none, then a valid one."""
+    import base64
+    from types import SimpleNamespace
+    from urllib.parse import urlencode
+
+    from agents.core import app_state
+    from agents.core.channels import sms
+
+    token, account = "h511-sms-token", "AC" + "c" * 32  # nosec B105 — probe credential
+    url = "http://127.0.0.1/api/channels/sms/webhook"
+    for name, value in ((sms.ENABLED_ENV, "1"), (sms.ACCOUNT_SID_ENV, account),
+                        (sms.AUTH_TOKEN_ENV, token), (sms.FROM_NUMBER_ENV, "+15550001111"),
+                        (sms.WEBHOOK_URL_ENV, url)):
+        monkeypatch.setenv(name, value)
+    accepted = []
+    channel = SimpleNamespace(accept_in_background=accepted.append)
+    monkeypatch.setattr(app_state, "get_orch", lambda: SimpleNamespace(channels={"sms": channel}))
+    params = {"MessageSid": "SM" + "d" * 32, "AccountSid": account, "From": "+15551234567",
+              "Body": "h511"}
+    body = urlencode(params)
+    payload = url + "".join(k + params[k] for k in sorted(params))
+    good = base64.b64encode(hmac.new(token.encode(), payload.encode(), hashlib.sha1).digest()).decode()
+    hdr = {"content-type": "application/x-www-form-urlencoded"}
+    assert client.post("/api/channels/sms/webhook", content=body,
+                       headers={**hdr, "x-twilio-signature": "AAAA" + good[4:]}).status_code == 403
+    denied = client.post("/api/channels/sms/webhook", content=body, headers=hdr)
+    allowed = client.post("/api/channels/sms/webhook", content=body,
+                          headers={**hdr, "x-twilio-signature": good})
+    assert (len(accepted) == 1) == (allowed.status_code == 200)
+    return denied, allowed
+
+
 # Route -> (probe, refusal statuses). A capability URL answers an unknown token
 # with 404 so it never confirms a token exists; a forged OAuth state is a 400.
 HTTP_PROBES = {
@@ -252,9 +359,16 @@ HTTP_PROBES = {
     "POST /api/a2a/task": (_probe_a2a, {401}),
     "POST /api/mcp/server/rpc": (_probe_mcp_rpc, {401}),
     "POST /api/oauth/callback": (_probe_oauth_callback, {400}),
+    "GET /api/oauth/mcp/callback": (_probe_mcp_oauth_callback, {403}),
     "POST /api/widget/{token}/message": (_probe_widget_message, {404}),
     "GET /api/widget/{token}": (_probe_widget_snippet, {404}),
     "GET /api/widget/{token}/config": (_probe_widget_config, {404}),
+    "POST /v1/chat/completions": (_api_probe("post", "/v1/chat/completions", _CHAT), {401}),
+    "POST /v1/responses": (_api_probe("post", "/v1/responses", {"model": "nerva", "input": "h511"}), {401}),
+    "GET /v1/responses/{response_id}": (_api_probe("get", "/v1/responses/resp_probe"), {401}),
+    "DELETE /v1/responses/{response_id}": (_api_probe("delete", "/v1/responses/resp_probe"), {401}),
+    "GET /v1/models": (_api_probe("get", "/v1/models"), {401}),
+    "POST /api/channels/sms/webhook": (_probe_sms_webhook, {403}),
 }
 
 # Routes whose in-handler credential has more than one posture: each extra posture
@@ -302,6 +416,17 @@ def test_in_handler_guards_admit_the_credential(client, monkeypatch, tmp_path):
     assert "H511 probe widget" in snippet.text
     config = _probe_widget_config(client, monkeypatch, tmp_path)[1].json()
     assert config["title"] == "H511 probe widget" and config["token"]
+    # The OpenAI-compatible API: a live key reaches the turn, the store and the model list.
+    chat = HTTP_PROBES["POST /v1/chat/completions"][0](client, monkeypatch, tmp_path)[1].json()
+    assert chat["choices"][0]["message"]["content"] == "probe answer"
+    response = HTTP_PROBES["POST /v1/responses"][0](client, monkeypatch, tmp_path)[1].json()
+    assert response["output_text"] == "probe answer"
+    stored = HTTP_PROBES["GET /v1/responses/{response_id}"][0](client, monkeypatch, tmp_path)[1].json()
+    assert stored == {"id": "resp_probe", "object": "response"}
+    deleted = HTTP_PROBES["DELETE /v1/responses/{response_id}"][0](client, monkeypatch, tmp_path)[1].json()
+    assert deleted["deleted"] is True
+    models = HTTP_PROBES["GET /v1/models"][0](client, monkeypatch, tmp_path)[1].json()
+    assert [m["id"] for m in models["data"]] == ["nerva", "nerva/jarvis"]
 
 
 # ── Guard spies ───────────────────────────────────────────────────────────────

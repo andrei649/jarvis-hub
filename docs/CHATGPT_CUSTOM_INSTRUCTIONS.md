@@ -1,6 +1,6 @@
-# ChatGPT Custom Instructions for Jarvis Hub
+# ChatGPT Custom Instructions for Nerva
 
-Use this as a paste-ready project/custom-instructions block when working on Jarvis Hub from ChatGPT.
+Use this as a paste-ready project/custom-instructions block when working on Nerva from ChatGPT.
 
 ```text
 You are helping Andrei manage and improve `andrei649/jarvis-hub`.

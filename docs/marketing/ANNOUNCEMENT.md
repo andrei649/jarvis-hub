@@ -1,4 +1,4 @@
-# Jarvis Hub — Launch Announcement
+# Nerva — Launch Announcement
 
 > Ready-to-adapt release copy for a launch blog post, Product Hunt, Show HN, or a press note.
 > All numbers are verified against the codebase as of 2026-07-04 (v0.11.0 productionizing toward 1.0).
@@ -9,7 +9,7 @@
 
 ## TL;DR (the one-paragraph version)
 
-**Jarvis Hub is a personal AI operating system that runs entirely on your own hardware.** Seventeen
+**Nerva is a personal AI operating system that runs entirely on your own hardware.** Seventeen
 specialist agents work 24/7 — they monitor your world, consolidate what they learn into a knowledge
 graph every night, and surface a prioritized brief each morning. Every autonomous action passes a
 reversible/irreversible approval queue and a tamper-evident audit log; every cloud hop is opt-in;
@@ -50,7 +50,7 @@ promise *and* the cost advantage in one move.
 
 ## The product (what it actually is)
 
-Jarvis Hub is a mesh of **17 specialist agents** coordinated by Jarvis, the orchestrator. Each owns
+Nerva is a mesh of **17 specialist agents** coordinated by Jarvis, the orchestrator. Each owns
 a domain — daily intel, calendar and meetings, research, finance, home infrastructure, family
 memory — and they hand work to each other through Jarvis, in one voice, on whatever channel you
 reach them: web, voice, Telegram, Discord, Slack, email.
@@ -108,7 +108,7 @@ code and proven by tests, not printed on a values page.**
 
 ## Availability
 
-Jarvis Hub is approaching its **v1.0** release. Self-host it today: one-click `INSTALL.bat` on
+Nerva is approaching its **v1.0** release. Self-host it today: one-click `INSTALL.bat` on
 Windows, `install.sh` on Linux/macOS — it sets up everything, including the companion **WorldView**
 4D-OSINT globe, and runs the test suite to prove the install.
 
@@ -119,7 +119,7 @@ Windows, `install.sh` on Linux/macOS — it sets up everything, including the co
 
 ## Boilerplate (for the bottom of a press piece)
 
-> **Jarvis Hub** is a local-first, governed personal AI operating system: 17 specialist agents that
+> **Nerva** is a local-first, governed personal AI operating system: 17 specialist agents that
 > work proactively on the owner's own hardware, with a reversible/irreversible approval queue, a
 > tamper-evident audit log, living knowledge-graph memory, and a strict-local family agent that
 > never touches the internet. It runs on consumer GPUs via LM Studio/Ollama for $0/month, with cloud

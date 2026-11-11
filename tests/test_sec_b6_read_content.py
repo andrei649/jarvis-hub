@@ -261,7 +261,9 @@ def test_imported_skill_manifest_requires_real_user_credential_and_preserves_pay
         assert PRIVATE_IMPORT_PATH not in denied.text
     allowed = client.get("/skills/imported", headers=USER)
     assert allowed.status_code == 200
-    assert allowed.json() == {"imported": [manifest]}
+    payload = allowed.json()
+    # The vendored Hermes catalog rides beside the manifests (Adopt lane slice 3): shipped metadata only.
+    assert payload["imported"] == [manifest] and set(payload) == {"imported", "hermes_catalog"}
     assert "no-store" in allowed.headers["cache-control"]
     assert client.get("/skills/imported", headers=ADMIN).json() == allowed.json()
 

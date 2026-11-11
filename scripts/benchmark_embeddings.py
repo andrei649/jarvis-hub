@@ -169,7 +169,7 @@ def main() -> None:
     model = os.getenv("EMBED_MODEL", default_model)
     base_url = os.getenv("EMBED_BASE_URL", "http://localhost:1234")
 
-    print(f"Jarvis Hub — Embedding Quality Benchmark (H8.4)")
+    print(f"Nerva — Embedding Quality Benchmark (H8.4)")
     print(f"Attempting backend: {backend!r}, model: {model!r}, url: {base_url!r}")
     print("(Falls back to hash embedding if backend is unreachable.)")
 

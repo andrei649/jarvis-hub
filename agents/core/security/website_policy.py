@@ -19,6 +19,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from agents.core import settings_db
+from agents.core.env_config import env_str
 from agents.core.paths import data_root
 
 logger = logging.getLogger("jarvis.security.website_policy")
@@ -215,7 +216,9 @@ def _owner_rules() -> tuple[bool, tuple[str, ...]]:
 
 def _env_rules() -> tuple[str, ...]:
     rules = []
-    for item in os.getenv("JARVIS_WEB_BLOCKED_DOMAINS", "").split(","):
+    # Through env_config, like web_providers._blocked_entries reads the same variable, so the
+    # NERVA_ spelling (RB-2) reaches both readers alike.
+    for item in env_str("JARVIS_WEB_BLOCKED_DOMAINS", "").split(","):
         if not item.strip():
             continue
         try:

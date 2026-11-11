@@ -207,7 +207,7 @@ export function hydrateAdminKeys(env: any, sources?: any) {
   /* H273 — /api/admin/env/sources names the layer each key came from (process
      environment, repo .env, data-home .env): names and layers, never values. */
   const layer: Record<string, string> = {};
-  const LAYER_LABELS: Record<string, string> = { process: 'process environment', repo_env: 'repo .env', user_env: 'data-home .env' };
+  const LAYER_LABELS: Record<string, string> = { process: 'process environment', repo_env: 'repo .env', user_env: 'data-home .env', managed: 'managed by your administrator' };
   for (const row of (sources && Array.isArray(sources.sources) ? sources.sources : [])) {
     if (!row || typeof row.key !== 'string' || typeof row.label !== 'string') continue;
     // "why is my .env value not the one in use?": name the layers this one overrides

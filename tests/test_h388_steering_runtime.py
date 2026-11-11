@@ -31,7 +31,8 @@ async def test_production_child_runner_binds_channel_and_delivers_fifo_after_too
     # The production runner advertises this to SubAgentManager.
     import inspect
     assert 'steer' in inspect.signature(runner).parameters
-    result = await runner('synthetic', 's-child', 'jarvis', steer=channel)
+    # H400: the runner narrows the child to the allowlist its manager hands it (none = no tools).
+    result = await runner('synthetic', 's-child', 'jarvis', steer=channel, tools=frozenset({'echo'}))
     assert result['output'] == 'done'
     assert len(backend.requests) == 3
     for index in (1, 2):

@@ -662,4 +662,5 @@ def test_end_to_end_only_the_listed_target_skips_the_check(monkeypatch, https_se
 def test_the_switch_is_documented():
     flags = (ROOT / "docs" / "FLAGS.md").read_text(encoding="utf-8")
     assert "JARVIS_TLS_INSECURE_TARGETS" in flags
-    assert "JARVIS_TLS_INSECURE_TARGETS" in (ROOT / ".env.example").read_text(encoding="utf-8")
+    # RB-2: .env.example spells every hub variable NERVA_<X>, the preferred spelling
+    assert "NERVA_TLS_INSECURE_TARGETS" in (ROOT / ".env.example").read_text(encoding="utf-8")

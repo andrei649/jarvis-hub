@@ -1,8 +1,8 @@
 # Sprint curent: echivalarea celor 697 de capabilități Hermes
 
-**47 / 697 = 6.7% echivalente complet în evaluarea documentată.**
+**161 / 697 = 23.1% echivalente complet în evaluarea documentată.**
 
-Din acestea, **47** au fost reevaluate pe cod în această livrare; **0** păstrează verdictul auditului din 7 septembrie.
+Din acestea, **161** au fost reevaluate pe cod în această livrare; **0** păstrează verdictul auditului din 7 septembrie.
 
 **Acesta este un status inițial conservator, nu o reauditare completă a celor 697.** Verdictele moștenite și cele actualizate sunt vizibile pentru fiecare rând. Procentul de 88% discutat anterior privea altă listă și nu se aplică aici.
 
@@ -10,57 +10,55 @@ Din acestea, **47** au fost reevaluate pe cod în această livrare; **0** păstr
 
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
-| Echivalent | 47 | 6.7% |
-| Parțial | 239 | 34.3% |
-| Lipsă | 102 | 14.6% |
-| Exclus intenționat | 0 | 0.0% |
-| De reverificat | 309 | 44.3% |
+| Echivalent | 161 | 23.1% |
+| Parțial | 489 | 70.2% |
+| Lipsă | 11 | 1.6% |
+| Exclus intenționat | 36 | 5.2% |
+| De reverificat | 0 | 0.0% |
 
-## Axe separate de contabilizare
+**Ținta acceptată în produs:** 661 rânduri; progres 161/661 = **24.4%**. Excluderi active: 36. Readmise explicit din vechiul audit: 71; readmiterea nu acordă credit de implementare.
 
-**Verdict pe cod înregistrat** (review sau audit moștenit): partial 432, equivalent 152, missing 113. Acesta nu este creditul conservator de mai sus.
-**Prospețimea dovezii:** changed 328, current 314, unrecorded 55.
-**Impactul schimbării:** pending 309, none 369, accepted 19. Un hash schimbat cere analiză; nu dovedește singur regresia funcțională.
-**Acceptare runtime/platform/provider:** runtime: unrecorded 694, verified 3; platform: unrecorded 694, required_pending 3; provider: unrecorded 694, required_pending 3. «unrecorded» nu înseamnă că toate rândurile cer servicii externe.
-**Prospețimea acceptării:** runtime: unrecorded 694, stale 3; platform: unrecorded 694, current 1, stale 2; provider: unrecorded 694, current 1, stale 2.
-**Scope-uri declarate încă în așteptare:** runtime 0, platform 5, provider 3.
-
-**Ținta acceptată în produs:** 697 rânduri; progres 47/697 = **6.7%**. Excluderi active: 0. Readmise explicit din vechiul audit: 107; readmiterea nu acordă credit de implementare.
-
-**Acoperirea reevaluării curente:** 333/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
+**Acoperirea reevaluării curente:** 661/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
 
 **Regulă de calcul:** fiecare rând are greutate egală; parțial = zero credit de finalizare. Un rând compus rămâne parțial cât timp are cerințe acceptate neimplementate. Un `update` rămâne parțial chiar dacă vechiul audit îl numea superior/parity, până când lipsurile sunt reconciliate. Acest procent măsoară codul documentat, nu efortul rămas, calitatea UX sau probele pe servicii reale.
 
-## Pe domenii
+## Pe domenii de funcționalitate
 
-| Domeniu | Total | Echiv. | Parțial | Lipsă | Exclus | Reverificare |
-|---|---:|---:|---:|---:|---:|---:|
-| cli | 56 | 1 | 14 | 7 | 0 | 34 |
-| gateway | 33 | 1 | 11 | 5 | 0 | 16 |
-| platforms | 39 | 2 | 22 | 8 | 0 | 7 |
-| web | 40 | 8 | 12 | 6 | 0 | 14 |
-| desktop | 54 | 3 | 26 | 9 | 0 | 16 |
-| tui | 25 | 0 | 11 | 4 | 0 | 10 |
-| config | 18 | 1 | 2 | 2 | 0 | 13 |
-| env | 28 | 1 | 11 | 2 | 0 | 14 |
-| tools — the agent-callable surface | 32 | 4 | 8 | 2 | 0 | 18 |
-| skills | 33 | 6 | 8 | 3 | 0 | 16 |
-| providers | 27 | 3 | 8 | 5 | 0 | 11 |
-| agent-core | 36 | 2 | 8 | 7 | 0 | 19 |
-| memory | 27 | 1 | 4 | 0 | 0 | 22 |
-| automation | 32 | 0 | 15 | 2 | 0 | 15 |
-| security | 34 | 3 | 9 | 2 | 0 | 20 |
-| media | 27 | 4 | 11 | 2 | 0 | 10 |
-| acp-mcp-dev | 33 | 1 | 12 | 17 | 0 | 3 |
-| docs-features | 48 | 0 | 21 | 7 | 0 | 20 |
-| rest-api | 33 | 1 | 17 | 5 | 0 | 10 |
-| delta | 42 | 5 | 9 | 7 | 0 | 21 |
+Fiecare rând aparține unui singur domeniu din [areas.json](docs/hermes/areas.json) (23 domenii). Lane: own = cod Nerva nativ, adopt = cod Hermes preluat, run = sidecar-ul Hermes guvernat. Suita de acceptanță a domeniului ține rândurile echivalente oneste: dacă pică, rândurile echivalente ale domeniului trec la «De reverificat». CI o evaluează la fiecare rulare din rezultatul JUnit al suitei pytest normale (`hermes_status.py verify --junit`), fără a rula testele a doua oară. «Subțire» = sub 5 fișiere sau sub 60% din rândurile reevaluate ale domeniului citează un test din suită; suitele de azi sunt semănate din testele deja citate în dovezi și urmează să fie înlocuite cu suite scrise din perspectiva owner-ului.
+
+| Domeniu | Lane | Rânduri | Echiv. | Parțial | Lipsă | Exclus | Reverificare | Suită | Stare suită |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---|
+| [cli](docs/HERMES_CAPABILITIES.md#area-cli) — Command line: jobs done through the nerva CLI | own | 56 | 15 | 37 | 2 | 2 | 0 | 111 | seed din dovezi |
+| [gateway](docs/HERMES_CAPABILITIES.md#area-gateway) — Always-on gateway and slash commands | own/run | 33 | 3 | 27 | 1 | 2 | 0 | 104 | seed din dovezi |
+| [platforms](docs/HERMES_CAPABILITIES.md#area-platforms) — Messaging platforms and channels | own | 39 | 3 | 30 | 0 | 6 | 0 | 41 | seed din dovezi |
+| [web](docs/HERMES_CAPABILITIES.md#area-web) — Web dashboard and HUD | own/run | 40 | 13 | 25 | 0 | 2 | 0 | 68 | seed din dovezi |
+| [desktop](docs/HERMES_CAPABILITIES.md#area-desktop) — Desktop app: jobs done in the HUD and Tauri shell | own | 54 | 5 | 46 | 1 | 2 | 0 | 52 | seed din dovezi |
+| [tui](docs/HERMES_CAPABILITIES.md#area-tui) — Terminal UI: jobs done in the HUD and nerva CLI | own | 25 | 2 | 19 | 2 | 2 | 0 | 25 | **subțire**, seed din dovezi |
+| [config](docs/HERMES_CAPABILITIES.md#area-config) — Configuration and settings | own | 18 | 9 | 9 | 0 | 0 | 0 | 30 | seed din dovezi |
+| [env](docs/HERMES_CAPABILITIES.md#area-env) — Environment, install and execution targets | own | 28 | 6 | 21 | 0 | 1 | 0 | 157 | seed din dovezi |
+| [tools](docs/HERMES_CAPABILITIES.md#area-tools) — Agent-callable tools and toolsets | adopt/own | 32 | 9 | 22 | 0 | 1 | 0 | 81 | seed din dovezi |
+| [skills](docs/HERMES_CAPABILITIES.md#area-skills) — Skills: authoring, catalogue and curation | adopt/own | 33 | 14 | 18 | 0 | 1 | 0 | 80 | seed din dovezi |
+| [providers](docs/HERMES_CAPABILITIES.md#area-providers) — Model providers, routing and fallback | adopt/own | 27 | 6 | 17 | 0 | 4 | 0 | 82 | seed din dovezi |
+| [agent-core](docs/HERMES_CAPABILITIES.md#area-agent-core) — Agent loop, context and sessions | own | 36 | 11 | 25 | 0 | 0 | 0 | 113 | seed din dovezi |
+| [memory](docs/HERMES_CAPABILITIES.md#area-memory) — Memory and recall | own | 27 | 9 | 18 | 0 | 0 | 0 | 69 | seed din dovezi |
+| [automation](docs/HERMES_CAPABILITIES.md#area-automation) — Automation: schedules, goals, delegation, kanban | own | 32 | 6 | 26 | 0 | 0 | 0 | 98 | seed din dovezi |
+| [security](docs/HERMES_CAPABILITIES.md#area-security) — Security: approvals, sandbox, secrets, egress | own | 34 | 8 | 25 | 0 | 1 | 0 | 214 | seed din dovezi |
+| [media](docs/HERMES_CAPABILITIES.md#area-media) — Media: images, video, voice, vision | adopt/own | 27 | 7 | 20 | 0 | 0 | 0 | 101 | seed din dovezi |
+| [editor-acp](docs/HERMES_CAPABILITIES.md#area-editor-acp) — Editor agent over ACP | own/adopt | 6 | 0 | 5 | 0 | 1 | 0 | 4 | **subțire**, seed din dovezi |
+| [mcp](docs/HERMES_CAPABILITIES.md#area-mcp) — MCP client and server | own/run | 13 | 3 | 10 | 0 | 0 | 0 | 12 | seed din dovezi |
+| [agent-interop](docs/HERMES_CAPABILITIES.md#area-agent-interop) — OpenAI-compatible API and agent-to-agent (A2A) | own/adopt | 5 | 0 | 4 | 0 | 1 | 0 | 4 | **subțire**, seed din dovezi |
+| [extensions](docs/HERMES_CAPABILITIES.md#area-extensions) — Extensions, hooks and deployment packaging | own/adopt | 9 | 1 | 6 | 0 | 2 | 0 | 13 | seed din dovezi |
+| [feature-pages](docs/HERMES_CAPABILITIES.md#area-feature-pages) — Upstream feature pages (cross-cutting) | own/adopt/run | 48 | 5 | 38 | 1 | 4 | 0 | 173 | seed din dovezi |
+| [user-journeys](docs/HERMES_CAPABILITIES.md#area-user-journeys) — User journeys from the rest of the docs (cross-cutting) | own | 33 | 5 | 24 | 1 | 3 | 0 | 66 | seed din dovezi |
+| [upstream-delta](docs/HERMES_CAPABILITIES.md#area-upstream-delta) — Upstream delta v2026.8.27 to v2026.8.31 (cross-cutting) | own/adopt/run | 42 | 21 | 17 | 3 | 1 | 0 | 150 | seed din dovezi |
+
+Suite subțiri: tui, editor-acp, agent-interop.
 
 ## Actualizare
 
-Evaluare: `2026-11-09T23:25:24Z`. Cod inspectat: `85a4179709c8e3551ac1ab98751b06859257c408`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
+Evaluare: `2026-11-10T17:33:57Z`. Cod inspectat: `7e263d5933731255ea297f324e7905368a400aa6`. Inventar înghețat: SHA-256 `7ce9e291cfb6053afb21a08d50b61b0375c17e71be02e1012791780930508686`.
 
-Sursa editabilă este [assessment.json](docs/hermes/assessment.json). Actualizează numai rândurile inspectate, cu motiv, lipsuri și hash-uri ale codului/testelor. Dacă dovezile se schimbă sau dispar, rândul trece la «De reverificat» până la analiza de impact. O acceptare explicită a impactului, legată de revizie și verificări, poate păstra verdictul; simpla schimbare de hash nu dovedește regresia. Data reauditării moștenite nu este rescrisă.
+Sursa editabilă este [assessment.json](docs/hermes/assessment.json): verdict, motiv, lipsuri și căile dovezilor (fără hash-uri). Un merge care doar mută sau editează cod nu schimbă niciun rând; un rând se schimbă când cineva îl reevaluează sau când suita domeniului său pică. Citările `cale:linie` din texte sunt indicatoare în proză, nu sunt fixate. Data reauditării moștenite nu este rescrisă.
 
 ```text
 python scripts/hermes_status.py summary
@@ -68,6 +66,8 @@ python scripts/hermes_status.py list --state partial --limit 20
 python scripts/hermes_status.py show H515
 python scripts/hermes_status.py write
 python scripts/hermes_status.py check
+python scripts/hermes_status.py verify --area mcp
+python scripts/hermes_status.py verify --junit pytest-junit.xml
 ```
 
-Pagina și inventarul afișat sunt generate din aceleași date; testele verifică derivarea, identitatea tuturor celor 697 de rânduri și lipsa derivării unor procente din PR-uri sau din bifele HA.
+Pagina și inventarul afișat sunt generate din aceleași date; testele verifică derivarea, identitatea tuturor celor 697 de rânduri, harta domeniilor și lipsa derivării unor procente din PR-uri sau din bifele HA.

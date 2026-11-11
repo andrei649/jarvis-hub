@@ -55,6 +55,7 @@ RULES = [
     ("/api/memory/search-tool", "NOT_IN_HUD"),
     ("/api/security/dependencies/audit", "NOT_IN_HUD"),  # H022 host CLI inventories its own install
     ("/api/curator/", "NOT_IN_HUD"),  # H027 owner CLI; existing inbox decides its exact cards
+    ("/api/acp/", "NOT_IN_HUD"),  # G11 `nerva acp`: an editor's ACP agent opens/closes its sessions
     # T-0.29 PWA: fetched by the BROWSER (install prompt / SW registration), never
     # rendered as a panel — a HUD surface for them would be meaningless.
     ("/manifest.webmanifest", "NOT_IN_HUD"),
@@ -98,6 +99,7 @@ RULES = [
     ("/api/system/", "cockpit"),  # 0.62 System Profiles — usage-mode selector (system/home setting)
     ("/api/help/", "cockpit"),  # H165 in-app documentation — the console's Start group (DocsPanel)
     ("/api/trust/status", "topbar"),
+    ("/api/auth/", "topbar"),  # H509 owner browser sign-in screen + corner sign-out (owner-sign-in.tsx)
     # memory & knowledge
     ("/api/osint/", "knowledge"),  # P2 OSINT pack — the Knowledge/"Vision · OSINT" surface (modes4)
     ("/api/kg/", "memory"),
@@ -211,6 +213,8 @@ RULES = [
     ("/api/subagents", "agents"),  # H20.6
     # admin (settings / env / models / llm lifecycle / oauth / oracle / plugins / voice / prompts / stats)
     ("/api/admin/", "admin"),
+    ("/api/files/", "admin"),  # G21 (H142): the owner's file browser (Files panel)
+    ("/api/hooks", "admin"),  # G17 (H163/H021/H514/H408): owner event hooks (Hooks panel)
     ("/plugins", "admin"),
     ("/api/plugins/extensions", "admin"),  # S1 inspection view pending below; CLI exists
     ("/api/models", "admin"),
@@ -525,6 +529,12 @@ _CLIENT_GLOBS = (
 # inheriting a bare list. The audit's own count came down from 86 to 68 precisely because
 # entries like these had been miscounted as missing UI.
 MACHINE_FACING: dict[str, str] = {
+    "/api/acp/sessions": "G11: `nerva acp` opens a conversation for an editor folder (ACP session/new)",
+    "/api/acp/sessions/{session_id}": "G11: `nerva acp` closes an editor session and its MCP servers",
+    "/api/acp/sessions/{session_id}/lease": "G11 review: `nerva acp` renews its sessions' lease while the editor is connected",
+    "/api/acp/sessions/{session_id}/mcp": (
+        "G11 (H545): `nerva acp` registers an editor-supplied MCP server for one session, after "
+        "the owner accepted it in the editor"),
     "/api/curator/status": "H027: owner `nerva curator status`; dedicated curator browsing is CLI administration",
     "/api/curator/usage": "H027: owner `nerva curator usage`; authenticated host CLI telemetry",
     "/api/curator/list-unmanaged": "H027: owner `nerva curator list-unmanaged`; explicit adoption preview input",
@@ -579,7 +589,15 @@ MACHINE_FACING: dict[str, str] = {
     "/.well-known/oauth-protected-resource": "OAuth resource metadata, fetched by clients",
     "/api/a2a/card": "agent-to-agent discovery",
     "/api/a2a/task": "agent-to-agent task submission",
+    "/api/channels/sms/webhook": "G16 (H098): Twilio posts inbound SMS here, signed with X-Twilio-Signature",
     "/api/mcp/server/rpc": "MCP transport \u2014 remote MCP clients, not our UI",
+    # G12 (H560/H614): the OpenAI-compatible API is for OTHER chat apps (Open WebUI, LibreChat,
+    # the openai SDKs) holding an API key; the HUD talks to Nerva through /chat. Keys are issued
+    # on the box (python -m agents.core.openai_api keys issue). POST /v1/chat/completions is not
+    # listed only because a client file already spells that path for an outbound provider.
+    "/v1/models": "OpenAI-compatible API: model list for external chat apps (bearer API key)",
+    "/v1/responses": "OpenAI-compatible API: Responses calls from external chat apps (bearer API key)",
+    "/v1/responses/{response_id}": "OpenAI-compatible API: stored-response read/delete by the key that made it",
     "/manifest.webmanifest": "PWA install prompt, fetched by the browser",
     "/v2/manifest.webmanifest": "PWA install prompt, fetched by the browser",
     "/sw-v2.js": "service-worker registration, fetched by the browser",
@@ -591,6 +609,8 @@ MACHINE_FACING: dict[str, str] = {
     "/api/plugins/extensions/activate": "owner activation of a local descriptor, via `nerva extensions activate`",
     "/api/oauth/auth-url": "OAuth dance, driven by the provider/browser",
     "/api/oauth/callback": "OAuth redirect target",
+    "/api/oauth/mcp/callback": "MCP sign-in redirect target: the browser returns here from the server's "
+                               "authorization page (G9 / H692)",
     "/api/admin/tool-events":
         "the tool loop's trail, read by `nerva tools` \u2014 the CLI is not in the client "
         "globs above; the HUD renderer for it is the deferred inline-tool-trail slice",
@@ -640,6 +660,22 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
+    # G18 (H401): a sub-agent's live transcript, its whole kept result and the exactly-once
+    # claim of finished results. The owner reaches them through /delegations in chat today;
+    # no HUD panel tails a transcript yet (ledger row H401, remaining).
+    "/api/subagents/{spawn_id}/transcript",
+    "/api/subagents/{spawn_id}/result",
+    "/api/subagents/completions/claim",
+    # H081 (G15 delivery receipts and dead targets): the owner reads them through the API;
+    # no HUD panel yet (ledger row H081, remaining).
+    "/api/channels/deliveries",
+    "/api/channels/dead-targets/clear",
+    # H562 (A2A outbound): peers get an address and token through the admin API; no HUD
+    # panel yet (ADOPT_LANE.md slice 4, remaining).
+    "/api/a2a/peers/{peer_id}/outbound",
+    # H553 (MCP elicitation): the card shows in the approval inbox, but there is no HUD form
+    # to type an answer yet (ledger row H553, remaining).
+    "/api/admin/mcp/elicitations/{card_id}/answer",
     # H361: installation, credential and selection APIs have no HUD controls.
     # Guarded physical sends do not establish graphical or native parity.
     "/api/admin/llm/provider-credentials",
@@ -845,9 +881,6 @@ COMPUTED_URL_CALLERS: dict[str, str] = {
     # AcquisitionPanel: apiPost(`/api/acquisition/${…}/${action}`), action from the buttons
     "/api/acquisition/{name}/revoke": "frontend/src/gap.tsx",
     "/api/acquisition/{name}/rollback": "frontend/src/gap.tsx",
-    # MCP panel: afetch(`/api/admin/mcp/${…}/${action}`), action = connected ? … : …
-    "/api/admin/mcp/{name}/connect": "agents/web/static/admin.js",
-    "/api/admin/mcp/{name}/disconnect": "agents/web/static/admin.js",
     # PromptsPanel: `const base = '/api/admin/prompts/' + agent`, then base + suffix
     "/api/admin/prompts/{agent_id}/ab": "frontend/src/gap.tsx",
     "/api/admin/prompts/{agent_id}/commit": "frontend/src/gap.tsx",

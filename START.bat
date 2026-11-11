@@ -45,14 +45,18 @@ echo   NERVA - STARTING
 echo ============================================================
 echo.
 
-REM --- Jarvis Signal Layer - opt-IN with JARVIS_SIGNAL_LAYER=1 ---
-if /I "%JARVIS_SIGNAL_LAYER%"=="1" (
+REM --- Nerva Signal Layer - opt-IN with JARVIS_SIGNAL_LAYER=1 ---
+REM RB-2: NERVA_<X> is the preferred spelling of JARVIS_<X>; both are read here.
+set "_NERVA_SIGNAL=%JARVIS_SIGNAL_LAYER%"
+if defined NERVA_SIGNAL_LAYER set "_NERVA_SIGNAL=%NERVA_SIGNAL_LAYER%"
+if /I "%_NERVA_SIGNAL%"=="1" (
   call :start_signal_layer
 )
 
 echo.
 REM The V2 HUD (cockpit) is the primary one from now on; override with  set JARVIS_HUD=v1  for the legacy HUD.
-if not defined JARVIS_HUD set "JARVIS_HUD=v2"
+REM RB-2: a NERVA_HUD you set is left alone (a JARVIS_HUD default beside it would be a conflict).
+if not defined JARVIS_HUD if not defined NERVA_HUD set "JARVIS_HUD=v2"
 echo Starting the server on http://127.0.0.1:8080  ^(loopback only^)
 echo Command Center: http://127.0.0.1:8080/v2   ^(legacy HUD at /v1^)
 echo Admin:        http://127.0.0.1:8080/admin
@@ -79,17 +83,18 @@ REM ============================================================
 :start_signal_layer
 echo.
 echo ------------------------------------------------------------
-echo   Jarvis Signal Layer - auto-start
+echo   Nerva Signal Layer - auto-start
 echo ------------------------------------------------------------
 where node >nul 2>&1 || (echo [SKIP] Node not found ^(Node 20+ required^) - skipping Signal Layer. & goto :eof)
 if not exist "services\signal-layer\src\index.mjs" (
   echo [SKIP] services\signal-layer is missing - skipping Signal Layer.
   goto :eof
 )
-if not defined JARVIS_SIGNAL_LAYER_MODE set "JARVIS_SIGNAL_LAYER_MODE=replay"
+if not defined JARVIS_SIGNAL_LAYER_MODE if not defined NERVA_SIGNAL_LAYER_MODE set "JARVIS_SIGNAL_LAYER_MODE=replay"
+if defined NERVA_SIGNAL_LAYER_MODE set "JARVIS_SIGNAL_LAYER_MODE=%NERVA_SIGNAL_LAYER_MODE%"
 if not defined SIGNAL_LAYER_HOST set "SIGNAL_LAYER_HOST=127.0.0.1"
 if not defined SIGNAL_LAYER_PORT set "SIGNAL_LAYER_PORT=8787"
 echo [INFO] Mode: %JARVIS_SIGNAL_LAYER_MODE%  Port: %SIGNAL_LAYER_PORT%
 echo [INFO] Starting Signal Layer in a separate window...
-start "Jarvis Signal Layer" /d "%~dp0services\signal-layer" cmd /k "node src\index.mjs"
+start "Nerva Signal Layer" /d "%~dp0services\signal-layer" cmd /k "node src\index.mjs"
 goto :eof

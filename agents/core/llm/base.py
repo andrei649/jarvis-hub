@@ -7,6 +7,7 @@ import inspect
 import json
 import logging
 import re
+import time
 from abc import ABC, abstractmethod
 from typing import Any, Callable
 
@@ -376,6 +377,66 @@ async def _emit(on_token: Callable, text: str) -> None:
 
 # ── Abstract base ─────────────────────────────────────────────────────────────
 
+#: H440 — a server that does not take a JSON schema says so: a malformed-request status
+#: (never a transient or server error) whose body names the feature it rejects. The status
+#: alone is not enough — LM Studio answers 400 "No models loaded" at boot, and taking that
+#: for a refusal would switch strict titles off.
+#:
+#: Third review: the body must name the request *field* — ``response_format``,
+#: ``json_schema`` (or "JSON schema"), or Ollama's ``format`` written as a field: quoted, or
+#: the last step of a dotted path (``GenerateRequest.format``). The bare words "format" and
+#: "schema" are everywhere in unrelated errors ("unsupported chat format", "GGUF format
+#: v1", "Unsupported image format", "database schema migration in progress") and each of
+#: those used to switch the schema off. When in doubt it is not a refusal: a refusal that
+#: goes unrecognised costs that session its model title (it keeps its first words); a
+#: false one costs every later session the constraint that stops a model answering the
+#: message instead of naming it.
+_SCHEMA_REFUSAL_STATUS = frozenset({400, 415, 422, 501})
+_SCHEMA_REFUSAL_RE = re.compile(
+    r"response_format"
+    r"|json[ _-]?schema"
+    r"|[\"'`]format\\?[\"'`]"                  # "format", 'format', `format` (also JSON-escaped)
+    r"|\b[a-z_][a-z0-9_]*\.format\b(?![.(\w])",   # GenerateRequest.format — a field path
+    re.IGNORECASE)
+_SCHEMA_REFUSAL_BODY_CHARS = 4096
+#: A remembered refusal is believed this long, then the schema is offered once more: a
+#: misread heals by itself, and so does a server upgraded in place.
+SCHEMA_REFUSAL_TTL_S = 3600.0
+_SCHEMA_REFUSALS_KEPT = 64
+
+
+def _schema_clock() -> float:
+    return time.monotonic()
+
+
+class JsonSchemaRejected(RuntimeError):
+    """H440 — the local server refused a request because of its JSON schema (an older
+    Ollama, an LM Studio engine without structured output). Nothing was generated. The
+    backend remembers the refusal for that model on that server address
+    (``json_schema_refused``); the caller may ask again in free text."""
+
+    json_schema_unsupported = True
+
+
+def _schema_refused(backend, model, json_schema, exc: Exception) -> bool:
+    """Whether ``exc`` is the server refusing ``json_schema``; if so the backend remembers
+    it for ``model``. Any other failure of a schema call is an ordinary failure."""
+    if json_schema is None or not isinstance(exc, httpx.HTTPStatusError):
+        return False
+    if exc.response.status_code not in _SCHEMA_REFUSAL_STATUS:
+        return False
+    try:
+        body = (exc.response.text or "")[:_SCHEMA_REFUSAL_BODY_CHARS].lower()
+    except Exception:
+        return False
+    if not _SCHEMA_REFUSAL_RE.search(body):
+        return False
+    backend._note_schema_refusal(model)
+    logger.info("%s refused a JSON schema for model %r (HTTP %s); asking it in free text from now on",
+                type(backend).__name__, model, exc.response.status_code)
+    return True
+
+
 class LLMBackend(ABC):
     supports_tools = False
     #: H297 — whether a tool message's ``images`` reach the model as images. Off by
@@ -386,6 +447,34 @@ class LLMBackend(ABC):
     #: never a transient 429/5xx/timeout) with ``PROVIDER_REJECTED_FINISH`` so the loop
     #: can detach the images and resend once.
     supports_tool_result_images = False
+    #: H440 — whether ``generate(json_schema=…)`` constrains the answer to that JSON
+    #: schema. Only the local backends declare it (LM Studio ``response_format``, Ollama
+    #: ``format``); a caller passes ``json_schema`` only to a backend that does.
+    supports_json_schema = False
+    #: H440 review — each (model, server address) this backend saw refuse a schema, and
+    #: when. Third review: one entry per pair (a single slot made two refusing models
+    #: push each other out and probe the server on every title), each forgotten after
+    #: ``SCHEMA_REFUSAL_TTL_S``.
+    _schema_refusals: dict[tuple[str, str], float] | None = None
+
+    def _schema_refusal_key(self, model: str) -> tuple[str, str]:
+        return (str(model), str(getattr(self, "base_url", "")))
+
+    def _note_schema_refusal(self, model: str) -> None:
+        noted = dict(self._schema_refusals or {})
+        noted.pop(self._schema_refusal_key(model), None)
+        noted[self._schema_refusal_key(model)] = _schema_clock()
+        while len(noted) > _SCHEMA_REFUSALS_KEPT:
+            noted.pop(next(iter(noted)))            # the oldest note
+        self._schema_refusals = noted
+
+    def json_schema_refused(self, model: str) -> bool:
+        """Whether this server refused a JSON schema for ``model`` within the last
+        ``SCHEMA_REFUSAL_TTL_S``. Keyed by the model and the server address, so the schema
+        is tried again once either changes (another model loaded, the backend pointed
+        elsewhere) — and once the note is an hour old, whatever it was."""
+        noted = (self._schema_refusals or {}).get(self._schema_refusal_key(model))
+        return noted is not None and 0 <= _schema_clock() - noted < SCHEMA_REFUSAL_TTL_S
 
     @abstractmethod
     async def generate(
@@ -645,9 +734,12 @@ class LMStudioBackend(LLMBackend):
                 raise
         raise RuntimeError("local completion retry limit exceeded")
 
+    supports_json_schema = True
+
     async def generate(
         self, model: str, prompt: str, system: str = "",
-        max_tokens: int = 1024, temperature: float = 0.7
+        max_tokens: int = 1024, temperature: float = 0.7,
+        json_schema: dict | None = None,
     ) -> str:
         _require_no_job_reasoning()
         payload = {
@@ -656,6 +748,10 @@ class LMStudioBackend(LLMBackend):
             "temperature": temperature,
             "stream": False,
         }
+        if json_schema is not None:     # H440: the answer is this JSON object, nothing else
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "response", "strict": True, "schema": json_schema}}
         # Auto (max_tokens <= 0): omit the cap so LM Studio answers up to the
         # loaded model's full context — the single dial sized in LM Studio.
         if not is_auto_max_tokens(max_tokens):
@@ -672,6 +768,8 @@ class LMStudioBackend(LLMBackend):
         except ReasoningEffortRefused:
             raise
         except Exception as e:
+            if _schema_refused(self, model, json_schema, e):
+                raise JsonSchemaRejected("LM Studio refused the JSON schema") from e
             return local_backend_degraded_reply("LM Studio", f"LM Studio ({self.base_url})", e, model=model)
 
     async def generate_tool_turn(
@@ -961,9 +1059,12 @@ class OllamaBackend(LLMBackend):
         except Exception:
             return False
 
+    supports_json_schema = True
+
     async def generate(
         self, model: str, prompt: str, system: str = "",
-        max_tokens: int = 1024, temperature: float = 0.7
+        max_tokens: int = 1024, temperature: float = 0.7,
+        json_schema: dict | None = None,
     ) -> str:
         _require_no_job_reasoning()
         payload = {
@@ -979,6 +1080,8 @@ class OllamaBackend(LLMBackend):
                 "temperature": temperature,
             },
         }
+        if json_schema is not None:     # H440: Ollama's structured output
+            payload["format"] = json_schema
         try:
             resp = await self.client.post("/api/generate", json=payload)
             resp.raise_for_status()
@@ -1003,6 +1106,8 @@ class OllamaBackend(LLMBackend):
             report_text_usage(ollama_usage(data))
             return answer
         except Exception as e:
+            if _schema_refused(self, model, json_schema, e):
+                raise JsonSchemaRejected("Ollama refused the JSON schema") from e
             return local_backend_degraded_reply("Ollama", f"Ollama ({self.base_url})", e, model=model)
 
     async def generate_tool_turn(

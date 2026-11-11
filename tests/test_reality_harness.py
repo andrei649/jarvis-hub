@@ -55,14 +55,18 @@ async def test_boot_registry_reality_cases_hold_for_every_wired_capability():
             if record.kind == "skill"} == default_skills
     assert default_skills.isdisjoint(optional_sources)
     assert len(default_skills | optional_sources) == 12
-    assert sum(record.kind == "plugin" for record in records.values()) == 48
+    # 53 plugins: the A2A outbound plugin (plugin:a2a, Adopt lane slice 4), the three
+    # default-off cloud video providers (G19) and the SMS channel (G16) joined the registry.
+    assert sum(record.kind == "plugin" for record in records.values()) == 53
     assert sum(record.kind == "component" for record in records.values()) == 24
-    assert len(cases) == len(records) == 84 - len(optional_sources) == 77
+    assert len(cases) == len(records) == 89 - len(optional_sources) == 82
+    assert results["plugin:a2a"] is True
     assert results["plugin:ntfy"] is True
     # The six disabled cloud-image plugins still have real manifest egress rails;
     # proving that policy does not change their default-off readiness state.
     default_off = {f"plugin:cloud-image-{provider}" for provider in (
         "fal", "codex", "openrouter", "krea", "xai", "deepinfra")}
+    default_off |= {f"plugin:cloud-video-{provider}" for provider in ("fal", "xai", "deepinfra")}
     assert {capability_id for capability_id, record in records.items()
             if record.state == cr.SEAM} == default_off | {"skill:Weather Intel"}
     assert all(results[capability_id] is True for capability_id in default_off)

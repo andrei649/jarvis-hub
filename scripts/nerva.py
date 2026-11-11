@@ -12,7 +12,10 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agents.cli.nerva import main  # noqa: E402
+from agents.cli.env_spelling import main as checked_main  # noqa: E402
+from agents.cli.nerva import main  # noqa: E402,F401
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    # RB-2: NERVA_<X> is the preferred spelling of JARVIS_<X>; a variable set under both,
+    # differently, is refused by name before the command tree runs (agents.cli.env_spelling).
+    raise SystemExit(checked_main(sys.argv[1:]))

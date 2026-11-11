@@ -1,5 +1,6 @@
 export function loadConfig(env = process.env) {
-  const modeEnv = env.JARVIS_SIGNAL_LAYER_MODE || 'replay';
+  // RB-2: NERVA_<X> is the preferred spelling of JARVIS_<X>; both are read.
+  const modeEnv = env.NERVA_SIGNAL_LAYER_MODE || env.JARVIS_SIGNAL_LAYER_MODE || 'replay';
   const mode = modeEnv === 'live' ? 'live' : 'replay';
   return {
     mode,

@@ -814,6 +814,13 @@ def _make_plugin_policy_probe(plugin_id: str, manifest):
         marker = object()
         previous = os.environ.get("JARVIS_STRICT_EGRESS", marker)
         os.environ["JARVIS_STRICT_EGRESS"] = "1"
+        # G1 — an administrator's pin answers env_config first; the probe judges the gate
+        # under strict egress, so the pin is lifted for the probe and put back after
+        from agents.core import env_config
+
+        pins = env_config.pinned_environment()
+        if "JARVIS_STRICT_EGRESS" in pins:
+            env_config.pin_environment({**pins, "JARVIS_STRICT_EGRESS": "1"})
 
         def _allowed(url: str) -> bool:
             try:
@@ -839,6 +846,8 @@ def _make_plugin_policy_probe(plugin_id: str, manifest):
                 return _allowed(external)
             return False
         finally:
+            if "JARVIS_STRICT_EGRESS" in pins:
+                env_config.pin_environment(pins)
             if previous is marker:
                 os.environ.pop("JARVIS_STRICT_EGRESS", None)
             else:

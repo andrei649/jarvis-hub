@@ -18,8 +18,6 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
 
-from agents.core.llm.cost_estimator import MODELS, PRICES_VERIFIED
-
 _SCHEMA = "nerva.turn.usage.v1"
 _MAX_CALLS = 1_000_000
 _MAX_TOKENS = 1_000_000_000_000
@@ -328,6 +326,8 @@ class TurnUsage:
                     and inputs + cache_read + cache_write > 200_000):
                 pair.unknown_cost = True
                 return
+            from agents.core.llm.cost_estimator import MODELS  # lazy: llm/ imports this module
+
             price = MODELS.get(pair.model)
             if (price is None or (price["input"] == price["output"] == 0)
                     or (cache_read and price.get("cached") is None)):
@@ -390,6 +390,8 @@ class TurnUsage:
                 "breakdown_truncated": len(pairs) > _MAX_BREAKDOWN,
             }
             if cost_basis == "price_table":
+                from agents.core.llm.cost_estimator import PRICES_VERIFIED
+
                 result["price_verified_at"] = PRICES_VERIFIED
             return result
 

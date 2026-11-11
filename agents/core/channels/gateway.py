@@ -126,7 +126,7 @@ class Gateway:
 
         try:
             origin = origin_for_channel(channel)
-            if channel in {"slack", "discord", "ntfy"}:
+            if channel in {"slack", "discord", "ntfy", "sms"}:
                 kwargs["origin"] = origin
             else:
                 kwargs.setdefault("origin", origin)
@@ -138,7 +138,7 @@ class Gateway:
             kwargs.pop("_inbox_message_id", None)
             metadata = {**kwargs, **inbound_meta}
             recorded = self._record_inbox(channel, text, sender=sender, metadata=metadata)
-            if channel in {"slack", "discord", "ntfy"}:
+            if channel in {"slack", "discord", "ntfy", "sms"}:
                 kwargs["_inbox_message_id"] = recorded.get("id", "") if recorded else ""
             from .. import code_interruptions
             admission_token = code_interruptions.bind_admitted_channel(channel)

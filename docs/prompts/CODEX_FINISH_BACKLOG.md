@@ -118,8 +118,8 @@ roadmap milestone that does not need the owner is ✅ in `BACKLOG.md` and §3 of
 ### A.5 Never (the rules no argument overrides)
 
 Never load `BACKLOG.md`, `docs/ARCHITECTURE.md`, `NERVA.md`, `MOONSHOT.md`, `docs/AI_CONTEXT.md`
-or the Hermes ledger JSON whole (`scripts/backlog.py`, `scripts/hermes_status.py`,
-`scripts/hermes_restamp.py` are the interfaces). Never force-push, rewrite history on a shared
+or the Hermes ledger JSON whole (`scripts/backlog.py` and `scripts/hermes_status.py`
+are the interfaces). Never force-push, rewrite history on a shared
 branch, or disable commit signing. Never weaken `scripts/selfdev_policy.py`, `selfdev-policy.json`,
 a workflow under `.github/`, the Action Kernel or a security boundary in the same PR that relies
 on it. `LICENSE`, `TRADEMARKS.md`, `MOONSHOT.md`, `NERVA_VISION.md` and `docs/legal/**` stay the

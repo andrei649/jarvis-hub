@@ -102,6 +102,14 @@ jobs:
         run: |
           python scripts/status_sync.py --verify-test-count backend --test-result pytest-junit.xml \
             || { echo "::error::project-status.json tests.backend does not match the number of tests this run executed — run 'python scripts/status_sync.py' locally and commit the regenerated status files (project-status.json, README.md, STATUS.md, NERVA.md, GO_LIVE_PLAN.md)."; exit 1; }
+      - name: Hermes area acceptance suites
+        # Owner decision 2026-11-10 §3: each Hermes feature area's acceptance suite keeps its
+        # equivalent ledger rows honest. Judged from the JUnit file the Test step already wrote
+        # (no second test run): a suite with a failing, erroring or never-run entry fails this
+        # step and names the rows that lose equivalent credit. Runs even when Test failed, so
+        # the ledger impact of a red run is visible. Ubuntu only, like the count check.
+        if: runner.os == 'Linux' && !cancelled()
+        run: python scripts/hermes_status.py verify --junit pytest-junit.xml
 
   sandbox-isolation:
     # Post-merge only. Proves the Docker sandbox actually CONTAINS code — no

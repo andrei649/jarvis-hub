@@ -27,7 +27,7 @@ def _archive(path: Path, entries: dict[str, bytes], *, symlink: str | None = Non
 
 def test_pin_is_fixed_complete_donor() -> None:
     pin = distribution.load_pin()
-    assert pin["commit"] == "0808ed8ec0420ef2c8e1363d919ef1d83fc4e5e7"
+    assert pin["commit"] == "9c0560f8e6856bc14c11bfe6d666df06be14d2de"
     assert len(pin["archive_sha256"]) == 64
     assert len(pin["source_sha256"]) == 64
     assert len(pin["tree_sha1"]) == 40
@@ -168,6 +168,20 @@ def test_selected_python_rejects_unsupported_interpreter(tmp_path) -> None:
     (install / "facts.json").write_text(json.dumps({"packages": {"venv": {"environment": str(venv)}}}))
     with pytest.raises(ValueError, match="Python 3.14"):
         distribution.validate_python(venv / "bin/python", source, home)
+
+
+def test_cli_sets_aside_a_source_left_by_the_previous_pin(tmp_path, monkeypatch) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "LICENSE").write_text("previous pin")
+    tree, digest = distribution._git_tree_sha1(source), distribution._source_sha256(source)
+    monkeypatch.setattr(distribution, "load_pin", lambda: {"tree_sha1": tree, "source_sha256": digest, "commit": "test"})
+    assert hermes_runtime._set_aside_stale_source(source) is None  # still the pinned tree: kept
+    (source / "LICENSE").write_text("other pin")
+    aside = hermes_runtime._set_aside_stale_source(source)
+    assert aside is not None and aside.name.startswith("source.stale-")
+    assert not source.exists() and (aside / "LICENSE").read_text() == "other pin"
+    assert hermes_runtime._set_aside_stale_source(source) is None
 
 
 def test_cli_descriptor_is_private_and_names_fixed_layout(tmp_path) -> None:

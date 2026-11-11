@@ -50,6 +50,40 @@ export interface JarvisData {
    `POST /autonomy/tasks/{id}/decision`, which lives in the Decision Inbox; a cockpit card
    offering "Approve" that merely dismissed would be the worst possible lie on this
    surface, since the operator would believe they had decided something. */
+const APPROVAL_MODES = ['auto', 'ask', 'off'];
+/* What each mode makes wait. `auto` is absent on purpose: under `auto` the mode is never
+   why a task waits (its risk tier, a money cap or a safety check is). */
+const MODE_HOLDS: Record<string, string> = {
+  ask: 'anything with a side effect waits for you',
+  off: 'nothing a machine approved runs',
+};
+
+/* H484 — the approval mode on an approval card, from what the backend sent:
+   `approval_mode` ({effective, source, global}) is the mode in force NOW; `asked_under`
+   ({mode, source, global, by_mode}) is the mode recorded when the task was held, and
+   whether the mode itself is why it asks. The card states only what is known: a recorded
+   mode is reported as recorded; without one, only today's mode, with the caveat that it
+   may not be why the task waits. Fail-closed: only the three exact mode strings are
+   shown; anything else is null and the card says nothing about the mode. */
+export function approvalModeNote(shown: any, asked?: any): { label: string; why: string } | null {
+  const current: string | null = shown && typeof shown === 'object' && APPROVAL_MODES.includes(shown.effective)
+    ? shown.effective : null;
+  if (asked && typeof asked === 'object' && APPROVAL_MODES.includes(asked.mode)) {
+    const mode: string = asked.mode;
+    const label = `asked under ${mode}` + (asked.source === 'agent' ? ' · agent override' : '');
+    if (asked.by_mode === true && MODE_HOLDS[mode]) {
+      const drift = current && current !== mode ? ` The mode is ${current} now.` : '';
+      return { label, why: `Held because the approval mode was ${mode} when this was queued: ${MODE_HOLDS[mode]}.${drift}` };
+    }
+    return { label, why: `Queued under approval mode ${mode}. The mode is not why it waits: its risk tier, a money cap or a safety check is.` };
+  }
+  if (!current) return null;
+  return {
+    label: `mode now ${current}` + (shown.source === 'agent' ? ' · agent override' : ''),
+    why: `Approval mode is ${current} now. The mode in force when this was queued was not recorded, so it may not be why this waits.`,
+  };
+}
+
 export function decisionCard(task: any): any {
   const kind = String(task.kind || 'task');
   const who = String(task.agent || kind).toUpperCase().slice(0, 18);
@@ -60,6 +94,7 @@ export function decisionCard(task: any): any {
     kind: reversible ? 'signal' : 'alert',
     kindLabel: reversible ? 'Needs approval · reversible' : 'Needs approval · irreversible',
     body: String(task.title || kind),
+    mode: approvalModeNote(task.approval_mode, task.asked_under),   // H484: the mode it was asked under
     actions: [{ l: 'Dismiss' }],
     live: true,
   };

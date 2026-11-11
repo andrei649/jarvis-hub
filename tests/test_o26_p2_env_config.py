@@ -152,6 +152,9 @@ _HELPER_DEF = re.compile(r"def\s+(_env_truthy|_env_flag|_env_int|_env_bool|truth
 _SCAN_ROOTS = ["agents", "serve.py"]
 _EXEMPT = {
     "agents/core/env_config.py",   # the one home for the convention
+    # The Integrations panel's key store: it places owner-entered keys into the process
+    # environment and must see exactly which spelling is set there, like the .env loader.
+    "agents/core/integration_keys.py",
 }
 
 
@@ -161,7 +164,11 @@ def _runtime_py_files():
         if p.is_file():
             yield p
         else:
-            yield from sorted(p.rglob("*.py"))
+            # Vendored Hermes files read the environment only through the compat layer's
+            # per-provider allowlist (agents/vendor/hermes_compat); tests/test_hermes_adopt_lane.py
+            # refuses any other access in that tree.
+            yield from (f for f in sorted(p.rglob("*.py"))
+                        if not f.relative_to(repo_root).as_posix().startswith("agents/vendor/hermes/"))
 
 
 def test_one_truthy_convention_in_the_tree():
@@ -299,7 +306,10 @@ _RAW_ENV_READ = re.compile(r"os\.getenv\(|os\.environ\.get\(|os\.environ\[")
 
 # Lower this when you migrate reads. Raising it should be a deliberate,
 # explained choice in the PR — not a reflex to get CI green.
-MAX_RAW_ENV_READS = 110
+MAX_RAW_ENV_READS = 110  # RB-2: the bind guard reads its tokens and host under either spelling;
+# G21: channel_config places and withdraws channel values in the process environment itself
+# (two `os.environ[name] = value` writes) and reads each spelling raw in one helper to know
+# which values it placed — env_config's merged, pin-aware read cannot answer that.
 
 
 def _raw_env_read_sites():
@@ -307,6 +317,11 @@ def _raw_env_read_sites():
     for path in _runtime_py_files():
         rel = path.relative_to(repo_root).as_posix()
         if rel in _EXEMPT:
+            continue
+        # Vendored Hermes files cannot read the real environment: their `os` is the
+        # per-provider allowlist shim (agents/vendor/hermes_compat/os_env.py), and
+        # tests/test_hermes_adopt_lane.py refuses any other form of `os` in that tree.
+        if rel.startswith("agents/vendor/hermes/"):
             continue
         for n, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
             if _RAW_ENV_READ.search(line):

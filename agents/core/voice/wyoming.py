@@ -142,7 +142,7 @@ def _info_payload() -> dict:
         "handle": [
             {
                 "name": "jarvis-hub",
-                "description": "Jarvis Hub assistant — handles transcripts, returns speech.",
+                "description": "Nerva assistant — handles transcripts, returns speech.",
                 "installed": True,
                 "version": PROTOCOL_VERSION,
                 "models": [],

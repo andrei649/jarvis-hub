@@ -105,6 +105,14 @@ class SkillCurator:
                     continue
                 considered += 1
                 rec = self._usage.get(name) or {}
+                if rec.get("restore_pending") is True:
+                    # H349 (second review, M2): the owner moved this skill back out of an
+                    # archive since the last pass. Its idle clock restarts at this pass, on
+                    # this pass's own clock, so it is never archived again the same night.
+                    settle = getattr(self._usage, "settle_restore", None)
+                    if callable(settle):
+                        settle(name, now.isoformat())
+                    continue
                 anchor = latest_activity_at(rec)
                 if anchor is None:
                     created = rec.get("created_at")
@@ -140,9 +148,23 @@ class SkillCurator:
             if dest.exists():
                 stamp = self._now().strftime("%Y%m%dT%H%M%SZ")
                 dest = self._archive_dir / f"{src.name}-{stamp}"
-            shutil.move(str(src), str(dest))
-            self._loader.skills.pop(name, None)
-            self._usage.set_state(name, STATE_ARCHIVED)
+            # H349: under the lock a pin write takes, so a pin that lands after the pass
+            # judged the skill curatable still stops the move; the row becomes a tombstone
+            # bound to the archived bytes (restorable with them; nothing a later skill of
+            # the name inherits).
+            hold = getattr(self._usage, "removal", None)
+            if not callable(hold):
+                shutil.move(str(src), str(dest))
+                self._loader.skills.pop(name, None)
+                self._usage.set_state(name, STATE_ARCHIVED)
+            else:
+                with hold([name], respect_pins=True) as held:
+                    if held.blocked:
+                        return False
+                    shutil.move(str(src), str(dest))
+                    self._loader.skills.pop(name, None)
+                    if not held.retire(name, getattr(skill, "source_fingerprint", None) or ""):
+                        self._usage.set_state(name, STATE_ARCHIVED)
             logger.info("Skill '%s' archived (idle) → %s", name, dest)
             return True
         except Exception:

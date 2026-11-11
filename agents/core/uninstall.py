@@ -35,8 +35,9 @@ from ``.venv\\Scripts\\python.exe`` and passes ``--allow-locked-venv``, so every
 removed (and a purge runs in process, the venv having the dependencies) while ``.venv`` is
 left untouched and reported under ``not_removed`` / ``venv_left_behind`` to delete by hand.
 
-``--gui`` also removes the Tauri desktop shell (``desktop/src-tauri``: productName ``Jarvis
-Hub``, identifier ``com.jarvis.hub``) from the per-OS places its bundles install to, plus the
+``--gui`` also removes the Tauri desktop shell (``desktop/src-tauri``: productName ``Nerva``
+— and ``Jarvis Hub``, the name bundles carried before the rename —, identifier
+``com.jarvis.hub``) from the per-OS places its bundles install to, plus the
 shell's own per-identifier webview/cache/preference/log dirs and launcher entries — and a
 source-built shell's cargo output tree (``desktop/src-tauri/target``, the binary and any
 ``bundle/``), which is how the desktop app is obtained today (no CI job ships a bundle).
@@ -85,7 +86,11 @@ UNINSTALL_TARGETS: tuple[str, ...] = (
 
 # The Tauri desktop shell's identity (desktop/src-tauri/tauri.conf.json + Cargo.toml);
 # tests/test_uninstall.py pins these against the config so a rename cannot drift.
-DESKTOP_PRODUCT_NAME = "Jarvis Hub"
+DESKTOP_PRODUCT_NAME = "Nerva"
+# Bundles built before the Nerva rename installed under this name; an uninstall has to find
+# those too, so every per-name location is looked up under each of these.
+DESKTOP_LEGACY_PRODUCT_NAMES = ("Jarvis Hub",)
+DESKTOP_PRODUCT_NAMES = (DESKTOP_PRODUCT_NAME, *DESKTOP_LEGACY_PRODUCT_NAMES)
 DESKTOP_IDENTIFIER = "com.jarvis.hub"
 DESKTOP_BINARY = "jarvis-hub-desktop"
 DESKTOP_PACKAGE = "jarvis-hub"
@@ -137,9 +142,10 @@ def desktop_app_targets(*, platform: str | None = None, home: Path | None = None
     sysroot = Path(system_root) if system_root is not None else Path("/")
     cands: list[tuple[Path, str, str | None, str]] = []
     if plat == "darwin":
-        app = f"{DESKTOP_PRODUCT_NAME}.app"
-        cands += [(sysroot / "Applications" / app, "remove", None, "app"),
-                  (h / "Applications" / app, "remove", None, "app")]
+        for name in DESKTOP_PRODUCT_NAMES:
+            app = f"{name}.app"
+            cands += [(sysroot / "Applications" / app, "remove", None, "app"),
+                      (h / "Applications" / app, "remove", None, "app")]
         lib = h / "Library"
         cands += [(lib / sub / DESKTOP_IDENTIFIER, "remove", None, "userdata")
                   for sub in ("Application Support", "Caches", "WebKit", "HTTPStorages", "Logs")]
@@ -154,19 +160,21 @@ def desktop_app_targets(*, platform: str | None = None, home: Path | None = None
         bases = [(local, False)]
         if env.get("ProgramFiles"):
             bases.append((Path(env["ProgramFiles"]), True))
-        for base, managed in bases:
-            d = base / DESKTOP_PRODUCT_NAME
-            if (d / "uninstall.exe").is_file():
-                cands.append((d, "uninstaller", None, "app"))
-            elif managed:
-                cands.append((d, "manual",
-                              f"remove '{DESKTOP_PRODUCT_NAME}' in Settings > Apps (MSI install)", "app"))
-            else:
-                cands.append((d, "remove", None, "app"))
+        for name in DESKTOP_PRODUCT_NAMES:
+            for base, managed in bases:
+                d = base / name
+                if (d / "uninstall.exe").is_file():
+                    cands.append((d, "uninstaller", None, "app"))
+                elif managed:
+                    cands.append((d, "manual",
+                                  f"remove '{name}' in Settings > Apps (MSI install)", "app"))
+                else:
+                    cands.append((d, "remove", None, "app"))
         cands += [(local / DESKTOP_IDENTIFIER, "remove", None, "userdata"),
-                  (roaming / DESKTOP_IDENTIFIER, "remove", None, "userdata"),
-                  (roaming / "Microsoft" / "Windows" / "Start Menu" / "Programs"
-                   / f"{DESKTOP_PRODUCT_NAME}.lnk", "remove", None, "integration")]
+                  (roaming / DESKTOP_IDENTIFIER, "remove", None, "userdata")]
+        cands += [(roaming / "Microsoft" / "Windows" / "Start Menu" / "Programs"
+                   / f"{name}.lnk", "remove", None, "integration")
+                  for name in DESKTOP_PRODUCT_NAMES]
     else:
         cands.append((sysroot / "usr" / "bin" / DESKTOP_BINARY, "manual",
                       f"sudo apt remove {DESKTOP_PACKAGE}  (or: sudo dnf remove {DESKTOP_PACKAGE})", "app"))

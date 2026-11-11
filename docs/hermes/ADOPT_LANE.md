@@ -1,0 +1,870 @@
+# The Adopt lane: running Hermes code inside Nerva
+
+The Adopt lane (`feature-integration-plan-2026-11-10.md`) runs selected Hermes Agent source
+files (MIT, NousResearch/hermes-agent) as they are, instead of re-writing them. Two rules hold:
+
+1. **A vendored file stays upstream text.** The only change is a mechanical, recorded rewrite
+   of its imports. A fix goes upstream, or the file is not adopted.
+2. **Every effect still crosses Nerva's controls.** The rewritten imports point at the compat
+   layer, and the compat layer maps each Hermes interface onto a Nerva control. Vendored code
+   reaches no network client, no secret and no registry of its own.
+
+## Layout
+
+| Path | What it is |
+|---|---|
+| `agents/vendor/hermes/` | Vendored files at their upstream paths (`plugins/web/exa/provider.py` …), plus `LICENSE`, `NOTICE.md` (pinned commit) and `MANIFEST.json`. |
+| `agents/vendor/hermes/MANIFEST.json` | Pinned commit, the rewrite rules, and per file: upstream sha256, vendored sha256, the rules applied. |
+| `agents/vendor/hermes_compat/` | The shims vendored code imports. Nerva code, reviewed like any other. |
+| `agents/vendor/hermes/SKILLS_CATALOG.json` | Slice 3: every upstream skill folder, classified (installable, carries code, excluded). |
+| `agents/vendor/hermes/optional-mcps/` | Slice 5: the 66 reviewed MCP server manifests, data only, one `MANIFEST.json` row each. |
+| `scripts/hermes_vendor.py` | `status`, `diff`, `pull`, `catalog`, `mcp-catalog`. |
+| `tests/test_hermes_adopt_lane.py` | Behaviour, egress, structure and sync-script tests. |
+
+The first slice (pinned `9c0560f8`) adopts three search providers: **Exa**, **Brave Search
+(free tier)** and **Parallel**, with `plugins/web/_common.py`. Tavily, SearXNG and DuckDuckGo
+are not adopted because Nerva has its own.
+
+## The compat layer
+
+| Hermes import | Compat module | Nerva control |
+|---|---|---|
+| `httpx` | `hermes_compat.httpx` | Owns no client. Each request goes to the `PluginHTTPClient` the adapter bound for the call, so the manifest allowlist, SSRF resolution with IP pinning, the breaker, the egress ledger and the kernel's `plugin.egress` hook apply. With nothing bound it refuses. The first refusal is recorded and repeated for the rest of the call, so a vendored `except Exception` cannot turn it into a retry or a rescue. Each wait is polled, so a worker stops when its caller leaves or the call's deadline passes. A request carrying a credential header is never sent with `follow_redirects`. |
+| `exa_py`, `parallel` (SDKs) | `hermes_compat.sdk` | The real SDKs build their own HTTP clients, so they are never imported. Stand-ins implement the one call each provider makes (`Exa.search`, `Parallel.beta.search`) over the documented REST endpoint, through the compat `httpx`. |
+| `agent.web_search_provider` | `hermes_compat.web_search_provider` | The `WebSearchProvider` base. `get_provider_env` reads a key through `agents.core.env_config` at call time, and only the key of the provider the adapter is running (`provider_scope`): Exa reads `EXA_API_KEY`, Brave `BRAVE_SEARCH_API_KEY`, Parallel `PARALLEL_API_KEY`. Any other name, another provider's key or a read outside a scope reads as unset. |
+| `os` | `hermes_compat.os_env` | `getenv` only, for `PARALLEL_SEARCH_MODE` only, inside Parallel's scope. |
+| `plugins.web.keyless_mcp` | `hermes_compat.keyless_mcp` | Off. Hermes's anonymous keyless tier is never used: a search goes only to a backend the owner configured. |
+| `tools.interrupt`, `tools.web_tools`, `pm` | same names under `hermes_compat` | No interrupt flag (the e-stop acts at egress), the SDK cache slots, and no runtime installs. |
+| plugin `ctx` | `hermes_compat.plugin_ctx` | `register_web_search_provider` wraps the provider in an adapter (`HermesSearchProvider`, a Nerva `SearchProvider`) and calls `register_search_provider`. The adapter sets the egress identity (`websearch`) and the tier from a reviewed table: all three count as paid, Brave too, since a `BRAVE_SEARCH_API_KEY` may be a paid-plan key. It never marks a provider keyless. It runs the synchronous vendored search on its own 4-thread executor, at most 3 at a time, never on the default executor the egress client needs for DNS. A search has 25 s (the tool loop cuts at 30 s) and its worker gives up when the caller leaves. It turns Hermes rows into Nerva rows (`title` / `url` / `snippet`), raises `PolicyBlock` from the recorded refusal and `ProviderFailure` with a reason code otherwise. A logging filter on each vendored logger drops records below WARNING, because upstream logs each query at INFO; a later `dictConfig` does not remove it. |
+
+`agents/core/plugins/web_providers.py` loads the adopted providers after its built-ins
+(`ADOPTED_PROVIDERS`). The hosts (`api.exa.ai`, `api.search.brave.com`, `api.parallel.ai`)
+are on the `websearch` manifest allowlist, the same way the built-ins' hosts are.
+
+## Rewrite rules
+
+The rules live in `REWRITE_RULES` in `scripts/hermes_vendor.py` and are copied into the
+manifest. `status` fails if the two differ. Each rule rewrites one import line in place, so
+line numbers stay the same and upstream diffs stay readable. No replacement matches any
+pattern, so the rewrite is idempotent. All rules but two rewrite an import. The exceptions:
+`exa-integration-tag` changes the caller name the Exa provider sends, and
+`video-registry-export` (G19) turns the video registry's `_registry.export(globals())` into
+`_registry.export(__name__)`.
+
+| Rule | Upstream line | Becomes |
+|---|---|---|
+| `httpx` | `import httpx` | `from agents.vendor.hermes_compat import httpx` Each wait is polled, so a worker stops when its caller leaves or the call's deadline passes. A request carrying a credential header is never sent with `follow_redirects`. |
+| `os-env` | `import os` | `from agents.vendor.hermes_compat import os_env as os` |
+| `web-search-provider` | `from agent.web_search_provider import …` | `from agents.vendor.hermes_compat.web_search_provider import …` |
+| `keyless-mcp` | `from plugins.web.keyless_mcp import …` | `from agents.vendor.hermes_compat.keyless_mcp import …` |
+| `plugins-web` | `from plugins.web.… import …` | `from agents.vendor.hermes.plugins.web.… import …` |
+| `interrupt` | `from tools.interrupt import …` | `from agents.vendor.hermes_compat.interrupt import …` |
+| `web-tools-slots` | `import tools.web_tools as …` | `import agents.vendor.hermes_compat.web_tools as …` |
+| `pm` | `import pm` | `from agents.vendor.hermes_compat import pm` |
+| `exa-sdk` | `from exa_py import …` | `from agents.vendor.hermes_compat.sdk.exa_py import …` |
+| `exa-integration-tag` | `client.headers["x-exa-integration"] = "hermes-agent"` | `… = "nerva"` |
+| `parallel-sdk` | `import parallel` | `from agents.vendor.hermes_compat.sdk import parallel` |
+
+A new rule is a code change to the script and needs a compat module behind it. It is never a
+hand edit to a vendored file.
+
+## Vendoring a file / updating
+
+```bash
+# where things stand: hashes vs manifest, local edits, unlisted files
+python scripts/hermes_vendor.py status
+python scripts/hermes_vendor.py status --upstream ~/src/hermes-agent   # also: still == rewritten upstream?
+
+# what an update would change, per file, with the rewrites applied (review this diff)
+python scripts/hermes_vendor.py diff --upstream ~/src/hermes-agent
+
+# take it (or vendor a new file): rewrites, writes, updates MANIFEST.json
+python scripts/hermes_vendor.py pull --upstream ~/src/hermes-agent plugins/web/exa/provider.py
+```
+
+`pull` reads the clone's commit with `git rev-parse` (or takes `--commit`). It refuses a
+symlink, or a path that resolves outside the clone. It refuses a file with local edits unless
+you pass `--force`. It refuses a file that, after the rewrite, falls outside the
+**allowlist**:
+
+- a `.py` file may import only `SAFE_STDLIB`, the listed compat modules and vendored
+  siblings;
+- `os` is allowed only as `os_env as os`;
+- the only relative import allowed is `from .x import y`;
+- no network, process or import-machinery names, as attributes or strings;
+- any other file must be YAML, JSON, Markdown or text that parses as plain data.
+
+`status` applies the same allowlist and checks `rules_applied` against the bytes.
+`tests/test_hermes_adopt_lane.py` runs it over the whole vendored tree on every CI pass. Its
+output is deterministic: the manifest is written with sorted keys, and pulling the same text
+twice leaves it byte-identical. After a pull:
+
+1. Read the `diff` output. A change that adds an import, a host or a new `ctx.register_*`
+   call needs the compat layer (and possibly the manifest allowlist) to cover it first.
+2. Update `NOTICE.md` if the pinned commit moved.
+3. Run `pytest tests/test_hermes_adopt_lane.py tests/test_h381_no_bare_model_client.py
+   tests/test_websearch.py tests/test_h310_web_parity.py tests/test_plugin_egress.py`.
+
+## What may be adopted
+
+- **Yes:** leaf modules whose Hermes imports are few and map onto an existing Nerva control:
+  search and extract providers, leaf tools such as `todo` and `clarify` (through a future
+  `tools.registry` shim onto the kernel-gated tool server), plugins whose `register(ctx)` uses
+  only `ctx` methods the compat layer offers, and SKILL.md skills (through the skills importer;
+  slice 3, instruction-only skills).
+- **No:** anything that needs a network client, a subprocess, the filesystem or a secret store
+  that is not behind a compat shim mapped onto a Nerva control. Also no modules tangled with
+  `hermes_state`, `hermes_cli.config`, the gateway or the agent loop (the Run lane covers them
+  through the sidecar), and no file that needs editing to work here.
+- **Security-sensitive areas** (approvals, memory writes, execution, delegation, credentials)
+  get adversarial review even when adopted.
+
+## Limits of the first slice
+
+- Only **search** is wired. The vendored files also contain Exa and Parallel `extract`. Their
+  SDK calls (`Exa.get_contents`, `AsyncParallel`) are not in the stand-ins, so they would
+  return an error entry. Nerva's `web_extract` uses its own reader.
+- The SDK stand-ins follow the vendors' documented REST APIs and are tested against a fake
+  transport only. No live call was made.
+- `parallel/provider.py` reads `PARALLEL_SEARCH_MODE` with `os.getenv`. The `os-env` rule
+  points that read at the allowlisted shim, but the line still counts in the AUD-14 raw-read
+  ratchet.
+
+## Model providers (slice 2)
+
+Hermes keeps what it knows about each inference provider in a small `ProviderProfile`
+subclass under `plugins/model-providers/<name>/`: the base URL, the model ids it offers, the
+key names, and the request extras that vendor wants (DeepSeek's `thinking` toggle, GLM's
+effort scale, Fireworks's top-level `reasoning_effort`, DashScope's `preserve_thinking` …).
+Slice 2 (same pin, `9c0560f8`) runs those profiles as they are for the providers Nerva had no
+native support for. Nerva's OpenAI-compatible backend (`OpenRouterBackend`) sends the request.
+
+### Inventory
+
+**Native in Nerva, kept native** (the Hermes profile is not used): `anthropic`, `gemini`,
+`openrouter`, `deepinfra`, `xai`, `nous` (Nerva's Nous vision route), `lmstudio` and local
+`ollama`, `custom` (Nerva's custom endpoints).
+
+**Adopted** (24 provider ids from 19 profile modules). Each depends only on
+`providers/base.py`, the registry and `agent/reasoning_effort.py`, all vendored or covered
+by the compat layer:
+
+| Provider id | Profile module | Key names (first set wins) | What the profile adds to a request |
+|---|---|---|---|
+| `deepseek` | `deepseek` | `DEEPSEEK_API_KEY` | V4: `thinking` on/off + `reasoning_effort` (low…max) |
+| `zai` | `zai` | `GLM_API_KEY`, `ZAI_API_KEY`, `Z_AI_API_KEY` | GLM-4.5+: `thinking` on/off (`clear_thinking: false`); GLM-5.2/5.3: `reasoning_effort` |
+| `kimi-coding` | `kimi-coding` | `KIMI_API_KEY`, `KIMI_CODING_API_KEY` | `reasoning_effort` (low/high/max) or `thinking`; temperature omitted; output cap 32000 |
+| `kimi-coding-cn` | `kimi-coding` | `KIMI_CN_API_KEY` | same, mainland-China host |
+| `fireworks` | `fireworks` | `FIREWORKS_API_KEY` | top-level `reasoning_effort` (`none` turns it off) |
+| `ollama-cloud` | `ollama-cloud` | `OLLAMA_API_KEY` | top-level `reasoning_effort` (`none` turns it off) |
+| `nebius-token-factory` | `nebius-token-factory` | `NEBIUS_API_KEY`, `NEBIUS_TOKEN_FACTORY_API_KEY` | `reasoning_effort` (low/medium/high) for reasoning families |
+| `upstage` | `upstage` | `UPSTAGE_API_KEY` | `reasoning_effort` (low/medium/high) |
+| `ai-gateway` | `ai-gateway` | `AI_GATEWAY_API_KEY` | `reasoning` object passthrough |
+| `commandcode` | `commandcode` | `COMMANDCODE_API_KEY` | DeepSeek ids reuse the `deepseek` profile's controls |
+| `alibaba`, `alibaba-cn`, `alibaba-token-plan`, `alibaba-token-plan-cn` | `alibaba` | `DASHSCOPE_API_KEY` / `ALIBABA_TOKEN_PLAN_*_API_KEY` | `preserve_thinking` / `clear_thinking` for models that replay reasoning |
+| `alibaba-coding-plan`, `alibaba-coding-plan-cn` | `alibaba-coding-plan` | `ALIBABA_CODING_PLAN_*_API_KEY`, then `DASHSCOPE_API_KEY` | same |
+| `nvidia` | `nvidia` | `NVIDIA_API_KEY` | strips `name` from tool messages; output cap 16384 |
+| `huggingface`, `kilocode`, `novita`, `gmi`, `arcee`, `stepfun`, `xiaomi` | same names | `HF_TOKEN`, `KILOCODE_API_KEY`, `NOVITA_API_KEY`, `GMI_API_KEY`, `ARCEEAI_API_KEY`, `STEPFUN_API_KEY`, `XIAOMI_API_KEY` | base URL and model list only |
+
+The table lives in `agents/core/llm/hermes_provider_table.py` (pure data: settings, the
+managed-key list and the bridge read it). `tests/test_hermes_model_providers.py` pins every row
+against the vendored profile.
+
+**Not adopted in this slice:**
+
+| Profile | Why |
+|---|---|
+| `actual` | needs `sys`, `agent.ssl_verify` and `hermes_cli.auth` (a local relay with its own TLS bundle) |
+| `azure-foundry` | no fixed host: the base URL is per resource, typed by the user |
+| `bedrock` | AWS SDK credentials and the Bedrock Converse wire, not OpenAI-compatible HTTP |
+| `minimax`, `minimax-cn`, `minimax-oauth` | Anthropic Messages wire (`/anthropic` base URLs); Nerva's Anthropic backend is pinned to Anthropic's host |
+| `commandcode-anthropic` | Anthropic Messages wire (its chat sibling `commandcode` is adopted) |
+| `meta-ai` | Responses wire (`codex_responses`); Nerva's Responses backend is pinned to OpenAI's host |
+| `qwen-oauth` | OAuth sign-in (`oauth_external`), no API key |
+| `openai-codex` | ChatGPT OAuth sign-in on the Responses wire; Nerva's `openai-responses` route serves OpenAI API keys |
+| `tencent-tokenhub` | the profile has no base URL; the endpoint lives in `hermes_cli/auth.py` |
+| `opencode-zen` | needs `httpx` (account usage) and `hermes_cli.runtime_provider` |
+| `router` | needs `hermes_constants`, `hermes_cli.config`, disk caches and its own catalog fetches |
+| `solstice` | OAuth PKCE plugin and its own transport |
+| `vertex` | Gemini wire through `agent.transports` |
+| `custom` | needs `utils`; Nerva's custom endpoints cover it |
+
+### How a request is built
+
+`agents/core/llm/hermes_profiles.py` loads the vendored modules into the compat registry
+(`hermes_compat.providers`) and wraps each profile in `HermesAdoptedProfile`, a Nerva
+`ProviderProfile` registered in `DEFAULT_REGISTRY` after the built-ins. From the Hermes
+profile: the base URL (fixed; a profile's `*_BASE_URL` override is not read), fallback models,
+`prepare_messages`, `build_extra_body`, `build_api_kwargs_extras`, `get_max_tokens`, the fixed
+temperature. Everything else is Nerva's: the client, streaming, tool calls, retries, cost,
+the kernel, the request headers and the key.
+
+- **Destination.** `adopted_client` is `egress.llm_async_client` (ledger, quota guard, TLS
+  anchor, host protocol, data-handling gate) plus a first request hook that refuses any origin
+  other than the profile's own `https://<host>:443`, and the host if the egress SSRF resolver
+  (`security.ssrf.resolve_and_validate`, run off the event loop) finds any non-public address
+  for it; a DNS failure fails closed as unreachable. A refusal is a ledger row with
+  `allowed=False` and the request never reaches the transport. The resolved address is not
+  pinned for the connection, so a rebinding between the check and the dial is a known limit.
+  `OpenRouterBackend` refuses an adopted profile on another base URL or with a client that
+  lacks that hook, so the router, `construct_backend` and tests all get the pin.
+- **Key checks.** `provider_probe.probe_all` (the HUD's "check keys") probes an adopted
+  provider only when it is the selected one: its key names are shared across hosts
+  (`DASHSCOPE_API_KEY` serves the international and the mainland endpoint; `HF_TOKEN` and
+  Kimi keys have other uses). The probe client takes the same destination pin, and the probe
+  reads every key name of the provider.
+- **Signed packages.** The adopted profiles are not built-ins of the signed provider registry
+  (`install_service.admitted_builtins`): a package the owner signed with an id such as
+  `deepseek` or an alias such as `zai` keeps winning and stays selectable, and no alias can
+  collide with an adopted id.
+- **Choosing one is acknowledged.** Like a custom endpoint or a signed package, choosing an
+  adopted provider's model needs `acknowledge_training` (its data handling is unverified; an
+  audited consent row) and `confirm_expensive` when Nerva has no price for the model
+  (`selection_guards.adopted_data_policy_guard` / `adopted_price_guard`).
+- **Keys.** Only the names in the provider's table row, read through `env_config` at
+  construction. A Kimi Code key (`sk-kimi-…`) is refused on the `kimi-coding` routes with a
+  message: it belongs to `api.kimi.com/coding`, which those routes do not reach. A provider is off until one is set and the owner picks it in
+  `llm.compatible_provider` (the settings select lists the ids). The names are managed
+  (`code_env`), so a skill cannot be granted them, and the support bundle lists them.
+- **Headers.** `User-Agent`, `HTTP-Referer`, `X-Title` (Hermes Agent attribution) and
+  `Accept-Encoding` are dropped. The compat `hermes_user_agent` answers "Nerva" anyway.
+- **Reasoning.** Sent only when the owner turned on `llm.compatible_reasoning_enabled` and chose
+  `llm.reasoning_effort`. Nerva first clamps the choice to the levels the profile sends
+  verbatim for that model (`derived_efforts`, probed from the profile itself, pure): nearest
+  weaker, below the minimum refused. Then the profile shapes the wire, and `check_reasoning`
+  lets through only a restatement: an on/off toggle that matches the choice, or a level no
+  stronger than it ("off" always passes). With no effort chosen, no reasoning field is sent,
+  except DeepSeek's explicit "on" toggle (DeepSeek and CommandCode's DeepSeek ids): the server
+  thinks by default and an omitted toggle then demands `reasoning_content` echoes, so the toggle
+  restates the default. Hermes's own upward roundings (Kimi K3 `medium → high`, `xhigh → max`,
+  GLM-5.2 floor `high`) do not apply: Nerva clamps down or refuses, as for every other provider.
+  - *On/off-only models* (GLM-4.5/4.6/5, whose profile has a toggle and no levels): a bare "on"
+    is full thinking, so `minimal` and `low` are sent as "off", `medium` and up as "on". A model
+    whose profile cannot say "off" refuses `minimal`/`low` instead of thinking.
+  - *Profiles without a model gate* (`fireworks`, `ai-gateway`, `ollama-cloud`): Hermes asks its
+    core catalog whether a model reasons; Nerva has none, so these send an effort only for a model
+    the owner declared in `llm.compatible_effort_declarations` (`{"model": ["low", "high"]}`).
+- **Data policy.** `unknown` for every adopted provider until someone checks the vendor terms.
+
+### Compat and rule additions
+
+| Hermes import | Rule | Becomes |
+|---|---|---|
+| `from providers.base import …` | `providers-base` | the vendored `agents.vendor.hermes.providers.base` |
+| `from providers import …` | `providers-registry` | `hermes_compat.providers` (a dict; the bridge reads it) |
+| `from agent.reasoning_effort import …` / `from agent import reasoning_effort` | `reasoning-effort`, `reasoning-effort-module` | the vendored `agents.vendor.hermes.agent.reasoning_effort` (pure) |
+| `from agent.account_usage import …` | `account-usage` | `hermes_compat.account_usage` (type names only) |
+| `from hermes_cli.{version_info,auth,urllib_security,chat_catalog} import …` | `hermes-cli-leaf` | `hermes_compat.hermes_cli`: user agent "Nerva", empty credential pool, `open_credentialed_url` refused |
+| `import threading` | `threading-locks` | `hermes_compat.locks` (`Lock`, `RLock` only) |
+| `import urllib.request` | `urllib-request` | `hermes_compat.urllib_refused` (an inert `Request`, no opener) |
+
+`urllib.parse` joined `SAFE_STDLIB`, but only as `from urllib.parse import …`: `import
+urllib.parse` binds `urllib`, so it is refused, as is any `import a.b` whose `a` is not
+allowed. `urllib.request` (and `.error`, `.response`) is refused on any name not bound to a
+compat module. `urlopen`, `urlretrieve`, `build_opener`, `install_opener`, `OpenerDirector`,
+and modules reached as attributes (`.os`, `.sys`, `.socket`, `.ssl`, `.http`, `.subprocess`,
+`.system`, `.popen`, `.Thread` …) joined the denied names. `providers/__init__.py` and
+`agent/__init__.py` under the vendor tree are Nerva-written package markers (the upstream ones
+are a plugin loader and a JSON preloader); `status` refuses them if they hold more than a
+docstring. So `ProviderProfile.fetch_models` exists in the vendored base but cannot reach the
+network: it builds an inert request and the compat opener refuses it.
+
+### Adding a model provider
+
+1. Check the profile's imports: `python scripts/hermes_vendor.py diff --upstream <clone>
+   plugins/model-providers/<name>/__init__.py` prints `!!!` for anything outside the allowlist.
+   It must be `api_mode="chat_completions"`, `auth_type="api_key"`, with a fixed HTTPS
+   `base_url`.
+2. `python scripts/hermes_vendor.py pull --upstream <clone> plugins/model-providers/<name>/__init__.py
+   plugins/model-providers/<name>/plugin.yaml`.
+3. Add a row to `ADOPTED_MODEL_PROVIDERS` (id, directory, key names without `*_BASE_URL`,
+   display name if the profile has none) and a case to `CASES` in
+   `tests/test_hermes_model_providers.py` (a representative model and effort).
+4. Document the key in `.env.example` and run `pytest tests/test_hermes_model_providers.py
+   tests/test_hermes_adopt_lane.py tests/test_h381_no_bare_model_client.py`.
+
+### Limits of slice 2
+
+- Model lists are the profiles' static `fallback_models`; no live catalog fetch.
+- `xiaomi` is vision-capable in Hermes; it is not offered for Nerva's vision routes.
+- GLM-5.3 cannot turn thinking off, so `reasoning_effort=none` on it is refused, not ignored.
+- Kimi Code keys are refused rather than routed to `api.kimi.com/coding` (a second pinned id for
+  that host would be the way to add it).
+- Tested against a fake transport only. No live call to any of these providers was made.
+
+## Turning an adopted capability on: the Integrations panel
+
+Before more Hermes code is adopted, using what is already here should not need `.env` and a
+restart. The HUD's **Console → Start → Integrations** panel is the owner's surface for it.
+
+- **One list** (`GET /api/admin/integrations`, `agents/core/integrations_catalog.py`): the
+  three adopted search backends and Tavily, the 24 adopted model providers and the native ones
+  that take a key, and a summary of the skills catalog that opens Skills Import. Each entry:
+  kind, origin (`native` / `hermes`), status (`not_set_up` / `key_set` / `shared` / `active` /
+  `error`),
+  host, host country (only where Nerva's data names one: the `*-cn` profiles), data policy, and
+  whether a price is known.
+- **Keys** (`PUT` / `DELETE /api/admin/integrations/{id}/key`, admin only): stored by
+  `agents/core/integration_keys.py` in the encrypted `SecretStore` (`security/secrets.enc`)
+  under the prefix `integration.key.`, which the secret broker treats as internal (never
+  listed, never injected through a `{{secret:…}}` handle, still redacted). The value is then
+  placed in the hub's process environment under its own name, where a `.env` key lands, so
+  every reader that goes through `env_config.env_str` sees it on its next read: the search
+  adapters' `configured()`, `HermesAdoptedProfile.auth_key`, `provider_probe`. The router
+  holds a built backend, so a key change for Gemini, Anthropic or the selected compatible
+  provider re-runs `HybridRouter.detect()` under the model-switch lock; Tavily's live plugin
+  gets the new key. Nothing needs a restart. Answers carry "set", the source and at most the
+  last four characters (none under 20 characters); a malformed body is answered without
+  FastAPI's detail. The secret store re-reads its file when it changed, so a long-lived
+  broker redacts a key saved after it started.
+- **Whose key.** A PUT writes the entry's own primary name (`keys[0]`), never a sibling's
+  name that happens to be set. A name other entries also read (`DASHSCOPE_API_KEY`, the
+  coding-plan names) is refused with 409 `shared_key` until the owner confirms it is the same
+  key (`same_key`). Each stored key records the entries it was typed for
+  (`integration.owner.<NAME>`); an entry whose key in effect was given for another shows
+  `shared`, is not tested and asks its own consent on "use". DELETE releases only this
+  entry's claim; the key goes when no entry vouches for it.
+- **Consent on save.** Gemini (used as soon as its key is set, data policy "depends on the
+  key") has no "use" step: its key save needs `acknowledge_training` and writes a required
+  `model_training_consent` row first. Anthropic (no-training terms) does not ask.
+- **Adopted search backends answer only when named.** `SearchProvider.explicit_only` (set on
+  the Hermes adapter): `auto` never picks one and no backend is rescued to one, whatever key
+  is set. Naming one in `JARVIS_WEB_BACKEND` is the choice: through the panel's "use" (audited
+  consent) or in `.env` (the owner's own explicit edit, not audited). A key alone, from `.env`
+  or the panel, sends no query there.
+- **Precedence: `.env` wins.** A name the environment sets (under either spelling) is refused
+  with 409 `env_managed` and left alone; when the store still holds an older panel copy of it,
+  DELETE purges that copy (`env_still_set`), so it cannot come back once the `.env` line goes.
+  At start, `apply_stored()` runs after the `.env` load (the lifespan, `PluginManager.build`
+  and the `Orchestrator` constructor, which builds the router first on the `agents/run.py`
+  path) and fills only names left unset, and only managed key names and a known search choice.
+- **Same origin.** Every write also needs `same_origin_write`: a browser-marked cross-site
+  request is refused (403) and a POST must be JSON (415), as for the settings import.
+- **Test** (`POST …/{id}/test`): a model provider is probed with `provider_probe.probe` for that
+  provider only (never `probe_all`; an adopted one through its pinned client), and only when
+  the key in effect was given for it or the owner selected it, and no other profile's base
+  URL claims it (`_key_for_elsewhere`); a search backend runs one query through the
+  `websearch` egress client, that backend only, no rescue.
+- **Use** (`POST …/{id}/use`): a model provider goes through `admin._guard_selection`, the
+  same guards, consent rows and refusals as the settings write. An adopted search backend asks
+  the same two acknowledgements and writes a required `search_backend_consent` audit row before
+  `JARVIS_WEB_BACKEND` is stored (same store, `integration.choice.`). The HUD shows one consent
+  card with the facts and one "I understand, use it" that resends exactly the flags the hub
+  named. `DELETE /api/admin/integrations/search-choice` goes back to `auto`.
+- **Limits.** The `nerva` CLI and other processes see a panel key only after their own start
+  (they read the store at `PluginManager.build`). Child processes that inherit the hub's
+  environment see a panel key exactly as they would see the same key from `.env`; the sandbox
+  child environment drops them (`code_env`'s managed names, now including `TAVILY_API_KEY`;
+  a test pins that every panel key is managed). Host country is recorded for the
+  mainland-China profiles only. A key name several providers read is still one value in the
+  environment: a provider that reads it can use it once chosen (with its own consent).
+
+## Skills (slice 3)
+
+Hermes ships its skills as folders with a `SKILL.md` under `skills/` and `optional-skills/`.
+Slice 3 (same pin, `9c0560f8`) makes that catalog browsable in Nerva and installable through
+Nerva's existing skill import, without a second skills system.
+
+### Design
+
+- **Vendored as data, indexed whole.** `scripts/hermes_vendor.py catalog --upstream <clone>`
+  reads every skill folder of the clone and writes `agents/vendor/hermes/SKILLS_CATALOG.json`
+  (one row a skill: kind, reason, description, category, tags, platforms, declared key names,
+  unmapped frontmatter keys, injection flags, and every file with its sha256). The
+  instruction-only skills are copied byte-identical to their upstream paths
+  (`agents/vendor/hermes/skills/…`, `…/optional-skills/…`) with a `MANIFEST.json` row per file
+  (`upstream_sha256 == vendored_sha256`, `rules_applied: []`). The rewrite rules never touch a
+  catalog file, even one whose code block says `import os`.
+- **Inert until installed.** `agents/vendor/hermes` is not a skill root (`loader.skill_roots()`
+  is the app's `skills/` and the owner's folder), so no vendored skill is discovered, listed to a
+  model or put in a prompt.
+- **Installed through the import path.** The existing `POST /skills/import` takes
+  `{"source": "hermes-catalog", "skill": "<slug>"}` (same user guard, same `DEV_MODE` gate).
+  `agents/core/skills/hermes_catalog.py` re-checks every file of the skill against the index and
+  the manifest (a difference answers 503 `catalog_unavailable` and writes nothing) and hands the
+  bytes to `SkillImporter._save_skill`, the call the pinned Hermes import makes: the SKILL.md
+  validator, the folder check (`exists`, 409), the name-holder check (`name_taken`, 409), the
+  install id and the provenance sidecar. The sidecar says `source: "hermes"` (as the pinned
+  import does), `source_commit`, `source_path`, `content_sha256`, `source_files` and
+  `provenance: "imported from Hermes @9c0560f8"`. Supporting files go through `_save_skill`'s
+  new `extra_files`: each path must be a plain relative data path (`.md`, `.txt`, `.yaml`,
+  `.yml`, `.json`, `LICENSE`; not `SKILL.md`, `manifest.json` or a quarantine/signature record),
+  at most 256 KB, all checked before anything is written, and written before the SKILL.md; an
+  update removes only the files its earlier import recorded. A re-install updates in place.
+- **No more trust than an import.** An installed catalog skill is an external, unsigned,
+  unvouched skill, like any import: `skill_view` serves its text fenced as DATA with a warning,
+  the prompt index and catalog drop a row whose text is injection-flagged, and its
+  `required_env` is declared to the code tool only once the owner vouches for it (keyed
+  signature or approval of these bytes; `tools.declare_skill_environment`). The listing shows a
+  skill's injection flags before install, as the local migration's review card does.
+- **Frontmatter is never rewritten.** The bytes are upstream's, so every Hermes key stays in the
+  file and in `skill_view`. Nerva's loader already maps Hermes's contract (H327: `platforms`,
+  `prerequisites.env_vars`, `required_environment_variables`, `setup.collect_secrets`,
+  `metadata.hermes.*` tags, category, related skills …). The index names the keys Nerva does not
+  read (`unmapped_keys`: `metadata.hermes.homepage` in 17 skills, `metadata.hermes.upstream` in 9,
+  and `when_to_use`, `when_not_to_use`, `category`, `title`, `required_commands`,
+  `metadata.standard`, `metadata.hermes.blueprint`, `metadata.hermes.related_docs` once each)
+  and the key-like names a skill's text mentions without declaring them
+  (`undeclared_env_mentions`, 21 skills). Nerva does not declare those, so no key reaches them.
+- **Owner surface.** `GET /skills/imported` carries a `hermes_catalog` object (counts, one row a
+  skill, `installable`, `code_files` for a skill with code, `installed_commit` once installed).
+  No new route and no OpenAPI change: both bodies were already untyped. The HUD's Skills Import
+  panel shows the catalog with a filter, the keys each skill needs, its flags, and an install
+  button that follows the panel's DEV_MODE check. The CLI has no import verb today, so it has
+  none for the catalog either. *(Superseded by the owner install below.)*
+- **Owner install, repair and CLI (H336, after slice 3).** `POST /api/skills/catalog/install`
+  (admin guard, **no** DEV_MODE: the catalog alone is pinned, byte-verified and
+  instruction-only) takes `{"skill": <slug | category/skill | official/category/skill>,
+  "repair": bool, "force": bool}` and goes through `hermes_catalog.owner_install`: a new skill
+  through the same `install` → `_save_skill` path; a skill a catalog install already wrote, or
+  `repair: true`, through `hermes_catalog.repair`, which compares the folder with the
+  `source_files` sha256 the install recorded, restores deleted files, refuses edited ones
+  (409 `local_edits`) unless `force` (a copy of each goes to
+  `<data root>/skills/catalog-repair-backups/`), answers `intact` when nothing differs, and
+  never touches a folder the catalog did not write (409 `not_from_catalog`, 404
+  `not_installed`). Writes are recorded in the intent log as `skill.install` / `skill.repair`.
+  `POST /skills/import` is unchanged (user guard, DEV_MODE, every source). The HUD panel's
+  catalog buttons call the owner route with the admin token (install, repair, and a forced
+  repair offered after a `local_edits` refusal). `nerva skills catalog [--search] [--category]
+  [--kind] [--limit N]` browses the catalog rows of `GET /skills/imported`, capped at 100 like
+  Hermes's browse and saying when it cut the list; `nerva skills catalog install|repair
+  [--force]` call the owner route. The catalog page is [`docs/SKILLS_CATALOG.md`](../SKILLS_CATALOG.md).
+
+### What is in the catalog (pin `9c0560f8`)
+
+| Kind | Count | What happens |
+|---|---|---|
+| `instruction` | 125 (31 in `skills/`, 94 in `optional-skills/`): 459 files, 3.9 MB | vendored, installable |
+| `upstream_only` | 55 (12 + 43) | listed with their code files; `POST` answers 422 `upstream_only` and writes nothing |
+| `excluded` | 5 (1 + 4) | listed with the reason; `POST` answers 422 `excluded` |
+
+Excluded: `skills/creative/architecture-diagram`, `optional-skills/creative/concept-diagrams` and
+`optional-skills/creative/pretext` carry HTML templates (`files_outside_data_allowlist`: HTML can
+hold script, and the catalog takes plain data only); `optional-skills/mlops/pytorch-fsdp` and
+`optional-skills/mlops/training/unsloth` carry a reference over 256 KB (`file_too_large`). Other
+reasons the builder can give: `symlink`, `nested_skill`, `not_utf8`, `invalid_skill_md`,
+`declared_name_differs_from_folder`, `unsafe_file_path`, `duplicate_slug_of:<path>`,
+`file_not_plain_data`.
+
+**Why skills with code are not installable.** None of Nerva's import paths copies code: the
+pinned and GitHub imports and the local migration write a SKILL.md (the migration quarantines
+it), and the only path that carries code is a marketplace package (`install-zip`, admin: its
+code is scanned with warnings, the signature gate applies when required, and an external
+package's code is not run in-process without a keyed signature or the owner's approval).
+Installing only the SKILL.md of such a skill would give the model instructions that call scripts
+that are not there, so the catalog refuses it and shows which code it carries (`.py` in 41
+skills, `.sh` in 11, `.mjs` in 7, `.js` in 6, and a few `.ts`/`.tsx`, `.ps1` and a `Makefile`).
+Bringing one in is the owner's call, through the marketplace path.
+
+### Refreshing it
+
+```bash
+python scripts/hermes_vendor.py catalog --upstream ~/src/hermes-agent   # classify, re-vendor, prune
+python scripts/hermes_vendor.py status [--upstream ~/src/hermes-agent]  # bytes, index <-> manifest
+pytest tests/test_hermes_skill_catalog.py tests/test_hermes_adopt_lane.py
+```
+
+`catalog` takes the clone's commit (or `--commit`) and moves the manifest's pin with it, as `pull`
+does; update `NOTICE.md` when it moves. A skill that gains a script upstream leaves the vendored
+tree on the next run (its files and rows are pruned). `pull` refuses a catalog path: a skill is
+vendored whole or not at all. `status` reports `CATALOG …` when the index and the manifest
+disagree (a file of an installable skill missing or different, a vendored file that belongs to no
+installable skill, another commit), `DRIFT` for a catalog row with a rewrite, and the usual
+`EDITED`/`EXTRA`/`UNSAFE`. The catalog allowlist admits `.md`, `.txt`, `.yaml`, `.yml`, `.json`
+(parsed as plain data) and `LICENSE` only; no `.py` file may sit under the catalog folders.
+
+### Limits of slice 3
+
+- ~~Installing still needs `DEV_MODE=1`, as every skill import does.~~ Since H336 the owner
+  installs and repairs catalog skills without it (`POST /api/skills/catalog/install`, admin);
+  `POST /skills/import` keeps the gate for every source.
+- The 55 skills that carry code are still refused; a scanned, approved package path for them
+  is open.
+- The network import (`source: "hermes"`) stays on its own pin, the release `v2026.8.31`
+  (`29112bef`), because `hermes_pin_v2.json` must name a release; the catalog is at main
+  `9c0560f8`. `GET /api/skills/taps` reports how far apart they are (`pin_alignment`) and the HUD
+  shows which pin each row installs at (docs/SKILLS_CATALOG.md, "Two official pins"). A catalog
+  install over a folder that import wrote is an update of the same source, in place.
+- G20 (skill taps) did not adopt `tools/skills_hub_sources.py`: its well-known, URL, LobeHub and
+  browse.sh adapters fetch mutable URLs with redirects and a disk memo cache through
+  `skills_hub_models.hub()` and import `utils`, none of which fits the exact-pin import, and
+  wrapping it would need edits to vendored text. Taps are native (`agents/core/skills/taps.py`).
+- Injection flags in the index are computed when the catalog is built; the loader and
+  `skill_view` scan again when a skill loads and is read.
+- About 3.9 MB of upstream Markdown is now in the repository.
+
+## A2A client tools (slice 4, G14 / H562)
+
+Hermes's A2A client tools let an agent call *other* agents. Slice 4 (same pin, `9c0560f8`)
+runs them as they are: `plugins/platforms/a2a/tools.py` (the five tools), `protocol.py` (wire
+format, transcripts, counters) and `security.py` (outbound redaction, inbound framing, audit).
+The inbound adapter (`adapter.py`) and the package's `__init__.py` (gateway registration, setup
+wizard) are not adopted; Nerva's inbound A2A stays `agents/core/a2a.py`. The two package
+`__init__.py` files under `plugins/platforms/` are Nerva-written docstring markers.
+
+### What the owner gets
+
+`PUT /api/a2a/peers/{peer_id}/outbound` (admin) gives an existing peer an address: `url`,
+optional bearer `token` (stored in the secret store as `a2a.peer.<id>`, never in `a2a.json`,
+never echoed; `keep_token` keeps the stored one), `allow_lan`, `timeout` (5–90 s),
+`capabilities` (tags for fan-out) and `tenant`. `DELETE …/outbound` removes it and its token;
+removing the peer removes the token too. `GET /api/a2a/peers` shows the address, never the
+token. With `JARVIS_A2A_ENABLED=1` the coordinator registers the tools
+(`agents/core/a2a_outbound.py`, `register_a2a_tools`):
+
+| Tool | Gate | What it reaches |
+|---|---|---|
+| `a2a_call` | **gated** (approval card per call) | one configured peer, by id, name or its exact configured URL |
+| `a2a_orchestrate` | **gated** | every configured peer with the tag (`*` for all); `all` / `first` / `best` |
+| `a2a_discover` | ungated, read-only | the Agent Card at a configured peer's stored address (`url` = peer id, name or exact configured URL); only the two well-known card paths are requested |
+| `a2a_list` | ungated, read-only, untrusted output | local only: peers, transcripts (`<peer>__<context id>`), counters |
+| `a2a_history` | ungated, read-only, untrusted output | local only: one stored transcript, by its `<peer>__<context id>` name |
+
+### How a call is governed
+
+1. **E-stop** (`estop.is_engaged`): no network tool starts, and the guard reads it again at
+   every request, so a running fan-out stops at its next request.
+2. **Targets** (`A2AOutbound.resolve`): a peer reference is resolved before vendored code runs:
+   `a2a_call`'s `agent` becomes the peer id, `a2a_discover`'s `url` becomes the stored URL, so
+   no text the model writes becomes part of a request path or query. Anything else is refused
+   (`peer_not_configured`, `unknown_peer`, `ambiguous_peer`, `no_peer_with_capability`).
+3. **Approval and kernel**: the two sending tools are gated ToolRPC tools, so the call becomes
+   an approval card (the ToolRPC `tool.rpc` kernel check runs first). Their preflight adds
+   `recipients` (id and URL of every peer, `*` expanded at the card) to the arguments the
+   card shows; the approved run resolves again and is refused (`recipients_changed`) if any
+   peer or URL differs. When the approved card
+   runs, the runtime asks the kernel for kind `a2a.outbound` (payload: tool, peer ids, message
+   length, argument names; never the text). A DENY (halt, budget, loop) refuses it.
+4. **Egress**: the vendored code runs on its own executor (4 threads, 3 calls at a time, 95 s
+   deadline) with three bindings in its context: the compat `httpx` egress call on
+   `PluginHTTPClient.for_plugin("a2a")`, the A2A scope (`a2a_shared`), and the request guard
+   (compat `urllib`). The `a2a` manifest is RESTRICTED with an empty static allowlist; the
+   configured peers' hosts are set as its runtime domains (`plugin_gate.set_dynamic_domains`)
+   before each call, so a removed peer stops being reachable. SSRF resolution with IP
+   pinning, the breaker, the egress ledger and the kernel's `plugin.egress` hook apply.
+5. **The guard** (per request): the origin (scheme, host, port) must be one of the peers *this
+   call* targets (a peer's card cannot route the message elsewhere: `origin_not_allowed`); a
+   LAN host only for a peer marked LAN; `Authorization` must be a handle
+   `Bearer nerva-a2a-peer:<id>` whose peer has that exact origin, and is then replaced by the
+   stored token (`credential_for_another_origin`, `credential_not_a_handle`,
+   `credential_unavailable`); any other credential header is refused; a query or fragment is
+   refused; a GET may only be the peer's `/.well-known/agent-card.json` or `agent.json` under
+   its configured path (`path_not_allowed`). The guard names the peer for the transcript
+   (below). A refusal latches the call like an egress refusal and the tool answers
+   `egress_refused` with the reason code. In a fan-out each peer's task has its own sub-call
+   (`httpx.bind_child`), so a refusal fails that peer only and is listed under `refused`.
+6. **Redaction**: upstream's `redact_outbound` runs on the message; its `redact_for_egress`
+   is Nerva's (stored secret values, then the secret scanner) and fails closed. Upstream
+   also removes e-mail addresses. Every line written to a transcript or the audit file is
+   redacted the same way (a peer echoing a token keeps it off disk), and so is the answer.
+7. **Taint**: every tool where peer text can appear is `untrusted_output`
+   (`a2a_call`, `a2a_orchestrate`, `a2a_discover`, `a2a_history`, `a2a_list`). A reply goes
+   through upstream's `security.wrap_inbound` (injection markers defanged, labelled as a
+   remote agent's text); an error line or a listing is Nerva's own text with peer fragments,
+   so it is defanged (`filter_inbound`) but not framed as a reply. Every answer carries
+   `tainted: True` and `taint_source: "a2a:<peer ids>"` and raises the turn's taint. An
+   approved call runs outside the turn that asked; a later turn reads its reply through
+   `a2a_history`, which the tool loop fences and taints as declared untrusted output.
+8. **Transcripts**: vendored code gets a confined home (`a2a_shared.ConfinedPath`): one plain
+   name per step, no `..`, no leaving the home, append (redacted) or read only, `*.jsonl`
+   globs only. A transcript is named `<peer>__<context id>` with the peer the guard last
+   named, so a peer's `contextId` can never write into another peer's transcript. A file over
+   256 KB rotates to `<name>.old`; at most 200 transcripts are kept (oldest removed). The
+   `<data>/a2a_hermes` folder is part of the memory forget (`data_purge.PURGE_MEMORY_DIRS`).
+
+### LAN peers
+
+A peer on the owner's network is allowed only when the owner sets `allow_lan` **and** names it
+by `localhost`, a loopback or an RFC 1918 IPv4 literal: exactly what the egress client dials in
+its `lan` mode. A DNS name that resolves to the LAN is refused at configuration
+(`lan_peer_needs_private_ip_literal`) and, for a public peer, at every request by the SSRF
+resolver, because a name that resolves privately is the rebinding case. Without `allow_lan` a
+private, loopback, link-local or reserved literal, `localhost` and `.local` names are refused
+(`lan_address_needs_allow_lan`). Link-local and metadata addresses are refused even with it.
+An internet peer must use https; plain http is for a LAN peer only, so a token in clear text
+crosses only the owner's network.
+
+### Compat and rule additions
+
+Rules can now be **path-scoped** (`Rule.paths`; recorded in the manifest as `paths`): these
+three apply only under `plugins/platforms/a2a/`, so `import urllib.request` anywhere else is
+still the refused `urllib_refused`.
+
+| Upstream line | Rule | Becomes |
+|---|---|---|
+| `import urllib.request` / `.error` / `.parse` | `a2a-urllib` | `hermes_compat.urllib`: `request.Request`/`urlopen`, `error.URLError`/`HTTPError`, `parse` (stdlib). `urlopen` asks the bound guard, then sends through the compat `httpx`; nothing bound refuses; no redirects; answers over 1 MB refused |
+| `from gateway.platforms._shared`, `hermes_constants`, `hermes_cli.config`, `agent.proxy_bypass`, `agent.secret_scope`, `agent.redact`, `pathlib import …` | `a2a-shared` | `hermes_compat.a2a_shared`: peers as `a2a_agents` with credential handles, home under `<data>/a2a_hermes`, Nerva redaction, no secret read by name, `Path` as an annotation only |
+| `from concurrent.futures import …` | `a2a-futures` | `hermes_compat.futures`: fan-out on one shared 4-thread pool, each task in a copy of the call's context |
+
+Allowlist changes: `hmac` and `ipaddress` joined `SAFE_STDLIB`. `urllib`, `a2a_shared` and
+`futures`, and the vendored a2a package itself, may be imported only under the a2a package
+(`PATH_SCOPED_COMPAT`, `A2A_PACKAGE`), in every import form (`import x.y as z`, `from x import
+y`, `from x.y import z`). A name starting with `_` is never imported from, or read off, a
+compat module. `urlopen` stays denied except as `<name>.request.urlopen` where `<name>` is
+bound to the governed compat `urllib`. Only in the a2a package, and only for the exact strings
+in `WIRE_DATA_STRINGS` (`"http"`), a dict-display key/value or a compared-with constant is wire
+data and not a denied name; every other denied string stays refused everywhere. The vendored tree's
+`ctx.register_tool` call is upstream's own plugin registration and is never called; the tool
+surface walk skips the vendor tree (Nerva's own registration is walked).
+
+### Limits of slice 4
+
+- Tested against a fake peer at the transport only; no live A2A peer was called.
+- `a2a_discover` and `a2a_call` take a configured peer (id, name or exact URL) only; Hermes
+  also lets them reach any URL. That is deliberately narrower.
+- `a2a_history` takes the `<peer>__<context id>` name `a2a_list` shows, not the bare context id
+  `a2a_call` prints.
+- A gated call's reply reaches the owner through the approved task's result, not back into
+  the turn that asked; the turn sees `approval_required`.
+- Streaming (`SendStreamingMessage`) and push notifications are not used by the client tools
+  and are not adopted. The kernel's `a2a.outbound` is asked only when `JARVIS_ACTION_KERNEL`
+  is on; with it off the approval card and the e-stop are the gates.
+- Three upstream bandit findings in the vendored files (two `try/except/pass`, one B104 on a
+  blocklist literal) are recorded in `.bandit-baseline.json`.
+
+## MCP server catalog (slice 5, G9 / H549)
+
+Hermes ships a directory of reviewed MCP server manifests, `optional-mcps/<name>/manifest.yaml`
+("presence in this directory = approval"). Slice 5 (same pin, `9c0560f8`) adopts it as **data**,
+the way slice 3 adopts the skills catalog; Hermes's reader (`hermes_cli/mcp_catalog.py`) and its
+OAuth manager (`tools/mcp_oauth*.py`) are references only (they import `hermes_constants`,
+`hermes_cli.config`, `subprocess` and the MCP SDK). Owner guide: [`docs/MCP_CATALOG.md`](../MCP_CATALOG.md).
+
+- **Vendoring.** `scripts/hermes_vendor.py mcp-catalog --upstream <clone>` copies each manifest
+  byte-identical to `agents/vendor/hermes/optional-mcps/<name>/manifest.yaml` with a
+  `MANIFEST.json` row (`upstream_sha256 == vendored_sha256`, `rules_applied: []`). A folder that
+  holds anything but `manifest.yaml`, a symlink, a manifest that is not plain YAML, or a clone at
+  another commit than the pin is refused and nothing is written; a manifest gone upstream is
+  pruned. The manifest rows are the index (no separate index file). `optional-mcps/` joined
+  `CATALOG_ROOTS` (byte-identical, never rewritten, `pull` refuses it) as `MCP_CATALOG_ROOT`;
+  `content_problems` admits exactly `optional-mcps/<name>/manifest.yaml` there, so
+  `tests/test_hermes_adopt_lane.py`'s allowlist walk covers it. The skills-index checks use
+  `SKILL_CATALOG_ROOTS` only.
+- **Reading.** `agents/core/mcp/catalog.py` lists every file against its row on each read
+  (`tampered` when the bytes differ or the row is missing), then validates with Nerva's own
+  reader: `manifest_version` 1 (`future_manifest` above), name, `transport` (`stdio` command +
+  args + static env, or `http` URL, or `url: "${NAME}"` typed by the owner from a declared
+  non-secret input), `auth` (`none` / `oauth` / `api_key` with Hermes's `MCP_<NAME>_API_KEY`
+  naming contract; `auth.oauth` pins `client_id`, `client_secret`, `scope`, `redirect_*`),
+  `tools.default_enabled` / `default_excluded`, `suggest`, `post_install`. `install:` (git clone +
+  bootstrap commands), `${INSTALL_DIR}` and a third-party `auth.provider` are `unsupported`:
+  Nerva does not run bootstrap steps. Environment names that steer an interpreter are refused.
+- **Installing** is the admin add path (`agents/core/routers/mcp.py`) with a plan the owner
+  confirms by digest, secrets in the secret store (`mcp.secret.<server>.<NAME>`, internal to the
+  broker), nothing started until connect. Remote servers sign in through
+  `agents/core/mcp/oauth_client.py` (discovery, DCR, PKCE, tokens in the secret store, refresh,
+  revocation), with the hub callback, a loopback relay (`nerva mcp login`) or a pasted address
+  (H550, H692).
+
+### What is in it (pin `9c0560f8`)
+
+66 manifests, all `transport: http` (vendor-hosted): 56 `auth: oauth` (n8n's URL is typed at
+install), 10 `auth: none`. None is `stdio`, so none spawns a process here; the stdio path is
+exercised by install links and tests. All 66 read as `ok`.
+
+### Refreshing it
+
+```bash
+python scripts/hermes_vendor.py mcp-catalog --upstream ~/src/hermes-agent
+python scripts/hermes_vendor.py status [--upstream ~/src/hermes-agent]
+pytest tests/test_mcp_g9_catalog_oauth.py tests/test_hermes_adopt_lane.py tests/test_hermes_skill_catalog.py
+```
+
+### Limits of slice 5
+
+- No probe and tool checklist after install; no `nerva://` scheme registered with the OS (links
+  are HUD addresses); `suggest` is listed, not used for chat suggestions.
+- OAuth: no CIMD client identity, no pinned first-login ports, no token-endpoint user agent.
+- Tested against a fake authorization server and a fake MCP server; no live sign-in was made.
+## Project verification recipes (slice 5, G5 / H023, H405, H406)
+
+Hermes's `hermes verify` detects how a project is built, tested and started and keeps a
+user-editable `.hermes/environment.json`. Slice 5 (same pin, `9c0560f8`) runs the detection
+as it is: `agent/verify/recipes.py` (fan-in 0) and `agent/verify/environment.py` (1 import,
+its sibling). Everything that *runs* or *decides* is Nerva's, in `agents/core/verify/`:
+
+| Upstream file | Lane | Nerva |
+|---|---|---|
+| `agent/verify/recipes.py`, `environment.py` | **Adopt** (byte-for-byte but two import lines) | `verify/project.py` calls `detect_recipe`, `load_or_detect`, `save_manifest` |
+| `agent/verify/runner.py` | **Not adopted**: it spawns the phases and the app itself | `verify/runner.py`: every command is a `terminal_run` through `ToolRPCServer.handle` |
+| `agent/verification_evidence.py` | reference (SQLite, threads, `hermes_constants`) | `verify/evidence.py`: hash-chained rows anchored in the signed intent log |
+| `agent/verification_stop.py`, `turn_stop_gates.py` | reference | `verify/stop.py` + one gate in `agent_runtime.py` |
+| `agent/coding_context.py` | reference (spawns git through `hermes_cli`) | `verify/coding.py`, `verify/workspace.py` |
+| `agent/verify/__init__.py` | not adopted (it imports the runner) | a Nerva docstring marker |
+
+### Compat and rule additions
+
+| Upstream line | Rule (scoped to `agent/verify/`) | Becomes |
+|---|---|---|
+| `from pathlib import Path` | `verify-fs` | `hermes_compat.verify_fs.Path`: no I/O of its own; every look goes to the file system Nerva bound for the call (`bound(fs)`, `verify/project.ConfinedFS`): one project root, walked component by component with `lstat` (any symlink, `..` or secret-looking component is absent), regular single-link files only (no hard link out of the root), reads `O_NOFOLLOW` and capped at 256 KiB, the only write the exact manifest `/verify save` names, opened `O_NOFOLLOW`; nothing bound means an empty, read-only disk |
+| `from agent.verify.… import` | `verify-siblings` | the vendored `agents.vendor.hermes.agent.verify.…` |
+
+`verify_fs` is path-scoped (`PATH_SCOPED_COMPAT`): only files under `agent/verify/` may
+import it. It imports no Nerva module, no `os` and no I/O library; all confinement is Nerva code.
+
+### How a verification run is governed
+
+- **Detect, status, ledger**: reads only (the confined stand-in, the evidence DB).
+- **Save** (`/verify save`): the owner's command; refused in plan mode and under the e-stop;
+  one file, audited as `verify.manifest_saved`.
+- **Run** (`/verify run`, or the model's own `terminal_run`): refused before anything is queued
+  under the e-stop and in plan mode; then each command goes through the tool front door, so the
+  plan-mode floor, the approval card (ask tier), the approval mode and its sealed-receipt rule,
+  smart approvals and standing consents, the target policy plane, `HARDLINE`, the
+  `terminal.exec` contract and the Action Kernel all apply exactly as for any command. A command
+  needing a shell (`|`, `&&`, `>`) is refused, since the governed transports run a plain argv.
+- **Plan mode**: a verification run executes the project's code, so it is not a read: refused.
+  The coding snapshot's fixed `git status`/`log`/`diff --shortstat` reads are reads and run in
+  plan mode; they are not run under the e-stop.
+- **The snapshot's git reads**: run only when the repository's config (local and worktree
+  scopes, `git config --list --show-scope`, no `--includes`) holds allowlisted plain keys only
+  (`verify/workspace.ALLOWED_KEYS`); anything else (filters in any letter case, includes,
+  `extensions.*` but the object format, `gpg.*`, `core.sshCommand`, `core.fsmonitor`, aliases,
+  drivers) withholds the git part and names the key. Second layer: `-c` overrides for hooks,
+  fsmonitor, signatures and `gpg.*` programs, `core.sshCommand`, `protocol.allow=never`,
+  `GIT_NO_LAZY_FETCH=1`, no system/global config; one 6 s deadline per snapshot and a streamed
+  64 KB output cap.
+- **Evidence**: `autonomy_coordinator._rpc_terminal_run` passes each finished, redacted result to
+  `evidence.record_terminal`; `ToolRPCServer.execute` passes each applied `file_write`/
+  `file_delete` to `evidence.mark_edited`. The session is the one whose turn queued the call
+  (`evidence.note_task` at intake).
+
+### Limits of slice 5
+
+- No app boot and readiness poll (Hermes's `start` phase): the governed transports run a
+  bounded command to completion and cannot keep a server alive and tear its process group down.
+  The start command and port are shown, never run.
+- No `pre_verify` plugin hook: Nerva has no hook that returns prompt text (extension events
+  are observe-only; owner hooks are G17, an open owner decision).
+- Edit-format steering: Nerva's only editor is `file_write` (whole file), so the per-family
+  table (patch vs replace) applies only if a patch-style tool is offered (an MCP server's).
+- No `nerva verify` CLI verb in this slice (`agents/cli/nerva.py` is another builder's file this
+  wave); `/verify` works from every chat surface, `nerva chat` included.
+- A call queued before a hub restart has no session, so its result counts for the project only.
+- Tested with fake project trees, a fake tool server, the real `ToolRPCServer` front door and a
+  real local git repository; no project's real test suite was run through a live terminal target.
+
+## Video generation (G19 / H516)
+
+Same pin (`9c0560f8`). Adopted as they are: Hermes's `VideoGenProvider` ABC with its
+`OpenAICompatibleVideoGenProvider` (`agent/video_gen_provider.py`), the registry
+(`agent/video_gen_registry.py`) and three provider plugins with their `plugin.yaml`:
+**FAL** (`plugins/video_gen/fal/`, 21 model families), **xAI Grok Imagine**
+(`plugins/video_gen/xai/`, text-, image- and reference-to-video plus `run_xai_video_edit` /
+`run_xai_video_extend`) and **DeepInfra** (`plugins/video_gen/deepinfra/`, the OpenAI
+`client.videos` flow). `plugins/video_gen/__init__.py` is a Nerva docstring marker.
+
+**Not adopted:** the OpenRouter video plugin (it resolves its key through
+`hermes_cli.runtime_provider`, Hermes's runtime credential resolver, and dials with
+`requests`), and `tools/video_generation_tool.py` (Hermes's tool; Nerva has its own,
+below). Inside the FAL plugin the managed Nous gateway path stays in the file but is never
+reached: `resolve_managed_tool_gateway` answers `None` and `_ManagedFalSyncClient` refuses.
+FAL's SeedVR2 upscale pass is never asked for (`upscale` is not a tool option: its cost is
+not on the card).
+
+### The Nerva side
+
+| Piece | Where | What it does |
+|---|---|---|
+| Provider table, registry load, request check, price | `agents/core/creative/video_providers.py` | `PROVIDERS`: the three reviewed names, each with one egress identity, one key name, its API host and the media hosts it accepts image URLs from. The plugins register through a ctx with one method (`register_video_gen_provider`); any other name is refused. `normalize_request` checks and clamps the arguments the way the plugin will (FAL family duration snap, xAI model by modality and resolution fallback), so the card shows what is sent. `estimate` is the upper-bound cost from **verified list prices only** (`FAL_PRICES` per family, modality, resolution and audio; `XAI_PRICES` per model and resolution; `DEEPINFRA_PRICES` per model; checked 2026-11-10). A family, modality, resolution or model without a verified price is refused (`price_unverified`) before any card; an unknown audio default counts as on, a dropped resolution at the dearest rate, an unset duration at the family's longest. |
+| Runtime | `agents/core/creative/video_generation.py` (`CloudVideoRuntime`) | The reviewed cloud-image governance (`cloud_image_runtime` helpers): availability (heavy features, enforced mediation, kernel on, signer, the consented choice, the key, e-stop off), one `plugin.egress` approval task per video with `amount` = estimate, a configuration generation bound to the key, prompt screening, the proposal binding, a durable attempt marker before the first POST (never replayed), a live check before every request (approval still binds, e-stop, mediation receipt, kernel), publication into the media store. |
+| Tool | `video_generate` (gated, `register_video_tool`) | Preflight validates; intake proposes one card; it never runs in the turn. Plan mode refuses it at the tool front door. |
+| Worker wiring | `wire_cloud_video` (outermost `plugin.egress` guard/handler in `AutonomyCoordinator.build_executor`) | `orch.cloud_videos`. |
+| Manifests | `cloud-video-fal` (`queue.fal.run`, `fal.media`), `cloud-video-xai` (`api.x.ai`, `vidgen.x.ai`), `cloud-video-deepinfra` (`api.deepinfra.com`) | RESTRICTED, https only, shipped **disabled** like the cloud-image manifests: the runtime treats one as on only while the owner has that provider chosen. Exactly one POST per task, to the approved URL (`task.payload["url"]`); a second POST (a retry, FAL's upscale pass) is refused (`second_submit_refused` / `dispatch_changed`). |
+| Owner surface | Integrations panel (`video.*` entries), `/api/media` (`cloud_video`, `kinds.video`) | Key, consent card (`video_provider_consent` audit row), `DELETE /api/admin/integrations/video-choice`. |
+
+**Running the vendored code.** The synchronous `generate` runs on its own executor (2
+threads, 2 jobs at a time) with three bindings in its context: the compat `httpx` call on
+the task's `PluginHTTPClient`, the provider scope (its one key) and the video sink (a
+staging folder and a byte cap). The job has 15 minutes. When the worker cancels the task or
+the deadline passes, `call.abandon()` wakes the poll's sleep (`video_clock.sleep` waits on
+the call's abandonment event) and the next request is refused, so the thread ends. A
+refusal raised by the live check is a `PluginEgressError` (latched by the compat `httpx`: the
+plugin cannot retry past it) and its reason is reported, not the plugin's text.
+
+**The file.** A provider URL is fetched by `video_media.save_url` through `httpx.download`: a
+stream capped at 16 MiB (a declared length over the cap is refused before reading), no
+redirect, no credential to a media host. The bytes are kept only if the media store
+recognizes them as MP4 (including fragmented `iso5`/`iso6`), QuickTime or WebM; they get a Nerva-minted name in `media/generated` and a
+catalog row (kind `video`), served by `/api/artifacts/md-…/blob`. Provider text (errors,
+model names in answers) reaches nobody except as a fixed reason code.
+
+**Image inputs.** Only an image Nerva generated (its 32-hex id; digest bound to the card,
+re-checked before sending, sent as a data URI) or the provider's own media URL. The xAI plugin
+would inline a local file a model names; here `Path` is inert and the read guard refuses.
+
+### Compat and rule additions
+
+All path-scoped to `VIDEO_PATHS` (the two `agent/video_gen_*` files and `plugins/video_gen/`):
+
+| Upstream line | Rule | Becomes |
+|---|---|---|
+| `from agent.video_gen_provider import …` | `video-gen-provider` | the vendored ABC |
+| `from agent import provider_media` | `video-provider-media` | `hermes_compat.video_media`: saves only into the bound sink, downloads through `httpx.download` |
+| `from agent.provider_base / provider_registry / secret_scope / process_bootstrap / file_safety`, `hermes_cli.config / models`, `tools.managed_tool_gateway / tool_backend_helpers / fal_common / xai_http`, `pathlib import …` | `video-shared` | `hermes_compat.video_shared`: base classes, a plain registry whose configured provider is `JARVIS_VIDEO_PROVIDER`, per-provider keys (`FAL_KEY`, `XAI_API_KEY`, `DEEPINFRA_API_KEY`; no `*_BASE_URL`), the FAL queue client (`queue.fal.run` submit, status polls, result), xAI helpers (fixed base, user agent "Nerva", storage off), no managed gateway, no live catalog, inert `Path`, refusing read guard |
+| `from tools import xai_http` | `video-xai-http-module` | `video_shared.xai_http` |
+| `import mimetypes` | `video-mimetypes` | a suffix table |
+| `import time` | `video-clock` | `hermes_compat.video_clock`: `sleep` wakes on cancel/deadline |
+| `import openai` | `video-openai-sdk` | `hermes_compat.video_openai`: `OpenAI(...).videos.create / retrieve / download_content` over the compat `httpx`, job ids checked as plain tokens |
+| `_registry.export(globals())` | `video-registry-export` | `_registry.export(__name__)` (`globals` stays a denied name) |
+
+The global `httpx`, `os-env` and `threading-locks` rules also apply. `hermes_compat.httpx`
+gained `AsyncClient` (the xAI plugin awaits it inside a private loop on its worker thread;
+each call is the same governed `request`) and `download`; `os_env` gained `environ.get` under
+the same allowlist (FAL's `FAL_VIDEO_MODEL` reads as unset, so the approved family is used).
+`COMPAT_PRIVATE_EXPORTS` lists the four underscore names the FAL and DeepInfra plugins import
+(`_ManagedFalSyncClient`, `_extract_http_status`, `_managed_fal_billing_error`,
+`_fetch_deepinfra_models_by_tag`). Acceptance: `tests/test_hermes_video_generation.py`.
+
+### Limits
+
+- Tested against fake providers at the transport only; no live video was generated, so the
+  wire shapes (FAL queue, xAI videos, DeepInfra's OpenAI-compatible videos endpoint, sent as
+  JSON) follow the vendors' documentation and upstream code, unproven live.
+- A provider that serves the finished file from a host outside its manifest (a DeepInfra
+  delivery URL on a CDN, an xAI host other than `vidgen.x.ai`) is refused
+  (`video_host_not_admitted`), not fetched.
+- Videos over 16 MiB are refused (the media store's serving limit).
+- **Cost.** xAI edit is priced on the source video's real length (its completion record) plus
+  xAI's $0.01/s input-video charge; extend adds the same input charge. When a provider reports
+  a cost above the estimate (xAI), the result carries `warning: reported_cost_above_estimate`
+  and the difference is added to the approval policy's spend, so the daily accounting holds
+  the real amount.
+- **DeepInfra delivery.** A delivery URL off `api.deepinfra.com` is never dialled: the same
+  file is fetched from the OpenAI videos content endpoint on the API host (the job id the
+  stand-in recorded), and a `data:video/...;base64` answer is decoded, capped, in place. A
+  URL off any other provider's hosts is refused before any request (`video_host_not_admitted`).
+- The compat registry's `export` binds only `agents.vendor.hermes.agent.video_gen_registry`, and
+  the vendor allowlist refuses any `.export(...)` call except `export(__name__)` in that file.
+- xAI's `await asyncio.sleep(5)` between polls is `video_asyncio.sleep` (rule `video-xai-asyncio`,
+  xAI plugin only), which wakes on cancel or deadline like the other polls.
+- DeepInfra needs a named model (no catalog fetch). Prices: list for three models, a stated
+  refusal for the rest; a provider-reported price is recorded only for xAI.
+- Cancelling a running video stops Nerva's polling; the provider's job itself is not
+  cancelled at the provider.
+
+## The /review prompt engine (G18 / H404)
+
+`agent/review_engine.py` (195 lines, fan-in 2) is vendored for its **text**: the reviewer goal
+(`_REVIEW_GOAL`), the conversation snapshot (`snapshot_recent_messages`, the last 10
+user/assistant messages, each cut at 12 000 characters) and the briefing
+(`build_review_task`). Nerva's `/review` (`agents/core/review_command.py`) calls those two
+functions, adds its own runtime note and the project's diff (collected by the hub with the
+hardened git helper, fenced as data), and spawns the reviewer itself through the one spawn
+gate with `read_only=True`: only tools that declared themselves `read_only`, under the
+kernel's `read_only_floor`. Hermes's reviewer is a full-privilege child; Nerva's is not.
+
+| Upstream line | Rule | Becomes |
+|---|---|---|
+| `from hermes_cli.config import load_config_readonly` | `review-config` | `hermes_compat.review_shared`: an empty config, so no `auxiliary.review` model; the reviewer runs on `autonomy.subagent_model` or the agent's route |
+| `from tools.delegate_tool import delegate_task` | `review-delegate` | `hermes_compat.review_shared.delegate_task`: refuses (an error JSON); upstream's `start_review` is never called by Nerva and raises if anything did |
+
+Both rules and the compat module are path-scoped to `agent/review_engine.py` (`REVIEW_PATH`).
+Acceptance: `tests/test_g18_worktrees_delegation.py` (the reviewer's tools, the read-only floor,
+the brief, the refused dispatch). Nerva also calls `collect_parent_loaded_skills` over the
+conversation's messages, fences every snapshot message and the diff with fence delimiters
+defanged, and replaces upstream's "delivered back into that conversation" sentence in the
+composed brief with Nerva's (delivered once through `/delegations collect`); the vendored bytes
+are unchanged. The reviewer's tools are at most `file_read` / `file_list` / `file_search`,
+confined to the checkout under review; the floor refuses every other tool (web, A2A, session
+search) and every Action Kernel action, an egress GET included.

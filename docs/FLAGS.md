@@ -128,6 +128,20 @@ Reality notes per channel:
   signature verification is deliberately a host seam — front it with the signed-
   webhook path in production (`integrations.py:217`). Outbound Teams/Google Chat
   need an incoming-webhook URL in config.
+- **Matrix end-to-end encryption (H127):** before a send, the hub asks the homeserver
+  whether the room is encrypted (an answer it cannot read counts as encrypted). Nerva has
+  no Olm/Megolm backend (none is pinned), so a send into an encrypted room is **refused**
+  unless the `matrix` config sets `"encrypted_rooms": "allow_plaintext"` (the message then
+  shows as unencrypted to the room) or `"encrypted_rooms": "proxy"` with a loopback
+  `homeserver` URL pointing at a local E2EE proxy such as pantalaimon, which encrypts for
+  this client. Encrypted inbound events are counted and logged, never answered.
+  `"allow_unverified_devices": true` will relax the device check once encryption exists.
+  Device and cross-signing trust: `python -m agents.core.channels.matrix_e2ee
+  verify|verify-master|revoke|devices|status` (encrypted store `<data>/matrix/crypto_store.enc`;
+  without `JARVIS_SECRET_KEY` its key file sits beside it — `crypto_store.enc.key`, 0600 — so
+  the encryption protects a copy of the store, not someone who can read the data dir; set
+  `JARVIS_SECRET_KEY` to keep the key off disk). Only a 404 `M_NOT_FOUND` answer means
+  "not encrypted", re-checked after 30 s; room ids with `/`, `\\` or dot segments are refused.
 - **Governance applies regardless:** inbound senders thread through the pairing
   gate (`agents/core/channels/gateway.py:65`); outbound is rate-limited only if
   you opt in (`webhook_channels.py:66`, unlimited by default). iMessage is
@@ -543,6 +557,118 @@ the default; `JARVIS_MCP_STDIO_ALLOWED_ENV` is the narrow remedy, `=0` the blunt
   the list, so keep it to the minimum. Names are matched case-insensitively; names not
   set on the host are ignored.
 
+### MCP client: resources, prompts, reconnects, sampling, elicitation (H552 · H556 · H553)
+
+Code: `agents/core/mcp/resources.py`, `resilience.py`, `host_requests.py`, wired in
+`agents/core/mcp/client.py`. Tests: `tests/test_mcp_g6_g7_client.py` and
+`tests/test_mcp_g6_g7_review.py`, `tests/test_mcp_g6_g7_round2.py` (a fake stdio server,
+`tests/fixtures/mcp_fake_server.py`, with hostile modes).
+
+**Resources and prompts.** A server that declares `resources` or `prompts` on `initialize`
+gets up to four extra tools next to its own: `mcp__<server>__list_resources`,
+`read_resource` (uri), `list_prompts`, `get_prompt` (name, arguments). They read only, so
+neither trust tier blocks them, and the owner's `tools_allow` / `tools_deny` patterns apply
+to these names too. Their output is third-party text and is treated like a fetched web
+page: format characters (zero-width, bidi, TAG), private-use code points and control
+characters other than newline and tab are removed from every string; a uri, prompt name or
+argument name carrying one is withheld instead (counted as `withheld`), because a cleaned
+copy would name something else; texts are scanned for prompt injection (on a worker thread
+when large; hits are listed as `injection_flags` with a warning), fenced as data, and the
+turn's action origin is raised so a later action in the same turn waits for approval.
+Listings follow `nextCursor` for at most 50 pages; one resource may be at most 50 MiB, over
+stdio (the line limit is 72 MiB; a longer line drops the connection, which the supervisor
+restores) and over Streamable HTTP (`resources/read` and `prompts/get` replies may be up to
+72 MiB there; every other HTTP reply keeps its 4 MiB cap). One result (a resource read,
+a prompt, a tool call) keeps at most 100 blocks and 2 000 000 characters of text in all,
+each block cut head+tail at 100 000; the cut happens before any cleaning or scanning, and
+cleaning, scanning and bounding run on a worker thread for large results. On stdio the
+reader's line limit is 1 MiB while idle (so a server can park at most about 2 MiB in the
+hub; one that writes that much unsolicited output is disconnected), 16 MiB during an
+ordinary call and 72 MiB only during a content read, of which at most 2 run at once
+across all servers. Parsing a maximum-size reply still holds the interpreter for a
+fraction of a second (about 0.15–0.25 s for 60 MB). Binary content (resource blobs, prompt and tool-result images,
+audio and embedded blobs) is saved under `<data>/mcp_cache/<server>/` (mode 0600,
+content-hash name, extension only from a short image/audio allowlist, else `.bin`), the
+model gets the path, `file_read` treats those files as third-party (tainted), and each
+server's cache keeps at most 500 files, 256 MiB and 7 days.
+
+**Connecting and staying connected.** `MCPManager.connect_all()` connects every server at
+once (at most 4 in flight), each with its own 30 s deadline, so a server that hangs costs
+only its own slot. A supervisor started at boot reconnects a server that dropped, with
+jittered exponential backoff (5 retries, 60 s ceiling, ±20 %), a circuit breaker (3
+failures within 60 s pause it for 60 s) and a parked state probed every 300 s; it pings an
+idle stdio server every 60 s and reads each child's stderr into the log so a chatty server
+cannot block on a full pipe (read in chunks, so an over-long line cannot stop the drain).
+Only the owner (connect, `connect_all`, autoconnect) marks a server as wanted; the
+supervisor re-checks that, the e-stop and both kill-switch scopes under the server's lock
+right before it spawns, so a disconnect or removal made mid-pass holds, and removing a
+server closes it in every state. A server that keeps dying right after connecting trips
+the breaker like one that never connects, and parks once its failures since the last
+connection that stayed up for 60 s pass the retry limit. Nothing is connected, reconnected or pinged
+while the e-stop or a kill switch (`mcp` or `mcp:<server>`) is engaged; the kill switch
+also refuses calls (the e-stop does not: it pauses new autonomous work, not chat).
+`GET /api/admin/mcp` shows, per server, `health` (state, attempts, last error, seconds to
+the next retry, circuit state, connect time, sampling/elicitation counters),
+`resource_tools`, `sampling` and `elicitation`, plus the day's `sampling_budget` and the
+open `pending_elicitations`.
+
+- **`JARVIS_MCP_AUTOCONNECT`** — default **off**: saved servers are registered at boot and
+  connected when the owner presses connect. On: every saved server is connected in the
+  background at boot (boot does not wait for any of them).
+
+**Sampling** (a server asks Nerva for a model completion). Per server, `sampling` is
+`off` (default), `ask` (an approval card per request) or `auto`. A request is refused under
+the e-stop or the kill switch (global or `mcp:<server>`), over the day's budget, over the
+per-server rate limit (`max_rpm`, default 10 per minute), or when it carries tools — Nerva
+never runs tools for a server and never declares `sampling.tools`. The answer is one
+stateless completion on the local auxiliary rail, at most `max_tokens_cap` (default and
+ceiling 1024) tokens, within `timeout` (default 30 s). The server's model preferences pick
+a Nerva role, never a model name: `capable` (the auxiliary `review` task's model) when its
+intelligence priority leads, `fast` (the one-shot model) otherwise; the saved `sampling` keys `role` /
+`allowed_roles` pin or narrow it.
+
+- **`JARVIS_MCP_SAMPLING_DAILY_TOKENS`** — default **20000**: the owner's daily allowance
+  (estimated tokens: four ASCII characters or one other character per token, prompt +
+  answer) for all MCP sampling together, on a K3 `BudgetLedger` dimension
+  `mcp_sampling_tokens`. The ledger is in memory: it resets when Nerva restarts and at UTC
+  midnight. `0` refuses every sampling request.
+
+**Elicitation** (a server asks the owner for input). Off unless the owner turns it on for
+the server (`elicitation: true`); at most 3 cards a minute per server and 2 server requests
+per client call. It becomes an approval card (`mcp.elicitation`) with the server's message
+and the fields it asks for, every server-chosen string passed through `card_safe` (no
+newline, ANSI, bidi or zero-width trick); a request whose field names or choices would need
+cleaning is declined without a card. It is never answered automatically.
+`POST /api/admin/mcp/elicitations/{card_id}/answer` with `{"content": {...}}` fills the
+fields (checked against the server's schema) and approves the card; a second answer is
+refused (409); rejecting the card declines; a card nobody answers within 300 s is
+cancelled. While the card is pending the tool loop's deadline is extended (a native
+human-wait window), and no longer; MCP cards together may hold one turn open for at most
+15 minutes, and open cards count against the per-minute limit. If the call ends first, the
+card is withdrawn, the server is told `cancel`, and a late answer gets `too_late` (410);
+an answer given just before the call ended is the one the server receives. Approving without content
+accepts only a request with no required fields. URL-mode requests are declined. There is
+no HUD form for the answer yet: the card shows in the approval inbox, the typed answer
+goes through the route.
+
+**Not done (H556 stays partial):** a schema cache with lazy connect (Hermes's
+`mcp_schema_cache.py` was not adopted: its fingerprint leaves out `cwd`, `env`, headers and
+the trust tier, and it needs two new compat shims), stdio idle/lifetime recycling, a
+parent-death watchdog for the child's process group, an orphan reaper and a cross-process
+discovery lock. Sampling and elicitation work on stdio servers only; a Streamable HTTP
+server is not offered either, because the client does not read server requests there.
+
+### `JARVIS_ACP_PERMISSION_TIMEOUT` · `JARVIS_ACP_MCP_TRUST` (G11, `nerva acp`)
+
+- **`JARVIS_ACP_PERMISSION_TIMEOUT`**: default **300** seconds (`agents/cli/nerva.py`
+  `cmd_acp`; `--permission-timeout` overrides it, 1–86400). It is how long an editor has to answer
+  one permission request. No answer is a **reject** of the approval card.
+- **`JARVIS_ACP_MCP_TRUST`**: default **`read-only`** (`agents/core/routers/acp.py`). It is the
+  trust tier of an MCP server an editor hands over for one session. `full` lets its mutating
+  tools be offered, each still an approval card. An unknown spelling is read-only.
+
+See `docs/ACP_EDITORS.md`.
+
 ### `JARVIS_VLM_PRESET`
 
 **Default: unset** (absolute pixels assumed — the only convention
@@ -945,7 +1071,7 @@ on the router's existing local backend independently of the conversation model:
 |---|---|---|
 | `JARVIS_AUX_SESSION_TITLE_MODEL` | Session title generation | Dedicated `qwen3:7b`; an unavailable model keeps the instant title |
 | `JARVIS_AUX_QUERY_REWRITE_MODEL` | Recall query rewriting | Active local model, then `qwen3:7b` |
-| `JARVIS_AUX_REVIEW_MODEL` | Background/on-demand conversation review | Active local model, then `google/gemma-4-31b-a4b` |
+| `JARVIS_AUX_REVIEW_MODEL` | Background/on-demand conversation review. Unset (or naming the active model) the per-turn review reads the conversation whole; naming another model switches it to the digest replay: the newest 24 turns verbatim over cut one-line digests of the older ones (H443) | Active local model, then `google/gemma-4-31b-a4b` |
 | `JARVIS_AUX_COMPRESSION_MODEL` | Context compression summary | Active local model, then `qwen3:7b` |
 | `JARVIS_AUX_ACQUISITION_CAPABILITY_MODEL` | Governed capability generation | Active local model, then `local` |
 | `JARVIS_AUX_ACQUISITION_DRAFT_MODEL` | Grounded acquisition plan drafting | Active local model, then `local` |
@@ -1212,6 +1338,122 @@ not spilled to a file.
 **Revert:** set it back to `false` and restart; the tool disappears from the allowlist.
 A call already in flight is refused on its next tool call.
 
+### `llm.delegate_task` (+ `autonomy.subagent_timeout_seconds`, the spawn pause)
+
+**Default: OFF** (`agents/core/delegate_tool.py`). Switching it on is read at composition
+(restart to apply); switching it off applies at once.
+
+**OFF:** `register_delegate_tool` is a no-op — `delegate_task` is not on the ToolRPC
+allowlist, so no profile can offer it. Turned off on a running hub, it is no longer
+offered from the next turn, and a call that still reaches it is refused
+(`delegate_task_disabled`). The owner's `/api/subagents` routes work as before.
+
+**ON:** in the owner's own operator turn (the web HUD, the local voice loop) the model
+may hand up to 16 self-contained tasks to isolated sub-agents and wait for their
+answers. The tool calls the same `SubAgentManager` the routes call; it is no second way
+to start a child. Ungated, like `execute_code`: starting a child changes nothing by
+itself, and every tool a child calls is mediated as the parent's would be.
+
+**What a child is.** The same agent as its parent (the model cannot pick another), in a
+session of its own, given a focused brief (the goal, the context the parent wrote, the
+output contract) and none of the parent's history. Its tools are the tools the parent
+turn was offered, minus `delegate_task`, `memory`, `skill_propose`, `clarify`, `speak`,
+`cronjob` and the board tools; the bound is enforced where tools are offered and again
+in `ToolRPCServer.handle`, and it ends with the child. It runs under the parent's
+principal, approval mode and action origin, so a parent turn that read untrusted
+content hands that taint to its child, and a gated call a child makes queues for the
+owner's approval; its card's title starts `[asked by sub-agent <id> of <agent>: <goal>]`
+(the HUD inbox and `nerva approvals list` show it; `/autonomy/approvals` and
+`/autonomy/tasks` also carry `delegated_by`). The request itself — kind, payload, risk
+— is the same one the parent would make, and is gated the same way. A child's loop
+exit, refusals and trajectory are its own and do not land in the delegating request's
+collectors. What a child answers comes back as a tool result declared untrusted:
+the loop fences it as data and marks the parent turn. With `output_schema` the answer
+must be JSON that validates (type, required, enum, properties, items), checked by the
+parent. An answer over 200,000 characters, or JSON nesting deeper than 32 levels, fails
+the check; a valid parsed answer over 24,000 characters is reported as
+`structured_omitted` (the text, cut at 24,000 characters, stays). A schema the check
+cannot apply is refused before any child starts, on the routes too
+(`invalid_output_schema`); any failure while recording a child's outcome fails that
+child (`answer_unchecked`, a fixed message) and gives its slot back.
+
+**Who is refused.** A guest, an inbound channel turn (the owner's too), a job or
+heartbeat, a script run by `execute_code`, a direct `/api/toolrpc/call`, and a sub-agent
+itself: `delegate_task` is an owner-operator tool, whatever `llm.guest_tools`,
+`llm.inbound_actuation` or `llm.internal_actuation` say. It is also refused while the
+agent's approval mode is `off`. **With the Action Kernel on (`JARVIS_ACTION_KERNEL`),
+delegation is off:** the kernel classifies the spawn as a `tool.rpc` effect at the
+irreversible tier and asks the owner, and a delegation has no approval card to wait on,
+so the call is refused with `kernel_requires_approval` (a kernel DENY is
+`kernel_denied`). This is the same as an `execute_code` session cell under the kernel;
+the kernel's classification is not loosened for delegation.
+
+**Limits the model cannot raise.** `autonomy.max_subagents` (how many run at once; a call
+with more tasks than free slots is refused whole), `autonomy.max_subagent_depth` (a child
+cannot delegate at all), `llm.tool_loop_subagent_spawn_cap` (children per turn),
+`autonomy.max_subagent_spawns_per_boot`, the same number again as a ceiling on
+`delegate_task` CALLS per turn (refused ones count), and
+**`autonomy.subagent_timeout_seconds`**
+(default 300, whole seconds 5..3600, no "off"; an unreadable value is 300): a child past
+it is cancelled, its spawn is recorded `failed` with `error: timeout`, and its slot is
+released when its task has ended. A sync tool handler a child had already started runs
+to its end (ToolRPC cannot interrupt a thread); the cancelled child can call nothing
+further, and its slot stays taken (the record shows `threads_running`) until that thread
+returns, so the threads running for children never exceed the cap. There is no per-turn
+money budget to count children against: a child inherits the
+delegating request's usage collector (`turn_usage`, not detached), but a sub-agent's one-shot completion
+is not metered into `cost_tracker`, so it is not in the spend `llm.daily_cost_cap_usd`
+checks (a known gap of every one-shot completion, not closed here). The delegating turn is still bounded by its own agent timeout
+(`agents.agent_timeout_seconds`, 120 s by default; `agents.reasoning_timeout_seconds` on
+the deep route): children that need longer
+than that end with the turn.
+
+**The batch quality gate.** A `delegate_task` call is refused whole, before any child
+starts, when a goal is a placeholder (`todo`, `task 3`), carries an unexpanded template
+marker (a multi-word name in `<...>` or `{...}`), or, with two or more tasks, is under
+ten characters. The owner's own batch (`POST /api/subagents/batch`) is not judged.
+
+**Stopping new sub-agents.** `POST /api/subagents/pause` (admin; optional `reason`) and
+`POST /api/subagents/resume` pause and resume NEW spawns for the routes and the tool
+alike; `GET /api/subagents` reports it under `gate`. The pause is a file in the data
+root (`subagents/SPAWN_PAUSED`), so it holds across a restart; a forget keeps it and a
+backup does not carry it (a restore neither lifts nor reinstates a pause). The emergency stop
+(`/api/ops/estop/engage`) and a halted kill switch stop new spawns the same way, the
+owner's own route spawns included, and a pause or stop state that cannot be read counts
+as stopped. Refusals: `spawn_paused`, `estop_engaged`, `kill_switch_halted`,
+`halt_state_unknown` (HTTP 409 on the routes). None of them touches a sub-agent that is
+already running: stop one with `POST /api/subagents/{id}/stop`.
+
+**Rollback:** set `llm.delegate_task` off (it applies at once); the routes, the pause and the
+timeout stay.
+
+### `autonomy.subagent_worktrees`, `autonomy.subagent_stall_seconds`, `autonomy.worktree_auto_reclaim` (+ `autonomy.worktree_reclaim_max_age_hours`) — G18
+
+**`autonomy.subagent_worktrees`** (default **off**, read at each spawn). On: a delegated child
+spawned while `llm.project_dir` is a git repository inside the file roots works in
+`<repo>/.worktrees/<spawn>` on `sub/<spawn>`, branched from HEAD, and its file tools resolve
+only inside that tree. Creating it is refused (and the spawn fails `worktree_unavailable`,
+the child never runs unisolated) under the emergency stop, in plan mode, for a repository
+whose git config could make git run a program, and — Action Kernel on — without a
+`file.write` grant. An unchanged tree is removed when the child ends (untracked scratch
+archived to `<data>/worktrees/archive`); a changed one is kept and its branch and changed
+files are returned to the parent. Off: children share the project folder as before. The
+read-only `/review` reviewer never gets a tree.
+
+**`autonomy.subagent_stall_seconds`** (default 120, whole seconds 10..3600). A running
+sub-agent with no activity (no tool event, no steer) this long is marked `stalled` on its
+record, its durable row and its transcript. It is a warning: the time limit stops it.
+
+**`autonomy.worktree_auto_reclaim`** (default **off**; forced off in safe mode). On: at most
+once an hour the autonomy tick reclaims the project's worktrees older than
+**`autonomy.worktree_reclaim_max_age_hours`** (default 72, 1..8760) that are clean, pushed,
+unlocked, not on a protected branch and not in use — the same rule as `/worktree prune
+--apply`. It is skipped while the approval mode is `off`, under the emergency stop, and —
+Action Kernel on — without a `file.write` grant.
+
+**Rollback:** turn the switches off; kept trees stay where they are (`/worktree list`), and
+archives stay under `<data>/worktrees/archive`.
+
 ### `llm.execute_code_sessions` (+ `llm.execute_code_image`, `llm.execute_code_max_kernels`, `llm.execute_code_idle_ttl`)
 
 **Execution context (H595):** `llm.execute_code_mode` accepts `project`
@@ -1275,6 +1517,41 @@ newcomer rather than killing a running cell.
 
 **Revert:** set it back to `false` and restart. The next call is a one-shot again, and
 says nothing about continuity — the fallback is named in the result shape, not silent.
+
+## H055/H564/H597 — language servers (code diagnostics after an edit)
+
+Code: `agents/core/codeintel/lsp/`. After `file_write` replaces a file a language server
+serves, the running server's diagnostics are taken before and after the write and only the
+ones the edit introduced are added to the tool result as `lsp_diagnostics` (bounded to 20,
+attributed to the edited lines, injection-scanned; a result carrying any is `tainted`, so the
+loop fences it as data). No server for the file type, or `JARVIS_LSP=0`: the result is
+exactly as before. A server starts only in a **git workspace the owner trusted** for
+language servers (`nerva lsp trust <root>`, `POST /api/codeintel/lsp/trust`, admin; the
+record is `<data root>/codeintel/lsp-trust.json`), and only once the write passed its
+contract and kernel checks. Servers run under `bwrap` with an allowlisted filesystem (system
+dirs, the server's own runtime, the workspace read-only, a private state dir; no network;
+the owner's home and the data root are not mounted). Without a working `bwrap` no server
+starts unless the owner sets `JARVIS_LSP_REQUIRE_SANDBOX=0`. Each server uses its own
+bundled runtime (typescript's own tsserver, a pinned system Python for pyright/pylsp,
+rust-analyzer without build scripts or proc-macros); what a trusted workspace can still
+influence is listed in `agents/core/codeintel/lsp/profiles.py`. Installing a server is an
+`lsp.install` approval card (pinned package, one registry, the hub's proxy and CA bundle);
+nothing is fetched before a person accepts it; `nerva lsp clear <server>` forgets a failed
+install.
+
+- **`JARVIS_LSP`** — default **on** (`codeintel/lsp/manager.py` `FLAG`), but no server
+  starts in a workspace the owner has not trusted. `0` turns the diagnostics and the start
+  route off; status and install requests still answer.
+- **`JARVIS_LSP_DISABLED`** — empty. Comma-separated server ids (`gopls,clangd`) never started.
+- **`JARVIS_LSP_TOOLS_DIR`** — default `<data root>/tools/lsp`: where approved installs land
+  (`npm/`, `venv/<id>/`, `go/bin`) and each server's private state directory.
+- **`JARVIS_LSP_IDLE_SECONDS`** — default **600** (minimum 30): a server unused this long is killed.
+- **`JARVIS_LSP_TIMEOUT_SECONDS`** — default **10** (cap 120): the wait for one diagnostics
+  answer; initialisation may take three times this.
+- **`JARVIS_LSP_MEMORY_MB`** — default **2048** (minimum 256): the data-segment limit of a server process.
+- **`JARVIS_LSP_REQUIRE_SANDBOX`** — default **on**: no server (and no install) runs without
+  `bwrap` isolation (`sandbox_unavailable`, shown in the status). `0` is the owner's explicit
+  opt-out: servers then run with resource limits and a scrubbed environment only.
 
 ## H010 — in-place restore and the hub's self-restart
 
@@ -1502,6 +1779,11 @@ failed query to a second configured provider. **Revert:** unset the variable.
 | `JARVIS_MCP_HTTP_CLIENT` | off (`mcp/http_transport.py:61`) | `MCPServer.connect()` speaks Streamable HTTP for `transport: streamable-http`; the tool-call contract widens via `active_tool_call_contract()` | Outbound HTTP to configured MCP endpoints through the SSRF-pinned `PluginHTTPClient`; bearer headers in memory only | Unset (no restart): `connect()` refuses `transport_disabled:JARVIS_MCP_HTTP_CLIENT`, contract reverts to stdio-only at the next call |
 | `JARVIS_MCP_STDIO_ENV_BASELINE` | **on** (`mcp/client.py` `STDIO_ENV_BASELINE_FLAG`) | stdio MCP subprocesses are handed only `STDIO_ENV_ALLOWLIST` + `JARVIS_MCP_STDIO_ALLOWED_ENV` + the per-server `env` — they are not handed the hub's API keys, tokens or proxies; one INFO line per connect reports the withheld **count** of host values (never names or values) and `GET /api/admin/mcp` reports `env_baseline` per spawning row (`null` for rows that spawn nothing) | **Defence in depth, not a boundary:** the child is same-UID, so a hostile server still reads the hub env from `/proc/<ppid>/environ`; the boundary needs the unshipped command screener + process isolation. A server that relied on inheriting a hub credential stops seeing it — the remedy is `JARVIS_MCP_STDIO_ALLOWED_ENV`, **not** the per-server `env` (in-process only, no config surface) | `JARVIS_MCP_STDIO_ENV_BASELINE=0` + reconnect: full parent env inherited again, for every stdio server at once |
 | `JARVIS_MCP_STDIO_ALLOWED_ENV` | empty (`mcp/client.py` `STDIO_ENV_ALLOW_FLAG`) | Comma-separated host variable **names** stdio MCP servers may keep inheriting on top of the allow-list; a listed name passes through even if it looks like a credential | Host-wide, not per-server: every stdio MCP server sees every listed name — list the minimum. Still narrower than `=0`, which surrenders the whole environment | Remove the name + reconnect: that variable is withheld again |
+| `JARVIS_MCP_AUTOCONNECT` | off (`web.py` lifespan → `MCPManager.start`) | Every saved MCP server is connected in the background at boot, in parallel (4 at a time, 30 s each); the reconnect supervisor runs either way | One more child process per saved stdio server from boot onwards | Unset: servers connect when the owner presses connect |
+| `JARVIS_LSP` (+ `JARVIS_LSP_DISABLED`, `JARVIS_LSP_TOOLS_DIR`, `JARVIS_LSP_IDLE_SECONDS`, `JARVIS_LSP_TIMEOUT_SECONDS`, `JARVIS_LSP_MEMORY_MB`, `JARVIS_LSP_REQUIRE_SANDBOX`) | **on** · none · `<data root>/tools/lsp` · 600 · 10 · 2048 · **on** (`codeintel/lsp/`) | In a git workspace the owner trusted, a `file_write` of a served file type starts (lazily) the language server found in the tools dir or on PATH and returns the diagnostics the edit introduced | A third-party server process per language and workspace, in an allowlist bwrap sandbox (no network, read-only workspace, home and data root absent); without bwrap nothing starts unless `JARVIS_LSP_REQUIRE_SANDBOX=0`; installs only through an `lsp.install` card | `JARVIS_LSP=0` or `nerva lsp untrust <root>`: no server starts, write results are unchanged; `nerva lsp stop` kills running ones |
+| `JARVIS_MCP_SAMPLING_DAILY_TOKENS` | 20000 (`mcp/host_requests.py` `DAILY_TOKENS_ENV`) | The daily allowance for completions MCP servers request (only servers whose `sampling` is `ask` or `auto`) | Local model time spent on a third party's prompts | `0`: every sampling request is refused |
+| `JARVIS_ACP_PERMISSION_TIMEOUT` | 300 s (`cli/nerva.py` `cmd_acp`) | Seconds an editor has to answer one ACP permission request | Longer: a card waits longer in the editor (never runs without an accept) | Shorter: unanswered cards are rejected sooner |
+| `JARVIS_ACP_MCP_TRUST` | `read-only` (`routers/acp.py`) | Trust tier of an editor-supplied, session-only MCP server; `full` offers its mutating tools as approval cards | A third-party server's mutating tools reach the model (still gated) | Unset: only tools the server marks read-only are offered |
 | `JARVIS_VLM_PRESET` | unset (absolute pixels assumed) | Names a pinned open grounder from `vlm.py:VLM_PRESETS` so `LocalVLMLocator` normalizes 0–1000-relative vs absolute-on-resized coordinates before a click | Right preset = clicks land where the model meant; **wrong** preset = mis-clicks (why it is explicit). Still needs `JARVIS_VLM_MODEL` (`vlm_model_unset`); unknown id → `vlm_preset_unknown` | Unset: the locator assumes absolute pixels on the original screenshot |
 | `JARVIS_ROLE_<NAME>_*` (H277: `DEEP_MODEL`, `VISION_PROVIDER/_MODEL/_BASE_URL`, `VIDEO_*`, `APPROVAL_JUDGE_*`) | unset (`llm/model_roles.py`) | Picks a model per job; the `JARVIS_VLM_*` / `JARVIS_DEEP_MODEL` names stay the fallbacks. `APPROVAL_JUDGE_MODEL` turns on an advisory judge that scores queued tool-call approvals off the request path | The judge sees each queued call's arguments: local by default; remote only with `JARVIS_ROLE_APPROVAL_JUDGE_ALLOW_REMOTE=1`, never under strict-local / `cloud_fallback=never` / safe mode / H378 findings, never for local-policy agents or tainted items. It decides nothing | Unset: roles fall back to the legacy names; no judge |
 | `JARVIS_FAULT_INJECT` | off (`observability/fault_injection.py`) | Arms the in-process failure-injection harness (llm_down / db_corrupt / disk_full / clock_skew) for the **test lane** | `inject()` may patch httpx send, `open()`/`sqlite3.connect` under the data root, and `time.time` inside a `with` block; nothing outside `data_root()` is touched | Unset: nothing is patched. `JARVIS_HARDENED=1` refuses unconditionally (`fault_injection_refused:hardened`) |
@@ -1525,6 +1807,7 @@ failed query to a second configured provider. **Revert:** unset the variable.
 | `llm.execute_code_sessions` *(runtime setting)* | on when code enabled · needs `llm.execute_code_image` pinned by digest (`session_kernels.py`) | A resident interpreter per agent×principal×session×data-scope: variables, imports and loaded data persist between `execute_code` calls | A long-lived process per active session. Every cell still re-binds K0 authority, requires a current Action Kernel GRANT after its interpreter lock, gets its own tool-call mailbox and re-reads ESTOP — so state persists and permission does not; every loss of state is named on the next cell | Explicitly set `false` + restart: back to the K1 one-shot, kernels destroyed |
 | `llm.tool_result_thresholds` *(runtime setting)* | `{}` (`tool_result_store.py`) | Per-tool byte ceilings for what a result may put in the context window, as `{tool: bytes}`. Beats the tool's own declaration and the `mcp_` family default; loses to a pinned tool (`file_read` is pinned to no limit, because it is how a spilled result is read back) | Raising one lets that tool fill more of the window; lowering it sends more of its output to disk. Nothing is lost either way — over the ceiling the full result is spilled and the model gets a preview naming the file | Set `{}` (no restart): back to the window-scaled default |
 | `llm.tool_result_context_window` *(runtime setting)* | `0` = auto (`agent_runtime.py`) | The context window the per-result (15 %) and per-turn (30 %) budgets scale against, with 8 KB / 16 KB floors. `0` reads the window of the model the turn is actually running on | Setting it wrong-large lets a turn overfill a small window; wrong-small spills results that would have fit. Distinct from `llm.tool_loop_context_tokens`, which is the *transcript* budget compaction folds against | Set `0` (no restart): the model's own window again |
+| `llm.tool_search` · `llm.tool_search_threshold_pct` · `llm.tool_search_max_tokens` *(runtime settings)* | `auto` · `5` · `4000` (`tool_search.py`, read per turn) | Above the budget `min(5 % of the model window, 4000 tokens)` a turn's MCP tools are sent as three bridge entries (tool search, tool describe, tool call) plus a listing; built-in tools are always sent directly. `on` defers every MCP tool whatever their size (Hermes's own `auto`), `off` none. What search/describe return is fenced as untrusted, so the turn's later actions ask first | None for authority: the bridge reaches only the turn's own offer and a bridged call is unwrapped before every gate, so approval, plan mode, posture and the kernel see the real tool. The model must search before it can use a deferred tool | Set `off` (no restart): every offered tool is sent directly again |
 | `llm.tool_result_retention_seconds` · `llm.tool_result_max_files` *(runtime settings)* | `86400` · `512` (`tool_result_store.py`) | How long a spilled result stays readable under `data/workspace/tool_results/`, and how many are kept. Swept on every write, oldest first, never the file just written | Longer retention keeps more tool output on disk; shorter can retire a spill the model has not read back yet | Set back (no restart): the next write sweeps to the new limits |
 
 Kernel flag alone ≠ smart home. Both kernel + unified flags = facades live.
@@ -1572,14 +1855,12 @@ the shipped 50 (never "off"). Past the ceiling the call is refused with the cap
 notice and the loop ends the turn with that notice, exactly as the generic cap
 already does; this is now on by default for `web_search`.
 
-`llm.tool_loop_subagent_spawn_cap` (default 50, `0` = off) is a **dormant guard**.
-It applies at `SubAgentManager.spawn` only to spawns made inside a bound tool-loop
-turn (refusal `turn_spawn_cap`). No such spawn exists today: the model has no
-spawn tool, and the only callers of `spawn`/`spawn_batch` are the
-`/api/subagents/spawn` and `/batch` HTTP routes, which run outside any tool-loop
-turn and are limited by `autonomy.max_subagent_spawns_per_boot` and the
-concurrency/depth caps instead. The guard starts to matter if a model-facing spawn
-tool is ever added.
+`llm.tool_loop_subagent_spawn_cap` (default 50, `0` = off) applies at
+`SubAgentManager.spawn` to spawns made inside a bound tool-loop turn (refusal
+`turn_spawn_cap`): the children the model starts with `delegate_task` (H400, off unless
+`llm.delegate_task` is on) are counted per turn. The `/api/subagents/spawn` and `/batch`
+HTTP routes run outside any tool-loop turn and are limited by
+`autonomy.max_subagent_spawns_per_boot` and the concurrency/depth caps instead.
 
 ## `JARVIS_PROVIDER_PLUGINS` — signed model-provider installation
 
@@ -1718,3 +1999,114 @@ run `/status` and the rest of the user tier keeps `/help` and `/whoami` only unt
 lists more. The behaviour from before this setting is
 `{"*": {"dm": ["btw", "jobs", "recap", "sessions", "status", "voice"], "group": ["btw", "jobs", "recap", "sessions", "status", "voice"]}}`;
 owner commands stay the owner's either way.
+
+## Variable names — `NERVA_<X>` and `JARVIS_<X>` are one variable (RB-2)
+
+The product is Nerva; `jarvis-hub` is the engine's codename. Every hub variable on this
+page named `JARVIS_<X>` is also read as **`NERVA_<X>`, the preferred spelling**.
+`JARVIS_<X>` is the **deprecated** spelling and keeps working: an existing `.env`, unit
+file or compose file needs no change. This page and the code keep the `JARVIS_` names;
+`.env.example` uses `NERVA_`. Variables that were always `NERVA_*` (`NERVA_WORKSPACE*`,
+`NERVA_PUBLIC_PROFILE`, `NERVA_HUB_URL`, …) have one spelling and are untouched.
+
+- **Same variable, same effect.** `NERVA_HARDENED=1` hardens exactly as
+  `JARVIS_HARDENED=1` does, from the process environment or from any `.env` file; a
+  typo in `NERVA_CHANNEL_OPEN` is refused by the same parse check. The hub folds a
+  `NERVA_<X>` onto `JARVIS_<X>` when it starts and as each `.env` file loads
+  (`agents/core/env_alias.py`), so child processes, sandboxes and
+  `/api/admin/env` see `JARVIS_<X>`, as before.
+- **Layers are unchanged.** Process environment, then the repo `.env`, then the
+  data-home `.env`: the first layer to set a variable wins, whichever spelling each
+  used. A `.env` value never overrides a process value, and the names a `.env` cannot
+  set (`JARVIS_HOME`, `JARVIS_APP_ROOT`, `JARVIS_MEMORY_DIR`, `JARVIS_PROFILE`,
+  `JARVIS_MANAGED_DIR`) cannot be set there as `NERVA_<X>` either. One layer sits above
+  all three: the administrator's managed `.env` (`NERVA_MANAGED_DIR`, default
+  `/etc/nerva`), applied last with override — see "Settings an administrator pins" in
+  `docs/INSTALL.md`.
+- **One rule when both spellings are set in the same place** (the process environment,
+  or one `.env` file) **to different values: the hub refuses to start** and names the
+  variable (never a value). This holds for *every* hub variable — there is none for
+  which one spelling "wins". Equal values are fine; an empty one yields to the other.
+  The coordinator, the `nerva` command and the stdio MCP bridge apply the same rule.
+- **Naming a variable works under either spelling too:** `--token-env NERVA_USER_TOKEN`,
+  `NERVA_MCP_STDIO_ALLOWED_ENV=NERVA_HOME,NERVA_PROFILE` (the child receives
+  `JARVIS_HOME` / `JARVIS_PROFILE`, exactly what the old spelling passes) and a
+  `${NERVA_HA_URL}` / `${env:NERVA_HA_URL}` reference in a setting.
+- **References in a `.env`.** `${NAME}` and `${NAME:-default}` resolve under either
+  spelling of a hub variable, from the environment first and the file's earlier lines
+  second, in every layer, and (as python-dotenv always did) in every value, quoted or
+  not. For a `JARVIS_`-only file the values are exactly what they were, with two
+  exceptions — things python-dotenv did silently that nobody meant, which now stop the
+  start and name the variable (never a value):
+  1. a **path-typed** variable built from a reference that nothing sets
+     (`JARVIS_LOG_FILE=${LOGDIR}/hub.log` with no `LOGDIR` used to become `/hub.log`);
+  2. a hub **credential** (the reviewed list `env_alias.CREDENTIALS`: the admin and user
+     tokens, the audit, secret, token, backup, sync, signing and A2A keys, the bridge
+     and integration tokens, and the `ROLE_*_KEY` / `VLM_KEY` family) whose value contains
+     a reference that nothing sets (part of the token was dropped). If the `${` is part
+     of the secret itself, set that variable in the process environment, or write its
+     dollar sign as `${LITERAL_DOLLAR:-$}`.
+
+  Everything else starts as before: a reference that is **defined** and blank, whatever
+  it builds (`HA_URL=` then `JARVIS_HA_URL=${HA_URL}`, a feature switched off; `PREFIX=`
+  then `JARVIS_LOG_FILE=${PREFIX}/var/log/hub.log`, an optional prefix), an address,
+  allowlist, number or flag built from an unset reference (one warning names the
+  variable), and any reference with a `:-default`. A path **written out** as the filesystem root (`JARVIS_FILE_ROOTS=/`)
+  also starts, with one `[SECURITY]` line naming the variable; `nerva doctor` warns.
+  The path-typed variables, by name: `HOME`, `USER_HOME`, `MEMORY_DIR`, `APP_ROOT`,
+  `FILE_ROOTS`, `TERMINAL_LOCAL_ROOTS`, `MEDIA_ROOTS`, `KEY_DIR`, `EXEC_TEMP_DIR`,
+  `FORGET_ARCHIVE_DIR`, `PLAYWRIGHT_DOWNLOAD_DIR`, `DRIVE_AI_DEST`, `EVAL_STORE`,
+  `LOG_FILE`, `RUNTIME_LOG`, `RUNTIME_STATE`, `SUBAGENT_SPAWN_LOG`, `CA_BUNDLE`,
+  `WASM_PYTHON`, `TERMINAL_SSH_KNOWN_HOSTS`.
+- **Exit status.** One variable under both spellings in the **process environment** is
+  exit status 78 from `serve.py` and from the coordinator: no restart can cure it, so
+  both systemd units and the Windows service are told not to restart on it
+  (`RestartPreventExitStatus=78`, `AppExit 78 Exit`) and the runtime supervisor does not
+  respawn. A refusal that comes from a **`.env` file** (both spellings in the file, or
+  one of the two lines above) is the ordinary failure status: the file may have been
+  caught mid-save, or name a variable this service gets later, so the service manager
+  tries again with its usual backoff. `scripts/token_recover.py` is never refused (it
+  loads what is there and reports what the hub will refuse), and neither are the
+  read-only diagnostics `nerva doctor`, `nerva completion`, `nerva logs`,
+  `nerva config path` and `nerva config env-path`. Every other `nerva` verb — anything
+  that writes a setting, deletes, uploads or talks to a hub with a token — refuses on a
+  conflicting pair, naming the variable.
+- **Seeing it.** `nerva doctor` (`config_sources`) marks each key still supplied under
+  the old spelling, fails on a conflict or a reference to nothing, and warns on a path
+  set to the filesystem root; `/api/admin/env/sources`
+  reports `spelling`, `preferred` and `deprecated` per hub variable.
+
+### Variables a launcher pins — override these as `JARVIS_<X>`
+
+A launcher that sets a variable itself puts it in the process environment under the
+`JARVIS_` spelling. If you then set `NERVA_<X>` for the same variable in that environment
+(`docker run -e`, a compose `environment:` or `env_file:`, a systemd `EnvironmentFile`),
+the hub sees one variable with two values and refuses to start; the message says that
+one of the two may be the launcher's. **Override a pinned variable under the spelling
+the launcher uses, or change the launcher's own line.** How to override depends on the
+launcher: with `docker run`, `-e JARVIS_PORT=…` replaces the image's value; in a systemd
+`EnvironmentFile`, a `JARVIS_PORT=…` line replaces the unit's `Environment=` value; under
+**compose, `environment:` beats `env_file:`, so a line in `.env` changes nothing — edit
+the compose file's own line.**
+
+| Launcher | Pins (always) |
+|---|---|
+| `Dockerfile` | `JARVIS_HOST`, `JARVIS_PORT`, `JARVIS_HOME` |
+| `docker-compose.yml` (hub) | `JARVIS_HOST`, `JARVIS_PORT`, `JARVIS_HOME` |
+| `docker-compose.yml` (runtime) | `JARVIS_HOME` |
+| `docker-compose.quickstart.yml` | `JARVIS_HOST`, `JARVIS_PORT`, `JARVIS_HOME` |
+| `deploy/systemd/jarvis-hub.service` | `JARVIS_HOST`, `JARVIS_PORT`, `JARVIS_SHUTDOWN_TIMEOUT`, `JARVIS_HOME` |
+| `deploy/systemd/jarvis-runtime.service` | `JARVIS_HOME`, `JARVIS_RUNTIME_LOG`, `JARVIS_RUNTIME_STATE` |
+| `deploy/windows/install-service.ps1` | `JARVIS_HOST`, `JARVIS_PORT`, `JARVIS_SHUTDOWN_TIMEOUT`, `JARVIS_HOME` (script parameters) |
+
+`start.sh` and `START.bat` only *default* a variable when it is not set
+(`JARVIS_HUD=v2`, `JARVIS_SIGNAL_LAYER_MODE=replay`), and they look at both spellings
+first, so a `NERVA_HUD` or `NERVA_SIGNAL_LAYER_MODE` of yours is never turned into a
+conflict. Two pins were removed because they only restated the code's default
+(`JARVIS_HUD=v2` in the image and the quickstart compose file, `JARVIS_LOG_LEVEL=info`
+in the hub unit): those two can be set under either spelling everywhere.
+
+Names that stay `JARVIS_`-only because nothing in the hub reads them through the alias:
+`JARVIS_WORLDVIEW` (a comment in the systemd env template; no code reads it) and the
+`$JARVIS_ADMIN_TOKEN` / `$JARVIS_USER_TOKEN` shell variables in the generated API sweep
+snippets (`scripts/gen_api_sweep.py`, text for a human to paste).

@@ -309,6 +309,36 @@ def test_desktop_identity_matches_tauri_config():
     assert f'name = "{un.DESKTOP_BINARY}"' in cargo
 
 
+def test_desktop_uninstall_finds_the_nerva_bundle_and_the_pre_rename_one(app_root, tmp_path):
+    """The shell is installed as "Nerva" now; a bundle built before the rename is "Jarvis Hub".
+    Both must be found — on macOS as apps, on Windows as install dirs and Start Menu links."""
+    assert un.DESKTOP_PRODUCT_NAME == "Nerva"
+    assert "Jarvis Hub" in un.DESKTOP_LEGACY_PRODUCT_NAMES
+    home, sysroot = tmp_path / "home", tmp_path / "sys"
+    apps = [sysroot / "Applications" / f"{name}.app" for name in ("Nerva", "Jarvis Hub")]
+    for app in apps:
+        (app / "Contents").mkdir(parents=True)
+    desktop = {"platform": "darwin", "home": home, "environ": {}, "system_root": sysroot}
+    report = un.run_uninstall(app_root, gui=True, desktop=desktop)
+    assert report["ok"] is True
+    assert set(report["desktop"]["removed"]) == {str(a) for a in apps}
+
+    local, roaming = tmp_path / "Local", tmp_path / "Roaming"
+    menu = roaming / "Microsoft" / "Windows" / "Start Menu" / "Programs"
+    menu.mkdir(parents=True)
+    dirs = [local / "Nerva", local / "Jarvis Hub"]
+    links = [menu / "Nerva.lnk", menu / "Jarvis Hub.lnk"]
+    for d in dirs:
+        d.mkdir(parents=True)
+    for lnk in links:
+        lnk.write_text("x", encoding="utf-8")
+    win = {"platform": "win32", "home": home,
+           "environ": {"LOCALAPPDATA": str(local), "APPDATA": str(roaming)}, "system_root": sysroot}
+    plan = un.plan_uninstall(app_root, gui=True, desktop=win)
+    existing = {r["path"] for r in plan["desktop"] if r["exists"]}
+    assert existing == {str(p) for p in dirs + links}
+
+
 def test_desktop_macos_app_and_caches_removed(app_root, tmp_path):
     home, sysroot = tmp_path / "home", tmp_path / "sys"
     app = sysroot / "Applications" / "Jarvis Hub.app" / "Contents"

@@ -42,24 +42,53 @@ Per-child API settings and honest failure (H681):
 * **batch** — :meth:`SubAgentManager.spawn_batch` runs up to ``BATCH_MAX`` children
   within the free slots and returns one ``subagent_model_rejected`` notice when every
   child failed because the provider does not know the model the setting chose.
+
+The one spawn gate (H400). Every child starts in :meth:`SubAgentManager.spawn` — the
+owner routes, the batch and the model's ``delegate_task`` tool all end there — and a
+spawn is admitted under one lock that also serialises the pause writer:
+
+* **emergency stop / spawn pause** — while the install's ESTOP is engaged, the kill
+  switch is halted, or the owner paused spawning (a sentinel file in the data root, so
+  a pause survives a restart), no new child starts. Running children are left alone:
+  both switches stop *new* work only. A state that cannot be read counts as stopped.
+* **caps** — depth and concurrency are checked and the slot is taken in the same
+  critical section; a child's depth comes from the spawn it is running in (a context
+  variable the manager sets), never from a caller's argument.
+* **per-child timeout** — a child that outruns ``child_timeout`` is cancelled, and its
+  slot is released only when its task has actually ended.
+* **tools** — a child's tool allowlist is the registered tools (or, for a spawn made
+  from a model turn, the tools that turn was offered) minus the tools the blocked
+  capabilities stand for (:func:`child_tool_allowlist`); it is recorded on the spawn
+  and handed to runners that accept a ``tools`` kwarg.
+* **batch quality gate** — a batch with a placeholder goal (``todo``, ``task 3``), an
+  unexpanded template marker, or (two or more tasks) a goal under ten characters is
+  refused before any child starts.
+* **typed answer** — ``answer_schema`` validates the JSON in the child's *text* on the
+  parent's side; the child's text is data, never instructions.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
 import json
 import logging
+import os
 import re
 import threading
 import time
+import uuid
+from collections.abc import Iterable
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
 from .env_config import env_flag
+from .estop import SPAWN_PAUSE_SENTINEL
 from .iteration_budget import IterationBudget
-from .tool_rpc import current_tool_turn
+from .tool_rpc import bind_sync_thread_sink, current_tool_turn, reset_sync_thread_sink
 
 logger = logging.getLogger("jarvis.subagents")
 
@@ -72,6 +101,99 @@ logger = logging.getLogger("jarvis.subagents")
 DELEGATE_BLOCKED_CAPABILITIES = frozenset({
     "delegate", "memory_write", "channel_send", "skill_manage", "clarify",
 })
+
+# H400 — the model-facing tools each blocked capability stands for. The capability list
+# above is what a spawn records; this is what enforces it for a runner that reaches
+# tools by name (the production runner narrows the child's turn to the allowlist with
+# ``job_toolsets.toolset_scope``, which both the offer and ``ToolRPCServer.handle``
+# honour). ``cronjob`` sits under ``delegate``: a child that schedules a job starts work
+# that outlives it. The board tools are withheld by prefix (Hermes strips ``kanban``
+# from every child; ``kanban.runtime.delegate_scope`` withholds them as well).
+BLOCKED_CAPABILITY_TOOLS: dict[str, tuple[str, ...]] = {
+    "delegate": ("delegate_task", "cronjob"),
+    "memory_write": ("memory",),
+    "channel_send": ("speak",),
+    "skill_manage": ("skill_propose",),
+    "clarify": ("clarify", "request_secret"),
+}
+BLOCKED_TOOL_PREFIXES: tuple[str, ...] = ("kanban_",)
+
+
+def blocked_tool_names(blocked: Iterable[str], names: Iterable[str]) -> frozenset:
+    """The tools in *names* a child with the *blocked* capabilities may not call."""
+    denied = {tool for capability in blocked for tool in BLOCKED_CAPABILITY_TOOLS.get(capability, ())}
+    return frozenset(name for name in names
+                     if name in denied or name.startswith(BLOCKED_TOOL_PREFIXES))
+
+
+def child_tool_allowlist(registered: Iterable[str], parent_offer: Optional[Iterable[str]],
+                         blocked: Iterable[str]) -> frozenset:
+    """A child's tools: the registered ones its parent holds, minus the blocked ones.
+
+    *parent_offer* is the set a model turn was offered (``None`` for a spawn made
+    outside any turn: then the registry is the bound, and the child's own tool profile
+    narrows it). The result is a subset of both — a child never gains a tool."""
+    names = frozenset(str(name) for name in registered)
+    if parent_offer is not None:
+        names &= frozenset(str(name) for name in parent_offer)
+    return names - blocked_tool_names(blocked, names)
+
+
+# The spawn the code in flight is running in (set by the manager around a child's run),
+# or None. A child's own spawns are attributed to it from here, so depth is counted from
+# what is running and not from what a caller says about itself.
+_CURRENT_SPAWN: ContextVar[Optional[str]] = ContextVar("nerva_current_spawn", default=None)
+
+
+def current_spawn_id() -> Optional[str]:
+    """The id of the sub-agent spawn this code runs in, or None outside one."""
+    return _CURRENT_SPAWN.get()
+
+
+# H400 review (M2): which delegation the code in flight belongs to — the spawn, the agent
+# that delegated, the model turn it delegated from and the goal it was given — so an
+# approval a child asks for says, on the card, that a sub-agent asked and for what.
+_CURRENT_DELEGATION: ContextVar[Optional[dict]] = ContextVar("nerva_current_delegation", default=None)
+DELEGATION_GOAL_CHARS = 80
+
+
+def current_delegation() -> Optional[dict]:
+    """``{"spawn_id", "parent", "turn", "goal"}`` inside a sub-agent, else None. A copy."""
+    found = _CURRENT_DELEGATION.get()
+    return dict(found) if found else None
+
+
+def card_safe(text: object) -> str:
+    """Text that came from a model (a delegated goal) made safe to sit beside the action an
+    approval card names: no control, format, separator, surrogate or private-use character
+    (ANSI escapes, bidi overrides, zero-width marks), no bracket that could fake the end of
+    the attribution, whitespace collapsed (second H400 review, B-1)."""
+    import unicodedata
+
+    kept = []
+    for char in str(text or ""):
+        if unicodedata.category(char) in {"Cc", "Cf", "Zl", "Zp", "Cs", "Co"}:
+            kept.append(" ")
+        elif char in "[]":
+            kept.append("(" if char == "[" else ")")
+        else:
+            kept.append(char)
+    return " ".join("".join(kept).split())
+
+
+def delegation_label(delegation: Optional[dict]) -> str:
+    """One bounded line for an approval card: who asked, on whose behalf, for what. Every
+    part is passed through :func:`card_safe`; the card puts it AFTER the action's own
+    title, so model-written text can never stand where the action is named."""
+    if not delegation:
+        return ""
+    goal = card_safe(delegation.get("goal"))
+    if len(goal) > DELEGATION_GOAL_CHARS:
+        goal = goal[: DELEGATION_GOAL_CHARS - 1] + "…"
+    spawn = card_safe(delegation.get("spawn_id") or "?")[:80]
+    parent = card_safe(delegation.get("parent") or "?")[:64]
+    return f"asked by sub-agent {spawn} of {parent}: {goal}"
+
 
 # Declared provenance of a steer message. `user` = the guarded HTTP surface
 # (an operator typing at a running worker); `agent` = another agent / the
@@ -89,8 +211,40 @@ SPAWN_LOG_ENV = "JARVIS_SUBAGENT_SPAWN_LOG"
 DEFAULT_TURN_SPAWN_CAP = 50
 TURN_SPAWN_HISTORY = 64
 
-# Spawn lifecycle. `stopping` is the window between stop() and the child task
-# unwinding; every other move is a terminal write.
+# H400 — the per-child wall clock (``autonomy.subagent_timeout_seconds`` in prod). There
+# is no "off": an unreadable value is the shipped one and every value is clamped.
+DEFAULT_CHILD_TIMEOUT_SECONDS = 300.0
+CHILD_TIMEOUT_MIN_SECONDS = 5.0
+CHILD_TIMEOUT_MAX_SECONDS = 3600.0
+# How long a cancelled child is waited for before its caller is answered. A child that
+# has not ended by then keeps its slot until it does (`stopping`, never a freed slot).
+UNWIND_GRACE_SECONDS = 5.0
+
+# H400 — the spawn pause: a sentinel file, so a pause outlives a restart. Its body is
+# optional JSON; a file that cannot be read still pauses.
+PAUSE_SENTINEL = SPAWN_PAUSE_SENTINEL
+PAUSE_REASON_MAX = 200
+# Why a spawn is refused when new spawns are stopped (as opposed to a cap being full).
+HALT_REASONS = frozenset({"estop_engaged", "kill_switch_halted", "halt_state_unknown", "spawn_paused"})
+
+# H400 — the batch quality gate (Hermes ``_validate_batch_tasks``).
+_PLACEHOLDER_GOAL = re.compile(r"(todo|task\s*\d+)", re.IGNORECASE)
+_TEMPLATE_MARKER = re.compile(
+    r"<[A-Za-z][A-Za-z0-9]*(?:[ _-][A-Za-z0-9]+)+>|\{[A-Za-z][A-Za-z0-9]*(?:[ _-][A-Za-z0-9]+)+\}")
+MIN_BATCH_GOAL_CHARS = 10
+
+# H400 (B1) — what a record says when its outcome could not be recorded: fixed text,
+# never the child's.
+ANSWER_UNCHECKED = {"error": "answer_unchecked",
+                    "detail": "the sub-agent's answer could not be checked and was discarded"}
+
+# H400 — a typed answer: the schema a child's JSON answer must satisfy, bounded.
+ANSWER_SCHEMA_MAX_BYTES = 8192
+ANSWER_SCHEMA_MAX_DEPTH = 8
+CONTEXT_MAX_CHARS = 8000
+
+# Spawn lifecycle. `stopping` is the window between stop() (or a timeout) and the child
+# task unwinding; every other move is a terminal write.
 SPAWN_TRANSITIONS: dict[str, frozenset] = {
     "running": frozenset({"done", "failed", "stopping", "stopped"}),
     "stopping": frozenset({"stopped", "failed", "done"}),
@@ -117,7 +271,8 @@ SUBAGENT_MODEL_SETTING = "autonomy.subagent_model"
 SUBAGENT_PROVIDER_SETTING = "autonomy.subagent_provider"
 BATCH_MAX = 16
 DETAIL_MAX = 500
-_BATCH_ITEM_KEYS = frozenset({"task", "agent", "output_schema", "model", "provider", "overrides"})
+_BATCH_ITEM_KEYS = frozenset({"task", "agent", "output_schema", "model", "provider", "overrides",
+                              "context", "answer_schema"})
 # The row's rule for a provider's own words: a model phrase, then the failure.
 _MODEL_MISSING_PHRASE = re.compile(r"model.*(not found|does not exist|unknown)", re.IGNORECASE)
 
@@ -276,44 +431,278 @@ class SteerChannel:
         return self._q.qsize()
 
 
+#: H400 — bounds on checking a child's answer (B1): a check can never raise, never
+#: recurse without bound and never report without bound.
+VALIDATE_MAX_DEPTH = 32
+VALIDATE_MAX_VIOLATIONS = 50
+SCHEMA_UNUSABLE = "$: the output schema could not be applied"
+
+
+def _shown(value: Any, limit: int = 80) -> str:
+    """A bounded ``repr`` for a violation line."""
+    try:
+        text = repr(value)
+    except Exception:  # noqa: BLE001 — a repr that fails is not worth failing for
+        text = f"<{type(value).__name__}>"
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
 def validate_output(value: Any, schema: Any, path: str = "$") -> list[str]:
     """Validate *value* against a minimal schema: ``type`` / ``required`` / ``enum``
     (plus nested ``properties`` and ``items``). Returns a list of violations —
     empty means valid. Unknown keywords are ignored; a non-dict schema is a
-    single violation rather than an exception."""
-    if not isinstance(schema, dict):
-        return [f"{path}: schema must be an object"]
+    single violation rather than an exception.
+
+    H400 (B1): it never raises, whatever JSON the schema and the value are — a
+    ``required`` member that is not a property name, an unhashable one, a schema nested
+    past ``VALIDATE_MAX_DEPTH``, a value too deep to compare — each is a violation, and
+    at most ``VALIDATE_MAX_VIOLATIONS`` are reported."""
     out: list[str] = []
+    try:
+        _validate(value, schema, path, out, 0)
+    except Exception:  # noqa: BLE001 — RecursionError, a comparison that fails, …
+        logger.warning("an output schema could not be applied", exc_info=True)
+        return [SCHEMA_UNUSABLE]
+    return out[:VALIDATE_MAX_VIOLATIONS]
+
+
+def _validate(value: Any, schema: Any, path: str, out: list, depth: int) -> None:
+    if len(out) >= VALIDATE_MAX_VIOLATIONS:
+        return
+    if depth > VALIDATE_MAX_DEPTH:
+        out.append(f"{path}: the schema nests deeper than {VALIDATE_MAX_DEPTH} levels")
+        return
+    if not isinstance(schema, dict):
+        out.append(f"{path}: schema must be an object")
+        return
     expected = schema.get("type")
     if expected is not None:
         types = expected if isinstance(expected, list) else [expected]
-        checks = [_TYPE_CHECKS.get(str(t)) for t in types]
-        if any(c is None for c in checks):
-            out.append(f"{path}: unknown type {expected!r}")
+        checks = [_TYPE_CHECKS.get(t) if isinstance(t, str) else None for t in types]
+        if not checks or any(c is None for c in checks):
+            out.append(f"{path}: unknown type {_shown(expected)}")
         elif not any(c(value) for c in checks if c is not None):
-            out.append(f"{path}: expected type {expected!r}, got {type(value).__name__}")
-            return out
+            out.append(f"{path}: expected type {_shown(expected)}, got {type(value).__name__}")
+            return
     enum = schema.get("enum")
-    if isinstance(enum, list) and value not in enum:
-        out.append(f"{path}: value {value!r} not in enum {enum!r}")
+    if "enum" in schema:
+        if not isinstance(enum, list):
+            out.append(f"{path}: enum must be a list")
+        elif value not in enum:
+            out.append(f"{path}: value {_shown(value)} not in enum {_shown(enum)}")
     required = schema.get("required")
-    if isinstance(required, list):
-        if isinstance(value, dict):
+    if required is not None:
+        if not isinstance(required, list) or any(not isinstance(key, str) for key in required):
+            out.append(f"{path}: required must be a list of property names")
+        elif isinstance(value, dict):
             for key in required:
                 if key not in value:
-                    out.append(f"{path}: missing required property {key!r}")
+                    out.append(f"{path}: missing required property {_shown(key)}")
         else:
             out.append(f"{path}: required properties on non-object")
     props = schema.get("properties")
     if isinstance(props, dict) and isinstance(value, dict):
         for key, sub in props.items():
-            if key in value:
-                out.extend(validate_output(value[key], sub, f"{path}.{key}"))
+            if isinstance(key, str) and key in value:
+                _validate(value[key], sub, f"{path}.{key}", out, depth + 1)
     items = schema.get("items")
     if isinstance(items, dict) and isinstance(value, list):
         for i, item in enumerate(value):
-            out.extend(validate_output(item, items, f"{path}[{i}]"))
-    return out
+            if len(out) >= VALIDATE_MAX_VIOLATIONS:
+                return
+            _validate(item, items, f"{path}[{i}]", out, depth + 1)
+
+
+def schema_problem(schema: Any, _depth: int = 0) -> Optional[str]:
+    """Why *schema* cannot be used as an output schema, or None. Never raises."""
+    try:
+        return _schema_problem(schema, _depth)
+    except Exception:  # noqa: BLE001 — RecursionError on a hostile shape, …
+        return "the schema could not be read"
+
+
+def _schema_problem(schema: Any, _depth: int = 0) -> Optional[str]:
+    """Why *schema* cannot be used as an ``answer_schema``, or None. Checked before a
+    child is spent on: an object of bounded size and depth whose ``type`` names are
+    ones :func:`validate_output` knows and whose ``required`` / ``enum`` /
+    ``properties`` / ``items`` have the shapes it reads."""
+    if not isinstance(schema, dict):
+        return "a schema is a JSON object"
+    if _depth == 0:
+        try:
+            size = len(json.dumps(schema, allow_nan=False))
+        except (TypeError, ValueError):
+            return "a schema is plain JSON"
+        if size > ANSWER_SCHEMA_MAX_BYTES:
+            return f"a schema is at most {ANSWER_SCHEMA_MAX_BYTES} bytes"
+    if _depth > ANSWER_SCHEMA_MAX_DEPTH:
+        return f"a schema nests at most {ANSWER_SCHEMA_MAX_DEPTH} levels"
+    expected = schema.get("type")
+    if expected is not None:
+        types = expected if isinstance(expected, list) else [expected]
+        if not types or any(not isinstance(t, str) or t not in _TYPE_CHECKS for t in types):
+            return f"unknown type {expected!r}"
+    required = schema.get("required")
+    if required is not None and (not isinstance(required, list)
+                                 or any(not isinstance(key, str) for key in required)):
+        return "required is a list of property names"
+    if "enum" in schema and not isinstance(schema["enum"], list):
+        return "enum is a list"
+    props = schema.get("properties")
+    if props is not None:
+        if not isinstance(props, dict):
+            return "properties is an object"
+        for sub in props.values():
+            problem = _schema_problem(sub, _depth + 1)
+            if problem:
+                return problem
+    if "items" in schema:
+        return _schema_problem(schema["items"], _depth + 1)
+    return None
+
+
+#: H400 (B1): the longest answer whose JSON is looked for, and how deep that JSON may nest.
+ANSWER_JSON_MAX_CHARS = 200_000
+ANSWER_JSON_MAX_DEPTH = 32
+
+
+def json_depth_exceeds(value: Any, limit: int) -> bool:
+    """Whether *value* nests containers deeper than *limit* (iterative: never recurses)."""
+    stack = [(value, 1)]
+    while stack:
+        item, depth = stack.pop()
+        if isinstance(item, (dict, list)):
+            if depth > limit:
+                return True
+            children = item.values() if isinstance(item, dict) else item
+            stack.extend((child, depth + 1) for child in children)
+    return False
+
+
+def extract_json_candidate(text: Any) -> tuple[bool, Any]:
+    """``(found, value)``: the JSON a child answered with. The whole text, the body of a
+    leading code fence, or the outermost ``{...}`` / ``[...]`` span is tried in turn.
+
+    H400 (B1): it never raises. An answer over ``ANSWER_JSON_MAX_CHARS`` is not parsed,
+    a parse that recurses too deep is no JSON, and a value nesting deeper than
+    ``ANSWER_JSON_MAX_DEPTH`` is not returned (the caller checks, renders and logs it,
+    and each of those walks it)."""
+    if not isinstance(text, str) or len(text) > ANSWER_JSON_MAX_CHARS:
+        return False, None
+    body = text.strip()
+    fence = re.match(r"```[A-Za-z0-9_-]*[ \t]*\r?\n(.*?)\r?\n?```", body, re.DOTALL)
+    candidates = [body] + ([fence.group(1).strip()] if fence else [])
+    for opener, closer in (("{", "}"), ("[", "]")):
+        start, end = body.find(opener), body.rfind(closer)
+        if 0 <= start < end:
+            candidates.append(body[start:end + 1])
+    for candidate in candidates:
+        try:
+            value = json.loads(candidate)
+        except (TypeError, ValueError, RecursionError):
+            continue
+        if json_depth_exceeds(value, ANSWER_JSON_MAX_DEPTH):
+            return False, None
+        return True, value
+    return False, None
+
+
+def goal_problem(goal: str, *, batch_size: int) -> Optional[str]:
+    """The batch quality gate for one goal (Hermes ``_validate_batch_tasks``), or None.
+
+    A placeholder (``todo``, ``task 3``), an unexpanded template marker (a multi-word
+    name in ``<...>`` or ``{...}``; ``Vec<T>``, ``<div>`` and ``{"k": 1}`` are not one),
+    or, in a batch of two or more, a goal under ten characters. Duplicate goals are
+    allowed on purpose (best-of-N)."""
+    normalized = " ".join(str(goal).split())
+    shown = normalized[:60]
+    if _PLACEHOLDER_GOAL.fullmatch(normalized):
+        return (f"placeholder goal ('{shown}'): replace it with a specific, self-contained "
+                "description of what the sub-agent should accomplish")
+    marker = _TEMPLATE_MARKER.search(normalized)
+    if marker:
+        return (f"unexpanded template marker ('{marker.group(0)[:60]}'): substitute the real "
+                "value, a sub-agent cannot resolve placeholders")
+    if batch_size >= 2 and len(normalized) < MIN_BATCH_GOAL_CHARS:
+        return (f"goal too short ('{shown}'): write a specific, self-contained goal of at "
+                f"least {MIN_BATCH_GOAL_CHARS} characters")
+    return None
+
+
+def build_child_prompt(task: str, context: Optional[str] = None,
+                       answer_schema: Optional[dict] = None) -> str:
+    """The focused brief a delegated child is given instead of its parent's history."""
+    parts = [
+        "You are a sub-agent working on one delegated task for another agent. You cannot "
+        "see its conversation: everything you are given is below.",
+        "Work only on this task with the tools you are offered. You cannot ask the user a "
+        "question, write long-term memory, propose skills, send messages, use the board or "
+        "delegate further. Your whole final reply is handed back to the agent that "
+        "delegated the task, as data: report what you did and what you found, concisely.",
+        f"TASK:\n{task}",
+    ]
+    if context and context.strip():
+        parts.append(f"CONTEXT:\n{context.strip()}")
+    if answer_schema is not None:
+        parts.append(
+            "OUTPUT CONTRACT (machine-validated):\nYour final reply must be a single JSON value "
+            "that validates against this schema. No prose before or after it; a ```json code "
+            "fence is acceptable.\n" + json.dumps(answer_schema, indent=2, sort_keys=True))
+    return "\n\n".join(parts)
+
+
+# ── the spawn pause (H400): one sentinel file is the truth ───────────────────
+
+def default_pause_path() -> Path:
+    from .paths import data_path
+
+    return data_path("subagents", PAUSE_SENTINEL)
+
+
+def read_pause(path: Path) -> Optional[dict]:
+    """``{"reason", "paused_at", "by"}`` when spawning is paused, else None. Blocking.
+
+    Fail safe: a sentinel that cannot be stat'ed or read still pauses (all fields None)."""
+    try:
+        if not path.exists():
+            return None
+    except OSError:
+        return {"reason": None, "paused_at": None, "by": None}
+    state = {"reason": None, "paused_at": None, "by": None}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            for key in state:
+                value = raw.get(key)
+                state[key] = value if isinstance(value, (str, int, float)) and value != "" else None
+    except (OSError, ValueError):
+        pass
+    return state
+
+
+def write_pause(path: Path, paused: bool, *, reason: str = "", actor: str = "") -> None:
+    """Create or remove the sentinel. Blocking; raises ``OSError`` when it could not."""
+    if not paused:
+        with contextlib.suppress(FileNotFoundError):
+            path.unlink()
+        return
+    body = json.dumps({"reason": str(reason or "")[:PAUSE_REASON_MAX] or None,
+                       "paused_at": time.time(), "by": str(actor or "")[:80] or None})
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_text(body + "\n", encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        with contextlib.suppress(OSError):      # already moved into place, or never written
+            tmp.unlink()
+
+
+def _estop_halt() -> Optional[str]:
+    """The default halt probe: the install's emergency stop. Blocking (one stat)."""
+    from . import estop
+
+    return "estop_engaged" if estop.is_engaged() else None
 
 
 def _default_cost_probe() -> dict:
@@ -376,6 +765,162 @@ def _compact_for_log(rec: dict, limit: int = 2000) -> dict:
     return out
 
 
+# G18 (H404) — the only tools a read-only reviewer may be given: reads of files in the
+# folder it reviews. Everything networked (web, A2A, MCP), and every search over the
+# owner's sessions or memory, is out: the reviewer reads private code and untrusted text,
+# so it must have no channel that could carry either out.
+REVIEWER_TOOLS = frozenset({"file_read", "file_list", "file_search"})
+
+# ── G18 (H401): live transcripts, tool trace, timeout dumps ─────────────────────
+
+#: How often a running child's durable row is touched, and how long a child may go
+#: without any activity (a tool event, a steer) before it is marked stalled.
+HEARTBEAT_SECONDS = 10.0
+DEFAULT_STALL_SECONDS = 120.0
+STALL_MIN_SECONDS = 10.0
+STALL_MAX_SECONDS = 3600.0
+#: A transcript's bounds: events kept on disk, bytes on disk, events kept for a dump.
+TRANSCRIPT_MAX_EVENTS = 2000
+TRANSCRIPT_MAX_BYTES = 2_000_000
+TRANSCRIPT_RECENT = 40
+TRANSCRIPT_TEXT_CHARS = 2000
+DUMP_STACK_FRAMES = 25
+#: Transcripts and dumps kept on disk (the newest; pruned at each start).
+STATE_FILES_KEPT = 500
+
+_TRACE: ContextVar[Optional["Transcript"]] = ContextVar("nerva_subagent_trace", default=None)
+
+
+class Transcript:
+    """One child's live transcript: an append-only JSONL file the owner can tail.
+
+    What goes in is bounded and never a tool's arguments or result: the start (goal,
+    agent, tool count, worktree), the tool loop's own events for this child (tool name,
+    status, call id, sizes and timings as ``observability.tool_events`` already bounds
+    them — the ``tool_trace``), steer messages, a stall, and the end (status, error,
+    an output preview). Past :data:`TRANSCRIPT_MAX_EVENTS` events or
+    :data:`TRANSCRIPT_MAX_BYTES` bytes one ``truncated`` marker is written and the rest
+    is dropped. Writes never raise into the child."""
+
+    def __init__(self, path: Optional[Path], on_activity: Optional[Callable[[float], None]] = None) -> None:
+        self.path = Path(path) if path is not None else None
+        self._lock = threading.Lock()
+        self._count = 0
+        self._bytes = 0
+        self._truncated = False
+        self.recent: list[dict] = []
+        self.tool_calls = 0
+        self._on_activity = on_activity
+
+    def append(self, kind: str, **fields: Any) -> None:
+        now = time.time()
+        row = {"seq": 0, "at": round(now, 3), "type": str(kind)[:40]}
+        for key, value in list(fields.items())[:16]:
+            if isinstance(value, str):
+                value = value[:TRANSCRIPT_TEXT_CHARS]
+            elif not (value is None or isinstance(value, (bool, int, float))):
+                try:
+                    value = json.loads(json.dumps(value, default=str))
+                except (TypeError, ValueError):
+                    value = type(value).__name__
+            row[str(key)[:40]] = value
+        try:
+            with self._lock:
+                self._count += 1
+                row["seq"] = self._count
+                self.recent.append(row)
+                del self.recent[:-TRANSCRIPT_RECENT]
+                if kind == "tool" and row.get("event") in {"tool_result", "tool_failed"}:
+                    self.tool_calls += 1
+                if self.path is None or self._truncated:
+                    pass
+                else:
+                    line = json.dumps(row, ensure_ascii=False, sort_keys=True, default=str) + "\n"
+                    if self._count > TRANSCRIPT_MAX_EVENTS or self._bytes + len(line) > TRANSCRIPT_MAX_BYTES:
+                        self._truncated = True
+                        line = json.dumps({"seq": self._count, "at": row["at"], "type": "truncated"}) + "\n"
+                    self.path.parent.mkdir(parents=True, exist_ok=True)
+                    with self.path.open("a", encoding="utf-8") as stream:
+                        stream.write(line)
+                    self._bytes += len(line)
+        except Exception:  # noqa: BLE001 — observability never breaks the child
+            logger.debug("sub-agent transcript write failed", exc_info=True)
+        if self._on_activity is not None:
+            with contextlib.suppress(Exception):
+                self._on_activity(now)
+
+
+def trace_tool_event(row: Any) -> None:
+    """Called by ``observability.tool_events`` for every tool-loop event: when the code
+    in flight belongs to a sub-agent, the (already bounded) event joins its transcript."""
+    transcript = _TRACE.get()
+    if transcript is None or not isinstance(row, dict):
+        return
+    transcript.append("tool", **{k: v for k, v in row.items() if k not in {"at", "seq"}})
+
+
+def read_transcript(path: Path, *, after: int = 0, limit: int = 200) -> list[dict]:
+    """Events of a transcript file with ``seq`` > *after* (at most *limit*)."""
+    bound = max(1, min(int(limit or 1), 1000))
+    out: list[dict] = []
+    try:
+        with Path(path).open("r", encoding="utf-8") as stream:
+            for line in stream:
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(row, dict) and int(row.get("seq") or 0) > after:
+                    out.append(row)
+                    if len(out) >= bound:
+                        break
+    except FileNotFoundError:
+        return []
+    return out
+
+
+def _parent_session() -> Optional[str]:
+    """The conversation the spawn is made from (its results are delivered back to it)."""
+    try:
+        from .kernel.plan_mode import current_session
+
+        return current_session()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _worktree_view(report: Optional[dict]) -> Optional[dict]:
+    """What the parent is told about a child's tree: its branch, whether it was kept, the
+    commits and files it changed, and the stale-file reminder (H401) when it changed any."""
+    if not isinstance(report, dict):
+        return None
+    view = {key: report[key] for key in ("branch", "path", "kept", "reason", "commits",
+                                          "changed_files", "changed_files_total", "archive")
+            if key in report}
+    if report.get("changed_files"):
+        view["stale_files_notice"] = (
+            "The sub-agent changed these files on its own branch. Any copy of them you read "
+            "earlier is stale: re-read them (or review the branch) before relying on or editing them.")
+    return view
+
+
+def _stack_of(task: Optional[asyncio.Future]) -> list[str]:
+    """Where a hung child's coroutine waits (file:line function), outermost first: the
+    task's coroutine and every coroutine it is awaiting, down to the innermost."""
+    get_coro = getattr(task, "get_coro", None)
+    coro = get_coro() if callable(get_coro) else None
+    frames: list[str] = []
+    with contextlib.suppress(Exception):
+        while coro is not None and len(frames) < DUMP_STACK_FRAMES:
+            frame = getattr(coro, "cr_frame", None) or getattr(coro, "gi_frame", None)
+            if frame is None:
+                break
+            code = frame.f_code
+            frames.append(f"{code.co_filename}:{frame.f_lineno} {code.co_name}")
+            coro = getattr(coro, "cr_await", None) or getattr(coro, "gi_yieldfrom", None)
+    return frames
+
+
 class SubAgentManager:
     """Gated, isolated, concurrent, steerable sub-agent spawning."""
 
@@ -390,8 +935,57 @@ class SubAgentManager:
                  decision_hook: Optional[Callable[..., Awaitable[Any]]] = None,
                  selection_defaults: Optional[Callable[[], dict]] = None,
                  fallback_probe: Optional[Callable[[str], Optional[str]]] = None,
-                 turn_cap: Any = DEFAULT_TURN_SPAWN_CAP) -> None:
+                 turn_cap: Any = DEFAULT_TURN_SPAWN_CAP,
+                 child_timeout: Any = DEFAULT_CHILD_TIMEOUT_SECONDS,
+                 halt_probe: Optional[Callable[[], Optional[str]]] = None,
+                 pause_path: Optional[Path] = None,
+                 tool_registry: Optional[Callable[[], Iterable[str]]] = None,
+                 store: Any = None,
+                 worktree_provider: Optional[Callable[[str], Any]] = None,
+                 read_only_probe: Optional[Callable[[str], bool]] = None,
+                 stall_seconds: Any = DEFAULT_STALL_SECONDS,
+                 heartbeat_seconds: float = HEARTBEAT_SECONDS,
+                 state_dir: Optional[Path] = None) -> None:
         self._runner = runner or NullRunner()
+        # G18 (H401) — the durable delegation rows (the autonomy queue in prod: a
+        # ``TaskQueue`` or a reader returning one), this boot's id, the per-child live
+        # transcripts and timeout dumps under ``state_dir``, and the stall monitor.
+        self._store = store
+        self.boot_id = uuid.uuid4().hex[:16]
+        self._state_dir = Path(state_dir) if state_dir is not None else None
+        self._stall_seconds = stall_seconds
+        self.heartbeat_seconds = max(0.05, float(heartbeat_seconds))
+        self._background: set = set()
+        self._pruned = False
+        self._transcripts: dict[str, Transcript] = {}
+        # G18 (H402) — a child's own git worktree (``autonomy.subagent_worktrees`` in
+        # prod): called on a worker thread with the spawn id, it answers a
+        # ``worktrees.ChildTree`` or None (no isolation for this child), or raises
+        # ``WorktreeRefused`` (the spawn then fails, never runs unisolated).
+        self._worktree_provider = worktree_provider
+        # G18 (H404) — which registered tools only read (ToolRPC's declared effect in
+        # prod); a read-only child (the /review reviewer) is given those and no others.
+        self._read_only_probe = read_only_probe
+        # H400 — the spawn gate. `halt_probe` answers why no new child may start (the
+        # emergency stop by default; prod adds the kill switch), `pause_path` is the
+        # owner's pause sentinel, and `_gate_lock` is held by every admission and by the
+        # pause writer, so a pause that has been answered is in force for every spawn
+        # admitted after it. Both reads block, so they run on a worker thread.
+        self._halt_probe = halt_probe or _estop_halt
+        self._pause_path = Path(pause_path) if pause_path is not None else None
+        self._gate_lock = asyncio.Lock()
+        # H400 — the per-child wall clock: a number or a reader (the setting in prod).
+        self._child_timeout = child_timeout
+        # H400 — the registered tool names (ToolRPC in prod). With it a spawn records
+        # and hands its runner the child's allowlist; without it there is none to give.
+        self._tool_registry = tool_registry
+        self._runner_takes_tools = _runner_accepts(self._runner, "tools")
+        self._settling: set = set()
+        # H400 — the spawns holding a slot, and the sync tool threads each child started
+        # (ToolRPC adds them through ``bind_sync_thread_sink``): a slot is given back only
+        # when its child's task has ended AND its last tool thread has returned.
+        self._held: set[str] = set()
+        self._threads: dict[str, set] = {}
         # H681: where a child's model comes from when its spawn names none (the
         # autonomy.subagent_* settings in prod), and what it would run on without it.
         self._selection_defaults = selection_defaults
@@ -405,8 +999,8 @@ class SubAgentManager:
         # H486: how many spawns one tool-loop turn may make (Hermes caps delegate_task at
         # 50 per turn). Read at each spawn (a setting reader in prod); 0 = no ceiling, an
         # unreadable value = the shipped ceiling. Keyed on the tool loop's own turn token,
-        # so a spawn outside any turn is left to the per-boot budget. DORMANT today: the
-        # model has no spawn tool and the only callers (the HTTP routes) run outside a turn.
+        # so a spawn outside any turn (the HTTP routes) is left to the per-boot budget; the
+        # model's delegate_task tool (H400) spawns inside one and is counted.
         self._turn_cap = turn_cap
         self._turn_spawns: dict[str, int] = {}
         # Capability scoping for children (hermes DELEGATE_BLOCKED_TOOLS analog).
@@ -460,6 +1054,99 @@ class SubAgentManager:
         # process does not grow a table of finished turns.
         while len(self._turn_spawns) > TURN_SPAWN_HISTORY:
             del self._turn_spawns[next(iter(self._turn_spawns))]
+
+    # ── the spawn gate: emergency stop, pause, timeout (H400) ────
+    def child_timeout(self) -> float:
+        """Seconds one child may run: the configured value clamped into
+        ``CHILD_TIMEOUT_MIN_SECONDS``..``CHILD_TIMEOUT_MAX_SECONDS``; an unreadable,
+        non-numeric, non-finite or non-positive one is the shipped default, never "off"."""
+        raw = self._child_timeout
+        if callable(raw):
+            try:
+                raw = raw()
+            except Exception:
+                logger.warning("sub-agent timeout unreadable; the shipped timeout applies")
+                return DEFAULT_CHILD_TIMEOUT_SECONDS
+        if isinstance(raw, bool):
+            return DEFAULT_CHILD_TIMEOUT_SECONDS
+        try:
+            value = float(raw)
+        except (TypeError, ValueError, OverflowError):
+            return DEFAULT_CHILD_TIMEOUT_SECONDS
+        if value != value or value in (float("inf"), float("-inf")) or value <= 0:
+            return DEFAULT_CHILD_TIMEOUT_SECONDS
+        return min(max(CHILD_TIMEOUT_MIN_SECONDS, value), CHILD_TIMEOUT_MAX_SECONDS)
+
+    def pause_path(self) -> Path:
+        if self._pause_path is None:
+            self._pause_path = default_pause_path()
+        return self._pause_path
+
+    def _halt_state(self) -> dict:
+        """What stops new spawns right now. Blocking: call it on a worker thread.
+
+        Fail closed: a probe or a sentinel that cannot be read stops spawning."""
+        try:
+            halted = self._halt_probe()
+        except Exception:
+            logger.warning("sub-agent halt probe failed; new spawns are refused", exc_info=True)
+            halted = "halt_state_unknown"
+        if halted is not None and (not isinstance(halted, str) or halted not in HALT_REASONS):
+            halted = "halt_state_unknown"
+        try:
+            pause = read_pause(self.pause_path())
+        except Exception:
+            logger.warning("sub-agent pause state unreadable; new spawns are refused", exc_info=True)
+            pause = {"reason": None, "paused_at": None, "by": None}
+        return {"halted": halted, "paused": pause is not None, "pause": pause}
+
+    @staticmethod
+    def _halt_refusal(state: dict) -> Optional[dict]:
+        if state["halted"]:
+            return {"ok": False, "reason": state["halted"],
+                    "detail": "new sub-agents are stopped; running ones are not affected"}
+        if state["paused"]:
+            return {"ok": False, "reason": "spawn_paused", "pause": state["pause"],
+                    "detail": "sub-agent spawning is paused; running ones are not affected"}
+        return None
+
+    async def gate_state(self) -> dict:
+        """``{"halted", "paused", "pause", "accepting"}`` — read under the gate lock, so
+        it is the state the next admitted spawn sees."""
+        async with self._gate_lock:
+            state = await asyncio.to_thread(self._halt_state)
+        return {**state, "accepting": self._halt_refusal(state) is None}
+
+    async def set_paused(self, paused: bool, *, reason: str = "", actor: str = "") -> dict:
+        """Pause or resume NEW spawns and answer the state read back from the sentinel.
+
+        Holds the gate lock, so no spawn is admitted between the write and the answer.
+        Running children are not touched. A resume that could not remove the sentinel,
+        or a pause that could not write it, raises ``OSError`` with nothing claimed."""
+        async with self._gate_lock:
+            await asyncio.to_thread(write_pause, self.pause_path(), bool(paused),
+                                    reason=reason, actor=actor)
+            state = await asyncio.to_thread(self._halt_state)
+        logger.info("sub-agent spawning %s by %s", "paused" if state["paused"] else "resumed",
+                    str(actor or "?")[:80])
+        return {**state, "accepting": self._halt_refusal(state) is None}
+
+    def _child_tools(self, parent_offer: Optional[Iterable[str]], agent: str = "") -> Optional[frozenset]:
+        """The child's allowlist, or None when no registry was given to draw it from.
+        A registry that cannot be read gives the child no tools at all."""
+        if self._tool_registry is None:
+            if parent_offer is None:
+                return None
+            return child_tool_allowlist(parent_offer, parent_offer, self.blocked)
+        try:
+            # H400 (minor 4): the registry reader is asked for what THIS child would be
+            # offered (in prod: the tool profile for its agent, principal and surface),
+            # so the record says what the child really gets.
+            registered = list(self._tool_registry(agent))
+        except Exception:
+            logger.warning("tool registry unreadable; the sub-agent gets no tools", exc_info=True)
+            return frozenset()
+        return child_tool_allowlist(registered, parent_offer, self.blocked)
 
     # ── introspection ────────────────────────────────────────────
     def _active_count(self) -> int:
@@ -524,67 +1211,508 @@ class SubAgentManager:
 
     async def spawn(self, task: str, agent: str = "", parent: str = "",
                     output_schema: Optional[dict] = None, *, model: Optional[str] = None,
-                    provider: Optional[str] = None, overrides: Optional[dict] = None) -> dict:
-        """Spawn an isolated sub-agent for `task`. Rejected if the concurrency cap is
+                    provider: Optional[str] = None, overrides: Optional[dict] = None,
+                    tools: Optional[Iterable[str]] = None, context: Optional[str] = None,
+                    answer_schema: Optional[dict] = None, focused: bool = False,
+                    read_only: bool = False, kind: str = "delegate", background: bool = False,
+                    confine: Optional[str] = None,
+                    _admitted: Optional[asyncio.Future] = None) -> dict:
+        """Spawn an isolated sub-agent for `task` — the one place a child starts.
+
+        G18: every spawn has a durable row (``delegation_id``), a live transcript and a
+        stall monitor; one past its timeout leaves a diagnostic dump. With the worktree
+        provider on, it runs confined to its own git worktree (H402). `read_only`
+        (H404, the /review reviewer) gives it only the tools that declared themselves
+        read-only and runs it under the kernel's read-only floor. `background` marks a
+        spawn whose result nobody waits for: it is delivered once, later, by a claim.
+
+        Refused while new spawns are stopped (the emergency stop, the kill switch, the
+        owner's pause: ``estop_engaged`` / ``kill_switch_halted`` / ``spawn_paused``, or
+        ``halt_state_unknown`` when that cannot be read), when the concurrency cap is
         reached, the total-spawn budget is spent, or the parent-chain is already
-        `max_depth` deep (recursion guard). With `output_schema`, the runner's result
-        must validate or the spawn is recorded as failed. With `model` / `provider` /
-        `overrides` (H681), the child runs pinned; an invalid one is refused
-        (``invalid_selection``) before any budget is spent."""
-        parent = parent or self.parent_agent
-        depth = self._depth_of(parent)
-        if self.max_depth is not None and depth >= self.max_depth:
-            return {"ok": False, "reason": "recursion_depth_cap",
-                    "depth": depth, "max_depth": self.max_depth}
-        if self._active >= self.max_concurrent:
-            return {"ok": False, "reason": "concurrency_cap",
-                    "active": self._active, "cap": self.max_concurrent}
-        if output_schema is not None and not isinstance(output_schema, dict):
-            return {"ok": False, "reason": "invalid_output_schema"}
+        `max_depth` deep (recursion guard). The checks and the slot are taken under one
+        lock. A child that outruns :meth:`child_timeout` is cancelled and recorded
+        ``failed`` with ``error: timeout``.
+
+        With `output_schema`, the runner's result must validate or the spawn is recorded
+        as failed. With `answer_schema` (H400), the JSON in the child's ``output`` text
+        must validate, and the parsed value is added as ``structured``. With `model` /
+        `provider` / `overrides` (H681), the child runs pinned; an invalid one is refused
+        (``invalid_selection``) before any budget is spent. `tools` is the set of tools
+        the spawning model turn was offered (None outside a turn): the child's allowlist
+        is drawn from it. `focused` gives the runner the brief built from `task`,
+        `context` and `answer_schema` (:func:`build_child_prompt`) instead of the bare task.
+
+        A spawn made from inside a running child is attributed to that child whatever
+        `parent` says, so its depth cannot be understated."""
+        parent = _CURRENT_SPAWN.get() or parent or self.parent_agent
+        # H400 (B1): both schemas are checked before anything is spent, on every caller
+        # (the routes, the batch, the tool): one the validator cannot apply is refused here.
+        for schema in (output_schema, answer_schema):
+            if isinstance(schema, dict):
+                problem = schema_problem(schema)
+                if problem:
+                    return {"ok": False, "reason": "invalid_output_schema",
+                            "detail": problem[:DETAIL_MAX]}
+        if context is not None and (not isinstance(context, str) or len(context) > CONTEXT_MAX_CHARS):
+            return {"ok": False, "reason": "invalid_context",
+                    "detail": f"context is text of at most {CONTEXT_MAX_CHARS} characters"}
+        timeout = self.child_timeout()
+        # Built before a slot is taken: nothing between the reservation and the child's
+        # task can fail and strand the slot.
+        prompt = build_child_prompt(task, context, answer_schema) if focused else task
+        caller_turn = current_tool_turn()
+        async with self._gate_lock:
+            # Blocking reads (a stat each), off the loop; the lock keeps this admission
+            # and the pause writer from interleaving.
+            refusal = self._halt_refusal(await asyncio.to_thread(self._halt_state))
+            if refusal is not None:
+                return refusal
+            depth = self._depth_of(parent)
+            if self.max_depth is not None and depth >= self.max_depth:
+                return {"ok": False, "reason": "recursion_depth_cap",
+                        "depth": depth, "max_depth": self.max_depth}
+            if self._active >= self.max_concurrent:
+                return {"ok": False, "reason": "concurrency_cap",
+                        "active": self._active, "cap": self.max_concurrent}
+            if output_schema is not None and not isinstance(output_schema, dict):
+                return {"ok": False, "reason": "invalid_output_schema"}
+            try:
+                selection, ov = self._resolve_selection(model, provider, overrides)
+            except ValueError as exc:
+                return {"ok": False, "reason": "invalid_selection", "detail": str(exc)[:DETAIL_MAX]}
+            turn, cap = current_tool_turn(), self.turn_cap()
+            if turn is not None and cap > 0 and self._turn_spawns.get(turn, 0) >= cap:
+                return {"ok": False, "reason": "turn_spawn_cap",
+                        "spawned": self._turn_spawns[turn], "cap": cap}
+            allowed = self._child_tools(tools, agent)
+            if read_only:
+                # G18 review: the reviewer reads files in the folder it reviews and
+                # nothing else — no network, no session or memory search — so nothing it
+                # read can leave the box. Without a folder to confine it to, no tools.
+                allowed = (self._read_only_tools(allowed) & REVIEWER_TOOLS) if confine else frozenset()
+            if self.budget is not None and not self.budget.consume():
+                return {"ok": False, "reason": "spawn_budget_exhausted",
+                        "used": self.budget.used, "max_total": self.budget.max_total}
+            if turn is not None:
+                self._note_turn_spawn(turn)
+            self._counter += 1
+            # The boot id makes a spawn id unique across restarts: a counter alone would
+            # repeat, and a repeated id would reuse an old child's tree, branch and record.
+            spawn_id = f"sub-{parent}-{self._counter}-{self.boot_id[:6]}"
+            session_id = f"session::{spawn_id}"   # isolated session
+            delegation_id = uuid.uuid4().hex[:20]
+            now = time.time()
+            rec = {"id": spawn_id, "parent": parent, "agent": agent or "sub",
+                   "task": task, "session_id": session_id, "status": "running",
+                   "created_at": now, "finished_at": None, "result": None,
+                   "blocked": sorted(self.blocked), "output_schema": output_schema,
+                   "steers": [], "steerable": self._runner_takes_steer,
+                   "stop_reason": None, "cost": None, "selection": selection,
+                   "tools": sorted(allowed) if allowed is not None else None,
+                   "timeout_seconds": timeout,
+                   # G18
+                   "delegation_id": delegation_id, "kind": str(kind or "delegate")[:20],
+                   "read_only": bool(read_only), "background": bool(background),
+                   "parent_session": _parent_session(), "activity_at": now, "stalled": False,
+                   "worktree": None, "transcript": None}
+            self._spawns[spawn_id] = rec
+            chan = SteerChannel(spawn_id)
+            self._channels[spawn_id] = chan
+            self._active += 1
+            self._held.add(spawn_id)
+        # H400 (B1): from here on the slot is taken. Whatever goes wrong below — the
+        # answer's check, the accounting, the log — the record ends terminal and the
+        # slot is released exactly once (``_close_on_error``); nothing escapes with a
+        # record left running.
+        child: Optional[asyncio.Future] = None
+        before: Optional[dict] = None
+        monitor: Optional[asyncio.Future] = None
         try:
-            selection, ov = self._resolve_selection(model, provider, overrides)
-        except ValueError as exc:
-            return {"ok": False, "reason": "invalid_selection", "detail": str(exc)[:DETAIL_MAX]}
-        turn, cap = current_tool_turn(), self.turn_cap()
-        if turn is not None and cap > 0 and self._turn_spawns.get(turn, 0) >= cap:
-            return {"ok": False, "reason": "turn_spawn_cap",
-                    "spawned": self._turn_spawns[turn], "cap": cap}
-        if self.budget is not None and not self.budget.consume():
-            return {"ok": False, "reason": "spawn_budget_exhausted",
-                    "used": self.budget.used, "max_total": self.budget.max_total}
-        if turn is not None:
-            self._note_turn_spawn(turn)
-        self._counter += 1
-        spawn_id = f"sub-{parent}-{self._counter}"
-        session_id = f"session::{spawn_id}"   # isolated session
-        rec = {"id": spawn_id, "parent": parent, "agent": agent or "sub",
-               "task": task, "session_id": session_id, "status": "running",
-               "created_at": time.time(), "finished_at": None, "result": None,
-               "blocked": sorted(self.blocked), "output_schema": output_schema,
-               "steers": [], "steerable": self._runner_takes_steer,
-               "stop_reason": None, "cost": None, "selection": selection}
-        self._spawns[spawn_id] = rec
-        chan = SteerChannel(spawn_id)
-        self._channels[spawn_id] = chan
-        self._active += 1
-        before = _cost_totals(self._safe_probe())
-        child = asyncio.ensure_future(self._run(task, session_id, agent or "sub", chan, selection, ov))
-        self._tasks[spawn_id] = child
-        result: Any = None
-        try:
-            result = await child
-        except asyncio.CancelledError:
-            if rec["status"] == "stopping":
-                self._set_status(rec, "stopped")
-                rec["result"] = {"error": "stopped", "reason": rec.get("stop_reason")}
-            else:
-                # The *parent* was cancelled (the awaiting task went away): record it
-                # honestly and let the cancellation keep propagating upward.
+            before = _cost_totals(self._safe_probe())
+            transcript = self._open_transcript(rec)
+            tree = None
+            if not read_only and self._worktree_provider is not None:
+                try:
+                    tree = await asyncio.to_thread(self._worktree_provider, spawn_id)
+                except Exception as exc:  # noqa: BLE001 — refused isolation never runs unisolated
+                    detail = str(exc)[:DETAIL_MAX] or type(exc).__name__
+                    self._set_status(rec, "failed")
+                    rec["result"] = {"error": "worktree_unavailable", "detail": detail}
+                    transcript.append("end", status="failed", error="worktree_unavailable", detail=detail)
+                if tree is not None:
+                    rec["worktree"] = tree.to_dict() if hasattr(tree, "to_dict") else dict(tree)
+            await self._durable_start(rec, task)
+            if rec["status"] != "running":
+                self._finish(rec, before, None)
+                return await self._answer(rec, selection, child)
+            transcript.append("start", goal=task, agent=rec["agent"], read_only=bool(read_only),
+                              tools=len(allowed) if allowed is not None else None,
+                              worktree=(rec["worktree"] or {}).get("path"), background=bool(background))
+            if _admitted is not None and not _admitted.done():
+                _admitted.set_result(rec)
+            child = asyncio.ensure_future(
+                self._run(prompt, session_id, agent or "sub", chan, selection, ov, spawn_id, allowed,
+                      {"spawn_id": spawn_id, "parent": parent, "turn": caller_turn,
+                       "goal": task[:DELEGATION_GOAL_CHARS * 4]},
+                      isolation={"tree": (rec["worktree"] or {}).get("path") or (confine if read_only else None),
+                                 "read_only": bool(read_only), "tools": allowed, "transcript": transcript}))
+            self._tasks[spawn_id] = child
+            monitor = asyncio.ensure_future(self._monitor(rec, transcript))
+            try:
+                finished, _pending = await asyncio.wait({child}, timeout=timeout)
+            except asyncio.CancelledError:
+                # The *parent* was cancelled (the awaiting task went away): stop the child,
+                # record it honestly and let the cancellation keep propagating upward.
                 rec["stop_reason"] = rec.get("stop_reason") or "parent_cancelled"
-                self._set_status(rec, "stopped")
-                rec["result"] = {"error": "stopped", "reason": rec["stop_reason"]}
-                self._finish(rec, before, result)
+                await self._end_cancelled(rec, child, chan, before, final="stopped",
+                                          result={"error": "stopped", "reason": rec["stop_reason"]})
+                self._settle_later(rec, child, monitor)
                 raise
+            if not finished:
+                # The wall clock ran out: cancel the child's work, not just the wait for it.
+                rec["stop_reason"] = "timeout"
+                payload = {"error": "timeout", "timeout_seconds": timeout,
+                           "detail": f"the sub-agent did not finish within {timeout:g} s and was cancelled"}
+                # G18 (H401): what the hung child was doing, written before it is cancelled.
+                dump = await self._timeout_dump(rec, child, transcript)
+                if dump is not None:
+                    payload["dump"] = dump
+                    rec["dump"] = dump
+                if not await self._end_cancelled(rec, child, chan, before, final="failed", result=payload):
+                    logger.warning("sub-agent %s timed out and has not ended yet; its slot stays taken",
+                                   spawn_id)
+            else:
+                try:
+                    result = self._record_outcome(rec, child, output_schema, answer_schema)
+                except Exception:  # noqa: BLE001 — fail closed with a fixed message
+                    logger.warning("sub-agent %s: its answer could not be checked", spawn_id,
+                                   exc_info=True)
+                    self._mark_unchecked(rec)
+                    result = None
+                if ov is not None:
+                    rec["overrides_applied"] = sorted(ov.taken())
+                    rec["overrides_ignored"] = sorted(ov.requested() - ov.taken())
+                self._finish(rec, before, result)
+        except asyncio.CancelledError:
+            # A child still unwinding is closed by the callback _end_cancelled attached.
+            if rec.get("finished_at") is None and (child is None or child.done()):
+                self._close_on_error(rec, child, before)
+            self._settle_later(rec, child, monitor)
+            raise
+        except Exception:  # noqa: BLE001 — the slot must never be stranded
+            logger.warning("sub-agent %s: the spawn failed after its slot was taken", spawn_id,
+                           exc_info=True)
+            self._close_on_error(rec, child, before)
+        if monitor is not None:
+            monitor.cancel()
+        if rec["status"] in TERMINAL_STATUSES:      # a child still unwinding is logged when it ends
+            await self._persist(rec)
+            await self._settle(rec, child)
+        return await self._answer(rec, selection, child)
+
+    async def _answer(self, rec: dict, selection: Optional[dict], child: Optional[asyncio.Future]) -> dict:
+        out = {"ok": rec["status"] == "done", "id": rec["id"],
+               "session_id": rec["session_id"], "status": rec["status"],
+               "result": rec["result"], "cost": rec["cost"], "selection": selection,
+               "delegation_id": rec.get("delegation_id")}
+        if rec.get("worktree"):
+            out["worktree"] = rec["worktree"]
+        if "overrides_applied" in rec:
+            out["overrides_applied"] = rec["overrides_applied"]
+            out["overrides_ignored"] = rec["overrides_ignored"]
+        return out
+
+    # ── G18: durability, the stall monitor, worktrees, transcripts ───────────
+    def stall_seconds(self) -> float:
+        """How long a running child may show no activity before it is marked stalled:
+        the configured value clamped into 10..3600 s; unreadable is the shipped 120 s."""
+        raw = self._stall_seconds
+        if callable(raw):
+            try:
+                raw = raw()
+            except Exception:
+                return DEFAULT_STALL_SECONDS
+        if isinstance(raw, bool):
+            return DEFAULT_STALL_SECONDS
+        try:
+            value = float(raw)
+        except (TypeError, ValueError, OverflowError):
+            return DEFAULT_STALL_SECONDS
+        if value != value or value <= 0 or value == float("inf"):
+            return DEFAULT_STALL_SECONDS
+        return min(max(STALL_MIN_SECONDS, value), STALL_MAX_SECONDS)
+
+    def _get_store(self) -> Any:
+        store = self._store
+        if store is None:
+            return None
+        if hasattr(store, "delegation_start"):
+            return store
+        if callable(store):
+            try:
+                found = store()
+            except Exception:
+                return None
+            return found if hasattr(found, "delegation_start") else None
+        return None
+
+    async def _store_call(self, name: str, *args: Any, **kwargs: Any) -> Any:
+        store = self._get_store()
+        method = getattr(store, name, None) if store is not None else None
+        if not callable(method):
+            return None
+        try:
+            return await asyncio.to_thread(method, *args, **kwargs)
+        except Exception:  # noqa: BLE001 — logged; the child's own outcome stands
+            logger.warning("sub-agent delegation store: %s failed", name, exc_info=True)
+            return None
+
+    def state_dir(self) -> Path:
+        if self._state_dir is None:
+            from .paths import data_path
+
+            self._state_dir = data_path("subagents")
+        return self._state_dir
+
+    def transcript_path(self, rec: dict) -> Path:
+        return self.state_dir() / "transcripts" / f"{rec['delegation_id']}.jsonl"
+
+    def _open_transcript(self, rec: dict) -> Transcript:
+        def activity(ts: float) -> None:
+            rec["activity_at"] = ts
+            if rec.get("stalled"):
+                rec["stalled"] = False
+        path = self.transcript_path(rec)
+        transcript = Transcript(path, on_activity=activity)
+        rec["transcript"] = str(path)
+        self._transcripts[rec["id"]] = transcript
+        return transcript
+
+    def transcript(self, spawn_id: str, *, after: int = 0, limit: int = 200) -> Optional[dict]:
+        """A child's live transcript (H401): ``{"id", "status", "events", "next"}``, read
+        from its file — a running child's as far as it has got. None when unknown here;
+        a past boot's child is found through its durable row."""
+        rec = self._spawns.get(spawn_id)
+        path: Optional[str] = rec.get("transcript") if rec else None
+        status = rec.get("status") if rec else None
+        if path is None:
+            row = None
+            store = self._get_store()
+            if store is not None:
+                with contextlib.suppress(Exception):
+                    row = store.delegation_get(spawn_id) or store.delegation_by_spawn(spawn_id)
+            if not row or not row.get("transcript_path"):
+                return None
+            path, status = row["transcript_path"], row.get("status")
+        events = read_transcript(Path(path), after=after, limit=limit)
+        return {"id": spawn_id, "status": status, "events": events,
+                "next": events[-1]["seq"] if events else after}
+
+    async def _durable_start(self, rec: dict, task: str) -> None:
+        await self._store_call("delegation_start", {
+            "delegation_id": rec["delegation_id"], "spawn_id": rec["id"], "boot_id": self.boot_id,
+            "kind": rec["kind"], "parent": rec["parent"], "agent": rec["agent"],
+            "parent_session": rec.get("parent_session"), "child_session": rec["session_id"],
+            "goal": task, "background": rec["background"], "created_at": rec["created_at"],
+            "worktree": rec.get("worktree"), "transcript_path": rec.get("transcript")})
+
+    async def _monitor(self, rec: dict, transcript: Transcript) -> None:
+        """Heartbeat the durable row and mark a child that has shown no activity for
+        :meth:`stall_seconds` as ``stalled`` (it is not stopped: its timeout does that)."""
+        while rec["status"] in ("running", "stopping"):
+            await asyncio.sleep(self.heartbeat_seconds)
+            now = time.time()
+            activity = float(rec.get("activity_at") or rec["created_at"])
+            stalled_at = None
+            if not rec.get("stalled") and now - activity > self.stall_seconds():
+                rec["stalled"] = True
+                rec["stalled_at"] = stalled_at = now
+                logger.warning("sub-agent %s shows no activity for %.0f s: stalled", rec["id"], now - activity)
+                on_activity, transcript._on_activity = transcript._on_activity, None
+                transcript.append("stalled", idle_seconds=round(now - activity, 1))
+                transcript._on_activity = on_activity
+            await self._store_call("delegation_touch", rec["delegation_id"], heartbeat_at=now,
+                                   activity_at=activity, stalled_at=stalled_at)
+
+    async def _timeout_dump(self, rec: dict, child: asyncio.Future, transcript: Transcript) -> Optional[str]:
+        """Write what a timed-out child was doing — where its coroutine waits, its last
+        transcript events, its steers and tool-thread count — before it is cancelled."""
+        body = {"delegation_id": rec["delegation_id"], "spawn_id": rec["id"], "goal": rec["task"][:2000],
+                "timeout_seconds": rec.get("timeout_seconds"), "started_at": rec["created_at"],
+                "dumped_at": time.time(), "stack": _stack_of(child),
+                "recent_events": list(transcript.recent), "tool_calls": transcript.tool_calls,
+                "steers": list(rec.get("steers") or [])[-10:],
+                "threads_running": sum(1 for f in self._threads.get(rec["id"], set()) if not f.done()),
+                "worktree": (rec.get("worktree") or {}).get("path")}
+        path = self.state_dir() / "dumps" / f"{rec['delegation_id']}.json"
+
+        def write() -> None:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(body, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+
+        try:
+            await asyncio.to_thread(write)
+        except Exception:  # noqa: BLE001
+            logger.warning("sub-agent %s: timeout dump not written", rec["id"], exc_info=True)
+            return None
+        transcript.append("timeout_dump", path=str(path))
+        return str(path)
+
+    def _settle_later(self, rec: dict, child: Optional[asyncio.Future],
+                      monitor: Optional[asyncio.Future]) -> None:
+        if monitor is not None:
+            monitor.cancel()
+        try:
+            task = asyncio.ensure_future(self._settle(rec, child))
+        except RuntimeError:
+            return
+        self._settling.add(task)
+        task.add_done_callback(self._settling.discard)
+
+    async def _settle(self, rec: dict, child: Optional[asyncio.Future]) -> None:
+        """Once per spawn, after it ends: close the transcript, reclaim or keep its
+        worktree (the kept branch is the reviewable artefact; its changed files are the
+        stale-file reminder), and close the durable row — delivered in line unless the
+        spawn ran in the background."""
+        if rec.get("settled") or rec["status"] not in TERMINAL_STATUSES:
+            return
+        rec["settled"] = True
+        transcript = self._transcripts.pop(rec["id"], None)
+        tree = rec.get("worktree")
+        if tree and tree.get("path") and self._worktree_provider is not None:
+            if child is not None and not child.done() or rec.get("threads_running"):
+                rec["worktree"] = {**tree, "kept": True, "reason": "child_still_running"}
+            else:
+                from . import worktrees
+
+                try:
+                    report = await asyncio.to_thread(worktrees.finish_child_tree, worktrees.ChildTree(
+                        repo=tree["repo"], path=tree["path"], branch=tree["branch"], base=tree["base"]))
+                except Exception as exc:  # noqa: BLE001
+                    report = {**tree, "kept": True, "reason": f"finish_failed: {type(exc).__name__}"}
+                rec["worktree"] = {**tree, **report}
+            if isinstance(rec.get("result"), dict):
+                rec["result"] = {**rec["result"], "worktree": _worktree_view(rec["worktree"])}
+        result = rec.get("result")
+        if transcript is not None:
+            preview = result.get("output") if isinstance(result, dict) else None
+            transcript.append("end", status=rec["status"],
+                              error=result.get("error") if isinstance(result, dict) else None,
+                              output=preview if isinstance(preview, str) else None)
+        await self._store_call("delegation_finish", rec["delegation_id"], rec["status"], result,
+                               worktree=rec.get("worktree"), dump_path=rec.get("dump"),
+                               delivered_to=None if rec.get("background") else "inline")
+
+    def _read_only_tools(self, allowed: Optional[frozenset]) -> frozenset:
+        """The tools of *allowed* that declared themselves read-only; none without a probe."""
+        if not allowed or self._read_only_probe is None:
+            return frozenset()
+        kept = set()
+        for name in allowed:
+            try:
+                read_only = self._read_only_probe(name) is True
+            except Exception:  # noqa: BLE001 — an unreadable tool is not read-only
+                read_only = False
+            if read_only:
+                kept.add(name)
+        return frozenset(kept)
+
+    def recover(self, *, now: Optional[float] = None) -> list[dict]:
+        """At start and on every autonomy tick (blocking): close as ``lost`` each durable
+        row another boot left running whose heartbeat has gone stale — its process died;
+        it is reported once, never re-run. A live second process keeps heartbeating and is
+        left alone."""
+        if not self._pruned:
+            self._pruned = True
+            self._prune_state()
+        store = self._get_store()
+        if store is None:
+            return []
+        try:
+            kwargs = {"now": now} if now is not None else {}
+            lost = store.delegation_recover(self.boot_id, **kwargs)
+        except Exception:  # noqa: BLE001
+            logger.warning("sub-agent recovery failed", exc_info=True)
+            return []
+        if lost:
+            logger.warning("%d sub-agent(s) stopped with their process; reported as lost", len(lost))
+        return lost
+
+    def _prune_state(self, keep: int = STATE_FILES_KEPT) -> None:
+        """Keep the newest *keep* transcripts and dumps; older files are removed (they
+        are observability, not the record: the durable row and the audit log are)."""
+        for folder in ("transcripts", "dumps"):
+            directory = self.state_dir() / folder
+            try:
+                files = sorted((p for p in directory.iterdir() if p.is_file() and not p.is_symlink()),
+                               key=lambda p: p.stat().st_mtime, reverse=True)
+            except OSError:
+                continue
+            for stale in files[keep:]:
+                with contextlib.suppress(OSError):
+                    stale.unlink()
+
+    async def claim_completions(self, consumer: str, *, parent_session: Optional[str] = None,
+                                limit: int = 20) -> list[dict]:
+        """Finished results nobody has received yet, each handed to exactly one consumer."""
+        rows = await self._store_call("delegation_claim", consumer, parent_session=parent_session, limit=limit)
+        return list(rows or [])
+
+    async def spawn_background(self, task: str, **kwargs: Any) -> dict:
+        """Start a child and answer as soon as it is admitted (H401 background fan-out):
+        ``{"ok": True, "id", "delegation_id", "status": "running", "background": True}``,
+        or the refusal. Its result is delivered once, later, by :meth:`claim_completions`."""
+        loop = asyncio.get_running_loop()
+        admitted: asyncio.Future = loop.create_future()
+        runner = asyncio.ensure_future(self.spawn(task, background=True, _admitted=admitted, **kwargs))
+        self._background.add(runner)
+        runner.add_done_callback(self._background.discard)
+        await asyncio.wait({admitted, runner}, return_when=asyncio.FIRST_COMPLETED)
+        if admitted.done():
+            rec = admitted.result()
+            return {"ok": True, "id": rec["id"], "delegation_id": rec["delegation_id"],
+                    "session_id": rec["session_id"], "status": "running", "background": True}
+        admitted.cancel()
+        out = runner.result()
+        return {**out, "background": True} if isinstance(out, dict) else out
+
+    @staticmethod
+    def _mark_unchecked(rec: dict) -> None:
+        """Fail a record whose outcome could not be recorded. Assigned, not transitioned:
+        whatever state the failed step left, the record ends ``failed`` with a fixed
+        message that carries none of the child's text."""
+        rec["status"] = "failed"
+        rec["result"] = dict(ANSWER_UNCHECKED)
+
+    def _close_on_error(self, rec: dict, child: Optional[asyncio.Future],
+                        before: Optional[dict]) -> None:
+        """The fail-closed end of a spawn whose normal path raised (B1): the record is
+        terminal and the slot released once — now, or when the child's task ends."""
+        if rec.get("finished_at") is not None:
+            return
+        if rec.get("status") not in TERMINAL_STATUSES:
+            self._mark_unchecked(rec)
+        if child is not None and not child.done():
+            child.cancel()
+            child.add_done_callback(lambda _fut: self._finish(rec, before, None))
+            return
+        self._finish(rec, before, None)
+
+    def _record_outcome(self, rec: dict, child: asyncio.Future, output_schema: Optional[dict],
+                        answer_schema: Optional[dict]) -> Any:
+        """Write a finished child's status and result onto its record; returns what the
+        runner answered (None when it did not)."""
+        spawn_id = rec["id"]
+        try:
+            result = child.result()
+        except asyncio.CancelledError:
+            if rec["status"] != "stopping":           # cancelled by something other than stop()
+                rec["stop_reason"] = rec.get("stop_reason") or "cancelled"
+                self._set_status(rec, "stopping")
+            self._set_status(rec, "stopped")
+            rec["result"] = {"error": "stopped", "reason": rec.get("stop_reason")}
+            return None
         except SubAgentProviderError as exc:
             logger.warning("sub-agent %s: its model call failed: %s", spawn_id, exc.detail[:200])
             self._set_status(rec, "failed")
@@ -592,41 +1720,96 @@ class SubAgentManager:
             failures = [d for d in (_failure_dict(f) for f in exc.failures) if d is not None]
             if failures:
                 rec["result"]["failures"] = failures
+            return None
         except Exception:
             logger.warning("sub-agent run failed", exc_info=True)
             self._set_status(rec, "failed")
             rec["result"] = {"error": "run failed"}
-        else:
-            violations = (validate_output(result, output_schema)
-                          if output_schema is not None else [])
-            blank = (isinstance(result, dict) and isinstance(result.get("output"), str)
-                     and not result["output"].strip())
-            if blank:
-                # A turn that answered nothing is not a child that finished its task.
-                self._set_status(rec, "failed")
-                rec["result"] = {"error": "provider_failed", "detail": "empty output"}
-            elif violations:
-                self._set_status(rec, "failed")
-                rec["result"] = {"error": "output_schema_violation",
-                                 "violations": violations, "output": result}
+            return None
+        violations = (validate_output(result, output_schema)
+                      if output_schema is not None else [])
+        blank = (isinstance(result, dict) and isinstance(result.get("output"), str)
+                 and not result["output"].strip())
+        structured: Any = None
+        if not blank and not violations and answer_schema is not None:
+            answer = result.get("output") if isinstance(result, dict) else result
+            found, structured = extract_json_candidate(answer)
+            if found:
+                violations = validate_output(structured, answer_schema)[:10]
+            elif isinstance(answer, str) and len(answer) > ANSWER_JSON_MAX_CHARS:
+                violations = [f"$: the answer is longer than {ANSWER_JSON_MAX_CHARS} characters"]
             else:
-                self._set_status(rec, "done")
-                rec["result"] = result
-        if ov is not None:
-            rec["overrides_applied"] = sorted(ov.taken())
-            rec["overrides_ignored"] = sorted(ov.requested() - ov.taken())
-        self._finish(rec, before, result)
-        await self._persist(rec)
-        out = {"ok": rec["status"] == "done", "id": spawn_id,
-               "session_id": session_id, "status": rec["status"],
-               "result": rec["result"], "cost": rec["cost"], "selection": selection}
-        if ov is not None:
-            out["overrides_applied"] = rec["overrides_applied"]
-            out["overrides_ignored"] = rec["overrides_ignored"]
-        return out
+                violations = [f"$: the answer is not JSON (or nests deeper than "
+                              f"{ANSWER_JSON_MAX_DEPTH} levels)"]
+        if blank:
+            # A turn that answered nothing is not a child that finished its task.
+            self._set_status(rec, "failed")
+            rec["result"] = {"error": "provider_failed", "detail": "empty output"}
+        elif violations:
+            self._set_status(rec, "failed")
+            rec["result"] = {"error": "output_schema_violation",
+                             "violations": violations, "output": result}
+        else:
+            self._set_status(rec, "done")
+            rec["result"] = ({**result, "structured": structured}
+                             if answer_schema is not None and isinstance(result, dict) else result)
+        return result
+
+    async def _end_cancelled(self, rec: dict, child: asyncio.Future, chan: SteerChannel,
+                             before: Optional[dict], *, final: str, result: dict) -> bool:
+        """Cancel a child and close its record as *final* once its task has ended.
+
+        The child is waited for (``UNWIND_GRACE_SECONDS``). If it has ended, the record
+        is closed and the slot released now. If it has not — its code is holding the
+        cancellation off — the record stays ``stopping`` and keeps its slot, and a
+        done-callback closes it when the task does end: the count of taken slots never
+        drops below the tasks that are still running. Returns whether it has ended."""
+        if rec["status"] == "running":
+            self._set_status(rec, "stopping")
+        chan.stop_requested = True
+        rec["result"] = dict(result)
+
+        def close(_fut: Any = None) -> None:
+            if not child.cancelled():
+                with contextlib.suppress(BaseException):
+                    child.exception()         # retrieved, so the loop does not log it
+            if rec["status"] == "stopping":
+                self._set_status(rec, final)
+            self._finish(rec, before, None)
+
+        recancelled = False
+        if not child.done():
+            child.cancel()
+            try:
+                await asyncio.wait({child}, timeout=UNWIND_GRACE_SECONDS)
+            except asyncio.CancelledError:
+                recancelled = True
+        if child.done():
+            close()
+        else:
+            rec["result"]["unwound"] = False
+
+            def later(fut: Any) -> None:
+                rec["result"].pop("unwound", None)
+                close(fut)
+                try:
+                    task = asyncio.ensure_future(self._persist(rec))
+                    settle = asyncio.ensure_future(self._settle(rec, child))
+                except RuntimeError:
+                    return
+                for pending in (task, settle):
+                    self._settling.add(pending)
+                    pending.add_done_callback(self._settling.discard)
+
+            child.add_done_callback(later)
+        if recancelled:
+            raise asyncio.CancelledError
+        return child.done()
 
     async def _run(self, task: str, session_id: str, agent: str, chan: SteerChannel,
-                   selection: Optional[dict] = None, ov: Any = None):
+                   selection: Optional[dict] = None, ov: Any = None,
+                   spawn_id: Optional[str] = None, tools: Optional[frozenset] = None,
+                   delegation: Optional[dict] = None, isolation: Optional[dict] = None):
         from .llm.job_selection import selection_scope
         from .llm.request_context import request_overrides_scope
 
@@ -637,16 +1820,55 @@ class SubAgentManager:
             kwargs["steer"] = chan
         if self._runner_takes_selection:
             kwargs["selection"] = selection
+        if self._runner_takes_tools:
+            kwargs["tools"] = tools
         pins = {k: selection[k] for k in ("model", "provider") if selection and selection.get(k)}
-        with selection_scope(pins), request_overrides_scope(ov):
-            return await self._runner(task, session_id, agent, **kwargs)
+        # This coroutine is the child's own task: what it binds here is the child's.
+        marker = _CURRENT_SPAWN.set(spawn_id)
+        delegated = _CURRENT_DELEGATION.set(dict(delegation) if delegation else None)
+        sink = bind_sync_thread_sink(self._threads.setdefault(spawn_id, set()) if spawn_id else None)
+        isolation = isolation or {}
+        trace = _TRACE.set(isolation.get("transcript"))
+        try:
+            with contextlib.ExitStack() as stack:
+                # G18 (H402): a child with its own worktree has its file tools confined
+                # to it (and the tree is held in use, so no reclaim takes it meanwhile).
+                if isolation.get("tree"):
+                    from .worktrees import tree_scope
+
+                    stack.enter_context(tree_scope(isolation["tree"]))
+                # G18 (H404): the reviewer runs under the kernel's read-only floor.
+                if isolation.get("read_only"):
+                    from .kernel.plan_mode import read_only_floor
+
+                    stack.enter_context(read_only_floor("review", allowed=isolation.get("tools") or frozenset()))
+                stack.enter_context(selection_scope(pins))
+                stack.enter_context(request_overrides_scope(ov))
+                return await self._runner(task, session_id, agent, **kwargs)
+        finally:
+            _TRACE.reset(trace)
+            reset_sync_thread_sink(sink)
+            _CURRENT_DELEGATION.reset(delegated)
+            _CURRENT_SPAWN.reset(marker)
 
     # ── batch (H681) ─────────────────────────────────────────────
-    async def spawn_batch(self, tasks: Any, parent: str = "") -> dict:
+    async def spawn_batch(self, tasks: Any, parent: str = "", *,
+                          tools: Optional[Iterable[str]] = None, model_authored: bool = False,
+                          queue: bool = True, background: bool = False) -> dict:
         """Run up to ``BATCH_MAX`` children, at most as many at once as there are free
-        slots, and report each. Every item is validated before any runs. The result's
-        ``notice`` is one ``subagent_model_rejected`` when every child failed because the
-        provider does not know the model ``autonomy.subagent_model`` chose."""
+        slots, and report each. Every item is validated before any runs: its shape, its
+        schemas and its selection. A batch a model wrote (``model_authored``: the
+        ``delegate_task`` tool, the only way a model reaches this) also passes the batch
+        quality gate (:func:`goal_problem`, H400): a placeholder goal, an unexpanded
+        template marker or, with two or more tasks, a goal under ten characters refuses
+        the whole batch as ``invalid_goal``, and each child is given the focused brief
+        (:func:`build_child_prompt`). The owner's own batch (the HTTP route) is the
+        owner's words and is not judged. A batch
+        is refused whole while new spawns are stopped. With ``queue=False`` a batch that
+        does not fit the free slots right now is refused (``concurrency_cap``) instead
+        of waiting for them. The result's ``notice`` is one ``subagent_model_rejected``
+        when every child failed because the provider does not know the model
+        ``autonomy.subagent_model`` chose."""
         if not isinstance(tasks, list):
             return {"ok": False, "reason": "invalid_batch", "detail": "tasks must be a list"}
         if not tasks:
@@ -660,22 +1882,66 @@ class SubAgentManager:
                         "detail": f"each task is an object with a non-empty 'task' and only {sorted(_BATCH_ITEM_KEYS)}"}
             if item.get("output_schema") is not None and not isinstance(item["output_schema"], dict):
                 return {"ok": False, "reason": "invalid_output_schema", "index": i}
+            if isinstance(item.get("output_schema"), dict):
+                problem = schema_problem(item["output_schema"])
+                if problem:
+                    return {"ok": False, "reason": "invalid_output_schema", "index": i,
+                            "detail": problem[:DETAIL_MAX]}
+            if item.get("answer_schema") is not None:
+                problem = schema_problem(item["answer_schema"])
+                if problem:
+                    return {"ok": False, "reason": "invalid_output_schema", "index": i,
+                            "detail": problem[:DETAIL_MAX]}
+            context = item.get("context")
+            if context is not None and (not isinstance(context, str) or len(context) > CONTEXT_MAX_CHARS):
+                return {"ok": False, "reason": "invalid_context", "index": i,
+                        "detail": f"context is text of at most {CONTEXT_MAX_CHARS} characters"}
+            problem = goal_problem(item["task"], batch_size=len(tasks)) if model_authored else None
+            if problem:
+                return {"ok": False, "reason": "invalid_goal", "index": i,
+                        "detail": f"task {i}: {problem}"[:DETAIL_MAX]}
             try:
                 self._resolve_selection(item.get("model"), item.get("provider"), item.get("overrides"))
             except ValueError as exc:
                 return {"ok": False, "reason": "invalid_selection", "index": i, "detail": str(exc)[:DETAIL_MAX]}
-        gate = asyncio.Semaphore(max(1, self.max_concurrent - self._active))
+        state = await self.gate_state()
+        refusal = self._halt_refusal(state)
+        if refusal is not None:
+            return refusal
+        free = self.max_concurrent - self._active
+        if (background or not queue) and len(tasks) > free:
+            return {"ok": False, "reason": "concurrency_cap", "active": self._active,
+                    "cap": self.max_concurrent, "requested": len(tasks)}
+        gate = asyncio.Semaphore(max(1, free))
 
         async def one(item: dict) -> dict:
             async with gate:
                 return await self.spawn(item["task"], agent=str(item.get("agent") or ""), parent=parent,
                                         output_schema=item.get("output_schema"), model=item.get("model"),
-                                        provider=item.get("provider"), overrides=item.get("overrides"))
+                                        provider=item.get("provider"), overrides=item.get("overrides"),
+                                        tools=tools, context=item.get("context"),
+                                        answer_schema=item.get("answer_schema"), focused=model_authored)
 
+        if background:
+            # G18 (H401): every child is admitted now and runs on; nobody waits. Each
+            # result is delivered exactly once, later (claim_completions).
+            started = []
+            for item in tasks:
+                started.append(await self.spawn_background(
+                    item["task"], agent=str(item.get("agent") or ""), parent=parent,
+                    output_schema=item.get("output_schema"), model=item.get("model"),
+                    provider=item.get("provider"), overrides=item.get("overrides"), tools=tools,
+                    context=item.get("context"), answer_schema=item.get("answer_schema"),
+                    focused=model_authored))
+            dispatched = sum(1 for c in started if c.get("status") == "running")
+            return {"ok": dispatched == len(started), "background": True, "children": started,
+                    "summary": {"total": len(started), "dispatched": dispatched,
+                                "failed": sum(1 for c in started if c.get("status") in ("failed", "stopped")),
+                                "refused": sum(1 for c in started if "status" not in c)}}
         children = list(await asyncio.gather(*(one(item) for item in tasks)))
         summary = {"total": len(children),
                    "done": sum(1 for c in children if c.get("status") == "done"),
-                   "failed": sum(1 for c in children if c.get("status") in ("failed", "stopped")),
+                   "failed": sum(1 for c in children if c.get("status") in ("failed", "stopped", "stopping")),
                    "refused": sum(1 for c in children if "status" not in c)}
         return {"ok": summary["done"] == summary["total"], "children": children, "summary": summary,
                 "notice": self._batch_notice(children)}
@@ -722,22 +1988,63 @@ class SubAgentManager:
             return {}
 
     def _finish(self, rec: dict, before: Optional[dict], result: Any) -> None:
-        """Release the slot, close the channel, attribute cost — exactly once."""
+        """Close the record, close the channel, attribute cost — exactly once — and
+        release the slot when the child's last tool thread has returned."""
         if rec.get("finished_at") is not None:
             return
         rec["finished_at"] = time.time()
-        self._active -= 1
         self._channels.pop(rec["id"], None)
         self._tasks.pop(rec["id"], None)
-        cost = _usage_from_result(result)
-        if cost is None and before is not None:
-            after = _cost_totals(self._safe_probe())
-            if after is not None:
-                cost = {"input_tokens": max(0, after["input_tokens"] - before["input_tokens"]),
-                        "output_tokens": max(0, after["output_tokens"] - before["output_tokens"]),
-                        "cost_usd": round(max(0.0, after["cost_usd"] - before["cost_usd"]), 6),
-                        "source": "tracker_delta"}
+        try:
+            cost = _usage_from_result(result)
+            if cost is None and before is not None:
+                after = _cost_totals(self._safe_probe())
+                if after is not None:
+                    cost = {"input_tokens": max(0, after["input_tokens"] - before["input_tokens"]),
+                            "output_tokens": max(0, after["output_tokens"] - before["output_tokens"]),
+                            "cost_usd": round(max(0.0, after["cost_usd"] - before["cost_usd"]), 6),
+                            "source": "tracker_delta"}
+        except Exception:  # noqa: BLE001 — accounting never strands a slot
+            logger.warning("sub-agent %s: its cost could not be attributed", rec["id"], exc_info=True)
+            cost = None
         rec["cost"] = cost
+        self._release_after_threads(rec)
+
+    def _release(self, spawn_id: str) -> None:
+        """Give back one slot — once per spawn, whoever calls."""
+        if spawn_id in self._held:
+            self._held.discard(spawn_id)
+            self._active -= 1
+
+    def _release_after_threads(self, rec: dict) -> None:
+        """Release *rec*'s slot now, or — when a sync tool handler the child started is
+        still running on its worker thread (ToolRPC cannot interrupt one) — when the last
+        such thread returns. Until then the slot stays taken and the record says how
+        many threads are still running, so real concurrency never exceeds the cap."""
+        spawn_id = rec["id"]
+        threads = self._threads.pop(spawn_id, set())
+        live = {future for future in threads if not future.done()}
+        if not live:
+            self._release(spawn_id)
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._release(spawn_id)
+            return
+        rec["threads_running"] = len(live)
+
+        def check() -> None:
+            remaining = sum(1 for future in live if not future.done())
+            if remaining:
+                rec["threads_running"] = remaining
+                return
+            rec.pop("threads_running", None)
+            self._release(spawn_id)
+
+        for future in live:
+            # A concurrent future calls back on its worker thread: hop to the loop.
+            future.add_done_callback(lambda _f: loop.call_soon_threadsafe(check))
 
     # ── persistence (observability only) ─────────────────────────
     def spawn_log_path(self) -> Path:
@@ -779,6 +2086,9 @@ class SubAgentManager:
         except ValueError as e:
             return {"ok": False, "reason": "invalid_steer", "detail": str(e), "id": spawn_id}
         rec["steers"].append(msg.to_dict())
+        transcript = self._transcripts.get(spawn_id)
+        if transcript is not None:
+            transcript.append("steer", origin=origin, text=msg.text)
         chan = self._channels.get(spawn_id)
         delivered = chan is not None and self._runner_takes_steer
         if chan is not None:
@@ -859,7 +2169,7 @@ class SubAgentManager:
                "cap": self.max_concurrent, "max_depth": self.max_depth,
                "blocked": sorted(self.blocked), "by_status": by_status,
                "steerable": self._runner_takes_steer, "persist": self.persist,
-               "cost_usd": round(cost_usd, 6)}
+               "cost_usd": round(cost_usd, 6), "timeout_seconds": self.child_timeout()}
         if self.budget is not None:
             out["budget"] = self.budget.status()
         turn = current_tool_turn()
@@ -869,7 +2179,12 @@ class SubAgentManager:
 
 
 __all__ = [
-    "BATCH_MAX", "DELEGATE_BLOCKED_CAPABILITIES", "NullRunner", "STEER_ORIGINS", "SPAWN_LOG_ENV",
-    "SPAWN_TRANSITIONS", "SUBAGENT_MODEL_SETTING", "SUBAGENT_PROVIDER_SETTING", "SteerChannel",
-    "SteerMessage", "SubAgentManager", "SubAgentProviderError", "validate_output",
+    "BATCH_MAX", "BLOCKED_CAPABILITY_TOOLS", "CHILD_TIMEOUT_MAX_SECONDS", "CHILD_TIMEOUT_MIN_SECONDS",
+    "DEFAULT_CHILD_TIMEOUT_SECONDS", "DELEGATE_BLOCKED_CAPABILITIES", "HALT_REASONS", "NullRunner",
+    "STEER_ORIGINS", "SPAWN_LOG_ENV", "SPAWN_TRANSITIONS", "SUBAGENT_MODEL_SETTING",
+    "SUBAGENT_PROVIDER_SETTING", "SteerChannel", "SteerMessage", "SubAgentManager",
+    "SubAgentProviderError", "blocked_tool_names", "build_child_prompt", "child_tool_allowlist",
+    "current_delegation", "current_spawn_id", "delegation_label", "extract_json_candidate", "goal_problem", "read_pause", "schema_problem",
+    "DEFAULT_STALL_SECONDS", "Transcript", "read_transcript", "trace_tool_event",
+    "validate_output", "write_pause",
 ]

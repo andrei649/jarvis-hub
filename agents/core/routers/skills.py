@@ -14,7 +14,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from fastapi import Path as PathParam
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from agents.core.routers._deps import user_guard, admin_guard
 from agents.core.routers._component import component_unavailable, require_component
@@ -22,6 +22,7 @@ from agents.core.routers._component import component_unavailable, require_compon
 from agents.core.web_helpers import error_json, logger, nocache_json
 from agents.core import app_state
 from agents.core.app_state import get_orch
+from agents.core.skills import hermes_catalog
 from agents.core.skills.marketplace import BrokerOnlyInstall
 from agents.core.skills.bundles import MAX_MEMBER_PATH_CHARS
 from agents.core.skills.signing import SkillSourceSnapshotError
@@ -313,6 +314,93 @@ async def switch_skill(body: SkillSwitchBody):
             "unchanged": outcome["unchanged"], "essential": outcome["essential"],
             "off_everywhere": outcome["off_everywhere"], "unstorable": outcome["unstorable"],
             "switches": outcome["state"], "audited": audited, **extra}
+
+
+class SkillPinBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    skill: str = Field(..., min_length=1, max_length=128)
+    pinned: StrictBool
+
+
+@router.post("/api/skills/pin", dependencies=[Depends(admin_guard)])
+async def pin_skill(body: SkillPinBody):
+    """H349 — pin or unpin one installed skill (Hermes: ``hermes curator pin|unpin``).
+
+    A pin stops automation: the curator's lifecycle pass leaves a pinned skill alone
+    (never marked stale or archived) and a batch the agent proposed does not delete it;
+    it can still be patched. The journey's forget refuses it too, as Hermes's does. The
+    owner's own removals are not blocked — the owner's batch delete, an uninstall, a
+    reject from review — and retire the pin with the skill. A skill that ships with Nerva
+    is not pinned (409 ``not_pinnable``): nothing ages it out or deletes it. Only a skill
+    installed and loaded now can be pinned (404 ``not_found``).
+
+    An admin route like the skill switch, applied at once like switching off (a pin only
+    narrows what automation may do), and written to the intent log when it changed
+    something. The one write is ``SkillUsageStore.pin``, which makes the same checks under
+    the sidecar's lock, so the answer is what the sidecar file now holds."""
+    import asyncio
+    import contextlib
+
+    from agents.core.skills import switches
+    from agents.core.skills.usage import PinRefused, usage_summary
+
+    orch, usage, unavailable = require_component(
+        "skill_usage", "the skill usage sidecar is not available, so nothing was pinned")
+    if unavailable is not None:
+        return unavailable
+    if getattr(orch, "skills", None) is None or not callable(getattr(usage, "pin", None)):
+        return component_unavailable("the skill usage sidecar is not available, so nothing was pinned")
+    # The exact registry name first (``spotify`` and ``Spotify`` are two skills), then the
+    # case-insensitive name-or-folder match the switches use.
+    found = orch.skills.skills.get(body.skill) or switches.find(orch.skills.skills.values(), body.skill)
+    # An unpin also reaches a pinned skill that is no longer loaded, by its exact name.
+    name = found.name if found is not None else body.skill
+
+    def _write():
+        # One hold of the sidecar's lock across the look at the folder, the sync of the row
+        # and the pin: a removal (which takes the same lock for its move) cannot land in
+        # between and be undone, or leave a pin on a skill that is gone.
+        # The folder is read first, with no lock held (a slow volume must not stall a
+        # counter bump on the event loop); only the check that it is still there, the
+        # write of the row and the pin run inside the hold.
+        observe = getattr(orch.skills, "observe", None)
+        record = getattr(orch.skills, "record", None)
+        seen = observe([name], strict=True) if found is not None and callable(observe) else {}
+        hold = getattr(usage, "locked", None)
+        with (hold() if callable(hold) else contextlib.nullcontext()):
+            if found is not None:
+                if callable(record):
+                    # The row and its origin, as the folder is now. Strict: a sidecar that
+                    # cannot be written is the 503 below, not "no such skill".
+                    record(seen, strict=True)
+            elif body.pinned:
+                raise PinRefused("not_found", f"no installed skill named {body.skill!r}")
+            return usage.pin(name, body.pinned)
+
+    try:
+        outcome = await asyncio.to_thread(_write)
+    except PinRefused as exc:
+        return JSONResponse({"error": str(exc), "reason": exc.reason},
+                            status_code=404 if exc.reason == "not_found" else 409)
+    except Exception:
+        logger.warning("skill pin could not be saved", exc_info=True)
+        return JSONResponse({"error": "the pin could not be saved; nothing changed", "reason": "write_failed"},
+                            status_code=503)
+    audited = False
+    if outcome["changed"]:
+        audit = getattr(orch, "intent_log", None)
+        if callable(getattr(audit, "record", None)):
+            try:
+                audit.record(actor="owner", action="skill.pin" if body.pinned else "skill.unpin",
+                             why=f"the owner {'pinned' if body.pinned else 'unpinned'} {name}",
+                             cause="skills.pin",
+                             metadata={"skill": name, "pinned": body.pinned, "origin": outcome.get("origin")})
+                audited = True
+            except Exception:
+                logger.warning("optional skill pin intent projection failed", exc_info=True)
+    return {"ok": True, "skill": name, "pinned": bool(outcome.get("pinned")), "changed": outcome["changed"],
+            "audited": audited, "usage": usage_summary(usage, name)}
 
 
 # ── H026: named skill bundles ────────────────────────────────────────────────────
@@ -728,19 +816,50 @@ async def sandbox_execute(body: SandboxExecuteBody, request: Request):
     }
 
 
+def _import_outcome(importer) -> tuple[str, list]:
+    """Why this request's import was refused, and the SKILL.md problems when that is why."""
+    outcome = getattr(importer, "outcome", None)
+    if callable(outcome):
+        try:
+            got = outcome()
+            return str(got.reason or ""), list(got.problems or [])
+        except Exception:
+            logger.warning("the import outcome could not be read", exc_info=True)
+    # A stand-in importer: its own attributes are all there is.
+    refusal = getattr(importer, "last_refusal", None)
+    return str(getattr(importer, "last_conflict", "") or ""), list(refusal) if isinstance(refusal, list) else []
+
+
+def _import_refused(importer, skill_name, source) -> JSONResponse:
+    """Why an import that wrote nothing was refused."""
+    # The outcome of THIS request's import (a context variable), never the shared
+    # importer's last_* attributes, which another request may have overwritten meanwhile.
+    reason, refusal = _import_outcome(importer)
+    if reason == "name_taken":
+        # H349: its SKILL.md declares the name of a skill installed from another folder.
+        return JSONResponse({"ok": False, "error": f"the skill '{skill_name}' in {source} declares the name of a "
+                                                    "skill that is already installed from another folder; nothing "
+                                                    "was written. Remove or rename that one first",
+                             "reason": "name_taken"}, status_code=409)
+    if reason == "exists":
+        # H349: the folder holds a skill this source did not import; nothing was written.
+        return JSONResponse({"ok": False, "error": f"a skill folder named '{skill_name}' already exists and was "
+                                                    f"not imported from {source}; it was left as it is. Remove or "
+                                                    "rename it first", "reason": "exists"}, status_code=409)
+    if isinstance(refusal, list) and refusal:
+        # H350 — found, but its SKILL.md is not valid: say why, never "not found".
+        return JSONResponse({"ok": False, "error": f"Skill '{skill_name}' in {source} has a SKILL.md that is "
+                                                    "not valid, and was not imported",
+                             "reason": "invalid_skill_md", "problems": [p.as_dict() for p in refusal]},
+                            status_code=422)
+    return JSONResponse({"ok": False, "error": f"Skill '{skill_name}' not found in {source}"}, status_code=404)
+
+
 @router.post("/skills/import", dependencies=[Depends(admin_guard)])
 async def skills_import(req: Request):
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    from agents.core.action_origin import current_action_origin
-    from agents.core.kernel import Action, Verdict
-    from agents.core.kernel.binding import make_action_kernel
-    from agents.core.skills.importer import OPENCLAW_REPO
-    from agents.core.skills.remote_pin import (
-        RemoteImportAuthorization, RemoteImportRefused, RemoteSkillPin,
-    )
-
     try:
         body = await req.json()
     except Exception:
@@ -755,6 +874,38 @@ async def skills_import(req: Request):
         return JSONResponse({"error": "skill name required"}, status_code=400)
     if not isinstance(source, str) or not isinstance(skill_name, str):
         return JSONResponse({"error": "invalid import request"}, status_code=400)
+    if source == hermes_catalog.REQUEST_SOURCE:
+        # Adopt lane slice 3: a skill of the vendored Hermes catalog, offline, through the
+        # same _save_skill gates as the pinned import (no network call). Its bytes are
+        # pinned to one upstream commit and verified against MANIFEST.json before a write.
+        try:
+            ok, refused = await hermes_catalog.install(orch.skill_importer, skill_name)
+        except OSError:
+            logger.warning("Hermes catalog install could not write its files", exc_info=True)
+            return JSONResponse({"ok": False, "error": "the skill's files could not be written",
+                                 "reason": "write_failed"}, status_code=500)
+        if refused is not None:
+            return _catalog_refusal(skill_name, refused)
+        if ok:
+            orch.skills.discover()
+            return {"ok": True, "source": source, "skill": skill_name}
+        return _import_refused(orch.skill_importer, skill_name, source)
+    return await _import_remote(orch, source, skill_name, body)
+
+
+async def _import_remote(orch, source: str, skill_name: str, body: dict):
+    """The one remote import: an exact pin, ``skill.install`` crossed before and after the
+    fetch, governed egress per request, a quarantined copy pending review. ``POST
+    /skills/import`` and a skill tap's install (H025, routers/skill_taps.py) both end here."""
+    from agents.core.action_origin import current_action_origin
+    from agents.core.kernel import Action, Verdict
+    from agents.core.kernel.binding import make_action_kernel
+    from agents.core.skills.importer import OPENCLAW_REPO
+    from agents.core.skills.remote_pin import (
+        RemoteImportAuthorization, RemoteImportRefused, RemoteSkillPin,
+    )
+
+    orch.skill_importer.last_refusal = []
     slug = _safe_slug(skill_name)
     if slug is None:
         return JSONResponse({"ok": False, "error": f"Skill '{skill_name}' not found in {source}"}, status_code=404)
@@ -871,22 +1022,133 @@ async def skills_import(req: Request):
         return {"ok": True, "source": source, "skill": skill_name,
                 "kernel": gate_verdicts[-1],
                 "quarantined": True, "status": "installed_review_required"}
-    refusal = getattr(orch.skill_importer, "last_refusal", None)
-    if isinstance(refusal, list) and refusal:
-        # H350 — found, but its SKILL.md is not valid: say why, never "not found".
-        return JSONResponse({"ok": False, "error": f"Skill '{skill_name}' in {source} has a SKILL.md that is "
-                                                    "not valid, and was not imported",
-                             "reason": "invalid_skill_md", "problems": [p.as_dict() for p in refusal]},
-                            status_code=422)
-    return JSONResponse({"ok": False, "error": f"Skill '{skill_name}' not found in {source}"}, status_code=404)
+    return _import_refused(orch.skill_importer, skill_name, source)
 
 
-@router.get("/skills/imported", dependencies=[Depends(user_guard)])
+@router.get("/skills/imported", dependencies=[Depends(user_guard)])   # manifests carry local source paths
 async def skills_imported():
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
-    return nocache_json({"imported": orch.skill_importer.list_imported()})
+    imported = orch.skill_importer.list_imported()
+    # Adopt lane slice 3: the vendored Hermes catalog the import above takes as
+    # source "hermes-catalog" (counts, one row a skill, what each needs; no file bytes).
+    return nocache_json({"imported": imported, "hermes_catalog": hermes_catalog.listing(imported)})
+
+
+def _catalog_refusal(skill_name, refused) -> JSONResponse:
+    """Why the Hermes catalog did not hand a skill to the importer."""
+    if refused.reason == "not_found":
+        return JSONResponse({"ok": False, "error": f"Skill '{skill_name}' not found in the Hermes catalog",
+                             "reason": "not_found"}, status_code=404)
+    if refused.reason == "upstream_only":
+        return JSONResponse({"ok": False, "reason": "upstream_only", "code_files": list(refused.files),
+                             "error": f"the Hermes skill '{skill_name}' carries code, which the catalog does "
+                                      "not install; nothing was written. Code reaches Nerva only as a "
+                                      "marketplace package: an admin install whose code is scanned and is "
+                                      "not run in-process without a keyed signature or the owner's "
+                                      "approval"}, status_code=422)
+    if refused.reason == "excluded":
+        return JSONResponse({"ok": False, "reason": "excluded", "why": refused.detail,
+                             "error": f"the Hermes skill '{skill_name}' is not in the installable catalog "
+                                      f"({refused.detail}); nothing was written"}, status_code=422)
+    if refused.reason == "not_installed":
+        return JSONResponse({"ok": False, "reason": "not_installed",
+                             "error": f"the Hermes skill '{skill_name}' is not installed; install it instead "
+                                      "of repairing it"}, status_code=404)
+    if refused.reason == "not_from_catalog":
+        return JSONResponse({"ok": False, "reason": "not_from_catalog",
+                             "error": f"the folder of '{skill_name}' was not written by a catalog install of "
+                                      "that skill; it was left as it is"}, status_code=409)
+    if refused.reason == "local_edits":
+        return JSONResponse({"ok": False, "reason": "local_edits", "files": list(refused.files),
+                             "error": f"the installed files of '{skill_name}' were edited; nothing was written. "
+                                      "Repair with force to replace them (a copy of each is kept)"},
+                            status_code=409)
+    logger.warning("Hermes catalog unavailable: %s", refused.detail)
+    return JSONResponse({"ok": False, "reason": "catalog_unavailable",
+                         "error": "the vendored Hermes catalog does not match its manifest; nothing was "
+                                  "written (run scripts/hermes_vendor.py status)"}, status_code=503)
+
+
+class CatalogInstallBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    skill: str = Field(..., min_length=1, max_length=200)
+    repair: StrictBool = False
+    force: StrictBool = False
+
+
+def _catalog_backups():
+    """Where a forced repair keeps the owner's edited files: outside every skills tree."""
+    from agents.core.paths import data_path
+
+    return data_path(*hermes_catalog.REPAIR_BACKUP_PARTS)
+
+
+@router.post("/api/skills/catalog/install", dependencies=[Depends(admin_guard)])
+async def catalog_install(body: CatalogInstallBody):
+    """H336 — the owner installs or repairs one skill of the vendored Hermes catalog
+    (Hermes: ``hermes skills install official/<category>/<skill>``, ``repair-official``).
+
+    An admin route, for this catalog only: its skills are pinned to one upstream commit,
+    byte-verified against MANIFEST.json before every write, and carry instructions and
+    plain data only. ``POST /skills/import`` (admin too) takes the same catalog as source
+    ``hermes-catalog`` without repair; its remote sources cross the action kernel and
+    governed egress for each request. ``skill`` is a slug, ``<category>/<skill>``,
+    the upstream path or ``official/<category>/<skill>``. A skill a catalog install already
+    wrote, or ``repair: true``, is repaired: deleted files are restored from the vendored
+    bytes, an edited file refuses the repair (409 ``local_edits``) unless ``force``, which
+    keeps a copy first. A write is recorded in the intent log as ``skill.install`` or
+    ``skill.repair``."""
+    import asyncio
+
+    orch = get_orch()
+    if not orch or getattr(orch, "skill_importer", None) is None:
+        return JSONResponse({"error": "not initialized"}, status_code=503)
+    try:
+        result, refused = await hermes_catalog.owner_install(
+            orch.skill_importer, body.skill, repair_it=body.repair, force=body.force,
+            backup_dir=await asyncio.to_thread(_catalog_backups))
+    except OSError:
+        logger.warning("Hermes catalog install could not write its files", exc_info=True)
+        return JSONResponse({"ok": False, "error": "the skill's files could not be written",
+                             "reason": "write_failed"}, status_code=500)
+    if refused is not None:
+        return _catalog_refusal(body.skill, refused)
+    if result is None:
+        reason, problems = _import_outcome(orch.skill_importer)
+        if reason in ("name_taken", "exists"):
+            return JSONResponse({"ok": False, "reason": reason,
+                                 "error": f"a skill folder or name '{body.skill}' is already taken by a skill the "
+                                          "catalog did not install; nothing was written. Remove or rename it "
+                                          "first"}, status_code=409)
+        if problems:
+            return JSONResponse({"ok": False, "reason": "invalid_skill_md", "problems": [p.as_dict() for p in problems],
+                                 "error": f"the catalog skill '{body.skill}' has a SKILL.md that is not valid"},
+                                status_code=422)
+        return JSONResponse({"ok": False, "reason": reason or "refused",
+                             "error": f"the catalog skill '{body.skill}' was not written"}, status_code=409)
+    audited = False
+    if result.get("changed"):
+        try:
+            orch.skills.discover()
+        except Exception:
+            logger.warning("skill discovery after a catalog install failed", exc_info=True)
+        audit = getattr(orch, "intent_log", None)
+        if callable(getattr(audit, "record", None)):
+            action = "skill.install" if result["action"] == "install" else "skill.repair"
+            why = (f"the owner installed {result['skill']} from the Hermes catalog @{result['commit'][:8]}"
+                   if action == "skill.install" else
+                   f"the owner repaired {result['skill']} from the Hermes catalog @{result['commit'][:8]}")
+            try:
+                audit.record(actor="owner", action=action, why=why, cause="skills.catalog",
+                             metadata={k: result.get(k) for k in (
+                                 "skill", "path", "commit", "status", "restored", "replaced", "backed_up")})
+                audited = True
+            except Exception:
+                logger.warning("optional catalog install intent projection failed", exc_info=True)
+    return {"ok": True, **result, "audited": audited}
 
 
 # ── Agent Marketplace Endpoints (H5.8) ───────────────────────────
@@ -1098,6 +1360,13 @@ async def marketplace_uninstall(body: UninstallSkillBody):
         # (and whether a row is actually there) BEFORE the uninstall.
         registry_key = orch.marketplace.registry_key(body.name)
         was_registered = bool(body.purge) and orch.marketplace.is_registered(registry_key)
+        # H349: whose usage row goes is read off the folder while it is still there — the
+        # name it registers under and the install id it carries.
+        from agents.core.skills.loader import install_id_of, loader_name
+
+        going_name, going_id = "", ""
+        if removed_dir.is_dir():
+            going_name, going_id = loader_name(removed_dir), install_id_of(removed_dir)
         removed = orch.marketplace.uninstall_skill(body.name, purge=body.purge)
         # OBSERVE the outcome. This used to return `body.purge` — the caller's own
         # request flag echoed back — so the HUD reported "registry row purged" even when
@@ -1122,6 +1391,14 @@ async def marketplace_uninstall(body: UninstallSkillBody):
                     if Path(getattr(s, "path", "")).resolve() == removed_dir]:
             with contextlib.suppress(Exception):
                 del orch.skills.skills[key]
+        # H349: uninstalled for good, pinned or not (the owner's own act): ITS usage row
+        # goes with it, so a later skill of the name inherits nothing. A row that belongs
+        # to another folder still holding the name (the source a package was published
+        # from, a duplicate) is left alone; that folder then takes the slot again.
+        forget_removed = getattr(orch.skills, "forget_removed", None)
+        if going_name and callable(forget_removed) and forget_removed(going_name, going_id):
+            with contextlib.suppress(Exception):
+                orch.skills.discover()
         # DRA-54 — drop the owner approval bound to that path immediately, so a
         # re-created (byte-identical) tree at the same path cannot inherit it.
         with contextlib.suppress(Exception):
@@ -1483,6 +1760,39 @@ async def skills_batch(body: SkillBatchBody):
                                      dry_run=body.dry_run)
     return JSONResponse(result, status_code=200 if result.get("ok") else 422,
                         headers={"Cache-Control": "no-store"})
+
+
+class SkillConsolidationBody(BaseModel):
+    """H348: the owner asks which skills overlap and, with ``draft``, for umbrella proposals."""
+
+    model_config = {"extra": "forbid"}
+
+    threshold: float = Field(0.35, ge=0.1, le=1.0)
+    max_groups: int = Field(3, ge=1, le=3)
+    draft: StrictBool = True
+
+
+@router.post("/api/skills/consolidation/analyze", dependencies=[Depends(admin_guard)])
+async def skills_consolidation_analyze(body: SkillConsolidationBody):
+    """H348 — find overlapping skills locally (TF-IDF similarity) and, with ``draft``, have the
+    local model draft one umbrella skill per group. Each draft becomes one skill batch
+    (create the umbrella, delete each member ``absorbed_into`` it) with one approval card;
+    nothing changes until the owner approves that card. Only ever runs when the owner asks."""
+    from agents.core.skills.consolidation import ConsolidationLedger, analyze
+
+    orch = get_orch()
+    loader = getattr(orch, "skills", None) if orch else None
+    if loader is None:
+        return component_unavailable("skills are not available")
+    from agents.core.paths import data_path
+
+    result = await analyze(loader, usage=getattr(orch, "skill_usage", None),
+                           batches=getattr(orch, "skill_batches", None),
+                           queue=getattr(orch, "action_approvals", None),
+                           ledger=ConsolidationLedger(data_path("learning", "skill_consolidations.json")),
+                           router=getattr(orch, "llm_router", None), threshold=body.threshold,
+                           max_groups=body.max_groups, draft=body.draft)
+    return JSONResponse(result, headers={"Cache-Control": "no-store"})
 
 
 @router.get("/api/skills/batches", dependencies=[Depends(admin_guard)])

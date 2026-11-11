@@ -332,6 +332,8 @@ _REFUSALS_BY_KIND: dict[str, tuple[str, ...]] = {
                  "mediation_execution_required", "local_image_disabled", "kernel_required",
                  "heavy_features_paused"),
     "repo.sync": (),
+    # session.loop_tick — a /loop wakeup is a turn, never an autonomy-worker task.
+    "session.loop_tick": (),
     "admin.kill_switch": (),
     "admin.capability_issue": (),
     # admin.agent_roster — H202's roster changes run only from admin routes and the CLI,
@@ -396,6 +398,14 @@ _REFUSALS_BY_KIND: dict[str, tuple[str, ...]] = {
     # research — unavailable/configuration paths return ``noop``; a websearch
     # exception returns ``failed`` and remains a genuine execution failure.
     "research": (),
+    # a2a.outbound — checked by the A2A runtime when an approved call sends; its refusals
+    # come back from the tool as ``ok: False`` reasons, never as a worker ``failed``.
+    "a2a.outbound": (),
+    # hook.exec — G17's owner hooks cross the kernel inline in hooks.runner (its refusals
+    # are named reasons of the run, e.g. ``kernel_denied``), never as an autonomy task;
+    # the approval card is ``hooks.define`` (irreversible tier), so no handler here
+    # returns a refusal for it.
+    "hook.exec": (),
 }
 REFUSAL_REASONS_BY_KIND: dict[str, frozenset[str]] = {
     kind: frozenset(reasons) for kind, reasons in _REFUSALS_BY_KIND.items()}
@@ -524,6 +534,15 @@ def _failure_record(error: BaseException) -> dict:
 # executor(task) -> dict result ; notifier(task) -> bool (pushed ok)
 Executor = Callable[[Task], Awaitable[dict]]
 Notifier = Callable[[Task], Awaitable[bool]]
+
+
+#: H484 — deciders that are not a person. Under the approval mode ``off`` an approval by
+#: one of these (or by a decider not listed anywhere: unknown is a machine) does not run.
+#: The checkpoint controller's set, plus the auxiliary model and the runtime.
+MACHINE_DECIDERS = frozenset({"", "policy", "system", "kernel", "auto", "worker", "scheduler",
+                              "smart_approval", "owner_once", "consent", "aux_llm", "runtime"})
+#: The decisions that are a person's approval.
+HUMAN_APPROVALS = frozenset({"accept", "approve", "edit"})
 
 
 class _ExecutionPermit:
@@ -668,6 +687,7 @@ class AutonomyWorker:
             self.policy.outcome_provider = self._capability_outcome_stats
         self.executor = executor
         self._parallel_tick_lock = asyncio.Lock()
+        self._recall_refused: set[int] = set()     # H484: logged once, not every tick
         self.notifier = notifier
         self.budget = budget or InterruptBudget()
         self.delivery_broker = delivery_broker or getattr(self.budget, "delivery_broker", None)
@@ -1199,6 +1219,115 @@ class AutonomyWorker:
         must_ask = invalid_tier or (trusted_tier is not None and decided_tier < trusted_tier)
         return decision, effective_tier, must_ask
 
+    @staticmethod
+    def _delegated_title(title: str) -> tuple[str, Optional[dict]]:
+        """H400 review (M2): a task a sub-agent asked for says so in its title — the line
+        the HUD card and ``nerva approvals list`` show — and the delegation is recorded
+        with the card's ask context. Nothing else changes: not the kind, not the payload
+        (exact payload shapes gate smart approval), not the policy decision."""
+        try:
+            from ..subagents import current_delegation, delegation_label
+
+            delegated = current_delegation()
+        except Exception:  # noqa: BLE001 — provenance never blocks an intake
+            return title, None
+        if not delegated:
+            return title, None
+        return f"{title} — {delegation_label(delegated)}", delegated   # the action first
+
+    def _record_ask_context(self, task: Task, decision=None, *, recalled: bool = False,
+                            delegated: Optional[dict] = None) -> None:
+        """H484 — remember, for the approval card, the mode this task was held under and
+        whether the mode itself (not its risk tier or a floor) is why it asks."""
+        try:
+            from .mode import resolve
+            from .policy import MODE_REASON
+
+            effective = getattr(self.policy, "effective_mode", None)
+            record = getattr(self.queue, "record_ask_context", None)
+            if not callable(effective) or not callable(record):
+                return
+            overrides = getattr(self.policy, "agent_modes", None)
+            overall, _source = resolve(getattr(self.policy, "mode", None), None)
+            mode, source = resolve(
+                overall, overrides.get(task.agent) if isinstance(overrides, dict) else None)
+            by_mode = recalled or (
+                decision is not None and decision.outcome == ASK
+                and str(getattr(decision, "reason", "")).startswith(MODE_REASON))
+            context = {"mode": mode, "source": source, "global": overall, "by_mode": by_mode,
+                       "recalled": recalled}
+            if delegated:
+                context["delegated"] = delegated
+            elif recalled:
+                kept = getattr(self.queue, "ask_context", None)
+                earlier = kept(task.id) if callable(kept) else None
+                if isinstance(earlier, dict) and isinstance(earlier.get("delegated"), dict):
+                    context["delegated"] = earlier["delegated"]   # a recall keeps who asked
+            record(task.id, context)
+        except Exception:
+            logger.warning("ask context unavailable for task %s", getattr(task, "id", "?"), exc_info=True)
+
+    @staticmethod
+    def _human_approved(task: Task) -> bool:
+        """H484 — whether a person approved *task*: a decider that is not a machine
+        (``MACHINE_DECIDERS``; an empty or unknown one counts as a machine) whose decision
+        is an approval, or one the queue recorded a human decision for."""
+        decider = str(task.decided_by or "").strip().lower()
+        if decider in MACHINE_DECIDERS:
+            return False
+        return task.decision in HUMAN_APPROVALS or bool(task.human_decision)
+
+    def _recalled_by_off(self, task: Task) -> bool:
+        """H484 — True when *task* must not run now: the approval mode that applies to its
+        agent is ``off`` and no person approved it — the policy, the smart reviewer, a
+        standing consent, or a decider this code does not know did. The task returns to
+        the decision inbox, whatever its attention mode; if the store will not take that
+        transition it stays approved and does not run while the mode is off."""
+        effective = getattr(self.policy, "effective_mode", None)
+        try:
+            if not callable(effective) or effective(task.agent) != "off":
+                return False
+        except Exception:
+            return False
+        if self._human_approved(task):
+            return False
+        try:
+            blocked = self.queue.transition(
+                task.id, TaskStatus.BLOCKED, decided_by="policy", decision="needs-approval",
+                expected_status=TaskStatus.APPROVED,
+            )
+        except Exception as exc:  # noqa: BLE001 — whatever refused it, the task does not run
+            if task.id not in self._recall_refused:
+                self._recall_refused.add(task.id)
+                logger.warning("approval mode off: task %s is held, not run (%s: it could not be "
+                               "returned to the inbox)", task.id, type(exc).__name__)
+            return True
+        self._recall_refused.discard(task.id)
+        self._record_ask_context(blocked, recalled=True)
+        self._audit("autonomy.recalled_by_off", blocked, "approval mode off — returned to the owner")
+        if blocked.attention_mode == "interrupt":
+            self._schedule_push(blocked)
+        return True
+
+    def _receipt_refused(self, task: Task, result) -> dict | None:
+        """H484 — the failure record for an approved task whose handler ran nothing because
+        the kernel queued its action instead of honouring the approval (it honours an
+        approval receipt only while the approval mode is ``auto``). Such a task is not
+        done: it failed, and its result says why and what to do. None otherwise."""
+        if not (isinstance(result, dict) and result.get("status") == "failed"
+                and result.get("reason") == "kernel_queued"):
+            return None
+        effective = getattr(self.policy, "effective_mode", None)
+        try:
+            mode = effective(task.agent) if callable(effective) else None
+        except Exception:
+            mode = None
+        if mode not in ("ask", "off"):
+            return None
+        return {**result, "error": (
+            f"not run: the approval mode is {mode}, and an approval of this kind of action takes "
+            "effect only in auto. Set the approval mode to auto and propose it again.")}
+
     def _strictest_level(self, requested: str, decided: str) -> str:
         rank = self._LEVEL_RANK
         return requested if rank.get(requested, 2) >= rank.get(decided, 2) else decided
@@ -1240,6 +1369,7 @@ class AutonomyWorker:
         an event loop is running, else the card waits in the inbox).
         """
         origin = self._effective_origin(origin)
+        title, delegated = self._delegated_title(title)
         proposed_payload = payload or {}
         payload, tainted = self._mark_payload_for_origin(proposed_payload, origin)
         classification = self.queue.classify_mediation(kind)
@@ -1318,6 +1448,7 @@ class AutonomyWorker:
             decision="needs-approval",
             expected_status=TaskStatus.PROPOSED,
         )
+        self._record_ask_context(task, decision, delegated=delegated)
         # Metadata cannot turn a successfully persisted ask into enqueue_failed.
         try:
             from .approval_grouping import current_model_producer
@@ -1440,6 +1571,7 @@ class AutonomyWorker:
     ) -> Task:
         """Propose a task, gate it through the policy, and route it."""
         origin = self._effective_origin(origin)
+        title, delegated = self._delegated_title(title)
         proposed_payload = payload or {}
         payload, tainted = self._mark_payload_for_origin(proposed_payload, origin)
         classification = self.queue.classify_mediation(kind)
@@ -1526,6 +1658,7 @@ class AutonomyWorker:
             decided_by="policy",
             decision="needs-approval",
         )
+        self._record_ask_context(task, decision, delegated=delegated)
         if grouping_context is not None and type(self.policy) is AutonomyPolicy:
             policy = {key: getattr(self.policy, key) for key in (
                 'mode', 'agent_modes', 'cap_per_action', 'daily_ceiling',
@@ -1852,6 +1985,11 @@ class AutonomyWorker:
             if irreversible.held_here(task):
                 held += 1
                 continue
+            # H484: in OFF nothing the policy approved on its own runs — the task goes
+            # back to waiting for the owner. What a human approved still runs.
+            if self._recalled_by_off(task):
+                held += 1
+                continue
             if self.queue.consent_task_marker(task.id):
                 summary = await self._run_consent(task)
                 ran += summary['ran']
@@ -1974,6 +2112,13 @@ class AutonomyWorker:
                             result=_retry_record(e, failures=failures, recorded=recorded_before),
                         )
                         logger.info(f"Task #{task.id} failed (attempt {attempts}), will retry: {e}")
+                    continue
+                refused = self._receipt_refused(task, result)
+                if refused is not None:
+                    # Nothing ran: never "done". Not an attempt of the capability either.
+                    self.queue.transition(task.id, TaskStatus.FAILED, result=refused)
+                    self._audit("autonomy.failed", task, "approval not honoured: approval mode is not auto")
+                    failed += 1
                     continue
                 try:
                     if (task.kind == "toolrpc.terminal_run"

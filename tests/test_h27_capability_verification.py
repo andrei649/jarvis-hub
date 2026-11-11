@@ -193,8 +193,9 @@ async def test_all_executable_capability_cases_pass_hermetically_without_flag_le
     )
     assert {case.capability_id for case in ACTION_CAPABILITY_CASES if
             case.capability_id == "action:plugin.load"} == {"action:plugin.load"}
-    assert result["total"] == 39
-    assert result["passed"] == 39
+    # + hook.exec (G17): its kill-switch case is generated from the manifest like every action.
+    assert result["total"] == 42
+    assert result["passed"] == 42
     assert result["skipped"] == 0
     assert result["promoted"] == []
     assert all(item["passed"] for item in result["results"])
@@ -289,8 +290,12 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
     by_ref = {case.ref: case for case in cases}
 
     _assert_h696_boot_skill_split(records)
-    # Six independent, default-off image-provider manifests each need a policy case.
-    assert len(records) == len(cases) == len(by_ref) == 84 - len(H696_OPTIONAL_SKILL_TITLES) == 77
+    # Six independent, default-off image-provider manifests each need a policy case, and so
+    # does the G14 ``a2a`` egress manifest.
+    # 89 before H696: + plugin:a2a (A2A outbound), the three default-off cloud video
+    # providers (G19) and plugin:channel_sms (G16); H696 moved the optional skills out of
+    # the boot registry.
+    assert len(records) == len(cases) == len(by_ref) == 89 - len(H696_OPTIONAL_SKILL_TITLES) == 82
     assert by_ref["reality-v1:plugin:cloud-image"].capability_id == "plugin:cloud-image"
     assert by_ref["reality-v1:plugin:kanban-attachments"].capability_id == "plugin:kanban-attachments"
     assert by_ref["reality-v1:plugin:ntfy"].capability_id == "plugin:ntfy"
@@ -298,18 +303,18 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
         kind: sum(case.capability_id.startswith(f"{kind}:") for case in cases)
         for kind in ("plugin", "component", "skill")
     } == {
-        "plugin": 48,
+        "plugin": 53,
         "component": 24,
         "skill": 5,
     }
-    assert len({case.capability_id for case in cases}) == 77
+    assert len({case.capability_id for case in cases}) == 82
     for record in records:
         assert record.verification in by_ref
         assert by_ref[record.verification].capability_id == record.id
 
     combined = all_reality_cases(orch)
     assert combined[: len(CASES)] == CASES
-    assert len(combined) == len(CASES) + 77
+    assert len(combined) == len(CASES) + 82
     all_refs = [case.ref for case in combined]
     assert len(all_refs) == len(set(all_refs))
 
@@ -322,9 +327,10 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
     assert ("reality-v1:action-provider-selection-kernel-halt", "action:provider.selection") in verification_pairs
     assert ("reality-v1:action-provider-custom_endpoint-owner-receipt-unavailable",
             "action:provider.custom_endpoint") in verification_pairs
-    assert len(ACTION_CAPABILITY_MANIFESTS) == 40
+    assert len(ACTION_CAPABILITY_MANIFESTS) == 43
     assert len(tool_records) == 2
-    assert len(verification_pairs) == 40 + 2 + 77 == 119
+    # + the three default-off cloud video providers, + channel_sms (G16), + hook.exec (G17)
+    assert len(verification_pairs) == 43 + 2 + 82 == 127
     for verification_ref, capability_id in verification_pairs:
         matches = [case for case in combined if case.ref == verification_ref]
         assert len(matches) == 1
@@ -342,8 +348,8 @@ async def test_registry_policy_cases_pass_while_default_off_plugins_remain_seams
     by_id = {item["capability_id"]: item for item in result["results"]}
 
     _assert_h696_boot_skill_split(records.values())
-    assert result["total"] == 77
-    assert result["passed"] == 76
+    assert result["total"] == 82
+    assert result["passed"] == 81
     assert by_id["plugin:ntfy"]["passed"] is True
     assert result["skipped"] == 0
     assert all(
@@ -355,6 +361,7 @@ async def test_registry_policy_cases_pass_while_default_off_plugins_remain_seams
     # disabled by default. This proof does not promote the provider to WIRED.
     default_off = {f"plugin:cloud-image-{provider}" for provider in (
         "fal", "codex", "openrouter", "krea", "xai", "deepinfra")}
+    default_off |= {f"plugin:cloud-video-{provider}" for provider in ("fal", "xai", "deepinfra")}
     assert {capability_id for capability_id, record in records.items()
             if record.state == cr.SEAM} == default_off | {"skill:Weather Intel"}
     assert all(by_id[capability_id]["passed"] for capability_id in default_off)

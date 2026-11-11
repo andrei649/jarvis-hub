@@ -87,10 +87,10 @@ def temp_settings(tmp_path, monkeypatch):
 def test_the_command_tree_is_discoverable_and_complete():
     tree = command_tree(build_parser())
     assert set(tree) == {
-        "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "inspect", "logs", "estop", "jobs", "sessions", "chat", "send", "completion",
+        "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "inspect", "logs", "estop", "jobs", "sessions", "chat", "acp", "send", "completion",
         "prompt-size", "desktop", "security", "todo", "skills", "company", "auth", "checkpoints", "kanban", "project", "secrets", "support",
-        "uninstall", "backup", "pairing", "webhook", "provider", "goal", "memory", "agents",
-        "journey", "learning", "memory-graph", "curator",
+        "uninstall", "backup", "pairing", "hooks", "webhook", "provider", "goal", "memory", "agents",
+        "journey", "learning", "memory-graph", "mcp", "curator", "lsp",
     }
     # H027: owner-governed skill curation. Reads (status, usage, ledger, lists) change nothing;
     # every other verb previews or requests an owner-approved, recoverable change.
@@ -110,6 +110,8 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert tree["webhook"] == ["list", "remove", "subscribe", "test"]
     # The owner-managed compatible endpoint is one explicit local CLI family.
     assert tree["provider"] == ["custom"]
+    # G9 (H549, H550, H692): the MCP catalog, a confirmed install, and a loopback-relayed sign-in.
+    assert tree["mcp"] == ["catalog", "install", "login"]
     # H010: backup create/list/verify read the data root; restore asks the hub's approval queue;
     # cancel withdraws a staged restore before it is applied.
     assert tree["backup"] == ["cancel", "create", "list", "restore", "verify"]
@@ -120,8 +122,9 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert tree["security"] == ["audit"]
     # H006: edit opens $VISUAL/$EDITOR on the declared settings; path / env-path name the
     # files; migrate writes this build's defaults and retired-model rewrites into a store.
-    assert tree["config"] == ["check", "edit", "env-path", "get", "list", "migrate", "path", "set", "unset"]
-    assert tree["approvals"] == ["accept", "consent", "defer", "edit", "list", "reject"]
+    assert tree["config"] == ["check", "edit", "env-path", "get", "list", "managed", "migrate", "path", "set", "unset"]
+    # H484: `mode` shows or sets the approval dial (auto|ask|off) through the admin route.
+    assert tree["approvals"] == ["accept", "consent", "defer", "edit", "list", "mode", "reject"]
     assert tree["checkpoints"] == [
         "clear", "clear-legacy", "diff", "list", "prune", "restore", "status",
     ]
@@ -130,7 +133,8 @@ def test_the_command_tree_is_discoverable_and_complete():
     # H350: the linter reads files and reports; it never writes a skill.
     # H354: `verify` runs one in-process reality probe on the hub and writes nothing durable.
     # H026: `bundles` keeps named groups of skills; it switches none of them (off/on --bundle does).
-    assert tree["skills"] == ["bundles", "config", "lint", "list", "off", "on", "verify"]
+    # H349: `pin` and `unpin` are the owner's pin on one skill.
+    assert tree["skills"] == ["bundles", "catalog", "config", "lint", "list", "off", "on", "pin", "unpin", "verify"]
     # H464: read the runs, and let a parked one go. Nothing here starts a run.
     assert tree["company"] == ["clear-wait", "list"]
     # H462: propose only sends a card to the decision inbox; subgoal only narrows.

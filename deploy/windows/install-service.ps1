@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Install/uninstall Jarvis Hub as a Windows service via NSSM. (H23.15)
+    Install/uninstall Nerva as a Windows service via NSSM. (H23.15)
 
 .DESCRIPTION
     Windows has no native "run this script as a resilient service" primitive, so
@@ -66,11 +66,14 @@ New-Item -ItemType Directory -Force -Path $DataRoot | Out-Null
 Write-Host "Installing service '$ServiceName' → $python $serve"
 & $nssm install $ServiceName $python $serve
 & $nssm set $ServiceName AppDirectory $InstallRoot
-& $nssm set $ServiceName Description "Jarvis Hub — personal AI cabinet (FastAPI)"
+& $nssm set $ServiceName Description "Nerva — personal AI operating system (FastAPI)"
 & $nssm set $ServiceName Start SERVICE_AUTO_START
 
 # Operability env (H23.11). Loopback default; off-loopback needs a token / the
 # explicit insecure-bind opt-in or serve.py refuses to boot (fail-closed).
+# RB-2: these four are pinned under the JARVIS_ spelling (change them with this script's
+# parameters). NERVA_<X> for one of them elsewhere in the service environment is one
+# variable set twice, and the hub refuses to start.
 & $nssm set $ServiceName AppEnvironmentExtra `
     "JARVIS_HOST=$BindHost" `
     "JARVIS_PORT=$Port" `
@@ -87,6 +90,9 @@ Write-Host "Installing service '$ServiceName' → $python $serve"
 # successor), so Default stays Restart; a clean exit (0) is a stop and stays stopped.
 & $nssm set $ServiceName AppExit Default Restart
 & $nssm set $ServiceName AppExit 0 Exit
+# RB-2: 78 = one variable under both the NERVA_ and the JARVIS_ spelling in the service
+# environment (serve.py): restarting cannot help.
+& $nssm set $ServiceName AppExit 78 Exit
 & $nssm set $ServiceName AppRestartDelay 5000
 
 Write-Host "Starting '$ServiceName'…"

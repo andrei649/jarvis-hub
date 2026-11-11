@@ -45,6 +45,8 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 
 **Pruned** (2026-09-27): the 45 rows closed so far (H613, H262, H681, H410, H586, H667, H670, H145, H157, H283, H285, H296, H314, H350, H441, H501, H504, H526, H117, H275, H328, H380, H450, H659, H674, H677, H156, H161, H168, H209, H227, H247, H259, H309, H373, H378, H507, H689, H222, H329, H413, H490, H594, H579, H182) left the queue table, and their plans were cut to a one-line stub that keeps the anchor the critic notes link to. Their records are in the ledger.
 
+**Closed 2026-11-10** (#1347): H440 — built, then four adversarial reviews with a fix round after each of the first three; its record is in the ledger and its plan below is kept only as the anchor.
+
 **How to use this archive.** When the active campaign selects a relevant row,
 read its current record with `scripts/hermes_status.py show <ID>`, then its plan
 here and every critic note it links. Sixty of the 93 plans overlap another plan
@@ -108,7 +110,6 @@ The doctor now keeps the admin token on this machine, decided by address; reads 
 | [H220](#h220) | Usage and cost accounting surface | partial | 10 | [10](#critic-note-10) |
 | [H243](#h243) | Completions (filesystem paths, slash commands) and provider/model options (list, save key, disconnect) | partial | 10 | [26](#critic-note-26) |
 | [H425](#h425) | Destructive forget: retract a fact and everything derived from it | partial | 10 | [28](#critic-note-28) |
-| [H440](#h440) | Automatic session titles and continuation lineage | partial | 10 | [4](#critic-note-4) |
 | [H596](#h596) | Keep working when one API key is rate-limited (credential pools) | partial | 10 | [26](#critic-note-26), [30](#critic-note-30) |
 | [H063](#h063) | Session reset policy and expiry/stall watchers | partial | 12 |  |
 | [H204](#h204) | Capabilities hub — skills and toolsets management | partial | 12 | [24](#critic-note-24) |

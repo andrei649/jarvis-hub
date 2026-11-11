@@ -90,6 +90,7 @@ from agents.core import archive_safe
 from agents.core.archive_safe import ArchiveLimits
 from agents.core.env_config import env_float, env_int, env_str
 from agents.core.estop import SENTINEL_NAME as ESTOP_SENTINEL
+from agents.core.estop import SPAWN_PAUSE_SENTINEL
 from agents.core.paths import data_root
 from agents.core.secrets import SecretStore, SecretStoreError, _looks_like_fernet_key
 
@@ -583,6 +584,9 @@ def create_backup(source_root: Optional[str] = None, out_dir: Optional[str] = No
     # pause for every hub; leaving it out means a restore never touches the live switch
     # (extraction only adds files, so an engaged pause also survives a restore).
     files = [f for f in files if f != src / ESTOP_SENTINEL]
+    # H400: the sub-agent spawn pause is a live switch too (subagents.PAUSE_SENTINEL): a
+    # restore neither reinstates a pause the owner has lifted nor lifts one in force.
+    files = [f for f in files if f != src / "subagents" / SPAWN_PAUSE_SENTINEL]
     if quick:
         files = [f for f in files if is_state_db(f)]
     with tempfile.TemporaryDirectory() as tmp:

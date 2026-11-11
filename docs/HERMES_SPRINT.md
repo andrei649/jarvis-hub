@@ -338,29 +338,39 @@ de finalizare dedus din procent: efortul fiecărui rând diferă considerabil.
 
 [assessment.json](hermes/assessment.json) păstrează numai reevaluările explicite,
 legate prin ID și hash de inventarul original. Restul rândurilor au baza de audit
-vizibilă. Hash-urile dovezilor sunt SHA-256 peste text UTF-8 cu newline normalizat,
-astfel încât checkout-urile Windows și Linux să aibă același verdict.
+vizibilă. Fiecare rând aparține unui singur domeniu de funcționalitate din
+[areas.json](hermes/areas.json) (decizia owner-ului din 2026-11-10, §3), iar fiecare
+domeniu are o suită de acceptanță: fișiere sau noduri pytest.
+
+**Dovezile nu mai sunt fixate prin hash (schema 3, 2026-11-10).** O evaluare reține
+verdictul, rezumatul, restanța și căile fișierelor citate; citările `cale:linie` sunt
+proză. Un merge care doar mută sau editează cod nu schimbă niciun rând și nu cere
+nicio restampilare. Ce ține un rând `equivalent` onest este suita domeniului său:
+CI citește rezultatul JUnit al rulării pytest normale (`verify --junit`, fără a rula
+testele de două ori); dacă o intrare a suitei pică, dă eroare sau nu a rulat deloc,
+rândurile echivalente ale domeniului apar ca `needs_review` (bază `suite_failed`) și
+pasul CI pică numindu-le. Rândurile parțiale și lipsă nu sunt atinse. Vechile
+hash-uri ale dovezilor sunt în istoricul git (ultima versiune: schema 2, commit-ul
+dinaintea migrării); `hermes_restamp.py` a fost retras odată cu ele.
 
 Pentru un rând reevaluat, citește cerința completă cu `show`, inspectează codul și
-testele, apoi actualizează evaluarea. `equivalent` cere cod și teste referențiate
-și zero lipsuri declarate; acestea sunt condiții necesare, nu un înlocuitor al
-judecății tehnice. Nu reîmprospăta hash-urile fără reevaluare. Un fișier schimbat
-sau dispărut produce `needs_review`, nu o promovare implicită.
+testele, apoi actualizează evaluarea direct în `assessment.json`. `equivalent` cere cod
+și teste referențiate, zero lipsuri declarate și un domeniu cu suită; acestea sunt
+condiții necesare, nu un înlocuitor al judecății tehnice. Când un rând devine
+echivalent, adaugă în suita domeniului testul care dovedește comportamentul (ce poate
+face owner-ul, ce nu poate face un atacator). Mutarea sau redenumirea unui fișier de
+test citat de o suită face `check` să eșueze cu numele intrării: actualizează
+`areas.json`, nu rândurile.
 
 ```text
 python scripts/hermes_status.py summary --json
-python scripts/hermes_status.py list --state partial --cluster media
+python scripts/hermes_status.py list --state partial --area media
 python scripts/hermes_status.py show H515
 python scripts/hermes_status.py write
 python scripts/hermes_status.py check
-python scripts/hermes_restamp.py drift --all-stale
-python scripts/hermes_restamp.py cite H464
-python scripts/hermes_restamp.py stamp --patch review.json
+python scripts/hermes_status.py verify --area mcp          # rulează local suita unui domeniu
+python scripts/hermes_status.py verify --junit junit.xml   # citește o rulare existentă (CI)
 ```
-
-`hermes_restamp.py` (2026-09-28) arată, pentru un rând `needs_review`, commit-ul care
-conține versiunea fixată a fiecărei dovezi și unde a ajuns fiecare citare `path:line`;
-`stamp` scrie numai un patch revizuit și refuză o evaluare care nu trece de `hermes_status`.
 
 Pagina principală și lista completă sunt generate împreună. Testele de integritate
 verifică numitorul, excluderile, identitatea rândurilor, dovezile modificate și

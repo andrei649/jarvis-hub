@@ -1141,6 +1141,82 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
             assert code == (503 if enabled and spy._verdict is Verdict.DENY else 202)
         finally:
             rig.q.close()
+    elif kind == "hook.exec":
+        # G17: every run of an owner-approved hook asks the kernel before a process exists.
+        import asyncio
+        from types import SimpleNamespace
+
+        from agents.core.hooks import runner, store
+        from tests.support.trusted_python import NO_TRUSTED_PYTHON, trusted_dir, trusted_python
+
+        # The program must pass the hook validator: CI's tool-cache Python sits under a
+        # world-writable directory and is (rightly) refused, so use an interpreter the
+        # validator accepts, else the system shell (the transport below never spawns it).
+        python = trusted_python()
+        folder = trusted_dir(tmp_path / "hook-scripts")
+        if python is not None:
+            argv0, script = python, folder / "hook.py"
+            script.write_text("import sys; sys.stdin.read()\n", encoding="utf-8")
+        elif not store.inspect_argv(["/bin/sh"])[0][0].startswith("argv[0]:"):
+            argv0, script = "/bin/sh", folder / "hook.sh"
+            script.write_text("cat >/dev/null\n", encoding="utf-8")
+        else:
+            pytest.skip(NO_TRUSTED_PYTHON)
+        script.chmod(0o644)
+        monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "hooks-home"))
+        tasks = []
+        accepted = {}
+        autonomy = SimpleNamespace(govern_enqueue=lambda **kw: tasks.append(kw) or len(tasks),
+                                   queue=SimpleNamespace(get=accepted.get))
+        orch = SimpleNamespace(autonomy=autonomy, intent_log=None, kill_switch=None)
+        hook = store.request_define(orch, event="tool.before", argv=[argv0, str(script)])
+        task = SimpleNamespace(id=hook["pending"], kind="hooks.define", decision="accept", decided_by="owner",
+                               status="done", payload=dict(tasks[-1]["payload"]))
+        assert asyncio.run(store.apply_approved(task, orch))["status"] == "ok"
+        accepted[task.id] = task
+        ran = []
+
+        class _Transport:
+            async def run(self, argv, **_kw):
+                ran.append(argv)
+                return {"ok": True, "exit_code": 0, "stdout": "", "stderr": ""}
+
+        monkeypatch.setattr(runner, "admin_credential_configured", lambda: True)
+        monkeypatch.setattr(runner, "kernel_for", lambda _orch: (lambda action, **_kw: spy(action)))
+        monkeypatch.setattr(runner, "transport_for", lambda _timeout: _Transport())
+        asyncio.run(runner.before_tool("terminal_run", {"command": "ls"}, orch=orch))
+        if spy.calls and spy._verdict is not Verdict.GRANT:
+            assert not ran
+    elif kind == "session.loop_tick":
+        # H460/H578: every /loop wakeup asks the kernel before its turn runs.
+        from types import SimpleNamespace
+
+        from agents.core.session_loops import tick_decision
+
+        state = SimpleNamespace(created_at=0.0, max_ticks=0, ticks_fired=0)
+        tick_decision(SimpleNamespace(), "matrix-session", state, kernel=spy)
+    elif kind == "a2a.outbound":
+        import asyncio
+
+        # G14: an approved a2a_call asks the kernel before anything leaves (a fake peer
+        # at the transport; no DNS, no network).
+        import httpx
+
+        from agents.core.a2a import A2ARegistry
+        from agents.core.a2a_outbound import A2AOutbound
+        from agents.core.http_client import PluginHTTPClient
+        from agents.core.resilience import CircuitBreaker
+
+        reg = A2ARegistry(path=str(tmp_path / "a2a.json"))
+        reg.add_peer("peer")
+        reg.set_outbound("peer", "https://peer.example")
+        client = PluginHTTPClient(
+            "a2a", circuit_breaker=CircuitBreaker(key="a2a-matrix"),
+            resolver=lambda host, *, mode: (["93.184.216.34"], None),
+            transport_factory=lambda _t: httpx.MockTransport(lambda _r: httpx.Response(404)))
+        asyncio.run(A2AOutbound(lambda: reg, kernel=lambda: spy, client=lambda: client,
+                                home=tmp_path / "a2a-home").run(
+            "a2a_call", {"agent": "peer", "message": "hi"}))
     else:  # pragma: no cover - a new KERNEL kind needs an exerciser added here
         raise AssertionError(f"no exerciser for kernel-classified kind {kind!r}")
 

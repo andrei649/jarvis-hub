@@ -1,4 +1,4 @@
-# Releasing Jarvis Hub (H23.13)
+# Releasing Nerva (H23.13)
 
 Jarvis runs **from source** — it is intentionally *not* a pip-installable package
 (see [`pyproject.toml`](../pyproject.toml) / `CONTRIBUTING.md`). A release is therefore a

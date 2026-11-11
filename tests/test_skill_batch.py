@@ -787,6 +787,13 @@ def test_the_decide_route_does_not_apply_a_batch_whose_card_was_already_rejected
 
 # ── H354: an applied batch counts as a patch of each skill it edited ─────────────────
 
+def _counted(store) -> dict:
+    """The rows that counted anything. H349: registering a skill makes its row (where it
+    came from), so "nothing was counted" is read off the counters, not off the row."""
+    return {name: rec for name, rec in store.list().items()
+            if rec.get("use_count") or rec.get("view_count") or rec.get("patch_count")}
+
+
 def _usage(hub):
     from agents.core.skills.usage import SkillUsageStore
 
@@ -810,14 +817,14 @@ def test_the_owner_route_counts_a_patch_per_edited_skill_only_when_it_lands(hub,
     assert client.post("/api/skills/batch", json={"operations": ops, "dry_run": True}, headers=ADMIN).status_code == 200
     bad = client.post("/api/skills/batch", json={"operations": [
         {"name": "alpha", "action": "patch", "old_string": "nope", "new_string": "x"}]}, headers=ADMIN)
-    assert bad.status_code == 422 and store.list() == {}
+    assert bad.status_code == 422 and _counted(store) == {}
 
     done = client.post("/api/skills/batch", json={"operations": ops}, headers=ADMIN)
     assert done.status_code == 200 and done.json()["applied"] is True, done.json()
     alpha, beta = store.get("alpha"), store.get("beta")
     assert alpha["patch_count"] == 1 and alpha["last_patched_at"] and not alpha["use_count"]
     assert beta["patch_count"] == 1
-    assert store.get("gamma") is None                                   # created: not a patch of anything
+    assert "gamma" not in _counted(store)                               # created: not a patch of anything
     gone = client.post("/api/skills/batch", json={"operations": [{"name": "delta", "action": "delete"}]},
                        headers=ADMIN)
     assert gone.status_code == 200 and gone.json()["applied"] is True and store.get("delta") is None
@@ -846,7 +853,7 @@ def test_a_batch_rolled_back_in_the_swap_counts_nothing(hub, monkeypatch):
     out = _run(hub, [{"name": "alpha", "action": "patch", "old_string": "Do the thing.", "new_string": "A."},
                      {"name": "beta", "action": "patch", "old_string": "Do the thing.", "new_string": "B."}])
     assert out["ok"] is False and out["reason"] == "skill_batch_apply_failed"
-    assert store.list() == {}
+    assert _counted(store) == {}
 
 
 def test_an_approved_proposed_batch_counts_a_patch_too(hub, client):
@@ -854,7 +861,7 @@ def test_an_approved_proposed_batch_counts_a_patch_too(hub, client):
     server = _server(hub, hub.store, hub.queue)
     got = _propose(server, {"operations": [
         {"name": "alpha", "action": "patch", "old_string": "Do the thing.", "new_string": "Done."}]})
-    assert store.get("alpha") is None                                     # proposing is not patching
+    assert "alpha" not in _counted(store)                                 # proposing is not patching
     [row] = client.get("/api/skills/batches", headers=ADMIN).json()["batches"]
     reply = client.post(f"/api/actions/{row['card']}/decide", json={"approved": True}, headers=ADMIN).json()
     assert reply["action"]["applied"]["ok"] is True and hub.store.get(got["batch_id"])["status"] == "applied"

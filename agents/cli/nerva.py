@@ -14,6 +14,7 @@ import os
 import re
 import shlex
 import sqlite3
+import stat
 import sys
 import time
 import uuid
@@ -25,6 +26,7 @@ from urllib.parse import quote, urlencode
 
 from .client import HubClient, HubError, HubUnavailable, hub_url, is_loopback_url
 from .custom_endpoints import run as cmd_custom_provider
+from .mcp_catalog import run as cmd_mcp
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -61,6 +63,9 @@ class Context:
     err: Any = field(default_factory=lambda: sys.stderr)
     inp: Any = field(default_factory=lambda: sys.stdin)
     client_factory: Callable[[Mapping[str, str]], HubClient] = HubClient.from_env
+    #: Reads a secret without echo when a `nerva chat` turn asks for one (H226);
+    #: ``None`` is ``getpass``. Tests inject a reader.
+    secret_reader: Callable[[str], str] | None = None
     _client: HubClient | None = None
 
     def client(self) -> HubClient:
@@ -193,6 +198,8 @@ def build_parser() -> argparse.ArgumentParser:
     configure_secrets(verbs)
     from .custom_endpoints import register_parser as configure_custom_endpoints
     configure_custom_endpoints(verbs)
+    from .mcp_catalog import register_parser as configure_mcp_catalog
+    configure_mcp_catalog(verbs)
 
     from agents.core.kanban.cli_parser import build_parser as configure_kanban
     configure_kanban(verbs)
@@ -281,6 +288,10 @@ def build_parser() -> argparse.ArgumentParser:
         "migrate", help="write this build's new defaults and retired-model replacements into an existing store")
     config_migrate.add_argument("--dry-run", action="store_true", help="print what would change; change nothing")
     config_migrate.add_argument("--json", action="store_true")
+    # G1 (H249/H267/H629) — what an administrator pinned, and whether writes are refused.
+    config_managed = config_verbs.add_parser(
+        "managed", help="the settings and environment values your administrator pinned (names, never a value)")
+    config_managed.add_argument("--json", action="store_true")
 
     approvals = verbs.add_parser("approvals", help="the approval queue (admin)")
     approvals_verbs = approvals.add_subparsers(dest="action", required=True, metavar="action")
@@ -298,6 +309,12 @@ def build_parser() -> argparse.ArgumentParser:
     consent.add_argument("--revision", required=True, help="the exact 64-character offer revision from approvals list")
     consent.add_argument("--reason", help="optional human decision reason (at most 280 characters)")
     consent.add_argument("--json", action="store_true")
+    # H484 — the approval dial. No `choices=`: Hermes' words (manual, smart) are read too,
+    # and an unknown word is refused before the hub is asked.
+    approvals_mode = approvals_verbs.add_parser(
+        "mode", help="show or set how much runs without asking: auto|ask|off (owner)")
+    approvals_mode.add_argument("value", nargs="?", metavar="auto|ask|off")
+    approvals_mode.add_argument("--json", action="store_true")
 
     curator = verbs.add_parser("curator", help="review and request owner-governed skill curation")
     curator_verbs = curator.add_subparsers(dest="action", required=True, metavar="action")
@@ -453,6 +470,14 @@ def build_parser() -> argparse.ArgumentParser:
         switch.add_argument("--bundle", help="every installed skill of this bundle instead of one skill")
         switch.add_argument("--channel", help="only on this channel (telegram, voice, web, ...)")
         switch.add_argument("--json", action="store_true")
+    # H349 — the owner's pin: the curator leaves a pinned skill alone, and an agent's batch
+    # and the journey's forget refuse to delete it; the owner's own removals are not blocked.
+    for verb, text in (("pin", "pin a skill: never aged out by the curator, never deleted by an agent's "
+                               "batch or the journey's forget (admin)"),
+                       ("unpin", "remove a skill's pin (admin)")):
+        pin = skills_verbs.add_parser(verb, help=text)
+        pin.add_argument("name", help="the skill's name or folder, as `nerva skills list` shows it")
+        pin.add_argument("--json", action="store_true")
     # H026 — named groups of skills, switched off/on as one unit with --bundle.
     bundles = skills_verbs.add_parser(
         "bundles", help="named groups of skills, switched as one unit (`nerva skills off|on --bundle`) "
@@ -484,6 +509,28 @@ def build_parser() -> argparse.ArgumentParser:
     bundle_verbs.add_parser(
         "reload", help="re-read the bundle files and report what changed (admin)").add_argument(
         "--json", action="store_true")
+    # H336 — Hermes's optional-skills catalog, vendored inert: browse, install, repair.
+    catalog = skills_verbs.add_parser(
+        "catalog", help="the vendored Hermes skill catalog: with no action, browse it (at most 100 rows, "
+                        "like `hermes skills browse`); install or repair one skill (admin)")
+    catalog.add_argument("--search", "-q", default="", help="text in the slug, name, category, description or tags")
+    catalog.add_argument("--category", "-c", default="", help="only this category (mlops, creative, ...)")
+    catalog.add_argument("--kind", choices=("instruction", "upstream_only", "excluded"), default="",
+                         help="instruction (installable), upstream_only (carries code) or excluded")
+    catalog.add_argument("--limit", "-n", type=int, default=100, help="at most this many rows (1-100)")
+    catalog.add_argument("--json", action="store_true")
+    catalog_verbs = catalog.add_subparsers(dest="catalog_action", required=False, metavar="action")
+    catalog_install = catalog_verbs.add_parser(
+        "install", help="install one instruction skill from the catalog; works without DEV_MODE (admin)")
+    catalog_install.add_argument("skill", help="<category>/<skill>, official/<category>/<skill> or the slug")
+    catalog_install.add_argument("--json", action="store_true")
+    catalog_repair = catalog_verbs.add_parser(
+        "repair", help="restore an installed catalog skill's deleted or edited files from the vendored "
+                       "bytes (admin)")
+    catalog_repair.add_argument("skill", help="<category>/<skill> or the slug")
+    catalog_repair.add_argument("--force", "-f", action="store_true",
+                                help="also replace files you edited (a copy of each is kept on the hub)")
+    catalog_repair.add_argument("--json", action="store_true")
     # H354 — the owner's trigger for one skill's reality-harness case.
     verify = skills_verbs.add_parser(
         "verify", help="run the reality harness's case for one loaded skill on the hub, now (admin)")
@@ -496,6 +543,32 @@ def build_parser() -> argparse.ArgumentParser:
     engage = estop_verbs.add_parser("engage", help="pause new autonomous work (admin)")
     engage.add_argument("--reason", default="")
     estop_verbs.add_parser("resume", help="lift the emergency stop (admin)")
+
+    lsp = verbs.add_parser("lsp", help="language servers for code diagnostics (H055)")
+    lsp_verbs = lsp.add_subparsers(dest="action", required=True, metavar="action")
+    lsp_verbs.add_parser("status", help="isolation, running servers and the broken set").add_argument(
+        "--json", action="store_true")
+    lsp_verbs.add_parser("list", help="every known server, its pinned recipe and where it was found")
+    lsp_which = lsp_verbs.add_parser("which", help="the binary a server would run, and its source")
+    lsp_which.add_argument("server")
+    lsp_install = lsp_verbs.add_parser("install", help="queue an approval card for a pinned install (admin)")
+    lsp_install.add_argument("server")
+    lsp_verbs.add_parser("install-all", help="queue a card for every installable server not yet found (admin)")
+    lsp_restart = lsp_verbs.add_parser("restart", help="stop then start a server for a workspace (admin)")
+    lsp_restart.add_argument("server")
+    lsp_restart.add_argument("--root", default=None)
+    lsp_start =lsp_verbs.add_parser("start", help="start a server for a workspace in the file roots (admin)")
+    lsp_start.add_argument("server")
+    lsp_start.add_argument("--root", default=None, help="workspace directory (default: the first file root)")
+    lsp_stop = lsp_verbs.add_parser("stop", help="stop running servers (admin)")
+    lsp_stop.add_argument("server", nargs="?", default=None)
+    lsp_stop.add_argument("--root", default=None)
+    lsp_trust = lsp_verbs.add_parser("trust", help="allow language servers in one git workspace (admin)")
+    lsp_trust.add_argument("root")
+    lsp_untrust = lsp_verbs.add_parser("untrust", help="stop allowing them there, and stop its servers (admin)")
+    lsp_untrust.add_argument("root")
+    lsp_clear = lsp_verbs.add_parser("clear", help="forget a failed install (admin)")
+    lsp_clear.add_argument("server")
 
     company = verbs.add_parser("company", help="company-mode work runs (user)")
     company_verbs = company.add_subparsers(dest="action", required=True, metavar="action")
@@ -540,6 +613,40 @@ def build_parser() -> argparse.ArgumentParser:
         "clear-pending", help="drop every pending request (nobody is blocked); a preview without --confirm")
     pairing_clear.add_argument("--confirm", action="store_true", help="actually drop them")
     pairing_clear.add_argument("--json", action="store_true")
+
+    hooks = verbs.add_parser(
+        "hooks", help="owner event hooks: programs that run on agent events, each behind an approval card (admin, G17)")
+    hooks_verbs = hooks.add_subparsers(dest="action", required=True, metavar="action")
+    hooks_list = hooks_verbs.add_parser(
+        "list", aliases=["ls"], help="every hook with its event, state and last run, and whether hooks can run here")
+    hooks_list.add_argument("--json", action="store_true")
+    hooks_add = hooks_verbs.add_parser(
+        "add", help="define a hook: queues an approval card showing the exact command; nothing runs until accepted")
+    hooks_add.add_argument("event", help="tool.before, tool.after, message.received, turn.completed, "
+                                         "session.started, session.ended, command.completed, "
+                                         "approval.requested or approval.decided")
+    hooks_add.add_argument("argv", nargs="+",
+                           help="the program (absolute path) and its fixed arguments; put -- before them")
+    hooks_add.add_argument("--matcher", help="tool events only: a tool name or glob (terminal_*)")
+    hooks_add.add_argument("--guard", action="store_true",
+                           help="tool.before only: if the hook fails, block the call (fail closed)")
+    hooks_add.add_argument("--timeout", type=int, help="seconds before the hook is killed")
+    hooks_add.add_argument("--name", help="a label")
+    hooks_add.add_argument("--replaces", help="the id of a hook this one replaces once accepted")
+    hooks_add.add_argument("--json", action="store_true")
+    for verb, text in (("disable", "switch a hook off now (no card)"),
+                       ("enable", "turn a switched-off hook back on, or re-approve changed files (queues an approval card)"),
+                       ("remove", "delete a hook now (no card)")):
+        sub = hooks_verbs.add_parser(verb, aliases=["rm"] if verb == "remove" else [], help=text)
+        sub.add_argument("hook_id")
+        sub.add_argument("--json", action="store_true")
+    hooks_test = hooks_verbs.add_parser(
+        "test", help="run one active hook once against a synthetic event (audited as a test)")
+    hooks_test.add_argument("hook_id")
+    hooks_test.add_argument("--tool", default="terminal_run", help="the tool name in the synthetic event")
+    hooks_test.add_argument("--payload-file", help="a JSON object used as the synthetic tool_input")
+    hooks_test.add_argument("--json", action="store_true")
+    hooks_verbs.add_parser("doctor", help="check every hook: files unchanged since approval, and the blockers")
 
     memory = verbs.add_parser(
         "memory", help="the long-term memory every prompt carries: what it holds, reset it, switch it off (H422)")
@@ -788,7 +895,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="one scripted turn: send a message, print the reply (scripts, cron, CI)",
         description="One turn in, one answer out. The message is the MESSAGE argument, else "
                     "--file PATH (- reads stdin), else whatever is piped on stdin; a terminal is "
-                    "never read. With -z the answer is the ONLY thing on stdout and every "
+                    "never read for the message. With -z the answer is the ONLY thing on stdout and every "
                     "diagnostic goes to stderr, so the command composes in a pipeline. A turn that "
                     "did not complete — one that queued an approval, was refused, or came back "
                     "empty — prints nothing on stdout and exits non-zero. Exit 0 answered · 1 the "
@@ -802,7 +909,12 @@ def build_parser() -> argparse.ArgumentParser:
                "\n"
                "This verb never auto-approves. If the turn queues an action for approval it\n"
                "stays queued: stdout is empty, the exit code is 1, and stderr names what to\n"
-               "decide with `nerva approvals`.",
+               "decide with `nerva approvals`.\n"
+               "\n"
+               "Run from a terminal (stdin not piped), the turn's questions are asked right\n"
+               "here while it runs: a clarify question, a missing secret (typed without echo,\n"
+               "stored only in the hub's secret store) and, after the turn, each approval card\n"
+               "it queued (accept, reject, defer, or leave it queued). --no-prompts turns this off.",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     chat.add_argument("message", nargs="?",
                       help="the message; omit it to read --file or stdin")
@@ -823,6 +935,9 @@ def build_parser() -> argparse.ArgumentParser:
     selection.add_argument("-c", "--continue", dest="continue_latest", action="store_true",
                            help="use the latest unarchived conversation and print a free recap")
     chat.add_argument("--json", action="store_true")
+    chat.add_argument("--no-prompts", action="store_true",
+                      help="do not answer the turn's questions, secret requests or approvals here, "
+                           "even on a terminal")
     chat.add_argument("--image", action="append", metavar="PATH",
                       help="ask the vision model about this PNG/JPEG/GIF/WebP file (up to 8, 4 MiB "
                            "each); the turn goes to the hub's vision model only, never to an agent")
@@ -833,6 +948,27 @@ def build_parser() -> argparse.ArgumentParser:
                       help="acknowledge that the images go to this vision destination off the "
                            "hub's machine; it must name the destination the hub reports")
     _selection_flags(chat)
+
+    acp = verbs.add_parser(
+        "acp",
+        help="be an editor's coding agent over the Agent Client Protocol (stdio)",
+        description="Speak the Agent Client Protocol (JSON-RPC on stdin/stdout) so an editor "
+                    "(Zed, JetBrains, any ACP client) drives Nerva as its coding agent. Every turn "
+                    "runs in the running hub; every permission the editor answers is the same "
+                    "decision as the HUD's approval card; no answer is a reject. Needs the hub "
+                    "and JARVIS_ADMIN_TOKEN (to decide approvals). See docs/ACP_EDITORS.md.",
+        epilog="examples:\n"
+               "  nerva acp --check\n"
+               "  python /path/to/jarvis-hub/scripts/nerva.py acp   # the command an editor launches",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    acp.add_argument("--check", action="store_true",
+                     help="check the hub, the credential and the protocol setup, then exit")
+    acp.add_argument("--permission-timeout", type=float, metavar="SECONDS", default=None,
+                     help="seconds the editor has to answer a permission before it is a reject "
+                          "(default JARVIS_ACP_PERMISSION_TIMEOUT, else 300)")
+    acp.add_argument("--token-file", metavar="PATH",
+                     help="read the owner's admin token from PATH (your own file, mode 0600, not a "
+                          "link) instead of the environment, so the editor's settings hold no token")
 
     send = verbs.add_parser(
         "send",
@@ -1630,7 +1766,8 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
                 source = f", {row['source']}" if row.get("source") else ""
                 overlay = (f"; in effect: {json.dumps(row['in_effect'])} by {row['overlay']}"
                            if row.get("overlay") else "")
-                ctx.say(f"{cat}.{row['key']} = {shown}  ({row.get('kind', '?')}{source}{overlay})")
+                managed = _managed_note(row)
+                ctx.say(f"{cat}.{row['key']} = {shown}  ({row.get('kind', '?')}{source}{overlay}{managed})")
         return EXIT_OK
     if ns.action == "get":
         from agents.core import settings_path
@@ -1667,6 +1804,13 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.err.write(f"{ns.name} is changed only in {settings.ROUTE_ONLY[(category, key)]}{hint}\n")
             return EXIT_FAILED
         kind = str(spec.get("kind", "text"))
+        if not path:
+            # G1 — Hermes's `config set|unset` on a pinned key: refused whatever the value
+            # (a path below a json setting is judged by the pinned leaves it would change)
+            refusal = _managed_refusal(ns.name, category, key)
+            if refusal:
+                ctx.err.write(refusal + "\n")
+                return EXIT_FAILED
         try:
             if path:
                 # H688 — inside a json value: the rest of the name is a path, the new whole
@@ -1711,6 +1855,8 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
         return _config_env_path(ns, ctx)
     if ns.action == "migrate":
         return _config_migrate(ns, ctx, settings)
+    if ns.action == "managed":
+        return _config_managed(ns, ctx)
     if ns.action == "check":
         problems: list[str] = []
         for cat, rows in settings.get_all().items():
@@ -1741,6 +1887,10 @@ def _write_setting(settings: Any, name: str, category: str, key: str, value: Any
     passed its schema: the retention approval (H262), the selection guards (H378), the
     write, and the approval lowering a narrowing implies. Returns the lines that explain
     a refusal (nothing written), or ``[]`` once the value is stored."""
+    # G1 — a value an administrator pinned is refused before any guard or approval sees it.
+    refusal = _managed_refusal(name, category, key, value)
+    if refusal:
+        return [refusal]
     # H262 — a value that makes retention delete deeper than a human approved waits for
     # the approval queue, which is the hub's: refused here (the approval is read, read-only).
     from agents.core import retention
@@ -1753,6 +1903,7 @@ def _write_setting(settings: Any, name: str, category: str, key: str, value: Any
     from agents.core.llm import selection_guards as guards
     from agents.core.llm.provider_selection import SelectionConflict
     from agents.core.llm.providers.selection_gates import SelectionBusy, SelectionUnavailable
+    from agents.core.managed_scope import ManagedRefused
 
     try:
         pair_state = (settings.compatible_pair_state()
@@ -1782,6 +1933,8 @@ def _write_setting(settings: Any, name: str, category: str, key: str, value: Any
             guards.record(findings, "cli", _audit_log())
         except guards.ConsentNotRecorded as exc:
             return [f"{name}: {exc}"]
+    approval_key = category == "autonomy" and key in ("mode", "agent_modes")
+    before = settings.get_value(category, key) if approval_key else None
     try:
         if pair_state is not None:
             settings.put_category(category, {key: value},
@@ -1790,13 +1943,88 @@ def _write_setting(settings: Any, name: str, category: str, key: str, value: Any
             settings.put_category(category, {key: value})
     except (SelectionConflict, SelectionBusy, SelectionUnavailable):
         return [f'{name}: compatible provider/model changed or busy — not changed, retry']
+    except ManagedRefused as exc:           # G1: the managed layer moved under this write
+        return [f"{name}: {exc}"]
     except sqlite3.OperationalError as exc:
         return [f"{name}: {_busy(exc)}"]
+    if approval_key:
+        # H484: the approval dial written straight to the store is on the audit log too.
+        from agents.core.autonomy.mode import audit_offline_write
+
+        audit_offline_write(_audit_log(), key, before, value, actor="owner", surface="cli")
     if f"{category}.{key}" in retention.RETENTION_KEYS:
         # H262 review — a narrowing is a human decision too: the approval is lowered to it,
         # so deepening again later needs a new approval (never raised here).
         retention.lower_approval_offline()
     return []
+
+
+def _managed_note(row: Mapping[str, Any]) -> str:
+    """G1 — ``; managed by your administrator (file)`` for a pinned row, else ``""``."""
+    managed = row.get("managed")
+    if not isinstance(managed, Mapping):
+        return ""
+    leaves = managed.get("leaves") or []
+    where = f" at {', '.join(str(leaf) for leaf in leaves)}" if leaves else ""
+    invalid = "; the pinned value is invalid and not applied" if managed.get("invalid") else ""
+    return f"; managed by your administrator{where} ({managed.get('source')}){invalid}"
+
+
+def _managed_refusal(name: str, category: str, key: str, value: Any = None) -> str:
+    """G1 — the line that refuses a write the managed layer forbids (audited), or ``""``.
+    Without *value* the write is refused whenever the key is pinned (``config unset``)."""
+    from agents.core import managed_scope
+
+    try:
+        managed_scope.check_setting_write(category, key, managed_scope.ANY if value is None else value)
+    except managed_scope.ManagedRefused as exc:
+        from agents.core.autonomy.mode import SimpleAudit, _audit
+
+        _audit(SimpleAudit(_audit_log()), f"settings.{category}.{key} write refused: {exc} (via cli)",
+               "settings_managed_refused")
+        return f"{name}: {exc}"
+    return ""
+
+
+def _config_managed(ns: argparse.Namespace, ctx: Context) -> int:
+    """``nerva config managed`` — the administrator's managed layer: where it is read
+    from, each file's state, the pinned settings and environment names (never a value),
+    the managed-mode marker and whether writes are refused. Exit 1 when a managed file
+    cannot be read (every write is refused until it is fixed)."""
+    from agents.core import managed_scope
+
+    info = managed_scope.describe()        # the environment the settings writers judge by
+    if ns.json:
+        ctx.dump(info)
+        return EXIT_FAILED if info["problems"] else EXIT_OK
+    if info["directory"] is None:
+        ctx.say("no managed configuration: nothing is pinned by an administrator "
+                "(NERVA_MANAGED_DIR is not set and /etc/nerva does not exist)")
+        return EXIT_OK
+    how = "the managed-directory variable" if info["explicit"] else "the system location"
+    ctx.say(f"managed directory: {info['directory']}  ({how}"
+            + (f", profile {info['profile']}" if info["profile"] else "") + ")")
+    for row in info["files"]:
+        if row["state"] == "absent":
+            continue
+        error = f" — {row['error']}" if row.get("error") else ""
+        ctx.say(f"  {row['scope']:<10} {row['path']}  {row['state']}{error}")
+    for row in info["settings"]:
+        leaves = f" (leaves: {', '.join(row['leaves'])})" if row["leaves"] else ""
+        ctx.say(f"  setting  {row['name']}{leaves}  ← {row['source']}")
+    for row in info["env"]:
+        ctx.say(f"  env      {row['name']}  ← {row['source']}")
+    if info["lock"]:
+        ctx.say(f"managed mode: every configuration write is refused — {info['lock']['instruction']}"
+                f" ({info['lock']['source']})")
+    for problem in info["problems"]:
+        ctx.err.write(f"cannot read the managed configuration: {problem}\n")
+    for detail in info.get("details", []):
+        ctx.err.write(f"  why: {detail}\n")
+    for warning in info.get("warnings", []):
+        ctx.err.write(f"warning: {warning}\n")
+    ctx.say(f"writes: {info['writes']}")
+    return EXIT_FAILED if info["problems"] else EXIT_OK
 
 
 def _busy(exc: sqlite3.Error) -> str:
@@ -1807,8 +2035,11 @@ def _busy(exc: sqlite3.Error) -> str:
 
 
 def _when_applied(category: str, key: str, spec: Mapping[str, Any]) -> str:
-    return ("restart the hub to apply it" if _applies_at_restart(category, key, str(spec.get("kind", "")))
-            else "a running hub picks it up within 30 s")
+    if _applies_at_restart(category, key, str(spec.get("kind", ""))):
+        return "restart the hub to apply it"
+    if category == "autonomy" and key in ("mode", "agent_modes"):     # H484: synced per tick
+        return "a running hub picks it up at its next autonomy tick (60 s by default)"
+    return "a running hub picks it up within 30 s"
 
 
 # ── H006: config edit / path / env-path / migrate ────────────────────────────
@@ -1873,6 +2104,8 @@ def _edit_document(settings: Any) -> tuple[str, dict[str, Mapping[str, Any]]]:
                 lines.append(f"# {name}: nothing declares it — read it with `nerva config get {name}`")
             elif (cat, row["key"]) in settings.ROUTE_ONLY:
                 lines.append(f"# {name}: changed only in {settings.ROUTE_ONLY[(cat, row['key'])]}")
+            elif row.get("managed"):          # G1
+                lines.append(f"# {name}: {_managed_note(row).lstrip('; ')} — it cannot be changed here")
             elif _is_secret(row):
                 lines.append(f"# {name}: a secret — change it with `nerva config set {name} VALUE`")
             else:
@@ -2051,6 +2284,14 @@ def _config_env_path(ns: argparse.Namespace, ctx: Context) -> int:
                   "read": not profile and home_env is not None,
                   "note": shared_note or (None if home_env is not None else
                                           "no JARVIS_USER_HOME; the packaged app uses ~/Documents/Nerva/.env")})
+    # G1 — the administrator's managed .env, applied last, over every file above
+    from agents.core import managed_scope
+
+    managed_root = managed_scope.managed_dir(environ)[0]
+    if managed_root is not None:
+        files.append({"layer": ep.MANAGED, "label": "managed .env", "path": str(managed_root / managed_scope.ENV_FILE),
+                      "present": (managed_root / managed_scope.ENV_FILE).exists(), "read": True,
+                      "note": "pinned by your administrator, applied last over every other layer"})
     example = app_root() / ".env.example"
     store = root / "security" / "secrets.enc"
     disabled = bool(dotenv_disabled(environ))
@@ -2093,8 +2334,14 @@ def _config_migrate(ns: argparse.Namespace, ctx: Context, settings: Any) -> int:
     listed one per line; ``--dry-run`` lists it and writes nothing. A boot does the same
     seeding silently; this is the same work read first, plus the retired-model rewrite on
     every model setting (agents/core/settings_migrate.py)."""
-    from agents.core import settings_migrate
+    from agents.core import managed_scope, settings_migrate
 
+    if not ns.dry_run:
+        try:            # G1 — managed mode, or an unreadable managed file: nothing is written
+            managed_scope.check_writable()
+        except managed_scope.ManagedRefused as exc:
+            ctx.err.write(f"config migrate: {exc}\n")
+            return EXIT_FAILED
     store = Path(settings.DB_PATH)
     try:
         return _config_migrate_run(ns, ctx, settings, settings_migrate, store)
@@ -2320,7 +2567,102 @@ def _valid_consent_offer(offer: Any) -> bool:
     )
 
 
+_APPROVAL_MODES = ("auto", "ask", "off")
+
+
+def _approval_mode_note(shown: Any, asked: Any = None) -> str:
+    """H484 — the mode line of one approval card: the mode it was asked under when the hub
+    recorded one, else the mode in force now (said as such); "" when the hub sent neither
+    (an older hub) or something that is not a mode."""
+    if isinstance(asked, Mapping) and asked.get("mode") in _APPROVAL_MODES:
+        mode, overall = asked["mode"], asked.get("global")
+        where = (f"agent override; global {overall}"
+                 if asked.get("source") == "agent" and overall in _APPROVAL_MODES else "global")
+        why = "the mode is why it waits" if asked.get("by_mode") is True else "the mode is not why it waits"
+        return f"asked under mode {mode} ({where}; {why})"
+    if not isinstance(shown, Mapping):
+        return ""
+    effective, overall = shown.get("effective"), shown.get("global")
+    if effective not in _APPROVAL_MODES:
+        return ""
+    if shown.get("source") == "agent" and overall in _APPROVAL_MODES:
+        return f"mode now {effective} (agent override; global {overall})"
+    return f"mode now {effective} (global)"
+
+
+def _say_looser_overrides(ctx: Context, reply: Any) -> None:
+    """H484 — name the agents whose own override lets them ask less than the global mode."""
+    looser = reply.get("looser") if isinstance(reply, Mapping) else None
+    names = [f"{agent}: {mode}" for agent, mode in sorted(looser.items())
+             if mode in _APPROVAL_MODES] if isinstance(looser, Mapping) else []
+    if names:
+        ctx.say("a per-agent override asks less than the global mode for: " + ", ".join(names))
+
+
+def _cmd_approvals_mode(ns: argparse.Namespace, ctx: Context) -> int:
+    """``nerva approvals mode [auto|ask|off]`` — the dial the HUD and ``/approvals`` set.
+    Every position only adds asking; ``off`` is the strictest, never a bypass."""
+    from agents.core.autonomy.mode import parse_requested
+
+    if ns.value is None:
+        reply = ctx.client().get("/autonomy/policy")
+        if ns.json:
+            ctx.dump(reply)
+            return EXIT_OK
+        overall = reply.get("global") if isinstance(reply, Mapping) else None
+        if overall not in _APPROVAL_MODES:
+            ctx.err.write("the hub did not report an approval mode\n")
+            return EXIT_FAILED
+        ctx.say(f"approval mode: {overall}")
+        agents = reply.get("agents")
+        for agent, mode in sorted(agents.items()) if isinstance(agents, Mapping) else ():
+            if mode in _APPROVAL_MODES:
+                ctx.say(f"  {agent}: {mode}" + ("  (ignored while the global mode is off)"
+                                                if overall == "off" else ""))
+        _say_looser_overrides(ctx, reply)
+        return EXIT_OK
+    wanted = parse_requested(ns.value)
+    if wanted is None:
+        ctx.err.write("mode must be auto|ask|off (manual and smart are read as ask and auto)\n")
+        return EXIT_USAGE
+    client = ctx.client()
+    try:
+        reply = client.post("/autonomy/mode", {"mode": wanted})
+    except HubError as exc:
+        if exc.status != 503:
+            raise
+        # The hub saved nothing, or saved it but runs another mode: say which is in force.
+        try:
+            now = client.get("/autonomy/policy")
+        except (HubError, HubUnavailable):
+            now = None
+        live = now.get("global") if isinstance(now, Mapping) else None
+        if live not in _APPROVAL_MODES:
+            ctx.err.write(f"approval mode {wanted} was not confirmed by the hub\n")
+        elif live == wanted:
+            ctx.err.write(f"approval mode in force: {live} (the hub did not confirm the write; "
+                          "check `nerva approvals mode` again)\n")
+        else:
+            ctx.err.write(f"approval mode in force: {live}; {wanted} did not take effect\n")
+        return EXIT_FAILED
+    effective = reply.get("mode") if isinstance(reply, Mapping) else None
+    if effective != wanted or reply.get("ok") is not True:
+        ctx.err.write(f"approval mode {wanted} did not become effective"
+                      + (f"; the hub reports {effective}\n" if effective in _APPROVAL_MODES else "\n"))
+        return EXIT_FAILED
+    if ns.json:
+        ctx.dump(reply)
+        return EXIT_OK
+    ctx.say(f"approval mode: {effective}")
+    _say_looser_overrides(ctx, reply)
+    if reply.get("audited") is False:
+        ctx.err.write("the change is in effect, but the hub could not record it in the audit log\n")
+    return EXIT_OK
+
+
 def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
+    if ns.action == "mode":
+        return _cmd_approvals_mode(ns, ctx)
     if ns.action == "list":
         reply = ctx.client().get("/autonomy/approvals")
         if ns.json:
@@ -2330,12 +2672,19 @@ def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
         if not pending:
             ctx.say("no pending approvals")
             return EXIT_OK
+        from .chat_prompts import card_safe
+
         for task in pending:
             flag = "reversible" if task.get("reversible") else "IRREVERSIBLE"
+            # G4 review M3: hub and model text without bidi or zero-width marks, so a
+            # title cannot reorder or hide what sits beside the accept command.
             ctx.say(
-                f"#{task.get('id', '?')}  tier {task.get('risk_tier', '?')}  {flag:12s}  "
-                f"{task.get('kind', '?')}  — {task.get('title', '')}"
+                f"#{card_safe(task.get('id', '?'))[:20]}  tier {card_safe(task.get('risk_tier', '?'))[:8]}  "
+                f"{flag:12s}  {card_safe(task.get('kind', '?'))[:80]}  — {card_safe(task.get('title', ''))[:400]}"
             )
+            note = _approval_mode_note(task.get("approval_mode"), task.get("asked_under"))
+            if note:
+                ctx.say(f"  {note}")
             offer = task.get("consent_offer")
             task_id = task.get("id")
             if _valid_consent_offer(offer) and type(task_id) is int and task_id > 0:
@@ -2948,7 +3297,10 @@ def explain_action(
     preview = preview_task({**task, "risk_tier": tier if tier is not None else classified})
     mediation = classify(kind)
     estop_state = estop.get_state()
-    mode = str(_settings().get_value("autonomy", "mode", "auto") or "auto")
+    from agents.core.autonomy.mode import read_mode
+
+    # H484: the stored value as the policy reads it (unknown → ask, boolean False → off).
+    mode = read_mode(_settings().get_value("autonomy", "mode", "auto"))
     # The policy's modes: "auto" — per-tier outcomes; "ask" — anything with a side effect
     # waits (pure reads still act); "off" — everything waits.
     if mode == "off":
@@ -3053,13 +3405,20 @@ def cmd_skills(ns: argparse.Namespace, ctx: Context) -> int:
     """H350 — ``nerva skills lint``: the hard check every write path runs, plus advice.
     H329 — ``nerva skills list | off | on | config``: running-hub skill switches.
     H354 — ``nerva skills verify``: run one skill's reality-harness case on the hub.
-    H026 — ``nerva skills bundles list|show|create|delete|reload``: named skill bundles."""
+    H026 — ``nerva skills bundles list|show|create|delete|reload``: named skill bundles.
+    H349 — ``nerva skills pin | unpin``: the owner's pin, and where each skill came from
+    in ``nerva skills list``.
+    H336 — ``nerva skills catalog [install|repair]``: the vendored Hermes skill catalog."""
     if ns.action in ("list", "off", "on", "config"):
         return _skill_switches(ns, ctx)
+    if ns.action in ("pin", "unpin"):
+        return _skill_pin(ns, ctx)
     if ns.action == "verify":
         return _skill_verify(ns, ctx)
     if ns.action == "bundles":
         return _skill_bundles(ns, ctx)
+    if ns.action == "catalog":
+        return _skill_catalog(ns, ctx)
     from agents.core.skills.validate import (
         MAX_SKILL_MD_BYTES,
         Problem,
@@ -3198,6 +3557,54 @@ def _skill_usage_suffix(usage: Any) -> str:
     return text
 
 
+def _skill_origin_suffix(usage: Any) -> str:
+    """H349 — `` · import (hermes) · pinned``: where the hub recorded the skill came from,
+    and the owner's pin. Nothing for an older hub, or for an origin it never recorded."""
+    if not isinstance(usage, Mapping):
+        return ""
+    origin = usage.get("origin")
+    text = ""
+    if isinstance(origin, str) and origin and origin != "unknown":
+        text = f" · {_plain(origin, 20)}"
+        source = usage.get("source")
+        if isinstance(source, str) and source:
+            text += f" ({_plain(source, 64)})"
+        # Both facts when both are true: agent-made, and an install record in its folder.
+        if usage.get("agent_created") is True and origin != "agent":
+            text += " · agent-made"
+        if usage.get("agent_created") is True and usage.get("write_origin") == "assistant_tool":
+            text += " · made in a turn, not curated"
+    if usage.get("pinned") is True:
+        text += " · pinned"
+    return text
+
+
+def _skill_pin(ns: argparse.Namespace, ctx: Context) -> int:
+    """H349 — ``nerva skills pin|unpin NAME``: the hub's ``POST /api/skills/pin``. A
+    refusal (no such skill, a skill that ships with Nerva, a sidecar that could not be
+    written) is the hub's error and a failed exit, never a printed success."""
+    wanted = ns.action == "pin"
+    reply = ctx.client().post("/api/skills/pin", {"skill": ns.name, "pinned": wanted})
+    if not isinstance(reply, Mapping) or reply.get("ok") is not True or reply.get("pinned") is not wanted:
+        ctx.err.write("unexpected reply from the hub: the pin was not confirmed\n")
+        return EXIT_FAILED
+    if ns.json:
+        ctx.dump(reply)
+        return EXIT_OK
+    name = _plain(reply.get("skill") or ns.name, 130)
+    if not reply.get("changed"):
+        ctx.say(f"{name}: already {'pinned' if wanted else 'not pinned'}")
+        return EXIT_OK
+    if wanted:
+        ctx.say(f"pinned {name}: the curator leaves it alone, and neither an agent's batch nor the journey's "
+                "forget deletes it; your own delete, uninstall or reject still removes it")
+    else:
+        ctx.say(f"unpinned {name}")
+    if not reply.get("audited"):
+        ctx.say("note: the intent log could not record this change")
+    return EXIT_OK
+
+
 def _skill_verify(ns: argparse.Namespace, ctx: Context) -> int:
     """H354 — ``nerva skills verify <name>``: the hub runs the reality harness's case for
     that skill now; a green probe marks its capability record VERIFIED until the hub's
@@ -3218,6 +3625,101 @@ def _skill_verify(ns: argparse.Namespace, ctx: Context) -> int:
     when = f", verified at {reply['verified_at']}" if reply.get("verified_at") else ""
     ctx.say(f"  record {record.get('state', '?')}{when}; the verdict lives until the hub's next boot")
     return EXIT_OK if passed else EXIT_FAILED
+
+
+_CATALOG_INSTALL_PATH = "/api/skills/catalog/install"
+
+
+def _skill_catalog(ns: argparse.Namespace, ctx: Context) -> int:
+    """H336 — ``nerva skills catalog``: Hermes's ``skills browse --source official`` (the
+    catalog rows of ``GET /skills/imported``, filtered here and capped at 100 like Hermes),
+    ``install`` and ``repair`` (``POST /api/skills/catalog/install``, admin, no DEV_MODE: the
+    vendored catalog is pinned, byte-verified and instruction-only). A skill that carries
+    code is listed with its code files and refused by the hub."""
+    from agents.core.skills import hermes_catalog
+
+    action = getattr(ns, "catalog_action", None)
+    if action in ("install", "repair"):
+        body = {"skill": ns.skill, "repair": action == "repair", "force": bool(getattr(ns, "force", False))}
+        try:
+            reply = ctx.client().post(_CATALOG_INSTALL_PATH, body)
+        except HubError as exc:
+            if exc.status == 409 and "edited" in str(exc.reason):
+                ctx.err.write(f"{_plain(exc.reason, 400)}\nrerun with --force to replace them; a copy of each "
+                              "edited file is kept on the hub\n")
+                return EXIT_FAILED
+            raise
+        if not isinstance(reply, Mapping) or reply.get("ok") is not True:
+            ctx.err.write("unexpected reply from the hub: the install was not confirmed\n")
+            return EXIT_FAILED
+        if ns.json:
+            ctx.dump(reply)
+            return EXIT_OK
+        name, commit = _plain(reply.get("skill"), 80), _plain(str(reply.get("commit") or "")[:8], 8)
+        status = reply.get("status")
+        if status == "intact":
+            ctx.say(f"{name}: intact — every file matches the catalog @{commit}; nothing was written")
+            return EXIT_OK
+        if reply.get("action") == "install":
+            ctx.say(f"installed {name} from the Hermes catalog @{commit} ({_plain(reply.get('path'), 160)})")
+            ctx.say("  it is an imported skill: its text is read as data until you vouch for it")
+        else:
+            ctx.say(f"{'updated' if status == 'updated' else 'repaired'} {name} from the Hermes catalog @{commit}")
+            for key, word in (("restored", "restored"), ("replaced", "replaced your edit of"),
+                              ("backed_up", "kept a copy of")):
+                for rel in reply.get(key) or []:
+                    ctx.say(f"  {word} {_plain(rel, 200)}")
+            if reply.get("backup_dir"):
+                ctx.say(f"  copies in {_plain(reply.get('backup_dir'), 300, keep_tail=True)}")
+        if not reply.get("audited"):
+            ctx.say("note: the intent log could not record this change")
+        return EXIT_OK
+    if not 1 <= ns.limit <= hermes_catalog.BROWSE_LIMIT:
+        ctx.err.write(f"--limit takes 1 to {hermes_catalog.BROWSE_LIMIT}\n")
+        return EXIT_USAGE
+    reply = ctx.client().get("/skills/imported")
+    catalog = reply.get("hermes_catalog") if isinstance(reply, Mapping) else None
+    if not isinstance(catalog, Mapping):
+        ctx.err.write("this hub reports no Hermes catalog\n")
+        return EXIT_FAILED
+    if catalog.get("available") is False:
+        ctx.err.write(f"the Hermes catalog is unavailable on the hub: {_plain(catalog.get('error'), 300)}\n")
+        return EXIT_FAILED
+    rows = catalog.get("skills") if isinstance(catalog.get("skills"), list) else []
+    shown, matched = hermes_catalog.browse(rows, search=ns.search, category=ns.category, kind=ns.kind,
+                                           limit=ns.limit)
+    if ns.json:
+        ctx.dump({"commit": catalog.get("commit"), "counts": catalog.get("counts"), "matched": matched,
+                  "shown": len(shown), "truncated": matched > len(shown), "skills": shown})
+        return EXIT_OK
+    counts = catalog.get("counts") if isinstance(catalog.get("counts"), Mapping) else {}
+    ctx.say(f"Hermes catalog @{_plain(str(catalog.get('commit') or '')[:8], 8)}: "
+            f"{_count_value(counts.get('instruction')) or 0} installable, "
+            f"{_count_value(counts.get('upstream_only')) or 0} carry code, "
+            f"{_count_value(counts.get('excluded')) or 0} excluded")
+    for row in shown:
+        kind = row.get("kind")
+        mark = ("installed" if row.get("installed_commit") else "install") if kind == "instruction" \
+            else ("code" if kind == "upstream_only" else "excluded")
+        where = f"{row.get('category')}/{row.get('slug')}" if row.get("category") else row.get("slug")
+        line = f"  {mark:<9} {_plain(where, 70):<40} {_plain(row.get('description'), 90)}"
+        ctx.say(line.rstrip())
+        needs = [str(k) for k in row.get("required_env") or []]
+        if needs:
+            ctx.say(f"            needs {_plain(', '.join(needs), 160)}")
+        if kind == "upstream_only" and row.get("code_files"):
+            ctx.say(f"            carries code: {_plain(', '.join(map(str, row['code_files'])), 160)}")
+        if row.get("injection_flags"):
+            ctx.say("            its text looks like an instruction to a model (flagged)")
+    if not shown:
+        ctx.say("no catalog skill matches")
+    elif matched > len(shown):
+        ctx.say(f"showing {len(shown)} of {matched} — narrow with --search/--category, or raise --limit "
+                f"(at most {hermes_catalog.BROWSE_LIMIT})")
+    else:
+        ctx.say(f"{matched} shown")
+    ctx.say("install one: nerva skills catalog install <category>/<skill>")
+    return EXIT_OK
 
 
 _BUNDLES_PATH = "/api/skills/bundles"
@@ -3384,7 +3886,7 @@ def _skill_switches(ns: argparse.Namespace, ctx: Context) -> int:
             where = ("off everywhere" if row.get("disabled") else
                      "off on " + ", ".join(row["disabled_channels"]) if row.get("disabled_channels") else "on")
             ctx.say(f"{name}: {where}{' (essential)' if row.get('essential') else ''}"
-                    f"{_skill_usage_suffix(row.get('usage'))}")
+                    f"{_skill_usage_suffix(row.get('usage'))}{_skill_origin_suffix(row.get('usage'))}")
         return EXIT_OK
     bundle = getattr(ns, "bundle", None)
     if sum(1 for target in (ns.name, ns.category, bundle) if target) != 1:
@@ -3519,6 +4021,105 @@ def cmd_estop(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.say(f"e-stop ENGAGED since {state.get('engaged_at') or '?'} — {state.get('reason') or 'no reason given'}")
     else:
         ctx.say("e-stop not engaged")
+    return EXIT_OK
+
+
+def cmd_lsp(ns: argparse.Namespace, ctx: Context) -> int:
+    """H055: language servers, through the hub (it owns the running processes)."""
+    client = ctx.client()
+    if ns.action == "install":
+        reply = client.post("/api/codeintel/lsp/install", {"server": ns.server}) or {}
+        ctx.say(f"approval card #{reply.get('task_id')} queued: install {reply.get('server')} "
+                f"({', '.join(reply.get('packages') or [])}) — accept it in the approval queue")
+        return EXIT_OK
+    if ns.action in ("trust", "untrust"):
+        reply = client.post("/api/codeintel/lsp/trust",
+                            {"root": ns.root, "trusted": ns.action == "trust"}) or {}
+        if ns.action == "trust":
+            ctx.say(f"language servers may start in {reply.get('root')}")
+        else:
+            ctx.say(f"{reply.get('root')} no longer trusted; stopped {reply.get('stopped', 0)} server(s)")
+        return EXIT_OK
+    if ns.action == "clear":
+        client.request("DELETE", f"/api/codeintel/lsp/install/{quote(ns.server, safe='')}")
+        ctx.say(f"install record for {ns.server} cleared")
+        return EXIT_OK
+    if ns.action == "install-all":
+        status = client.get("/api/codeintel/lsp/status") or {}
+        asked: set[tuple] = set()
+        for row in status.get("servers") or []:
+            packages = tuple((row.get("recipe") or {}).get("packages") or [])
+            if row.get("available") or not row.get("installable") or packages in asked:
+                continue
+            asked.add(packages)   # one card per package (json/css/html share one)
+            try:
+                reply = client.post("/api/codeintel/lsp/install", {"server": row.get("id")}) or {}
+                ctx.say(f"  card #{reply.get('task_id')}: {row.get('id')} ({', '.join(packages)})")
+            except HubUnavailable:
+                raise
+            except HubError as exc:
+                ctx.say(f"  {row.get('id')}: {exc.reason}")
+        if not asked:
+            ctx.say("every installable server is already installed")
+        return EXIT_OK
+    if ns.action in ("start", "restart"):
+        body = {"server": ns.server, **({"root": ns.root} if ns.root else {})}
+        if ns.action == "restart":
+            client.post("/api/codeintel/lsp/stop", body)
+        row = (client.post("/api/codeintel/lsp/start", body) or {}).get("running") or {}
+        ctx.say(f"{row.get('server')} running for {row.get('root')} (pid {row.get('pid')}, "
+                f"isolation {row.get('isolation')})")
+        return EXIT_OK
+    if ns.action == "stop":
+        body = {k: v for k, v in (("server", ns.server), ("root", ns.root)) if v}
+        reply = client.post("/api/codeintel/lsp/stop", body) or {}
+        ctx.say(f"stopped {reply.get('stopped', 0)} server(s)")
+        return EXIT_OK
+    status = client.get("/api/codeintel/lsp/status") or {}
+    servers = status.get("servers") or []
+    if ns.action == "which":
+        row = next((s for s in servers if s.get("id") == ns.server), None)
+        if row is None:
+            ctx.say(f"unknown server: {ns.server}")
+            return EXIT_USAGE
+        if not row.get("available"):
+            ctx.say(f"{ns.server}: not installed")
+            return EXIT_FAILED
+        ctx.say(f"{row.get('binary')} ({row.get('source')})")
+        return EXIT_OK
+    if ns.action == "list":
+        for row in servers:
+            recipe = row.get("recipe") or {}
+            how = (", ".join(recipe.get("packages") or []) + f" via {recipe.get('kind')}"
+                   if row.get("installable") else (recipe.get("hint") or "manual"))
+            found = f"found ({row.get('source')})" if row.get("available") else "not installed"
+            if row.get("disabled"):
+                found = "disabled"
+            ctx.say(f"  {row.get('id'):<16} {'/'.join(row.get('languages') or []):<34} {found:<18} {how}")
+        return EXIT_OK
+    if getattr(ns, "json", False):
+        ctx.dump(status)
+        return EXIT_OK
+    state = "on" if status.get("enabled") else "off (JARVIS_LSP=0)"
+    ctx.say(f"diagnostics on write: {state} · isolation: {status.get('isolation')} · "
+            f"idle kill after {status.get('idle_seconds')}s · tools: {status.get('tools_dir')}")
+    if status.get("isolation") != "bwrap":
+        ctx.say("  warning: no namespace sandbox — servers run with resource limits and a scrubbed "
+                "environment only")
+    if not status.get("can_start", True):
+        ctx.say("  no server will start: bubblewrap is unavailable and JARVIS_LSP_REQUIRE_SANDBOX is on "
+                "(set it to 0 to run servers with limits only)")
+    ctx.say(f"  available: {', '.join(s['id'] for s in servers if s.get('available')) or 'none'}")
+    trusted = [row.get("root") for row in status.get("trusted_workspaces") or []]
+    ctx.say(f"  trusted workspaces: {', '.join(trusted) or 'none (`nerva lsp trust <git root>`)'}")
+    for row in status.get("running") or []:
+        ctx.say(f"  running  {row.get('server'):<16} {row.get('root')} pid {row.get('pid')} "
+                f"({row.get('diagnostics_served')} checks)")
+        if row.get("warning"):
+            ctx.say(f"           warning: {row.get('warning')}")
+    for row in status.get("broken") or []:
+        ctx.say(f"  broken   {row.get('server'):<16} {row.get('root')}: {row.get('reason')} "
+                f"(retry in {row.get('retry_in')}s)")
     return EXIT_OK
 
 
@@ -4767,10 +5368,18 @@ def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.say("no sessions recorded")
         return EXIT_OK
     for row in sessions:
-        sid = row.get("session_id") or row.get("id") or "?"
+        # H440: the id a resume opens. ``continuations`` counts the other sessions of the
+        # row's conversation (earlier parts, other branches); ``earlier_part`` marks a
+        # session that was continued and then used again.
+        sid = row.get("resume_id") or row.get("session_id") or row.get("id") or "?"
         started = row.get("started_at") or ""
         title = row.get("title") or ""   # H413
-        ctx.say(f"{sid}  {started}  {title}".rstrip())
+        more = row.get("continuations") or 0
+        note = (f"  (+{more} other session{'' if more == 1 else 's'} in this conversation)"
+                if isinstance(more, int) and not isinstance(more, bool) and more > 0 else "")
+        if row.get("earlier_part") is True:
+            note += "  (earlier part, still in use)"
+        ctx.say(f"{sid}  {started}  {title}".rstrip() + note)
     return EXIT_OK
 
 
@@ -5237,6 +5846,73 @@ def _write_usage(path: str, report: dict[str, Any], ctx: Context) -> None:
                 os.unlink(temporary)
 
 
+def read_token_file(path: str) -> str:
+    """The admin token from *path* (G11): a regular file of this user's, not a link, not
+    readable or writable by group or others (on POSIX), at most 4 KiB, one token."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise ValueError(f"cannot open it ({exc.strerror or 'error'}; a link is refused)") from None
+    with os.fdopen(fd, "rb") as handle:
+        info = os.fstat(handle.fileno())
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError("not a regular file")
+        if os.name == "posix":
+            if info.st_uid != os.getuid():
+                raise ValueError("not owned by you")
+            if info.st_mode & 0o077:
+                raise ValueError("readable or writable by others; chmod 600 it")
+        data = handle.read(4097)
+    if len(data) > 4096:
+        raise ValueError("larger than 4 KiB")
+    token = data.decode("utf-8", errors="strict").strip() if data else ""
+    if not token or any(ch.isspace() for ch in token):
+        raise ValueError("it must hold exactly one token")
+    return token
+
+
+def cmd_acp(ns: argparse.Namespace, ctx: Context) -> int:
+    """``nerva acp`` (G11): the ACP agent on stdio. stdout is the protocol channel."""
+    from agents.core.acp.server import DEFAULT_PERMISSION_TIMEOUT
+    from agents.core.env_config import env_float
+
+    timeout = ns.permission_timeout
+    if timeout is None:
+        timeout = env_float("JARVIS_ACP_PERMISSION_TIMEOUT", DEFAULT_PERMISSION_TIMEOUT)
+    if not 1 <= timeout <= 24 * 3600:
+        ctx.err.write("--permission-timeout must be between 1 and 86400 seconds\n")
+        return EXIT_USAGE
+    client = ctx.client()
+    if ns.token_file:
+        try:
+            client.admin_token = read_token_file(ns.token_file)
+        except ValueError as exc:
+            ctx.err.write(f"--token-file refused: {exc}\n")
+            return EXIT_USAGE
+    if ns.check:
+        health = client.get("/api/commands")
+        commands = len((health or {}).get("commands") or []) if isinstance(health, dict) else 0
+        ctx.err.write(f"hub: {client.base_url} answers ({commands} commands)\n")
+        if not client.admin_token:
+            ctx.err.write("JARVIS_ADMIN_TOKEN is not set: turns run, but approvals cannot be decided "
+                          "from the editor and editor MCP servers cannot be added\n")
+            return EXIT_AUTH
+        client.get("/autonomy/approvals")
+        ctx.err.write(f"credential: approvals readable; permission timeout {timeout:g} s\n")
+        ctx.err.write("ok: point the editor at `python <checkout>/scripts/nerva.py acp` (docs/ACP_EDITORS.md)\n")
+        return EXIT_OK
+    import asyncio
+
+    from .acp_hub import serve_stdio
+
+    try:
+        asyncio.run(serve_stdio(client, permission_timeout=timeout))
+    except KeyboardInterrupt:
+        return EXIT_INTERRUPTED
+    return EXIT_OK
+
+
 def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
     """One scripted turn. H002 — a turn in, an answer out, and an exit code a script can trust.
 
@@ -5364,8 +6040,18 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
             body["reasoning"] = ns.reasoning
         if selected_session:
             body["session_id"] = selected_session
+        # H226: on a terminal, the turn's clarify and secret prompts are answered here,
+        # mid-turn, through the hub's pending-input routes. A script (piped stdin) is
+        # never read, so nothing changes for it.
+        interactive = (_is_tty(ctx.inp) and not ns.json
+                       and not getattr(ns, "no_prompts", False))
         try:
-            reply = ctx.client().post("/chat", body)
+            if interactive:
+                from .chat_prompts import run_turn
+
+                reply = run_turn(ctx, body, read_secret=ctx.secret_reader)
+            else:
+                reply = ctx.client().post("/chat", body)
         except HubUnavailable:
             finish(EXIT_NO_HUB, status="no_hub", reason="no hub is reachable")
             raise
@@ -5421,6 +6107,10 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
                 for line in _recall_lines(reply):
                     _write_answer(ctx, line, stream=ctx.err)
                 ctx.say(str(raw))
+            if interactive and pending:
+                from .chat_prompts import decide_queued
+
+                decide_queued(ctx, pending)
             status = "queued_for_approval" if queued else "refused" if incomplete else "completed"
             return finish(EXIT_OK, status=status, reason=stop_reason or refusal, pending=pending,
                           completed=not incomplete)
@@ -5428,6 +6118,16 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
         if incomplete:
             reason = stop_reason or refusal or ("the turn queued an action for approval and was not executed"
                                  if queued else "the hub returned an empty answer")
+            decided: dict[int, str] = {}
+            if interactive and pending:
+                from .chat_prompts import decide_queued
+
+                decided = decide_queued(ctx, pending)
+            if decided:
+                # The decision is made, but the action runs later on the hub: the turn still
+                # did not complete, and the receipt says what was decided here.
+                reason = (f"{reason}; decided here: "
+                          + ", ".join(f"#{i} {a}" for i, a in sorted(decided.items())))
             if pending:
                 ids = ", ".join(_plain(i, 40) for i in pending)
                 reason = f"{reason} (approval {ids})"
@@ -6297,6 +6997,92 @@ def cmd_project(ns: argparse.Namespace, ctx: Context) -> int:
     return code if 0 <= code <= 255 and (code != 0 or result.get("ok") is True) else EXIT_FAILED
 
 
+def cmd_hooks(ns: argparse.Namespace, ctx: Context) -> int:
+    """G17 — the owner's event hooks, over the same admin routes as the HUD's Hooks panel
+    (agents/core/routers/hooks.py). ``add`` and ``enable`` only queue an approval card;
+    ``disable`` and ``remove`` narrow what runs and apply at once."""
+    client = ctx.client()
+    action = {"ls": "list", "rm": "remove"}.get(ns.action, ns.action)
+    if action in ("list", "doctor"):
+        reply = client.get("/api/hooks")
+        hooks = reply.get("hooks") if isinstance(reply, dict) else None
+        if not isinstance(hooks, list):
+            ctx.err.write("unexpected reply from the hub: no list of hooks in it\n")
+            return EXIT_FAILED
+        if getattr(ns, "json", False):
+            ctx.dump(reply)
+            return EXIT_OK
+        status = reply.get("status") if isinstance(reply.get("status"), dict) else {}
+        blockers = status.get("blockers") or []
+        ctx.say("hooks can run here" if status.get("ready") else
+                "hooks cannot run here: " + ", ".join(str(b) for b in blockers))
+        if not hooks:
+            ctx.say("no hooks")
+        problems = 0
+        for hook in hooks:
+            if not isinstance(hook, dict):
+                continue
+            flags = [hook.get("status") or "?"]
+            if hook.get("guard"):
+                flags.append("guard")
+            if hook.get("matcher"):
+                flags.append(f"tools={hook['matcher']}")
+            if hook.get("binding_current") is False:
+                flags.append("FILES CHANGED since approval: it will not run "
+                             f"(`nerva hooks enable {hook.get('id')}` asks to re-approve)")
+                problems += 1
+            last = hook.get("last_run") if isinstance(hook.get("last_run"), dict) else None
+            if last:
+                flags.append(f"last run {last.get('outcome')}")
+            ctx.say(f"{hook.get('id')}  {hook.get('event')}  {' · '.join(flags)}")
+            ctx.say(f"    {hook.get('command')}")
+        if action == "doctor":
+            return EXIT_FAILED if problems or blockers else EXIT_OK
+        return EXIT_OK
+    if action == "add":
+        body: dict[str, Any] = {"event": ns.event, "argv": list(ns.argv), "guard": bool(ns.guard)}
+        for key, value in (("matcher", ns.matcher), ("timeout_s", ns.timeout), ("name", ns.name),
+                           ("replaces", ns.replaces)):
+            if value is not None:
+                body[key] = value
+        reply = client.post("/api/hooks", body)
+    elif action == "remove":
+        reply = client.request("DELETE", f"/api/hooks/{quote(ns.hook_id, safe='')}")
+    elif action == "test":
+        body = {"tool": ns.tool}
+        if ns.payload_file:
+            try:
+                with open(ns.payload_file, encoding="utf-8") as fh:
+                    tool_input = json.load(fh)
+            except (OSError, ValueError) as exc:
+                ctx.err.write(f"could not read {ns.payload_file}: {exc}\n")
+                return EXIT_USAGE
+            if not isinstance(tool_input, dict):
+                ctx.err.write("the payload file must hold a JSON object\n")
+                return EXIT_USAGE
+            body["tool_input"] = tool_input
+        reply = client.post(f"/api/hooks/{quote(ns.hook_id, safe='')}/test", body)
+    else:
+        reply = client.post(f"/api/hooks/{quote(ns.hook_id, safe='')}/{action}")
+    reply = reply if isinstance(reply, dict) else {}
+    if getattr(ns, "json", False):
+        ctx.dump(reply)
+        return EXIT_OK
+    if action in ("add", "enable"):
+        ctx.say(f"approval card {reply.get('task_id')} queued for hook {(reply.get('hook') or {}).get('id')}; "
+                "it runs only after you accept it (nerva approvals)")
+    elif action == "test":
+        run = reply.get("run") if isinstance(reply.get("run"), dict) else {}
+        ctx.say(f"{run.get('outcome')}" + (" · would block" if run.get("blocked") else "")
+                + (f" · {run.get('reason')}" if run.get("reason") else "")
+                + (f" · {run.get('message')}" if run.get("message") else ""))
+    elif action == "remove":
+        ctx.say(f"removed {reply.get('removed')}")
+    else:
+        ctx.say(f"{ns.hook_id} switched off")
+    return EXIT_OK
+
+
 _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "secrets": cmd_secrets,
     "kanban": cmd_kanban,
@@ -6317,19 +7103,23 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "logs": cmd_logs,
     "skills": cmd_skills,
     "estop": cmd_estop,
+    "lsp": cmd_lsp,
     "company": cmd_company,
     "goal": cmd_goal,
     "pairing": cmd_pairing,
+    "hooks": cmd_hooks,
     "memory": cmd_memory,
     "agents": cmd_agents,
     # argparse names the verb as typed, so each alias dispatches too.
     **dict.fromkeys(("journey", *_JOURNEY_ALIASES), cmd_journey),
     "provider": cmd_custom_provider,
+    "mcp": cmd_mcp,
     "webhook": cmd_webhook,
     "jobs": cmd_jobs,
     "sessions": cmd_sessions,
     "todo": cmd_todo,
     "chat": cmd_chat,
+    "acp": cmd_acp,
     "send": cmd_send,
     "desktop": cmd_desktop,
     "support": cmd_support,

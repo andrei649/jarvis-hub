@@ -85,6 +85,7 @@ _LOCALHOSTS = {"127.0.0.1", "::1", "localhost"}
 # import edge back into web.
 from agents.core.security.token_store import get_token_store
 from agents.core.security.auth_audit import submit_auth_event
+from agents.core.security import browser_session as _browser_session
 
 
 def _admin_env_token() -> str:
@@ -244,6 +245,59 @@ def _admin_credential_ok(supplied: str) -> bool:
     return _env_admin_active() and secrets.compare_digest(supplied, _admin_env_token())
 
 
+def _owner_credential_hash_valid(cred_hash: str) -> bool:
+    """Whether the admin credential a browser session was opened with is still valid
+    (H509): a managed admin token still on file and unexpired, or the bootstrap env token
+    while it is active. Rotating or revoking the credential therefore signs every browser
+    session opened with it out on its next request."""
+    if not cred_hash:
+        return False
+    if get_token_store().scope_of_hash(cred_hash) == "admin":
+        return True
+    env = _admin_env_token()
+    return bool(env) and _env_admin_active() and secrets.compare_digest(
+        _browser_session.token_hash(env), cred_hash)
+
+
+def _owner_session(request) -> str:
+    """The request's owner browser session (H509): ``"ok"``, ``"csrf_failed"`` or ``"none"``.
+
+    Consulted only where no header credential authenticated the request, so a header
+    token route never becomes cookie-driven. Positive same-origin evidence is required,
+    a mutating request must carry the session's ``X-CSRF-Token``, and over plain HTTP
+    from another device the cookie counts only with ``JARVIS_ALLOW_INSECURE_SIGNIN=1``
+    (``agents/core/security/browser_session.py``). A request with no well-formed session
+    cookie never touches the store."""
+    if not _browser_session.cookie_present(request):
+        return _browser_session.NONE
+    if not _browser_session.transport_ok(
+            request, loopback=_real_client_host(request) in _LOCALHOSTS):
+        return _browser_session.NONE
+    try:
+        state, _session = _browser_session.session_state(request, _owner_credential_hash_valid)
+    except Exception:
+        logger.warning("owner browser session could not be read; treated as absent", exc_info=True)
+        return _browser_session.NONE
+    return state
+
+
+async def _owner_session_async(request) -> str:
+    """``_owner_session`` off the event loop (the store is SQLite) when a cookie is present."""
+    if not _browser_session.cookie_present(request):
+        return _browser_session.NONE
+    return await asyncio.to_thread(_owner_session, request)
+
+
+def _owner_session_ok(request) -> bool:
+    """True when the request carries a live owner browser session that passed CSRF."""
+    return _owner_session(request) == _browser_session.OK
+
+
+def _csrf_refusal(tier: str, client: str) -> HTTPException:
+    submit_auth_event("auth_failure", tier=tier, reason="csrf", client=client)
+    return HTTPException(status_code=403, detail="csrf token missing or wrong")
+
+
 async def _admin_guard(request: Request):
     """Authorize an /api/admin/* request or raise 401/403."""
     supplied = request.headers.get("x-admin-token", "")
@@ -251,6 +305,13 @@ async def _admin_guard(request: Request):
     if _admin_credential_ok(supplied):
         submit_auth_event("auth_success", tier="admin", reason="credential", client=client)
         return
+    # H509: the owner's browser session (cookie + same origin + CSRF on writes).
+    session = await _owner_session_async(request) if not supplied else _browser_session.NONE
+    if session == _browser_session.OK:
+        submit_auth_event("auth_success", tier="admin", reason="session", client=client)
+        return
+    if session == _browser_session.CSRF_FAILED:
+        raise _csrf_refusal("admin", client)
     # No admin credential configured at all → dev posture: trust a direct-localhost
     # origin (so a fresh box can mint its first token), reject the network. Behind
     # an untrusted reverse proxy _real_client_host returns "" → fails closed
@@ -344,6 +405,16 @@ async def _user_guard(request: Request):
             reason = "admin_credential" if admin_supplied and not user_supplied else "credential"
             submit_auth_event("auth_success", tier="user", reason=reason, client=client)
             return
+        # H509: the owner's browser session admits user routes too (owner ⊇ user), but
+        # only where an admin header would (a user credential is configured: HF-1), and
+        # only when no header credential was presented — a header is judged on its own.
+        session = (await _owner_session_async(request) if not (user_supplied or admin_supplied)
+                   else _browser_session.NONE)
+        if session == _browser_session.OK:
+            submit_auth_event("auth_success", tier="user", reason="session", client=client)
+            return
+        if session == _browser_session.CSRF_FAILED:
+            raise _csrf_refusal("user", client)
         reason = "invalid" if (user_supplied or admin_supplied) else "missing"
         submit_auth_event("auth_failure", tier="user", reason=reason, client=client)
         raise HTTPException(status_code=401, detail="user token required")
@@ -400,11 +471,13 @@ def _client_ip(request: Request) -> str:
 
 
 def _request_is_authed(request: Request) -> bool:
-    """True only if the request carries a *valid* user or admin token."""
-    return _user_credential_ok(
-        user_supplied=request.headers.get("x-user-token", ""),
-        admin_supplied=request.headers.get("x-admin-token", ""),
-    )
+    """True only if the request carries a *valid* user or admin token, or a live owner
+    browser session (H509)."""
+    user_supplied = request.headers.get("x-user-token", "")
+    admin_supplied = request.headers.get("x-admin-token", "")
+    if _user_credential_ok(user_supplied=user_supplied, admin_supplied=admin_supplied):
+        return True
+    return not (user_supplied or admin_supplied) and _owner_session_ok(request)
 
 
 def _rate_limited(ip: str, now: float) -> bool:
@@ -474,6 +547,14 @@ async def lifespan(application: FastAPI):
     # them when it is the entry; the first load in a process is the only one.
     from agents.core.env_provenance import load_hub_env
     load_hub_env()
+    # Keys and choices the owner set in the HUD's Integrations panel (encrypted secret
+    # store): applied after the .env files, only where they left a name unset (.env wins).
+    from agents.core.integration_keys import apply_stored as _apply_integration_keys
+    _apply_integration_keys()
+    # G21: the channels' plain settings set in the HUD's Channels panel (settings DB),
+    # likewise only where .env left a name unset, before the channels are wired below.
+    from agents.core.channel_config import apply_stored as _apply_channel_config
+    _apply_channel_config()
     # O26-P0.6 (F6): the fail-closed boot guards (unauthenticated external
     # bind, hardened-profile preconditions) used to run only in serve.py — a
     # raw `python -m uvicorn agents.web:app` start silently skipped them.
@@ -553,6 +634,12 @@ async def lifespan(application: FastAPI):
 
     # Load MCP servers from settings DB
     _load_mcp_config()
+    # H556 — reconnect/keepalive supervisor; JARVIS_MCP_AUTOCONNECT also connects every
+    # saved server in the background, in parallel and bounded (boot never waits on one).
+    try:
+        orch.mcp.start(autoconnect=env_flag("JARVIS_MCP_AUTOCONNECT", False))
+    except Exception:
+        logger.warning("MCP supervisor not started", exc_info=True)
 
     orch.checkpoints.create_session_record(
         orch.session_id,
@@ -590,6 +677,9 @@ async def lifespan(application: FastAPI):
             # a `/start <token>` redeemed here came back on the owner's next save.
             pairing=gateway.pairing,
         )
+        # G16 (H070): a MEDIA: attachment crosses the Action Kernel when it is on.
+        from agents.core.kernel.binding import make_action_kernel
+        telegram_ch.media_kernel = make_action_kernel(orch)
         await orch.register_channel(telegram_ch)
         logger.info("Telegram channel wired with bot token")
     else:
@@ -655,6 +745,22 @@ async def lifespan(application: FastAPI):
         await orch.register_channel(slack_ch)
         logger.info("Slack channel wired")
 
+    # G16 (H098) — SMS through Twilio. Default-off (JARVIS_SMS_ENABLED + account, number,
+    # auth token); inbound arrives on the signed webhook (routers/channels_sms.py) and a
+    # reply leaves only as an approved channel.reply task at the money tier.
+    from agents.core.channels import sms as _sms
+    if _sms.enabled() and safe_mode.enabled():
+        safe_mode.note("outbound_webhooks")
+    elif _sms.enabled():
+        # Wired whenever switched on: the webhook and the sender check the account, number
+        # and token on every request, so a token set later in the HUD works without a restart.
+        sms_ch = _sms.SmsChannel(handler=gateway.route, pairing=gateway.pairing)
+        gateway.register_channel(sms_ch.channel_id)
+        await orch.register_channel(sms_ch)
+        missing = _sms.missing_config()
+        logger.info("SMS channel wired (Twilio)%s",
+                    f"; answering 404 until set: {', '.join(missing)}" if missing else "")
+
     # H12.16 — broaden governed channels (WhatsApp/Signal/Matrix/Teams/Google
     # Chat). Configured via JARVIS_WEBHOOK_CHANNELS = {"<kind>": {<config>}}.
     # Default-off; each adapter routes inbound through the same governed gateway.
@@ -710,6 +816,12 @@ async def lifespan(application: FastAPI):
         logger.exception("Nerva Workspace scheduler did not stop cleanly")
     from agents.core.hermes_runtime.service import get_service as get_hermes_runtime
     await get_hermes_runtime().stop()
+    # H055: no language server (third-party code) outlives the hub.
+    try:
+        from agents.core.codeintel.lsp import get_manager as _lsp_manager
+        await _lsp_manager().shutdown()
+    except Exception:
+        logger.exception("language servers did not stop cleanly")
     from agents.core import power
     power.KEEP_AWAKE.release_all()   # H182: no power assertion outlives the hub
     from agents.core.routers.cameras import stop_camera_ingestion
@@ -734,7 +846,7 @@ async def lifespan(application: FastAPI):
 from agents import __version__ as _APP_VERSION  # CDX-4: single-source the version
 from core.web_base_path import configured_root_path, render_ui_html, RootPathRoutingMiddleware
 
-app = FastAPI(root_path=configured_root_path(), title="Jarvis", version=_APP_VERSION, lifespan=lifespan)
+app = FastAPI(root_path=configured_root_path(), title="Nerva", version=_APP_VERSION, lifespan=lifespan)
 app.add_middleware(RootPathRoutingMiddleware)
 # H691: the scheme a listed proxy states — just outside the root-path adapter, so
 # every route sees it; nothing between here and the router reads the scheme.
@@ -787,6 +899,19 @@ async def security_block_handler(request: Request, exc: SecurityBlockError):
          "message": "Security policy blocked this request"},
         status_code=403,
     )
+
+
+from agents.core.managed_scope import ManagedRefused  # noqa: E402
+
+
+@app.exception_handler(ManagedRefused)
+async def managed_refused_handler(request: Request, exc: ManagedRefused):
+    """G1 — a configuration write the administrator's managed layer refuses, from any
+    route: 409 naming the managed file, audited (a route that maps it itself answers first)."""
+    from agents.core.managed_scope import audit_refusal
+
+    await asyncio.to_thread(audit_refusal, exc, f"{request.method} {request.url.path}")
+    return _nocache_json(exc.payload(), status_code=409)
 
 
 @app.exception_handler(Exception)
@@ -1147,6 +1272,13 @@ def _enrich_agents() -> list[dict]:
     return result
 
 
+class ChatAttachment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=1, max_length=200)
+    text: str = Field(..., min_length=1, max_length=64_000)
+
+
 class ChatRequest(BaseModel):
     # Unknown fields still fail; explicit sessions are validated and hydrated.
     model_config = ConfigDict(extra="forbid")
@@ -1155,6 +1287,13 @@ class ChatRequest(BaseModel):
     agent: str = "jarvis"
     reasoning: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"] | None = None
     session_id: str | None = None
+    # G11 (H544): /chat/stream only — also send the turn's bounded tool events (tool, call
+    # id, status; never arguments or results) as `tool` events, for an editor's tool cards.
+    tool_events: bool = False
+    # G11 review M2: content an editor attaches beside the prompt (a fetched page, a buffer,
+    # a file outside its folder). Attached like an @file: reference — fenced as content,
+    # never the owner's words, and the turn is tainted.
+    attachments: list[ChatAttachment] | None = Field(default=None, max_length=8)
 
     @field_validator("session_id")
     @classmethod
@@ -1385,7 +1524,10 @@ def _web_principal(request: Request):
     """
     from agents.core.commands import Principal
 
-    admin = _admin_credential_ok(request.headers.get("x-admin-token", ""))
+    supplied = request.headers.get("x-admin-token", "")
+    admin = _admin_credential_ok(supplied)
+    if not admin and not supplied and not request.headers.get("x-user-token", ""):
+        admin = _owner_session_ok(request)   # H509: the owner's browser session
     if not admin and not _admin_configured():
         admin = _real_client_host(request) in _LOCALHOSTS
     return Principal(channel="web", sender=None, admin=admin)
@@ -1532,6 +1674,9 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
         # or prefixed to it.
         checkpoint_command = preappend_command_name(req.message) is not None
         expansion = None if checkpoint_command else await asyncio.to_thread(context_refs.expand, req.message)
+        if expansion is not None and req.attachments:   # G11 review M2: editor content, fenced
+            expansion = context_refs.attach_editor_content(
+                expansion, req.message, [item.model_dump() for item in req.attachments])
         # H10.21: inject the active session's notes as persistent context.
         message = req.message
         notes = getattr(orch, "notes", None)
@@ -1598,7 +1743,8 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
 
 
 async def _chat_event_stream(orch, message: str, agent: str, agent_override, principal=None, reasoning=None, session_id=None,
-                             attached=None, own_words=None, pending_actor=None, pending_current=None, refused=None):
+                             attached=None, own_words=None, pending_actor=None, pending_current=None, refused=None,
+                             tool_events=False):
     """SSE producer for /chat/stream — cancellation-safe (AUD-7 / F8).
 
     The model turn runs in a background ``runner`` task feeding a queue; this
@@ -1654,7 +1800,19 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             except RuntimeError:
                 loop.call_soon_threadsafe(queue.put_nowait, event)
 
-        with turn_usage_scope() as collector, turn_stops_scope() as stops:
+        def tool_progress(row):
+            # G11 (H544): already cut to tool/call id/status by the trail itself.
+            try:
+                if asyncio.get_running_loop() is loop:
+                    queue.put_nowait(("tool", row))
+                    return
+            except RuntimeError:
+                pass
+            loop.call_soon_threadsafe(queue.put_nowait, ("tool", row))
+
+        from agents.core.observability.tool_events import turn_listener
+        listening = turn_listener(tool_progress) if tool_events else nullcontext()
+        with turn_usage_scope() as collector, turn_stops_scope() as stops, listening:
             collector.observe_progress(usage_progress)
             live_usage = collector
             await run_in_scope(collector, stops, usage_progress)
@@ -1753,6 +1911,8 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
                 yield f"data: {json.dumps({'type': 'token', 'text': data})}\n\n"
             elif kind == "outcome_progress":
                 yield f"data: {json.dumps({'type': 'outcome_progress', 'outcome': data})}\n\n"
+            elif kind == "tool":
+                yield f"data: {json.dumps({'type': 'tool', 'event': data})}\n\n"
             elif kind == "clarify":
                 prompt, acknowledged = data
                 yield f"data: {json.dumps(prompt)}\n\n"
@@ -1810,6 +1970,9 @@ async def chat_stream(req: ChatRequest, request: Request):
     checkpoint_command = preappend_command_name(req.message) is not None   # see /chat
     expansion = (None if checkpoint_command or refused is not None
                  else await asyncio.to_thread(context_refs.expand, req.message))
+    if expansion is not None and req.attachments:   # G11 review M2: editor content, fenced
+        expansion = context_refs.attach_editor_content(
+            expansion, req.message, [item.model_dump() for item in req.attachments])
     # H10.21 parity (Q2): the stream path injects the session's notes block the
     # same way /chat does — before this, persistent notes silently stopped
     # applying the moment the cockpit switched to streaming.
@@ -1825,7 +1988,7 @@ async def chat_stream(req: ChatRequest, request: Request):
         _chat_event_stream(orch, message, req.agent, agent_override, principal=_web_principal(request), reasoning=req.reasoning, session_id=req.session_id,
                            attached=expansion, own_words=req.message, pending_actor=actor,
                            pending_current=lambda: actor is not None and http_actor(request) == actor,
-                           refused=refused),
+                           refused=refused, tool_events=req.tool_events),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -1979,6 +2142,11 @@ from agents.core.routers.pressure import router as _pressure_router  # noqa: E40
 from agents.core.routers.model_setup import router as _model_setup_router  # noqa: E402
 from agents.core.routers.permissions import router as _permissions_router  # noqa: E402
 from agents.core.routers.report import router as _report_router  # noqa: E402
+from agents.core.routers.openai_compat import router as _openai_compat_router  # noqa: E402
+from agents.core.routers.channels_sms import router as _channels_sms_router  # noqa: E402
+from agents.core.routers.files import router as _files_router  # noqa: E402
+from agents.core.routers.hooks import router as _hooks_router  # noqa: E402  (G17 owner hooks)
+from agents.core.routers.channel_config import router as _channel_config_router  # noqa: E402
 from agents.core.routers.brain import router as _brain_router  # noqa: E402
 from agents.core.routers.browser import router as _browser_router  # noqa: E402
 from agents.core.routers.canvas import router as _canvas_router  # noqa: E402
@@ -1995,6 +2163,7 @@ from agents.core.routers.mesh import router as _mesh_router  # noqa: E402
 from agents.core.routers.models_llm import router as _models_llm_router  # noqa: E402
 from agents.core.routers.provider_credentials import router as _provider_credentials_router  # noqa: E402
 from agents.core.routers.provider_selection import router as _provider_selection_router  # noqa: E402
+from agents.core.routers.integrations_setup import router as _integrations_setup_router  # noqa: E402
 from agents.core.routers.custom_endpoints import router as _custom_endpoints_router  # noqa: E402
 from agents.core.routers.multimodal import router as _multimodal_router  # noqa: E402
 from agents.core.routers.notes import router as _notes_router  # noqa: E402
@@ -2010,6 +2179,7 @@ from agents.core.routers.system_profiles import router as _system_profiles_route
 from agents.core.routers.support import router as _support_router  # noqa: E402
 from agents.core.routers.codeintel import router as _codeintel_router  # noqa: E402
 from agents.core.routers.pairing import router as _pairing_router  # noqa: E402
+from agents.core.routers.browser_auth import router as _browser_auth_router  # noqa: E402
 from agents.core.routers.quickbar import router as _quickbar_router  # noqa: E402
 from agents.core.routers.commands import router as _commands_router  # noqa: E402
 from agents.core.routers.dashboard import router as _dashboard_router  # noqa: E402
@@ -2017,6 +2187,7 @@ from agents.core.routers.agents_api import router as _agents_api_router  # noqa:
 from agents.core.routers.dashboard import dashboard  # noqa: E402  (re-export: MCP route-tool + drift guard resolve web.dashboard)
 from agents.core.routers.payments import router as _payments_router  # noqa: E402
 from agents.core.routers.mcp import router as _mcp_router  # noqa: E402
+from agents.core.routers.acp import router as _acp_router  # noqa: E402  (G11 editor agent)
 from agents.core.routers.voice import router as _voice_router  # noqa: E402
 from agents.core.routers.eval import router as _eval_router  # noqa: E402
 from agents.core.routers.heartbeat import router as _heartbeat_router  # noqa: E402
@@ -2032,6 +2203,8 @@ from agents.core.routers.security import router as _security_router  # noqa: E40
 from agents.core.routers.security_hud import router as _security_hud_router  # noqa: E402
 from agents.core.routers.skills import router as _skills_router  # noqa: E402
 from agents.core.routers.skill_curator import router as _skill_curator_router  # noqa: E402
+from agents.core.routers.skill_setup import router as _skill_setup_router  # noqa: E402  (G20, H342)
+from agents.core.routers.skill_taps import router as _skill_taps_router  # noqa: E402  (G20, H025)
 from agents.core.routers.status import router as _status_router  # noqa: E402
 from agents.core.routers.status import status  # noqa: E402  (re-export: MCP route-tool + drift guard resolve web.status)
 from agents.core.routers.swarm import router as _swarm_router  # noqa: E402
@@ -2043,6 +2216,7 @@ from agents.core.routers.webhooks import router as _webhooks_router  # noqa: E40
 app.include_router(_webhooks_router)
 app.include_router(_a2a_router)
 app.include_router(_pairing_router)
+app.include_router(_browser_auth_router)   # H509 owner browser sign-in
 app.include_router(_quickbar_router)
 app.include_router(_commands_router)
 app.include_router(_canvas_router)
@@ -2069,6 +2243,8 @@ app.include_router(_security_router)
 app.include_router(_security_hud_router)
 app.include_router(_skills_router)
 app.include_router(_skill_curator_router)
+app.include_router(_skill_setup_router)   # G20: a skill's declared variables (H342)
+app.include_router(_skill_taps_router)   # G20: skill taps, the trusted sources (H025)
 app.include_router(_status_router)
 app.include_router(_data_spaces_router)
 app.include_router(_design_manifest_router)
@@ -2084,6 +2260,7 @@ app.include_router(_missions_router)
 app.include_router(_models_llm_router)
 app.include_router(_provider_credentials_router)
 app.include_router(_provider_selection_router)
+app.include_router(_integrations_setup_router)   # HUD Integrations panel (keys, test, consented choice)
 app.include_router(_custom_endpoints_router)
 app.include_router(_oauth_router)
 app.include_router(_brain_router)
@@ -2098,6 +2275,7 @@ app.include_router(_integrations_router)
 app.include_router(_dashboard_router)
 app.include_router(_payments_router)
 app.include_router(_mcp_router)
+app.include_router(_acp_router)
 app.include_router(_agents_api_router)
 app.include_router(_voice_router)
 app.include_router(_multimodal_router)
@@ -2126,6 +2304,19 @@ app.include_router(_pressure_router)   # H161: GET /api/system/pressure + dismis
 app.include_router(_model_setup_router)
 app.include_router(_permissions_router)
 app.include_router(_report_router)
+# G12 (H560/H614): OpenAI-compatible API. Off unless openai_api.enabled; each route checks
+# its own bearer key in the handler (never the hub tokens), see routers/openai_compat.py.
+app.include_router(_openai_compat_router)
+# G16 (H098): Twilio's inbound SMS webhook. 404 unless SMS is configured; the handler checks
+# X-Twilio-Signature (HMAC-SHA1) and the account, never a hub token (routers/channels_sms.py).
+app.include_router(_channels_sms_router)
+# G21 (H142): the owner's HUD file browser over approved folders. Admin-only; rename and
+# delete are approval cards at the irreversible tier, never applied by the request.
+app.include_router(_files_router)
+app.include_router(_hooks_router)
+# G21 (H151/H160): view and edit channel settings from the HUD. Admin-only; secrets only
+# through the integration-key store and never echoed; .env and managed pins win.
+app.include_router(_channel_config_router)
 
 # Nerva Workspace — the B2B pilot app (docs/business/WORKSPACE_PILOT_SPEC.md). Every
 # /api/workspace route answers 404 workspace_disabled while NERVA_WORKSPACE is off and
@@ -2161,7 +2352,7 @@ ADMIN_HTML_TEMPLATE = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>JARVIS HUB · Admin</title>
+<title>NERVA · Admin</title>
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="stylesheet" href="/static/fonts.css">
 <link rel="stylesheet" href="/static/style.css">
@@ -2427,6 +2618,30 @@ def _build_mcp_server():
         route_tools=route_tools,
         mutating_route_tools=mutating_route_tools,
         agent_request_guard=_mcp_agent_request_guard,
+        inbox_tools=_build_mcp_inbox_tools(),
+    )
+
+
+def _build_mcp_inbox_tools():
+    """G10 / H559 — the owner's conversations and approval cards over MCP.
+
+    Offered with the read surface (``JARVIS_MCP_ROUTE_TOOLS``, default OFF); every tool
+    still needs the transport's owner verdict. ``approval_respond`` is listed and callable
+    only while the write surface is on too (``JARVIS_MCP_MUTATING_TOOLS``, forced off by
+    the hardened profile), and answers through ``POST /autonomy/tasks/{id}/decision``'s
+    own handler. See ``agents/core/mcp/inbox_tools.py``.
+    """
+    from agents.core.mcp.route_tools import mutating_tools_enabled, route_tools_enabled
+
+    if not route_tools_enabled():
+        return None
+    from agents.core.app_state import get_orch
+    from agents.core.mcp.inbox_tools import InboxTools, build_orch_backend
+
+    return InboxTools(
+        build_orch_backend(get_orch),
+        writes_enabled=lambda: route_tools_enabled() and mutating_tools_enabled(),
+        auditor=orch.audit if orch else None,
     )
 
 

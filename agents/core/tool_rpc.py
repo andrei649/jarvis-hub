@@ -58,6 +58,7 @@ from .automation_contracts import ContractTemplate, predicate
 from .autonomy.consent_registration import trusted_registration_key
 from .capability_manifests import RISK_LEVELS, RollbackContract
 from .security.quarantine import strip_invisible, strip_invisible_deep
+from .tool_search import BRIDGE_TOOL_NAMES
 from .turn_approvals import record_pending_approval
 
 logger = logging.getLogger("jarvis.tool_rpc")
@@ -97,6 +98,21 @@ def reset_tool_turn(token) -> None:
 def current_tool_turn() -> Optional[str]:
     """The model turn of the call in flight, or ``None`` (no loop run, or a script)."""
     return _tool_turn.get()
+
+
+#: H400 — where a sync handler's worker-thread future is also noted, when the call runs
+#: inside a sub-agent: the manager keeps the child's slot until those threads return
+#: (a thread cannot be interrupted, so a cancelled child's tool may still be running).
+_sync_thread_sink: ContextVar[Optional[set]] = ContextVar("nerva_sync_thread_sink", default=None)
+
+
+def bind_sync_thread_sink(sink: Optional[set]):
+    """Note every sync-handler thread started in this context in *sink*; returns the token."""
+    return _sync_thread_sink.set(sink)
+
+
+def reset_sync_thread_sink(token) -> None:
+    _sync_thread_sink.reset(token)
 
 
 #: A coroutine function, or (H297) a plain function: a sync handler runs on a worker
@@ -489,6 +505,11 @@ class ToolRPCServer:
         # spec for the same reason as ``_parallel_safe``: the consent hash and the
         # snapshotted offer rows must not move when a tool says what it writes.
         self._effects: dict[str, tuple[str, RollbackContract | None]] = {}
+        # G11 (H545) — a tool offered to one conversation only (an MCP server an editor
+        # handed over for that session): absent from :meth:`tools` and refused by
+        # :meth:`handle` whenever its predicate is not true. Beside the spec, like the two
+        # above, so the consent hash and the snapshotted offer rows do not move.
+        self._visible: dict[str, Callable[[], bool]] = {}
         self._secrets = secret_broker
         self._enqueue = enqueue
         self._audit = audit
@@ -528,6 +549,7 @@ class ToolRPCServer:
         parallel_safe: bool | None = None,
         risk: str | None = None,
         rollback: RollbackContract | None = None,
+        visible: Callable[[], bool] | None = None,
     ) -> "ToolRPCServer":
         """Expose one tool. ``gated=True`` ⇒ external/mutating ⇒ needs approval.
 
@@ -584,7 +606,17 @@ class ToolRPCServer:
         (``tests/test_tool_surface.py``). Like ``parallel_safe`` it is not part of
         :meth:`tools` or of the consent registration: read it with
         :meth:`declared_effect`.
+
+        ``visible`` (G11, H545) narrows who is offered the tool: when given, the tool is
+        left out of :meth:`tools` and refused by :meth:`handle` (as if not registered)
+        unless the predicate answers ``True``; a predicate that raises hides it. An
+        approved card still runs through :meth:`execute`, which the owner decided.
         """
+        if name in BRIDGE_TOOL_NAMES:
+            # G8 (H585): the tool-search bridge names are the loop's, unwrapped before a
+            # call reaches this server; a tool registered under one would make the bridge
+            # itself an authorizable action.
+            raise ValueError(f"tool name is reserved for the tool-search bridge: {name}")
         if parallel_safe is not None and type(parallel_safe) is not bool:
             raise ValueError("parallel_safe must be a bool or None")
         effect = _effect_declaration(risk, rollback, gated=bool(gated))
@@ -671,7 +703,22 @@ class ToolRPCServer:
             self._effects.pop(name, None)
         else:
             self._effects[name] = effect
+        if visible is None:
+            self._visible.pop(name, None)
+        else:
+            if not callable(visible):
+                raise ValueError("visible must be a zero-argument callable")
+            self._visible[name] = visible
         return self
+
+    def _is_visible(self, name: str) -> bool:
+        predicate = getattr(self, "_visible", {}).get(name)
+        if predicate is None:
+            return True
+        try:
+            return predicate() is True
+        except Exception:
+            return False
 
     async def unregister_tool(
         self,
@@ -693,6 +740,7 @@ class ToolRPCServer:
             return False
         self._parallel_safe.pop(str(name or ""), None)
         self._effects.pop(key, None)
+        getattr(self, "_visible", {}).pop(key, None)
         current = asyncio.current_task()
         tasks = [task for task in tuple(spec.get("active_tasks", ())) if task is not current]
         if cancel_inflight:
@@ -732,6 +780,8 @@ class ToolRPCServer:
         so a surface that answers without a token serves the static schema."""
         tools = []
         for name, spec in sorted(self._tools.items()):
+            if not self._is_visible(name):
+                continue
             description, schema = advertised_schema(
                 name, spec["description"], spec["input_schema"],
                 spec.get("schema_overrides") if live else None)
@@ -791,14 +841,20 @@ class ToolRPCServer:
 
         if not isinstance(args, dict):
             return refused("bad_args")
+        if name in BRIDGE_TOOL_NAMES:
+            # G8 (H585): the agent loop unwraps ``tool_call`` into the real tool before it
+            # calls here, so every gate below sees the real name. A bridge name arriving
+            # here was not unwrapped (a script, a stale caller): never dispatch it.
+            return refused("bridge_not_unwrapped")
 
         from .job_toolsets import allows
         if not allows(name):
             return refused("job_toolset_not_allowed")
 
         spec = self._tools.get(name)
-        if spec is None:
-            # Not on the allowlist — the sandbox cannot reach it.
+        if spec is None or not self._is_visible(name):
+            # Not on the allowlist — the sandbox cannot reach it. A tool scoped to another
+            # conversation (G11) answers exactly like one that does not exist.
             return refused("tool_not_allowed")
 
         if spec.get("gated_review") is not None:
@@ -819,6 +875,20 @@ class ToolRPCServer:
                 allowed = False
             if allowed is not True:
                 return refused("tool_not_allowed")
+        # H668 — plan mode: while the owner keeps this conversation in plan mode only a
+        # tool that declared itself read_only runs; a gated tool is refused before its
+        # preflight, intake or approval card, with the Action Kernel on or off.
+        from .kernel.plan_mode import tool_denial as _plan_mode_tool_denial
+
+        effect = self.declared_effect(name)
+        try:
+            planned = _plan_mode_tool_denial(name, gated=bool(spec["gated"]),
+                                             risk=effect[0] if effect else None)
+        except Exception:  # noqa: BLE001 — fail closed
+            planned = "plan mode: state unavailable"
+        if planned is not None:
+            self._record("toolrpc.plan_mode_denied", f"{name}: {planned}", agent=effective_actor)
+            return refused("plan_mode", detail=planned)
         args, denial = self._run_preflight(spec, args, name)
         if denial is not None:
             from .turn_outcome import record_tool_refused
@@ -1129,6 +1199,15 @@ class ToolRPCServer:
                 failed["detail"] = self._scrub(detail)
             return failed
         self._record("toolrpc.execute", name, agent=effective_actor)
+        if name in {"file_write", "file_delete"} and isinstance(result, Mapping):
+            # G5 — an applied edit makes the project's verification evidence stale.
+            from .verify.evidence import mark_edited
+
+            try:
+                await asyncio.to_thread(mark_edited, getattr(task, "id", None),
+                                        result.get("path") or args.get("path"))
+            except Exception:
+                logger.warning("verify evidence: edit not recorded", exc_info=True)
         return {"status": "ok", "tool": name, "result": self._scrub(result)}
 
     # ── internals ────────────────────────────────────────────────────────────
@@ -1212,6 +1291,9 @@ class ToolRPCServer:
             raise
         threads = self._sync_threads.setdefault(name, set())
         threads.add(future)
+        sink = _sync_thread_sink.get()
+        if sink is not None:
+            sink.add(future)
 
         def _finished(done: Future) -> None:
             threads.discard(done)

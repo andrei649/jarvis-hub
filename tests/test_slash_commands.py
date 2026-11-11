@@ -58,7 +58,7 @@ def _orch():
         agents={"jarvis": object(), "friday": object()},
         get_setting=lambda key, default=None: {"autonomy.mode": "ask"}.get(key, default),
         session_id="s-1",
-        checkpoints=SimpleNamespace(get_sessions=lambda limit=5: [{"session_id": "s-1", "started_at": "2026-09-07"}]),
+        checkpoints=SimpleNamespace(get_sessions=lambda limit=5, **_: [{"session_id": "s-1", "started_at": "2026-09-07"}]),
     )
     return orch
 
@@ -176,7 +176,7 @@ def _bare_orchestrator():
     orch.channels = {"telegram": SimpleNamespace(allowed_users=[42])}
     orch.llm_router = SimpleNamespace(name="lm-studio")
     orch.agents = {}
-    orch.checkpoints = SimpleNamespace(get_sessions=lambda limit=5: [])
+    orch.checkpoints = SimpleNamespace(get_sessions=lambda limit=5, **_: [])
     seen = {}
 
     async def fake_handle_input(text, channel="voice", agent_override=None):
@@ -293,6 +293,12 @@ def test_the_default_registry_names_the_first_wave(monkeypatch, tmp_path):
         "checkpoints", "rollback", "kanban", "project", "goal", "subgoal",
         "bundles", "bundle",   # H026: owner commands; a guest's set below is unchanged
         "whoami",              # H058: a user command, so in both sets
+        "approvals",           # H484: the approval dial, an owner command
+        "memory",              # H443: held memory writes, an owner command (DM only)
+        "plan", "loop", "proactive",   # H668, H460/H578: owner session commands
+        "context", "compress",         # H412: the context meter, owner commands
+        "verify",                      # G5 (H023/H405): project verification, an owner command
+        "worktree", "review", "delegations",   # G18 (H474, H404, H401): owner commands
     }
     # H058: a guest sees /help and /whoami until the owner allows more; allowed everything
     # a non-owner may be allowed, it sees the user tier, never an owner command.

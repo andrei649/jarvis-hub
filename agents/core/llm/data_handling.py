@@ -454,6 +454,16 @@ def authorize(router, backend, model, route="", *, principal=None, origin=None, 
         from agents.core.orchestrator import current_principal
         principal = current_principal()
     resolved = resolve(router, backend, model, route)
+    if resolved.policy != "local":
+        # H496: a cloud route spends the owner's provider credential; a guest turn may
+        # use it only when the owner shared that provider with guests.
+        from agents.core.security.credential_scope import KIND_PROVIDER, CredentialNotShared, check
+        try:
+            check(KIND_PROVIDER, resolved.provider, principal=principal, origin=origin)
+        except CredentialNotShared as exc:
+            raise DataHandlingRefused(
+                f"{exc.reason}: the owner has not shared the {resolved.provider} provider with "
+                "guests; guest turns use local models") from None
     selected = getattr(_unwrap(backend), '_selected_provider_runtime', None)
     custom = getattr(_unwrap(backend), '_custom_endpoint_runtime', None)
     if custom is not None:
@@ -533,6 +543,9 @@ def acknowledge(router, provider, acknowledged, scope, audit, *, target=None, ro
         else:
             values.pop(provider, None)
         _ack_map(values)
+        from agents.core.managed_scope import check_setting_write
+
+        check_setting_write(*SETTING, values)                           # G1
         conn.execute("UPDATE settings SET value=? WHERE category=? AND key=?", (json.dumps(values), *SETTING))
         if row is None:
             raise ConsentUnavailable("consent setting missing")
@@ -581,6 +594,9 @@ def _acknowledge_role(router, provider, acknowledged, scope, audit, target, *, r
         _role_ack_map(values)
         if row is None:
             raise ConsentUnavailable("role consent setting missing")
+        from agents.core.managed_scope import check_setting_write
+
+        check_setting_write(*ROLE_SETTING, values)                      # G1
         conn.execute("UPDATE settings SET value=? WHERE category=? AND key=?", (json.dumps(values), *ROLE_SETTING))
         conn.commit()
     except Exception as exc:

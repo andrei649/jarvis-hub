@@ -120,6 +120,26 @@ class TokenStore:
             return None
         return scope
 
+    def scope_of_hash(self, token_hash: str, now: Optional[float] = None) -> Optional[str]:
+        """The scope of the valid, unexpired token whose SHA-256 is *token_hash*, else None.
+
+        For a holder that kept only the hash — a browser session re-checking the admin
+        credential it was opened with (H509) — so a rotation or revoke ends it too."""
+        if not token_hash:
+            return None
+        now = now if now is not None else time.time()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT scope, expires_at FROM issued_tokens WHERE token_hash=?",
+                (token_hash,),
+            ).fetchone()
+        if not row:
+            return None
+        scope, expires_at = row
+        if expires_at is not None and now >= expires_at:
+            return None
+        return scope
+
     def has_scope(self, scope: str, now: Optional[float] = None) -> bool:
         """True if at least one unexpired token of *scope* exists."""
         now = now if now is not None else time.time()

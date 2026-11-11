@@ -1086,11 +1086,14 @@ class LedgerChain:
                     )
                 if source.record_id == record.record_id:
                     raise ValueError("ledger record cannot derive from itself")
-            elif external is not None and ref.key in external:
-                if external[ref.key] != ref.integrity_sha256:
-                    raise ValueError(
-                        f"ledger external ref {ref.record_id} integrity mismatch"
-                    )
+            elif (
+                external is not None
+                and ref.key in external
+                and external[ref.key] != ref.integrity_sha256
+            ):
+                raise ValueError(
+                    f"ledger external ref {ref.record_id} integrity mismatch"
+                )
 
     @staticmethod
     def _check_supersession(

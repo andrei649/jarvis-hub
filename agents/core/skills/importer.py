@@ -30,7 +30,9 @@ import shutil
 import sys
 import tempfile
 import time
+import uuid
 from collections.abc import Callable
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Optional
@@ -293,6 +295,23 @@ def _load_hermes_pin() -> _HermesPin:
     )
 
 
+@dataclass(frozen=True)
+class ImportOutcome:
+    """How one import call ended: ``reason`` is ``""`` (imported, or simply not found),
+    ``name_taken``, ``exists`` or ``invalid_skill_md`` (with its ``problems``)."""
+
+    ok: bool
+    reason: str = ""
+    problems: tuple | list = ()
+
+
+#: The outcome of the import call running in THIS task (H349, fourth review). The
+#: importer is one shared instance and its ``last_*`` attributes are overwritten by
+#: whichever import finishes last; a caller that reads them after an ``await`` may read
+#: another request's. A context variable belongs to the calling task.
+_OUTCOME: ContextVar[ImportOutcome | None] = ContextVar("nerva_skill_import_outcome", default=None)
+
+
 class SkillImporter:
     def __init__(self, skills_dir: str | None = None, *, resolver=None, transport_factory=None):
         if skills_dir is None:
@@ -305,6 +324,12 @@ class SkillImporter:
         self._remote_transport_factory = transport_factory
         # H350 — why the last _save_skill refused its document (empty when it did not).
         self.last_refusal: list = []
+        # H349 — ``"exists"`` when the last _save_skill refused because the folder holds a
+        # skill this source did not import (``""`` when it did not).
+        self.last_conflict: str = ""
+        # H349 — the folder the last _save_skill created (None when it updated its own
+        # earlier import, or wrote nothing): a new skill, for the usage sidecar.
+        self.last_created: Optional[Path] = None
 
     def _remote_client(self, authorization: RemoteImportAuthorization):
         from agents.core.http_client import RequiredEgressHTTPClient
@@ -621,9 +646,23 @@ class SkillImporter:
         manifest: Optional[dict] = None,
         skill_md_bytes: Optional[bytes] = None,
         provenance: Optional[dict] = None,
+        extra_files: Optional[dict[str, bytes]] = None,
         reference_files: Optional[dict[str, bytes]] = None,
     ) -> bool:
+        """Write one imported skill. ``extra_files`` (Adopt lane slice 3, the Hermes
+        catalog) are supporting files of plain data (``references/x.md`` …) written beside
+        the SKILL.md; each path must pass ``hermes_catalog.safe_extra_path`` and every one is
+        checked before anything is written. An update removes the supporting files its
+        earlier import recorded (``source_files``) that the new one no longer carries.
+
+        ``reference_files`` (a pinned remote import's verified ``references/`` bytes) take
+        the staged path instead: the complete directory is prepared away from the live
+        name, marked ``PENDING_REVIEW`` and published only when the name is still absent
+        — an existing copy, even this source's own, is never replaced there."""
         self.last_refusal = []
+        self.last_conflict = ""
+        self.last_created = None
+        _OUTCOME.set(ImportOutcome(False, ""))
         slug = _safe_slug(skill_name)
         if slug is None:
             logger.warning("Rejected skill import: unsafe name %r", skill_name)
@@ -658,34 +697,70 @@ class SkillImporter:
 
         self.last_refusal = validate_skill_md(skill_md_bytes if skill_md_bytes is not None else skill_md_text)
         if self.last_refusal:
+            _OUTCOME.set(ImportOutcome(False, "invalid_skill_md", list(self.last_refusal)))
             logger.warning("Rejected skill import: its SKILL.md is not valid (%s)",
                            "; ".join(str(p) for p in self.last_refusal))
             return False
-        # Sidecar manifest.json records import provenance for list_imported().
-        fm = self._extract_frontmatter(skill_md_text)
-        meta = manifest or {}
-        sidecar = {
-            "name": fm.get("name") or meta.get("name", skill_name),
-            "description": fm.get("description") or meta.get("description", ""),
-            "version": str(fm.get("version") or meta.get("version", "1.0.0")),
-            "author": fm.get("author") or meta.get("author", ""),
-            "license": fm.get("license", ""),
-            "source": source,
-            "imported": True,
-        }
-        if provenance:
-            sidecar.update(provenance)
-        manifest_bytes = json.dumps(sidecar, indent=2, ensure_ascii=False).encode("utf-8")
-        body = skill_md_bytes if skill_md_bytes is not None else skill_md_text.encode("utf-8")
-        if reference_files is None:
-            target_dir.mkdir(parents=True, exist_ok=True)
-            (target_dir / "SKILL.md").write_bytes(body)
-            (target_dir / "manifest.json").write_bytes(manifest_bytes)
-        else:
+        # H349 (review M2) — an import never writes into a skill folder it did not create:
+        # the owner's own skill, an agent-made one or another source's import under the
+        # same slug is left exactly as it is (it used to have its SKILL.md replaced with
+        # no backup). Only this source's own earlier import is updated in place. Checked
+        # before anything is written, so a refusal leaves no partial write.
+        if (target_dir.exists() or target_dir.is_symlink()) and not self._imported_here(target_dir, source):
+            self.last_conflict = "exists"
+            _OUTCOME.set(ImportOutcome(False, "exists"))
+            logger.warning("Rejected skill import: the folder %s holds a skill %s did not import", slug, source)
+            return False
+        # H349 (third review, B1) — nor does it install a package whose SKILL.md declares
+        # the name of a skill installed from ANOTHER folder: the loader lets a later folder
+        # take a name, so the package would take that skill's slot while the owner's
+        # folder stays. The slug asked for says nothing about the name declared.
+        # Fourth review: asked of every root the loader discovers and of what is loaded
+        # (``loader.name_holder``), and the package is named by the loader's own parse —
+        # the name it would register under, not what another parser reads off it.
+        from .loader import loader_name, name_holder
+
+        final_bytes = skill_md_bytes if skill_md_bytes is not None else skill_md_text.encode("utf-8")
+        new_name = loader_name(target_dir, final_bytes)
+        # Fifth review: an update that keeps the name its folder already registers under
+        # takes nobody's name, so it is never refused over another holder.
+        keeps_name = target_dir.is_dir() and loader_name(target_dir) == new_name
+        holder = None if keeps_name else name_holder(new_name, except_dir=target_dir,
+                                                     extra_roots=[self.skills_dir])
+        if holder is not None:
+            self.last_conflict = "name_taken"
+            _OUTCOME.set(ImportOutcome(False, "name_taken"))
+            logger.warning("Rejected skill import: its SKILL.md declares a name the folder %s already holds",
+                           holder.name)
+            return False
+
+        def _sidecar(install_id: str) -> dict:
+            # Sidecar manifest.json records import provenance for list_imported().
+            fm = self._extract_frontmatter(skill_md_text)
+            meta = manifest or {}
+            sidecar = {
+                "name": fm.get("name") or meta.get("name", skill_name),
+                "description": fm.get("description") or meta.get("description", ""),
+                "version": str(fm.get("version") or meta.get("version", "1.0.0")),
+                "author": fm.get("author") or meta.get("author", ""),
+                "license": fm.get("license", ""),
+                "source": source,
+                "imported": True,
+            }
+            if provenance:
+                sidecar.update(provenance)
+            if install_id:
+                sidecar["install_id"] = install_id
+            return sidecar
+
+        if reference_files is not None:
             # The complete verified directory is prepared away from the live name.
             # An existing owner copy (and its approval) is never replaced here.
             if target_dir.exists() or target_dir.is_symlink():
                 return False
+            manifest_bytes = json.dumps(_sidecar(uuid.uuid4().hex), indent=2,
+                                        ensure_ascii=False).encode("utf-8")
+            body = skill_md_bytes if skill_md_bytes is not None else skill_md_text.encode("utf-8")
             stage = Path(tempfile.mkdtemp(prefix=".hermes-stage-", dir=self.skills_dir))
             try:
                 (stage / "SKILL.md").write_bytes(body)
@@ -713,9 +788,131 @@ class SkillImporter:
             finally:
                 if stage.exists():
                     shutil.rmtree(stage)
+            self.last_created = target_dir
+            _OUTCOME.set(ImportOutcome(True, ""))
+            logger.info(f"Imported skill '{skill_name}' from {source} -> {target_dir}")
+            return True
 
+        extras = self._checked_extra_files(extra_files)
+        if extras is None:
+            self.last_refusal = []
+            _OUTCOME.set(ImportOutcome(False, "unsafe_extra_file"))
+            logger.warning("Rejected skill import: a supporting file is not plain data at a safe path")
+            return False
+        created = not target_dir.exists()
+        # H349 (third review, M1) — a new install stamps its folder with an install id, so
+        # the usage sidecar knows it for new whenever the hub first sees it (now, after a
+        # crash, at the start after an offline import). An update keeps the id it has.
+        install_id = uuid.uuid4().hex if created else self._install_id(target_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        if created:
+            self.last_created = target_dir
+
+        def _write_skill_md() -> None:
+            # Preserve verified upstream bytes exactly. Generic imports write the text
+            # checked above as UTF-8 bytes: text mode would turn '\n' into '\r\n' on Windows.
+            if skill_md_bytes is None:
+                (target_dir / "SKILL.md").write_bytes(skill_md_text.encode("utf-8"))
+            else:
+                (target_dir / "SKILL.md").write_bytes(skill_md_bytes)
+
+        # H349: in a NEW folder the install record (with its install id) is written first
+        # and SKILL.md last, so the folder is never a loadable skill without the id that
+        # says it is a new install — a crash in between leaves a folder the loader ignores.
+        # An update keeps the order it always had. Supporting files land before the
+        # SKILL.md in both cases (a skill is never loadable with half of its references).
+        if extras:
+            self._write_extra_files(target_dir, extras, created=created)
+        if not created:
+            _write_skill_md()
+
+        (target_dir / "manifest.json").write_text(
+            json.dumps(_sidecar(install_id), indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        if created:
+            _write_skill_md()
+
+        _OUTCOME.set(ImportOutcome(True, ""))
         logger.info(f"Imported skill '{skill_name}' from {source} -> {target_dir}")
         return True
+
+    @staticmethod
+    def _checked_extra_files(extra_files: Optional[dict]) -> Optional[dict[str, bytes]]:
+        """``extra_files`` when every path is a safe data path and every value bytes within
+        the catalog's bounds; ``{}`` when there are none; None when one is refused."""
+        if not extra_files:
+            return {}
+        from .hermes_catalog import MAX_FILE_BYTES, MAX_FILES, safe_extra_path
+
+        if not isinstance(extra_files, dict) or len(extra_files) > MAX_FILES:
+            return None
+        for rel, data in extra_files.items():
+            if not safe_extra_path(rel) or not isinstance(data, bytes) or len(data) > MAX_FILE_BYTES:
+                return None
+            try:
+                data.decode("utf-8")
+            except UnicodeDecodeError:
+                return None
+            if b"\0" in data:
+                return None
+        return dict(extra_files)
+
+    @staticmethod
+    def _write_extra_files(target_dir: Path, extras: dict[str, bytes], *, created: bool) -> None:
+        root = target_dir.resolve()
+        if not created:
+            # The supporting files this source's earlier import recorded and the new one
+            # drops go; nothing else in the folder is touched.
+            try:
+                old = json.loads((target_dir / "manifest.json").read_text(encoding="utf-8"))
+                recorded = [f.get("path") for f in old.get("source_files", []) if isinstance(f, dict)]
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError, AttributeError):
+                recorded = []
+            from .hermes_catalog import safe_extra_path
+
+            for rel in recorded:
+                if isinstance(rel, str) and rel not in extras and safe_extra_path(rel):
+                    stale = target_dir / rel
+                    if _is_plain_file(stale, max_bytes=1 << 30) and _really_inside(stale, root):
+                        stale.unlink()
+        for rel, data in sorted(extras.items()):
+            path = target_dir / rel
+            current = target_dir
+            for part in Path(rel).parts[:-1]:
+                current = current / part
+                if current.is_symlink() or (current.exists() and not current.is_dir()):
+                    raise OSError(f"refused to write through {current}")
+                current.mkdir(exist_ok=True)
+            if path.is_symlink() or (path.exists() and not path.is_file()):
+                raise OSError(f"refused to overwrite {path}")
+            if not _really_inside(path.parent, root):
+                raise OSError(f"refused to write outside {target_dir}")
+            path.write_bytes(data)
+
+    @staticmethod
+    def outcome() -> ImportOutcome:
+        """How the import call of the calling task ended (see :data:`_OUTCOME`)."""
+        return _OUTCOME.get() or ImportOutcome(False, "")
+
+    @staticmethod
+    def _install_id(target_dir: Path) -> str:
+        """The install id an earlier import stamped into ``target_dir``, or ``""``."""
+        from .loader import install_id_of
+
+        return install_id_of(target_dir)
+
+    @staticmethod
+    def _imported_here(target_dir: Path, source: str) -> bool:
+        """Whether ``target_dir`` is a plain folder whose ``manifest.json`` says this
+        importer wrote it from ``source`` (the sidecar ``_save_skill`` writes)."""
+        sidecar = target_dir / "manifest.json"
+        if not _is_plain_dir(target_dir) or not _is_plain_file(sidecar):
+            return False
+        try:
+            data = json.loads(sidecar.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        return isinstance(data, dict) and data.get("imported") is True and data.get("source") == source
 
     @staticmethod
     def _synthesize_skill_md(skill_name: str, manifest: dict, source: str) -> str:
@@ -897,7 +1094,9 @@ class SkillImporter:
             except (json.JSONDecodeError, IOError):
                 continue
             if data.get("imported") or data.get("source") in ("hermes", "openclaw"):
-                imported.append(data)
+                # H349: the install id says which install a usage row belongs to; it is the
+                # hub's own bookkeeping and is not served (this listing is an open route).
+                imported.append({k: v for k, v in data.items() if k != "install_id"})
         return imported
 
 
@@ -1498,7 +1697,8 @@ async def _import_local_skill(
         },
     )
     if not saved:
-        return _local_skill_result(slug, "rejected", "save_refused", sha256=digest)
+        reason = "name_taken" if importer.outcome().reason == "name_taken" else "save_refused"
+        return _local_skill_result(slug, "rejected", reason, sha256=digest)
     # CDX-8 quarantine: registered for review, never exec'd until owner approval
     # (``SkillLoader.approve_generated_skill``). A foreign install's skill is
     # untrusted code by definition — flags or not.

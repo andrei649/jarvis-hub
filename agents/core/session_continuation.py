@@ -52,6 +52,12 @@ def initialize(conn):
         root_id TEXT NOT NULL, root_instance_id TEXT NOT NULL, root_birth_at TEXT NOT NULL,
         seed_json TEXT NOT NULL, seed_sha256 TEXT NOT NULL, created_at TEXT NOT NULL
     )""")
+    # H440 review: the lists, the archiver and retention look a session's lineage up for
+    # every row; without these each lookup scanned the whole table.
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_session_continuations_root"
+                 " ON session_continuations(root_id, created_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_session_continuations_parent"
+                 " ON session_continuations(parent_id)")
     conn.execute("""CREATE TABLE IF NOT EXISTS session_history_rewinds (
         session_id TEXT PRIMARY KEY, instance_id TEXT NOT NULL,
         revision INTEGER NOT NULL, snapshot_sha256 TEXT NOT NULL
@@ -159,6 +165,52 @@ def seed_json(turns):
     except (TypeError, ValueError, UnicodeError):
         raise ContinuationRefused("invalid_history") from None
     return value
+
+
+def _lineage_title(conn, source, root):
+    """H440 — the continuation's name: the source's title (else the lineage root's) with
+    the next free ``#N``. A source that is itself a numbered part (``title_source:
+    lineage``) continues its conversation's count; any other title is taken whole, its
+    own trailing number included (``Fix issue #12`` → ``Fix issue #12 #2``). Numbers are
+    counted over every session's title, so two chats never share one name. ``""`` when
+    neither has a title. Third review: the titles that count are found through the title
+    index (``session_titles.title_rows``), not by reading every session; and the name is
+    never longer than a rename accepts."""
+    from .session_titles import (
+        _stored_title,
+        lineage_stem,
+        next_lineage_title,
+        sync_title_keys,
+        title_key,
+        title_rows,
+    )
+
+    sync_title_keys(conn)
+    base, source_kind = "", ""
+    for sid in (source, root):
+        row = conn.execute("SELECT metadata FROM sessions WHERE id=?", (sid,)).fetchone()
+        base, source_kind = _stored_title(row[0] if row else None)
+        if base.strip():
+            break
+    if not base.strip():
+        return ""
+    numbered = source_kind == "lineage"
+    stem = title_key(lineage_stem(base, numbered=numbered))
+    return next_lineage_title(base, [title for _sid, title, _kind in title_rows(conn, stem, numbered=True)],
+                              numbered=numbered)
+
+
+def _lineage_stamps(conn, source):
+    """H440 review — a pin and an archive stamp are the conversation's, so its new member
+    is born with the ones its source carries."""
+    row = conn.execute("SELECT metadata FROM sessions WHERE id=?", (source,)).fetchone()
+    try:
+        meta = json.loads((row[0] if row else None) or "{}")
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(meta, dict):
+        return {}
+    return {key: meta[key] for key in ("pinned_at", "archived_at") if isinstance(meta.get(key), str)}
 
 
 class ContinuationStore:
@@ -287,6 +339,10 @@ class ContinuationStore:
                 now = datetime.now(UTC).isoformat()
                 metadata = ({MARKER: {"kind": "derived", "source": source_origin.source,
                                      "instance_id": instance}} if source_origin.tainted else {})
+                title = _lineage_title(conn, source, root)
+                if title:   # H440: "base #2", "base #3"… — never replaced by the model's upgrade
+                    metadata.update({"title": title, "title_source": "lineage"})
+                metadata.update(_lineage_stamps(conn, source))
                 conn.execute(
                     "INSERT INTO sessions(id, started_at, turn_count, instance_id, metadata) VALUES(?,?,?,?,?)",
                     (sid, now, len(turns), instance, json.dumps(metadata, separators=(",", ":"))),
@@ -338,6 +394,24 @@ class ContinuationStore:
             raise ContinuationRefused("continuation_unavailable", 503) from None
 
 
+#: G11 — the refusal an editor conversation gets once the hub no longer holds it.
+EDITOR_SESSION_CLOSED = "editor_session_closed"
+
+
+def editor_session_closed(sid) -> bool:
+    """G11 — *sid* names an editor conversation (``acp_…``) with no live binding."""
+    from .acp import sessions as acp_sessions
+
+    return isinstance(sid, str) and sid.startswith(acp_sessions.PREFIX) and acp_sessions.get(sid) is None
+
+
+def _fresh_editor_session(sid) -> bool:
+    """G11 — *sid* is an editor conversation this process opened and still holds open."""
+    from .acp import sessions as acp_sessions
+
+    return acp_sessions.get(sid) is not None
+
+
 def _load_locked(orch, sid):
     """Caller holds manager then conversation lock; never switches current ID."""
     from .foreign_history import seed as foreign_seed
@@ -350,6 +424,11 @@ def _load_locked(orch, sid):
         instance, legacy = history_identity(orch.checkpoints._conn, sid)
         head = rewind_head(orch.checkpoints._conn, sid)
         origin = status_locked(orch.checkpoints._conn, sid)
+        # H443: whether this history came from elsewhere (an import), as opposed to the
+        # conversation's own snapshot reloaded after a restart or a continuation (which
+        # carries its source's standing from create_continuation on).
+        lineage = orch.checkpoints._conn.execute(
+            "SELECT 1 FROM session_imports WHERE session_id=?", (sid,)).fetchone() is not None
     if head is not None and head[0] != instance:
         raise ContinuationRefused("history_identity_changed")
     if sid in conversation.sessions:
@@ -374,6 +453,10 @@ def _load_locked(orch, sid):
                     or digest != head[2]):
                 raise ContinuationRefused("invalid_history")
         if not turns:
+            if head is None and _fresh_editor_session(sid):
+                # G11: the empty conversation this hub opened for an editor (POST
+                # /api/acp/sessions) before its first turn; nothing to seed or verify.
+                return turns
             if head is None or conversation.revisions.get(sid) != head[1]:
                 raise ContinuationRefused("invalid_history")
         else:
@@ -439,6 +522,10 @@ def _load_locked(orch, sid):
         turn.timestamp = value["timestamp"]
         restored.append(turn)
     conversation.invalidate_active_images(sid)
+    guard = getattr(conversation, "load_guard", None)
+    if callable(guard) and (origin.tainted or lineage):
+        # H443: a history loaded whole from elsewhere was not watched turn by turn.
+        guard(sid)
     conversation.sessions[sid] = restored
     conversation.instances[sid] = instance
     conversation.revisions[sid] = loaded_revision
@@ -454,6 +541,10 @@ async def prepare_session(orch, sid):
     from .foreign_history import ForeignHistoryRefused
     if not is_valid_session_id(sid):
         raise ContinuationRefused("invalid_identifier", 422)
+    if editor_session_closed(sid):
+        # G11 review M3: an editor conversation the hub no longer holds (a restart, an
+        # expired lease) has no folder binding: it is refused, never run unconfined.
+        raise ContinuationRefused(EDITOR_SESSION_CLOSED, 410)
     if orch.checkpoints._conn is None:
         raise ContinuationRefused("continuation_unavailable", 503)
     with orch.checkpoints._lock:
@@ -477,6 +568,8 @@ async def create_continuation(orch, source, request):
     store = ContinuationStore(orch.checkpoints)
     replay = store.replay(source, request)
     if replay:
+        # H443: idempotent; a hub that stopped before the first call is caught up here.
+        await _inherit_standing(orch, source, replay)
         return replay
     async with orch.turn_lease(source) as acquired:
         if not acquired:
@@ -489,9 +582,20 @@ async def create_continuation(orch, source, request):
                 turns = _load_locked(orch, source)
                 # No await from captured history through the one SQLite activation
                 # commit. Cancellation/response loss after commit resolves by request ID.
-                return store.create(source, request, turns, clock)
+                created = store.create(source, request, turns, clock)
             except ForeignHistoryRefused as exc:
                 raise ContinuationRefused(exc.reason, exc.status) from exc
+    await _inherit_standing(orch, source, created)
+    return created
+
+
+async def _inherit_standing(orch, source, created):
+    """H443: the continuation stands as its source does (a known-unclean source's reason
+    is recorded for it) before its seed is ever loaded or searchable."""
+    inherit = getattr(orch, "inherit_conversation_standing", None)
+    child = created.get("session_id") if isinstance(created, dict) else None
+    if callable(inherit) and child:
+        await inherit(source, child)
 
 
 CONTINUATION_REFUSED_REPLY = (

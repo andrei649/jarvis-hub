@@ -1,4 +1,4 @@
-# Campaign Plan — Jarvis Hub v1.0 launch
+# Campaign Plan — Nerva v1.0 launch
 
 > The executable launch playbook: audiences, message ladder, channel-by-channel plan, a T-minus
 > timeline, and the metrics that decide success. Action layer for [`docs/GTM_PLAN.md`](../../docs/GTM_PLAN.md)
@@ -53,7 +53,7 @@ Wave 1 is technical, reachable, and amplifies. Win them first; they carry waves 
 ## 4. Channel plan (Wave 1 — fired together for star velocity)
 
 **Show HN** — the anchor.
-- Title: `Show HN: Jarvis Hub — a governed, local-first multi-agent AI assistant`
+- Title: `Show HN: Nerva — a governed, local-first multi-agent AI assistant`
 - Link the **GitHub repo**, not a marketing page. Founder free ~4h to work comments live:
   agree-then-address, humble, lean OSS/privacy. Post early in the week.
 

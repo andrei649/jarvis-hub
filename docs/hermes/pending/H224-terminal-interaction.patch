@@ -1,0 +1,2003 @@
+From bacce38936e260feb16fbb5a480ff0b3a9061ffc Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Wed, 11 Nov 2026 16:55:49 +0000
+Subject: [PATCH] Interactive terminal chat with the H224 keyboard model (H224
+ missing -> partial)
+
+`nerva chat -i` (agents/cli/repl.py) is built on stdlib GNU readline, because
+prompt_toolkit is not a pinned dependency.
+
+Keys:
+- Ctrl+C clears the draft, else stops the running turn, else arms exit; a
+  second press exits.
+- Alt+Enter, and Shift+Enter where the terminal sends it as its own sequence,
+  adds a newline; so does a trailing backslash.
+- Bracketed paste keeps a multi-line paste as one draft.
+- Ctrl+X Ctrl+E and /edit open $EDITOR on a 0600 temp file.
+- Ctrl+L redraws; Esc Esc kills the draft.
+- Tab/Shift+Tab cycle /api/commands slash commands and @file: paths.
+
+Also: persistent 0600 JSONL history, a queue for messages typed during a turn,
+/image and /paste-image (vision turn), /switch (session switcher), and /model
+(the owner's local-model picker).
+
+Server side: new user-guarded POST /chat/interrupt cancels only turns that the
+caller's own credential started (agents/core/turn_interrupts.py, keyed by the
+http_actor hash). The /chat door absorbs only that cancel and answers with a
+fixed reply and a turn_interrupted notice.
+
+Route snapshots, API sweep, HUD parity machine-facing entry, Hermes
+assessment, areas suite, CHANGELOG, BACKLOG, ARCHITECTURE and CLI docs are
+updated. +53 tests (tests/test_h224_terminal_interaction.py).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Rn17sW3k5CjbsJzgDdx9Ag
+---
+ BACKLOG.md                              |   1 +
+ CHANGELOG.md                            |  17 +
+ agents/cli/nerva.py                     |  44 ++
+ agents/cli/repl.py                      | 826 ++++++++++++++++++++++++
+ agents/core/routers/chat_pending.py     |  26 +-
+ agents/core/turn_interrupts.py          |  96 +++
+ agents/web.py                           |  17 +-
+ docs/ARCHITECTURE.md                    |   1 +
+ docs/cli-chat-receipts.md               |  45 ++
+ docs/hermes/areas.json                  |   1 +
+ docs/hermes/assessment.json             |  12 +-
+ tests/test_h224_terminal_interaction.py | 706 ++++++++++++++++++++
+ tests/test_hud_v2_parity.py             |   3 +-
+ 13 files changed, 1787 insertions(+), 8 deletions(-)
+ create mode 100644 agents/cli/repl.py
+ create mode 100644 agents/core/turn_interrupts.py
+ create mode 100644 tests/test_h224_terminal_interaction.py
+
+diff --git a/BACKLOG.md b/BACKLOG.md
+index c36354e..f8857e3 100644
+--- a/BACKLOG.md
++++ b/BACKLOG.md
+@@ -2592,6 +2592,7 @@
+ - 2026-11-11 Hermes H127 — Matrix end-to-end encryption (reopened by the owner, decision §5): **H127 missing → partial**. New `agents/core/channels/matrix_e2ee.py` (pinned `cryptography` only): `MatrixChannel.before_send` (new `WebhookChannel.before_send` hook) asks the room's `m.room.encryption` state (unknown = encrypted) and refuses plaintext into an encrypted room unless `encrypted_rooms: allow_plaintext`; `encrypted_rooms: proxy` honoured only for a loopback homeserver (local pantalaimon); `m.room.encrypted` inbound counted and logged, never answered; device keys checked against their Ed25519 self-signature over canonical JSON and through cross-signing (owner-verified master → self-signing → device); owner trust in `DeviceTrustStore`, encrypted at `<data>/matrix/crypto_store.enc` (verified / cross_signed / changed / unverified); unverified devices refused unless `allow_unverified_devices` once encryption exists. CLI `python -m agents.core.channels.matrix_e2ee`. Remaining: Olm/Megolm itself (no backend pinned — matrix-nio[e2e]/python-olm/vodozemac would need adding to the hash-pinned requirements), key upload and room-key sharing, key backup / `MATRIX_RECOVERY_KEY` recovery, SAS verification, live homeserver proof. +15 tests (`tests/test_h127_matrix_e2ee.py`, in the `platforms` area suite).
+ - 2026-11-11 Hermes H348 — LLM consolidation of overlapping skills into umbrella skills (reopened by the owner, decision §5): **H348 missing → partial**. New `agents/core/skills/consolidation.py`, owner-triggered only (`POST /api/skills/consolidation/analyze`, admin; Decision Inbox "overlapping skills" controls in `panels/skill-batches.tsx`; nothing schedules it, pinned by a test): overlap found in-process (TF-IDF cosine over name/description/body, groups ≤5, candidates exclude shipped, pinned, pending-review and sandbox-only skills); the strict-local auxiliary one-shot (purpose `skill_consolidation`) drafts one umbrella SKILL.md per group with each skill fenced as untrusted data; `check_draft` requires a new valid name and refuses injection-flagged text; each draft becomes one H665 batch (create umbrella, delete members `absorbed_into` it), dry-run diffs + H330 reference migrations on one `skill.batch_proposal` card (origin `agent:consolidation`, pins respected); only the owner's decision applies it, members archived to `<data>/skills/batch-archive`; analyses kept in `<data>/learning/skill_consolidations.json`. Remaining: jobs/cron references reported not migrated, one-click undo, embedding similarity, live local-model run. +12 tests (`tests/test_h348_skill_consolidation.py`, in the `skills` area suite), +3 frontend.
+ - 2026-11-11 Hermes H496/H127/H348 review fixed (same branch): **M1** a guest turn is refused any runnable skill that declares credentials, stored or satisfied from the hub's `.env`, unless shared (`Skill.execute`, also the plain-text skill-command path); **M2** the local voice pipeline (channel `voice`, no sender, not inbound) is the owner for credentials (`credential_scope._local_voice`), tool posture unchanged, chat voice notes keep their channel's principal; **M3** consolidation candidates exclude skills the catalog hides (untrusted signature, sandboxed, disabled, unsupported), the batch origin is `agent:consolidation` (umbrella recorded agent-made, unsigned, no approval standing), the card says the local model wrote it, members' supporting files are named not carried over. Minors: Matrix 404 counts as unencrypted only with JSON `M_NOT_FOUND`, unencrypted answers re-checked after 30 s, strict room ids quoted the same in check and send (`valid_room_id`, `quote_room`), status CLI no longer claims hub counters; web-search cache per identity class with the guest share check before it; ElevenLabs/Fish voices share-checked; unshare audits first; CHANGELOG states exactly what is covered. Nits: share ledger HMAC with the hub's secret-store key (tampered = nothing shared); docs note the Matrix trust-store key file beside it without `JARVIS_SECRET_KEY`. +14 tests across the three row files, +0 frontend (one assertion updated).
++- 2026-11-11 Hermes H224 — terminal keyboard model: **H224 missing → partial**. New `nerva chat -i` (`agents/cli/repl.py`, stdlib GNU readline; prompt_toolkit is not a pinned dependency). Ctrl+C clears the draft, else stops the running turn, else arms exit (second press exits). The stop is a new user-guarded `POST /chat/interrupt` (`agents/core/turn_interrupts.py`, `routers/chat_pending.py`) that cancels only turns started by the caller's own credential (the `http_actor` hash); the `/chat` door answers with a fixed reply and a `turn_interrupted` notice. Alt+Enter (and Shift+Enter where the terminal sends a distinct sequence) or a trailing `\` adds a newline. Bracketed paste keeps a multi-line paste as one draft. Ctrl+X Ctrl+E and `/edit` open `$VISUAL`/`$EDITOR` on a 0600 temp file. Ctrl+L redraws; Esc Esc kills the draft. Tab and Shift+Tab cycle hub slash commands (`/api/commands`) and `@file:` paths (`/api/context-refs`). History persists in a 0600 JSONL file (bounded, no key-shaped lines, `--no-history`). Messages typed during a turn are queued (`/queue`). `/image` and `/paste-image` send the next message as a vision turn. `/switch` is a session switcher over `GET /sessions`; `/model` is a model picker over the owner's local-model routes. Remaining: Up/Down cannot walk a completion menu (readline), Cmd+V image paste is not detected, `/chat/stream` turns are not covered by the route, libedit/Windows get reduced keys, and the mouse half is skipped by decision. +53 tests (`tests/test_h224_terminal_interaction.py`, in the `tui` area suite).
+ 
+ - [ ] **HEQ-1 — equate the accepted Hermes capabilities in Nerva.** This is the current
+   owner-prioritized sprint; all 697 rows are now accepted, with no scope exclusions.
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index dc43a78..a9a52b3 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -4,6 +4,23 @@
+ 
+ ### What changed for you — 2026-11-11
+ 
++**An interactive chat in the terminal: `nerva chat -i`**
++- Enter sends. Alt+Enter adds a new line, and so does Shift+Enter on terminals that report
++  it separately. A line ending in `\` also continues on the next line. A multi-line paste
++  arrives as one message.
++- Ctrl+C clears what you are typing. On an empty line while Nerva is working, it stops that
++  turn; only a turn your own credential started can be stopped. When nothing is running, a
++  second Ctrl+C (or Ctrl+D) leaves.
++- Ctrl+X Ctrl+E or `/edit` opens your `$VISUAL`/`$EDITOR` on a private temporary file, and
++  the text comes back as your draft. Ctrl+L redraws the screen. Esc Esc discards the draft,
++  and Ctrl+Y brings it back.
++- Tab completes slash commands you may run and `@file:` paths. Up and Down go through your
++  history, which is kept in a private file (`--no-history` to keep none).
++- Messages you type while a turn runs wait in a queue (`/queue` to see or drop them).
++  `/image PATH` or `/paste-image` sends your next message, with the image, to the vision
++  model. `/switch` moves between your sessions. `/model` picks the hub's local model
++  (owner only). `/keys` lists every key.
++
+ **Merge overlapping skills, only when you say so**
+ - In the Decision Inbox, "find overlaps" shows which of your skills cover the same ground
+   (measured on this machine). "draft umbrellas" asks your local model to write one umbrella
+diff --git a/agents/cli/nerva.py b/agents/cli/nerva.py
+index 94212d9..6269fcc 100644
+--- a/agents/cli/nerva.py
++++ b/agents/cli/nerva.py
+@@ -906,6 +906,7 @@ def build_parser() -> argparse.ArgumentParser:
+                "  echo \"summarise this\" | nerva chat -z --usage-file spend.json\n"
+                "  nerva chat -z -f prompt.txt --agent athena\n"
+                "  nerva chat -z --image screenshot.png \"what does this error say?\"\n"
++               "  nerva chat -i            (the interactive chat on this terminal; /keys inside)\n"
+                "\n"
+                "This verb never auto-approves. If the turn queues an action for approval it\n"
+                "stays queued: stdout is empty, the exit code is 1, and stderr names what to\n"
+@@ -935,6 +936,12 @@ def build_parser() -> argparse.ArgumentParser:
+     selection.add_argument("-c", "--continue", dest="continue_latest", action="store_true",
+                            help="use the latest unarchived conversation and print a free recap")
+     chat.add_argument("--json", action="store_true")
++    chat.add_argument("-i", "--interactive", action="store_true",
++                      help="an interactive chat on this terminal (H224): Enter sends, Alt+Enter is a "
++                           "newline, Ctrl+C clears / stops the turn / exits, Tab completes, "
++                           "/keys lists the rest")
++    chat.add_argument("--no-history", action="store_true",
++                      help="with -i: keep no history file")
+     chat.add_argument("--no-prompts", action="store_true",
+                       help="do not answer the turn's questions, secret requests or approvals here, "
+                            "even on a terminal")
+@@ -5913,6 +5920,41 @@ def cmd_acp(ns: argparse.Namespace, ctx: Context) -> int:
+     return EXIT_OK
+ 
+ 
++def _interactive_chat(ns: argparse.Namespace, ctx: Context) -> int:
++    """H224 — `nerva chat -i`: the interactive terminal chat (agents/cli/repl.py)."""
++    conflicts = [flag for flag, given in (
++        ("MESSAGE", ns.message), ("--file", ns.file), ("-z", getattr(ns, "oneshot", False)),
++        ("--json", ns.json), ("--usage-file", getattr(ns, "usage_file", None)),
++        ("--image", getattr(ns, "image", None)), ("--clipboard-image", getattr(ns, "clipboard_image", False)),
++        ("--no-prompts", getattr(ns, "no_prompts", False))) if given]
++    if conflicts:
++        ctx.err.write(f"-i is the interactive chat; {', '.join(conflicts)} belong to a scripted turn\n")
++        return EXIT_USAGE
++    if not (_is_tty(ctx.inp) and _is_tty(ctx.out)):
++        ctx.err.write("-i needs a terminal on stdin and stdout; a script uses `nerva chat MESSAGE`\n")
++        return EXIT_USAGE
++    session = getattr(ns, "session", None)
++    selector = getattr(ns, "resume", None)
++    if selector or getattr(ns, "continue_latest", False):
++        if selector and selector.startswith("@"):
++            ctx.err.write("-i resumes the hub's own sessions; import a foreign one with "
++                          "`nerva chat -r @claude MESSAGE` first\n")
++            return EXIT_USAGE
++        try:
++            resolved = ctx.client().post("/sessions/resolve", {
++                "selector": selector or "latest", "latest_mode": bool(getattr(ns, "continue_latest", False))})
++        except HubError as exc:
++            ctx.err.write(f"{_plain(exc, 300)}\n")
++            return EXIT_AUTH if exc.status in (401, 403) else EXIT_FAILED
++        session = resolved.get("session_id") if isinstance(resolved, dict) else None
++    from .repl import Repl, load_readline
++
++    repl = Repl(ctx, session_id=session if isinstance(session, str) and session else None,
++                agent=ns.agent or None, reasoning=getattr(ns, "reasoning", None),
++                history=not getattr(ns, "no_history", False), readline_module=load_readline())
++    return repl.run()
++
++
+ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
+     """One scripted turn. H002 — a turn in, an answer out, and an exit code a script can trust.
+ 
+@@ -5922,6 +5964,8 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
+     verb reports it on stderr and exits non-zero, and there is no flag that changes that.
+     Nothing in this function can approve, execute or bypass a queued item.
+     """
++    if getattr(ns, "interactive", False):
++        return _interactive_chat(ns, ctx)
+     oneshot = bool(getattr(ns, "oneshot", False))
+     usage_file = getattr(ns, "usage_file", None)
+     if usage_file is not None and not str(usage_file).strip():
+diff --git a/agents/cli/repl.py b/agents/cli/repl.py
+new file mode 100644
+index 0000000..6713a9f
+--- /dev/null
++++ b/agents/cli/repl.py
+@@ -0,0 +1,826 @@
++"""H224 — `nerva chat -i`: the interactive terminal chat and its keyboard model.
++
++Built on the standard library's GNU readline (prompt_toolkit is not a dependency of
++this repository, and the CLI stays stdlib-only). What each key does:
++
++=====================  ==========================================================
++Ctrl+C                 clear the draft; on an empty draft while a turn runs, stop
++                       that turn (``POST /chat/interrupt``, the caller's own turn
++                       only); idle and empty, arm exit — a second Ctrl+C exits
++Ctrl+D                 exit (on an empty line, readline's rule)
++Enter                  submit
++Alt+Enter, Shift+Enter newline in the draft (Shift+Enter where the terminal sends
++                       a distinct sequence: kitty/CSI-u ``ESC[13;2u`` or xterm's
++                       modifyOtherKeys ``ESC[27;2;13~``); a trailing ``\\`` also
++                       continues the message on the next line
++Ctrl+X Ctrl+E, /edit   compose in ``$VISUAL``/``$EDITOR`` (owner-only 0600 temp
++                       file, removed afterwards); the text comes back as the draft
++Ctrl+L                 redraw (clear the screen, keep the draft)
++Esc Esc                discard the draft (Ctrl+Y brings it back: it is killed, not lost)
++Tab / Shift+Tab        cycle completions: the hub's slash commands
++                       (``GET /api/commands``, what this credential may run), this
++                       client's own commands, and ``@file:`` paths
++                       (``GET /api/context-refs``)
++Up / Down              history (persistent, owner-only file, ``--no-history`` off)
++paste                  bracketed paste: a multi-line paste is one draft, not N turns
++=====================  ==========================================================
++
++Client commands (never sent to the hub): ``/edit``, ``/image PATH``, ``/paste-image``,
++``/switch [N|id|new]`` (your sessions, ``GET /sessions``), ``/model [N|id]`` (the hub's
++local models; switching is the owner's admin route and is refused otherwise),
++``/queue [clear|drop N]``, ``/keys``, ``/exit``. Everything else — ``/help``, ``/recap``,
++any hub command — goes to the hub as a message, where the command plane judges it.
++
++A message typed while a turn runs is queued and sent, in order, when the turn ends.
++
++Security: nothing the hub or the model writes is ever executed here; their text is
++stripped of control sequences before it is drawn. The editor is the owner's own
++``$VISUAL``/``$EDITOR`` argv (no shell). A line that looks like a key or token is kept
++out of the history file.
++"""
++
++from __future__ import annotations
++
++import collections
++import contextlib
++import json
++import os
++import re
++import signal
++import threading
++import time
++from collections.abc import Callable, Iterable, Mapping
++from dataclasses import dataclass, field
++from pathlib import Path
++from typing import Any
++from urllib.parse import quote
++
++#: Client-side commands. A hub command of the same name is shadowed in this client
++#: only (``/sessions``, ``/new`` and the rest are the hub's and are not here).
++LOCAL_COMMANDS: dict[str, str] = {
++    "/edit": "compose the message in $VISUAL/$EDITOR (also Ctrl+X Ctrl+E)",
++    "/image": "attach an image file to the next message (it goes to the vision model)",
++    "/paste-image": "attach the clipboard's image to the next message",
++    "/switch": "list your sessions; /switch N, /switch <id> or /switch new",
++    "/model": "list the hub's local models; /model N or /model <id> switches (owner only)",
++    "/queue": "messages waiting for the running turn; /queue clear, /queue drop N",
++    "/keys": "the keyboard reference",
++    "/exit": "leave (also /quit, Ctrl+D, or Ctrl+C twice)",
++    "/quit": "leave",
++}
++
++#: What /keys prints.
++KEY_HELP: tuple[str, ...] = (
++    "Enter            send",
++    "Alt+Enter        newline (Shift+Enter too, where the terminal sends it apart); a trailing \\ continues",
++    "Ctrl+C           clear the draft · stop the running turn · press twice to exit",
++    "Ctrl+D           exit",
++    "Ctrl+X Ctrl+E    compose in $VISUAL/$EDITOR (also /edit)",
++    "Ctrl+L           redraw",
++    "Esc Esc          discard the draft (Ctrl+Y brings it back)",
++    "Tab / Shift+Tab  cycle completions: /commands and @file: paths",
++    "Up / Down        history",
++    "Ctrl+A/E/W/U/K/Y and the other readline chords edit the line",
++    *(f"{name:<16} {text}" for name, text in LOCAL_COMMANDS.items()),
++)
++
++HISTORY_LIMIT = 1000
++EXIT_ARM_SECONDS = 3.0
++_SESSION_ID = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
++
++#: readline bindings (GNU syntax). Each is data, so a test can read the table.
++READLINE_BINDINGS: tuple[str, ...] = (
++    "set enable-bracketed-paste on",
++    "set editing-mode emacs",
++    "set show-all-if-ambiguous on",
++    # newline in the draft: Alt+Enter, and Shift+Enter where the terminal can say so
++    r'"\e\r": "\C-v\C-j"',
++    r'"\e\n": "\C-v\C-j"',
++    r'"\e[13;2u": "\C-v\C-j"',
++    r'"\e[27;2;13~": "\C-v\C-j"',
++    # Ctrl+X Ctrl+E: hand the draft to /edit
++    r'"\C-x\C-e": "\C-a/edit \C-j"',
++    # Esc Esc: discard the draft into the kill ring
++    r'"\e\e": kill-whole-line',
++    # Tab / Shift+Tab cycle completions
++    r'"\t": menu-complete',
++    r'"\e[Z": menu-complete-backward',
++    r'"\C-l": clear-screen',
++)
++
++
++# ── key policy (pure) ────────────────────────────────────────────────────────
++
++def ctrl_c_action(draft: str, *, turn_running: bool, exit_armed: bool) -> str:
++    """What Ctrl+C means now, in Hermes' order: ``clear`` a draft; else ``interrupt``
++    a running turn; else ``exit`` when already armed; else ``arm`` the exit."""
++    if draft:
++        return "clear"
++    if turn_running:
++        return "interrupt"
++    return "exit" if exit_armed else "arm"
++
++
++def route_line(line: str) -> tuple[str, str]:
++    """``(kind, rest)``: ``("local", "/cmd args")`` for a client command, ``("empty", "")``,
++    ``("continue", text)`` for a line ending in a backslash, or ``("send", text)``."""
++    if not line.strip():
++        return "empty", ""
++    if line.endswith("\\") and not line.endswith("\\\\"):
++        return "continue", line[:-1]
++    head = line.strip().split(maxsplit=1)[0]
++    if head in LOCAL_COMMANDS:
++        return "local", line.strip()
++    return "send", line
++
++
++def completions(text: str, *, line: str, begin: int, commands: Iterable[str],
++                refs: Callable[[str], list[str]] | None = None) -> list[str]:
++    """Candidates for the word *text* that starts at *begin* in *line*.
++
++    A ``/word`` at the start of the line completes from the hub's commands and this
++    client's own; ``@file:prefix`` anywhere completes from *refs* (the hub's scope)."""
++    if text.startswith("/") and not line[:begin].strip():
++        names = sorted(set(commands) | set(LOCAL_COMMANDS))
++        return [name for name in names if name.startswith(text)]
++    if text.startswith("@file:") and refs is not None:
++        prefix = text[len("@file:"):]
++        return [f"@file:{ref}" for ref in refs(prefix)]
++    if text.startswith("@") and "@file:".startswith(text):
++        return ["@file:"]
++    return []
++
++
++# ── history ──────────────────────────────────────────────────────────────────
++
++def history_path(environ: Mapping[str, str]) -> Path:
++    from agents.core.paths import data_path
++
++    return data_path("cli", "chat_history.jsonl")
++
++
++def load_history(path: Path, limit: int = HISTORY_LIMIT) -> list[str]:
++    """Entries of the history file, oldest first (one JSON string per line, so a
++    multi-line message stays one entry). A file someone else can read is not trusted
++    to be ours: it is re-permissioned, not skipped, and a broken line is ignored."""
++    try:
++        raw = path.read_text(encoding="utf-8")
++    except (OSError, UnicodeDecodeError):
++        return []
++    with contextlib.suppress(OSError):
++        if path.stat().st_mode & 0o077:
++            os.chmod(path, 0o600)
++    entries: list[str] = []
++    for row in raw.splitlines():
++        try:
++            value = json.loads(row)
++        except ValueError:
++            continue
++        if isinstance(value, str) and value.strip():
++            entries.append(value)
++    return entries[-limit:]
++
++
++def append_history(path: Path, entry: str, limit: int = HISTORY_LIMIT) -> bool:
++    """Append one entry (owner-only file, 0600); the file is cut to *limit* entries."""
++    from .chat_prompts import looks_like_secret
++
++    if not entry.strip() or looks_like_secret(entry):
++        return False
++    try:
++        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
++        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
++        with os.fdopen(fd, "a", encoding="utf-8") as handle:
++            handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
++        os.chmod(path, 0o600)
++        entries = load_history(path, limit=limit * 2)
++        if len(entries) > limit:
++            temp = path.with_name(path.name + ".tmp")
++            fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
++            with os.fdopen(fd, "w", encoding="utf-8") as handle:
++                handle.writelines(json.dumps(e, ensure_ascii=False) + "\n" for e in entries[-limit:])
++            os.replace(temp, path)
++        return True
++    except OSError:
++        return False
++
++
++# ── editor ───────────────────────────────────────────────────────────────────
++
++def compose_in_editor(environ: Mapping[str, str], draft: str, *, err: Any,
++                      run: Callable[[list[str], str], int] | None = None) -> str | None:
++    """The owner's ``$VISUAL``/``$EDITOR`` on *draft* in an owner-only (0600) temporary
++    file that is removed afterwards; the saved text, or None (said why) when it failed."""
++    import tempfile
++
++    from .nerva import _editor_argv, _editor_failure, _plain, _run_editor
++
++    argv = _editor_argv(environ)
++    fd, temporary = tempfile.mkstemp(prefix="nerva-chat-", suffix=".md")   # 0600 by mkstemp
++    try:
++        if hasattr(os, "fchmod"):
++            os.fchmod(fd, 0o600)
++        with os.fdopen(fd, "w", encoding="utf-8") as handle:
++            handle.write(draft)
++        try:
++            status = (run or _run_editor)(argv, temporary)
++        except OSError as exc:
++            err.write(f"editor {_plain(argv[0], 80)} {_editor_failure(exc)} — set $VISUAL or $EDITOR\n")
++            return None
++        if status != 0:
++            err.write(f"editor exited {status}; the draft is unchanged\n")
++            return None
++        return Path(temporary).read_text(encoding="utf-8").rstrip("\n")
++    finally:
++        with contextlib.suppress(OSError):
++            os.unlink(temporary)
++
++
++# ── the REPL ─────────────────────────────────────────────────────────────────
++
++@dataclass
++class Outgoing:
++    message: str
++    images: list[str] = field(default_factory=list)
++    clipboard_image: bool = False
++
++
++class Repl:
++    """One interactive chat. The main thread reads the keyboard; one worker thread
++    runs turns, one at a time, from the queue. Questions a turn asks (clarify,
++    secrets) and approval cards it queued are answered on the main thread."""
++
++    def __init__(self, ctx, *, session_id: str | None = None, agent: str | None = None,
++                 reasoning: str | None = None, history: bool = True,
++                 reader: Callable[[str], str] | None = None, readline_module: Any = None) -> None:
++        self.ctx = ctx
++        self.session_id = session_id
++        self.agent = agent
++        self.reasoning = reasoning
++        self.history_file = history_path(ctx.environ) if history else None
++        self._reader = reader or input
++        self._rl = readline_module
++        self._lock = threading.RLock()
++        self._wake = threading.Condition(self._lock)
++        self.queue: collections.deque[Outgoing] = collections.deque()
++        self.asks: collections.deque[tuple[str, Any]] = collections.deque()
++        self.running = False
++        self.stopped = False
++        self.exit_armed_at: float | None = None
++        self.staged_images: list[str] = []
++        self.staged_clipboard = False
++        self.commands: list[str] = []
++        self.continued: list[str] = []
++        self._draft_at_interrupt = ""
++        self._prefill = ""
++        self._reading = False
++        self._worker: threading.Thread | None = None
++
++    # output -----------------------------------------------------------------
++    def say(self, text: str = "") -> None:
++        with self._lock:
++            stream = self.ctx.err
++            try:
++                if self._reading:
++                    stream.write("\r\x1b[K")
++                stream.write(text + "\n")
++                stream.flush()
++            except (OSError, ValueError, AttributeError):
++                return
++            if self._reading and self._rl is not None:
++                with contextlib.suppress(Exception):
++                    self._rl.redisplay()
++
++    def answer(self, text: str) -> None:
++        from .nerva import _answer_text
++
++        with self._lock:
++            if self._reading:
++                with contextlib.suppress(OSError, ValueError):
++                    self.ctx.err.write("\r\x1b[K")
++            try:
++                self.ctx.out.write(_answer_text(text).rstrip("\n") + "\n")
++                self.ctx.out.flush()
++            except (OSError, ValueError):
++                pass
++            if self._reading and self._rl is not None:
++                with contextlib.suppress(Exception):
++                    self._rl.redisplay()
++
++    # setup ------------------------------------------------------------------
++    def load_catalog(self) -> None:
++        from .client import HubError
++
++        try:
++            reply = self.ctx.client().get("/api/commands")
++        except HubError:
++            return
++        rows = reply.get("commands") if isinstance(reply, dict) else None
++        names = []
++        for row in rows if isinstance(rows, list) else []:
++            command = row.get("command") if isinstance(row, dict) else None
++            if isinstance(command, str) and re.fullmatch(r"/[a-z0-9][a-z0-9_-]{0,63}", command):
++                names.append(command)
++        self.commands = names
++
++    def file_refs(self, prefix: str) -> list[str]:
++        from .client import HubError
++
++        try:
++            reply = self.ctx.client().get(f"/api/context-refs?prefix={quote(prefix[:1024], safe='')}")
++        except HubError:
++            return []
++        items = reply.get("items") if isinstance(reply, dict) else None
++        refs = []
++        for item in items if isinstance(items, list) else []:
++            ref = item.get("ref") if isinstance(item, dict) else None
++            if isinstance(ref, str) and ref and not any(ord(c) < 32 for c in ref):
++                refs.append(ref)
++        return refs[:200]
++
++    def install_readline(self) -> None:
++        rl = self._rl
++        if rl is None:
++            return
++        libedit = "libedit" in (getattr(rl, "__doc__", "") or "")
++        with contextlib.suppress(Exception):
++            rl.set_auto_history(False)
++        rl.set_completer_delims(" \t\n\"'")
++        if libedit:
++            rl.parse_and_bind("bind ^I rl_complete")
++        else:
++            for binding in READLINE_BINDINGS:
++                rl.parse_and_bind(binding)
++        state: dict[str, list[str]] = {}
++
++        def complete(text: str, index: int) -> str | None:
++            if index == 0:
++                line = rl.get_line_buffer()
++                state["c"] = completions(text, line=line, begin=rl.get_begidx(),
++                                         commands=self.commands, refs=self.file_refs)
++            options = state.get("c", [])
++            return options[index] if index < len(options) else None
++
++        rl.set_completer(complete)
++        if self.history_file is not None:
++            for entry in load_history(self.history_file):
++                rl.add_history(entry)
++
++        def prefill() -> None:
++            if self._prefill:
++                rl.insert_text(self._prefill)
++                self._prefill = ""
++                rl.redisplay()
++
++        rl.set_pre_input_hook(prefill)
++
++    # the keyboard -----------------------------------------------------------
++    def _on_sigint(self, signum, frame) -> None:
++        draft = ""
++        if self._rl is not None:
++            with contextlib.suppress(Exception):
++                draft = self._rl.get_line_buffer()
++        self._draft_at_interrupt = draft
++        raise KeyboardInterrupt
++
++    def read_line(self, prompt: str) -> str | None:
++        """One line; None at end of input. Ctrl+C is handled here (never raised)."""
++        self._draft_at_interrupt = ""
++        self._reading = True
++        try:
++            return self._reader(prompt)
++        except EOFError:
++            return None
++        except KeyboardInterrupt:
++            self.on_ctrl_c(self._draft_at_interrupt)
++            return ""
++        finally:
++            self._reading = False
++
++    def on_ctrl_c(self, draft: str) -> str:
++        armed = self.exit_armed_at is not None and time.monotonic() - self.exit_armed_at < EXIT_ARM_SECONDS
++        action = ctrl_c_action(draft or "".join(self.continued), turn_running=self.running, exit_armed=armed)
++        if action == "clear":
++            self.continued = []
++            self.exit_armed_at = None
++            self.say("(draft cleared)")
++        elif action == "interrupt":
++            self.exit_armed_at = None
++            self.interrupt()
++        elif action == "exit":
++            self.stopped = True
++        else:
++            self.exit_armed_at = time.monotonic()
++            self.say("(press Ctrl+C again to exit, or Ctrl+D)")
++        return action
++
++    def interrupt(self) -> None:
++        from .client import HubError
++
++        body = {"session_id": self.session_id} if self.session_id else {}
++        try:
++            reply = self.ctx.client().post("/chat/interrupt", body)
++        except HubError as exc:
++            if exc.status in (404, 405):
++                self.say("this hub cannot stop a turn; it will finish on its own")
++            elif exc.status in (401, 403):
++                self.say("this terminal's credential cannot stop the turn")
++            else:
++                self.say(f"the turn was not stopped (HTTP {exc.status})")
++            return
++        count = reply.get("interrupted") if isinstance(reply, dict) else None
++        if type(count) is int and count > 0:
++            self.say("(stopping the turn…)")
++        else:
++            self.say("(nothing to stop: the turn had already finished)")
++
++    # client commands --------------------------------------------------------
++    def local(self, line: str) -> None:
++        head, _, rest = line.partition(" ")
++        rest = rest.strip()
++        if head in ("/exit", "/quit"):
++            self.stopped = True
++        elif head == "/keys":
++            for text in KEY_HELP:
++                self.say(text)
++        elif head == "/edit":
++            text = compose_in_editor(self.ctx.environ, rest, err=self.ctx.err)
++            if text is not None:
++                self._prefill = text
++                if self._rl is None and text.strip():
++                    self.submit(text)
++        elif head == "/image":
++            self.stage_image(rest)
++        elif head == "/paste-image":
++            self.staged_clipboard = True
++            self.say("the clipboard's image goes with your next message (to the vision model)")
++        elif head == "/queue":
++            self.queue_command(rest)
++        elif head == "/switch":
++            self.switch(rest)
++        elif head == "/model":
++            self.model(rest)
++
++    def stage_image(self, path: str) -> None:
++        from .nerva import VISION_MAX_IMAGES, _plain, _read_image
++
++        if not path:
++            self.say("usage: /image PATH")
++            return
++        path = os.path.expanduser(path.strip().strip("'\""))
++        raw, why = _read_image(path)
++        if raw is None:
++            self.say(f"not attached: {_plain(why, 200)}")
++            return
++        if len(self.staged_images) + 1 > VISION_MAX_IMAGES:
++            self.say(f"one turn carries up to {VISION_MAX_IMAGES} images")
++            return
++        self.staged_images.append(path)
++        self.say(f"attached {_plain(os.path.basename(path), 80)}; it goes with your next message "
++                 "to the vision model (not to an agent or this conversation)")
++
++    def queue_command(self, rest: str) -> None:
++        from .nerva import _plain
++
++        with self._lock:
++            if rest == "clear":
++                dropped = len(self.queue)
++                self.queue.clear()
++                self.say(f"dropped {dropped} queued message(s)")
++                return
++            if rest.startswith("drop"):
++                arg = rest[4:].strip()
++                if arg.isdigit() and 1 <= int(arg) <= len(self.queue):
++                    del self.queue[int(arg) - 1]
++                    self.say(f"dropped queued message {arg}")
++                else:
++                    self.say("usage: /queue drop N")
++                return
++            if not self.queue:
++                self.say("nothing queued")
++            for index, item in enumerate(self.queue, 1):
++                self.say(f"  {index}. {_plain(item.message, 100)}")
++
++    def switch(self, rest: str) -> None:
++        from .chat_prompts import card_safe
++        from .client import HubError
++
++        if rest == "new":
++            self.session_id = None
++            self.say("the next message starts in the hub's current conversation "
++                     "(send /new to start a fresh one)")
++            return
++        try:
++            listing = self.ctx.client().get("/sessions")
++        except HubError as exc:
++            self.say(f"cannot list your sessions (HTTP {exc.status})")
++            return
++        rows = [r for r in ((listing or {}).get("sessions") or []) if isinstance(r, dict)] \
++            if isinstance(listing, dict) else []
++        ids = []
++        for row in rows:
++            sid = row.get("resume_id") or row.get("session_id") or row.get("id")
++            if isinstance(sid, str) and _SESSION_ID.match(sid):
++                ids.append((sid, card_safe(row.get("title") or "")[:60]))
++        if not rest:
++            if not ids:
++                self.say("no sessions")
++            for index, (sid, title) in enumerate(ids, 1):
++                mark = "*" if sid == self.session_id else " "
++                self.say(f" {mark}{index:>2}. {sid}  {title}")
++            self.say("/switch N or /switch <id> continues that conversation")
++            return
++        chosen = None
++        if rest.isdigit() and 1 <= int(rest) <= len(ids):
++            chosen = ids[int(rest) - 1][0]
++        elif any(sid == rest for sid, _ in ids):
++            chosen = rest
++        if chosen is None:
++            self.say("not one of your sessions; /switch lists them")
++            return
++        if self.running:
++            self.say("switched; the running turn finishes in its own conversation")
++        self.session_id = chosen
++        self.say(f"now in {chosen}")
++
++    def model(self, rest: str) -> None:
++        from .chat_prompts import card_safe
++        from .client import HubError
++
++        client = self.ctx.client()
++        try:
++            listing = client.get("/api/models/local")
++        except HubError as exc:
++            if exc.status in (401, 403):
++                self.say("only the owner picks the model (this terminal has no admin credential)")
++            else:
++                self.say(f"cannot list the models (HTTP {exc.status})")
++            return
++        rows = [r for r in ((listing or {}).get("models") or []) if isinstance(r, dict)] \
++            if isinstance(listing, dict) else []
++        pickable = [(card_safe(r.get("id"))[:120], card_safe(r.get("provider"))[:20], r.get("active") is True)
++                    for r in rows
++                    if isinstance(r.get("id"), str) and r.get("provider") in ("lm-studio", "ollama")
++                    and r.get("available") is not False]
++        if not rest:
++            if not pickable:
++                self.say("no local model the hub can switch to")
++            for index, (mid, provider, active) in enumerate(pickable, 1):
++                self.say(f" {'*' if active else ' '}{index:>2}. {mid}  ({provider})")
++            if pickable:
++                self.say("/model N or /model <id> switches (the hub's own switch, for the owner)")
++            return
++        chosen = None
++        if rest.isdigit() and 1 <= int(rest) <= len(pickable):
++            chosen = pickable[int(rest) - 1]
++        else:
++            chosen = next((row for row in pickable if row[0] == rest), None)
++        if chosen is None:
++            self.say("not one of the listed models")
++            return
++        try:
++            reply = client.post("/api/models/local/switch", {"model": chosen[0], "provider": chosen[1]})
++        except HubError as exc:
++            self.say("only the owner picks the model" if exc.status in (401, 403)
++                     else f"not switched (HTTP {exc.status})")
++            return
++        self.say(f"model: {card_safe((reply or {}).get('active') or chosen[0])[:120]}")
++
++    # turns ------------------------------------------------------------------
++    def submit(self, text: str) -> None:
++        from .nerva import CHAT_MAX_CHARS
++
++        if len(text) > CHAT_MAX_CHARS:
++            self.say(f"not sent: {len(text):,} characters, and one turn carries up to {CHAT_MAX_CHARS:,}")
++            self._prefill = text
++            return
++        if self.history_file is not None:
++            append_history(self.history_file, text)
++            if self._rl is not None:
++                from .chat_prompts import looks_like_secret
++
++                if not looks_like_secret(text):
++                    with contextlib.suppress(Exception):
++                        self._rl.add_history(text)
++        item = Outgoing(text, list(self.staged_images), self.staged_clipboard)
++        self.staged_images, self.staged_clipboard = [], False
++        with self._wake:
++            busy = self.running or bool(self.queue)
++            self.queue.append(item)
++            self._wake.notify_all()
++        if busy:
++            self.say(f"(queued: {len(self.queue)} waiting for the running turn)")
++
++    def _work(self) -> None:
++        while True:
++            with self._wake:
++                while not self.queue and not self.stopped:
++                    self._wake.wait(0.5)
++                if self.stopped:
++                    return
++                item = self.queue.popleft()
++                self.running = True
++            try:
++                self.run_turn(item)
++            except Exception as exc:  # noqa: BLE001 — a turn failing never ends the chat
++                from .nerva import _plain
++
++                self.say(f"the turn failed: {_plain(exc, 200)}")
++            finally:
++                with self._wake:
++                    self.running = False
++                    self._wake.notify_all()
++
++    def run_turn(self, item: Outgoing) -> None:
++        from .chat_prompts import POLL_SECONDS, _pending, _PollRefused, _post_turn
++        from .client import HubError, HubUnavailable
++
++        if item.images or item.clipboard_image:
++            self.vision_turn(item)
++            return
++        body: dict[str, Any] = {"message": item.message}
++        if self.session_id:
++            body["session_id"] = self.session_id
++        if self.agent:
++            body["agent"] = self.agent
++        if self.reasoning:
++            body["reasoning"] = self.reasoning
++        client = self.ctx.client()
++        box: dict[str, Any] = {}
++
++        def post() -> None:
++            try:
++                box["reply"] = _post_turn(client, body)
++            except BaseException as exc:  # noqa: BLE001 — handed to this thread
++                box["error"] = exc
++
++        poster = threading.Thread(target=post, name="nerva-chat-post", daemon=True)
++        poster.start()
++        seen: set[str] = set()
++        polling = True
++        while poster.is_alive():
++            poster.join(POLL_SECONDS)
++            if not poster.is_alive() or not polling:
++                continue
++            try:
++                questions = _pending(client, body.get("session_id"))
++            except _PollRefused:
++                polling = False
++                continue
++            if questions is None:
++                polling = False
++                continue
++            for question in questions:
++                prompt_id = str(question.get("id", ""))
++                if prompt_id and prompt_id not in seen:
++                    seen.add(prompt_id)
++                    with self._lock:
++                        self.asks.append(("question", question))
++                    self.say("? the turn asks you something — press Enter to answer it")
++        if "error" in box:
++            exc = box["error"]
++            if isinstance(exc, HubUnavailable):
++                self.say("no hub is reachable; the message was not sent")
++            elif isinstance(exc, HubError):
++                from .nerva import _plain
++
++                self.say(f"the hub refused the turn (HTTP {exc.status}): {_plain(exc.reason, 200)}")
++            else:
++                raise exc
++            return
++        self.show_reply(box.get("reply"))
++
++    def show_reply(self, reply: Any) -> None:
++        from .nerva import _pending_ids, _recall_lines
++
++        if not isinstance(reply, dict):
++            self.say("the hub's reply is malformed")
++            return
++        returned = reply.get("session_id")
++        if isinstance(returned, str) and _SESSION_ID.match(returned):
++            self.session_id = returned
++        for line in _recall_lines(reply):
++            self.say(line)
++        self.answer(str(reply.get("reply", "")))
++        for notice in reply.get("notices") or []:
++            if isinstance(notice, dict) and isinstance(notice.get("text"), str):
++                from .chat_prompts import card_safe
++
++                self.say(f"ℹ {card_safe(notice['text'])[:300]}")
++        pending, _ = _pending_ids(reply.get("pending_approvals"))
++        if pending:
++            with self._lock:
++                self.asks.append(("approvals", list(pending)))
++            self.say(f"! this turn queued {len(pending)} approval(s) — press Enter to decide them here")
++
++    def vision_turn(self, item: Outgoing) -> None:
++        import argparse
++
++        from .nerva import _vision_turn
++
++        ns = argparse.Namespace(image=item.images, clipboard_image=item.clipboard_image, agent=None,
++                                session=None, reasoning=None, remote_vision=None, json=False,
++                                confirm_expensive=False, acknowledge_training=False)
++        try:
++            _vision_turn(ns, self.ctx, item.message, finish=lambda code, **_: code, oneshot=False)
++        except Exception as exc:  # noqa: BLE001
++            from .nerva import _plain
++
++            self.say(f"the image turn failed: {_plain(exc, 200)}")
++
++    def answer_asks(self) -> None:
++        from .chat_prompts import _answer_clarify, _answer_secret, decide_queued
++
++        while True:
++            with self._lock:
++                if not self.asks:
++                    return
++                kind, payload = self.asks.popleft()
++            try:
++                if kind == "question":
++                    if payload.get("kind") == "secret":
++                        _answer_secret(self.ctx, self.ctx.client(), payload,
++                                       self.ctx.secret_reader or _getpass(self.ctx), self.session_id)
++                    else:
++                        _answer_clarify(self.ctx, self.ctx.client(), payload, self.session_id)
++                else:
++                    decide_queued(self.ctx, payload)
++            except KeyboardInterrupt:
++                self.say("(skipped)")
++
++    # main loop --------------------------------------------------------------
++    def prompt(self) -> str:
++        if self.continued:
++            return "… "
++        return "nerva (running)> " if self.running else "nerva> "
++
++    def step(self) -> bool:
++        """Read and handle one line; False at end of input."""
++        self.answer_asks()
++        line = self.read_line(self.prompt())
++        if line is None:
++            if self.running:
++                self.interrupt()
++            return False
++        if self.stopped:
++            return False
++        if line.strip():
++            self.exit_armed_at = None
++        kind, text = route_line(line)
++        if kind == "empty":
++            return True
++        if kind == "continue":
++            self.continued.append(text)
++            return True
++        if self.continued:
++            text = "\n".join([*self.continued, line])
++            self.continued = []
++            kind = "send"
++        if kind == "local":
++            self.local(text)
++        else:
++            self.submit(text)
++        return True
++
++    def run(self) -> int:
++        self.load_catalog()
++        self.install_readline()
++        previous = None
++        if threading.current_thread() is threading.main_thread():
++            previous = signal.signal(signal.SIGINT, self._on_sigint)
++        self._worker = threading.Thread(target=self._work, name="nerva-chat-turns", daemon=True)
++        self._worker.start()
++        self.say("Nerva chat. Enter sends · Alt+Enter newline · Ctrl+C clears / stops / exits · "
++                 "/keys for the rest")
++        try:
++            while not self.stopped:
++                try:
++                    if not self.step():
++                        break
++                except KeyboardInterrupt:      # Ctrl+C outside the prompt (an HTTP call, a menu)
++                    self.on_ctrl_c("")
++        finally:
++            with self._wake:
++                self.stopped = True
++                dropped = len(self.queue)
++                self._wake.notify_all()
++            if dropped:
++                self.say(f"{dropped} queued message(s) were not sent")
++            if previous is not None:
++                signal.signal(signal.SIGINT, previous)
++        return 0
++
++
++def _getpass(ctx) -> Callable[[str], str]:
++    import getpass
++
++    return lambda prompt: getpass.getpass(prompt, stream=ctx.err)
++
++
++def load_readline() -> Any:
++    """The readline module, or None where there is none (Windows without pyreadline)."""
++    try:
++        import readline
++    except ImportError:
++        return None
++    return readline
+diff --git a/agents/core/routers/chat_pending.py b/agents/core/routers/chat_pending.py
+index 02045ce..fc79c79 100644
+--- a/agents/core/routers/chat_pending.py
++++ b/agents/core/routers/chat_pending.py
+@@ -2,7 +2,8 @@
+ 
+ `nerva chat` uses these two routes to answer a turn's questions mid-turn (H226). A
+ secret prompt is listed with its name only; its value is stored through the secret
+-broker route, and the answer here is the marker ``"stored"``, never the value."""
++broker route, and the answer here is the marker ``"stored"``, never the value.
++``POST /chat/interrupt`` (H224) stops the caller's own running turn."""
+ 
+ import asyncio
+ import hashlib
+@@ -137,3 +138,26 @@ async def answer_pending(request: Request, body: PendingAnswer,
+     status = {"resolved": 200, "invalid": 422, "unavailable": 404}[result]
+     return JSONResponse({"ok": result == "resolved", "status": result}, status_code=status,
+                         headers={"Cache-Control": "no-store"})
++
++
++class TurnInterrupt(BaseModel):
++    model_config = ConfigDict(extra="forbid", strict=True)
++    session_id: str | None = Field(default=None, max_length=128, description=
++        "Stop only the caller's turn in this conversation; omit to stop every turn the caller has running.")
++
++
++@router.post("/chat/interrupt", dependencies=[Depends(user_guard)])
++async def interrupt_turn(request: Request, body: TurnInterrupt):
++    """H224 — stop the caller's own running ``POST /chat`` turn (Ctrl+C in `nerva chat -i`).
++
++    Turns are found by the credential that started them, never by a name in the body:
++    another credential's turn is simply not found. The stopped turn answers its own
++    request with the interrupted reply and a ``turn_interrupted`` notice."""
++    from ..session_continuation import is_valid_session_id
++    from ..turn_interrupts import interrupt
++
++    if body.session_id is not None and not is_valid_session_id(body.session_id):
++        return JSONResponse({"error": "invalid_session_id"}, status_code=422,
++                            headers={"Cache-Control": "no-store"})
++    stopped = interrupt(http_actor(request), body.session_id)
++    return JSONResponse({"ok": True, "interrupted": stopped}, headers={"Cache-Control": "no-store"})
+diff --git a/agents/core/turn_interrupts.py b/agents/core/turn_interrupts.py
+new file mode 100644
+index 0000000..46b9137
+--- /dev/null
++++ b/agents/core/turn_interrupts.py
+@@ -0,0 +1,96 @@
++"""H224 — stop a running ``POST /chat`` turn on its caller's request (Ctrl+C in `nerva chat -i`).
++
++A turn the web door runs is registered here, while the model works on it, under the
++**credential that started it** (:func:`agents.core.routers.chat_pending.http_actor`, a
++hash of the token, browser session or localhost peer — never a name the request
++carries). ``POST /chat/interrupt`` cancels only the turns registered under the
++caller's own credential, optionally narrowed to one session: another credential's turn
++is not found, not refused, so a caller cannot even learn that it exists.
++
++Cancelling is the same thing the hub already does when the HTTP client goes away
++(``http_chat_binding``'s disconnect watcher, ``/chat/stream``'s runner): the turn's
++task is cancelled where it awaits. What this adds is that the turn ends with a reply,
++:data:`INTERRUPTED_REPLY`, and a ``turn_interrupted`` notice, instead of a dropped
++connection — and the turn's own ``finally`` blocks (approvals sink, lease, principal)
++run exactly as on any other exit. Nothing here can approve, execute or bypass anything:
++it only stops work that its caller started.
++"""
++
++from __future__ import annotations
++
++import asyncio
++from collections.abc import Iterator
++from contextlib import contextmanager
++from dataclasses import dataclass
++
++INTERRUPTED_REPLY = "Interrupted. Nothing more was done for this message."
++NOTICE_CODE = "turn_interrupted"
++NOTICE_TEXT = "You stopped this turn; any step it had not finished was not done."
++
++
++@dataclass(eq=False)
++class LiveTurn:
++    actor: str
++    session_id: str
++    task: asyncio.Task
++    interrupted: bool = False
++
++
++_live: dict[str, set[LiveTurn]] = {}
++
++
++@contextmanager
++def track(actor: str | None, session_id: str | None) -> Iterator[LiveTurn | None]:
++    """Register the current task as *actor*'s running turn for the block's duration.
++
++    ``actor`` None (no credential could be derived) registers nothing: such a turn
++    cannot be interrupted over HTTP, only by disconnecting."""
++    task = asyncio.current_task()
++    if not actor or task is None:
++        yield None
++        return
++    turn = LiveTurn(actor, str(session_id or ""), task)
++    _live.setdefault(actor, set()).add(turn)
++    try:
++        yield turn
++    finally:
++        turns = _live.get(actor)
++        if turns is not None:
++            turns.discard(turn)
++            if not turns:
++                del _live[actor]
++
++
++def interrupt(actor: str | None, session_id: str | None = None) -> int:
++    """Cancel *actor*'s running turns (in *session_id* only, when given); how many."""
++    if not actor:
++        return 0
++    stopped = 0
++    for turn in tuple(_live.get(actor, ())):
++        if session_id is not None and turn.session_id != session_id:
++            continue
++        if turn.task.done() or turn.interrupted:
++            continue
++        turn.interrupted = True
++        turn.task.cancel()
++        stopped += 1
++    return stopped
++
++
++def running(actor: str | None) -> int:
++    """How many turns *actor* has running (for tests and diagnostics)."""
++    return len(_live.get(actor or "", ()))
++
++
++def absorb(turn: LiveTurn | None) -> bool:
++    """Whether a CancelledError the turn just raised is this module's interrupt.
++
++    When it is, the task's cancel request is withdrawn (``uncancel``) so the web door
++    can answer normally; a cancel from anywhere else (a disconnect, shutdown) is not
++    absorbed and keeps propagating."""
++    if turn is None or not turn.interrupted:
++        return False
++    task = asyncio.current_task()
++    if task is not None and task is turn.task and task.cancelling():
++        task.uncancel()
++    return True
+diff --git a/agents/web.py b/agents/web.py
+index d7dbed3..aa0800b 100644
+--- a/agents/web.py
++++ b/agents/web.py
+@@ -1713,9 +1713,22 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
+                         await _bind_status_scope(collector, orch, req.session_id or getattr(orch, "session_id", None))
+                         conversation_token = code_interruptions.bind_conversation(
+                             str(req.session_id or getattr(orch, "session_id", None) or ""))
++                        # H224: the caller (and only the caller's credential) can stop this
++                        # turn with POST /chat/interrupt; it then ends with a reply.
++                        from agents.core import turn_interrupts
++                        from agents.core import turn_notices as turn_notices_mod
++                        from agents.core.routers.chat_pending import http_actor
+                         try:
+-                            reply = await orch.handle_input(message, channel="web", agent_override=req.agent if req.agent != "jarvis" else None,
+-                                                           **({"session_id": req.session_id} if req.session_id is not None else {}))
++                            with turn_interrupts.track(http_actor(request),
++                                                       req.session_id or getattr(orch, "session_id", None)) as live:
++                                try:
++                                    reply = await orch.handle_input(message, channel="web", agent_override=req.agent if req.agent != "jarvis" else None,
++                                                                   **({"session_id": req.session_id} if req.session_id is not None else {}))
++                                except asyncio.CancelledError:
++                                    if not turn_interrupts.absorb(live):
++                                        raise
++                                    reply = turn_interrupts.INTERRUPTED_REPLY
++                                    turn_notices_mod.record_turn_notice(turn_interrupts.NOTICE_CODE, turn_interrupts.NOTICE_TEXT)
+                         finally:
+                             code_interruptions.reset_conversation(conversation_token)
+         finally:
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index 8557580..f4a1b31 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -196,6 +196,7 @@ change the eight strict-local auxiliary routes or enable a provider.
+ | `agents/core/tool_result_store.py` | Where an oversized tool result goes instead of being dropped. `threshold_for` resolves the ceiling most-specific-first (pinned → owner override → `mcp_` family → the tool's own `register_tool(max_result_bytes=…)` → default); `budget_for_context_window` scales the per-result (15 %) and per-turn (30 %) caps to the model's real window with 8 KB / 16 KB floors; `ToolResultStore.spill/read/sweep` writes the full bytes under the file tools' default root, refuses any reference that is not one of its own, and enforces age, file-count and total-size retention on every write. `open_stream` is the same thing for bytes that must never be buffered whole — an `execute_code` run's stdout — writing and hashing as the chunks go past, capped at 5,000,000 bytes (`DEFAULT_MAX_STREAM_BYTES`) with one `[... spill capped ...]` marker and `capped=True`. H661: every notice carries `page_recipe` — the exact `file_read(path="…", offset=0, max_bytes=…)` call on the *resolved* path, also as `read_with` arguments — only when the `read_back(path)` probe says that call works (the coordinator checks the registry, the turn's own offer and that the live scope opens that very file); otherwise it says the file cannot be paged from this turn. Spills are never named like a secret (`_spill_name` falls back to `result-<hash>`) | `threshold_for`, `budget_for_context_window`, `ToolResultStore`, `StreamSpill`, `preview_envelope`, `page_recipe`, `default_root`, `is_reference` |
+ | `agents/core/environments/output_limits.py` | The one place that says how much output a tool may return: `MAX_OUTPUT_BYTES` (50 KB), `MAX_OUTPUT_LINES` (2 000), `MAX_LINE_LENGTH` (2 000), imported rather than re-declared by `code_tools` and `session_kernels`. `truncate_text` / `read_capped_stream` bound bytes; `cap_lines` bounds shape — which a byte cap cannot see — and never drops a line carrying an earlier layer's truncation notice. `read_capped_stream(sink=…)` hands every chunk to a spool on the way past, so the middle it discards can still be kept without the host ever holding the stream (H305/H595) | `truncate_text`, `read_capped_stream`, `render_capped`, `cap_lines`, `StreamSinks` |
+ | `agents/cli/` (`nerva.py`, `client.py`; `scripts/nerva.py` wrapper) | The `nerva` command: `doctor`, `status`, `config`, `approvals`, `kernel explain`, `logs`, `estop`, `memory`, `sessions`, `chat`, `completion`. Online verbs use the hub's own admin/user routes with the same credentials; offline verbs read the same data root | `build_parser`, `main`, `explain_action`, `HubClient` |
++| `agents/cli/repl.py`; `agents/core/turn_interrupts.py` (`POST /chat/interrupt` in `routers/chat_pending.py`) | H224 `nerva chat -i`: the interactive terminal chat on stdlib GNU readline. It handles Ctrl+C in three steps (clear the draft, stop the turn, exit), `$EDITOR` compose on a 0600 temp file, Tab completion from `/api/commands` and `/api/context-refs`, a 0600 JSONL history, a queue for messages typed during a turn, `/switch`, `/model` and `/image`. Running `/chat` turns are registered under the caller's credential hash, and the interrupt route cancels only those. See `docs/cli-chat-receipts.md` | `Repl`, `ctrl_c_action`, `completions`, `track`, `interrupt`, `absorb` |
+ | `agents/core/acp/` (`jsonrpc.py`, `paths.py`, `render.py`, `server.py`, `sessions.py`); `agents/cli/acp_hub.py`; `agents/core/routers/acp.py` | G11 `nerva acp`: Nerva as an editor's coding agent over the Agent Client Protocol (stdio JSON-RPC). No agent loop of its own: prompts are hub turns over `POST /chat/stream` (`tool_events` forwards the turn's bounded tool events), approvals are the ordinary cards decided through `/autonomy/tasks/{id}/decision` (no answer = reject), each editor session is its own conversation bound to its folder through the `/worktree` session seam, and editor-supplied MCP servers are session-scoped (`MCPServer.session_scope`, `ToolRPCServer.register_tool(visible=)`), never saved. See `docs/ACP_EDITORS.md` | `AcpServer`, `HubBackend`, `JsonRpcConnection`, `confine`, `card_tool_call`, `acp_sessions.cwd_for` |
+ | `agents/core/turn_usage.py` | H002 request-owned generation accounting at the accepted HTTP dispatch seam: bounded provider/model pairs, task-local usage correlation, complete provider counters, conservative unknowns and dated exact-model cost estimates. `/chat` and SSE return snapshots; the stdlib CLI validates them for atomic receipts. Background title/review/cache tasks detach, while response-producing auxiliary generation remains included. See `docs/cli-chat-receipts.md` | `turn_usage_scope`, `model_usage_scope`, `detached_turn_usage`, `record_dispatch`, `record_usage` |
+ | `agents/core/commands.py` | Chat slash-command plane: one tiered registry dispatched by the orchestrator before skills and the model; the turn's `Principal` (channel, sender, owner?, chat, DM/group `scope`) decides owner commands, and `slash_access.py` (H058) which user-tier commands a non-owner may run; `/whoami` reports it. `/btw <question>` (H414) asks a side question about the conversation on the auxiliary rail (`llm/auxiliary_text.run_oneshot`, strict-local) and is answered before the turn is appended, so it adds no turn, takes no turn lease, and neither interrupts running work nor waits behind it (Telegram's chat lane, the Discord/Slack key lock and the channel session peek all skip it); the same rail serves the plugin LLM facade (`plugin_manager.PluginLLM`, gated by the manifest's `llm_access`; see `docs/developer/plugin-llm.md`) | `CommandRegistry.dispatch`, `build_default_registry`, `Principal`, `SlashCommand`, `preappend_command_name` |
+diff --git a/docs/cli-chat-receipts.md b/docs/cli-chat-receipts.md
+index e0197da..8851d9a 100644
+--- a/docs/cli-chat-receipts.md
++++ b/docs/cli-chat-receipts.md
+@@ -158,3 +158,48 @@ is read from the terminal and the exit codes above are unchanged.
+ Questions and secret prompts need the clarification preview to be on:
+ `nerva config set channels.pending_inputs_enabled true`, then restart the hub. It is
+ off by default; while it is off the model has no `clarify` or `request_secret` tool.
++
++## The interactive chat: `nerva chat -i` (H224)
++
++`nerva chat -i` keeps a conversation open on the terminal. It needs a terminal on stdin
++and stdout, writes no receipt, and refuses the scripted-turn flags (`MESSAGE`, `-f`, `-z`,
++`--json`, `--usage-file`, `--image`, `--no-prompts`). `--session`, `-r`/`-c` (the hub's
++own sessions), `--agent` and `--reasoning` apply to every turn. It is built on GNU
++readline from the standard library.
++
++| Key | What it does |
++|---|---|
++| Enter | send |
++| Alt+Enter, Shift+Enter | new line in the message. Shift+Enter works only where the terminal sends it as its own sequence (kitty and other CSI-u terminals, xterm with modifyOtherKeys). A trailing `\` also continues the message. |
++| Ctrl+C | 1) clear the draft; 2) on an empty draft while a turn runs, stop it; 3) when idle, arm exit, and a second press within 3 s leaves |
++| Ctrl+D | leave (on an empty line) |
++| Ctrl+X Ctrl+E, `/edit [text]` | compose in `$VISUAL`/`$EDITOR`. The editor is run without a shell on an owner-only (0600) temporary file, which is removed afterwards; the saved text becomes the draft |
++| Ctrl+L | redraw |
++| Esc Esc | discard the draft (Ctrl+Y brings it back) |
++| Tab, Shift+Tab | cycle completions: the slash commands this credential may run (`GET /api/commands`), the client commands below, and `@file:` paths (`GET /api/context-refs`) |
++| Up, Down | history |
++| paste | bracketed paste: a multi-line paste is one message |
++
++Client commands, never sent to the hub: `/edit`, `/image PATH` and `/paste-image` (the
++next message goes to the vision model with the image, as `--image` does), `/switch`
++(list your sessions, then `/switch N`, `/switch <id>` or `/switch new`), `/model` (the
++hub's local models; switching uses the owner's admin route, so a user token is told
++no), `/queue` (messages typed while a turn runs wait here: `/queue drop N`,
++`/queue clear`), `/keys`, `/exit`. Any other line, hub slash commands included, is sent
++to the hub.
++
++**Stopping a turn.** Ctrl+C calls `POST /chat/interrupt`. The hub stops only turns
++started with the same credential as the caller (in the current session once the chat
++has one). The stopped turn answers *Interrupted. Nothing more was done for this message.*
++with a `turn_interrupted` notice. A step already done is not undone. An older hub
++without the route says so, and the turn runs to its end.
++
++**History** is kept in `<data>/cli/chat_history.jsonl`: owner-only (0600), the last
++1,000 messages, multi-line messages kept whole. A line that looks like a key or token
++is never written. `--no-history` keeps no file.
++
++Questions a turn asks while it runs, and the approval cards it queued, are shown when
++they arrive; press Enter to answer them (the same prompts as above). Not available:
++Up/Down through a completion menu (readline has none), detecting an image pasted with
++Cmd/Ctrl+V, and the mouse. With macOS's libedit Python only Tab completion is bound,
++and without readline (Windows) the prompt is plain input.
+diff --git a/docs/hermes/areas.json b/docs/hermes/areas.json
+index 45be61d..f863516 100644
+--- a/docs/hermes/areas.json
++++ b/docs/hermes/areas.json
+@@ -704,6 +704,7 @@
+         "tests/test_h10_20_chat_rooms.py",
+         "tests/test_h10_29_agent_templates.py",
+         "tests/test_h12_20_auth_rotation.py",
++        "tests/test_h224_terminal_interaction.py",
+         "tests/test_h226_cli_governance_prompts.py",
+         "tests/test_h227_prompt_preview_clients.py",
+         "tests/test_h247_mic_lease.py",
+diff --git a/docs/hermes/assessment.json b/docs/hermes/assessment.json
+index 87f077c..23c53c2 100644
+--- a/docs/hermes/assessment.json
++++ b/docs/hermes/assessment.json
+@@ -3750,11 +3750,15 @@
+     {
+       "id": "H224",
+       "row_sha256": "1b4b3bc3992aba576697abc25b364cf55ac478cdc726b56d9c9271058fc9e100",
+-      "status": "missing",
+-      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): The terminal client is still a bare `input()` REPL (agents/run.py:45-53, :57-76). Ctrl-C or Ctrl-D ends input and the loop exits. Nothing else applies: no readline, completion, history navigation, queue editing, $EDITOR, paste or mouse handling, and no Ctrl-C that clears the draft or interrupts the turn.",
+-      "remaining": "- Ctrl+C with three meanings in order: clear draft, interrupt turn (needs a server-side interrupt), exit\n- $EDITOR, redraw, paste of text or image, Esc-Esc, Tab completion, ↑/↓ across completions, queue and history, the session switcher, the model picker, readline chords and Enter versus Shift+Enter\n- Push-to-talk, flushing a queued message, wheel and drag selection, and mouse-tracking presets",
++      "status": "partial",
++      "summary": "Assessed 2026-11-11 (H224 build): `nerva chat -i` is an interactive terminal chat with the row's keyboard model, built on the standard library's GNU readline because prompt_toolkit is not a pinned dependency (the CLI stays stdlib-only; agents/cli/repl.py). **Ctrl+C, three meanings in order.** `ctrl_c_action` (agents/cli/repl.py:114-121) clears a draft, else stops the running turn, else arms exit and a second press within 3 s exits (agents/cli/repl.py:400-415). The draft is read inside a SIGINT handler before readline discards it (agents/cli/repl.py:378-398). **Server-side interrupt.** Nerva had none for a `/chat` turn, so this adds `POST /chat/interrupt` (user-guarded; agents/core/routers/chat_pending.py:143-166) over a registry of running turns keyed by the hash of the credential that started them, the same `http_actor` that binds pending questions (agents/core/turn_interrupts.py:42-96). Another credential's turn is not found (interrupted: 0). The turn's task is cancelled where it awaits, the same way a disconnect already cancels it. The web door absorbs only its own interrupt and answers with a fixed reply and a `turn_interrupted` notice, so the turn's own `finally` blocks run (agents/web.py:1716-1733). A cancel from anywhere else still propagates. **Keys** (readline bindings as data, agents/cli/repl.py:92-110): Alt+Enter, and Shift+Enter on terminals that send it as a separate sequence (CSI-u / modifyOtherKeys), insert a newline. A trailing backslash continues the message. Bracketed paste makes a multi-line paste one draft. Ctrl+X Ctrl+E and `/edit` open the owner's $VISUAL/$EDITOR argv (no shell) on a 0600 temp file, which is removed afterwards; the text comes back as the next draft (agents/cli/repl.py:210-238, :369-375). Ctrl+L redraws. Esc Esc kills the draft into the kill ring. Tab and Shift+Tab cycle completions: slash commands from the hub's `GET /api/commands` (what this credential may run) plus the client's own, and `@file:` paths from `GET /api/context-refs` (agents/cli/repl.py:137-153, :311-339). The emacs readline chords apply. History is persistent: one JSON string per line, so multi-line entries survive. The file is owner-only 0600, re-permissioned if readable by others, bounded to 1000 entries, never keeps a key-shaped line, and `--no-history` turns it off (agents/cli/repl.py:156-206). **Queue.** A worker thread runs one turn at a time. Messages typed meanwhile are queued, listed and dropped with `/queue` (agents/cli/repl.py:482-502, :590-632). Clarify and secret questions and approval cards are handed to the keyboard thread and answered through the G4/H226 code paths (agents/cli/repl.py:634-750). **Image.** `/image PATH` and `/paste-image` attach to the next message, which goes as the existing H586 vision turn (agents/cli/repl.py:464-480, :716-729). **Session switcher.** `/switch` lists `GET /sessions` (the hub's view of this credential's own sessions) and switches only to a listed id (agents/cli/repl.py:504-544). **Model picker.** `/model` lists the hub's switchable local models and switches through the owner's admin route `POST /api/models/local/switch`; a non-owner is told so and nothing is posted (agents/cli/repl.py:546-588). All hub and model text is control-stripped before it is drawn, and nothing from the server is executed. Verb and conflict checks: agents/cli/nerva.py:5923-5955. Tests: tests/test_h224_terminal_interaction.py (53 cases: the Ctrl+C ladder, routing, completion sources, history file permissions, editor temp file, queue and worker, switcher, picker, the interrupt route over the real ASGI app with two credentials, and the real readline driven through a pseudo-terminal: Ctrl+C clear/arm/exit, Alt+Enter, Esc Esc, bracketed paste, Tab completion).",
++      "remaining": "- Up/Down cannot walk a completion menu: readline has no popup, so Tab and Shift+Tab cycle completions and Up/Down stay on history (needs prompt_toolkit, a new dependency)\n- Shift+Enter works only where the terminal sends it as a separate sequence; elsewhere Alt+Enter or a trailing backslash\n- Pasting an image with Cmd/Ctrl+V is not detected; images go through /image or /paste-image\n- A question a turn asks while the prompt is open is answered after the next Enter, not on its own\n- macOS libedit Python gets Tab completion only, and Windows without readline gets plain input\n- `/chat/interrupt` covers `POST /chat` turns; a `/chat/stream` turn still stops only by disconnecting. The first turn of a REPL with no session yet stops every turn this credential has running\n- Push-to-talk, flushing one queued message ahead, and the mouse half (wheel, drag selection, DEC tracking presets) are skipped by this row's decision",
+       "evidence": [
+-        "agents/run.py"
++        "agents/cli/repl.py",
++        "agents/core/turn_interrupts.py",
++        "agents/core/routers/chat_pending.py",
++        "agents/web.py",
++        "agents/cli/nerva.py"
+       ]
+     },
+     {
+diff --git a/tests/test_h224_terminal_interaction.py b/tests/test_h224_terminal_interaction.py
+new file mode 100644
+index 0000000..d5860e2
+--- /dev/null
++++ b/tests/test_h224_terminal_interaction.py
+@@ -0,0 +1,706 @@
++"""H224 — the interactive terminal chat's keyboard model (`nerva chat -i`).
++
++prompt_toolkit is not a dependency of this repository, so the client is built on the
++standard library's GNU readline. The key logic is tested as pure functions and on the
++``Repl`` object with a fake hub; the readline bindings themselves are driven through a
++real pseudo-terminal (the equivalent of prompt_toolkit's pipe input); the interrupt
++route is tested over the real ASGI app with two credentials.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import io
++import json
++import os
++import stat
++import sys
++import textwrap
++import time
++from pathlib import Path
++
++import httpx
++import pytest
++
++from agents import web
++from agents.cli import repl as R
++from agents.cli.client import HubError
++from agents.cli.nerva import EXIT_USAGE, Context, build_parser, main
++
++# ── the Ctrl+C ladder ─────────────────────────────────────────────────────────
++
++
++@pytest.mark.parametrize("draft,running,armed,expected", [
++    ("hello", True, True, "clear"),
++    ("hello", False, False, "clear"),
++    (" ", False, False, "clear"),
++    ("", True, False, "interrupt"),
++    ("", True, True, "interrupt"),
++    ("", False, False, "arm"),
++    ("", False, True, "exit"),
++])
++def test_ctrl_c_has_three_meanings_in_order(draft, running, armed, expected):
++    assert R.ctrl_c_action(draft, turn_running=running, exit_armed=armed) == expected
++
++
++class FakeHub:
++    """A synchronous hub client: records calls, answers from a table."""
++
++    base_url = "http://127.0.0.1:8080"
++
++    def __init__(self, answers=None):
++        self.calls = []
++        self.answers = dict(answers or {})
++
++    def request(self, method, path, body=None, *, timeout=None):
++        self.calls.append((method, path, body))
++        answer = self.answers.get((method, path.split("?")[0]))
++        if isinstance(answer, Exception):
++            raise answer
++        return answer(body) if callable(answer) else answer
++
++    def get(self, path):
++        return self.request("GET", path)
++
++    def post(self, path, body=None, *, timeout=None):
++        return self.request("POST", path, body if body is not None else {}, timeout=timeout)
++
++
++def _repl(tmp_path, monkeypatch, hub=None, lines=(), **kwargs):
++    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "home"))
++    hub = hub or FakeHub()
++    out, err = io.StringIO(), io.StringIO()
++    ctx = Context(environ={"EDITOR": "true"}, out=out, err=err, inp=io.StringIO(),
++                  client_factory=lambda env: hub)
++    feed = list(lines)
++
++    def reader(prompt):
++        if not feed:
++            raise EOFError
++        item = feed.pop(0)
++        if isinstance(item, BaseException) or (isinstance(item, type) and issubclass(item, BaseException)):
++            raise item
++        return item
++
++    return R.Repl(ctx, reader=reader, **kwargs), hub, out, err
++
++
++def test_ctrl_c_clears_then_arms_then_exits(tmp_path, monkeypatch):
++    repl, hub, _out, err = _repl(tmp_path, monkeypatch)
++    assert repl.on_ctrl_c("half a thought") == "clear"
++    assert "(draft cleared)" in err.getvalue()
++    assert repl.on_ctrl_c("") == "arm" and not repl.stopped
++    assert "press Ctrl+C again" in err.getvalue()
++    assert repl.on_ctrl_c("") == "exit" and repl.stopped
++    assert hub.calls == []                     # idle: nothing was sent to the hub
++
++
++def test_the_exit_arm_expires(tmp_path, monkeypatch):
++    repl, *_ = _repl(tmp_path, monkeypatch)
++    assert repl.on_ctrl_c("") == "arm"
++    repl.exit_armed_at = time.monotonic() - R.EXIT_ARM_SECONDS - 1
++    assert repl.on_ctrl_c("") == "arm" and not repl.stopped
++
++
++def test_a_continued_draft_counts_as_a_draft(tmp_path, monkeypatch):
++    repl, *_ = _repl(tmp_path, monkeypatch)
++    repl.continued = ["first line"]
++    assert repl.on_ctrl_c("") == "clear" and repl.continued == []
++
++
++def test_ctrl_c_during_a_turn_interrupts_the_callers_own_turn(tmp_path, monkeypatch):
++    hub = FakeHub({("POST", "/chat/interrupt"): {"ok": True, "interrupted": 1}})
++    repl, hub, _out, err = _repl(tmp_path, monkeypatch, hub, session_id="sess_1")
++    repl.running = True
++    assert repl.on_ctrl_c("") == "interrupt"
++    assert hub.calls == [("POST", "/chat/interrupt", {"session_id": "sess_1"})]
++    assert "stopping the turn" in err.getvalue()
++    assert not repl.stopped
++
++
++@pytest.mark.parametrize("status,said", [(404, "cannot stop a turn"), (403, "cannot stop the turn")])
++def test_an_interrupt_the_hub_refuses_is_said(tmp_path, monkeypatch, status, said):
++    hub = FakeHub({("POST", "/chat/interrupt"): HubError(status, "x")})
++    repl, _hub, _out, err = _repl(tmp_path, monkeypatch, hub)
++    repl.running = True
++    repl.on_ctrl_c("")
++    assert said in err.getvalue()
++
++
++def test_read_line_turns_ctrl_c_into_the_ladder_and_eof_into_none(tmp_path, monkeypatch):
++    repl, *_ = _repl(tmp_path, monkeypatch, lines=[KeyboardInterrupt, KeyboardInterrupt])
++    assert repl.read_line("> ") == "" and repl.exit_armed_at is not None
++    assert repl.read_line("> ") == "" and repl.stopped
++    assert repl.read_line("> ") is None
++
++
++# ── routing lines ─────────────────────────────────────────────────────────────
++
++@pytest.mark.parametrize("line,expected", [
++    ("", ("empty", "")),
++    ("   ", ("empty", "")),
++    ("hello", ("send", "hello")),
++    ("/help", ("send", "/help")),              # a hub command goes to the hub
++    ("/sessions", ("send", "/sessions")),
++    ("/edit some text", ("local", "/edit some text")),
++    ("/model 2", ("local", "/model 2")),
++    ("first line\\", ("continue", "first line")),
++    ("ends in a real backslash \\\\", ("send", "ends in a real backslash \\\\")),
++])
++def test_route_line(line, expected):
++    assert R.route_line(line) == expected
++
++
++def test_a_backslash_continues_and_alt_enter_text_is_one_message(tmp_path, monkeypatch):
++    repl, *_ = _repl(tmp_path, monkeypatch, lines=["first\\", "second", "a\nb"])
++    sent = []
++    repl.submit = sent.append
++    assert repl.step() and repl.step() and repl.step()
++    assert sent == ["first\nsecond", "a\nb"]
++
++
++# ── completion sources ────────────────────────────────────────────────────────
++
++def test_slash_completion_merges_the_hubs_catalog_and_local_commands():
++    got = R.completions("/s", line="/s", begin=0, commands=["/status", "/sessions", "/help"])
++    assert got == ["/sessions", "/status", "/switch"]
++    assert "/edit" in R.completions("/", line="/", begin=0, commands=[])
++    # not at the start of the line: a slash is just text
++    assert R.completions("/s", line="see /s", begin=4, commands=["/status"]) == []
++
++
++def test_file_reference_completion_asks_the_hub():
++    asked = []
++
++    def refs(prefix):
++        asked.append(prefix)
++        return ["docs/", "docs/ARCHITECTURE.md"]
++
++    got = R.completions("@file:do", line="read @file:do", begin=5, commands=[], refs=refs)
++    assert got == ["@file:docs/", "@file:docs/ARCHITECTURE.md"] and asked == ["do"]
++    assert R.completions("@f", line="@f", begin=0, commands=[], refs=refs) == ["@file:"]
++
++
++def test_catalog_and_refs_come_from_the_hubs_routes_and_are_filtered(tmp_path, monkeypatch):
++    hub = FakeHub({
++        ("GET", "/api/commands"): {"ok": True, "commands": [
++            {"command": "/recap"}, {"command": "/bad name"}, {"command": "/\x1b[31mx"}, {"nope": 1}]},
++        ("GET", "/api/context-refs"): {"ok": True, "items": [
++            {"ref": "a.txt", "kind": "file"}, {"ref": "bad\x07", "kind": "file"}]},
++    })
++    repl, hub, *_ = _repl(tmp_path, monkeypatch, hub)
++    repl.load_catalog()
++    assert repl.commands == ["/recap"]
++    assert repl.file_refs("a b") == ["a.txt"]
++    assert hub.calls[-1][1] == "/api/context-refs?prefix=a%20b"
++
++
++def test_a_catalog_the_hub_refuses_leaves_local_commands_only(tmp_path, monkeypatch):
++    hub = FakeHub({("GET", "/api/commands"): HubError(401, "no")})
++    repl, *_ = _repl(tmp_path, monkeypatch, hub)
++    repl.load_catalog()
++    assert repl.commands == []
++
++
++# ── readline bindings ─────────────────────────────────────────────────────────
++
++def test_the_binding_table_covers_the_rows_keys():
++    table = "\n".join(R.READLINE_BINDINGS)
++    for needle in ("enable-bracketed-paste on", r'"\e\r": "\C-v\C-j"', r'"\e[13;2u"', r'"\e[27;2;13~"',
++                   r'"\C-x\C-e": "\C-a/edit \C-j"', r'"\e\e": kill-whole-line', "menu-complete",
++                   "menu-complete-backward", "clear-screen"):
++        assert needle in table
++
++
++class FakeReadline:
++    __doc__ = "GNU readline"
++
++    def __init__(self):
++        self.bound, self.history, self.buffer = [], [], ""
++        self.completer = self.hook = None
++
++    def set_auto_history(self, flag):
++        self.auto = flag
++
++    def set_completer_delims(self, delims):
++        self.delims = delims
++
++    def parse_and_bind(self, text):
++        self.bound.append(text)
++
++    def set_completer(self, fn):
++        self.completer = fn
++
++    def add_history(self, entry):
++        self.history.append(entry)
++
++    def set_pre_input_hook(self, fn):
++        self.hook = fn
++
++    def insert_text(self, text):
++        self.buffer += text
++
++    def redisplay(self):
++        pass
++
++    def get_line_buffer(self):
++        return self.buffer
++
++    def get_begidx(self):
++        return 0
++
++
++def test_install_readline_binds_loads_history_and_completes(tmp_path, monkeypatch):
++    rl = FakeReadline()
++    repl, *_ = _repl(tmp_path, monkeypatch, readline_module=rl)
++    R.append_history(repl.history_file, "earlier\nmessage")
++    repl.commands = ["/recap"]
++    repl.install_readline()
++    assert rl.auto is False and rl.bound == list(R.READLINE_BINDINGS)
++    assert rl.history == ["earlier\nmessage"]
++    rl.buffer = "/re"
++    assert rl.completer("/re", 0) == "/recap" and rl.completer("/re", 1) is None
++    repl._prefill = "from the editor"
++    rl.buffer = ""
++    rl.hook()
++    assert rl.buffer == "from the editor" and repl._prefill == ""
++
++
++def test_sigint_handler_captures_the_draft_before_readline_drops_it(tmp_path, monkeypatch):
++    rl = FakeReadline()
++    rl.buffer = "typed so far"
++    repl, *_ = _repl(tmp_path, monkeypatch, readline_module=rl)
++    with pytest.raises(KeyboardInterrupt):
++        repl._on_sigint(2, None)
++    assert repl._draft_at_interrupt == "typed so far"
++
++
++# ── persistent history ────────────────────────────────────────────────────────
++
++def test_history_file_is_owner_only_and_keeps_multiline_entries(tmp_path):
++    path = tmp_path / "cli" / "chat_history.jsonl"
++    assert R.append_history(path, "one")
++    assert R.append_history(path, "two\nlines")
++    assert stat.S_IMODE(path.stat().st_mode) == 0o600
++    assert R.load_history(path) == ["one", "two\nlines"]
++
++
++def test_history_never_keeps_a_secret_looking_line(tmp_path):
++    path = tmp_path / "h.jsonl"
++    assert not R.append_history(path, "my key is sk-abcdefghijklmnop1234")
++    assert R.load_history(path) == []
++
++
++def test_a_readable_history_file_is_repermissioned_and_bad_rows_skipped(tmp_path):
++    path = tmp_path / "h.jsonl"
++    path.write_text('"ok"\nnot json\n42\n"also"\n', encoding="utf-8")
++    os.chmod(path, 0o644)
++    assert R.load_history(path) == ["ok", "also"]
++    assert stat.S_IMODE(path.stat().st_mode) == 0o600
++
++
++def test_history_is_bounded(tmp_path):
++    path = tmp_path / "h.jsonl"
++    for index in range(12):
++        R.append_history(path, f"m{index}", limit=5)
++    assert R.load_history(path) == [f"m{index}" for index in range(7, 12)]
++
++
++def test_no_history_keeps_no_file(tmp_path, monkeypatch):
++    repl, *_ = _repl(tmp_path, monkeypatch, history=False)
++    repl.submit("hello")
++    assert repl.history_file is None
++    assert not (tmp_path / "home" / "cli").exists()
++
++
++# ── $EDITOR ───────────────────────────────────────────────────────────────────
++
++def test_editor_gets_an_owner_only_temp_file_that_is_removed(tmp_path):
++    seen = {}
++
++    def run(argv, path):
++        seen["argv"], seen["path"] = argv, path
++        seen["mode"] = stat.S_IMODE(os.stat(path).st_mode)
++        seen["before"] = Path(path).read_text(encoding="utf-8")
++        Path(path).write_text("edited text\n", encoding="utf-8")
++        return 0
++
++    got = R.compose_in_editor({"EDITOR": "myeditor --wait"}, "draft", err=io.StringIO(), run=run)
++    assert got == "edited text"
++    assert seen["argv"] == ["myeditor", "--wait"] and seen["mode"] == 0o600 and seen["before"] == "draft"
++    assert not os.path.exists(seen["path"])
++
++
++def test_an_editor_that_fails_leaves_the_draft(tmp_path):
++    err = io.StringIO()
++    assert R.compose_in_editor({"EDITOR": "x"}, "d", err=err, run=lambda a, p: 3) is None
++    assert "exited 3" in err.getvalue()
++
++    def missing(argv, path):
++        raise FileNotFoundError(argv[0])
++
++    assert R.compose_in_editor({"EDITOR": "nope"}, "d", err=err, run=missing) is None
++    assert "not found" in err.getvalue()
++
++
++def test_slash_edit_prefills_the_next_draft(tmp_path, monkeypatch):
++    rl = FakeReadline()
++    repl, *_ = _repl(tmp_path, monkeypatch, readline_module=rl)
++    monkeypatch.setattr(R, "compose_in_editor", lambda env, draft, err: draft.upper())
++    repl.local("/edit hello there")
++    assert repl._prefill == "HELLO THERE"
++
++
++# ── the queue and the turn worker ─────────────────────────────────────────────
++
++def test_messages_typed_while_a_turn_runs_are_queued_and_managed(tmp_path, monkeypatch):
++    repl, _hub, _out, err = _repl(tmp_path, monkeypatch)
++    repl.running = True
++    repl.submit("one")
++    repl.submit("two")
++    repl.submit("three")
++    assert [item.message for item in repl.queue] == ["one", "two", "three"]
++    assert "(queued: 3 waiting" in err.getvalue()
++    repl.local("/queue drop 2")
++    assert [item.message for item in repl.queue] == ["one", "three"]
++    repl.local("/queue")
++    assert "1. one" in err.getvalue() and "2. three" in err.getvalue()
++    repl.local("/queue clear")
++    assert not repl.queue
++
++
++def test_the_worker_sends_in_order_adopts_the_session_and_sanitises(tmp_path, monkeypatch):
++    sent = []
++
++    def chat(body):
++        sent.append(dict(body))
++        return {"reply": f"re: {body['message']}\x1b]0;title\x07", "session_id": "web_abc",
++                "pending_approvals": [7] if body["message"] == "two" else [],
++                "notices": [{"code": "turn_interrupted", "text": "You stopped\x1b[2J this turn"}]}
++
++    hub = FakeHub({("POST", "/chat"): chat, ("GET", "/chat/pending"): {"questions": []}})
++    repl, hub, out, err = _repl(tmp_path, monkeypatch, hub, agent="athena")
++    repl.submit("one")
++    repl.submit("two")
++    import threading
++
++    worker = threading.Thread(target=repl._work, daemon=True)
++    worker.start()
++    deadline = time.monotonic() + 10
++    while (repl.queue or repl.running or len(sent) < 2) and time.monotonic() < deadline:
++        time.sleep(0.02)
++    repl.stopped = True
++    worker.join(5)
++    assert [b["message"] for b in sent] == ["one", "two"]
++    assert "session_id" not in sent[0] and sent[1]["session_id"] == "web_abc"
++    assert sent[0]["agent"] == "athena"
++    assert "re: one" in out.getvalue() and "\x1b" not in out.getvalue()
++    assert "\x1b" not in err.getvalue() and "ℹ You stopped" in err.getvalue()
++    assert ("approvals", [7]) in repl.asks
++
++
++def test_a_question_mid_turn_is_handed_to_the_keyboard_thread(tmp_path, monkeypatch):
++    import threading
++
++    gate = threading.Event()
++
++    def chat(body):
++        gate.wait(5)
++        return {"reply": "done"}
++
++    question = {"id": "a" * 32, "kind": "clarify", "question": "Which?"}
++    hub = FakeHub({("POST", "/chat"): chat, ("GET", "/chat/pending"): {"questions": [question]}})
++    repl, *_rest = _repl(tmp_path, monkeypatch, hub)
++    monkeypatch.setattr("agents.cli.chat_prompts.POLL_SECONDS", 0.01)
++    worker = threading.Thread(target=repl.run_turn, args=(R.Outgoing("hi"),), daemon=True)
++    worker.start()
++    deadline = time.monotonic() + 5
++    while not repl.asks and time.monotonic() < deadline:
++        time.sleep(0.01)
++    gate.set()
++    worker.join(5)
++    assert list(repl.asks) == [("question", question)]          # asked once, not per poll
++    answered = []
++    monkeypatch.setattr("agents.cli.chat_prompts._answer_clarify",
++                        lambda ctx, client, q, sid=None: answered.append(q["id"]))
++    repl.answer_asks()
++    assert answered == [question["id"]] and not repl.asks
++
++
++def test_staged_images_make_the_next_message_a_vision_turn(tmp_path, monkeypatch):
++    png = tmp_path / "shot.png"
++    png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\0" * 64)
++    repl, *_ = _repl(tmp_path, monkeypatch)
++    repl.local(f"/image {png}")
++    repl.local("/paste-image")
++    repl.submit("what is this?")
++    item = repl.queue.popleft()
++    assert item.images == [str(png)] and item.clipboard_image is True
++    assert repl.staged_images == [] and repl.staged_clipboard is False
++    seen = {}
++    monkeypatch.setattr("agents.cli.nerva._vision_turn",
++                        lambda ns, ctx, message, **kw: seen.update(ns=ns, message=message))
++    repl.run_turn(item)
++    assert seen["message"] == "what is this?" and seen["ns"].image == [str(png)]
++    assert seen["ns"].session is None and seen["ns"].agent is None
++
++
++def test_a_non_image_is_not_attached(tmp_path, monkeypatch):
++    bad = tmp_path / "x.png"
++    bad.write_text("#!/bin/sh\n", encoding="utf-8")
++    repl, _hub, _out, err = _repl(tmp_path, monkeypatch)
++    repl.local(f"/image {bad}")
++    assert repl.staged_images == [] and "not attached" in err.getvalue()
++
++
++# ── session switcher and model picker ─────────────────────────────────────────
++
++def test_session_switcher_lists_and_switches_only_listed_sessions(tmp_path, monkeypatch):
++    hub = FakeHub({("GET", "/sessions"): {"sessions": [
++        {"session_id": "web_a", "title": "Plans\x1b[31m"}, {"session_id": "web_b", "title": "B"},
++        {"session_id": "bad id!", "title": "x"}]}})
++    repl, _hub, _out, err = _repl(tmp_path, monkeypatch, hub)
++    repl.local("/switch")
++    text = err.getvalue()
++    assert "1. web_a  Plans" in text and "2. web_b" in text and "bad id" not in text and "\x1b" not in text
++    repl.local("/switch 2")
++    assert repl.session_id == "web_b"
++    repl.local("/switch web_zzz")
++    assert repl.session_id == "web_b" and "not one of your sessions" in err.getvalue()
++    repl.local("/switch new")
++    assert repl.session_id is None
++
++
++def test_model_picker_offers_only_switchable_local_models(tmp_path, monkeypatch):
++    switched = []
++    hub = FakeHub({
++        ("GET", "/api/models/local"): {"models": [
++            {"id": "qwen", "provider": "ollama", "available": True, "active": True},
++            {"id": "gone", "provider": "lm-studio", "available": False},
++            {"id": "mystery", "provider": "unknown", "available": None},
++            {"id": "llama", "provider": "lm-studio", "available": True}]},
++        ("POST", "/api/models/local/switch"): lambda body: switched.append(body) or {"active": body["model"]},
++    })
++    repl, _hub, _out, err = _repl(tmp_path, monkeypatch, hub)
++    repl.local("/model")
++    text = err.getvalue()
++    assert "* 1. qwen" in text and "2. llama" in text and "gone" not in text and "mystery" not in text
++    repl.local("/model 2")
++    assert switched == [{"model": "llama", "provider": "lm-studio"}]
++    repl.local("/model gone")
++    assert len(switched) == 1
++
++
++def test_model_picker_without_the_owners_credential_says_so(tmp_path, monkeypatch):
++    hub = FakeHub({("GET", "/api/models/local"): HubError(403, "admin")})
++    repl, _hub, _out, err = _repl(tmp_path, monkeypatch, hub)
++    repl.local("/model 1")
++    assert "only the owner picks the model" in err.getvalue()
++    assert [c for c in hub.calls if c[0] == "POST"] == []
++
++
++# ── the verb ──────────────────────────────────────────────────────────────────
++
++def test_chat_dash_i_is_parsed_and_refuses_a_script_shape():
++    ns = build_parser().parse_args(["chat", "-i"])
++    assert ns.interactive is True and ns.no_history is False
++    err = io.StringIO()
++    ctx = Context(environ={}, out=io.StringIO(), err=err, inp=io.StringIO("x"),
++                  client_factory=lambda env: FakeHub())
++    assert main(["chat", "-i", "hello"], context=ctx) == EXIT_USAGE
++    assert "MESSAGE" in err.getvalue()
++    err.truncate(0)
++    assert main(["chat", "-i"], context=ctx) == EXIT_USAGE      # stdin is not a terminal
++    assert "needs a terminal" in err.getvalue()
++
++
++def test_chat_help_names_the_interactive_chat():
++    text = build_parser()._subparsers._group_actions[0].choices["chat"].format_help()
++    assert "--interactive" in text and "nerva chat -i" in text
++
++
++# ── the interrupt route (real app, two credentials) ───────────────────────────
++
++def test_turn_registry_interrupts_only_the_named_actor():
++    from agents.core import turn_interrupts as T
++
++    async def scenario():
++        started = asyncio.Event()
++
++        async def turn(actor, session):
++            with T.track(actor, session) as live:
++                started.set()
++                try:
++                    await asyncio.sleep(30)
++                except asyncio.CancelledError:
++                    assert T.absorb(live)
++                    return "interrupted"
++            return "finished"
++
++        mine = asyncio.create_task(turn("actor-a", "s1"))
++        await started.wait()
++        assert T.interrupt("actor-b") == 0 and T.interrupt(None) == 0
++        assert T.interrupt("actor-a", "other-session") == 0
++        assert T.running("actor-a") == 1
++        assert T.interrupt("actor-a", "s1") == 1
++        assert await asyncio.wait_for(mine, 2) == "interrupted"
++        assert T.running("actor-a") == 0
++        assert not asyncio.current_task().cancelling()
++
++    asyncio.run(scenario())
++
++
++def test_a_cancel_from_elsewhere_is_not_absorbed():
++    from agents.core import turn_interrupts as T
++
++    async def scenario():
++        async def turn():
++            with T.track("actor", "s") as live:
++                try:
++                    await asyncio.sleep(30)
++                except asyncio.CancelledError:
++                    assert not T.absorb(live)
++                    raise
++
++        task = asyncio.create_task(turn())
++        await asyncio.sleep(0)
++        task.cancel()                       # a disconnect, a shutdown
++        with pytest.raises(asyncio.CancelledError):
++            await task
++
++    asyncio.run(scenario())
++
++
++@pytest.mark.asyncio
++async def test_interrupt_route_stops_only_the_callers_own_turn(tmp_path, monkeypatch):
++    from agents.core.security.token_store import TokenStore
++    from agents.core.turn_interrupts import INTERRUPTED_REPLY, NOTICE_CODE
++    from tests.test_h226_cli_governance_prompts import _host
++
++    store = TokenStore(str(tmp_path / "tokens.db"))
++    owner, stranger = store.issue("user"), store.issue("user")
++    orch, _cap, stream = await _host(tmp_path, monkeypatch, store=store)
++    entered = asyncio.Event()
++
++    async def model(*_args, **_kwargs):
++        entered.set()
++        await asyncio.sleep(60)
++        return "never"
++
++    orch.handle_input = model
++    try:
++        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app),
++                                     base_url="http://localhost") as client:
++            turn = asyncio.create_task(client.post("/chat", json={"message": "long job"},
++                                                   headers={"x-user-token": owner}))
++            await asyncio.wait_for(entered.wait(), 5)
++            other = await client.post("/chat/interrupt", json={}, headers={"x-user-token": stranger})
++            assert other.status_code == 200 and other.json()["interrupted"] == 0
++            anonymous = await client.post("/chat/interrupt", json={})
++            assert anonymous.status_code in (401, 403)
++            bad = await client.post("/chat/interrupt", json={"session_id": "../x"},
++                                    headers={"x-user-token": owner})
++            assert bad.status_code == 422
++            extra = await client.post("/chat/interrupt", json={"turn": 1}, headers={"x-user-token": owner})
++            assert extra.status_code == 422
++            assert not turn.done()
++            mine = await client.post("/chat/interrupt", json={}, headers={"x-user-token": owner})
++            assert mine.status_code == 200 and mine.json()["interrupted"] == 1
++            response = await asyncio.wait_for(turn, 5)
++        assert response.status_code == 200
++        body = response.json()
++        assert body["reply"] == INTERRUPTED_REPLY
++        assert [n["code"] for n in body["notices"]] == [NOTICE_CODE]
++    finally:
++        await stream.aclose()
++        orch._pending_input_service().close()
++        store._conn.close()
++
++
++# ── the real readline, through a pseudo-terminal ──────────────────────────────
++
++_CHILD = textwrap.dedent("""
++    import io, json, sys
++    sys.path.insert(0, {root!r})
++    from agents.cli import repl as R
++    from agents.cli.nerva import Context
++
++    class Hub:
++        base_url = "http://127.0.0.1:8080"
++        def get(self, path):
++            if path.startswith("/api/commands"):
++                return {{"commands": [{{"command": "/recap"}}]}}
++            return {{"questions": []}}
++        def post(self, path, body=None, *, timeout=None):
++            if path == "/chat":
++                print("SENT " + json.dumps(body["message"]), flush=True)
++                return {{"reply": "ok"}}
++            return {{}}
++
++    ctx = Context(environ={{}}, out=sys.stdout, err=sys.stdout, inp=sys.stdin,
++                  client_factory=lambda env: Hub())
++    code = R.Repl(ctx, history=True, readline_module=R.load_readline()).run()
++    print("EXITED", code, flush=True)
++""")
++
++
++def _drive(tmp_path, keystrokes):
++    pty = pytest.importorskip("pty")
++    import select
++
++    readline = R.load_readline()
++    if readline is None or "libedit" in (readline.__doc__ or ""):
++        pytest.skip("GNU readline is not available")
++    script = tmp_path / "child.py"
++    script.write_text(_CHILD.format(root=str(Path(__file__).resolve().parents[1])), encoding="utf-8")
++    env = {**os.environ, "JARVIS_HOME": str(tmp_path / "home"), "TERM": "xterm", "INPUTRC": "/dev/null"}
++    pid, fd = pty.fork()
++    if pid == 0:  # pragma: no cover — the child
++        os.execve(sys.executable, [sys.executable, str(script)], env)
++
++    def read(wait=0.6):
++        out, deadline = b"", time.monotonic() + wait
++        while time.monotonic() < deadline:
++            ready, _, _ = select.select([fd], [], [], 0.05)
++            if ready:
++                try:
++                    chunk = os.read(fd, 4096)
++                except OSError:
++                    break
++                if not chunk:
++                    break
++                out += chunk
++        return out.decode("utf-8", "replace")
++
++    transcript = read(2.0)
++    for keys in keystrokes:
++        os.write(fd, keys)
++        transcript += read()
++    transcript += read(1.0)
++    with __import__("contextlib").suppress(ChildProcessError):
++        os.waitpid(pid, 0)
++    os.close(fd)
++    return transcript
++
++
++def test_real_terminal_keys(tmp_path):
++    transcript = _drive(tmp_path, [
++        b"hello",           # a draft …
++        b"\x03",            # … Ctrl+C clears it
++        b"a\x1b\rb\r",      # Alt+Enter is a newline; Enter sends one message
++        b"zz\x1b\x1bq\r",   # Esc Esc discards the draft
++        b"\x1b[200~x\ny\x1b[201~\r",   # a bracketed multi-line paste is one message
++        b"/rec\t\r",        # Tab completes the hub's command
++        b"\x03",            # idle, empty: arm
++        b"\x03",            # again: exit
++    ])
++    assert "(draft cleared)" in transcript
++    assert 'SENT "a\\nb"' in transcript
++    assert 'SENT "q"' in transcript and 'SENT "zz' not in transcript
++    assert 'SENT "x\\ny"' in transcript
++    assert 'SENT "/recap"' in transcript
++    assert "press Ctrl+C again" in transcript
++    assert "EXITED 0" in transcript
++    history = tmp_path / "home" / "cli" / "chat_history.jsonl"
++    assert stat.S_IMODE(history.stat().st_mode) == 0o600
++    assert json.loads(history.read_text().splitlines()[0]) == "a\nb"
+diff --git a/tests/test_hud_v2_parity.py b/tests/test_hud_v2_parity.py
+index 067f603..d1ee30d 100644
+--- a/tests/test_hud_v2_parity.py
++++ b/tests/test_hud_v2_parity.py
+@@ -529,7 +529,8 @@ _CLIENT_GLOBS = (
+ # inheriting a bare list. The audit's own count came down from 86 to 68 precisely because
+ # entries like these had been miscounted as missing UI.
+ MACHINE_FACING: dict[str, str] = {
+-    "/api/acp/sessions": "G11: `nerva acp` opens a conversation for an editor folder (ACP session/new)",
++    "/chat/interrupt": "H224: Ctrl+C in `nerva chat -i` stops the caller's own running /chat turn",
++    "/api/acp/sessions":"G11: `nerva acp` opens a conversation for an editor folder (ACP session/new)",
+     "/api/acp/sessions/{session_id}": "G11: `nerva acp` closes an editor session and its MCP servers",
+     "/api/acp/sessions/{session_id}/lease": "G11 review: `nerva acp` renews its sessions' lease while the editor is connected",
+     "/api/acp/sessions/{session_id}/mcp": (
+-- 
+2.43.0
+

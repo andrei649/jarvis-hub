@@ -1,7 +1,7 @@
 import { Text } from './ThemedText';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Modal, Pressable, StyleSheet, View } from 'react-native';
-import { ApiError, fetchSessions, resumeSession, type HistoryTurn, type SessionInfo } from '../api/client';
+import { ApiError, fetchSessions, resumeSession, resumeTarget, type HistoryTurn, type SessionInfo } from '../api/client';
 import { useServer } from '../context/ServerContext';
 import { useThemeStyles, type Theme } from '../theme';
 
@@ -85,7 +85,8 @@ export function SessionsModal({
             keyExtractor={(s) => s.id}
             style={styles.list}
             renderItem={({ item }) => (
-              <Pressable style={styles.option} onPress={() => resume(item.id)} disabled={!!busyId || loading}>
+              // H440: one row per conversation; a resume opens the newest member of its lineage.
+              <Pressable style={styles.option} onPress={() => resume(resumeTarget(item))} disabled={!!busyId || loading}>
                 <View style={styles.optInfo}>
                   <Text style={styles.optTitle} numberOfLines={1}>
                     {item.title?.trim() || item.summary?.trim() || item.id}
@@ -94,13 +95,14 @@ export function SessionsModal({
                     {[
                       item.agent_id,
                       item.turn_count != null ? `${item.turn_count} turns` : null,
+                      item.continuations ? `+${item.continuations} other in this conversation` : null,
                       formatDate(item.started_at),
                     ]
                       .filter(Boolean)
                       .join(' · ')}
                   </Text>
                 </View>
-                {busyId === item.id && <ActivityIndicator color={theme.accent} size="small" />}
+                {busyId === resumeTarget(item) && <ActivityIndicator color={theme.accent} size="small" />}
               </Pressable>
             )}
             ListEmptyComponent={

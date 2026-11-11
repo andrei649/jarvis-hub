@@ -1,4 +1,4 @@
-# H11.1 — Jarvis Hub desktop shell (Tauri v2). HOST BUILD ONLY.
+# H11.1 — Nerva desktop shell (Tauri v2). HOST BUILD ONLY.
 #   cargo tauri build      # package native desktop app (Win/macOS/Linux)
 # Wraps the existing web HUD (http://127.0.0.1:8080) with a native window, tray
 # icon, and auto-start — no new backend.
@@ -15,3 +15,11 @@ tauri = { version = "2", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-runtime = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-deep-link = "2"
+notify-rust = "4"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+sysinfo = { version = "0.40.1", default-features = false, features = ["system"] }
+
+[target."cfg(unix)".dependencies]
+libc = "0.2.191"

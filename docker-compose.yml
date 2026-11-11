@@ -22,6 +22,9 @@ services:
     # tini as pid 1: the coordinator shares this pid namespace (below), so something here
     # must reap what is orphaned in it; serve.py's self-restart re-exec keeps its own pid.
     init: true
+    # RB-2: these three are pinned here, under the JARVIS_ spelling. In compose `environment:`
+    # beats `env_file:`, so a line in .env does NOT change them: to change one, edit it here.
+    # NERVA_<X> for one of them in .env is one variable set twice, and the hub refuses to start.
     environment:
       JARVIS_HOST: "127.0.0.1"
       JARVIS_PORT: "8080"
@@ -59,6 +62,7 @@ services:
         COPY . .
         CMD ["python", "scripts/runtime_supervisor.py"]
     pid: "service:jarvis"
+    # RB-2: pinned here under the JARVIS_ spelling, as for the hub above (edit this line to change it).
     environment:
       JARVIS_HOME: /data
     env_file:

@@ -563,6 +563,16 @@ class AutonomyCoordinator:
         except Exception:
             logger.warning("Runtime run-log cycle recording failed", exc_info=True)
 
+    def _sync_approval_mode(self) -> str:
+        """H484 — the stored mode and overrides onto the live policy; a failure changes nothing."""
+        try:
+            from agents.core.autonomy.mode import sync_policy
+
+            return sync_policy(self._orch)
+        except Exception:
+            logger.warning("approval mode sync failed; the live policy is unchanged", exc_info=True)
+            return "unknown"
+
     async def loop(self):
         """Periodically run approved autonomy tasks (the self-tasking worker).
 
@@ -571,8 +581,8 @@ class AutonomyCoordinator:
         """
         while True:
             await asyncio.sleep(autonomy_tick_seconds(self._orch))
-            # Global emergency stop: skip the whole self-tasking tick while the
-            # ESTOP sentinel exists (pause-new-work; in-flight work is not killed).
+            # H484: synced before the e-stop check — the stored mode governs while paused too.
+            amode = await asyncio.to_thread(self._sync_approval_mode)   # the write lock, off the loop
             from agents.core import estop
             if estop.check_paused("autonomy", logger):
                 # Expiry is queue metadata only under e-stop. Ledger resume and
@@ -584,19 +594,13 @@ class AutonomyCoordinator:
                     except Exception:
                         logger.warning("Approval expiry metadata sweep failed under e-stop", exc_info=True)
                 continue
-            amode = "unknown"
             max_tier = None
             try:
-                # Sync the live autonomy knobs (/admin) onto the policy each tick:
-                # mode (AUTO/ASK/OFF) + the money caps + the interrupt budget.
-                amode = str(self._orch.get_setting("autonomy.mode", "auto") or "auto").lower()
+                # Sync the live autonomy knobs (/admin) onto the policy each tick: the
+                # money caps + the interrupt budget (the mode and the per-agent overrides
+                # were synced above, by _sync_approval_mode).
                 if self._orch.autonomy:
                     pol = self._orch.autonomy.policy
-                    if pol.mode != amode:
-                        pol.mode = amode
-                    # Per-agent mode overrides (HUD v3) — resynced live like the global mode.
-                    _am = self._orch.get_setting("autonomy.agent_modes", {})
-                    pol.agent_modes = dict(_am) if isinstance(_am, dict) else {}
                     pol.cap_per_action = float(
                         self._orch.get_setting("autonomy.cap_per_action", 50.0) or 50.0
                     )
@@ -620,6 +624,7 @@ class AutonomyCoordinator:
                             self._orch.get_setting("autonomy.interrupt_budget", 4)
                         )
                 max_tier = None
+                await self._maybe_reclaim_worktrees()      # G18 (H474): at most hourly, off by default
                 if self._orch.get_setting("autonomy.night_shift", False):
                     start = int(self._orch.get_setting("autonomy.night_start", 23) or 23)
                     end = int(self._orch.get_setting("autonomy.night_end", 6) or 6)
@@ -627,7 +632,7 @@ class AutonomyCoordinator:
                         max_tier = 1  # reversible/read-only only
                 dispatch_settings_unavailable = False
                 try:
-                    dispatch_enabled = amode != "off" and all(
+                    dispatch_enabled = amode not in ("off", "unknown") and all(
                         self._orch.get_setting(key, False) is True
                         for key in ("llm.kanban", "llm.kanban_dispatch", "llm.tool_loop_enabled")
                     )
@@ -654,7 +659,7 @@ class AutonomyCoordinator:
                 except Exception:
                     logger.warning("Kanban dispatcher intake failed", exc_info=True)
                 # Proactive passes self-generate new tasks — paused entirely in OFF mode.
-                if amode != "off":
+                if amode not in ("off", "unknown"):
                     # Sample the host and turn state changes into gated tasks.
                     if self._orch.observer and self._orch.get_setting(
                         "system.observer_enabled", True
@@ -722,6 +727,13 @@ class AutonomyCoordinator:
         worker = getattr(self._orch, "autonomy", None)
         if worker is not None and hasattr(worker, "govern_enqueue"):
             return worker.govern_enqueue(*args, **kwargs)
+        # H400 review (M2): the raw fallback says so too when a sub-agent asked.
+        from .autonomy.worker import AutonomyWorker
+
+        if len(args) >= 3:
+            args = (*args[:2], AutonomyWorker._delegated_title(args[2])[0], *args[3:])
+        elif "title" in kwargs:
+            kwargs["title"] = AutonomyWorker._delegated_title(kwargs["title"])[0]
         return self._orch.autonomy_queue.enqueue(*args, **kwargs)
 
     def _submit_job_script(self, payload, origin):
@@ -746,6 +758,19 @@ class AutonomyCoordinator:
         if not callable(enqueue):
             raise RuntimeError('governed scheduled-task intake is unavailable')
         return enqueue(**kwargs)
+
+    def _session_trust_check(self):
+        """H443 — ``session_id -> "clean" | "unproven" | "unclean"``: a conversation's
+        standing for a search hit, read per call from the hub (its review ledger and its
+        own records). Only "unclean" taints the turn's actions. Blocking: callers run it
+        off the event loop."""
+        def trust(session_id: str) -> str:
+            check = getattr(self._orch, "session_trust", None)
+            if not callable(check):
+                return "unproven"
+            return check(session_id)
+
+        return trust
 
     def _wire_agent_tool_runtime(self, action_kernel=None, *, _browser_fixture_origin=None):
         """Build the shared, default-off governed tool loop for loaded agents."""
@@ -944,6 +969,8 @@ class AutonomyCoordinator:
             preflight=image_dispatcher.preflight, trusted_execution=True,
             gated_intake=image_dispatcher.intake,
         )
+        from .creative.video_generation import register_video_tool  # G19 (H516)
+        register_video_tool(server, lambda: getattr(self._orch, "cloud_videos", None), _APPROVED_TASK.get)
         from .browser_runtime import (
             BrowserRuntime, INPUT_SCHEMA as BROWSER_RUN_SCHEMA, local_browser_ready,
         )
@@ -1288,6 +1315,15 @@ class AutonomyCoordinator:
 
             if approved_task_id is not None and args.get("cwd"):
                 await asyncio.to_thread(project_context.note_terminal, approved_task_id, result, args["cwd"])
+            if approved_task_id is not None and args.get("cwd"):
+                # G5 — a finished verify command is evidence (passive; never changes the result).
+                from .verify import evidence as verify_evidence
+
+                try:
+                    await asyncio.to_thread(verify_evidence.record_terminal, approved_task_id, args, result,
+                                            audit=getattr(self._orch, "intent_log", None))
+                except Exception:
+                    logger.warning("verify evidence not recorded", exc_info=True)
             return result
 
         def _terminal_intake(actor, args):
@@ -1354,8 +1390,10 @@ class AutonomyCoordinator:
                                               and getattr(self._orch, 'autonomy', None) is worker),
                 )
             from . import project_context
+            from .verify import evidence as verify_evidence
 
             project_context.note_task(task_id)
+            verify_evidence.note_task(task_id)   # G5: its result counts for this session
             return task_id
 
         async def _terminal_review(actor, args, task_id):
@@ -1572,7 +1610,8 @@ class AutonomyCoordinator:
         # reaches the model. Who may ask is the tool profile's decision (3b), not the tool's.
         from .memory.session_search import register_session_search
 
-        register_session_search(server)
+        # H443: a hit from a conversation known to be unclean taints the turn.
+        register_session_search(server, trust=self._session_trust_check())
         # 1.1.0 operator wave — governed file read/list/search/write/delete. Default-off:
         # register_file_tools returns [] and touches nothing unless JARVIS_FILE_TOOLS
         # is set. The two mutating tools are gated, so they can only run from an
@@ -1629,6 +1668,9 @@ class AutonomyCoordinator:
                                                payload=payload, risk_tier=3,
                                                autonomy_level='ask', origin='generated')
             child_adapter.bind(child, task_id)
+            from .verify import evidence as verify_evidence   # G5: the edit counts for this session
+
+            verify_evidence.note_task(task_id)
             return task_id
 
         register_file_tools(server, file_tools, mutation_intake=_file_mutation_intake)
@@ -1658,11 +1700,28 @@ class AutonomyCoordinator:
             server,
             lambda: (getattr(self._orch, "plugins", None) or {}).get("websearch"),
         )
+        # G14 — the owner's A2A peers as tools (the adopted Hermes client tools). Off unless
+        # JARVIS_A2A_ENABLED; a2a_call / a2a_orchestrate are gated (they send the owner's
+        # text off the box), every answer is untrusted output.
+        from .a2a_outbound import A2AOutbound, register_a2a_tools
+        from .routers.a2a import _get_a2a_registry
+
+        def _a2a_kernel():
+            from .kernel.binding import make_action_kernel
+
+            return make_action_kernel(self._orch)
+
+        register_a2a_tools(server, A2AOutbound(
+            _get_a2a_registry,
+            secret_broker=lambda: getattr(self._orch, "secret_broker", None),
+            kernel=_a2a_kernel,
+        ))
         from .memory.rag_tool import register_search_memory
 
         register_search_memory(
             server,
             lambda: getattr(getattr(self._orch, "memory", None), "recall", None),
+            trust=self._session_trust_check(),
         )
 
         acquisition = AcquisitionRuntime(
@@ -1760,7 +1819,7 @@ class AutonomyCoordinator:
         # is a state the status route has to be able to report honestly.
         bind_external_orchestrator_attribute(self._orch, "session_kernels", kernels)
 
-        tool_profile = ToolProfileResolver(
+        tool_profile = self._tool_profile = ToolProfileResolver(
             settings=_get_setting,
             agent_patterns=_agent_tool_patterns,
             principal=_turn_principal,
@@ -1819,6 +1878,29 @@ class AutonomyCoordinator:
 
         register_pointer_tool(server, canvas=lambda: getattr(self._orch, "canvas", None),
                               posture=lambda: tool_profile.posture().key)
+        # H400 — the model hands self-contained tasks to isolated sub-agents. Off unless
+        # `llm.delegate_task` is on (off = not registered). It adds no second way to
+        # start a child: it calls the SubAgentManager the owner routes call, so the
+        # emergency stop, the spawn pause, the caps and the timeout are the same gate.
+        # Who is calling, what the turn was offered, the approval mode and the agent
+        # roster are read from the host at each call, never from an argument.
+        from .delegate_tool import loop_timeout_seconds, register_delegate_tool
+
+        def _delegate_mode(agent_id):
+            from .autonomy.mode import describe
+
+            return describe(self._orch, agent_id)["effective"]
+
+        register_delegate_tool(
+            server,
+            settings=_get_setting,
+            manager=lambda: getattr(self._orch, "subagents", None),
+            principal=_turn_principal,
+            offer=_TURN_TOOL_OFFER.get,
+            mode=_delegate_mode,
+            agents=lambda: getattr(self._orch, "agents", None) or {},
+            authorizer=action_kernel,
+        )
 
         def _profile_and_note_offer(agent_id, tools):
             # H661 — the same decision, unchanged, plus a note of what it offered in the
@@ -1867,6 +1949,7 @@ class AutonomyCoordinator:
         # gated unless declared read-only, output fenced as untrusted; a built-in name
         # is reserved against them on every sync. The loop syncs at each turn's start.
         from .mcp.model_bridge import MCPModelBridge
+        from .tool_search import config_from_settings as tool_search_config
 
         mcp_bridge = MCPModelBridge(server, lambda: getattr(self._orch, "mcp", None))
         runtime = AgentToolRuntime(
@@ -1880,7 +1963,14 @@ class AutonomyCoordinator:
             context_budget_tokens=lambda: _get_setting("llm.tool_loop_context_tokens", 0),
             per_tool_limit=lambda: _get_setting("llm.tool_loop_per_tool_cap", 0),
             # H486 — the web-search ceiling ships on at 50; the runtime sanitizes the value.
-            tool_turn_caps=lambda: {"web_search": _get_setting("llm.tool_loop_web_search_cap", 50)},
+            tool_turn_caps=lambda: {"web_search": _get_setting("llm.tool_loop_web_search_cap", 50),
+                                    # H400 — every delegate_task CALL counts, refused or not
+                                    # (the children each call starts are counted by the manager).
+                                    "delegate_task": _get_setting("llm.tool_loop_subagent_spawn_cap", 50)},
+            # H400 — one delegate_task call waits for its sub-agents: its deadline is the
+            # child timeout plus a grace (the manager cancels a slow child first).
+            tool_timeouts=lambda: {"delegate_task": loop_timeout_seconds(
+                getattr(self._orch, "subagents", None))},
             stall_halt_enabled=lambda: _get_setting("llm.tool_loop_stall_halt_enabled", False) is True,
             # H298 — an oversized tool result is spilled to disk instead of being
             # thrown away, and the caps scale to the model's real context window.
@@ -1903,6 +1993,9 @@ class AutonomyCoordinator:
             tool_profile=_profile_and_note_offer,
             guidance_context=_guidance_context,
             execution_profile=tool_profile,
+            # G8 (H585) — a large offer's MCP tools go behind tool_search/tool_call; the
+            # loop unwraps a bridge call before any gate, so authority is unchanged.
+            tool_search=lambda: tool_search_config(_get_setting),
         )
         bind_external_orchestrator_attribute(self._orch, "tool_rpc", server)
         bind_external_orchestrator_attribute(self._orch, "agent_tool_runtime", runtime)
@@ -2170,6 +2263,8 @@ class AutonomyCoordinator:
         self._wire_url_monitor(executor)
         self._wire_cloud_image(executor)
         self._wire_kanban_network(executor)
+        from .creative.video_generation import wire_cloud_video  # G19 (H516): outermost plugin.egress
+        wire_cloud_video(self._orch, executor)
         for kw in ("research", "search", "monitor", "scan", "lookup", "check"):
             executor.register(kw, _research)
         for kw in ("summarize", "analyze", "review", "draft", "plan", "prepare"):
@@ -2521,8 +2616,26 @@ class AutonomyCoordinator:
                 budget=self._subagent_spawn_budget(),
                 # H486 — and this caps how many one tool-loop turn may spawn (Hermes: 50).
                 turn_cap=self._subagent_turn_cap,
+                # H400 — one child's wall clock, the emergency stop and kill switch at
+                # the spawn gate, and the registry a child's tool allowlist is drawn from.
+                child_timeout=self._subagent_timeout,
+                halt_probe=self._subagent_halt,
+                tool_registry=self._registered_tool_names,
+                # G18 — durable delegation rows on the autonomy queue (H401), a child's
+                # own worktree (H402), the read-only reviewer's tools (H404) and the
+                # stall monitor's threshold.
+                store=lambda: getattr(self._orch, "autonomy_queue", None),
+                worktree_provider=self._subagent_worktree,
+                read_only_probe=self._tool_is_read_only,
+                stall_seconds=lambda: self._orch.get_setting("autonomy.subagent_stall_seconds", 120),
             ),
         )
+        self._g18_kernel = _action_kernel
+        try:
+            # H401: children a previous boot left running died with it: reported once, never re-run.
+            self._orch.subagents.recover()
+        except Exception:
+            logger.warning("sub-agent recovery at start failed", exc_info=True)
 
         # Domain routers may register late-bound host handlers (for example the
         # default-off House Brain after owner configuration is available). Keep
@@ -2567,6 +2680,106 @@ class AutonomyCoordinator:
             return None
         return IterationBudget(cap) if cap > 0 else None
 
+    def _subagent_timeout(self):
+        """``autonomy.subagent_timeout_seconds`` as stored, read at each spawn; the
+        manager sanitizes it (an unreadable value is the shipped 300 s, never "off")."""
+        return self._orch.get_setting("autonomy.subagent_timeout_seconds", 300)
+
+    def _subagent_halt(self):
+        """H400 — why no new sub-agent may start, or None: the install's emergency stop,
+        then the kill switch. Blocking (a stat each); the manager calls it on a worker
+        thread, and reads a failure as "stopped"."""
+        from . import estop
+
+        if estop.is_engaged():
+            return "estop_engaged"
+        switch = getattr(self._orch, "kill_switch", None)
+        if switch is not None and switch.is_halted():
+            return "kill_switch_halted"
+        return None
+
+    def _subagent_worktree(self, spawn_id):
+        """G18 (H402) — a delegated child's own worktree, or None. Blocking; the
+        manager calls it on a worker thread.
+
+        Off unless ``autonomy.subagent_worktrees`` is on, and None when no project folder
+        (``llm.project_dir``) is set or it is not a repository: there is nothing to
+        isolate. A project outside the owner's file roots, a repository whose config could
+        make the version-control tool run a program, the emergency stop, plan mode on the
+        delegating session, or (kernel on) anything but a ``file.write`` grant raises
+        ``WorktreeRefused``: the spawn fails rather than run unisolated."""
+        from pathlib import Path
+
+        from . import worktrees
+        from .file_tools import FileScope
+
+        if self._orch.get_setting("autonomy.subagent_worktrees", False) is not True:
+            return None
+        raw = self._orch.get_setting("llm.project_dir", "")
+        if not isinstance(raw, str) or not raw.strip() or not Path(raw).expanduser().is_dir():
+            return None
+        top = worktrees.repo_root(Path(raw).expanduser())
+        if top is None:
+            return None
+        repo = worktrees.main_repo(top) or top
+        if FileScope.from_env().root_for(repo.resolve()) is None:
+            raise worktrees.WorktreeRefused("the project is outside the owner's file roots")
+        from .kernel.plan_mode import current_session
+
+        refusal = worktrees.write_refusal(
+            session_id=current_session(), authorizer=getattr(self, "_g18_kernel", None),
+            title="Create a worktree for a sub-agent",
+            payload={"path": str(repo / worktrees.TREES_DIR), "operation": "worktree_add"})
+        if refusal is not None:
+            raise worktrees.WorktreeRefused(refusal)
+        return worktrees.create_child_tree(repo, spawn_id)
+
+    def _tool_is_read_only(self, name):
+        """G18 (H404) — whether a registered tool declared itself read-only and ungated
+        (ToolRPC's own declaration; an undeclared tool is not read-only)."""
+        server = getattr(self._orch, "tool_rpc", None)
+        if server is None:
+            return False
+        spec = getattr(server, "_tools", {}).get(name)
+        if not spec or spec.get("gated") or spec.get("untrusted_output"):
+            return False
+        effect = server.declared_effect(name)
+        return bool(effect) and effect[0] == "read_only"
+
+    async def _maybe_reclaim_worktrees(self):
+        """H474 — the opportunistic worktree reclaim on the tick (off by default); and
+        H401 — close delegation rows another process left running with a stale heartbeat."""
+        manager = getattr(self._orch, "subagents", None)
+        if manager is not None:
+            try:
+                await asyncio.to_thread(manager.recover)
+            except Exception:
+                logger.warning("sub-agent recovery on the tick failed", exc_info=True)
+        try:
+            from .worktree_commands import opportunistic_reclaim
+
+            await opportunistic_reclaim(self._orch, authorizer=getattr(self, "_g18_kernel", None))
+        except Exception:
+            logger.warning("worktree reclaim failed", exc_info=True)
+
+    def _registered_tool_names(self, agent=""):
+        """The tools a sub-agent of *agent* would be offered now: the registered rows
+        (static: no live override is consulted) through the same tool profile its turn
+        resolves — principal, surface, shared session, the agent's ``tools:`` list and a
+        job's toolset bound, all read from the spawning context, which the child
+        inherits. The manager subtracts the blocked tools (H400 minor 4)."""
+        server = getattr(self._orch, "tool_rpc", None)
+        if server is None:
+            return ()
+        rows = server.tools(live=False)
+        profile = getattr(self, "_tool_profile", None)
+        if profile is None:
+            return tuple(row["name"] for row in rows)
+        roster = getattr(self._orch, "agents", None) or {}
+        picked = agent if agent in roster else "jarvis"
+        offered, _decision = profile(picked, rows)
+        return tuple(str(row.get("name") or "") for row in offered)
+
     def _subagent_turn_cap(self):
         """``llm.tool_loop_subagent_spawn_cap`` as stored, read at each spawn; the manager
         sanitizes it (an unreadable value is the shipped 50, 0 is no ceiling)."""
@@ -2602,12 +2815,20 @@ def make_subagent_runner(orch):
     from .llm.provider_errors import provider_failure_scope
     from .subagents import SubAgentProviderError
 
-    async def _subagent_runner(task, session_id, agent, *, steer=None):
+    async def _subagent_runner(task, session_id, agent, *, steer=None, tools=None):
         picked = agent if agent in orch.agents else "jarvis"
         from .steering import steering_scope
+        from .job_toolsets import toolset_scope
         from .kanban.runtime import delegate_scope
+        from .orchestrator import child_turn_scope
 
-        with provider_failure_scope() as failures, steering_scope(steer, agent_id=picked), delegate_scope():
+        # H400 — the child's turn is narrowed to its allowlist for as long as it runs:
+        # the offer and every ToolRPC call honour the scope, it intersects with a job's
+        # own bound, and it expires with this block, so a tool call that outlives a
+        # cancelled child is refused. No allowlist handed in is no tools, never all.
+        allowed = frozenset(tools) if tools is not None else frozenset()
+        with provider_failure_scope() as failures, steering_scope(steer, agent_id=picked), \
+                delegate_scope(), toolset_scope(allowed), child_turn_scope(session_id):
             if current_selection() is not None:
                 router = getattr(orch, "llm_router", None)
                 if not callable(getattr(router, "select_backend", None)):

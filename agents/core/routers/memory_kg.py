@@ -1169,6 +1169,101 @@ async def memory_switch(body: MemorySwitchBody):
     return nocache_json(reply)
 
 
+class MemoryApprovalBody(BaseModel):
+    enabled: StrictBool
+
+
+class MemoryProposalDecision(BaseModel):
+    approved: StrictBool
+    reason: Optional[str] = None
+
+
+async def _memory_proposals_body(orch) -> dict:
+    """H443 — the held memory writes as the admin reads them: the gate as the settings
+    store holds it, the open proposals with their text, and the newest decided ones."""
+    from agents.core.learning.memory_proposals import (
+        PENDING_TTL_S, STATUS_APPLYING, STATUS_PENDING, public, write_approval_required,
+    )
+
+    store = getattr(orch, "memory_proposals", None) if orch else None
+    gate = await asyncio.to_thread(write_approval_required)
+    if store is None:
+        return {"available": False, "write_approval": gate, "pending": [], "decided": []}
+    # A card decided through the queue's own doors (a group reject, an expiry) closes its
+    # proposal here, before the list is read.
+    await orch.settle_memory_proposals()
+    records = await asyncio.to_thread(store.list)
+    open_ones = [public(rec) for rec in records if rec.get("status") in (STATUS_PENDING, STATUS_APPLYING)]
+    decided = [public(rec) for rec in records if rec.get("status") not in (STATUS_PENDING, STATUS_APPLYING)]
+    stats = await asyncio.to_thread(store.stats)
+    return {"available": True, "write_approval": gate, "pending": open_ones, "decided": decided[-20:][::-1],
+            "pending_ttl_days": int(PENDING_TTL_S // 86400), "stats": stats}
+
+
+@router.get("/api/memory/proposals", dependencies=[Depends(admin_guard)])
+async def memory_proposals():
+    """H443 — the memory writes the post-turn review (or a ``/refine``) holds for the
+    owner (Hermes's ``/memory pending``): each with its facts, the ring each would go to,
+    why it waits (``memory.write_approval``, a conversation that read untrusted content,
+    the approval dial) and its approval card. Admin-only: a held fact is not yet the
+    owner's memory. ``write_approval`` is the gate as the settings store holds it now."""
+    return nocache_json(await _memory_proposals_body(get_orch()))
+
+
+@router.post("/api/memory/proposals/{proposal_id}/decide", dependencies=[Depends(admin_guard)])
+async def memory_proposal_decide(proposal_id: str, body: MemoryProposalDecision):
+    """H443 — approve or reject one held memory write (Hermes's ``/memory approve|reject``).
+    It decides the proposal's own approval card, and what the card then says is what
+    happens: approved, each fact goes through the ring's own checks (the owner's memory
+    switch, the injection scan, the budget) and the reply says what landed; rejected,
+    nothing is written. Deciding the card in the Decision Inbox does the same."""
+    orch = get_orch()
+    if orch is None or getattr(orch, "memory_proposals", None) is None:
+        return nocache_json({"ok": False, "reason": "unavailable",
+                             "error": "held memory writes are not available on this hub"}, status_code=503)
+    if len(proposal_id) > 64:
+        return nocache_json({"ok": False, "reason": "unknown_proposal"}, status_code=404)
+    result = await orch.decide_memory_proposal(proposal_id, body.approved, by="admin", reason=body.reason)
+    reason = str(result.get("reason") or "")
+    if reason == "unknown_proposal":
+        return nocache_json(result, status_code=404)
+    if reason.startswith("not_pending") or reason in ("card_missing", "card_not_decided", "apply_incomplete"):
+        return nocache_json(result, status_code=409)
+    if reason == "bad_reason":
+        return nocache_json(result, status_code=400)
+    if reason in ("approval_queue_unavailable", "unavailable"):
+        return nocache_json(result, status_code=503)
+    if getattr(orch, "_core_rings_reread", None) is not None and result.get("applied"):
+        orch._core_rings_reread = None
+    return nocache_json(result)
+
+
+@router.post("/api/memory/approval", dependencies=[Depends(admin_guard)])
+async def memory_write_approval(body: MemoryApprovalBody):
+    """H443 — the owner turns ``memory.write_approval`` on or off (Hermes's ``/memory
+    approval on|off``). On, the post-turn review's and a ``/refine``'s memory writes wait
+    for the owner; the model's ``memory`` tool and ``POST /api/memory/remember`` are not
+    held by it. The gate is read from the settings store on every review pass, so it
+    holds from the next pass on. Recorded in the intent log as ``memory.write_approval``;
+    switching it **off** is refused when that record cannot be written."""
+    from agents.core.learning.memory_proposals import set_write_approval, write_approval_required
+
+    orch = get_orch()
+    if orch is None:
+        return nocache_json({"ok": False, "reason": "unavailable", "error": "the hub is not ready"}, status_code=503)
+    try:
+        result = await asyncio.to_thread(set_write_approval, body.enabled,
+                                         audit=getattr(orch, "intent_log", None))
+    except Exception:
+        logger.warning("memory write approval: the gate could not be changed", exc_info=True)
+        return nocache_json({"ok": False, "reason": "memory_approval_not_saved",
+                             "error": "the gate was not changed: the setting or its intent-log record could "
+                                      "not be saved; GET /api/memory/proposals says what the hub reads",
+                             "write_approval": await asyncio.to_thread(write_approval_required)},
+                            status_code=503)
+    return nocache_json({"ok": True, **result, "write_approval": await asyncio.to_thread(write_approval_required)})
+
+
 @router.post("/api/memory/reset", dependencies=[Depends(admin_guard)])
 async def memory_reset(body: dict):
     """H422 — erase the agent's notes, the user profile or both, for good (Hermes's

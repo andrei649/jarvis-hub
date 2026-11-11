@@ -134,8 +134,40 @@ export async function kgEntities(limit = 60): Promise<KgEntities> {
 export async function getAutonomyMode(): Promise<AutonomyModeState> {
   return apiGet<AutonomyModeState>('/autonomy/mode', { admin: true });
 }
+/* H484 — a mode or override write the hub refused is an ANSWER, not a thrown failure:
+   503 `mode_not_saved` (nothing stored), 503 `mode_not_effective` (stored, but the live
+   policy runs `live`), 422 `invalid_agent`. The caller shows the mode in force and why. */
+const modeRefusal = (status: number, body: unknown) =>
+  (status === 503 || status === 422) && !!body && typeof body === 'object' && typeof (body as any).error === 'string';
 export async function setAutonomyMode(mode: string): Promise<unknown> {
-  return apiPost('/autonomy/mode', { mode }, { admin: true });
+  return apiPost('/autonomy/mode', { mode }, { admin: true, accept: modeRefusal });
+}
+export async function setAgentAutonomyMode(agent: string, mode: string): Promise<unknown> {
+  return apiPost('/autonomy/policy', { agent, mode }, { admin: true, accept: modeRefusal });
+}
+const KNOWN_MODES = ['auto', 'ask', 'off'];
+/* What to tell the owner about a refused global-mode write, and the mode to display:
+   the one the hub says is in force, never the one that was clicked. */
+export function modeRefusalNote(asked: string, r: any): { live: string | null; text: string } | null {
+  if (!r || typeof r !== 'object' || typeof r.error !== 'string') return null;
+  const live = KNOWN_MODES.includes(r.live) ? r.live : KNOWN_MODES.includes(r.mode) ? r.mode : null;
+  const now = live ? ` ${live.toUpperCase()} is in force.` : '';
+  if (r.error === 'mode_not_saved') return { live, text: `${asked.toUpperCase()} was not saved.${now}` };
+  if (r.error === 'mode_not_effective') {
+    return { live, text: `${asked.toUpperCase()} did not take effect: the settings store holds another mode.${now}` };
+  }
+  return { live, text: `${asked.toUpperCase()} was refused (${r.error}).${now}` };
+}
+/* The same for a per-agent override. */
+export function agentModeRefusalNote(agent: string, asked: string, r: any): string | null {
+  if (!r || typeof r !== 'object' || typeof r.error !== 'string') return null;
+  if (r.error === 'invalid_agent') return typeof r.detail === 'string' ? r.detail : 'that agent id was refused';
+  if (r.error === 'mode_not_saved') return `${agent}: ${asked} was not saved`;
+  if (r.error === 'mode_not_effective') {
+    const runs = KNOWN_MODES.includes(r.live) ? ` — ${agent} runs ${r.live}` : '';
+    return `${agent}: ${asked} did not take effect${runs} (safe mode serves no looser override, or the store could not be read back)`;
+  }
+  return `${agent}: ${asked} was refused (${r.error})`;
 }
 
 /* ── Trust · governed payments lifecycle (modes.tsx, H16.3) ──────

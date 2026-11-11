@@ -1,4 +1,4 @@
-name: "Jarvis Hub CodeQL config"
+name: "Nerva CodeQL config"
 
 # Full security + quality suite on application code.
 queries:

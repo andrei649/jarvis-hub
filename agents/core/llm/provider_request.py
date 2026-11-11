@@ -34,6 +34,7 @@ _BODY_PROTECTED = {
     "authorization", "headers", "api_key", "base_url", "endpoint", "url", "transport",
     "client", "generationConfig", "cachedContent", "max_tokens", "max_output_tokens",
     "num_predict", "temperature", "prompt_cache_key", "prompt_cache_retention",
+    "user", "metadata", "response_format", "parallel_tool_calls", "n", "stop",
 }
 _HEADER_PROTECTED = {
     "authorization", "proxy-authorization", "cookie", "host", "content-type",
@@ -208,6 +209,12 @@ def profile_reasoning_config(profile, model, default_effort=None, *,
     return {"enabled": True, "effort": level} if level is not None else {"enabled": False}
 
 
+def _adopted(profile) -> bool:
+    """True for a provider Nerva runs from a vendored Hermes profile (Adopt lane)."""
+    from .hermes_profiles import is_adopted_profile
+    return is_adopted_profile(profile)
+
+
 def profile_request_defaults(profile, model, *, session_id=None, context=None):
     """Snapshot bounded profile hooks before a transport finalizes its wire body.
 
@@ -243,7 +250,13 @@ def profile_request_defaults(profile, model, *, session_id=None, context=None):
     # one. Dedicated transports still perform their final wire reconciliation.
     requested_reasoning = {key: value for key, value in {**body, **top}.items()
                            if key in {"reasoning", "reasoning_effort", "thinking"}}
-    if requested_reasoning:
+    if requested_reasoning and _adopted(profile):
+        # A vendored Hermes profile speaks its vendor's own reasoning wire (an on/off
+        # ``thinking`` toggle, an effort the vendor clamps lower). The bridge's check
+        # holds it to the same rule: restate the owner's choice, never invent or raise it.
+        from .hermes_profiles import check_reasoning
+        check_reasoning(requested_reasoning, context.get("reasoning_config"), profile)
+    elif requested_reasoning:
         configuration = context.get("reasoning_config")
         if type(configuration) is not dict or configuration.get("enabled") is not True:
             raise ProfileRequestRefused("profile reasoning is not declared")
@@ -330,7 +343,8 @@ def compatible_parameters(profile, model, effort):
         params['prompt_cache_key'] = 'nerva-' + hashlib.sha256(
             json.dumps([profile.id, sid], separators=(',', ':')).encode()
         ).hexdigest()[:48]
-    if 'reasoning-effort' in profile.capabilities:
+    # An adopted Hermes profile shapes its own reasoning wire (``build_api_kwargs_extras``).
+    if 'reasoning-effort' in profile.capabilities and not _adopted(profile):
         level, reason = clamp_vocabulary(profile.supported_reasoning_efforts(model), effort)
         if reason == "below-minimum":
             raise ReasoningEffortRefused()

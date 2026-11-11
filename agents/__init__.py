@@ -1,4 +1,10 @@
-"""Jarvis Hub — agents package."""
+"""Nerva (engine codename jarvis-hub) — agents package."""
+
+# RB-2: NERVA_<X> is the preferred spelling of every JARVIS_<X>. Importing the core
+# package folds it into the process environment (agents/core/__init__.py), and this is
+# the first statement of the package every entry point imports — before any hub module
+# reads its configuration.
+from . import core as _core  # noqa: F401
 
 # CDX-4/5: the single source of truth for the app version. web.py's FastAPI(version=…),
 # /status and /api/status all read this (was a stale "0.5.0-beta" hard-coded in web.py

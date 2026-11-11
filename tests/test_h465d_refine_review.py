@@ -156,6 +156,7 @@ def test_a_per_turn_skip_leaves_a_log_line(caplog, monkeypatch):
     orch.reviewer = _reviewer(_LLM())
     orch.reviewer._on_demand = True                     # a /refine is running
     orch._session_id_default = "web-1"
+    orch._runtime_settings, orch._last_channel = {}, "web"   # H443: a local turn, nobody signed in
     caplog.set_level(logging.DEBUG, logger="jarvis")
     asyncio.run(orch._background_review_task("hi", "hello"))
     assert any("learning review skipped: on_demand" in r.getMessage() for r in caplog.records)

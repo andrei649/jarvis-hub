@@ -181,6 +181,17 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         ),
         implementation="agents.core.autonomy.call_broker:CallBroker.request",
     ),
+    "a2a.outbound": _action(
+        "a2a.outbound",
+        "Send the owner's task to a configured A2A peer agent (call or fan-out) after approval.",
+        required=("tool", "peers"),
+        rollback=RollbackContract(
+            mode="cancel",
+            description="Reject the approval card before the message is sent.",
+            limitations="A message a peer has received cannot be recalled.",
+        ),
+        implementation="agents.core.a2a_outbound:A2AOutbound.run",
+    ),
     "social.*": _action(
         "social.*",
         "Publish or mutate content through a governed social provider.",
@@ -274,6 +285,19 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
             limitations="The action is not reversible when the tool declares no rollback.",
         ),
         implementation="agents.core.tool_rpc:ToolRPCServer.handle",
+    ),
+    "session.loop_tick": _action(
+        "session.loop_tick",
+        "Start one /loop wakeup: the owner's repeating prompt as an ordinary turn in its session.",
+        required=("session_id", "tick"),
+        risk="reversible",
+        supports=("loop",),
+        rollback=RollbackContract(
+            mode="cancel",
+            description="Pause or stop the loop (/loop pause, /loop stop, the emergency stop).",
+            limitations="A wakeup already running finishes; what its tools did has their own rollback.",
+        ),
+        implementation="agents.core.session_loops:run_tick",
     ),
     "repo.sync": _action(
         "repo.sync",
@@ -605,6 +629,20 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         ),
         implementation="agents.core.environments.execution:GovernedTargetRunner.run",
         contract_ref="agents.core.environments.terminal_contract:TERMINAL_EXEC_CONTRACT",
+    ),
+    "hook.exec": _action(
+        "hook.exec",
+        "Run one owner-approved hook program on an agent event, argv fixed, the event as JSON on stdin.",
+        required=("hook_id", "event", "argv_sha256", "binding_sha256", "approved_task_id"),
+        risk="irreversible_or_money",
+        supports=("execute",),
+        rollback=RollbackContract(
+            mode="disable",
+            description="Switch the hook off (or remove it) to stop future runs.",
+            handler_ref="agents.core.hooks.store:disable",
+            limitations="A finished run cannot be undone; switching a hook off does not stop a run already started.",
+        ),
+        implementation="agents.core.hooks.runner:run_hook",
     ),
     "file.write": _action(
         "file.write",

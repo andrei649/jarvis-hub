@@ -2,9 +2,9 @@
 
 The generic `llm.tool_loop_per_tool_cap` ships off (0). These two ship ON at 50: a turn
 that runs `web_search` past its ceiling is refused with the usual cap notice. The spawn
-ceiling is a DORMANT guard: it refuses a spawn made inside a bound tool-loop turn, but no
-model-facing spawn tool exists and the HTTP routes run outside any turn. When the generic
-cap is also set, the stricter one applies.
+ceiling refuses a spawn made inside a bound tool-loop turn (the children `delegate_task`
+starts, H400; `tests/test_h400_delegation.py` drives it through the tool); the HTTP routes
+run outside any turn. When the generic cap is also set, the stricter one applies.
 """
 
 from __future__ import annotations
@@ -176,9 +176,10 @@ def test_the_coordinator_binds_web_search_to_its_setting(monkeypatch):
     coordinator._orch.get_setting = lambda key, default=None: selected.get(key, default)
     coordinator._wire_agent_tool_runtime()
     read = captured["tool_turn_caps"]
-    assert read() == {"web_search": 50}
+    # H400: every delegate_task call counts against the spawn ceiling's number too.
+    assert read() == {"web_search": 50, "delegate_task": 50}
     selected[f"llm.{WEB}"] = 7
-    assert read() == {"web_search": 7}
+    assert read() == {"web_search": 7, "delegate_task": 50}
 
 
 # ── the spawn surface ───────────────────────────────────────────────────────────

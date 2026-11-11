@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Jarvis Hub — complete installer (Windows, PowerShell).
+    Nerva — complete installer (Windows, PowerShell).
 .DESCRIPTION
     Sets up everything from one script:
       JARVIS:    Python 3.12 venv + dependencies (requirements-beta.txt) + tests

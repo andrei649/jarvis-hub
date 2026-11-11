@@ -73,6 +73,9 @@ os.environ.setdefault("JARVIS_RATE_LIMIT", "0")
 # non-strict so plugin tests that hit real/mock hosts aren't blocked; the
 # dedicated egress tests opt back into strict via monkeypatch.setenv.
 os.environ.setdefault("JARVIS_STRICT_EGRESS", "0")
+# H055/H564: a file write would otherwise start whatever language server the developer's
+# PATH holds. The suite's LSP tests opt back in with a fake server (tests/test_lsp_rows.py).
+os.environ.setdefault("JARVIS_LSP", "0")
 
 from fastapi import APIRouter, FastAPI
 
@@ -221,6 +224,23 @@ def _isolate_provider_quota(tmp_path_factory):
     quota.set_store(quota.QuotaStore(tmp_path_factory.mktemp("quota") / "provider_quota.db"))
     yield
     quota.set_store(None)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_channel_reliability(tmp_path_factory):
+    """Each test gets its own delivery ledger, dead targets and inbound cursors (G15):
+    a Telegram offset one test saved must not become another test's backfill start."""
+    try:
+        from agents.core.channels import delivery_ledger
+    except Exception:
+        yield
+        return
+    store = delivery_ledger.ReliabilityStore(
+        tmp_path_factory.mktemp("channel_reliability") / "channel_reliability.db")
+    delivery_ledger.set_store(store)
+    yield
+    delivery_ledger.set_store(None)
+    store.close()
 
 
 @pytest.fixture(autouse=True)

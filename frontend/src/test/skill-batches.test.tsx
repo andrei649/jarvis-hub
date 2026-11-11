@@ -69,6 +69,16 @@ describe('SkillBatchesInbox', () => {
     expect(screen.getByText('cut short · only removed or unchanged lines omitted')).toBeTruthy();
   });
 
+  it('says which touched skill the owner has pinned (H349)', () => {
+    const pinned = { ...batch, preview: [
+      { name: 'alpha', change: 'changed', pinned: true, files: [{ file: 'SKILL.md', change: 'changed', diff: '+x' }] },
+      { name: 'beta', change: 'changed', files: [{ file: 'SKILL.md', change: 'changed', diff: '+y' }] }] };
+    render(<SkillBatchesInbox reply={{ batches: [pinned] }} />);
+    const rows = screen.getAllByTestId('skill-batch-skill');
+    expect(rows[0].textContent).toContain('alpha · changed · pinned by you');
+    expect(rows[1].textContent).not.toContain('pinned');
+  });
+
   it('cannot be decided without a card, and a failed read says so', () => {
     const { rerender } = render(<SkillBatchesInbox reply={{ batches: [{ ...batch, card: null }] }} />);
     expect(screen.getByTitle('approve skill batch').disabled).toBe(true);

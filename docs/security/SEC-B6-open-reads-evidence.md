@@ -102,6 +102,58 @@ Each returns a specific user's content, so each now requires `X-User-Token`:
 (match record) · `/api/oracle/conflicts` (conflict content) · `/api/reflection/status` (daily
 reflection result) · `/api/worldview/overview` (recon/alerts).
 
+## Independent post-merge review — 2026-11-09 (HOLD, then fixed)
+
+The owner-amended #894 directive (2026-09-01) asks for an independent read-only review of every
+allowlist row against handler source. That review ran on `fcc3bef` over all 71 open GETs: the
+gate is sound and green, 12 of the 13 routes above are still guarded (the thirteenth,
+`/api/worldview/overview`, left with WorldView in #1305), and **three rows were wrong** — the
+verdict was HOLD:
+
+- `GET /api/oracle/status` returned the open conflicts (the same rows the guarded
+  `/api/oracle/conflicts` serves), the last ten sessions and the owner's PR feed.
+- `GET /learning/stats` returned `prompt_optimizations[].after`, the learned prompt text that is
+  the reason `/learning` is guarded; it lists recorded error strings, which can be whole replies.
+- `GET /api/local-docs` returned the owner's folder path and up to 50 skipped file names.
+
+All three now carry `user_guard` (same commit as this section), are gone from
+`INTENTIONALLY_OPEN_READS`, and read `user` in `tests/_snapshots/route_auth.json`. Rows this file
+listed for routes that no longer exist or are no longer open (`/api/worldview/status`,
+`/skills`) were dropped. Open since #896 and judged OK by the same review, though not listed
+above: `/api/design-manifest`, the two web manifests and two service workers, the
+`/api/oauth/callback` redirect, the three `/workspace` shell routes and `/api/workspace/session`.
+`GET /agents` also returns each agent's `last_error` text and SOUL description (roster
+metadata, judged OK). A fresh independent PASS on the fixed tree is what closes SEC-B6.
+
+**Second independent review — PASS (2026-11-09, on `9d098a4`/`3ad439f`).** A different read-only
+reviewer confirmed each of the three decorators holds the real `user_guard` object (by identity),
+and probed the real app outside pytest (the suite's conftest overrides the guard, so ordinary
+tests prove nothing about it): a remote caller with no credentials gets 403 when no user token is
+configured (a spoofed `X-Forwarded-For: 127.0.0.1` too) and 401 when one is; the correct
+`x-user-token` passes. No side door: the other readers of the bridge status
+(`/api/swarm/summary`), of the learning data (`/learning`, `/api/admin/stats`,
+`/api/cognition/learning`) and of the local-docs summary are guarded, and neither websocket
+route touches them. Live open GETs = allowlist = 68. Five further rows spot-checked OK.
+**Fourth open read found later (2026-11-10, during the H349 reviews) and guarded:**
+`GET /skills/imported` served each imported skill's `manifest.json` verbatim, which for a
+locally migrated skill holds the absolute `source_path` (the owner's home path) and a content
+hash. Both reviews above had judged it "imported skill manifests"; it now carries `user_guard`
+and is off the allowlist (67 open GETs).
+
+Below the bar: `/memory/stats` returns the current session id; `/agents` returns the last raw
+exception string per agent; `/status` returns the hostname.
+
+Noted by the review, not fixed here: a reply that starts with `[` is recorded as a failed
+interaction with its whole text as the error (`orchestrator.py`, `is_degraded_reply`); the
+OAuth state map filled by the open `/api/oauth/auth-url` is never pruned.
+
+**Merged with main #1346 (2026-11-10).** Main's own remediation, recorded in the twelve-route
+table above, landed beside these fixes: `/agents`, the three eval dataset reads,
+`/api/arena/leaderboard`, `/api/metrics/kernel`, `/api/metrics/capabilities` and `/sandbox/status`
+now carry `user_guard` too, so the open-GET counts quoted in this section (68, then 67) describe
+the tree before that merge; `tests/test_route_auth_matrix.py` and
+`tests/_snapshots/route_auth.json` hold the current set.
+
 ## Earlier export/purge follow-up
 
 The earlier export-manifest/purge-KEEP drift follow-up was delivered in #900

@@ -39,6 +39,10 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # Wave 1 — kernel-mediated.
     "node.dispatch": Mediation.KERNEL,
     "call.outbound": Mediation.KERNEL,
+    # G14 — a message to an A2A peer sends the owner's text off the box. The outbound
+    # runtime asks the kernel at send time (a DENY — halt, budget, loop — refuses it) after
+    # the owner approved the gated tool call; its egress also crosses plugin.egress.
+    "a2a.outbound": Mediation.KERNEL,
     "social.*": Mediation.KERNEL,
     "writeback.*": Mediation.KERNEL,
     # Payment micro-wave — admissible requests routed through kernel.authorize
@@ -59,6 +63,9 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # Wave 3 — a gated Tool-RPC call is mediated by the kernel before it can enqueue
     # an approval task (a DENY blocks it: kill-switch / budget / loop).
     "tool.rpc": Mediation.KERNEL,
+    # H460/H578 — every /loop wakeup crosses the kernel before its turn runs (kill
+    # switch, plan mode, approval mode, the loop's own budget); a denial pauses the loop.
+    "session.loop_tick": Mediation.KERNEL,
     # R1 residual hardening — an external GitHub trigger asking Oracle to pull/rebase
     # and run tests is host execution. It is default-refused when the kernel is off,
     # and when enabled it crosses kernel.authorize before any git/pytest subprocess.
@@ -133,6 +140,10 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # first; a durable accepted task is required before any process exists, and
     # the irreversible tier keeps this at the approval QUEUE floor.
     "terminal.exec": Mediation.KERNEL,
+    # G17 owner hooks: each run of an owner-approved hook program crosses the kernel.
+    # It is granted only through the receipt of the human-accepted ``hooks.define``
+    # task that activated that exact hook (argv + file digests), never by policy alone.
+    "hook.exec": Mediation.KERNEL,
     # Owner checkpoint effects still require an exact human task at the producer
     # and executor; this classification makes their kernel crossing visible.
     "checkpoint.restore": Mediation.KERNEL,

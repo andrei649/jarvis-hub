@@ -40,7 +40,7 @@ describe('mobile first-run command center API (H18.19)', () => {
         },
         wizard: {
           steps: [
-            { key: 'intro', title: 'Welcome to Jarvis' },
+            { key: 'intro', title: 'Welcome to Nerva' },
             { key: 'model', title: 'Connect a model' },
           ],
           completed: ['intro'],

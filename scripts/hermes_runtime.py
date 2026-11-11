@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 if __package__ in {None, ""}:
@@ -51,11 +52,35 @@ def _write_descriptor(root: Path, source: Path, home: Path, python: Path) -> Pat
     return path
 
 
+def _set_aside_stale_source(source: Path) -> Path | None:
+    """After a pin bump the old tree no longer verifies. Keep it beside the new one
+    (never delete: it may be inspected) and let prepare download the pinned tree."""
+    if not (source.exists() or source.is_symlink()):
+        return None
+    try:
+        verify_source(source)
+        return None
+    except ValueError:
+        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        aside = source.with_name(f"{source.name}.stale-{stamp}")
+        source.rename(aside)
+        return aside
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    if sys.argv[1:2] == ["bump"]:
+        # Maintainer step: move the pin. See scripts/hermes_runtime_bump.py.
+        from scripts.hermes_runtime_bump import main as bump_main
+
+        return bump_main(sys.argv[2:])
+    parser = argparse.ArgumentParser(description=__doc__ + " Use `bump --commit <sha>` to move the pin.")
     parser.add_argument("command", choices=("prepare", "install", "status"))
     args = parser.parse_args()
     source, home = DATA_ROOT / "source", DATA_ROOT / "home"
+    if args.command in {"prepare", "install"}:
+        aside = _set_aside_stale_source(source)
+        if aside:
+            print(json.dumps({"stale_source_moved_to": str(aside)}), file=sys.stderr)
     if args.command == "prepare":
         prepare_source(source)
         print(json.dumps({"source": str(source), "identity": verify_source(source)}))

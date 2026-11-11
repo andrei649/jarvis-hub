@@ -68,6 +68,19 @@ def selection_receipt_matches(action):
             and receipt[0].enabled() is True and _owner_current(receipt[2]))
 
 
+def admitted_builtins():
+    """The built-ins a signed package registry layers over: Nerva's native profiles only.
+
+    The providers adopted from Hermes's profiles (``ADOPTED_PROFILES``) are not among them,
+    so a signed package that already uses one of their ids (``deepseek``, ``zai``) or aliases
+    keeps resolving to the owner's package: the owner's signed choice never changes under
+    them, and no alias of an adopted profile can collide with a package alias.
+    """
+    from . import BUILTIN_PROFILES
+
+    return list(BUILTIN_PROFILES)
+
+
 class ProviderInstallService:
     def __init__(self, *, root, signing, profile, kernel, enabled=lambda: False,
                  home, runner=None, audit=None):
@@ -664,7 +677,6 @@ class ProviderInstallService:
         return {'status': 'cleared', 'revision': revision}
 
     def registry(self):
-        from . import DEFAULT_REGISTRY
         store = self._store()
         records = store.list_active(home=self.home)
         chosen = {}
@@ -694,7 +706,7 @@ class ProviderInstallService:
             candidates.append(Candidate(record.provider_id, record.profile.aliases, record.source,
                 record.home, hashlib.sha256(metadata).hexdigest(), record.replacement_target,
                 root=directory.parent, directory=record.artifact_id))
-        return AdmittedProviderRegistry(DEFAULT_REGISTRY.list(), candidates, packages=store,
+        return AdmittedProviderRegistry(admitted_builtins(), candidates, packages=store,
             runtime=runtime, home=self.home,
             bindings={identity:record.package_hash for identity,record in chosen.items()})
 

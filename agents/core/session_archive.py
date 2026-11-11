@@ -12,10 +12,12 @@ listed and resumed; the only deletion was the install-wide ``/api/admin/forget``
 - **Delete permanently.** Backup first, like the install-wide forget: what the hub keeps
   under the session's id (its rows — the session, checkpoints, clock, continuation seed
   and history binding —, the transcript snapshot and log, the compaction archive, its
-  checklist and its note) is written, encrypted, to ``<id>-<stamp>.json.enc`` beside the
-  pre-forget archives, outside the data root (:func:`default_backup_dir`), fsynced and
-  read back; only then is it deleted, with the chat's turn embeddings in long-term recall.
-  A backup that did not land deletes nothing, and the newest few backups are kept. The
+  checklist and its note) is written, encrypted, to ``<id>-<stamp>.c-<key>.json.enc``
+  beside the pre-forget archives, outside the data root (:func:`default_backup_dir`),
+  fsynced and read back; only then is it deleted, with the chat's turn embeddings in
+  long-term recall. A backup that did not land deletes nothing, and the backups of the
+  newest few conversations are kept (``<key>`` names the conversation: the backups of a
+  continued chat's sessions are kept or pruned together, :func:`backup_sets`). The
   route is admin-only, needs ``?confirm=DELETE`` and holds the session's turn lease; the
   session in use, and one another chat continues, cannot be deleted. Facts already
   extracted into the knowledge graph and the append-only audit log are not touched.
@@ -34,9 +36,11 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import hashlib
 import json
 import logging
 import os
+import re
 import tempfile
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, timedelta
@@ -79,15 +83,20 @@ def auto_archive_days(value: Any) -> int:
 def run_auto_archive(checkpoints: Any, days: int, *, active: str | Iterable[str] | None = None,
                      now: datetime | None = None) -> list[str]:
     """Archive every unarchived, unpinned session idle for more than ``days`` — never one
-    in ``active`` (one id, or every session a chat is on)."""
+    in ``active`` (one id, or every session a chat is on).
+
+    H440 review: a continued chat is archived as one conversation (``stale_sessions``
+    measures the lineage, ``set_archived`` stamps every member), and never while a chat is
+    on any of its members."""
     if days <= 0 or checkpoints is None:
         return []
     live = {active} if isinstance(active, str) else set(active or ())
     moment = now or _now()
     before = (moment - timedelta(days=days)).isoformat()
     done: list[str] = []
+    members = getattr(checkpoints, "lineage_members", None)
     for sid in checkpoints.stale_sessions(before):
-        if sid in live:
+        if sid in live or (callable(members) and live.intersection(members(sid))):
             continue
         if checkpoints.set_archived(sid, True, at=moment.isoformat()):
             done.append(sid)
@@ -228,17 +237,76 @@ def read_backup(path: str | Path) -> dict:
     return json.loads(_backup_cipher(None).decrypt_bytes(Path(path).read_bytes()))
 
 
+_SET_RE = re.compile(r"\.c-([0-9a-f]{16})" + re.escape(BACKUP_SUFFIX) + "$")
+
+
+#: ``<session>-<stamp>.c-<key>.json.enc`` → the session id (the stamp has no dash).
+_COPY_RE = re.compile(r"(.+)-\d{8}T\d{12}Z\.c-[0-9a-f]{16}" + re.escape(BACKUP_SUFFIX) + "$")
+
+
+def conversation_key(record: dict) -> str:
+    """H440 third review — what the backups of one conversation have in common: a digest
+    of its lineage root (the root's id and the instance that id named when the
+    conversation was made, so a later chat that reuses the id is another conversation).
+    A chat nobody continued is a conversation of one. Never a secret: it only groups
+    files that already carry their session ids."""
+    continuation = record.get("continuation") or {}
+    session = record.get("session") or {}
+    root = continuation.get("root_id") or record.get("session_id") or ""
+    instance = continuation.get("root_instance_id") if continuation else session.get("instance_id")
+    return hashlib.sha256(f"{root}\x00{instance or ''}".encode()).hexdigest()[:16]
+
+
+def backup_name(session_id: str, stamp: str, key: str) -> str:
+    """``<session>-<stamp>.c-<conversation key>.json.enc``."""
+    return f"{session_id}-{stamp}.c-{key}{BACKUP_SUFFIX}"
+
+
+def backup_sets(root: Path) -> list[list[Path]]:
+    """The session backups under ``root`` as sets, newest set first: the backups of one
+    conversation (the same ``.c-<key>`` in their names) are one set, whenever and however
+    its sessions were deleted; a backup written before sets existed is a set of its own.
+    A set is as new as its newest file."""
+    sets: dict[str, list[tuple[int, str, Path]]] = {}
+    for path in root.glob(f"*{BACKUP_SUFFIX}"):
+        try:
+            modified = path.stat().st_mtime_ns
+        except OSError:
+            continue
+        match = _SET_RE.search(path.name)
+        sets.setdefault(match.group(1) if match else f"/{path.name}", []).append((modified, path.name, path))
+    ordered = sorted(sets.values(), key=max, reverse=True)
+    return [[path for _modified, _name, path in sorted(files, reverse=True)] for files in ordered]
+
+
 def prune_backups(root: Path, keep: int | None = None) -> list[str]:
-    """Keep only the newest ``keep`` session backups (``JARVIS_SESSION_BACKUP_KEEP``, else
-    :data:`BACKUP_KEEP_DEFAULT`, never fewer than the one just written); what was removed.
-    A copy of a deleted chat is a safety net, not an archive kept forever."""
+    """Keep only the newest ``keep`` sets of session backups (``JARVIS_SESSION_BACKUP_KEEP``,
+    else :data:`BACKUP_KEEP_DEFAULT`, never fewer than the one just written); what was removed.
+    A copy of a deleted chat is a safety net, not an archive kept forever.
+
+    H440 third review: ``keep`` counts conversations, not files (:func:`backup_sets`). A
+    conversation's backups stay together or go together — pruning by file cut a long
+    conversation deleted a moment ago down to a few parts without its beginning."""
     from agents.core.env_config import env_int
 
     if keep is None:
         keep = env_int("JARVIS_SESSION_BACKUP_KEEP", BACKUP_KEEP_DEFAULT, minimum=1)
-    backups = sorted(root.glob(f"*{BACKUP_SUFFIX}"), key=lambda p: (p.stat().st_mtime_ns, p.name), reverse=True)
     removed: list[str] = []
-    for stale in backups[max(1, keep):]:
+    sets = backup_sets(root)
+    stale_files = [stale for stale_set in sets[max(1, keep):] for stale in stale_set]
+    # H440 fourth review: a delete that fails after its backup was written is retried by
+    # every sweep, and each retry writes the session again under the same key. A kept set
+    # holds one copy of each session, the newest (a set lists its files newest first).
+    for kept_set in sets[:max(1, keep)]:
+        seen: set[str] = set()
+        for path in kept_set:
+            match = _COPY_RE.match(path.name)
+            if match is None:
+                continue
+            if match.group(1) in seen:
+                stale_files.append(path)
+            seen.add(match.group(1))
+    for stale in stale_files:
         try:
             stale.unlink()
             removed.append(stale.name)
@@ -328,7 +396,8 @@ async def delete_session(session_id: str, *, checkpoints: Any, memory: Any = Non
             raise SessionDeleteError("has_continuations")
         stamp = _now().strftime("%Y%m%dT%H%M%S%fZ")
         try:
-            backup = await asyncio.to_thread(_write_backup, record, root / f"{session_id}-{stamp}{BACKUP_SUFFIX}")
+            backup = await asyncio.to_thread(
+                _write_backup, record, root / backup_name(session_id, stamp, conversation_key(record)))
         except (OSError, ValueError, TypeError, SecretStoreError) as exc:
             logger.warning("session delete refused: the backup did not land (%s)", type(exc).__name__)
             raise SessionDeleteError("backup_failed") from exc
@@ -429,6 +498,55 @@ async def delete_leased(orch: Any, session_id: str, *, live: Iterable[str] | Non
     return result
 
 
+async def delete_lineage(orch: Any, session_id: str) -> dict:
+    """H440 review — the permanent delete of a whole conversation: ``session_id`` and every
+    session of its lineage (every branch), newest first (a chat is deleted before the one
+    it continues), each through :func:`delete_leased` — its own turn lease, its own backup
+    first.
+
+    Nothing is deleted when a chat is on any member (``active_session``), and a member a
+    chat opens while the run is under way is not deleted either: the live sessions are
+    read again before each member. A member that cannot be deleted stops the run; the
+    error carries ``deleted``, ``backups`` and ``pruned`` for what was done.
+
+    Older backups are pruned once, after the run, keeping the usual few conversations *on
+    top of* this one — so every backup the answer lists is on disk however long the
+    conversation was. Third review: the run's backups are one set (:func:`backup_sets`),
+    which later prunes — the next single delete, the lifecycle sweep — keep whole or
+    remove whole, never in part. The answer is the root's own delete result plus
+    ``deleted`` (ids, in order), ``backups`` and the real ``pruned``."""
+    from agents.core.env_config import env_int
+
+    members = getattr(orch.checkpoints, "lineage_members", None)
+    ids = (await asyncio.to_thread(members, session_id) if callable(members) else []) or [session_id]
+
+    def live() -> set:
+        return live_session_ids(orch) | {getattr(orch, "session_id", None)}
+
+    if set(ids) & live():
+        raise SessionDeleteError("active_session")
+    deleted: list[str] = []
+    backups: list[Any] = []
+    result: dict = {}
+    failure: SessionDeleteError | None = None
+    for sid in reversed(ids):
+        try:
+            result = await delete_leased(orch, sid, live=live(), prune=False)
+        except SessionDeleteError as exc:
+            failure = exc
+            break
+        deleted.append(sid)
+        backups.append(result.get("backup"))
+    pruned: list[str] = []
+    if deleted:
+        keep = env_int("JARVIS_SESSION_BACKUP_KEEP", BACKUP_KEEP_DEFAULT, minimum=1)
+        pruned = await asyncio.to_thread(prune_backups, default_backup_dir(), keep + 1)
+    if failure is not None:
+        failure.deleted, failure.backups, failure.pruned = deleted, backups, pruned
+        raise failure
+    return {**result, "session": session_id, "deleted": deleted, "backups": backups, "pruned": pruned}
+
+
 async def delete_expired(orch: Any, session_id: str, before: str, *, archived_before: str | None = None) -> dict:
     """H262 — retention's delete of one archived, unpinned session idle since before
     ``before`` and archived at or before ``archived_before`` (default: the grace before
@@ -447,6 +565,8 @@ async def delete_expired(orch: Any, session_id: str, before: str, *, archived_be
 
 __all__ = [
     "BACKUP_KEEP_DEFAULT", "BACKUP_SUFFIX", "CONFIRM", "MAX_AUTO_DAYS", "SETTING_AUTO_DAYS",
-    "SessionDeleteError", "auto_archive_days", "collect", "default_backup_dir", "delete_expired", "delete_leased",
+    "SessionDeleteError", "auto_archive_days", "backup_name", "backup_sets", "collect", "conversation_key",
+    "default_backup_dir", "delete_expired", "delete_leased",
+    "delete_lineage",
     "delete_session", "live_session_ids", "prune_backups", "read_backup", "run_auto_archive",
 ]

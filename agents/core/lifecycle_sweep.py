@@ -158,7 +158,10 @@ async def _retention(orch: Any, checkpoints: Any, root: Path, now: float, delete
             deleted_from.add("checkpoints")
             # Keep every backup this sweep may have written — one per delete attempt, a
             # failed one included (its backup lands before the failure) — on top of the
-            # usual few, so no deleted chat's backup is pruned in its own sweep.
+            # usual few, so no deleted chat's backup is pruned in its own sweep. H440
+            # third review: the count is in conversations (``session_archive.backup_sets``):
+            # the backups of a continued chat's sessions — this sweep's, an earlier
+            # delete's — are one set, kept whole or pruned whole.
             keep = env_int("JARVIS_SESSION_BACKUP_KEEP", session_archive.BACKUP_KEEP_DEFAULT, minimum=1)
             conv["backups_pruned"] = await asyncio.to_thread(
                 session_archive.prune_backups, session_archive.default_backup_dir(), keep + conv["attempts"])

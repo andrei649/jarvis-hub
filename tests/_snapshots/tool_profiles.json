@@ -1,6 +1,7 @@
 {
   "registry": [
     "canvas_point",
+    "delegate_task",
     "desktop_plan",
     "desktop_run",
     "echo",
@@ -37,6 +38,7 @@
     "terminal_run",
     "time",
     "todo",
+    "video_generate",
     "web_extract",
     "web_search"
   ],
@@ -65,6 +67,7 @@
       "terminal_run",
       "time",
       "todo",
+      "video_generate",
       "web_extract",
       "web_search"
     ],

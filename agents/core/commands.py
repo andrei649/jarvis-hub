@@ -111,8 +111,11 @@ class CommandOutcome:
     """What dispatch decided, so callers can log and record it honestly."""
 
     name: str
-    status: str  # answered | queued | refused | unknown | failed
+    status: str  # answered | queued | refused | unknown | failed | continue
     reply: str
+    #: ``continue`` only (H668 ``/plan``): what the turn goes on to send the model as the
+    #: user's message — a ``plan_commands.TurnRewrite``. Every other outcome ends the turn.
+    continuation: Any = None
 
 
 def _oversized(name: str, text: str) -> CommandOutcome | None:
@@ -230,6 +233,12 @@ class CommandRegistry:
             result = command.handler(CommandContext(orch=orch, principal=principal, name=name, args=args))
             if inspect.isawaitable(result):
                 result = await result
+            from .plan_commands import TurnRewrite
+
+            if isinstance(result, TurnRewrite):
+                if not principal.admin:          # only an owner command may continue a turn
+                    return self._observed(CommandOutcome(name, "refused", "Nothing changed."))
+                return self._observed(CommandOutcome(name, "continue", result.reply, continuation=result))
             return self._observed(CommandOutcome(name, "answered", str(result)))
         except Exception:
             logger.warning("slash command /%s failed", name, exc_info=True)
@@ -290,13 +299,12 @@ def _status(ctx: CommandContext) -> str:
     backend = getattr(getattr(orch, "llm_router", None), "name", None) or "none"
     agents = getattr(orch, "agents", None) or {}
     state = estop.get_state()
-    mode = None
-    get_setting = getattr(orch, "get_setting", None)
-    if callable(get_setting):
-        mode = get_setting("autonomy.mode", None)
+    from .autonomy.mode import global_mode
+
+    mode = global_mode(orch)     # H484: what the policy runs, never the raw setting
     lines = [
         f"Nerva {__version__} — backend {backend}, {len(agents)} agents loaded",
-        f"autonomy mode: {mode or 'auto'}",
+        f"autonomy mode: {mode}",
         (
             f"e-stop: ENGAGED since {state.get('engaged_at') or '?'} — {state.get('reason') or 'no reason given'}"
             if state is not None
@@ -311,19 +319,30 @@ def _status(ctx: CommandContext) -> str:
 
 def _sessions(ctx: CommandContext) -> str:
     checkpoints = getattr(ctx.orch, "checkpoints", None)
-    rows = checkpoints.get_sessions(limit=5) if checkpoints is not None else []
+    # H440: the sessions nobody continued yet — the newest part of a continued chat, not
+    # the parts before it — so every id printed is one to resume. Archived chats are not
+    # in this list, as they are not in the HUD's.
+    # Third review: as ``GET /sessions`` does, an imported or derived chat is the owner's
+    # alone (left out before the limit), and a continued session that was used again is
+    # listed — its later turns are in no continuation — and marked as an earlier part.
+    owner = bool(ctx.principal.admin)
+    rows = (checkpoints.get_sessions(limit=5, archived=False, native_only=not owner, hide_continuations=True)
+            if checkpoints is not None else [])
     if not rows:
         return "No sessions recorded."
     from agents.core.session_titles import title_fields
 
+    continued = getattr(checkpoints, "continued_sessions", None)
+    continued = continued([row.get("session_id") or row.get("id") for row in rows]) if callable(continued) else set()
     lines = []
     for row in rows:
         sid = row.get("session_id") or row.get("id") or "?"
         started = row.get("started_at") or ""
         # H413: a title is the opening words of the owner's conversation, so only the
         # owner sees it; a widget visitor or a paired guest gets the id and time.
-        title = title_fields(row.get("metadata"))["title"] if ctx.principal.admin else ""
-        lines.append(f"{sid}  {started}  {title}".rstrip())
+        title = title_fields(row.get("metadata"))["title"] if owner else ""
+        note = "  (earlier part, still in use)" if sid in continued else ""
+        lines.append(f"{sid}  {started}  {title}".rstrip() + note)
     return "Recent sessions:\n" + "\n".join(lines)
 
 
@@ -448,6 +467,12 @@ _REFINE_REFUSALS = {
     "review_unparsed": ("The local model's review was cut off or malformed, so nothing was kept. Raise "
                         "learning.review_max_tokens, or try a narrower focus."),
     "empty_conversation": "There is no conversation here to review yet.",
+    "not_owner": "Only the owner's own turns are reviewed; nothing was read or kept.",
+    "no_scope": "The review could not place this turn, so it did not run; nothing was kept.",
+    "foreign_history_not_promotable": ("This conversation was imported from another assistant; it is never "
+                                       "reviewed into memory or skills."),
+    "image_history_not_promotable": ("This conversation holds an image reading; it is never reviewed into "
+                                     "memory or skills."),
     "unavailable": "The learning reviewer is not available on this hub.",
 }
 
@@ -472,6 +497,9 @@ async def _refine(ctx: CommandContext) -> str:
     lines = [head, *[f"- {a}" for a in actions]]
     if any("patch proposed" in a for a in actions):
         lines.append("A skill change waits for your approval in the Decision Inbox.")
+    if any("memory write" in a and "proposed" in a for a in actions):
+        lines.append("Nothing was written to memory yet: read the held writes in Long-Term Memory "
+                     "(GET /api/memory/proposals) and approve or reject them there or in the Decision Inbox.")
     if any("quarantined" in a for a in actions):
         lines.append("A new skill waits in the pending skills list (SELF-IMPROVEMENT) until you approve it.")
     return "\n".join(lines)
@@ -487,18 +515,23 @@ _BTW_NO_MODEL = ("The side question could not be answered: it needs a local mode
 
 
 async def _btw(ctx: CommandContext) -> str:
-    """H414 — Hermes' ``/btw <question>``: a side question ABOUT this conversation,
-    answered beside it. The model sees a bounded, redacted snapshot of the session
-    (the one ``/refine`` reviews: newest turns first, commands and their replies left
-    out, secrets and personal data scrubbed line by line) and the question, once,
-    through ``run_oneshot`` on the auxiliary rail — strict-local, job pins excluded,
-    the auxiliary consent boundary. The orchestrator dispatches ``/btw`` before the
-    turn is appended, so neither the question nor the answer becomes a turn."""
+    """H414/H669 — Hermes' ``/btw <question>``: a side question ABOUT this conversation,
+    answered beside it by a **fork** that reads the whole conversation.
+
+    The fork replays every turn of the session (oldest first, each turn whole — no
+    per-turn cut), as much as the local model's window holds (``btw_fork_budget_chars``),
+    redacted turn by turn first (secrets and personal data scrubbed, as before), with
+    commands and their replies left out. It answers once through ``run_side_fork`` on the
+    strict-local auxiliary rail, which offers the model no tools, so the fork cannot act.
+    Its provider-certified usage is charged to the parent session in the cost ledger under
+    the purpose ``btw`` (``session_usage`` shows it beside the turns). The orchestrator
+    dispatches ``/btw`` before the turn is appended, so neither the question nor the
+    answer becomes a turn."""
     from agents.core.llm.auxiliary_text import (
         BTW_MAX_TOKENS,
         BTW_QUESTION_CHARS,
-        BTW_SNAPSHOT_CHARS,
-        run_oneshot,
+        resolve_btw_fork_budget,
+        run_side_fork,
     )
 
     question = " ".join((ctx.args or "").split())[:BTW_QUESTION_CHARS]
@@ -520,17 +553,17 @@ async def _btw(ctx: CommandContext) -> str:
     if router is None:
         return _BTW_NO_MODEL
     from agents.core.day_report import default_redactor
-    from agents.core.learning.background_review import REFINE_TURN_CHARS, conversation_snapshot
+    from agents.core.learning.background_review import conversation_snapshot
     from agents.core.llm.data_handling import DataHandlingRefused
     from agents.core.llm.job_selection import SelectionError
 
+    budget = await resolve_btw_fork_budget(router)
     turns = await memory.get_history(session)
-    # Redact each turn's WHOLE content before anything is cut: cutting first can split a
-    # key so that no pattern matches and its prefix survives (the Redactor's own rule).
-    # The snapshot then bounds each turn and the total, over text that is already clean;
-    # the redactor also folds whitespace, so a turn cannot forge a role line.
-    # Only the newest window that can fill the snapshot is redacted (a long history is not
-    # scanned whole on the event loop); each turn kept in it is redacted in full first.
+    # Redact each turn's WHOLE content before anything is bounded: cutting first can split
+    # a key so that no pattern matches and its prefix survives (the Redactor's own rule).
+    # Only the newest window that can fill the budget is redacted (a long history is not
+    # scanned whole on the event loop); the redactor also folds whitespace, so a turn
+    # cannot forge a role line.
     redact = default_redactor()
     window, used = [], 0
     for turn in reversed(list(turns or [])):
@@ -542,16 +575,23 @@ async def _btw(ctx: CommandContext) -> str:
             continue
         clean = redact(content, limit=max(1, len(content)))
         window.append(dict(turn, content=clean))
-        used += min(len(clean), REFINE_TURN_CHARS) + 16
-        if used > BTW_SNAPSHOT_CHARS:
+        used += len(clean) + 16
+        if used > budget:
             break
-    transcript = conversation_snapshot(window[::-1], limit=BTW_SNAPSHOT_CHARS, per_turn=REFINE_TURN_CHARS)
+    transcript = conversation_snapshot(window[::-1], limit=budget, per_turn=budget)
     if not transcript:
         return "There is no conversation here to ask about yet."
-    prompt = f"Conversation:\n{transcript}\n\nQuestion about this conversation: {question}"
+    from agents.core.turn_usage import detached_turn_usage, turn_usage_scope
+
     try:
-        answer = await run_oneshot(router, prompt, system=_BTW_SYSTEM, purpose="btw",
-                                   max_tokens=BTW_MAX_TOKENS, temperature=0.2)
+        # The fork's own collector, detached from any turn receipt: its usage is the
+        # parent session's, charged below under ``btw``.
+        with detached_turn_usage(), turn_usage_scope() as collector:
+            try:
+                answer = await run_side_fork(router, transcript, question, system=_BTW_SYSTEM,
+                                             max_tokens=BTW_MAX_TOKENS, temperature=0.2)
+            finally:
+                _charge_btw(str(session), collector.snapshot())
     except SelectionError:
         return "A job model pin is in force for this turn, and side questions do not run under one."
     except DataHandlingRefused as exc:
@@ -561,6 +601,26 @@ async def _btw(ctx: CommandContext) -> str:
         return _BTW_NO_MODEL
     answer = str(answer or "").strip()
     return answer or "The local model gave no answer to that."
+
+
+def _charge_btw(session_id: str, usage: dict) -> None:
+    """H669 — the fork's usage goes to the parent session under the ``btw`` purpose.
+    Counts the provider did not certify are recorded as unmeasured calls, never guessed."""
+    calls = usage.get("api_calls") if isinstance(usage, dict) else None
+    if type(calls) is not int or calls < 1:
+        return
+    try:
+        from agents.core import cost_tracker
+
+        inputs, outputs = usage.get("input_tokens"), usage.get("output_tokens")
+        if inputs is None or outputs is None:
+            cost_tracker.record_unmeasured("btw", session_id=session_id, purpose="btw", calls=calls)
+            return
+        cost_tracker.record("btw", int(inputs), int(outputs),
+                            model=usage.get("model") or cost_tracker.UNPRICED_MODEL,
+                            route="local", session_id=session_id, purpose="btw")
+    except Exception:  # noqa: BLE001 — accounting never fails the answer
+        logger.debug("/btw usage not recorded", exc_info=True)
 
 
 async def _recap(ctx: CommandContext) -> str:
@@ -589,6 +649,27 @@ async def _recap(ctx: CommandContext) -> str:
     if parsed and parsed[0] == "recap" and turns[-1].get("role") == "user":
         turns = turns[:-1]
     return render_recap(turns, exchanges=exchanges)["text"]
+
+
+async def _context_meter(ctx: CommandContext):
+    """H412 — what fills the window (``/context``), and what compaction does (``/compress``).
+    Both read the compaction loop's own policy object (``context_meter``); neither changes
+    the conversation."""
+    from .context_meter import MeterUnavailable, breakdown, compress_report, render
+
+    orch = ctx.orch
+    session = getattr(orch, "session_id", None)
+    if not session or getattr(orch, "memory", None) is None:
+        return "There is no conversation here to measure yet."
+    if not callable(getattr(orch, "_compaction_policy", None)):
+        return "The context meter is not available on this hub."
+    try:
+        meter = await breakdown(orch, str(session))
+    except MeterUnavailable as exc:
+        return f"The context meter could not run: {exc}."
+    if ctx.name == "compress":
+        return compress_report(meter)
+    return render(meter, expand=(ctx.args or "").strip().lower() in {"all", "full", "expand"})
 
 
 async def _kanban(ctx: CommandContext) -> str:
@@ -720,15 +801,249 @@ def _bundle(ctx: CommandContext) -> str:
             "send it as a message of its own. /bundles lists the bundles.")
 
 
+def _looser_note(approval_mode, orch, *, still: bool) -> str:
+    """The agents whose own override lets them ask less than the global mode, or ""."""
+    looser = approval_mode.looser_overrides(orch)
+    if not looser:
+        return ""
+    names = ", ".join(f"{agent}: {mode}" for agent, mode in sorted(looser.items()))
+    verb = "still asks less" if still else "asks less than the global mode"
+    if still:
+        return (f"A per-agent override {verb} than this for: {names}. "
+                "Change one with the HUD's per-agent mode control.")
+    return f"A per-agent override {verb} for: {names}."
+
+
+async def _approvals(ctx: CommandContext) -> str:
+    """H484 — Hermes' ``/approvals``: show or set the approval dial (``autonomy.mode``).
+
+    Bare shows the mode; ``auto``, ``ask`` or ``off`` sets it (Hermes' ``smart`` and
+    ``manual`` are read as ``auto`` and ``ask``). Every position only adds asking — there
+    is no word here that silences approvals, and ``off`` is the strictest position. The
+    write is the audited one the admin route makes (``autonomy.mode.set_global_mode``);
+    the owner is re-checked here, at the side-effect boundary, as well as by the tier.
+    A reply states only what holds: the mode the live policy runs after the write."""
+    import asyncio
+
+    from .autonomy import mode as approval_mode
+
+    usage = f"Usage: /approvals [{approval_mode.USAGE}]"
+    current = approval_mode.global_mode(ctx.orch)
+    words = (ctx.args or "").split()
+
+    def recalled(still: bool) -> str:
+        count = getattr(getattr(ctx.orch, "autonomy_queue", None), "recalled_waiting", None)
+        try:
+            waiting = int(count()) if callable(count) else 0
+        except Exception:  # noqa: BLE001 — a count that cannot be read is not reported
+            waiting = 0
+        if not waiting:
+            return ""
+        tasks = "1 task" if waiting == 1 else f"{waiting} tasks"
+        verb = ("is" if waiting == 1 else "are") + (" still" if still else "")
+        return (f"{tasks} recalled by off {verb} waiting in your inbox"
+                + ("; they do not resume by themselves." if still else "."))
+
+    if not words:
+        lines = [f"Approval mode: {current} — {approval_mode.meaning(current)}."]
+        overrides = approval_mode.agent_modes(ctx.orch)
+        if overrides:
+            listed = ", ".join(f"{agent}: {mode}" for agent, mode in sorted(overrides.items()))
+            lines.append(f"Per-agent overrides: {listed}."
+                         + (" None applies while the global mode is off." if current == "off" else ""))
+        looser = _looser_note(approval_mode, ctx.orch, still=False)
+        if looser:
+            lines.append(looser)
+        if recalled(False):
+            lines.append(recalled(False))
+        lines.append("No position turns approvals off: the kernel's owner-approval floor asks "
+                     f"in every mode. {usage}")
+        return "\n".join(lines)
+    if not ctx.principal.admin:
+        return "Only the owner can change the approval mode; nothing changed."
+    wanted = approval_mode.parse_requested(words[0]) if len(words) == 1 else None
+    if wanted is None:
+        return f"{usage}\nApproval mode remains {current}; nothing changed."
+    actor = f"{ctx.principal.channel}:{ctx.principal.sender or 'owner'}"
+    try:
+        result = await asyncio.to_thread(
+            approval_mode.set_global_mode, ctx.orch, wanted, actor=actor, surface="chat")
+    except approval_mode.ModeManaged as exc:      # G1: name the administrator's file
+        return f"Approval mode remains {approval_mode.global_mode(ctx.orch)}; {exc}."
+    except Exception:  # noqa: BLE001 — a store that refused the write: say what still holds
+        logger.warning("/approvals: the mode could not be saved", exc_info=True)
+        return (f"Approval mode remains {approval_mode.global_mode(ctx.orch)}; "
+                "the requested value did not become effective.")
+    live = approval_mode.global_mode(ctx.orch)
+    if live != wanted:
+        return (f"Approval mode remains {live}; the requested value did not become effective: "
+                f"the settings store holds {live} (another write, or a store that could not be "
+                "read back). The stricter mode stays in force.")
+    lines = [f"Approval mode: {live} (persistent setting) — {approval_mode.meaning(live)}."]
+    if live == "off":
+        lines.append("This is the strictest position, and no per-agent override loosens it: Nerva has "
+                     "no position that turns approvals off. Work approved by anything but you (the "
+                     "policy, the smart reviewer, a standing consent) returns to your inbox instead of "
+                     "running, and waits there until you decide it — also after you leave off.")
+    looser = _looser_note(approval_mode, ctx.orch, still=True)
+    if looser:
+        lines.append(looser)
+    if result["was"] == "off" and live != "off" and recalled(True):
+        lines.append(recalled(True))
+    if not result["audited"]:
+        lines.append("The change is in effect, but it could not be recorded in the audit log.")
+    return "\n".join(lines)
+
+
+_MEMORY_USAGE = "Usage: /memory pending | approve <id|all> | reject <id|all> | approval [on|off]"
+
+
+def _memory_age(seconds) -> str:
+    if not isinstance(seconds, (int, float)):
+        return "?"
+    if seconds < 3600:
+        return f"{int(seconds // 60)} min"
+    if seconds < 86400:
+        return f"{int(seconds // 3600)} h"
+    return f"{int(seconds // 86400)} d"
+
+
+async def _memory(ctx: CommandContext) -> str:
+    """H443 — Hermes' ``/memory pending | approve | reject | approval``: the memory writes the
+    post-turn review (or a /refine) holds for the owner. Owner-only and DM-only: a group
+    never reads or decides the owner's held facts, and a non-owner is refused here as well
+    as by the tier. A decision goes through the same settle path as the HUD and the API
+    (the proposal's own card, applied once); switching approval goes through the audited
+    writer the route uses. A fact's text is shown only where it came from, or on the
+    hub's own screen (the verbose notification rule); elsewhere, counts."""
+    import asyncio
+
+    from .action_origin import OPERATOR_TURN_CHANNELS
+    from .learning import memory_proposals as mp
+    from .learning.review_policy import STAGE_REASONS
+
+    if not ctx.principal.admin:
+        return "Only the owner can read or decide held memory writes; nothing changed."
+    if ctx.principal.scope != "dm":
+        return ("Held memory writes are the owner's: /memory answers only in a direct conversation "
+                "with you, never in a group. Nothing was read or changed.")
+    orch = ctx.orch
+    store = getattr(orch, "memory_proposals", None)
+    words = (ctx.args or "").split()
+    sub = words[0].lower() if words else "pending"
+    if sub == "approval":
+        if len(words) == 1:
+            on = await asyncio.to_thread(mp.write_approval_required)
+            return (f"Memory write approval is {'on' if on else 'off'}: the post-turn review and /refine "
+                    + ("ask before they write memory." if on else
+                       "write on their own, except from a conversation that read untrusted content or "
+                       "was not watched from its start.")
+                    + " The model's memory tool and /api/memory/remember are not held by it.")
+        wanted = {"on": True, "off": False}.get(words[1].lower()) if len(words) == 2 else None
+        if wanted is None:
+            return _MEMORY_USAGE
+        actor = f"{ctx.principal.channel}:{ctx.principal.sender or 'owner'}"
+        try:
+            await asyncio.to_thread(mp.set_write_approval, wanted, audit=getattr(orch, "intent_log", None),
+                                    actor=actor)
+        except Exception:
+            logger.warning("/memory approval: the gate could not be changed", exc_info=True)
+            now = await asyncio.to_thread(mp.write_approval_required)
+            return (f"Memory write approval stays {'on' if now else 'off'}: the change or its audit "
+                    "record could not be saved.")
+        now = await asyncio.to_thread(mp.write_approval_required)
+        return f"Memory write approval is now {'on' if now else 'off'}."
+    if store is None:
+        return "Held memory writes are not available on this hub."
+    settle = getattr(orch, "settle_memory_proposals", None)
+    if callable(settle):
+        await settle()
+    records = await asyncio.to_thread(store.list)
+    waiting = [rec for rec in records if rec.get("status") in (mp.STATUS_PENDING, mp.STATUS_APPLYING)]
+    if sub == "pending" and len(words) == 1:
+        stats = await asyncio.to_thread(store.stats)
+        if not waiting:
+            lines = ["No memory writes are waiting for you."]
+        else:
+            lines = [f"{len(waiting)} memory write proposal(s) wait for you "
+                     f"(oldest {_memory_age(stats.get('oldest_pending_age_s'))}):"]
+        here = str(ctx.principal.channel or "").strip().lower()
+        local = here in OPERATOR_TURN_CHANNELS
+        current = str(getattr(orch, "session_id", "") or "default")
+        for rec in waiting[:20]:
+            ops = rec.get("operations") or []
+            why = STAGE_REASONS.get(str(rec.get("reason")), str(rec.get("reason") or "held"))
+            lines.append(f"- {rec['id']}: {len(ops)} fact(s), {why}"
+                         + (" [approved, retrying]" if rec.get("status") == mp.STATUS_APPLYING else ""))
+            if local or rec.get("session_id") == current:
+                for op in ops[:12]:
+                    text = " ".join(str(op.get("text") or "").split())
+                    lines.append(f"    {mp.TARGET_LABELS.get(op.get('target'), op.get('target'))}: "
+                                 f"\u201c{text[:80]}{'\u2026' if len(text) > 80 else ''}\u201d")
+        if len(waiting) > 20:
+            lines.append(f"\u2026 and {len(waiting) - 20} more (Long-Term Memory in the HUD lists them all).")
+        if stats.get("dropped_at_cap"):
+            lines.append(f"{stats['dropped_at_cap']} held write(s) were not kept because "
+                         f"{stats.get('max_pending')} were already waiting.")
+        if waiting:
+            lines.append("Decide with /memory approve <id|all> or /memory reject <id|all>.")
+        return "\n".join(lines)
+    if sub in ("approve", "reject") and len(words) == 2:
+        approved = sub == "approve"
+        target = words[1]
+        chosen = [rec["id"] for rec in waiting if rec.get("status") == mp.STATUS_PENDING] if target == "all" \
+            else [target]
+        if not chosen:
+            return "No memory writes are waiting for you; nothing changed."
+        decide = getattr(orch, "decide_memory_proposal", None)
+        if not callable(decide):
+            return "Held memory writes cannot be decided on this hub; nothing changed."
+        by = f"{ctx.principal.channel}:{ctx.principal.sender or 'owner'}"
+        lines = []
+        for pid in chosen[:mp.MAX_PENDING]:
+            if not ctx.principal.admin:          # the owner, re-checked at the write
+                return "Only the owner can decide held memory writes."
+            result = await decide(pid, approved, by=by)
+            reason = str(result.get("reason") or "")
+            if reason == "unknown_proposal":
+                lines.append(f"- {pid}: no such held write")
+            elif approved and result.get("applied"):
+                lines.append(f"- {pid}: approved, {result.get('written', 0)} written")
+            elif approved and result.get("status") == mp.STATUS_FAILED:
+                lines.append(f"- {pid}: approved, nothing written (memory is off, or every fact was refused)")
+            elif not approved and result.get("status") == mp.STATUS_REJECTED:
+                lines.append(f"- {pid}: rejected, nothing written")
+            elif reason == "apply_incomplete":
+                lines.append(f"- {pid}: approved, not written yet (a memory file was busy); it is retried")
+            elif reason.startswith("not_pending:"):
+                # Decided elsewhere first (the HUD, another command): say how, not "not decided".
+                status = reason.split(":", 1)[1]
+                done = {mp.STATUS_APPLIED: "approved and written", mp.STATUS_APPLYING: "approved, being written",
+                        mp.STATUS_REJECTED: "rejected", mp.STATUS_EXPIRED: "expired",
+                        mp.STATUS_FAILED: "approved, nothing written"}.get(status, status or "closed")
+                lines.append(f"- {pid}: already decided ({done})")
+            else:
+                lines.append(f"- {pid}: not decided ({reason or result.get('status') or 'unknown'})")
+        return "\n".join(lines)
+    return _MEMORY_USAGE
+
+
 def build_default_registry() -> CommandRegistry:
     from .checkpoint_commands import checkpoint_command
     from .goal_commands import goal_command, subgoal_command
+    from .plan_commands import plan_command
+    from .review_command import review_command
+    from .session_loops import loop_command
+    from .verify.command import verify_command
+    from .worktree_commands import delegations_command, worktree_command
 
     registry = CommandRegistry()
     registry.register(SlashCommand("help", "the commands you can use here", _help))
     registry.register(SlashCommand("whoami", "your platform, scope, sender id, tier and the commands you can run",
                                    _whoami))
     registry.register(SlashCommand("status", "backend, agents, autonomy mode, e-stop", _status))
+    registry.register(SlashCommand("approvals", "show or set how much runs without asking (the approval mode)",
+                                   _approvals, tier=ADMIN, usage="[auto|ask|off]"))
     registry.register(SlashCommand("sessions", "the five most recent sessions", _sessions))
     registry.register(SlashCommand("new", "start a fresh conversation and save this one", _session_change, tier=ADMIN))
     registry.register(SlashCommand("reset", "same as /new", _session_change, tier=ADMIN))
@@ -746,6 +1061,8 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("personality", "switch this conversation's personality preset", _personality,
                                    tier=ADMIN, usage="[<name>|none|default|global <name|none>]"))
     registry.register(SlashCommand("refine", "review this conversation now for memories and skill changes", _refine, tier=ADMIN, usage="[focus]"))
+    registry.register(SlashCommand("memory", "memory writes waiting for your approval: pending, approve, reject, approval",
+                                   _memory, tier=ADMIN, usage="pending | approve <id|all> | reject <id|all> | approval [on|off]"))
     registry.register(SlashCommand("bundles", "your skill bundles, and how to load one into a turn", _bundles,
                                    tier=ADMIN))
     registry.register(SlashCommand("bundle", "load every skill of a bundle into this turn (/<bundle> works too)",
@@ -765,6 +1082,28 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("subgoal", "add an acceptance criterion to the running goal",
                                    subgoal_command, tier=ADMIN,
                                    usage="[run id] <criterion> | remove <N> | clear"))
+    registry.register(SlashCommand("plan", "plan mode: only reads run here, and the plan is saved as a file",
+                                   plan_command, tier=ADMIN, usage="[task] | status | off"))
+    registry.register(SlashCommand("loop", "repeat a prompt in this conversation on a cadence, or self-paced",
+                                   loop_command, tier=ADMIN,
+                                   usage="[interval] <prompt> [--times N] [--until <cond>] | status | pause | resume | stop"))
+    registry.register(SlashCommand("proactive", "same as /loop", loop_command, tier=ADMIN,
+                                   usage="[interval] <prompt> | status | pause | resume | stop"))
+    registry.register(SlashCommand("context", "what fills the model's window in this conversation",
+                                   _context_meter, tier=ADMIN, usage="[all]"))
+    registry.register(SlashCommand("compress", "what compaction does to this conversation now (it changes nothing)",
+                                   _context_meter, tier=ADMIN))
+    registry.register(SlashCommand("verify", "detect, save and run a project's test/build recipe; its evidence",
+                                   verify_command, tier=ADMIN,
+                                   usage="[status|detect|save|run [phases]|ledger] [path] | on-stop on|off | coding auto|on|off"))
+    # G18 — worktrees (H474), the read-only reviewer (H404), durable delegation results (H401).
+    registry.register(SlashCommand("worktree", "work in a git worktree of your own; list or reclaim the project's trees",
+                                   worktree_command, tier=ADMIN,
+                                   usage="new [name] [--from <branch>] | off | status | list | prune [--apply] [--max-age <h>]"))
+    registry.register(SlashCommand("review", "a read-only reviewer sub-agent reviews this conversation's work and diff",
+                                   review_command, tier=ADMIN, usage="[--branch <name>] [--wait] [focus]"))
+    registry.register(SlashCommand("delegations", "sub-agents that ran, and their results (each delivered once)",
+                                   delegations_command, tier=ADMIN, usage="[list|collect]"))
     return registry
 
 

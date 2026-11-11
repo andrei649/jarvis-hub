@@ -37,7 +37,7 @@ function SignalLayerDown({ onRetry }) {
       <div>
         <div className="cn">Signal Layer unavailable</div>
         <div className="cd" style={{ lineHeight: 1.55 }}>
-          Start Jarvis with <b>START.bat</b> or <b>./start.sh</b>, then check <b>http://127.0.0.1:8787/healthz</b>. Replay mode is the Sunday-safe path and needs no WorldMonitor or API keys.
+          Start Nerva with <b>START.bat</b> or <b>./start.sh</b>, then check <b>http://127.0.0.1:8787/healthz</b>. Replay mode is the Sunday-safe path and needs no WorldMonitor or API keys.
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
           <Pill kind="gated">NO LIVE PANEL DATA</Pill>
@@ -105,9 +105,9 @@ export function WorldIntelligencePanel() {
         <div>
           <SubH>RECOMMENDATIONS · preview</SubH>
           {(brief.recommendations || []).slice(0, 5).map((rec, index) => (
-            <Cap key={index} title={rec.label || String(rec)} detail="Preview only. Route through Jarvis approval before action." tag={rec.requiresApproval ? 'APPROVAL' : 'INFO'} kind={rec.requiresApproval ? 'gated' : 'allow'} />
+            <Cap key={index} title={rec.label || String(rec)} detail="Preview only. Route through Nerva approval before action." tag={rec.requiresApproval ? 'APPROVAL' : 'INFO'} kind={rec.requiresApproval ? 'gated' : 'allow'} />
           ))}
-          {!(brief.recommendations || []).length && <Cap title="No recommendations loaded" detail="Jarvis will wait for the next brief payload." tag="NONE" />}
+          {!(brief.recommendations || []).length && <Cap title="No recommendations loaded" detail="Nerva will wait for the next brief payload." tag="NONE" />}
 
           <SubH style={{ marginTop: 16 }}>PROVIDER HEALTH</SubH>
           <Cap title="Signal Layer" detail={data.baseUrl || 'http://localhost:8787'} tag={health.ok ? 'ONLINE' : 'UNKNOWN'} kind={health.ok ? 'allow' : 'gated'} />
