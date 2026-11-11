@@ -92,6 +92,12 @@ class WebhookChannel(ChannelAdapter):
             return False
         transport = await self._get_transport()
         try:
+            if not await self.before_send(spec, kwargs):
+                return False
+        except Exception:
+            logger.warning("%s pre-send check failed; not sent", self.channel_id, exc_info=True)
+            return False
+        try:
             resp = await transport.request(spec["method"], spec["url"],
                                            headers=spec.get("headers"), json=spec.get("json"))
             if hasattr(resp, "raise_for_status"):
@@ -126,6 +132,11 @@ class WebhookChannel(ChannelAdapter):
         """Provider hook: what the payload alone does not say but the provider's API does
         (Matrix: whether the room is a DM). Never raises; the default adds nothing."""
         return parsed
+
+    async def before_send(self, spec: dict, kwargs: dict) -> bool:
+        """Provider hook: a last check before the request leaves (Matrix: never plaintext
+        into an end-to-end encrypted room). False drops the send; the default allows it."""
+        return True
 
     async def _get_transport(self):
         if self._transport is None:  # pragma: no cover - real network path
@@ -228,6 +239,14 @@ class MatrixChannel(WebhookChannel):
     def parse_inbound(self, payload):
         events = payload.get("events") if isinstance(payload, dict) else None
         ev = (events[0] if events else payload) or {}
+        if ev.get("type") == "m.room.encrypted":
+            # H127: an end-to-end encrypted event this hub cannot decrypt is counted and
+            # logged, never answered (a plaintext reply would downgrade the room).
+            from .matrix_e2ee import note_undecryptable
+
+            room = ev.get("room_id") or self.config.get("default_room") or ""
+            note_undecryptable(room if isinstance(room, str) else "")
+            return None
         if ev.get("type") not in (None, "m.room.message"):
             return None
         text = (ev.get("content") or {}).get("body", "")
@@ -285,6 +304,28 @@ class MatrixChannel(WebhookChannel):
                 members[user] = membership
         return (sender != self._own_user_id
                 and members == {sender: "join", self._own_user_id: "join"})
+
+    async def before_send(self, spec, kwargs):
+        """H127: never a plaintext message into an end-to-end encrypted room. The room's
+        encryption state is asked of the homeserver (unknown = encrypted); while this hub
+        cannot encrypt, such a send is refused unless the owner set ``encrypted_rooms`` to
+        ``allow_plaintext`` (``matrix_e2ee.send_decision``)."""
+        from . import matrix_e2ee
+
+        room = kwargs.get("room_id") or self.config.get("default_room")
+        hs = (self.config.get("homeserver", "") or "").rstrip("/")
+        token = self.config.get("token", "")
+        if not (_matrix_id(room, "!") and hs):
+            logger.warning("matrix send refused: room id is not a Matrix room id")
+            return False
+        state = await matrix_e2ee.room_encryption(await self._get_transport(), hs, token, room)
+        decision = matrix_e2ee.send_decision(state, self.config)
+        if not decision.allowed:
+            logger.warning("matrix send refused in %s: %s", room[:64], decision.reason)
+            return False
+        if decision.reason == "plaintext_allowed_by_owner":
+            logger.info("matrix: plaintext into encrypted room %s (owner allowed)", room[:64])
+        return True
 
     async def _get_json(self, url: str, token: str) -> Optional[dict]:
         transport = await self._get_transport()

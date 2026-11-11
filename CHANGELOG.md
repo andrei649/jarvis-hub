@@ -4,6 +4,16 @@
 
 ### What changed for you — 2026-11-11
 
+**Matrix: no plain text into encrypted rooms**
+- Before Nerva writes to a Matrix room it checks whether the room is end-to-end encrypted.
+  Nerva cannot encrypt Matrix messages yet, so it no longer posts plain text into an
+  encrypted room (other members would see "not encrypted"). You can allow it per channel
+  (`"encrypted_rooms": "allow_plaintext"`), or run a local encryption proxy such as
+  pantalaimon and set `"encrypted_rooms": "proxy"`.
+- Encrypted messages Nerva cannot read are counted and logged instead of vanishing.
+- Device and cross-signing trust you compared out of band is kept encrypted on disk:
+  `python -m agents.core.channels.matrix_e2ee verify …` (see `docs/FLAGS.md`).
+
 **Guests never spend your keys**
 - A turn from someone other than you (a household token in the HUD, a paired Telegram sender,
   another OpenAI-API key) uses none of your credentials: no cloud model key, no MCP server's

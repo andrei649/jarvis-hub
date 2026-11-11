@@ -8,7 +8,7 @@ ID-urile H001–H697 sunt poziții în inventarul înghețat, validate prin hash
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
 | [cli](#area-cli) — Command line: jobs done through the nerva CLI | own | 56 | 15 | 36 | 3 | 2 | 0 | 109 | seed din dovezi |
 | [gateway](#area-gateway) — Always-on gateway and slash commands | own/run | 33 | 3 | 27 | 1 | 2 | 0 | 103 | seed din dovezi |
-| [platforms](#area-platforms) — Messaging platforms and channels | own | 39 | 3 | 29 | 1 | 6 | 0 | 40 | seed din dovezi |
+| [platforms](#area-platforms) — Messaging platforms and channels | own | 39 | 3 | 30 | 0 | 6 | 0 | 41 | seed din dovezi |
 | [web](#area-web) — Web dashboard and HUD | own/run | 40 | 13 | 24 | 1 | 2 | 0 | 67 | seed din dovezi |
 | [desktop](#area-desktop) — Desktop app: jobs done in the HUD and Tauri shell | own | 54 | 5 | 46 | 1 | 2 | 0 | 52 | seed din dovezi |
 | [tui](#area-tui) — Terminal UI: jobs done in the HUD and nerva CLI | own | 25 | 2 | 19 | 2 | 2 | 0 | 25 | **subțire**, seed din dovezi |
@@ -141,7 +141,7 @@ Lane: own/run. Suită: 103 intrări (seed din dovezi); 26/31 rânduri reevaluate
 
 ## platforms — Messaging platforms and channels
 
-Lane: own. Suită: 40 intrări (seed din dovezi); 30/33 rânduri reevaluate citează un test din suită.
+Lane: own. Suită: 41 intrări (seed din dovezi); 30/33 rânduri reevaluate citează un test din suită.
 
 | ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
 |---|---|---|---|---|---|
@@ -182,7 +182,7 @@ Lane: own. Suită: 40 intrări (seed din dovezi); 30/33 rânduri reevaluate cite
 | <a id="h124"></a>H124 | Long-tail protocol adapters (IRC, LINE, SimpleX, Mattermost, Raft, Buzz) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
 | <a id="h125"></a>H125 | iMessage reach (Photon/BlueBubbles sidecar) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
 | <a id="h126"></a>H126 | Slack-native AI-app surfaces (Agent view, task cards, suggested prompts, thread titles, Block Kit) | skip | Parțial | Reevaluat | - chat.startStream native streaming where the streamed message is the final message - native plan/task cards with per-tool running/complete/error rows keyed by (team, channel, thread_ts) - up to four suggested prompts via assistant.threads.setSuggestedPrompts - automatic thread titles from the first user message - app_context_changed handling (viewed channel as a label only) - Block Kit rich_blocks rendering for ordinary replies - feedback buttons - tests for each [d1](../agents/core/channels/slack.py) [d2](../tests/test_pending_input_slack_transport.py) |
-| <a id="h127"></a>H127 | Transport-level end-to-end encryption (Matrix E2EE, cross-signing) | skip | Lipsă | Reevaluat | - Matrix E2EE (Olm/Megolm) send and receive with device-key storage inside the vault/secret path - cross-signing verification via a recovery key - proxy mode for platforms where native E2EE fails - tests for encrypted round-trip and verification [d1](../agents/core/channels/webhook_channels.py) [d2](../tests/test_webhook_channels_h12_16.py) |
+| <a id="h127"></a>H127 | Transport-level end-to-end encryption (Matrix E2EE, cross-signing) | skip | Parțial | Reevaluat | - Olm/Megolm encryption and decryption: no backend is pinned (matrix-nio\[e2e\], python-olm or vodozemac would have to be added to the hash-pinned requirements); can_encrypt() stays False and encrypted rooms are refused or go through the owner's local proxy - device-key upload, one-time keys, to-device room-key sharing and the per-device send fan-out that consumes the verification state - server-side key backup and secret-storage recovery via MATRIX_RECOVERY_KEY (AES-CTR/HMAC SSSS), interactive SAS emoji verification - not verified against a live homeserver or a live pantalaimon [d1](../agents/core/channels/matrix_e2ee.py) [d2](../agents/core/channels/webhook_channels.py) [d3](../docs/FLAGS.md) |
 | <a id="h128"></a>H128 | Agent-facing platform administration tools (act on the platform, not just chat in it) | skip | Exclus intenționat | Audit 07.09 | Preluat din auditul 07.09; nereevaluat în această livrare.  |
 
 <a id="area-web"></a>

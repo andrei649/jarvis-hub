@@ -128,6 +128,16 @@ Reality notes per channel:
   signature verification is deliberately a host seam — front it with the signed-
   webhook path in production (`integrations.py:217`). Outbound Teams/Google Chat
   need an incoming-webhook URL in config.
+- **Matrix end-to-end encryption (H127):** before a send, the hub asks the homeserver
+  whether the room is encrypted (an answer it cannot read counts as encrypted). Nerva has
+  no Olm/Megolm backend (none is pinned), so a send into an encrypted room is **refused**
+  unless the `matrix` config sets `"encrypted_rooms": "allow_plaintext"` (the message then
+  shows as unencrypted to the room) or `"encrypted_rooms": "proxy"` with a loopback
+  `homeserver` URL pointing at a local E2EE proxy such as pantalaimon, which encrypts for
+  this client. Encrypted inbound events are counted and logged, never answered.
+  `"allow_unverified_devices": true` will relax the device check once encryption exists.
+  Device and cross-signing trust: `python -m agents.core.channels.matrix_e2ee
+  verify|verify-master|revoke|devices|status` (encrypted store `<data>/matrix/crypto_store.enc`).
 - **Governance applies regardless:** inbound senders thread through the pairing
   gate (`agents/core/channels/gateway.py:65`); outbound is rate-limited only if
   you opt in (`webhook_channels.py:66`, unlimited by default). iMessage is
