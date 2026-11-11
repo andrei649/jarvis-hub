@@ -11,7 +11,7 @@ H624 (safe update apply), H224 (terminal keyboard model) and H658 (remote room m
 independent adversarial review, fixed, and their reviewers' repro tests re-run before merging. All three stay
 `partial`; their remaining work is in `docs/hermes/assessment.json`.
 
-## 2. Hermes rows still `missing` (11)
+## 2. Hermes rows still `missing` (8)
 
 | Rows | Why open | Next step |
 |---|---|---|
