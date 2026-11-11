@@ -8,6 +8,7 @@ import { playTts } from './api/actions';
 import { SaveArtifactButton } from './artifacts';
 import { VoiceOrb } from './orb';
 import { Markdown } from './markdown';
+import { TurnApprovals, TurnTools } from './turn-tools';
 import { MicLeases } from './mic-leases';
 import { StatusStrip, type TurnOutcome } from './turn-outcome';
 import type { PowerState } from './power-chip';
@@ -94,7 +95,9 @@ function Conversation({ messages, thinking, onStop, onProv, onArtifactSaved, lan
                 </span>
               )}
             </div>
+            <TurnTools tools={m.tools} />
             <div className="bubble"><Bubble text={m.text} /></div>
+            <TurnApprovals ids={m.approvals} />
             {m.prov && (
               <div className="prov-chip" onClick={()=>onProv(m.prov)}>
                 <Icon d={ICONS.shield} size={12}/>

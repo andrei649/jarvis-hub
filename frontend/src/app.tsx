@@ -13,6 +13,7 @@ import { localityFigure } from './locality';
 import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
 import { TopBar, Ticker, Rail, RailDrawer, Tabs, RosterColumn, ContextColumn, Palette, Ambient, CinemaMesh, MODES, useRailCollapsed } from './shell';
 import { PageHeaderBar, PageHeaderProvider } from './page-header';
+import { approvalIds, mergeToolEvent } from './turn-tools';
 
 /** H132 — the page header's title: the mode's own label from the rail. */
 function modeTitle(mode: string, t: any): string {
@@ -442,7 +443,7 @@ function App({ floating = false, shortcuts, onWorld }: {
     setCenterTab('conversation');
     setThinking({ label: t.think + ' · routing', route: null });
     const updateBubble=(change:(message:any)=>any)=>setMessages((messages)=>messages.map(message=>message._turnId===id?change(message):message));
-    postStream('/chat/stream', { message: text, agent: activeId,
+    postStream('/chat/stream', { message: text, agent: activeId, tool_events: true,
       ...(sessionId.current ? { session_id: sessionId.current } : {}) }, (evt) => {
       if(closed||epoch!==turnEpoch.current||ctl.signal.aborted)return;
       if (evt.type === 'start') {
@@ -458,6 +459,9 @@ function App({ floating = false, shortcuts, onWorld }: {
         // No-op unless a voice turn opened a session (typed turns stay silent).
         try { if(source==='voice')voiceRef.current?.pushSpeakDelta(evt.text || ''); } catch { /* never break the stream over TTS */ }
         updateBubble(message=>({...message,text:streamed}));
+      } else if (evt.type === 'tool') {
+        // H137 — one card per tool call, updated in place (no arguments or results ride here).
+        updateBubble(message=>({...message,tools:mergeToolEvent(message.tools,evt.event)}));
       } else if (evt.type === 'outcome_progress') {
         if (id === latestTextTurn.current) setCurrentOutcome(turnOutcome(evt.outcome));
       } else if (evt.type === 'end') {
@@ -479,7 +483,7 @@ function App({ floating = false, shortcuts, onWorld }: {
           }
           setMessages([{ role: 'agent', who: evt.agent || activeId, role_label: '', ts: fmtTimeShort(new Date()), text: finalText }]);
         } else {
-          updateBubble(message=>({...message,text:finalText,who:evt.agent||activeId}));
+          updateBubble(message=>({...message,text:finalText,who:evt.agent||activeId,approvals:approvalIds(evt.pending_approvals)}));
         }
         // H674: what the owner should know beside the reply (e.g. the summary was deferred).
         const notes = noticeMessages(evt, fmtTimeShort(new Date()));

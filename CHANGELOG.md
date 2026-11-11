@@ -4,6 +4,13 @@
 
 ### What changed for you — 2026-11-11
 
+**See what Nerva ran while it answers**
+- In the browser chat, each tool a reply uses appears as a small card above the reply
+  (running, done, failed), updated as the turn goes. Only the tool's name and state are
+  shown, never its inputs or output.
+- When a reply asked for something that needs your decision, the reply says so and names
+  the cards, with a link to the Decision Inbox.
+
 **The mode rail folds, and becomes a menu on a phone**
 - The `»` / `«` button at the top of the rail widens it with labels beside the icons or
   folds it back; the choice is remembered in this browser.
