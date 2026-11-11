@@ -477,6 +477,7 @@
         "tests/test_confirm_tiers.py",
         "tests/test_estop.py",
         "tests/test_extension_activation_routes.py",
+        "tests/test_g21_ops_surfaces.py",
         "tests/test_h011_terminal_queue_integration.py",
         "tests/test_h10_8_webhooks.py",
         "tests/test_h12_19_pairing.py",

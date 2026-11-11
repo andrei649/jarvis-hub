@@ -211,6 +211,7 @@ RULES = [
     ("/api/subagents", "agents"),  # H20.6
     # admin (settings / env / models / llm lifecycle / oauth / oracle / plugins / voice / prompts / stats)
     ("/api/admin/", "admin"),
+    ("/api/files/", "admin"),  # G21 (H142): the owner's file browser (Files panel)
     ("/plugins", "admin"),
     ("/api/plugins/extensions", "admin"),  # S1 inspection view pending below; CLI exists
     ("/api/models", "admin"),

@@ -4,6 +4,19 @@
 
 ### What changed for you — 2026-11-11
 
+**Your files in the HUD**
+- New Console panel **Files** (Admin group): browse the folders you approve, read a text file,
+  download a file, upload new files (pick them or drop them on the list) and make folders. By
+  default it shows Nerva's own `workspace`, `outputs` and `reports` folders; list others in
+  `JARVIS_FILE_BROWSER_DIRS`. Your home folder, `/`, Nerva's data folder and code, and anything
+  holding keys or settings can never be one of them.
+- Keys, passwords, tokens, `.env`, SSH and GPG folders, databases and hidden files are never
+  shown, read or written, even inside an approved folder; the list says how many it hid. Links
+  are never followed and a file with a second name (a hard link) is never read. Up to 100 MB per
+  file (`JARVIS_FILE_BROWSER_MAX_BYTES`). An upload never replaces an existing file.
+- Rename and delete are never done on the click: each becomes a card in your decision inbox and
+  happens only when you accept it, and only if the file is still the one on the card.
+
 **Files and voice notes in Telegram replies, and SMS as a channel**
 - When Nerva makes a file for you (a chart, an image, a report, a recording), it can now send it
   in the Telegram chat after its answer, instead of telling you where it saved it. Only files in

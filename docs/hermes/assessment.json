@@ -2447,12 +2447,14 @@
     {
       "id": "H142",
       "row_sha256": "aa88835ad68fc3a149b9e905c188e642651e1a6723f6b39169b260fdaf0bf8c0",
-      "status": "missing",
-      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): There is still no host file manager. No router serves `/api/files*` or a listing, upload, mkdir, download or delete over host paths. The only file-shaped routes are the encrypted blob vault (agents/core/routers/vault.py:81-132), workspace documents (agents/core/routers/workspace_documents.py:82) and the artifact store, and none of them browses the filesystem.",
-      "remaining": "- A browse route with server-canonicalised paths and `..` navigation, under a policy of a locked versus browsable root\n- A credential denylist (`.env`, `auth.json`, `credentials`, `config.yaml`, `mcp-tokens/`, `pairing/`) applied to listing and read\n- Chunked multipart upload with a drop zone, mkdir, download and delete, with writes crossing `file.write` (KERNEL, snapshot/rollback)\n- The HUD panel",
+      "status": "partial",
+      "summary": "Assessed 2026-11-11 (G21 files slice): the owner now has a host file browser in the HUD. agents/core/routers/files.py serves admin-only `GET /api/files/roots|list|read|download`, `PUT /api/files/upload`, `POST /api/files/mkdir|rename|delete` (writes also need this origin); agents/core/file_browser.py holds the policy and frontend/src/panels/files.tsx is the Files console panel (folder picker, breadcrumb and `..` up, text preview, download, file-picker and drop-zone upload, new folder, rename/delete). Roots are a locked list of approved folders (`JARVIS_FILE_BROWSER_DIRS`, default `<data>/workspace|outputs|reports`) addressed by opaque ids; a folder that is or contains `/`, home, the data root, the checkout or the security/tokens/vault folders, or lies inside a private home folder, is dropped. Paths are server-canonicalised: relative, no `..`/empty/backslash components, walked component by component with O_NOFOLLOW beneath the root (a symlink is never followed and a swap mid-walk fails), files opened non-blocking with an inode check, hard links never read. The credential denylist (hidden names, `.env`, `auth.json`, `credentials`, `config.yaml`, `mcp-tokens`, `pairing`, security/tokens/vault/secrets/keys/ssh/gnupg, key and token names, `*.db`/`*.sqlite`/`*.enc`) applies to listing, read, download, upload, mkdir and rename targets; a listing counts what it hid. Uploads stream to a hidden temp file and are linked into place without replacing anything, within `JARVIS_FILE_BROWSER_MAX_BYTES`. Rename and delete are `files.rename`/`files.delete` cards at the approval queue's irreversible tier (governed intake), applied only on a human accept after the target's inode/device/size/mtime still match; a folder is deleted only when empty. Tests: tests/test_g21_ops_surfaces.py, frontend/src/panels/files.test.tsx.",
+      "remaining": "- The upload is one streamed raw-body PUT per file, not Hermes's chunked/resumable multipart upload\n- The applied rename/delete is not mediated as the `file.write` kernel kind and takes no snapshot, so a delete has no rollback (it is an irreversible-tier card instead); under `JARVIS_TASK_MEDIATION=enforce` the unregistered `files.*` kinds are refused at intake\n- No overwrite of an existing file (refused as `exists`) and no move across folders",
       "evidence": [
-        "agents/core/routers/vault.py",
-        "agents/core/routers/workspace_documents.py"
+        "agents/core/file_browser.py",
+        "agents/core/routers/files.py",
+        "frontend/src/panels/files.tsx",
+        "tests/test_g21_ops_surfaces.py"
       ]
     },
     {

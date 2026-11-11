@@ -43,6 +43,9 @@ BUILTIN_KINDS: dict[str, tuple[str, str]] = {
     "settings.retention": ("agents.core.retention", "apply_approved"),   # H262
     "settings.voice_command": ("agents.core.voice.command_settings", "apply_approved"),   # H613
     "backup.restore": ("agents.core.backup", "apply_approved"),   # H010: staged, then the hub restarts
+    # G21 · H142: the HUD file browser's rename and delete, re-walked before they apply.
+    "files.delete": ("agents.core.file_browser", "apply_approved"),
+    "files.rename": ("agents.core.file_browser", "apply_approved"),
 }
 _APPLY: dict[str, Apply] = {}
 #: Kinds some processes must leave for another one: kind → (module, function), the

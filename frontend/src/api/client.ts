@@ -143,6 +143,28 @@ export async function apiGet<T = unknown>(path: string, opts?: { admin?: boolean
   return res.json() as Promise<T>;
 }
 
+/** A file's bytes (G21 file browser download). Same credentials as apiGet, no prompt retry. */
+export async function apiGetBlob(path: string, opts?: { admin?: boolean }): Promise<Blob> {
+  const headers = buildHeaders(opts?.admin);
+  headers.Accept = 'application/octet-stream';
+  const res = await fetch(appUrl(path), { method: 'GET', headers, credentials: 'same-origin', cache: 'no-store' });
+  if (!res.ok) {
+    let body: unknown;
+    try { body = await res.json(); } catch { /* non-JSON */ }
+    throw Object.assign(new Error(`GET ${path} -> ${res.status}`), { status: res.status, body });
+  }
+  return res.blob();
+}
+
+/** A raw-body PUT (G21 file browser upload): the bytes as sent, never JSON-encoded. */
+export async function apiPutBytes<T = unknown>(path: string, data: Blob, opts?: { admin?: boolean }): Promise<T> {
+  const headers = buildHeaders(opts?.admin);
+  headers['Content-Type'] = 'application/octet-stream';
+  const res = await fetch(appUrl(path), { method: 'PUT', headers, body: data, credentials: 'same-origin' });
+  if (!res.ok) await failMutation('PUT', path, res);
+  return res.json() as Promise<T>;
+}
+
 export async function apiPost<T = unknown>(path: string, body?: unknown,
   opts?: { admin?: boolean; accept?: AcceptRefusal }): Promise<T> {
   const res = await request('POST', path, body, opts?.admin === undefined ? undefined : { admin: opts.admin });

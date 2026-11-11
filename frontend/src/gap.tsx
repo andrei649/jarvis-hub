@@ -50,6 +50,7 @@ import { DesktopAllowlistPanel } from './panels/desktop-allowlist';
 import { LlmRoutingPanel } from './panels/llm-routing';
 import { CustomEndpointsPanel } from './panels/custom-endpoints';
 import { IntegrationsPanel } from './panels/integrations';
+import { FilesPanel } from './panels/files';
 import { WorkflowTracesPanel } from './panels/workflows-advanced';
 import { PresenceInboxPanel } from './panels/presence-inbox';
 import { ReviewQualityPanel } from './panels/review-quality';
@@ -5737,6 +5738,7 @@ const PANEL_COMPONENTS = {
   LlmRoutingPanel,
   SupportVoicePanel,
   BackupPanel,
+  FilesPanel,
   OAuthPanel,
   SettingsPanel,
   PromptsPanel,

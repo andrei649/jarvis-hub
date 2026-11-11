@@ -44,7 +44,7 @@ OWNER = {
     "canvas": "05", "capabilities": "04", "capture": "09", "channels": "11",
     "coach": "05", "codeintel": "09", "cognition": "09", "context": "09", "cost": "09",
     "creative": "05", "dashboard": "05", "desktop": "06", "digest": "07", "eval": "10",
-    "feedback": "10", "health": "01", "house": "12", "ingestion": "09",
+    "feedback": "10", "files": "08", "health": "01", "house": "12", "ingestion": "09",
     "integrations": "11", "jobs": "07", "kg": "09", "learning": "07", "llm": "02", "local-docs": "09",
     "market": "05", "mcp": "08", "media": "12", "memory": "09", "mesh": "04",
     "metrics": "07", "missions": "07", "models": "02", "multimodal": "05", "nodes": "04",
