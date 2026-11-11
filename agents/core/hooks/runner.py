@@ -2,24 +2,33 @@
 
 **One run** (:func:`run_hook`) is governed end to end, and every refusal is a named reason:
 
-1. the hook must still be ``active`` and its files must still have the content the owner
-   approved (``changed_since_approval`` otherwise; re-hashed when a file's stat changed);
-2. ``JARVIS_HOOKS`` (default on) is the owner's switch for every hook; safe mode runs none
-   (the ``owner_hooks`` layer); the emergency stop runs none;
-3. the hub must have an **admin credential**: on a box that never had one, the hub trusts
+1. **off states** — ``JARVIS_HOOKS`` (default on) is the owner's switch for every hook,
+   safe mode runs none (the ``owner_hooks`` layer), the emergency stop runs none. In an off
+   state *nothing runs and nothing is blocked*, not even by a guard (:data:`OFF_STATES`);
+2. the hub must have an **admin credential**: on a box that never had one, the hub trusts
    any local process as the owner, so a hook could decide approval cards over loopback.
    Hooks refuse to run there (``admin_credential_required``), and defining one is refused;
-4. with the Action Kernel on (``JARVIS_ACTION_KERNEL``), the run crosses it as
-   ``hook.exec`` at risk tier 3, with a receipt naming the hook, the task that activated
-   it and its binding digest. The kernel grants it only through that receipt
-   (:func:`agents.core.hooks.store.receipt_matches`), and its kill switch, plan mode and
-   policy mode ``off`` all refuse it. With the kernel off the kill switch is read directly;
-5. the program runs through the governed local host transport
-   (:class:`agents.core.environments.local_transport.LocalHostTransport`): the argv
-   verbatim (no shell, no interpolation), the hardline denylist again, a private working
-   directory (``<data>/hooks/run``), an environment scrubbed of every secret-looking
-   variable, the hook's timeout (killed after it), and output capped at 8 KB. **The event
-   is one JSON object on stdin**.
+3. the hook must still be ``active`` and its files must still have the content the owner
+   approved (``changed_since_approval`` otherwise; re-hashed when a file's stat changed);
+4. **the durable approval queue must hold a person's acceptance of this exact hook**
+   (:func:`agents.core.hooks.store.approval_verified`): ``hooks.json`` is never its own
+   proof, so a row any other writer put there is ``not_approved`` and does not run (and
+   blocks nothing). This is checked whether or not the Action Kernel is on;
+5. with the Action Kernel on (``JARVIS_ACTION_KERNEL``), the run also crosses it as
+   ``hook.exec`` at risk tier 3, with a receipt naming the hook, the task that activated it
+   and its binding digest. The kernel grants it only through that receipt, re-verified
+   against the queue (:func:`agents.core.hooks.store.receipt_matches`), and its kill
+   switch, plan mode and policy mode ``off`` refuse it. **With the kernel off (the default)
+   a run does not cross the kernel**: checks 1-4 are made directly;
+6. the program runs through the governed local host transport
+   (:class:`agents.core.environments.local_transport.LocalHostTransport`) in its own
+   process group: the argv verbatim (no shell, no interpolation), the hardline denylist
+   again, a private working directory (``<data>/hooks/run``), an environment scrubbed of
+   every secret-looking variable, the hook's timeout, and output capped at 8 KB. The whole
+   group is killed at the timeout, and while it runs it is killed as soon as hooks are
+   switched off, safe mode or the emergency stop comes on, or the hook is switched off or
+   removed. **The event is one JSON object on stdin**; a tool call's arguments are cut to
+   size and masked with the approval events' scanners first.
 
 **The wire protocol** follows Hermes's shell hooks so scripts move between the two:
 stdin carries ``hook_event_name`` (the Hermes name, e.g. ``pre_tool_call``), ``event`` (the
@@ -31,10 +40,13 @@ as ignored, so a hook can never turn a refusal into a run or change a call's arg
 it runs *before* the approval queue and the kernel judge the call, which still decide
 everything they decided before. For every other event, nothing a hook prints is read.
 
-**Failure.** A hook that fails (refused, timed out, crashed, exited with neither 0 nor 2,
-printed something that is not a JSON object) **blocks the call when the owner marked it a
-guard** (fail closed) and lets it through otherwise (fail open). Either way the run is
-audited with its outcome.
+**Failure.** A hook that fails (refused for a reason that is not an off state, timed out,
+crashed, exited with neither 0 nor 2, printed something that is not a JSON object, or ran out
+of the per-call budget of :data:`TOOL_BEFORE_BUDGET_S`) **blocks the call when the owner
+marked it a guard** (fail closed) and lets it through otherwise (fail open). A hook store
+that cannot be read blocks every tool call, since its guards cannot run. Either way the run
+is audited with its outcome. A block reason is masked, and the model sees it fenced as
+untrusted text.
 
 **Audit.** Every run lands in the intent log (``hook.run``, actor ``hook:<id>``) and in a
 bounded in-memory list the HUD and ``nerva hooks list`` show.
@@ -65,6 +77,17 @@ MESSAGE_CHARS = 400
 EXCERPT_CHARS = 300
 MAX_CONCURRENT = 4
 MAX_PENDING_OBSERVERS = 32
+#: The most wall-clock time all ``tool.before`` hooks together may take for one tool call.
+TOOL_BEFORE_BUDGET_S = 60
+#: How often a running hook is checked against a switch-off, safe mode or the emergency stop.
+STOP_POLL_S = 0.5
+#: Characters of one string in ``tool_input`` kept (before masking), and of all of them.
+INPUT_STRING_CHARS = 16_000
+INPUT_TOTAL_CHARS = 48_000
+#: Refusals that mean "hooks are off here": nothing runs and nothing is blocked, not even
+#: by a guard. Every other refusal is a failure (a guard blocks on it).
+OFF_STATES = frozenset({"hooks_switched_off", "safe_mode", "kill_switch_engaged", "not_approved",
+                        "hook_switched_off"})
 RUN_LOG_SIZE = 200
 BLOCK_EXIT_CODE = 2
 DEFAULT_BLOCK_MESSAGE = "Blocked by an owner hook."
@@ -103,6 +126,43 @@ def transport_for(timeout_s: int):
 
     return LocalHostTransport([store.run_dir()], default_timeout=timeout_s,
                               max_timeout=store.TIMEOUT_CEILING_S, max_output=OUTPUT_CAP_BYTES)
+
+
+def _halted(orch: Any) -> bool:
+    switch = getattr(orch, "kill_switch", None)
+    halted = getattr(switch, "is_halted", None)
+    try:
+        return bool(callable(halted) and halted("global"))
+    except Exception:  # noqa: BLE001 — a stop that cannot be read is treated as engaged
+        return True
+
+
+def _off_state(orch: Any) -> str | None:
+    """Why no hook may run at all right now (nothing runs, nothing is blocked), or None."""
+    from agents.core import safe_mode
+
+    if not store.hooks_switched_on():
+        return "hooks_switched_off"
+    if safe_mode.enabled():
+        safe_mode.note("owner_hooks")
+        return "safe_mode"
+    if _halted(orch):
+        return "kill_switch_engaged"
+    return None
+
+
+def _stop_reason(row: dict, orch: Any) -> str | None:
+    """Why a hook already running must be stopped now (its process group is killed)."""
+    try:
+        off = _off_state(orch)
+        if off is not None:
+            return off
+        now = store.get(row["id"])
+        if now is None or now.get("status") != "active":
+            return "hook_switched_off"
+    except Exception:  # noqa: BLE001 — cannot tell: keep running to its own timeout
+        logger.debug("hook stop check failed", exc_info=True)
+    return None
 
 
 def _orch(orch: Any = None) -> Any:
@@ -147,19 +207,20 @@ def binding_current(row: dict) -> bool:
 
 
 def _gate(row: dict, orch: Any) -> str | None:
-    """Why this run may not happen, or None. Never raises."""
+    """Why this run may not happen, or None. Never raises. A reason in :data:`OFF_STATES`
+    means the hook is not running here at all; any other is a failure."""
     try:
-        from agents.core import safe_mode
-
-        if not store.hooks_switched_on():
-            return "hooks_switched_off"
-        if safe_mode.enabled():
-            safe_mode.note("owner_hooks")
-            return "safe_mode"
+        off = _off_state(orch)
+        if off is not None:
+            return off
         if not admin_credential_configured():
             return "admin_credential_required"
         if not binding_current(row):
             return "changed_since_approval"
+        # Kernel on or off: the durable approval queue must hold a person's acceptance of
+        # this exact binding. A row that only hooks.json vouches for is not an owner hook.
+        if not store.approval_verified(row, orch):
+            return "not_approved"
         return _kernel_gate(row, orch)
     except Exception:  # noqa: BLE001 — a gate that fails, fails closed
         logger.warning("hook gate failed", exc_info=True)
@@ -170,10 +231,6 @@ def _kernel_gate(row: dict, orch: Any) -> str | None:
     from agents.core.kernel.flags import kernel_enabled
 
     if not kernel_enabled():
-        switch = getattr(orch, "kill_switch", None)
-        halted = getattr(switch, "is_halted", None)
-        if callable(halted) and halted("global"):
-            return "kill_switch_engaged"
         return None
     from agents.core.environments.terminal_contract import argv_fingerprint
     from agents.core.kernel import Action, Verdict
@@ -211,6 +268,37 @@ def _jsonable(value: Any, depth: int = 0) -> Any:
     return str(value)
 
 
+def _masked_input(value: Any) -> Any:
+    """A tool call's arguments for a hook's stdin: bounded before it is serialised (strings
+    cut to :data:`INPUT_STRING_CHARS`, :data:`INPUT_TOTAL_CHARS` in all) and every string
+    masked with the scanners the approval events use (secrets and catalogue identifiers)."""
+    from agents.core.log_catalogue import CatalogueScanner
+    from agents.core.security.scanner import SecretScanner
+
+    secret, catalogue = SecretScanner(), CatalogueScanner()
+    budget = [INPUT_TOTAL_CHARS]
+
+    def walk(item: Any, depth: int) -> Any:
+        if depth > 12:
+            return "…"
+        if item is None or type(item) in (bool, int, float):
+            return item
+        if isinstance(item, str):
+            if budget[0] <= 0:
+                return "…"
+            cut = item[:min(INPUT_STRING_CHARS, budget[0])]
+            budget[0] -= len(cut)
+            masked = catalogue.redact(secret.redact(cut))
+            return masked + ("…" if len(cut) < len(item) else "")
+        if isinstance(item, dict):
+            return {str(k)[:200]: walk(v, depth + 1) for k, v in list(item.items())[:500]}
+        if isinstance(item, (list, tuple)):
+            return [walk(v, depth + 1) for v in list(item)[:500]]
+        return walk(str(item), depth)
+
+    return walk(value, 0)
+
+
 def build_stdin(row: dict, event: str, fields: dict) -> bytes:
     """The one JSON object a hook reads on stdin (the production and the test path)."""
     spec = store.EVENTS[event]
@@ -219,7 +307,7 @@ def build_stdin(row: dict, event: str, fields: dict) -> bytes:
     body = {
         "hook_event_name": spec["hermes"], "event": event,
         "tool_name": fields.get("tool_name"),
-        "tool_input": _jsonable(fields.get("tool_input")) if event == "tool.before" else None,
+        "tool_input": _masked_input(fields.get("tool_input")) if event == "tool.before" else None,
         "session_id": str(fields.get("session_id") or ""),
         "cwd": str(store.run_dir()), "extra": extra,
         "nerva": {"hook_id": row["id"], "occurred_at": round(time.time(), 3), "guard": row["guard"]},
@@ -295,7 +383,7 @@ def evaluate(event: str, result: dict) -> dict:
             message = _redacted(str(result.get("stderr") or ""), MESSAGE_CHARS)
         out["block"] = True
         out["error"] = None
-        out["message"] = _clean(message, MESSAGE_CHARS) or DEFAULT_BLOCK_MESSAGE
+        out["message"] = _redacted(str(message or ""), MESSAGE_CHARS) or DEFAULT_BLOCK_MESSAGE
         return out
     if verb is not None:
         # allow / approve / ask / modify / anything else: a hook only ever blocks.
@@ -307,13 +395,40 @@ def evaluate(event: str, result: dict) -> dict:
 
 # ── one run ────────────────────────────────────────────────────────────────────
 
-def _slot() -> asyncio.Semaphore:
+def _slot(blocking: bool) -> asyncio.Semaphore:
+    """``tool.before`` and observers each have their own slots, so observers never make a
+    tool call wait."""
     loop = asyncio.get_running_loop()
-    key = id(loop)
+    key = (id(loop), blocking)
     if key not in _SLOTS:
-        _SLOTS.clear()
+        for stale in [k for k in _SLOTS if k[0] != id(loop)]:
+            del _SLOTS[stale]
         _SLOTS[key] = asyncio.Semaphore(MAX_CONCURRENT)
     return _SLOTS[key]
+
+
+async def _spawn(row: dict, stdin: bytes, timeout_s: int, orch: Any) -> dict:
+    """Run the program in its own process group, and kill that whole group when its
+    timeout passes, or when hooks are switched off, safe mode or the emergency stop comes on,
+    or the hook itself is switched off or removed, while it runs."""
+    job = asyncio.ensure_future(transport_for(timeout_s).run(
+        list(row["argv"]), cwd=str(store.run_dir()), timeout=timeout_s, stdin_data=stdin,
+        process_group=True))
+    try:
+        while True:
+            done, _ = await asyncio.wait({job}, timeout=STOP_POLL_S)
+            if done:
+                return job.result()
+            reason = _stop_reason(row, orch)
+            if reason is not None:
+                job.cancel()
+                await asyncio.wait({job})
+                return {"ok": False, "reason": reason, "exit_code": -1, "stopped": True}
+    except asyncio.CancelledError:
+        job.cancel()
+        with contextlib.suppress(BaseException):
+            await asyncio.wait({job})
+        raise
 
 
 def _record(orch: Any, row: dict, event: str, run: dict) -> None:
@@ -334,7 +449,8 @@ def recent_runs(limit: int = 50, hook: str | None = None) -> list[dict]:
     return rows[-max(1, min(int(limit), RUN_LOG_SIZE)):]
 
 
-async def run_hook(row: dict, event: str, fields: dict, *, orch: Any = None, test: bool = False) -> dict:
+async def run_hook(row: dict, event: str, fields: dict, *, orch: Any = None, test: bool = False,
+                   timeout_s: int | None = None) -> dict:
     """Run one hook once and say what it meant. Never raises; always audited."""
     orch = _orch(orch)
     started = time.monotonic()
@@ -348,18 +464,24 @@ async def run_hook(row: dict, event: str, fields: dict, *, orch: Any = None, tes
             result = {"ok": False, "reason": refusal}
         else:
             stdin = build_stdin(row, event, fields)
-            async with _slot():
-                result = await transport_for(row["timeout_s"]).run(
-                    list(row["argv"]), cwd=str(store.run_dir()), timeout=row["timeout_s"], stdin_data=stdin)
+            limit = row["timeout_s"] if timeout_s is None else max(1, min(int(timeout_s), row["timeout_s"]))
+            async with _slot(event in store.BLOCKING_EVENTS):
+                result = await _spawn(row, stdin, limit, orch)
     except asyncio.CancelledError:
         raise
     except Exception:  # noqa: BLE001 — a crash in here is a failed run, never the turn's
         logger.warning("hook run failed", exc_info=True)
         result = {"ok": False, "reason": "runner_error"}
-    meaning = evaluate(event, result)
+    off = result.get("reason") if result.get("reason") in OFF_STATES else None
+    meaning = evaluate(event, result) if off is None else {"block": False, "error": None, "ignored": None,
+                                                           "exit_code": result.get("exit_code")}
     run["exit_code"] = meaning["exit_code"]
     run["ignored"] = meaning["ignored"]
-    if meaning["block"]:
+    if off is not None:
+        # Hooks are off here (or this row is not an approved hook): nothing ran to the end
+        # and nothing is blocked, not even by a guard.
+        run.update(outcome="stopped" if result.get("stopped") else "skipped", reason=off)
+    elif meaning["block"]:
         run.update(outcome="blocked", blocked=True, message=meaning["message"])
     elif meaning["error"] is not None:
         refused = "exit_code" not in result
@@ -396,13 +518,30 @@ async def before_tool(tool: str, args: Any, *, agent_id: str = "", session_id: s
     before when nothing blocked it."""
     _remember_loop()
     verdict = {"blocked": False, "message": None, "hook": None}
-    rows = store.active_for("tool.before", tool)
+    try:
+        rows = store.active_for("tool.before", tool, strict=True)
+    except store.StoreUnreadable:
+        # A guard the owner set up must not be lost to a corrupt file: fail closed.
+        store._audit(_orch(orch), "hooks", "hook.store_unreadable",
+                     f"the hook store cannot be read; tool call {tool} blocked", {"tool": str(tool)[:100]})
+        return {"blocked": True, "hook": None,
+                "message": "The owner hook store cannot be read, so its guards cannot run; "
+                           "fix or remove <data>/hooks/hooks.json."}
     if not rows:
         return verdict
     fields = {"tool_name": str(tool), "tool_input": args if isinstance(args, dict) else {},
               "agent_id": str(agent_id or ""), "session_id": str(session_id or "")}
+    started = time.monotonic()
     for row in rows:
-        run = await run_hook(row, "tool.before", fields, orch=orch)
+        remaining = TOOL_BEFORE_BUDGET_S - (time.monotonic() - started)
+        if remaining < 1:
+            if row["guard"]:
+                return {"blocked": True, "hook": row["id"],
+                        "message": f"Owner hook {row.get('name') or row['id']} failed closed: hook_budget_exceeded"}
+            _record(_orch(orch), row, "tool.before", {"outcome": "skipped", "reason": "hook_budget_exceeded",
+                                                       "tool": str(tool), "blocked": False})
+            continue
+        run = await run_hook(row, "tool.before", fields, orch=orch, timeout_s=int(remaining))
         if run["blocked"]:
             return {"blocked": True, "message": run["message"], "hook": row["id"]}
     return verdict

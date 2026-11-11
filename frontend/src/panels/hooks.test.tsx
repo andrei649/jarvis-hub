@@ -74,6 +74,20 @@ describe('Hooks panel', () => {
     await waitFor(() => expect(calls.some((c) => c.method === 'DELETE')).toBe(true));
   });
 
+  it('offers a one-step re-approval when the files changed', async () => {
+    const calls = hub((url, method) => {
+      if (url.endsWith('/api/hooks') && method === 'GET') {
+        return { status: 200, body: listing({ hooks: [{ ...HOOK, binding_current: false }] }) };
+      }
+      if (url.includes('/enable')) return { status: 202, body: { ok: true, task_id: 12 } };
+      return { status: 404, body: {} };
+    });
+    render(<HooksPanel />);
+    fireEvent.click(await screen.findByText('re-approve…'));
+    await screen.findByText(/approval card 12 queued/);
+    expect(calls.some((c) => c.url.includes(`/api/hooks/${HOOK.id}/enable`))).toBe(true);
+  });
+
   it('says why hooks cannot run here', async () => {
     hub(() => ({ status: 200, body: listing({ status: { ready: false, blockers: ['admin_credential_required'] } }) }));
     render(<HooksPanel />);

@@ -79,7 +79,7 @@ export function HooksPanel() {
   };
   const disable = (h: Hook) => apiPost(`/api/hooks/${h.id}/disable`, {}, { admin: true }).then(() => done(`${h.id} switched off`)).catch(fail);
   const enable = (h: Hook) => apiPost<any>(`/api/hooks/${h.id}/enable`, {}, { admin: true })
-    .then((r) => done(`approval card ${r.task_id} queued to turn ${h.id} back on`)).catch(fail);
+    .then((r) => done(`approval card ${r.task_id} queued for ${h.id}: it runs again once you accept it`)).catch(fail);
   const remove = (h: Hook) => apiDelete(`/api/hooks/${h.id}`, { admin: true }).then(() => done(`${h.id} removed`)).catch(fail);
   const test = (h: Hook) => apiPost<any>(`/api/hooks/${h.id}/test`, {}, { admin: true })
     .then((r) => done(`test run: ${r.run?.outcome}${r.run?.blocked ? ' · would block' : ''}${r.run?.reason ? ` · ${r.run.reason}` : ''}`))
@@ -111,6 +111,8 @@ export function HooksPanel() {
                 {h.status === 'active' && <button className="tool-btn" onClick={() => test(h)}>test</button>}
                 {h.status === 'active' && <button className="tool-btn" onClick={() => disable(h)}>switch off</button>}
                 {h.status === 'disabled' && <button className="tool-btn" onClick={() => enable(h)}>turn on…</button>}
+                {h.status === 'active' && h.binding_current === false && !h.pending_card &&
+                  <button className="tool-btn" onClick={() => enable(h)}>re-approve…</button>}
                 <button className="tool-btn" onClick={() => remove(h)} aria-label={`remove ${h.id}`}>remove</button>
               </span>
             </div>

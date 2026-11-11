@@ -231,6 +231,30 @@ def _store_path() -> Path:
     return Path(data_path("hooks", "hooks.json"))
 
 
+def store_folder() -> Path:
+    """``<data>/hooks``: no other writer may touch it (the file browser never shows it and a
+    model file write refuses it), and it is kept 0700 with ``hooks.json`` 0600."""
+    from agents.core.paths import data_path
+
+    return Path(data_path("hooks"))
+
+
+def is_store_path(path: object) -> bool:
+    """Whether *path* is in ``<data>/hooks``, or is a ``hooks.json`` anywhere under the data
+    root (resolved, so a link to it counts too)."""
+    from agents.core.paths import data_root
+
+    try:
+        target = Path(os.path.realpath(os.fspath(path)))
+        folder = Path(os.path.realpath(store_folder()))
+        root = Path(os.path.realpath(data_root()))
+    except (TypeError, ValueError, OSError):
+        return False
+    if target == folder or folder in target.parents:
+        return True
+    return target.name.lower() == "hooks.json" and (target == root or root in target.parents)
+
+
 def run_dir() -> Path:
     """The private working directory every hook starts in (created 0700)."""
     from agents.core.paths import data_path
@@ -260,7 +284,17 @@ def _row_ok(row: object) -> bool:
                                                  and bool(MATCHER_RE.fullmatch(row["matcher"])))))
 
 
-_CACHE: dict[str, Any] = {"key": None, "data": None}
+_CACHE: dict[str, Any] = {"key": None, "data": None, "dropped": 0}
+
+
+def store_key() -> tuple | None:
+    """The store file's identity now (None when absent): anything cached about the
+    store's rows is valid only for this key."""
+    try:
+        info = _store_path().stat()
+    except OSError:
+        return None
+    return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
 
 def _read() -> dict:
@@ -275,16 +309,20 @@ def _read() -> dict:
         raise HookRefused("store_unavailable") from exc
     if _CACHE["key"] == key and _CACHE["data"] is not None:
         return json.loads(_CACHE["data"])
-    data = _read_file(path)
-    _CACHE.update(key=key, data=json.dumps(data))
+    data, dropped = _read_file(path)
+    if dropped:
+        logger.warning("the hook store held %d malformed row(s); they never run", dropped)
+        _audit(None, "hooks", "hook.store_rows_dropped",
+               f"{dropped} malformed row(s) in the hook store were dropped, never run", {"dropped": dropped})
+    _CACHE.update(key=key, data=json.dumps(data), dropped=dropped)
     return data
 
 
-def _read_file(path: Path) -> dict:
+def _read_file(path: Path) -> tuple[dict, int]:
     try:
         raw = path.read_text(encoding="utf-8")
     except FileNotFoundError:
-        return _empty()
+        return _empty(), 0
     except OSError as exc:
         raise HookRefused("store_unavailable") from exc
     try:
@@ -293,16 +331,22 @@ def _read_file(path: Path) -> dict:
         raise HookRefused("store_unavailable") from exc
     if not isinstance(data, dict) or not isinstance(data.get("hooks"), list):
         raise HookRefused("store_unavailable")
-    # A hand-edited row that does not hold up is dropped, never run.
-    data["hooks"] = [row for row in data["hooks"] if _row_ok(row)][:MAX_HOOKS]
-    return data
+    # A hand-edited row that does not hold up is dropped, never run (and audited).
+    kept = [row for row in data["hooks"] if _row_ok(row)]
+    dropped = len(data["hooks"]) - len(kept)
+    data["hooks"] = kept[:MAX_HOOKS]
+    return data, dropped
 
 
 def _write(data: dict) -> None:
     path = _store_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(prefix=".hooks-", dir=str(path.parent))
+    with contextlib.suppress(OSError):
+        os.chmod(path.parent, 0o700)
+    fd, tmp = tempfile.mkstemp(prefix=".hooks-", dir=str(path.parent))   # created 0600
     try:
+        with contextlib.suppress(OSError):
+            os.fchmod(fd, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=1, sort_keys=True)
         os.replace(tmp, path)
@@ -327,13 +371,21 @@ def get(ident: str) -> dict | None:
         return dict(row) if row is not None else None
 
 
-def active_for(event: str, tool: str | None = None) -> list[dict]:
+class StoreUnreadable(Exception):
+    """The hook store exists but cannot be read: a ``tool.before`` caller fails closed."""
+
+
+def active_for(event: str, tool: str | None = None, *, strict: bool = False) -> list[dict]:
     """The active hooks for *event* (and, for a tool event, whose matcher takes *tool*), in
-    the order they were defined. A store that cannot be read holds no hook (and is logged)."""
+    the order they were defined. A store that cannot be read holds no hook for an observer
+    (logged); with ``strict`` (the blocking ``tool.before`` path) it raises
+    :class:`StoreUnreadable`, so a guard the owner set up cannot be lost to a corrupt file."""
     try:
         rows = all_hooks()
     except HookRefused:
         logger.warning("the hook store could not be read; no hook runs")
+        if strict:
+            raise StoreUnreadable(str(_store_path())) from None
         return []
     found = []
     for row in rows:
@@ -358,6 +410,7 @@ def public(row: dict) -> dict:
         "files": [shown(i) for i in row["identities"]], "replaces": row.get("replaces"),
         "requested_at": row.get("requested_at"), "approved_at": row.get("approved_at"),
         "approved_by": row.get("approved_by"), "pending_card": bool(row.get("card_open")),
+        "reapproval_pending": bool(row.get("card_open") and row.get("requested_identities")),
     }
 
 
@@ -381,17 +434,75 @@ def payload_digest(payload: dict) -> str:
 
 
 def binding_digest(row: dict) -> str:
-    """What a run's kernel receipt names: the hook, its argv and its files' digests."""
-    basis = {"id": row["id"], "argv": list(row["argv"]), "event": row["event"],
-             "files": [[i.get("path"), i.get("sha256")] for i in row["identities"]]}
-    return hashlib.sha256(json.dumps(basis, sort_keys=True).encode("utf-8")).hexdigest()
+    """The digest of everything the owner approved (:func:`_payload`: the id, event, argv,
+    matcher, guard flag, timeout, name and every file with its size and sha256). A run's
+    receipt names it, and the approval queue's stored card must carry the same digest."""
+    return payload_digest(_payload(row))
+
+
+#: (task id, binding digest, store key) → verified. Cleared by any change of the store.
+_VERIFIED: dict[tuple, bool] = {}
+
+
+def _queue_of(orch: Any) -> Any:
+    queue = getattr(orch, "autonomy_queue", None)
+    if queue is None:
+        queue = getattr(getattr(orch, "autonomy", None), "queue", None)
+    return queue
+
+
+def approval_verified(row: dict, orch: Any = None) -> bool:
+    """Whether the durable approval queue holds the human acceptance of this exact hook:
+    the row's ``approved_task_id`` is a ``hooks.define`` task, decided accept (plain) by a
+    person (``irreversible.MACHINE_DECIDERS`` refused), approved or applied, and its stored
+    card carries this hook's full binding. ``hooks.json`` alone proves nothing: a row that
+    any other writer put there does not run. Cached per (task, binding, store state)."""
+    from agents.core.autonomy.irreversible import MACHINE_DECIDERS
+
+    if orch is None:
+        from agents.core.app_state import get_orch
+
+        orch = get_orch()
+    task_id = row.get("approved_task_id")
+    if type(task_id) is not int or task_id <= 0 or row.get("status") != "active":
+        return False
+    digest = binding_digest(row)
+    key = (task_id, digest, store_key())
+    if _VERIFIED.get(key):
+        return True
+    queue = _queue_of(orch)
+    getter = getattr(queue, "get", None)
+    if not callable(getter):
+        return False
+    try:
+        task = getter(task_id)
+    except Exception:  # noqa: BLE001 — an unreadable queue proves nothing
+        logger.warning("the approval queue could not be read for hook %s", row.get("id"), exc_info=True)
+        return False
+    if task is None:
+        return False
+    payload = getattr(task, "payload", None)
+    decided_by = str(getattr(task, "decided_by", "") or "").strip().lower()
+    ok = (getattr(task, "kind", None) == APPROVAL_KIND
+          and str(getattr(task, "decision", "") or "").strip().lower() in ("accept", "approve")
+          and decided_by not in MACHINE_DECIDERS
+          and str(getattr(task, "status", "") or "") in ("approved", "running", "done")
+          and isinstance(payload, dict) and payload.get("hook_id") == row["id"]
+          and payload_digest({k: payload.get(k) for k in _payload(row)}) == digest)
+    if ok:
+        if len(_VERIFIED) > 256:
+            _VERIFIED.clear()
+        _VERIFIED[key] = True
+    return ok
 
 
 _EFFECT = ("Runs on this machine as the hub's user, with that user's permissions: it can read what "
            "the hub's user can read. Nerva starts it with the argv shown (no shell), the event as JSON "
-           "on stdin, an environment without the hub's secrets, the timeout shown and capped output. "
+           "on stdin (secrets in a tool call's arguments masked), an environment without the hub's "
+           "secrets, the timeout shown (it and anything it started are killed then) and capped output. "
            "Approving binds these exact files: changing any of them stops the hook until it is "
-           "approved again.")
+           "approved again. It does not bind what they load or start: a bound script can still import "
+           "modules, read files or run programs that are not on this card.")
 
 
 def _preview(row: dict, *, operation: str) -> dict:
@@ -405,6 +516,7 @@ def _preview(row: dict, *, operation: str) -> dict:
     else:
         effect += " It only observes: nothing it prints is read."
     return {"action": {"define": "Run a new owner hook", "enable": "Turn an owner hook back on",
+                       "reapprove": "Approve an owner hook's changed files",
                        "replace": "Replace an owner hook"}[operation],
             "command": command_line(row["argv"]), "argv": list(row["argv"]),
             "event": row["event"], "event_doc": spec["doc"], "matcher": row.get("matcher") or "(every tool)"
@@ -417,8 +529,8 @@ def _queue(orch: Any, row: dict, operation: str) -> int:
     from agents.core.autonomy import irreversible
 
     payload = _payload(row)
-    title = f"{'Turn on' if operation == 'enable' else 'Run'} hook on {row['event']}: " \
-            f"{command_line(row['argv'])[:120]}"
+    verb = {"enable": "Turn on", "reapprove": "Re-approve"}.get(operation, "Run")
+    title = f"{verb} hook on {row['event']}: {command_line(row['argv'])[:120]}"
     queued = irreversible.enqueue(orch, APPROVAL_KIND, title=title, payload=payload,
                                   preview=_preview(row, operation=operation))
     if "pending" not in queued:
@@ -488,15 +600,29 @@ def request_define(orch: Any, *, event: str, argv: list, matcher: str | None = N
     return {"pending": row["task_id"], "hook": public(row)}
 
 
+def _files_changed(row: dict) -> bool:
+    problems, files = inspect_argv(row["argv"])
+    now = identities(files) if not problems else None
+    return now is None or [shown(i) for i in now] != [shown(i) for i in row["identities"]]
+
+
 def request_enable(orch: Any, ident: str, *, actor: str = "owner") -> dict:
     """Turning a switched-off hook back on is the same card again, with the files as they
-    are now (a changed file shows its new digest on the card)."""
+    are now (a changed file shows its new digest on the card). For an active hook whose
+    files changed since its approval this is the one-step re-approval: the card shows the
+    new digests, and the hook stays stopped until it is accepted."""
     with _LOCK:
         data = _read()
         row = _find(data, ident)
         if row is None:
             raise HookRefused("not_found")
-        if row["status"] != "disabled":
+        if row["status"] == "active":
+            if not _files_changed(row):
+                raise HookRefused("not_disabled", "the hook is on and its files are as approved")
+            operation = "reapprove"
+        elif row["status"] == "disabled":
+            operation = "enable"
+        else:
             raise HookRefused("not_disabled")
         problems, files = inspect_argv(row["argv"])
         if problems:
@@ -504,11 +630,15 @@ def request_enable(orch: Any, ident: str, *, actor: str = "owner") -> dict:
         found = identities(files)
         if found is None:
             raise HookRefused("unreadable_file")
-        row["identities"] = found
-        _queue(orch, row, "enable")
+        current = dict(row, identities=found)
+        _queue(orch, current, operation)
+        # The row keeps its approved files until the card is accepted (so the approved
+        # binding still proves only what was approved); the card's files wait on the side.
+        row.update(task_id=current["task_id"], payload_sha256=current["payload_sha256"], card_open=True,
+                   requested_identities=found)
         _write(data)
-    _audit(orch, actor, "hook.request", f"hook {ident} asked to be turned back on",
-           {"hook": ident, "task_id": row["task_id"]})
+    _audit(orch, actor, "hook.request", f"hook {ident} asked to be {'re-approved' if operation == 'reapprove' else 'turned back on'}",
+           {"hook": ident, "task_id": row["task_id"], "operation": operation})
     return {"pending": row["task_id"], "hook": public(row)}
 
 
@@ -525,22 +655,23 @@ async def apply_approved(task: Any, orch: Any) -> dict:
         row = _find(data, str(payload.get("hook_id") or ""))
         if row is None or row.get("task_id") != task_id or not row.get("card_open"):
             return {"status": "refused", "reason": "not_requested"}
-        if row["status"] not in ("pending", "disabled"):
+        if row["status"] not in ("pending", "disabled", "active"):
             return {"status": "refused", "reason": "already_applied"}
-        expected = _payload(row)
+        requested = row.get("requested_identities") or row["identities"]
+        expected = _payload(dict(row, identities=requested))
         if (payload_digest({k: payload.get(k) for k in expected}) != row.get("payload_sha256")
                 or any(payload.get(k) != v for k, v in expected.items())):
             return {"status": "refused", "reason": "payload_changed"}
         problems, files = inspect_argv(row["argv"])
         now = identities(files) if not problems else None
-        if now is None or [shown(i) for i in now] != [shown(i) for i in row["identities"]]:
+        if now is None or [shown(i) for i in now] != [shown(i) for i in requested]:
             row["card_open"] = False
             _write(data)
             return {"status": "refused", "reason": "changed_since_request"}
         replaced = row.get("replaces")
         if replaced:
             data["hooks"] = [r for r in data["hooks"] if r["id"] != replaced]
-            row["replaces"] = None
+        row.pop("requested_identities", None)
         row["identities"] = now
         row["status"] = "active"
         row["card_open"] = False
@@ -563,6 +694,7 @@ def disable(orch: Any, ident: str, *, actor: str = "owner") -> dict:
             raise HookRefused("not_found")
         row["status"] = "disabled" if row["status"] != "pending" else "pending"
         row["card_open"] = False   # an open card for it no longer applies
+        row.pop("requested_identities", None)
         row["disabled_at"] = time.time()
         _write(data)
     _audit(orch, actor, "hook.disable", f"hook {ident} switched off", {"hook": ident})
@@ -583,15 +715,21 @@ def remove(orch: Any, ident: str, *, actor: str = "owner") -> dict:
 
 def receipt_matches(action: Any) -> bool:
     """The kernel's ``approval_check`` for ``hook.exec``: the receipt names an active hook,
-    the task that activated it, and the binding it was approved with."""
+    the task that activated it and the binding it was approved with, **and the durable
+    approval queue holds a person's acceptance of exactly that binding**
+    (:func:`approval_verified`) — the row in ``hooks.json`` is never its own proof."""
     payload = getattr(action, "payload", None)
     if getattr(action, "kind", None) != "hook.exec" or not isinstance(payload, dict):
         return False
-    row = get(str(payload.get("hook_id") or ""))
+    try:
+        row = get(str(payload.get("hook_id") or ""))
+    except HookRefused:
+        return False
     return (row is not None and row["status"] == "active"
             and type(payload.get("approved_task_id")) is int
             and payload["approved_task_id"] == row.get("approved_task_id")
-            and payload.get("binding_sha256") == binding_digest(row))
+            and payload.get("binding_sha256") == binding_digest(row)
+            and approval_verified(row))
 
 
 def _audit(orch: Any, actor: str, action: str, why: str, metadata: dict) -> None:
@@ -609,6 +747,7 @@ def _audit(orch: Any, actor: str, action: str, why: str, metadata: dict) -> None
 
 __all__ = [
     "APPROVAL_KIND", "BLOCKING_EVENTS", "EVENTS", "HookRefused", "active_for", "all_hooks",
-    "apply_approved", "binding_digest", "catalogue", "disable", "get", "inspect_argv", "public",
+    "apply_approved", "approval_verified", "binding_digest", "catalogue", "disable", "get", "inspect_argv",
+    "is_store_path", "public", "StoreUnreadable",
     "receipt_matches", "remove", "request_define", "request_enable", "run_dir",
 ]

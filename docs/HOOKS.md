@@ -42,8 +42,11 @@ What a command may be:
   is no placeholder syntax and no shell.
 
 Changing a script after approval stops the hook (`changed_since_approval` in its last run,
-"files changed" in the HUD and `nerva hooks doctor`) until you approve it again. Switching a
-hook off and removing it apply at once. Turning it back on is a new card. To change a hook,
+"files changed" in the HUD and `nerva hooks doctor`) until you approve it again: **re-approve…**
+in the HUD or `nerva hooks enable <id>` queues the card with the new digests in one step (a
+guard keeps blocking until then). Approval binds the files on the card, not what they load: a
+bound script can still import modules, read files or run programs that are not on it.
+Switching a hook off and removing it apply at once. Turning it back on is a new card. To change a hook,
 add the new one with `--replaces <id>`: the old one keeps running until the new card is
 accepted.
 
@@ -72,36 +75,60 @@ stdin is one JSON object, the same shape Hermes uses, so scripts move between th
  "extra": {"agent_id": "jarvis"}, "nerva": {"hook_id": "hk-…", "occurred_at": 1762862400.0, "guard": true}}
 ```
 
+`tool_input` is the tool call's arguments, cut to size (16,000 characters per string, 48,000
+in all) and masked with the same scanners as the approval events: recognised keys, tokens and
+catalogue identifiers come through as redaction markers. A secret-scanning guard sees the
+masked form.
+
 A `tool.before` hook blocks the call with **exit code 2** (the first 400 characters of
 stderr are the reason) or by printing `{"action": "block", "message": "…"}` or
 `{"decision": "block", "reason": "…"}`. The model is told the call was blocked by an owner
-hook, with that reason.
+hook; the reason is masked the same way and handed over fenced as untrusted text, not as
+instructions.
 
 Nothing else is honoured. `allow`, `approve` and `modify` answers are recorded as ignored:
 **a hook can never allow a call** that the approval queue or the Action Kernel would refuse
 (it runs before them and they still decide everything they decided before), and it cannot
 change a call's arguments. For every other event, nothing a hook prints is read.
 
-**Guards.** If a hook fails (refused, timed out, crashed, exited with neither 0 nor 2, or
-printed something that is not a JSON object), a hook you marked as a guard (`--guard`,
-`tool.before` only) blocks the call: it fails closed. Any other hook lets the call through
-and the failure is audited (it fails open).
+**Guards.** If a hook fails (timed out, crashed, exited with neither 0 nor 2, printed
+something that is not a JSON object, its files changed since approval, the hub has no admin
+credential, the kernel refused it, or the tool call's hooks used up their 60-second budget), a
+hook you marked as a guard (`--guard`, `tool.before` only) blocks the call: it fails closed.
+Any other hook lets the call through and the failure is audited (it fails open). A hook store
+that cannot be read blocks every tool call (its guards cannot run) until it is fixed or
+removed; malformed rows in it are dropped, never run, and audited.
+
+**Off is not a failure.** With `NERVA_HOOKS=0`, in safe mode or while the emergency stop is on,
+no hook runs and nothing is blocked, not even by a guard.
 
 ## How a run is governed
 
-Before each run: the hook is still active, its files still have the approved content,
-`NERVA_HOOKS` is on (default on; `0` switches every hook off), safe mode is off (no hook
-runs in safe mode; a guard does not block either), the emergency stop is off, the hub has an
-admin credential, and, with `NERVA_ACTION_KERNEL` on, the Action Kernel grants the run as
-`hook.exec` (risk tier 3) through the receipt of the task that activated that exact hook.
-The kernel's mode `off` refuses it.
+Before each run: `NERVA_HOOKS` is on (default on; `0` switches every hook off), safe mode is
+off, the emergency stop is off, the hub has an admin credential, the hook is still active and
+its files still have the approved content, and **the approval queue still holds a person's
+acceptance of this exact hook**: the task that activated it is a `hooks.define` card decided
+accept by a person, and its stored payload is this hook's whole definition (event, argv,
+matcher, guard, timeout, name, every file and its sha256). `hooks.json` is never its own
+proof: a row any other program wrote there does not run. With `NERVA_ACTION_KERNEL` on, the
+Action Kernel also grants the run as `hook.exec` (risk tier 3), only through that receipt,
+re-checked against the queue; the kernel's mode `off` refuses it. **With the kernel off (the
+default) a run does not cross the kernel**; the checks above are made directly.
+
+`<data>/hooks` is kept closed to other writers: it is 0700 and `hooks.json` 0600, the HUD file
+browser never shows it, and a model file write refuses it (and any `hooks.json` under the data
+root) with `hooks_store_protected`.
 
 The run goes through the governed local host transport: the argv verbatim, no shell, the
 private working directory `<data>/hooks/run`, an environment with every secret-looking
 variable removed (no `*_TOKEN`, `*_KEY`, `*_SECRET`… and no `NERVA_*`/`JARVIS_*` except the
 home and profile), the hook's timeout (default 10 s, at most `NERVA_HOOKS_MAX_TIMEOUT_S`,
-30 s by default, ceiling 120 s; killed after it), and output capped at 8 KB. At most four
-hooks run at once; observer runs never delay the turn and at most 32 wait.
+30 s by default, ceiling 120 s), and output capped at 8 KB. The program runs in its own
+process group: at the timeout the whole group is killed (what the hook started too), and a
+running hook's group is killed as soon as hooks are switched off, safe mode or the emergency
+stop comes on, or the hook is switched off or removed. `tool.before` hooks and observers each
+have four slots, so observers never make a tool call wait; all `tool.before` hooks of one call
+share a 60-second budget; at most 32 observer runs wait.
 
 What this does **not** do: a hook runs as the hub's operating-system user. It can read
 whatever that user can read, and Nerva does not sandbox it further. Approve only programs
@@ -117,7 +144,7 @@ reason, exit code and duration, and the last 200 runs in the HUD and `nerva hook
 | `nerva hooks list` | every hook, its state, guard, matcher, file drift and last run; whether hooks can run here |
 | `nerva hooks add <event> [--guard] [--matcher G] [--timeout S] [--name N] [--replaces ID] -- <argv…>` | queue the card |
 | `nerva hooks test <id> [--tool T] [--payload-file F]` | run one active hook once on a synthetic event, through the same gates and evaluation (audited as a test) |
-| `nerva hooks disable <id>` / `enable <id>` / `remove <id>` | switch off now / ask to turn on (a card) / delete now |
+| `nerva hooks disable <id>` / `enable <id>` / `remove <id>` | switch off now / ask to turn on or re-approve changed files (a card) / delete now |
 | `nerva hooks doctor` | exits non-zero when a hook's files changed or hooks cannot run here |
 
 HTTP: admin-only `GET /api/hooks`, `POST /api/hooks`, `POST /api/hooks/{id}/disable`,

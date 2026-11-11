@@ -1153,12 +1153,15 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
         script = tmp_path / "hook.py"
         script.write_text("import sys; sys.stdin.read()\n", encoding="utf-8")
         tasks = []
-        autonomy = SimpleNamespace(govern_enqueue=lambda **kw: tasks.append(kw) or len(tasks))
+        accepted = {}
+        autonomy = SimpleNamespace(govern_enqueue=lambda **kw: tasks.append(kw) or len(tasks),
+                                   queue=SimpleNamespace(get=accepted.get))
         orch = SimpleNamespace(autonomy=autonomy, intent_log=None, kill_switch=None)
         hook = store.request_define(orch, event="tool.before", argv=[_sys.executable, str(script)])
-        task = SimpleNamespace(id=hook["pending"], decision="accept", decided_by="owner",
-                               payload=dict(tasks[-1]["payload"]))
+        task = SimpleNamespace(id=hook["pending"], kind="hooks.define", decision="accept", decided_by="owner",
+                               status="done", payload=dict(tasks[-1]["payload"]))
         assert asyncio.run(store.apply_approved(task, orch))["status"] == "ok"
+        accepted[task.id] = task
         ran = []
 
         class _Transport:

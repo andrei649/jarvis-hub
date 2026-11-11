@@ -231,7 +231,8 @@ def _code_locations() -> list[Path]:
     from agents.core.paths import data_path
 
     places = [Path(__file__).resolve().parents[2], Path(sys.prefix), Path(sys.exec_prefix),
-              Path(sys.base_prefix), data_path("skills"), data_path("plugins")]
+              Path(sys.base_prefix), data_path("skills"), data_path("plugins"),
+              data_path("hooks")]   # G17: the owner's hook definitions and their run folder
     with contextlib.suppress(Exception):      # a virtualenv without the helper
         places += [Path(p) for p in site.getsitepackages()]
     with contextlib.suppress(Exception):

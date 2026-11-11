@@ -608,7 +608,7 @@ def build_parser() -> argparse.ArgumentParser:
     hooks_add.add_argument("--replaces", help="the id of a hook this one replaces once accepted")
     hooks_add.add_argument("--json", action="store_true")
     for verb, text in (("disable", "switch a hook off now (no card)"),
-                       ("enable", "turn a switched-off hook back on (queues an approval card)"),
+                       ("enable", "turn a switched-off hook back on, or re-approve changed files (queues an approval card)"),
                        ("remove", "delete a hook now (no card)")):
         sub = hooks_verbs.add_parser(verb, aliases=["rm"] if verb == "remove" else [], help=text)
         sub.add_argument("hook_id")
@@ -6814,7 +6814,8 @@ def cmd_hooks(ns: argparse.Namespace, ctx: Context) -> int:
             if hook.get("matcher"):
                 flags.append(f"tools={hook['matcher']}")
             if hook.get("binding_current") is False:
-                flags.append("FILES CHANGED since approval: it will not run")
+                flags.append("FILES CHANGED since approval: it will not run "
+                             f"(`nerva hooks enable {hook.get('id')}` asks to re-approve)")
                 problems += 1
             last = hook.get("last_run") if isinstance(hook.get("last_run"), dict) else None
             if last:
