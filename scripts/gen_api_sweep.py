@@ -51,7 +51,7 @@ OWNER = {
     "notes": "09", "oauth": "05", "onboarding": "05", "oracle": "04", "osint": "04",
     "pairing": "08", "payments": "07", "plugins": "02", "presence": "07",
     "provenance": "09", "quality": "10", "reflection": "09", "resilience": "01",
-    "review": "10", "rooms": "09", "sandbox": "08", "satellites": "04", "schedule": "07",
+    "review": "10", "room-peers": "08", "rooms": "09", "sandbox": "08", "satellites": "04", "schedule": "07",
     "secrets": "08", "security": "08", "security-skills": "08",
     "self-improvement": "10", "sessions": "09", "skills": "08", "status": "01",
     "subagents": "06", "support": "11", "swarm": "06", "sync": "04", "system": "01",

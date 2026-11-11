@@ -488,6 +488,15 @@ def _effect_declaration(
     return risk, rollback
 
 
+def _callable_identity(fn) -> str:
+    """``module:qualname`` of a callable (a partial or bound method reads through)."""
+    inner = getattr(fn, "func", fn)
+    inner = getattr(inner, "__func__", inner)
+    module = getattr(inner, "__module__", None) or type(inner).__module__
+    qualname = getattr(inner, "__qualname__", None) or type(inner).__qualname__
+    return f"{module}:{qualname}"
+
+
 class ToolRPCServer:
     """Allowlisted, risk-gated, secret-scrubbed tool surface for sandboxed code."""
 
@@ -825,6 +834,34 @@ class ToolRPCServer:
 
     def allows(self, name: str) -> bool:
         return name in self._tools
+
+    def remote_profile(self, name: str) -> Optional[dict]:
+        """H658 — what a room grant must know about a registered tool: whether it is
+        gated and whether it runs only from a trusted execution context (such a tool is
+        never offered to a member on another machine). ``None`` when not registered."""
+        spec = self._tools.get(name)
+        if spec is None:
+            return None
+        handler = spec.get("handler")
+        predicate = getattr(self, "_visible", {}).get(name)
+        return {"gated": bool(spec["gated"]),
+                "trusted_execution": bool(spec.get("trusted_execution")),
+                # review m3: what stands behind the name. The registration id changes on
+                # every ``register_tool``, so a handler swapped under the same name moves
+                # a room grant's policy digest even when module and qualname match.
+                "handler": _callable_identity(handler),
+                "registration": str(spec.get("_grouping_epoch") or ""),
+                # G11: the visibility rule (its identity) and whether it holds right now.
+                "visibility": _callable_identity(predicate) if predicate is not None else "",
+                "visible": self._is_visible(name)}
+
+    def classify_call(self, name: str, args: dict):
+        """H658 — the H506 labels for one call (``(labels, None)``/``(None, reason)``),
+        so an approval card raised elsewhere carries the class ``execute`` re-derives."""
+        spec = self._tools.get(name)
+        if spec is None:
+            return None, "tool_not_allowed"
+        return self._classify(spec, args)
 
     # ── the RPC entry point ──────────────────────────────────────────────────
 

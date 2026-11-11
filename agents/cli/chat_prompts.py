@@ -66,8 +66,19 @@ def card_safe(text: Any) -> str:
     module): no ANSI, no bidi override, no zero-width mark, whitespace collapsed."""
     kept = []
     for char in str("" if text is None else text):
-        kept.append(" " if unicodedata.category(char) in {"Cc", "Cf", "Zl", "Zp", "Cs", "Co"} else char)
+        kept.append(" " if unicodedata.category(char) in _UNSAFE_CATEGORIES else char)
     return " ".join("".join(kept).split())
+
+
+#: card_safe's rule: control (C0/C1), format (bidi, zero-width, BOM), line/paragraph
+#: separator, surrogate and private-use characters.
+_UNSAFE_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp", "Cs", "Co"})
+
+
+def terminal_unsafe(text: Any) -> bool:
+    """Whether *text* holds a character card_safe would remove — for a hub string that
+    must be drawn exactly or not at all (a completion candidate the hub must resolve)."""
+    return any(unicodedata.category(char) in _UNSAFE_CATEGORIES for char in str("" if text is None else text))
 
 
 def _bounded(text: str, width: int) -> str:

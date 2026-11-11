@@ -3,7 +3,9 @@
    The hub reads its own checkout (agents/core/hub_update.py): version, branch, commit,
    whether the tree has uncommitted changes, and how far behind its upstream it is as of the
    last fetch, with the fetch's age. "Check now" fetches the upstream and shows the log as
-   it runs. Applying an update is not offered here: the hub says why, and the steps are in
+   it runs. With update trust pinned (H624) it plans and requests an update to the default
+   target (the pinned commit, else the upstream) or to a tag or commit the owner types, showing
+   the target's signature status; otherwise the hub says why, and the steps are in
    docs/UPGRADE.md. "Restart" asks the hub to restart itself, then waits until it answers
    again; a hub that was not started by serve.py says it cannot. */
 import React, { useEffect, useRef, useState } from 'react';
@@ -16,6 +18,16 @@ type Check = { version: string; install: string; restart: 'self' | 'manual'; bra
   upstream: string | null; behind: number | null; ahead: number | null; fetched_seconds_ago: number | null;
   dirty: boolean | null; can_apply: boolean; apply_refused: string[]; manual_steps: string };
 type Action = { id: string; kind: string; status: 'running' | 'ok' | 'failed'; lines: string[] };
+type Receipt = { id: string; kind: string; from: string | null; to: string | null; phase?: string; result?: string | null;
+  reason?: string | null; action_id?: string | null; log?: string[] };
+type Trust = { configured: boolean; mode: string | null; fingerprints?: string[]; commit?: string };
+type Plan = { can_apply: boolean; refused: string[]; from: string | null; to: string | null; from_version: string | null;
+  to_version: string | null; commit_count: number; file_count: number; migrations: string[]; migrations_uncertain?: boolean;
+  dependencies: { changed: boolean; command: string | null; refused?: string | null };
+  commits: { sha: string; subject?: string }[]; verdict?: { trusted: boolean; how?: string; signer?: string; reason?: string } | null };
+type Target = { ref: string | null; commit: string | null; signature: string; signer?: string | null; reason?: string | null };
+type UpdateCheck = Check & { trust?: Trust; target?: Target; in_progress?: Receipt | null; last_receipt?: Receipt | null };
+const short = (sha: string | null | undefined) => (sha ? sha.slice(0, 12) : '—');
 
 export function ago(s: number | null | undefined): string {
   if (s == null) return 'never fetched';
@@ -33,11 +45,13 @@ const why = (err: any) => {
 
 export function SystemUpdatePanel({ pollMs = 1000 }: { pollMs?: number }) {
   const { d, e, reload } = useApi(OPS_UPDATE_PATH, true, true);
-  const c = d as Check | null;
+  const c = d as UpdateCheck | null;
+  const [plan, setPlan] = useState<Plan | null>(null);
   const [log, setLog] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [ref, setRef] = useState('');
   const timer = useRef<any>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
@@ -76,6 +90,22 @@ export function SystemUpdatePanel({ pollMs = 1000 }: { pollMs?: number }) {
       .catch((x: any) => { setBusy(false); setNote(`not restarted · ${why(x)}`); });
   };
 
+  const showPlan = () => {
+    setBusy(true); setNote(null);
+    const wanted = ref.trim();
+    apiGet<Plan>(`/api/admin/ops/update/plan${wanted ? `?ref=${encodeURIComponent(wanted)}` : ''}`, { admin: true })
+      .then((p) => { setPlan(p); setBusy(false); })
+      .catch((x: any) => { setBusy(false); setNote(`no plan · ${why(x)}`); });
+  };
+  const queueCard = (path: string, body: object, what: string) => {
+    setBusy(true); setNote(null);
+    apiPost<{ task_id: number }>(path, body, { admin: true })
+      .then((r) => { setBusy(false); setNote(`approval card #${r.task_id} queued: ${what} — accept it in the approval queue`); reload(); })
+      .catch((x: any) => { setBusy(false); setNote(`not queued · ${why(x)}`); });
+  };
+  const flight = c?.in_progress || null;
+  const last = c?.last_receipt || null;
+
   return (
     <Card title="RESTART / UPDATE" live={c ? 'live' : undefined} onReload={reload}
       sub={c ? `v${c.version}${c.commit ? ` · ${c.commit}` : ''}` : null}>
@@ -87,6 +117,11 @@ export function SystemUpdatePanel({ pollMs = 1000 }: { pollMs?: number }) {
           <dt>Behind</dt><dd style={{ margin: 0 }}>{c.behind == null ? 'unknown' : `${c.behind} commit(s)`}{c.ahead ? ` · ${c.ahead} ahead` : ''} · as of the last fetch, {ago(c.fetched_seconds_ago)}</dd>
           <dt>Working tree</dt><dd style={{ margin: 0 }}>{c.dirty == null ? 'unknown' : c.dirty ? <Tag c="var(--amber)">uncommitted changes</Tag> : 'clean'}</dd>
           <dt>Restart</dt><dd style={{ margin: 0 }}>{c.restart === 'self' ? 'Nerva can restart itself' : 'restart it the way it was started'}</dd>
+          <dt>Trust</dt><dd style={{ margin: 0, ...mono }}>{c.trust?.configured ? `${c.trust.mode} · ${c.trust.commit ? short(c.trust.commit) : (c.trust.fingerprints || []).join(', ')}` : 'none pinned (nerva update trust)'}</dd>
+          {c.target?.commit && <><dt>Target</dt><dd style={{ margin: 0 }}><span style={mono}>{short(c.target.commit)}</span> ({c.target.ref}) · signature {c.target.signature === 'verified'
+            ? <Tag c="var(--green)">verified</Tag> : <Tag c="var(--amber)">{c.target.signature}{c.target.reason ? `: ${c.target.reason}` : ''}</Tag>}</dd></>}
+          {flight && <><dt>In progress</dt><dd style={{ margin: 0 }}><Tag c="var(--amber)">{flight.kind} {flight.phase}</Tag> {short(flight.from)} → {short(flight.to)}</dd></>}
+          {last && <><dt>Last</dt><dd style={{ margin: 0 }}>{last.kind} {short(last.from)} → {short(last.to)} · {last.result || last.phase}{last.reason ? ` (${last.reason})` : ''}</dd></>}
         </dl>
       )}
       <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
@@ -101,6 +136,31 @@ export function SystemUpdatePanel({ pollMs = 1000 }: { pollMs?: number }) {
             </span>
           )}
       </div>
+      {(c?.can_apply || (c?.trust?.configured && c?.install === 'git')) && (
+        <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input aria-label="update target" placeholder="tag or commit (blank: default target)" value={ref}
+            onChange={(ev) => { setRef(ev.target.value); setPlan(null); }} style={{ ...mono, fontSize: 11, minWidth: 0, flex: '1 1 160px' }} />
+          <button className="tool-btn" disabled={busy} onClick={showPlan}>plan</button>
+          {plan?.can_apply && <button className="tool-btn" disabled={busy} onClick={() => queueCard('/api/admin/ops/update/apply', ref.trim() ? { ref: ref.trim() } : {}, `update to ${short(plan.to)}`)}>request update</button>}
+        </div>
+      )}
+      {last?.kind === 'update' && last.result === 'verified' && !flight && (
+        <button className="tool-btn" style={{ marginTop: 6 }} disabled={busy} onClick={() => queueCard('/api/admin/ops/update/rollback', {}, `roll back to ${short(last.from)}`)}>request rollback</button>
+      )}
+      {plan && (
+        <div aria-label="update plan" style={{ fontSize: 11, marginTop: 6 }}>
+          <div>{short(plan.from)} ({plan.from_version || '?'}) → {short(plan.to)} ({plan.to_version || '?'}) · {plan.commit_count} commit(s), {plan.file_count} file(s)</div>
+          <div>signature: {plan.verdict?.trusted ? `verified (${plan.verdict.how}${plan.verdict.signer ? ` · ${plan.verdict.signer}` : ''})` : `unverified${plan.verdict?.reason ? ` (${plan.verdict.reason})` : ''}`}</div>
+          <div>dependencies: {plan.dependencies.refused ? `lock refused: ${plan.dependencies.refused}` : plan.dependencies.command || 'lock unchanged'} · data: {plan.migrations_uncertain
+            ? 'possible data migration (the changed files could not be scanned)'
+            : plan.migrations.length ? `possible data migration in: ${plan.migrations.join(', ')}` : 'none expected: no store code changed'}</div>
+          {plan.commits.slice(0, 10).map((x) => <div key={x.sha} style={mono}>{short(x.sha)} {x.subject}</div>)}
+          {plan.refused.length > 0 && <div style={{ color: 'var(--amber)' }}>refused: {plan.refused.join(', ')}</div>}
+        </div>
+      )}
+      {flight?.log && flight.log.length > 0 && log.length === 0 && (
+        <pre aria-label="update log" style={{ ...mono, fontSize: 10.5, maxHeight: 220, overflow: 'auto', background: 'var(--surface)', padding: 6, marginTop: 6 }}>{flight.log.join('\n')}</pre>
+      )}
       {note && <div role="status" style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>{note}</div>}
       {log.length > 0 && (
         <pre aria-label="action log" style={{ ...mono, fontSize: 10.5, maxHeight: 220, overflow: 'auto', background: 'var(--surface)', padding: 6, marginTop: 6 }}>{log.join('\n')}</pre>

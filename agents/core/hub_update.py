@@ -18,12 +18,12 @@ offered (see "Apply" below).
   backup restore is applied by that restart, as it is by any start.
 
 **Apply** — pulling and running new code is host execution and irreversible in the sense
-that the code that runs next is not the code that approved it. It would need, at least: a
-verified pre-update backup, a clean tree, a tracked branch, the irreversible approval tier,
-and a way to tell that the new commit is one the owner trusts (a signed tag, a pinned ref).
-This repository has no signature or pinned-ref check for its own code, so an apply cannot
-be made safe here; :func:`check` reports ``can_apply: false`` with its reasons and the
-manual steps (``docs/UPGRADE.md``).
+that the code that runs next is not the code that approved it. H624 adds it in
+:mod:`agents.core.hub_update_apply`: a trusted-commit check (allowed SSH or OpenPGP signing
+keys, or one pinned commit, set through an irreversible-tier card), a plan, a verified
+pre-update backup, an irreversible-tier ``hub.update`` card, a fast-forward to the verified
+sha, the hash-pinned lock, a restart, a post-restart check and an automatic rollback.
+:func:`check` reports ``can_apply`` and, while it is false, its reasons in ``apply_refused``.
 
 git runs with a fixed argv (never a shell), ``GIT_TERMINAL_PROMPT=0``, no pager, its
 fsmonitor and hooks turned off and the ``ext::`` transport refused for the call, a timeout,
@@ -145,8 +145,20 @@ def check() -> dict:
                             "branch": None, "commit": None, "upstream": None, "behind": None, "ahead": None,
                             "fetched_seconds_ago": None, "dirty": None, "can_apply": False,
                             "manual_steps": "docs/UPGRADE.md"}
-    reasons = ["no signature or pinned-ref check exists for this repository's own code, so applying "
-               "an update from the HUD cannot be made safe; update by hand (docs/UPGRADE.md)"]
+    from agents.core import hub_update_apply
+
+    trust = hub_update_apply.trust_status()
+    body["trust"] = trust
+    reasons = []
+    if not trust["configured"]:
+        reasons.append("no trusted signature key or pinned commit is configured, so no commit can be "
+                       "verified: pin one first (`nerva update trust`), or update by hand (docs/UPGRADE.md)")
+    in_flight = hub_update_apply.current()
+    body["in_progress"] = hub_update_apply._public(in_flight) if in_flight else None
+    last = hub_update_apply.receipts(1)
+    body["last_receipt"] = hub_update_apply._public(last[-1]) if last else None
+    if in_flight:
+        reasons.append("an update or rollback is in progress")
     if install == "container":
         reasons.append("a container is updated by pulling a new image, not from inside it")
     if install != "git":
@@ -171,7 +183,25 @@ def check() -> dict:
         reasons.append("the branch tracks no upstream")
     if body["dirty"]:
         reasons.append("the working tree has uncommitted changes")
+    target = hub_update_apply.default_target_status()
+    body["target"] = target
+    if trust.get("mode") == "pinned":
+        # the target is the owner's pinned commit, not the upstream
+        if target["commit"] is None:
+            reasons.append("the pinned commit is not in this checkout yet: fetch it first")
+        elif target["commit"] == hub_update_apply.head():
+            reasons.append("nothing to apply: the checkout already runs the pinned commit")
+        if "the branch tracks no upstream" in reasons:
+            reasons.remove("the branch tracks no upstream")      # a pinned commit needs none
+    elif body["behind"] == 0:
+        reasons.append("nothing to apply: the checkout is not behind its upstream as of the last fetch")
+    if trust["configured"] and target["commit"] and target["signature"] != "verified":
+        reasons.append(f"the target {target['commit'][:12]} is not verified against the pinned trust "
+                       f"({target.get('reason') or 'unverified'})")
+    if body["restart"] != "self":
+        reasons.append("this hub cannot restart itself, so the new code could not be checked after the update")
     body["apply_refused"] = reasons
+    body["can_apply"] = not reasons
     return body
 
 

@@ -24,6 +24,7 @@ ExternalBindingName = Literal[
     "channel_replies",
     "call_broker",
     "node_mesh",
+    "room_peers",
     "subagents",
     "task_executor",
     "last_memory_maintenance",
@@ -55,13 +56,14 @@ EXTERNAL_BINDING_WRITERS: Mapping[str, tuple[ExternalBindingCallsite, ...]] = Ma
         "channel_replies": (("agents/core/autonomy_coordinator.py", 2376, 8),),
         "call_broker": (("agents/core/autonomy_coordinator.py", 2397, 8),),
         "node_mesh": (("agents/core/autonomy_coordinator.py", 2417, 8),),
-        "subagents": (("agents/core/autonomy_coordinator.py", 2603, 8),),
-        "task_executor": (("agents/core/autonomy_coordinator.py", 2643, 8),),
+        "room_peers": (("agents/core/autonomy_coordinator.py", 2451, 8),),
+        "subagents": (("agents/core/autonomy_coordinator.py", 2643, 8),),
+        "task_executor": (("agents/core/autonomy_coordinator.py", 2683, 8),),
         "last_memory_maintenance": (("agents/core/scheduler_service.py", 594, 8),),
         "channel_inbox": (("agents/web.py", 608, 4),),
         "oracle_bridge": (("agents/core/plugin_manager.py", 362, 8),),
-        "permission_ledger": (("agents/core/autonomy_coordinator.py", 2471, 12),),
-        "work_runs": (("agents/core/autonomy_coordinator.py", 2506, 12),),
+        "permission_ledger": (("agents/core/autonomy_coordinator.py", 2511, 12),),
+        "work_runs": (("agents/core/autonomy_coordinator.py", 2546, 12),),
         "argus": (("agents/core/plugin_manager.py", 367, 8),),
         "company_runtime": (("agents/core/scheduler_service.py", 378, 12),),
         "custom_endpoint_service": (("agents/core/llm/custom_endpoint_service.py", 551, 4),),
@@ -85,6 +87,7 @@ class ExternalOrchestratorBindings(Protocol):
     channel_replies: Any | None
     call_broker: Any | None
     node_mesh: Any | None
+    room_peers: Any | None
     subagents: Any | None
     task_executor: Any | None
     last_memory_maintenance: Any | None

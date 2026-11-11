@@ -20,20 +20,17 @@ rebrand and the Hermes integration (PR #1347 and every PR that was open on 2026-
    `docs/hermes/areas.json`).
 
 ## The goal
-Finish the backlog and bring the 697 Hermes capabilities to parity in Nerva. Today: 161 equivalent, 489 partial,
-11 missing, 36 excluded. A row is `equivalent` only when nothing remains (`scripts/hermes_status.py` enforces it);
+Finish the backlog and bring the 697 Hermes capabilities to parity in Nerva. Today: 161 equivalent, 492 partial,
+8 missing, 36 excluded. A row is `equivalent` only when nothing remains (`scripts/hermes_status.py` enforces it);
 otherwise it is `partial` and its `remaining` text lists exactly what is left. Be honest — never mark a row
 equivalent to make a number move.
 
 ## Work in this order
-1. **Review and merge the three built-but-unreviewed patches** in `docs/hermes/pending/` (H624 safe update apply,
-   H224 terminal keyboard model, H658 remote room members). Apply each on a branch, regenerate generated files,
-   do an adversarial security review with runnable repro tests, fix, re-run the repros, merge.
-2. **Close partial rows group by group** (`docs/hermes/areas.json` groups rows by feature area). For each row read
+1. **Close partial rows group by group** (`docs/hermes/areas.json` groups rows by feature area). For each row read
    `scripts/hermes_status.py show Hxxx`, build what `remaining` lists, add tests, update the row honestly.
-3. **Ask the owner** before: the five sidecar-only rows (H032, H214, H238, H590, H657), H040/H086 (no upstream
+2. **Ask the owner** before: the five sidecar-only rows (H032, H214, H238, H590, H657), H040/H086 (no upstream
    code), a new Matrix Olm/Megolm dependency (H127), the kernel default flip, RB-3 (renaming code identifiers / repo).
-4. Open BACKLOG rows (`scripts/backlog.py open`).
+3. Open BACKLOG rows (`scripts/backlog.py open`).
 
 ## Non-negotiables (from `MOONSHOT.md` §5 and how this codebase was built)
 - **Security first.** Anything touching approvals, credentials, execution, file writes, network egress, memory,

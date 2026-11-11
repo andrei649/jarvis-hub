@@ -27,6 +27,7 @@ from urllib.parse import quote, urlencode
 from .client import HubClient, HubError, HubUnavailable, hub_url, is_loopback_url
 from .custom_endpoints import run as cmd_custom_provider
 from .mcp_catalog import run as cmd_mcp
+from .rooms import run as cmd_rooms
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -200,6 +201,8 @@ def build_parser() -> argparse.ArgumentParser:
     configure_custom_endpoints(verbs)
     from .mcp_catalog import register_parser as configure_mcp_catalog
     configure_mcp_catalog(verbs)
+    from .rooms import register_parser as configure_rooms
+    configure_rooms(verbs)
 
     from agents.core.kanban.cli_parser import build_parser as configure_kanban
     configure_kanban(verbs)
@@ -543,6 +546,38 @@ def build_parser() -> argparse.ArgumentParser:
     engage = estop_verbs.add_parser("engage", help="pause new autonomous work (admin)")
     engage.add_argument("--reason", default="")
     estop_verbs.add_parser("resume", help="lift the emergency stop (admin)")
+
+    update = verbs.add_parser(
+        "update", help="update this install to a trusted commit, verify it, roll it back (admin, H624)")
+    update_verbs = update.add_subparsers(dest="action", required=True, metavar="action")
+    update_status = update_verbs.add_parser("status", help="trust, the update in flight and the last receipts")
+    update_status.add_argument("--json", action="store_true")
+    update_plan = update_verbs.add_parser(
+        "plan", help="what an update would change (commits, files, lock, migrations) and why it is refused")
+    update_plan.add_argument("--ref", default=None, help="a tag, branch or full commit (default: the pinned "
+                             "commit, else the tracked upstream)")
+    update_plan.add_argument("--json", action="store_true")
+    update_apply = update_verbs.add_parser(
+        "apply", help="queue an approval card for the update; a person accepts it in the approval queue")
+    update_apply.add_argument("--ref", default=None)
+    update_apply.add_argument("--stash", action="store_true",
+                              help="stash uncommitted changes first instead of refusing (never discards them)")
+    update_rollback = update_verbs.add_parser(
+        "rollback", help="queue a card to roll the last update back (--offline: the hub is not running)")
+    update_rollback.add_argument("--restore-data", choices=("yes", "no"), default=None,
+                                 help="restore the pre-update backup (default: when a migration may have run)")
+    update_rollback.add_argument("--offline", action="store_true",
+                                 help="roll back here, with no hub running (the owner at the machine)")
+    update_rollback.add_argument("--yes", action="store_true", help="confirm an --offline rollback")
+    update_trust = update_verbs.add_parser(
+        "trust", help="queue a card pinning which signing keys or commit an update may apply")
+    trust_how = update_trust.add_mutually_exclusive_group(required=True)
+    trust_how.add_argument("--ssh-key", action="append", metavar="FILE", help="an SSH public key file (repeatable)")
+    trust_how.add_argument("--gpg-key", metavar="FILE", help="an ASCII-armored OpenPGP public key block")
+    trust_how.add_argument("--pin", metavar="COMMIT", help="one exact commit (40 hex)")
+    update_trust.add_argument("--fingerprint", action="append", default=[],
+                              help="with --gpg-key: each primary key fingerprint, declared explicitly")
+    update_trust.add_argument("--principal", default="owner", help="with --ssh-key: the signer's name")
 
     lsp = verbs.add_parser("lsp", help="language servers for code diagnostics (H055)")
     lsp_verbs = lsp.add_subparsers(dest="action", required=True, metavar="action")
@@ -906,6 +941,7 @@ def build_parser() -> argparse.ArgumentParser:
                "  echo \"summarise this\" | nerva chat -z --usage-file spend.json\n"
                "  nerva chat -z -f prompt.txt --agent athena\n"
                "  nerva chat -z --image screenshot.png \"what does this error say?\"\n"
+               "  nerva chat -i            (the interactive chat on this terminal; /keys inside)\n"
                "\n"
                "This verb never auto-approves. If the turn queues an action for approval it\n"
                "stays queued: stdout is empty, the exit code is 1, and stderr names what to\n"
@@ -935,6 +971,12 @@ def build_parser() -> argparse.ArgumentParser:
     selection.add_argument("-c", "--continue", dest="continue_latest", action="store_true",
                            help="use the latest unarchived conversation and print a free recap")
     chat.add_argument("--json", action="store_true")
+    chat.add_argument("-i", "--interactive", action="store_true",
+                      help="an interactive chat on this terminal (H224): Enter sends, Alt+Enter is a "
+                           "newline, Ctrl+C clears / stops the turn / exits, Tab completes, "
+                           "/keys lists the rest")
+    chat.add_argument("--no-history", action="store_true",
+                      help="with -i: keep no history file (NERVA_CHAT_HISTORY=off does it for every chat)")
     chat.add_argument("--no-prompts", action="store_true",
                       help="do not answer the turn's questions, secret requests or approvals here, "
                            "even on a terminal")
@@ -4024,6 +4066,94 @@ def cmd_estop(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+def cmd_update(ns: argparse.Namespace, ctx: Context) -> int:
+    """H624: update the install to a trusted commit, through the hub's approval queue."""
+    if ns.action == "rollback" and ns.offline:
+        from agents.core import hub_update_apply
+
+        if not ns.yes:
+            ctx.say("an offline rollback moves the checkout back and may restore data: add --yes")
+            return EXIT_USAGE
+        try:
+            done = hub_update_apply.rollback_offline(
+                None if ns.restore_data is None else ns.restore_data == "yes")
+        except hub_update_apply.UpdateRefused as exc:
+            ctx.say(f"refused: {exc.code}{' — ' + exc.detail if exc.detail else ''}")
+            return EXIT_FAILED
+        ctx.say(f"checkout moved back to {str(done.get('to') if done.get('kind') == 'rollback' else done.get('from'))[:12]}"
+                + ("; the pre-update backup is staged for the next start" if done.get("data_restored") else "")
+                + " — start Nerva again")
+        return EXIT_OK if done.get("phase") == "rolled_back_restarting" else EXIT_FAILED
+    client = ctx.client()
+    if ns.action == "status":
+        body = client.get("/api/admin/ops/update/receipts") or {}
+        if ns.json:
+            ctx.dump(body)
+            return EXIT_OK
+        trust = body.get("trust") or {}
+        if trust.get("configured"):
+            pinned = trust.get("commit") or ", ".join(trust.get("fingerprints") or [])
+            ctx.say(f"trust: {trust.get('mode')} · {pinned}")
+        else:
+            ctx.say("trust: none — every apply is refused (`nerva update trust`)")
+        flight = body.get("in_progress")
+        if flight:
+            ctx.say(f"in progress: {flight.get('kind')} {str(flight.get('from'))[:12]} → "
+                    f"{str(flight.get('to'))[:12]} ({flight.get('phase')})")
+        for row in (body.get("receipts") or [])[-10:]:
+            ctx.say(f"  {row.get('id')} {row.get('kind'):<8} {str(row.get('from'))[:12]} → "
+                    f"{str(row.get('to'))[:12]} {row.get('result') or row.get('phase')}"
+                    + (f" ({row.get('reason')})" if row.get("reason") else ""))
+        return EXIT_OK
+    if ns.action == "plan":
+        query = urlencode({"ref": ns.ref}) if ns.ref else ""
+        body = client.get("/api/admin/ops/update/plan" + (f"?{query}" if query else "")) or {}
+        if ns.json:
+            ctx.dump(body)
+            return EXIT_OK
+        ctx.say(f"{str(body.get('from'))[:12]} ({body.get('from_version')}) → {str(body.get('to'))[:12]} "
+                f"({body.get('to_version')}) · {body.get('commit_count')} commit(s), {body.get('file_count')} file(s)")
+        verdict = body.get("verdict") or {}
+        ctx.say(f"  trust: {'verified (' + str(verdict.get('how')) + ')' if verdict.get('trusted') else verdict.get('reason') or 'unchecked'}")
+        deps = body.get("dependencies") or {}
+        ctx.say(f"  dependencies: {deps.get('command') or 'lock unchanged'}")
+        ctx.say(f"  migrations: {', '.join(body.get('migrations') or []) or 'none expected'}")
+        for commit in (body.get("commits") or [])[:20]:
+            ctx.say(f"    {str(commit.get('sha'))[:12]} {commit.get('subject', '')}")
+        if body.get("refused"):
+            ctx.say(f"  refused: {', '.join(body['refused'])}")
+            return EXIT_FAILED
+        ctx.say("  can apply: `nerva update apply` queues the approval card")
+        return EXIT_OK
+    if ns.action == "apply":
+        reply = client.post("/api/admin/ops/update/apply",
+                            {**({"ref": ns.ref} if ns.ref else {}), "dirty_policy": "stash" if ns.stash else "refuse"}) or {}
+        ctx.say(f"approval card #{reply.get('task_id')} queued: update {str(reply.get('from'))[:12]} → "
+                f"{str(reply.get('to'))[:12]} — accept it in the approval queue")
+        return EXIT_OK
+    if ns.action == "rollback":
+        body = {} if ns.restore_data is None else {"restore_data": ns.restore_data == "yes"}
+        reply = client.post("/api/admin/ops/update/rollback", body) or {}
+        plan = reply.get("plan") or {}
+        ctx.say(f"approval card #{reply.get('task_id')} queued: roll back to {str(plan.get('to'))[:12]}"
+                f"{' and restore ' + str(plan.get('backup')) if plan.get('restore_data') else ''} — accept it "
+                f"in the approval queue")
+        return EXIT_OK
+    # trust
+    if ns.pin:
+        body = {"mode": "pinned", "commit": ns.pin}
+    elif ns.ssh_key:
+        body = {"mode": "ssh", "principal": ns.principal,
+                "keys": [Path(path).read_text(encoding="utf-8").strip() for path in ns.ssh_key]}
+    else:
+        body = {"mode": "gpg", "public_key": Path(ns.gpg_key).read_text(encoding="utf-8"),
+                "fingerprints": ns.fingerprint}
+    reply = client.post("/api/admin/ops/update/trust", body) or {}
+    ctx.say(f"approval card #{reply.get('task_id')} queued: pin update trust ({reply.get('mode')}) — accept it "
+            f"in the approval queue")
+    return EXIT_OK
+
+
 def cmd_lsp(ns: argparse.Namespace, ctx: Context) -> int:
     """H055: language servers, through the hub (it owns the running processes)."""
     client = ctx.client()
@@ -5621,7 +5751,9 @@ _ANSWER_ESCAPE = re.compile(
 #: range is stripped so a model (or anything upstream of it) cannot repaint the terminal
 #: or forge output in a piped run. Deliberately NOT `_plain`, which also eats \n and
 #: truncates at 200 characters — that would destroy the payload.
-_ANSWER_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+#: H224 review m1: also the bidi controls and zero-width marks (U+200B-U+200F,
+#: U+202A-U+202E, U+2066-U+2069, U+FEFF), which can reorder or hide what a reader sees.
+_ANSWER_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]")
 
 
 def _answer_text(reply: Any) -> str:
@@ -5913,6 +6045,41 @@ def cmd_acp(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+def _interactive_chat(ns: argparse.Namespace, ctx: Context) -> int:
+    """H224 — `nerva chat -i`: the interactive terminal chat (agents/cli/repl.py)."""
+    conflicts = [flag for flag, given in (
+        ("MESSAGE", ns.message), ("--file", ns.file), ("-z", getattr(ns, "oneshot", False)),
+        ("--json", ns.json), ("--usage-file", getattr(ns, "usage_file", None)),
+        ("--image", getattr(ns, "image", None)), ("--clipboard-image", getattr(ns, "clipboard_image", False)),
+        ("--no-prompts", getattr(ns, "no_prompts", False))) if given]
+    if conflicts:
+        ctx.err.write(f"-i is the interactive chat; {', '.join(conflicts)} belong to a scripted turn\n")
+        return EXIT_USAGE
+    if not (_is_tty(ctx.inp) and _is_tty(ctx.out)):
+        ctx.err.write("-i needs a terminal on stdin and stdout; a script uses `nerva chat MESSAGE`\n")
+        return EXIT_USAGE
+    session = getattr(ns, "session", None)
+    selector = getattr(ns, "resume", None)
+    if selector or getattr(ns, "continue_latest", False):
+        if selector and selector.startswith("@"):
+            ctx.err.write("-i resumes the hub's own sessions; import a foreign one with "
+                          "`nerva chat -r @claude MESSAGE` first\n")
+            return EXIT_USAGE
+        try:
+            resolved = ctx.client().post("/sessions/resolve", {
+                "selector": selector or "latest", "latest_mode": bool(getattr(ns, "continue_latest", False))})
+        except HubError as exc:
+            ctx.err.write(f"{_plain(exc, 300)}\n")
+            return EXIT_AUTH if exc.status in (401, 403) else EXIT_FAILED
+        session = resolved.get("session_id") if isinstance(resolved, dict) else None
+    from .repl import Repl, load_readline
+
+    repl = Repl(ctx, session_id=session if isinstance(session, str) and session else None,
+                agent=ns.agent or None, reasoning=getattr(ns, "reasoning", None),
+                history=not getattr(ns, "no_history", False), readline_module=load_readline())
+    return repl.run()
+
+
 def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
     """One scripted turn. H002 — a turn in, an answer out, and an exit code a script can trust.
 
@@ -5922,6 +6089,8 @@ def cmd_chat(ns: argparse.Namespace, ctx: Context) -> int:
     verb reports it on stderr and exits non-zero, and there is no flag that changes that.
     Nothing in this function can approve, execute or bypass a queued item.
     """
+    if getattr(ns, "interactive", False):
+        return _interactive_chat(ns, ctx)
     oneshot = bool(getattr(ns, "oneshot", False))
     usage_file = getattr(ns, "usage_file", None)
     if usage_file is not None and not str(usage_file).strip():
@@ -6582,7 +6751,7 @@ SEND_MAX_CHARS = 4_000
 #: HTTP 422 that a script would read as "the turn failed".
 CHAT_MAX_CHARS = 4_096
 _NO_BODY = "no message provided. Pass text as an argument, use --file PATH, or pipe it on stdin"
-_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]")
 
 
 def _plain(text: Any, width: int = 200, *, keep_tail: bool = False) -> str:
@@ -7104,6 +7273,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "skills": cmd_skills,
     "estop": cmd_estop,
     "lsp": cmd_lsp,
+    "update": cmd_update,
     "company": cmd_company,
     "goal": cmd_goal,
     "pairing": cmd_pairing,
@@ -7113,6 +7283,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     # argparse names the verb as typed, so each alias dispatches too.
     **dict.fromkeys(("journey", *_JOURNEY_ALIASES), cmd_journey),
     "provider": cmd_custom_provider,
+    "rooms": cmd_rooms,
     "mcp": cmd_mcp,
     "webhook": cmd_webhook,
     "jobs": cmd_jobs,

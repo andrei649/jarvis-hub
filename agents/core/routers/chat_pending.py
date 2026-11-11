@@ -2,7 +2,8 @@
 
 `nerva chat` uses these two routes to answer a turn's questions mid-turn (H226). A
 secret prompt is listed with its name only; its value is stored through the secret
-broker route, and the answer here is the marker ``"stored"``, never the value."""
+broker route, and the answer here is the marker ``"stored"``, never the value.
+``POST /chat/interrupt`` (H224) stops the caller's own running turn."""
 
 import asyncio
 import hashlib
@@ -137,3 +138,36 @@ async def answer_pending(request: Request, body: PendingAnswer,
     status = {"resolved": 200, "invalid": 422, "unavailable": 404}[result]
     return JSONResponse({"ok": result == "resolved", "status": result}, status_code=status,
                         headers={"Cache-Control": "no-store"})
+
+
+class TurnInterrupt(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    session_id: str | None = Field(default=None, max_length=128, description=
+        "Stop the caller's turn in this conversation.")
+    turn_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$", description=
+        "Stop the caller's turn sent with this X-Nerva-Turn-Id header (before a session id is known).")
+
+    @model_validator(mode="after")
+    def names_a_turn(self):
+        if self.session_id is None and self.turn_id is None:
+            raise ValueError("name the turn to stop: session_id or turn_id")
+        return self
+
+
+@router.post("/chat/interrupt", dependencies=[Depends(user_guard)])
+async def interrupt_turn(request: Request, body: TurnInterrupt):
+    """H224 — stop the caller's own running ``POST /chat`` turn (Ctrl+C in `nerva chat -i`).
+
+    Turns are found by the credential that started them, never by a name in the body:
+    another credential's turn is simply not found. The body names which of the caller's
+    turns (its session, or the turn id sent with ``POST /chat``); one naming neither is
+    refused (422), so a client cannot stop every turn of a shared credential by accident. The stopped turn answers its own
+    request with the interrupted reply and a ``turn_interrupted`` notice."""
+    from ..session_continuation import is_valid_session_id
+    from ..turn_interrupts import interrupt
+
+    if body.session_id is not None and not is_valid_session_id(body.session_id):
+        return JSONResponse({"error": "invalid_session_id"}, status_code=422,
+                            headers={"Cache-Control": "no-store"})
+    stopped = interrupt(http_actor(request), body.session_id, body.turn_id)
+    return JSONResponse({"ok": True, "interrupted": stopped}, headers={"Cache-Control": "no-store"})

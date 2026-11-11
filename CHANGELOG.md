@@ -4,6 +4,48 @@
 
 ### What changed for you — 2026-11-11
 
+**An interactive chat in the terminal: `nerva chat -i`**
+- Enter sends. Alt+Enter adds a new line, and so does Shift+Enter on terminals that report
+  it separately. A line ending in `\` also continues on the next line. A multi-line paste
+  arrives as one message.
+- Ctrl+C clears what you are typing. On an empty line while Nerva is working, it stops that
+  turn, even after a `/switch`; only a turn your own credential started can be stopped, and
+  a step already running may still finish. Messages you queued wait for your next Enter.
+  When nothing is running, a second Ctrl+C (or Ctrl+D) leaves.
+- Ctrl+X Ctrl+E or `/edit` opens your `$VISUAL`/`$EDITOR` on a private temporary file, and
+  the text comes back as your draft. Ctrl+L redraws the screen. Esc Esc discards the draft,
+  and Ctrl+Y brings it back.
+- Tab completes slash commands you may run and `@file:` paths. Up and Down go through your
+  history, which is kept in a private file in your own config folder (never in a hub
+  backup); `--no-history` or `NERVA_CHAT_HISTORY=off` keeps none, and a line that states a
+  password or PIN is never kept.
+- Messages you type while a turn runs wait in a queue (`/queue` to see or drop them).
+  `/image PATH` or `/paste-image` sends your next message, with the image, to the vision
+  model. `/switch` moves between your sessions. `/model` picks the hub's local model
+  (owner only). `/keys` lists every key.
+**A room member on another machine**
+- A member of one of your rooms can now live on another Nerva hub and use tools on this one, under a permission this hub gives it and can take back. Off until you set `JARVIS_ROOM_PEERS=1` on both hubs.
+- Invite from the Console **Remote Members** panel or `nerva rooms invite <room> <member> --tools a,b --url <this hub's address>`. The invitation is a card in your decision inbox; only after you accept it can you take the one-time bundle and hand it to the other hub's owner, who joins with it (`nerva rooms join`, bundle on stdin). Each hub shows a key fingerprint the two owners can compare.
+- Everything the member asks for runs here as that member, never as you: your own approval rules and emergency stops apply, a read-only tool answers at once, anything that changes something becomes a card in your inbox. You can pause a room's remote members with the `room:<id>` kill-switch scope.
+- Revoke a member and its next call is refused. Change its tools and its permission stops working until you invite it again. Its permission expires after an hour of dispatching (renewed automatically) and for good after a week without renewal.
+- Hub-to-hub messages are signed with keys each hub remembers for the other, so a copied permission, a changed message or a replayed one is refused. Keys and permissions are never shown.
+**Update Nerva from the HUD or the command line, and undo it**
+- First pin what Nerva may update to, once: your SSH or OpenPGP signing keys, or one exact
+  commit (`nerva update trust --ssh-key ~/.ssh/id_ed25519.pub`, `--gpg-key key.asc
+  --fingerprint …`, or `--pin <commit>`). Changing it is an approval card. Without it Nerva
+  refuses every update and says why.
+- `nerva update plan` (or "plan" in Console → Restart / Update) shows the commits, files,
+  whether the dependency lock changed, files that may migrate, and the version from → to.
+- `nerva update apply` queues an approval card. When you accept it, Nerva takes and verifies a
+  full backup, moves the checkout forward to the signed commit only, installs the hash-pinned
+  lock if it changed, restarts, and checks that it now serves the new version. If that check
+  fails it goes back to the previous commit (restoring the backup when a migration may have
+  run) and restarts again. A receipt records every step.
+- `nerva update rollback` undoes the last update, again behind an approval card;
+  `nerva update rollback --offline --yes` works when Nerva cannot start.
+- Uncommitted changes in the checkout stop an update, unless you ask for them to be stashed
+  (`--stash`); they are never discarded.
+
 **Merge overlapping skills, only when you say so**
 - In the Decision Inbox, "find overlaps" shows which of your skills cover the same ground
   (measured on this machine). "draft umbrellas" asks your local model to write one umbrella

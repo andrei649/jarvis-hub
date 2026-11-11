@@ -783,6 +783,7 @@ class Orchestrator:
         self.channel_replies = None
         self.call_broker = None
         self.node_mesh = None
+        self.room_peers = None
         self.subagents = None
         self.task_executor = None
         self.last_memory_maintenance = None

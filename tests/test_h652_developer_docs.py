@@ -90,7 +90,9 @@ def test_nerva_dispatches_only_to_its_own_functions():
 
     assert nerva._VERBS["provider"] is custom_endpoints.run
     # G9: the MCP catalog verbs live in their own module.
-    own = {"provider": "agents.cli.custom_endpoints", "mcp": "agents.cli.mcp_catalog"}
+    # H658: `nerva rooms` lives in agents/cli/rooms.py.
+    own = {"provider": "agents.cli.custom_endpoints", "mcp": "agents.cli.mcp_catalog",
+           "rooms": "agents.cli.rooms"}
     assert {verb: fn.__module__ for verb, fn in nerva._VERBS.items()} == {
         verb: own.get(verb, "agents.cli.nerva") for verb in nerva._VERBS
     }

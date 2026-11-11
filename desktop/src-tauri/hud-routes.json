@@ -286,6 +286,8 @@
     "/v2/console/prompts/",
     "/v2/console/rooms",
     "/v2/console/rooms/",
+    "/v2/console/remote-members",
+    "/v2/console/remote-members/",
     "/v2/console/lm-studio",
     "/v2/console/lm-studio/",
     "/v2/console/vlm-describe",

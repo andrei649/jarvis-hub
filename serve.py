@@ -167,6 +167,87 @@ def _leave_refused(refused) -> None:
     raise SystemExit(refused.exit_status) from None
 
 
+def update_boot_guard() -> bool:
+    """H624: count the boots of an update that has not been verified yet; when the new code
+    has failed to start too many times, move the checkout back to the previous commit (and
+    stage the pre-update backup when a migration may have run) before anything else loads.
+    POSIX re-executes so only the previous code runs; elsewhere the next start does.
+
+    The guard is code of the release being checked: when its module does not even import,
+    :func:`_update_guard_fallback` still counts the boots with the standard library and moves
+    the checkout back with plain git (see AUTO_ROLLBACK_LIMITS in hub_update_apply)."""
+    try:
+        from agents.core import hub_update_apply
+
+        moved = hub_update_apply.boot_guard()
+    except Exception as exc:  # noqa: BLE001 — the new code is broken: fall back, never crash here
+        moved = _update_guard_fallback(exc)
+    if not moved:
+        return False
+    print("Nerva: the updated code did not start; rolled back to the previous commit", file=sys.stderr)
+    if os.name != "nt":
+        os.execv(sys.executable, list(sys.orig_argv))  # nosec B606 - this process's own argv
+    return True
+
+
+def _update_guard_fallback(exc: BaseException) -> bool:
+    """The update's boot guard could not load: count this boot in the receipt with the
+    standard library only, and past JARVIS_UPDATE_MAX_BOOTS (default 3) run ``git reset
+    --keep <from>`` (fixed argv, hooks and fsmonitor off). No data restore and no dependency
+    reinstall happen here; the receipt says so and names what to run."""
+    import json
+    import re
+    import subprocess  # nosec B404 - fixed argv, no shell
+
+    try:
+        from agents.core.paths import data_root
+
+        path = data_root() / "update" / "current.json"
+        receipt = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — no receipt (or no paths module): nothing to guard
+        return False
+    if not isinstance(receipt, dict) or receipt.get("kind") != "update" \
+            or receipt.get("phase") not in ("restarting", "verifying"):
+        return False
+    receipt["boots"] = int(receipt.get("boots") or 0) + 1
+    log = receipt.setdefault("log", [])
+    log.append(f"boot guard unavailable ({type(exc).__name__}): boot {receipt['boots']} counted by serve.py")
+    try:
+        # Standard library only (this runs when the guard module cannot import). A NERVA_
+        # spelling is already moved onto JARVIS_ when the agents package loads (RB-2).
+        env = os.environ
+        limit = max(1, int(env.get("JARVIS_UPDATE_MAX_BOOTS") or 3))
+    except ValueError:
+        limit = 3
+    moved = False
+    src = str(receipt.get("from") or "")
+    if receipt["boots"] > limit and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", src):
+        done = subprocess.run(  # nosec B603 B607 - fixed argv
+            ["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "reset", "--keep", src],
+            cwd=str(Path(__file__).resolve().parent), capture_output=True, text=True, timeout=120, check=False,
+            env={"PATH": env.get("PATH", os.defpath), "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"})
+        moved = done.returncode == 0
+        log.append(f"git reset --keep {src[:12]}: {'ok' if moved else done.stderr.strip()[-200:]}")
+        if moved:
+            receipt["phase"] = "rolled_back_restarting"
+            receipt["rollback_reason"] = "the updated hub could not load its update guard"
+            receipt["dependencies_restored"] = False if receipt.get("dependencies_changed") else None
+            if receipt.get("migrations"):
+                receipt["data_restored"] = False
+            receipt["action_needed"] = ("rolled back by serve.py without the update module: reinstall "
+                                        "requirements-beta.lock if it changed and restore the pre-update "
+                                        f"backup {receipt.get('backup')} if a migration ran")
+    tmp = path.with_name(f".{path.name}.fallback")
+    tmp.write_text(json.dumps(receipt, indent=2, sort_keys=True, default=str), encoding="utf-8")
+    os.replace(tmp, path)
+    print(f"Nerva: the update guard did not load ({exc!r}); boot {receipt['boots']} of an unverified "
+          "update" + (" — moved back to the previous commit" if moved else
+                      f"; if Nerva keeps failing, stop it and run `git reset --keep {src}` in the checkout"),
+          file=sys.stderr)
+    return moved
+
+
+update_boot_guard()
 apply_staged_restore()
 
 # O26-P0.6 (F6): the boot guards moved to agents/core/boot_guards.py so the
