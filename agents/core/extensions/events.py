@@ -279,6 +279,7 @@ class _BoundBus:
     def emit(self, event: str, **fields) -> dict | None:
         if event not in EVENTS or event not in FIELDS:
             raise ValueError("unknown_event")
+        _owner_hooks(event, fields)
         bus = self.bus
         if bus is None:
             return None
@@ -289,6 +290,35 @@ class _BoundBus:
         except Exception:
             logger.debug("extension event emission failed", exc_info=True)
             return None
+
+
+#: G17: the lifecycle events an owner hook may also watch, under its own catalogue name.
+OWNER_HOOK_EVENTS = {
+    "command.completed": "command.completed",
+    "session.started": "session.started",
+    "session.ended": "session.ended",
+    "tool.completed": "tool.after",
+    "approval.smart.requested": "approval.requested",
+    "approval.smart.decided": "approval.decided",
+}
+
+
+def _owner_hooks(event: str, fields: dict) -> None:
+    """Hand the same event to the owner's hooks (``agents.core.hooks.runner.observe``):
+    fire and forget, never raises, nothing comes back. Bound or not, the extension bus
+    is not involved: owner hooks are the owner's own approved programs."""
+    target = OWNER_HOOK_EVENTS.get(event)
+    if target is None:
+        return
+    try:
+        from agents.core.hooks.runner import observe
+
+        if target == "tool.after":
+            observe(target, tool_name=fields.get("tool"), status=fields.get("status"))
+        else:
+            observe(target, **fields)
+    except Exception:  # noqa: BLE001 — observation never breaks the emitter
+        logger.debug("owner hook observation failed", exc_info=True)
 
 
 EXTENSION_EVENTS = _BoundBus()

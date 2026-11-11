@@ -509,6 +509,32 @@ def _billable_from_usage(usage) -> tuple[int, int, int] | None:
     return billable_input, usage.output_tokens, usage.cache_read
 
 
+def _owner_hook_turn_started(text, channel, session_id) -> dict:
+    """G17: tell the owner's ``message.received`` hooks a turn starts (the channel, the
+    session and the message's length; never its text). Fire and forget."""
+    turn = {"channel": str(channel or ""), "session_id": str(session_id or ""),
+            "started": time.monotonic(), "status": "error"}
+    try:
+        from .hooks.runner import observe
+
+        observe("message.received", channel=turn["channel"], session_id=turn["session_id"],
+                chars=len(text) if isinstance(text, str) else 0)
+    except Exception:  # noqa: BLE001 — observation never breaks the turn
+        logger.debug("owner hook observation failed", exc_info=True)
+    return turn
+
+
+def _owner_hook_turn_ended(turn: dict) -> None:
+    """G17: tell the owner's ``turn.completed`` hooks how the turn ended."""
+    try:
+        from .hooks.runner import observe
+
+        observe("turn.completed", channel=turn["channel"], session_id=turn["session_id"],
+                status=turn["status"], duration_ms=int((time.monotonic() - turn["started"]) * 1000))
+    except Exception:  # noqa: BLE001
+        logger.debug("owner hook observation failed", exc_info=True)
+
+
 def _taint_attached_context() -> None:
     """H579 — a turn whose owner message attached ``@file:`` content is tainted, like one
     that recalled untrusted memory: an action planned from it escalates GRANT to QUEUE."""
@@ -3415,6 +3441,7 @@ class Orchestrator:
         _taint_attached_context()   # H579: attached file content taints the turn
         project_token = project_context.bind()   # H594: begun once the session is known
         awake = power.hold_for_turn(self)        # H182: off unless JARVIS_KEEP_AWAKE=1
+        hook_turn = _owner_hook_turn_started(text, channel, session_id)
         try:
             from .turn_compaction import TurnCompaction, compaction_scope
 
@@ -3440,24 +3467,30 @@ class Orchestrator:
             settle_agent_turn()
             if _TURN_CHAT_OUTCOMES.get() is not None:
                 self._ack_chat_outcomes(reply)
+            hook_turn["status"] = "ok"
             return reply
         except DataHandlingRefused as exc:
             record_runtime_stop("generation_refused")
             record_turn_completion("refused")
+            hook_turn["status"] = "refused"
             return exc.reply()
         except CompactionClockRefused:
             record_runtime_stop("context_refused")
             record_turn_completion("refused")
+            hook_turn["status"] = "refused"
             return CONTEXT_REFUSED_REPLY
         except ContinuationRefused:
             record_runtime_stop("continuation_refused")
             record_turn_completion("refused")
+            hook_turn["status"] = "refused"
             return CONTINUATION_REFUSED_REPLY
         except ForeignHistoryRefused:
             record_runtime_stop("continuation_refused")
             record_turn_completion("refused")
+            hook_turn["status"] = "refused"
             return CONTINUATION_REFUSED_REPLY
         finally:
+            _owner_hook_turn_ended(hook_turn)
             # H443: read before the origin is reset, saved after every reset below.
             read_untrusted = _turn_is_untrusted()
             # The reason is read now: the turn's origin and principal are reset below.
@@ -3698,6 +3731,7 @@ class Orchestrator:
         _taint_attached_context()   # H579: attached file content taints the turn
         project_token = project_context.bind()   # H594: begun once the session is known
         awake = power.hold_for_turn(self)        # H182: see handle_input
+        hook_turn = _owner_hook_turn_started(text, channel, session_id)
         try:
             from .turn_compaction import TurnCompaction, compaction_scope
 
@@ -3723,24 +3757,30 @@ class Orchestrator:
             settle_agent_turn()
             if _TURN_CHAT_OUTCOMES.get() is not None:
                 self._ack_chat_outcomes(reply)
+            hook_turn["status"] = "ok"
             return reply
         except DataHandlingRefused as exc:
             record_runtime_stop("generation_refused")
             record_turn_completion("refused")
+            hook_turn["status"] = "refused"
             return exc.reply()
         except CompactionClockRefused:
             record_runtime_stop("context_refused")
             record_turn_completion("refused")
+            hook_turn["status"] = "refused"
             return CONTEXT_REFUSED_REPLY
         except ContinuationRefused:
             record_runtime_stop("continuation_refused")
             record_turn_completion("refused")
+            hook_turn["status"] = "refused"
             return CONTINUATION_REFUSED_REPLY
         except ForeignHistoryRefused:
             record_runtime_stop("continuation_refused")
             record_turn_completion("refused")
+            hook_turn["status"] = "refused"
             return CONTINUATION_REFUSED_REPLY
         finally:
+            _owner_hook_turn_ended(hook_turn)
             # H443: read before the origin is reset, saved after every reset below.
             read_untrusted = _turn_is_untrusted()
             # The reason is read now: the turn's origin and principal are reset below.

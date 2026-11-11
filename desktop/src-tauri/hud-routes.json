@@ -272,6 +272,8 @@
     "/v2/console/backup/",
     "/v2/console/files",
     "/v2/console/files/",
+    "/v2/console/hooks",
+    "/v2/console/hooks/",
     "/v2/console/channels-config",
     "/v2/console/channels-config/",
     "/v2/console/restart-update",

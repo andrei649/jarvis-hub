@@ -29,6 +29,7 @@ const LABELS: Record<string, string> = {
   voice_commands: 'voice command providers',
   company_mode: 'the company-mode night shift',
   personality_overlays: 'personality presets',
+  owner_hooks: 'your event hooks',
 };
 
 /** The hub's `safe_mode` field as the HUD holds it; anything malformed is "off". */

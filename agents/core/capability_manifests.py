@@ -630,6 +630,20 @@ ACTION_CAPABILITY_MANIFESTS: dict[str, CapabilityManifest] = {
         implementation="agents.core.environments.execution:GovernedTargetRunner.run",
         contract_ref="agents.core.environments.terminal_contract:TERMINAL_EXEC_CONTRACT",
     ),
+    "hook.exec": _action(
+        "hook.exec",
+        "Run one owner-approved hook program on an agent event, argv fixed, the event as JSON on stdin.",
+        required=("hook_id", "event", "argv_sha256", "binding_sha256", "approved_task_id"),
+        risk="irreversible_or_money",
+        supports=("execute",),
+        rollback=RollbackContract(
+            mode="disable",
+            description="Switch the hook off (or remove it) to stop future runs.",
+            handler_ref="agents.core.hooks.store:disable",
+            limitations="A finished run cannot be undone; switching a hook off does not stop a run already started.",
+        ),
+        implementation="agents.core.hooks.runner:run_hook",
+    ),
     "file.write": _action(
         "file.write",
         "Write or delete one file inside the owner's declared file roots, under a byte cap.",

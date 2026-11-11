@@ -52,6 +52,21 @@
   projects and any server that answers but never reports.
   `nerva lsp list | which | start | stop | restart | clear` manage them; a failed install
   can be cleared and asked for again.
+**Your own programs on agent events, each behind an approval card (hooks)**
+- Console → **Hooks** (or `nerva hooks add <event> -- /path/to/program …`) runs a program of yours when something happens: before or after a tool call, when a message arrives or a turn ends, when a session starts or ends, after a slash command, when an approval is asked or decided. The event reaches the program as JSON on its stdin, in the same shape Hermes uses, so hook scripts carry over.
+- Adding a hook only puts a card in your decision inbox showing the exact command and the fingerprint of every file it runs. Nothing runs until you accept that card. If you edit the script afterwards, the hook stops until you approve it again. Switching a hook off or removing it is immediate.
+- A hook on `tool.before` can stop a tool call (exit code 2, or `{"decision": "block"}`). It can never let through a call that would otherwise wait for you or be refused, and it cannot change the call. Mark it a **guard** and a hook that crashes or times out blocks the call too; otherwise the call goes ahead and the failure is logged.
+- Hooks run without the hub's keys in their environment, in a private folder, with a timeout. They need an admin token on the hub, and none run in safe mode or while the emergency stop is on. `NERVA_HOOKS=0` switches them all off. Details: `docs/HOOKS.md`.
+- **Security fixes (same day):** a hook now runs only while the approval queue still holds your
+  acceptance of exactly that hook — a line written into the hooks file by anything else never
+  runs, and editing a hook's guard flag, tool matcher or timeout there stops it. The hooks folder
+  is closed to the file browser and to the assistant's file writes. With hooks switched off, in
+  safe mode or during an emergency stop, a guard no longer blocks every tool call. A hook that
+  times out (or is switched off while it runs) is killed together with everything it started.
+  Keys in a tool call's arguments are masked before a hook sees them, a hook's block reason
+  reaches the model as untrusted text, a damaged hooks file blocks tool calls instead of
+  silently dropping your guards, and a hook whose script you edited can be re-approved in one
+  step (**re-approve…** in the HUD, `nerva hooks enable <id>`).
 
 **The desktop app starts Nerva, a hotkey from anywhere, notifications and `nerva://` links**
 - The desktop app now starts the hub itself when none is running (from your checkout's

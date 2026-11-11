@@ -1422,6 +1422,13 @@ class FileTools:
         root = self.scope.root_for(target)
         if root is None or target == root:
             return {"ok": False, "reason": "outside_scope"}
+        # G17: the owner's hook definitions are written only by the hooks store, behind an
+        # approval card. No model file write may create or change one, whatever the roots.
+        from .hooks.store import is_store_path
+
+        if is_store_path(target) or is_store_path(os.path.join(str(root), str(raw_path or ""))):
+            self._record("file.hooks_store_protected", f"{op} {target}", ok=False)
+            return {"ok": False, "reason": "hooks_store_protected"}
         attempt_id: str | None = None
         target_key = hashlib.sha256(str(target).encode('utf-8')).hexdigest()
         reported: list[bool] = []

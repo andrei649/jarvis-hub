@@ -49,6 +49,8 @@ BUILTIN_KINDS: dict[str, tuple[str, str]] = {
     "files.rename": ("agents.core.file_browser", "apply_approved"),
     # H055: a language server is third-party code; installing one is a pinned registry fetch.
     "lsp.install": ("agents.core.codeintel.lsp.install", "apply_approved"),
+    # G17 · H163/H021/H514/H408: an owner hook runs a program on this machine on an event.
+    "hooks.define": ("agents.core.hooks.store", "apply_approved"),
 }
 _APPLY: dict[str, Apply] = {}
 #: Kinds some processes must leave for another one: kind → (module, function), the

@@ -682,6 +682,8 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         # H507: an owner's off for the code-pattern warnings reads as on in safe mode.
         "agents/core/code_guidance.py",
         "agents/core/heartbeat.py",
+        # G17: no owner hook runs in safe mode (a guard does not block either).
+        "agents/core/hooks/runner.py",
         # The managed Hermes service only refuses enablement while safe mode is on.
         "agents/core/hermes_runtime/service.py",
         # H490: the router's cloud fallback and the model pull cap read the stricter value.
@@ -702,6 +704,8 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         "agents/core/orchestrator.py",
         "agents/core/plugin_gate.py",
         "agents/core/project_context.py",
+        # G11 (H545): an editor-supplied MCP server is refused in safe mode, like any added server.
+        "agents/core/routers/acp.py",
         "agents/core/routers/mcp.py",
         "agents/core/routers/ops.py",
         "agents/core/routers/plugins.py",

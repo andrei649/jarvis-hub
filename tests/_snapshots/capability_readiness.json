@@ -12,6 +12,7 @@
   "action:file.write": "wired",
   "action:goal.approve": "wired",
   "action:hermes.runtime": "wired",
+  "action:hook.exec": "wired",
   "action:host.control": "wired",
   "action:house.control": "wired",
   "action:house.recovery": "wired",
