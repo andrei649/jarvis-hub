@@ -22,6 +22,17 @@ write while managed mode is on or the managed files cannot be read, is refused
 (``managed_scope.ManagedRefused`` → 409, the settings write is checked by
 ``settings_db.put_category`` and every name by ``managed_scope.check_env_write``).
 
+**A secret is bound to its server** (review M1): the ntfy token and topics to the ntfy
+URL, ``SMTP_PASS`` to the SMTP host and port, ``IMAP_PASS`` to the IMAP host and port
+(:data:`ENDPOINTS`). Changing one of those endpoint values here — setting it for the first
+time included — clears the stored secret, so it must be typed again for the new server; it
+is refused (``BoundSecretInEnv``) while the secret comes from ``.env`` or the
+administrator. Each stored secret records a digest of the endpoint values it was entered
+for, and :func:`verify_bindings` (at start) withholds one whose endpoint changed any other
+way (the generic settings route, an edit of ``.env``). The ntfy URL must be ``https://``
+(``http://`` only to a loopback host), and the email channel verifies the mail servers'
+certificates (``channels/email.py``).
+
 Channels are wired once, at start, so a change applies at the next restart (the view
 says ``restart_required``); the SMS channel reads its account, numbers and token on every
 request, so those apply now. Only the names listed in :data:`CHANNELS` can be set.
@@ -29,6 +40,7 @@ request, so those apply now. Only the names listed in :data:`CHANNELS` can be se
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import ipaddress
 import logging
@@ -51,6 +63,32 @@ _LOCK = threading.Lock()
 _PLACED: dict[str, str] = {}
 #: names whose value changed in this process after the channels were wired.
 _CHANGED: set[str] = set()
+#: secrets stored here but withheld at start: their endpoint changed since they were entered.
+_WITHHELD: set[str] = set()
+BIND_PREFIX = "integration.bind."
+
+#: G21 review M1 — a secret is bound to the endpoint it was entered for. Changing one of
+#: these endpoint values clears the stored secret (it must be typed again for the new
+#: host), refuses while the secret comes from ``.env``, and a stored secret whose endpoint
+#: changed some other way (the generic settings route, ``.env``) is withheld at start.
+ENDPOINTS: dict[str, tuple[str, ...]] = {
+    "NTFY_TOKEN": ("NTFY_URL", "NTFY_SERVER_URL"),
+    "NTFY_TOPIC": ("NTFY_URL", "NTFY_SERVER_URL"),
+    "NTFY_PUBLISH_TOPIC": ("NTFY_URL", "NTFY_SERVER_URL"),
+    "SMTP_PASS": ("SMTP_HOST", "SMTP_PORT"),
+    "IMAP_PASS": ("IMAP_HOST", "IMAP_PORT"),
+}
+
+
+class BoundSecretInEnv(Exception):
+    """An endpoint change while its bound secret comes from ``.env`` (or the administrator):
+    the secret cannot be cleared here, so the endpoint may not move away from it."""
+
+    def __init__(self, endpoint: str, secret: str) -> None:
+        super().__init__(f"{endpoint} cannot change here while {secret} is set in .env (or by the "
+                         f"administrator): it would be sent to the new host. Change both in .env.")
+        self.endpoint = endpoint
+        self.secret = secret
 
 
 class EnvOwned(Exception):
@@ -108,7 +146,7 @@ CHANNELS: tuple[Channel, ...] = (
         Field("IMAP_PASS", "IMAP password", secret=True),
     ), "starts when both an SMTP and an IMAP host are set"),
     Channel("ntfy", "ntfy", (
-        Field("NTFY_URL", "Server URL", "url"),
+        Field("NTFY_URL", "Server URL (https)", "secure_url"),
         Field("NTFY_TOPIC", "Topic (anyone who knows it can read it)", secret=True),
         Field("NTFY_TOKEN", "Access token", secret=True),
         Field("NTFY_TITLE", "Notification title"),
@@ -184,6 +222,16 @@ def normalise(field: Field, value: Any) -> str:
         if not text.isdigit() or not 1 <= int(text) <= 65535:
             raise InvalidValue(field.name)
         return str(int(text))
+    if field.kind == "secure_url":
+        parts = urlsplit(text)
+        host = (parts.hostname or "").lower()
+        loopback = host == "localhost"
+        with contextlib.suppress(ValueError):
+            loopback = loopback or ipaddress.ip_address(host).is_loopback
+        if (not host or parts.username or parts.password
+                or not (parts.scheme == "https" or (parts.scheme == "http" and loopback))):
+            raise InvalidValue(field.name)
+        return text
     if field.kind == "url":
         parts = urlsplit(text)
         if parts.scheme not in {"https", "http"} or not parts.hostname or parts.username or parts.password:
@@ -276,7 +324,60 @@ def _secret_state(field: Field) -> dict:
     status = integration_keys.status(field.name)
     source = status.get("source")
     return {**field.view(), "set": bool(status.get("set")), "source": source,
-            "editable": source in (None, "hub")}
+            "editable": source in (None, "hub"), "needs_reentry": field.name in _WITHHELD}
+
+
+def _effective(name: str) -> str:
+    for spelling in _spellings(name):
+        value = os.environ.get(spelling)
+        if value is not None and value.strip():
+            return value.strip()
+    return ""
+
+
+def _endpoint_digest(secret: str) -> str:
+    joined = "\x00".join(f"{n}={_effective(n)}" for n in ENDPOINTS.get(secret, ()))
+    return _digest(joined)
+
+
+def _record_binding(secret: str) -> None:
+    from agents.core import integration_keys
+
+    if secret in ENDPOINTS:
+        integration_keys._store().set(BIND_PREFIX + secret, _endpoint_digest(secret))
+
+
+def _drop_binding(secret: str) -> None:
+    from agents.core import integration_keys
+
+    if secret in ENDPOINTS and integration_keys._store_path().exists():
+        integration_keys._store().delete(BIND_PREFIX + secret)
+
+
+def verify_bindings() -> list[str]:
+    """Withhold (take out of the environment) every stored secret whose endpoint is not the
+    one it was entered for. Returns the names withheld. Called at start."""
+    from agents.core import integration_keys
+
+    if not integration_keys._store_path().exists():
+        return []
+    withheld = []
+    store = integration_keys._store()
+    for secret in ENDPOINTS:
+        if not integration_keys.placed_here(secret):
+            continue
+        try:
+            recorded = store.get(BIND_PREFIX + secret)
+        except Exception:  # noqa: BLE001 — an unreadable record withholds, the safe side
+            recorded = None
+        if recorded != _endpoint_digest(secret):
+            os.environ.pop(secret, None)
+            integration_keys._PLACED.pop(secret, None)
+            _WITHHELD.add(secret)
+            withheld.append(secret)
+            logger.warning("channel secret %s withheld: its server changed since it was entered; "
+                           "enter it again in the Channels panel", secret)
+    return withheld
 
 
 def listing(running: set[str] | frozenset[str] = frozenset()) -> dict:
@@ -319,6 +420,23 @@ def set_plain(channel_id: str, values: dict[str, Any]) -> dict:
         _check_managed(name)
         if plain_env_owned(name):
             raise EnvOwned(name)
+    from agents.core import integration_keys
+
+    to_clear: list[str] = []
+    for secret, endpoints in ENDPOINTS.items():
+        moved = [n for n in endpoints if n in planned and (planned[n] or "") != _effective(n)]
+        if not moved:
+            continue
+        state = integration_keys.status(secret)
+        if state.get("set") and state.get("source") in ("env", "managed"):
+            raise BoundSecretInEnv(moved[0], secret)
+        if integration_keys.stored_copy(secret) or state.get("set"):
+            to_clear.append(secret)
+    for secret in to_clear:          # first: a failed settings write must not keep the pairing
+        integration_keys.clear_key(secret, allowed=secret_names())
+        _drop_binding(secret)
+        _WITHHELD.discard(secret)
+        _CHANGED.add(secret)
     with _LOCK:
         stored = stored_plain()
         merged = dict(stored)
@@ -339,7 +457,7 @@ def set_plain(channel_id: str, values: dict[str, Any]) -> dict:
                 _PLACED[name] = _digest(value)
             if field is not None and not field.now:
                 _CHANGED.add(name)
-    return {"written": sorted(planned)}
+    return {"written": sorted(planned), "cleared_secrets": sorted(to_clear)}
 
 
 def set_secret(channel_id: str, name: str, value: str) -> dict:
@@ -354,6 +472,8 @@ def set_secret(channel_id: str, name: str, value: str) -> dict:
         integration_keys.set_key(name, value, allowed=secret_names(), owner=f"channel.{channel_id}")
     except integration_keys.EnvManaged:
         raise EnvOwned(name) from None
+    _record_binding(name)
+    _WITHHELD.discard(name)
     if not field.now:
         _CHANGED.add(name)
     state = integration_keys.status(name)
@@ -371,6 +491,8 @@ def clear_secret(channel_id: str, name: str) -> dict:
         integration_keys.clear_key(name, allowed=secret_names())
     except integration_keys.EnvManaged:
         raise EnvOwned(name) from None
+    _drop_binding(name)
+    _WITHHELD.discard(name)
     if not field.now:
         _CHANGED.add(name)
     state = integration_keys.status(name)
@@ -398,6 +520,7 @@ def apply_stored() -> list[str]:
             os.environ[name] = value
             _PLACED[name] = _digest(value)
             applied.append(name)
+    verify_bindings()
     return applied
 
 
@@ -408,7 +531,8 @@ def reset_for_tests() -> None:
                 os.environ.pop(name, None)
         _PLACED.clear()
         _CHANGED.clear()
+        _WITHHELD.clear()
 
 
-__all__ = ["CHANNELS", "EnvOwned", "InvalidValue", "apply_stored", "channel", "clear_secret", "listing",
-           "normalise", "plain_names", "secret_names", "set_plain", "set_secret", "stored_plain"]
+__all__ = ["CHANNELS", "ENDPOINTS", "BoundSecretInEnv", "EnvOwned", "InvalidValue", "apply_stored", "channel", "clear_secret", "listing",
+           "normalise", "plain_names", "secret_names", "set_plain", "set_secret", "stored_plain", "verify_bindings"]

@@ -11,7 +11,11 @@ deleted. It is a door onto the owner's disk, so every rule refuses by default:
   checkout, ``security``/``tokens``/``vault``/``secrets``/``config`` under the data root),
   or lies inside one or inside a private home folder (``~/.ssh``, ``~/.gnupg``,
   ``~/.config`` …), is dropped with a warning — the same policy as channel media delivery
-  (``channels.media_delivery``). The Nerva Workspace's company data is never a root either
+  (``channels.media_delivery``). So is a folder that is itself a link, one that is, holds or
+  lies in code the hub loads (the checkout, the interpreter's prefix and site-packages,
+  ``<data>/skills``, ``<data>/plugins``), and one under a hidden folder below the data root
+  (review m1). Where the platform has no ``openat``/``O_NOFOLLOW`` (Windows) no folder is
+  approved at all: the browser fails closed. The Nerva Workspace's company data is never a root either
   (``workspace.config.hub_roots_without_workspace``). A folder is addressed by an opaque
   id; a request never carries an absolute path.
 * **No escape.** A path is relative to its folder, ``/``-separated, with no empty, ``.``
@@ -28,7 +32,9 @@ deleted. It is a door onto the owner's disk, so every rule refuses by default:
   ``api_key.txt``, ``credentials.json`` …) or the media policy (``*token*``, ``passw*``),
   names a credential folder (``security``, ``tokens``, ``vault``, ``secrets``, ``keys``,
   ``ssh``, ``gnupg`` …) or is a data store (``*.db``, ``*.sqlite``, ``*.enc``, WAL and
-  journal files). A listing counts what it hid without naming it.
+  journal files). A listing counts what it hid without naming it. Names that load code
+  (``*.pth``, ``sitecustomize.py``/``usercustomize.py``, ``*.so``/``*.dylib``/``*.dll``/``*.pyd``)
+  may be read but are never created or renamed to.
 * **Bounded.** A listing holds at most :data:`MAX_LIST_ENTRIES`; a preview at most
   :data:`PREVIEW_BYTES`; a download or an upload at most ``JARVIS_FILE_BROWSER_MAX_BYTES``
   (100 MiB by default, never above 1 GiB).
@@ -48,6 +54,7 @@ Refusals are bounded reason codes (:data:`REASONS`), never an echo of the reques
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import errno
 import hashlib
 import logging
@@ -140,8 +147,26 @@ def denied_name(name: str) -> bool:
             or bool(_STORE_SUFFIX.search(lowered)))
 
 
+#: Review m1 — names that load code when they sit where an interpreter looks: never
+#: created or renamed to here, even inside an approved folder.
+_CODE_SUFFIX = re.compile(r"\.(pth|so|dylib|dll|pyd)$|^(sitecustomize|usercustomize)\.pyc?$")
+
+
+def denied_write_name(name: str) -> bool:
+    """True when *name* may be read but never created here (code-loading names)."""
+    return denied_name(name) or bool(_CODE_SUFFIX.search(str(name or "").lower()))
+
+
+def _check_write_name(name: object) -> str:
+    name = _check_name(name)
+    if denied_write_name(name):
+        raise FileBrowserError("denied_name")
+    return name
+
+
 def _check_name(name: object, *, reason: str = "bad_name") -> str:
     if (not isinstance(name, str) or not name or len(name) > MAX_NAME_CHARS or name in {".", ".."}
+            or len(name.encode("utf-8", "surrogatepass")) > MAX_NAME_CHARS
             or "/" in name or "\\" in name or name != name.strip()
             or any(ord(ch) < 32 or ord(ch) == 127 for ch in name)):
         raise FileBrowserError(reason)
@@ -193,9 +218,45 @@ def _default_dirs() -> list[str]:
     return [str(data_path("workspace")), str(data_path("outputs")), str(data_path("reports"))]
 
 
+#: Review nit: the walk needs ``openat`` beneath a folder with ``O_NOFOLLOW``. Where the
+#: platform has neither (Windows), no folder is approved: the browser fails closed.
+SUPPORTED = bool(getattr(os, "O_NOFOLLOW", 0)) and os.open in os.supports_dir_fd and os.stat in os.supports_dir_fd
+
+
+def _code_locations() -> list[Path]:
+    """Folders whose files the hub or its interpreter load as code (review m1)."""
+    import site
+    import sys
+
+    from agents.core.paths import data_path
+
+    places = [Path(__file__).resolve().parents[2], Path(sys.prefix), Path(sys.exec_prefix),
+              Path(sys.base_prefix), data_path("skills"), data_path("plugins")]
+    with contextlib.suppress(Exception):      # a virtualenv without the helper
+        places += [Path(p) for p in site.getsitepackages()]
+    with contextlib.suppress(Exception):
+        places.append(Path(site.getusersitepackages()))
+    return [Path(os.path.realpath(p)) for p in places]
+
+
+def _hidden_part(real: Path) -> bool:
+    """A hidden component below the data root (the data root itself may be hidden)."""
+    from agents.core.paths import data_root
+
+    base = Path(os.path.realpath(data_root()))
+    try:
+        parts = real.relative_to(base).parts
+    except ValueError:
+        parts = real.parts[1:]
+    return any(part.startswith(".") for part in parts)
+
+
 def roots() -> list[Root]:
     """The approved folders in effect now (resolved, existing, policy-checked)."""
     from agents.core.channels import media_delivery as md
+
+    if not SUPPORTED:
+        return []
 
     configured = [p.strip() for p in env_str(DIRS_ENV).split(os.pathsep) if p.strip()]
     owner_listed = bool(configured)
@@ -214,10 +275,19 @@ def roots() -> list[Root]:
         if not candidate.is_absolute():
             logger.warning("%s: an entry is not an absolute path; ignored", DIRS_ENV)
             continue
+        if candidate.is_symlink():
+            logger.warning("%s: an entry is a link; ignored (name the folder it points to)", DIRS_ENV)
+            continue
         real = md._real(candidate)
         if real is None or not real.is_dir():
             if owner_listed:
                 logger.warning("%s: an entry is not an existing folder; ignored", DIRS_ENV)
+            continue
+        if any(real == code or md._within(real, code) or md._within(code, real) for code in _code_locations()):
+            logger.warning("%s: an entry is, holds or lies in code the hub loads; ignored", DIRS_ENV)
+            continue
+        if _hidden_part(real):
+            logger.warning("%s: an entry is inside a hidden folder; ignored", DIRS_ENV)
             continue
         if any(real == bad or md._within(bad, real) for bad in forbidden):
             logger.warning("%s: an entry is or contains a protected folder; ignored", DIRS_ENV)
@@ -249,12 +319,17 @@ _NEW_FILE_FLAGS = (os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLO
                    | getattr(os, "O_CLOEXEC", 0))
 
 
+_NAME_ERRNOS = {errno.ENAMETOOLONG, errno.EILSEQ, errno.EINVAL}
+
+
 def _lstat_at(name: str, dir_fd: int) -> os.stat_result:
     try:
         return os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
     except FileNotFoundError:
         raise FileBrowserError("not_found") from None
-    except OSError:
+    except OSError as exc:
+        if exc.errno in _NAME_ERRNOS:
+            raise FileBrowserError("bad_name") from None
         raise FileBrowserError("unreadable") from None
 
 
@@ -332,6 +407,23 @@ def _open_file(root: Root, parts: tuple[str, ...]) -> tuple[int, os.stat_result]
 
 # ── reads ──────────────────────────────────────────────────────────────────────
 
+#: A listing reads at most this many entries (shown or hidden) before it says truncated.
+MAX_SCAN_ENTRIES = 5 * MAX_LIST_ENTRIES
+_UPLOAD_PREFIX = ".nerva-upload-"
+#: An upload's temporary file older than this was abandoned (a killed hub): removed when seen.
+STALE_UPLOAD_S = 24 * 3600
+
+
+def _sweep_stale_upload(entry: os.DirEntry, dir_fd: int) -> None:
+    try:
+        st = entry.stat(follow_symlinks=False)
+        if (stat.S_ISREG(st.st_mode) and entry.name.endswith(".part")
+                and time.time() - st.st_mtime > STALE_UPLOAD_S):
+            os.unlink(entry.name, dir_fd=dir_fd)
+    except OSError:
+        logger.debug("a stale upload could not be removed", exc_info=True)
+
+
 def list_dir(root_id: object, rel: object = "") -> dict:
     """The entries of a folder: dirs first, then files; denied names hidden and counted."""
     root = root_for(root_id)
@@ -339,16 +431,20 @@ def list_dir(root_id: object, rel: object = "") -> dict:
     fd = _open_dir(root, parts)
     entries: list[dict] = []
     hidden = 0
+    seen = 0
     truncated = False
     try:
         with os.scandir(fd) as it:
             for entry in it:
+                seen += 1
+                if seen > MAX_SCAN_ENTRIES or len(entries) >= MAX_LIST_ENTRIES:
+                    truncated = True     # review nit: never scan a huge folder to the end
+                    break
+                if entry.name.startswith(_UPLOAD_PREFIX):
+                    _sweep_stale_upload(entry, fd)
                 if denied_name(entry.name):
                     hidden += 1
                     continue
-                if len(entries) >= MAX_LIST_ENTRIES:
-                    truncated = True
-                    break
                 try:
                     st = entry.stat(follow_symlinks=False)
                 except OSError:
@@ -396,41 +492,51 @@ def read_preview(root_id: object, rel: object) -> dict:
     return {**body, "binary": False, "text": text}
 
 
-@dataclass(frozen=True)
+class DownloadChanged(Exception):
+    """The file shrank while it was sent: the stream is aborted, never padded or cut short silently."""
+
+
 class Download:
-    root: Root
-    parts: tuple[str, ...]
-    name: str
-    size: int
-    identity: tuple[int, int]
+    """One download. It holds the descriptor :func:`prepare_download` checked (no second
+    open, so nothing can be swapped in between); :meth:`close` is idempotent and also runs
+    when the object is collected, so an abandoned response never leaks it."""
+
+    def __init__(self, root: Root, parts: tuple[str, ...], fd: int, size: int) -> None:
+        import weakref
+
+        self.root, self.parts, self.name, self.size = root, parts, parts[-1], size
+        self._fd: int | None = fd
+        self._finalizer = weakref.finalize(self, os.close, fd)
+
+    def close(self) -> None:
+        if self._fd is not None:
+            self._fd = None
+            self._finalizer()
 
     def chunks(self) -> Iterator[bytes]:
-        """The file's bytes. The file is opened again here, beneath the root, and must
-        still be the file that was checked; a file that grew stops at the checked size."""
-        fd, fst = _open_file(self.root, self.parts)
+        """Exactly the checked size: a file that grew stops there, one that shrank aborts."""
         try:
-            if (fst.st_ino, fst.st_dev) != self.identity:
-                return
             left = self.size
             while left > 0:
-                block = os.read(fd, min(CHUNK, left))
+                if self._fd is None:
+                    raise DownloadChanged("closed")
+                block = os.read(self._fd, min(CHUNK, left))
                 if not block:
-                    break
+                    raise DownloadChanged("the file shrank while it was sent")
                 left -= len(block)
                 yield block
         finally:
-            os.close(fd)
+            self.close()
 
 
 def prepare_download(root_id: object, rel: object) -> Download:
     root = root_for(root_id)
     parts = split_path(rel)
     fd, fst = _open_file(root, parts)
-    os.close(fd)
     if fst.st_size > max_bytes():
+        os.close(fd)
         raise FileBrowserError("too_large")
-    return Download(root=root, parts=parts, name=parts[-1], size=fst.st_size,
-                    identity=(fst.st_ino, fst.st_dev))
+    return Download(root, parts, fd, fst.st_size)
 
 
 # ── writes that replace nothing ────────────────────────────────────────────────
@@ -438,7 +544,7 @@ def prepare_download(root_id: object, rel: object) -> Download:
 def make_dir(root_id: object, rel_dir: object, name: object) -> dict:
     root = root_for(root_id)
     parts = split_path(rel_dir)
-    name = _check_name(name)
+    name = _check_write_name(name)
     dfd = _open_dir(root, parts)
     try:
         os.mkdir(name, 0o700, dir_fd=dfd)
@@ -458,10 +564,10 @@ class Upload:
     def __init__(self, root_id: object, rel_dir: object, name: object, *, limit: int | None = None):
         self.root = root_for(root_id)
         self.parts = split_path(rel_dir)
-        self.name = _check_name(name)
+        self.name = _check_write_name(name)
         self.limit = max_bytes() if limit is None else int(limit)
         self.size = 0
-        self._tmp = f".nerva-upload-{uuid.uuid4().hex}.part"
+        self._tmp = f"{_UPLOAD_PREFIX}{uuid.uuid4().hex}.part"
         self._dfd = _open_dir(self.root, self.parts)
         try:
             if self._exists(self.name):
@@ -608,7 +714,7 @@ def rename_request(root_id: object, rel: object, new_name: object) -> dict:
     """``{title, payload, preview}`` for a ``files.rename`` card within the same folder."""
     root = root_for(root_id)
     parts = split_path(rel)
-    new_name = _check_name(new_name)
+    new_name = _check_write_name(new_name)
     if parts and new_name == parts[-1]:
         raise FileBrowserError("exists")
     dfd, st = _target(root, parts)
@@ -625,7 +731,7 @@ def rename_request(root_id: object, rel: object, new_name: object) -> dict:
     path = "/".join(parts)
     new_path = "/".join((*parts[:-1], new_name))
     preview = {"action": "Rename", "folder": root.label, "folder_path": str(root.path),
-               "path": path, "new_path": new_path, "kind": _kind(st.st_mode), "irreversible": False}
+               "path": path, "new_path": new_path, "kind": _kind(st.st_mode), "irreversible": True}
     payload = {"op": "rename", "root_id": root.id, "root_path": str(root.path), "path": path,
                "new_name": new_name, "target": _identity(st)}
     return {"title": f"Rename {path} to {new_name} in {root.label}", "payload": payload,
@@ -654,7 +760,7 @@ def apply_payload(payload: object, *, kind: str) -> dict:
         if str(root.path) != payload.get("root_path"):
             return _refused("root_changed")
         parts = split_path(payload.get("path"))
-        new_name = _check_name(payload.get("new_name")) if op == "rename" else None
+        new_name = _check_write_name(payload.get("new_name")) if op == "rename" else None
         dfd, st = _target(root, parts)
     except FileBrowserError as exc:
         return _refused("root_changed" if exc.reason == "unknown_root" else exc.reason)
@@ -683,6 +789,10 @@ def apply_payload(payload: object, *, kind: str) -> dict:
             except OSError:
                 os.rename(name, new_name, src_dir_fd=dfd, dst_dir_fd=dfd)
         else:
+            # A folder (or a link) has no link-based no-replace: the absence of the new name
+            # was checked inside this same directory fd just above; the residual race is only
+            # against a write in this folder between that check and the rename. Python has
+            # no renameat2(RENAME_NOREPLACE) binding, which would close it.
             os.rename(name, new_name, src_dir_fd=dfd, dst_dir_fd=dfd)
         return {"status": "ok", "kind": kind, "renamed": "/".join(parts),
                 "to": "/".join((*parts[:-1], new_name))}

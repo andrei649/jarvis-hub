@@ -96,8 +96,12 @@ async def files_download(root: str = _ROOT, path: str = _PATH):
         download = await asyncio.to_thread(fb.prepare_download, root, path)
     except fb.FileBrowserError as exc:
         return _refusal(exc)
-    await fb.audit(get_orch(), f"downloaded {download.size} bytes from {download.root.label}",
-                   "file_browser_download")
+    try:
+        await fb.audit(get_orch(), f"downloaded {download.size} bytes from {download.root.label}",
+                       "file_browser_download")
+    except BaseException:
+        download.close()
+        raise
     safe = download.name.encode("ascii", "replace").decode("ascii").replace('"', "_")
     headers = {
         "Content-Disposition": f"attachment; filename=\"{safe}\"; filename*=UTF-8''{quote(download.name)}",
@@ -105,7 +109,10 @@ async def files_download(root: str = _ROOT, path: str = _PATH):
         "X-Content-Type-Options": "nosniff",
         "Cache-Control": "no-store",
     }
-    return StreamingResponse(download.chunks(), media_type="application/octet-stream", headers=headers)
+    from starlette.background import BackgroundTask
+
+    return StreamingResponse(download.chunks(), media_type="application/octet-stream", headers=headers,
+                             background=BackgroundTask(download.close))
 
 
 @router.put("/api/files/upload", dependencies=WRITE_GUARDS)

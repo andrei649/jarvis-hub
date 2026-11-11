@@ -26,7 +26,10 @@ be made safe here; :func:`check` reports ``can_apply: false`` with its reasons a
 manual steps (``docs/UPGRADE.md``).
 
 git runs with a fixed argv (never a shell), ``GIT_TERMINAL_PROMPT=0``, no pager, its
-fsmonitor and hooks turned off for the call, a timeout, and in the hub's own checkout.
+fsmonitor and hooks turned off and the ``ext::`` transport refused for the call, a timeout,
+and in the hub's own checkout, with a minimal environment (PATH, HOME, locale, proxy and CA
+variables, the ssh agent socket) — never the hub's own secrets or inherited ``GIT_*``.
+A log line drops a URL's userinfo (to the last ``@``) and its whole query string.
 """
 
 from __future__ import annotations
@@ -55,7 +58,15 @@ RESTART_DELAY_S = 0.5
 _LOCK = threading.Lock()
 _ACTIONS: dict[str, dict] = {}
 _ORDER: deque[str] = deque()
-_USERINFO = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/\s@]+@")
+#: Review m2: the userinfo runs to the LAST '@' before the host (a password may hold '@'),
+#: and a URL's query string (where tokens travel) is dropped whole.
+_USERINFO = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/\s?#]*@")
+_QUERY = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://[^\s?#]*)\?[^\s#]*")
+#: The only variables the subprocess gets from the hub's environment (never the hub's secrets).
+_GIT_ENV_KEEP = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "TMPDIR", "SSH_AUTH_SOCK", "SYSTEMROOT",
+                 "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA", "COMSPEC",
+                 "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy",
+                 "SSL_CERT_FILE", "SSL_CERT_DIR", "GIT_SSL_CAINFO")
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 _REMOTE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
@@ -66,11 +77,11 @@ def repo_root() -> Path:
 
 def _git_argv(*args: str) -> list[str]:
     return ["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null",
-            "-c", "core.pager=cat", "--no-pager", *args]
+            "-c", "core.pager=cat", "-c", "protocol.ext.allow=never", "--no-pager", *args]
 
 
 def _git_env() -> dict[str, str]:
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env = {k: os.environ[k] for k in _GIT_ENV_KEEP if os.environ.get(k)}
     env.update({"GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "", "SSH_ASKPASS": "", "LC_ALL": "C"})
     return env
 
@@ -90,7 +101,8 @@ def _git(*args: str, timeout: float = GIT_TIMEOUT_S) -> tuple[int, str, str]:
 
 def clean_line(line: str) -> str:
     """A log line without credentials in URLs or control characters, bounded."""
-    line = _CONTROL.sub("", _USERINFO.sub(r"\1", line))
+    line = _QUERY.sub(r"\1?[redacted]", _USERINFO.sub(r"\1", line))
+    line = _CONTROL.sub("", line)
     return line[:MAX_LINE_CHARS]
 
 

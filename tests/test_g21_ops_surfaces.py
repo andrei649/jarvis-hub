@@ -772,3 +772,181 @@ def test_restart_needs_the_confirm_word_and_says_when_it_cannot_restart_itself(o
 def test_an_unknown_action_is_404(ops):
     assert ops.client.get("/api/admin/ops/actions/0123456789abcdef", headers=ADMIN).status_code == 404
     assert ops.client.get("/api/admin/ops/actions/../x", headers=ADMIN).status_code in (404, 422)
+
+
+# ══ security review fixes ════════════════════════════════════════════════════════
+
+NTFY_TOKEN = "tk_synthetic_ntfy_token_0123456789"
+IMAP_PASSWORD = "synthetic-imap-app-password-XYZ"
+
+
+def test_m1_ntfy_url_must_be_https_unless_loopback(chub):
+    for bad in ("http://ntfy.example.org", "ftp://ntfy.example.org", "https://u:p@ntfy.example.org"):
+        assert chub.client.put(f"{CBASE}/ntfy/config", headers=ADMIN,
+                               json={"values": {"NTFY_URL": bad}}).status_code == 422, bad
+    for ok in ("https://ntfy.example.org", "http://127.0.0.1:8090", "http://localhost:8090"):
+        assert chub.client.put(f"{CBASE}/ntfy/config", headers=ADMIN,
+                               json={"values": {"NTFY_URL": ok}}).status_code == 200, ok
+
+
+def test_m1_moving_an_endpoint_clears_its_bound_secret(chub):
+    c = chub.client
+    assert c.put(f"{CBASE}/ntfy/config", headers=ADMIN,
+                 json={"values": {"NTFY_URL": "https://ntfy.owner.example"}}).status_code == 200
+    assert c.put(f"{CBASE}/ntfy/secret", headers=ADMIN, json={"name": "NTFY_TOKEN", "value": NTFY_TOKEN}).status_code == 200
+    assert c.put(f"{CBASE}/ntfy/secret", headers=ADMIN, json={"name": "NTFY_TOPIC", "value": "owner-topic"}).status_code == 200
+    # an unrelated field keeps the secret
+    assert c.put(f"{CBASE}/ntfy/config", headers=ADMIN, json={"values": {"NTFY_TITLE": "Nerva"}}).json()["cleared_secrets"] == []
+    assert os.environ["NTFY_TOKEN"] == NTFY_TOKEN
+    moved = c.put(f"{CBASE}/ntfy/config", headers=ADMIN, json={"values": {"NTFY_URL": "https://other.example"}})
+    assert moved.status_code == 200
+    assert moved.json()["cleared_secrets"] == ["NTFY_TOKEN", "NTFY_TOPIC"]
+    assert "NTFY_TOKEN" not in os.environ and "NTFY_TOPIC" not in os.environ
+    assert any("secrets cleared for the new server" in preview for _, preview in chub.orch.audit.rows)
+    # the email password the same way, port included
+    assert c.put(f"{CBASE}/email/config", headers=ADMIN, json={"values": {"IMAP_HOST": "imap.owner.example"}}).status_code == 200
+    assert c.put(f"{CBASE}/email/secret", headers=ADMIN, json={"name": "IMAP_PASS", "value": IMAP_PASSWORD}).status_code == 200
+    assert c.put(f"{CBASE}/email/config", headers=ADMIN, json={"values": {"IMAP_PORT": 1993}}).json()["cleared_secrets"] == ["IMAP_PASS"]
+    assert "IMAP_PASS" not in os.environ
+
+
+def test_m1_an_endpoint_cannot_move_away_from_a_secret_in_env(chub, monkeypatch):
+    monkeypatch.setenv("SMTP_PASS", "dot-env-smtp-password")
+    c = chub.client
+    response = c.put(f"{CBASE}/email/config", headers=ADMIN, json={"values": {"SMTP_HOST": "smtp.elsewhere.example"}})
+    assert response.status_code == 409 and response.json()["error"] == "bound_secret_in_env"
+    assert "SMTP_HOST" not in os.environ and "dot-env-smtp-password" not in response.text
+
+
+def test_m1_a_secret_whose_server_changed_out_of_band_is_withheld_at_start(chub):
+    from agents.core import channel_config, integration_keys, settings_db
+
+    c = chub.client
+    c.put(f"{CBASE}/email/config", headers=ADMIN, json={"values": {"IMAP_HOST": "imap.owner.example"}})
+    c.put(f"{CBASE}/email/secret", headers=ADMIN, json={"name": "IMAP_PASS", "value": IMAP_PASSWORD})
+    # the generic settings route (or a hand edit) repoints the server, bypassing the panel
+    settings_db.put_category("channels", {"config": {"IMAP_HOST": "attacker.example.net"}})
+    # the next start
+    integration_keys._PLACED.clear()
+    channel_config.reset_for_tests()
+    for name in ("IMAP_PASS", "IMAP_HOST"):
+        os.environ.pop(name, None)
+    integration_keys.apply_stored()
+    channel_config.apply_stored()
+    assert os.environ.get("IMAP_HOST") == "attacker.example.net"
+    assert "IMAP_PASS" not in os.environ
+    field = next(f for f in _channel(chub, "email")["fields"] if f["name"] == "IMAP_PASS")
+    assert field["needs_reentry"] is True
+    # an unchanged server keeps its secret across a start
+    settings_db.put_category("channels", {"config": {"IMAP_HOST": "imap.owner.example"}})
+    integration_keys._PLACED.clear()
+    channel_config.reset_for_tests()
+    for name in ("IMAP_PASS", "IMAP_HOST"):
+        os.environ.pop(name, None)
+    integration_keys.apply_stored()
+    channel_config.apply_stored()
+    assert os.environ.get("IMAP_PASS") == IMAP_PASSWORD
+
+
+def test_m1_the_email_channel_verifies_the_mail_servers_certificates(monkeypatch):
+    import ssl
+
+    from agents.core.channels import email as email_channel
+
+    monkeypatch.delenv("JARVIS_TLS_INSECURE_TARGETS", raising=False)
+    monkeypatch.delenv("NERVA_TLS_INSECURE_TARGETS", raising=False)
+    context = email_channel._tls_context("imap.example.org")
+    assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname is True
+    monkeypatch.setenv("JARVIS_TLS_INSECURE_TARGETS", "mail.local")
+    assert email_channel._tls_context("imap.example.org").verify_mode == ssl.CERT_REQUIRED
+    assert email_channel._tls_context("mail.local").verify_mode == ssl.CERT_NONE
+
+
+def test_m1_roots_refuse_links_code_and_hidden_folders(env, monkeypatch, tmp_path):
+    import sys
+
+    link = tmp_path / "share-link"
+    link.symlink_to(env.approved, target_is_directory=True)
+    hidden = tmp_path / ".hidden" / "box"
+    hidden.mkdir(parents=True)
+    skills = env.data / "skills"
+    skills.mkdir()
+    for bad in (link, hidden, skills, Path(sys.prefix), Path(fb.__file__).resolve().parents[2] / "docs"):
+        monkeypatch.setenv("JARVIS_FILE_BROWSER_DIRS", str(bad))
+        assert fb.roots() == [], bad
+
+
+@pytest.mark.parametrize("name", ["evil.pth", "sitecustomize.py", "usercustomize.py", "lib.so", "lib.dylib",
+                                  "x.dll", "y.pyd"])
+def test_m1_code_loading_names_are_never_written(env, client, name):
+    up = client.put("/api/files/upload", headers=ADMIN, params={"root": env.root, "name": name}, content=b"x")
+    assert up.status_code == 403 and up.json()["error"] == "denied_name"
+    rn = client.post("/api/files/rename", headers=ADMIN, json={"root": env.root, "path": "notes.txt", "new_name": name})
+    assert rn.status_code == 403
+    assert not (env.approved / name).exists()
+
+
+def test_m2_a_log_line_keeps_no_password_with_at_signs_and_no_query_string():
+    from agents.core import hub_update
+
+    line = hub_update.clean_line("From https://owner:p@ss@w0rd@github.example.org/o/r?token=abc&x=1 done")
+    assert line == "From https://github.example.org/o/r?[redacted] done"
+    assert "w0rd" not in line and "abc" not in line
+
+
+def test_nit_git_gets_no_hub_secret(monkeypatch):
+    from agents.core import hub_update
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "hub-secret-token")
+    monkeypatch.setenv("GIT_CONFIG_PARAMETERS", "'core.sshCommand=evil'")
+    env = hub_update._git_env()
+    assert "TELEGRAM_BOT_TOKEN" not in env and "GIT_CONFIG_PARAMETERS" not in env
+    assert env["GIT_TERMINAL_PROMPT"] == "0"
+    assert "protocol.ext.allow=never" in hub_update._git_argv("fetch")
+
+
+def test_m3_an_overlong_name_is_a_400(env, client):
+    name = "é" * 200        # 200 characters, 400 bytes
+    up = client.put("/api/files/upload", headers=ADMIN, params={"root": env.root, "name": name}, content=b"x")
+    assert up.status_code == 400 and up.json()["error"] == "bad_name"
+    read = client.get("/api/files/read", headers=ADMIN, params={"root": env.root, "path": name})
+    assert read.status_code == 400
+
+
+def test_nit_rename_card_is_marked_irreversible_and_listing_is_bounded(env, client, monkeypatch):
+    task_id = client.post("/api/files/rename", headers=ADMIN,
+                          json={"root": env.root, "path": "notes.txt", "new_name": "n2.txt"}).json()["pending"]
+    assert env.queue.get(task_id).payload["preview"]["irreversible"] is True
+    monkeypatch.setattr(fb, "MAX_SCAN_ENTRIES", 3)
+    body = client.get("/api/files/list", headers=ADMIN, params={"root": env.root}).json()
+    assert body["truncated"] is True and len(body["entries"]) + body["hidden"] <= 3
+
+
+def test_nit_a_stale_upload_part_is_swept_when_listed(env, client):
+    import time
+
+    stale = env.approved / ".nerva-upload-0123.part"
+    stale.write_bytes(b"half")
+    old = time.time() - 2 * 86400
+    os.utime(stale, (old, old))
+    fresh = env.approved / ".nerva-upload-4567.part"
+    fresh.write_bytes(b"in flight")
+    client.get("/api/files/list", headers=ADMIN, params={"root": env.root})
+    assert not stale.exists() and fresh.exists()
+
+
+def test_nit_a_download_that_shrinks_aborts_and_one_that_grows_stops_at_its_size(env):
+    target = env.approved / "grow.txt"
+    target.write_bytes(b"a" * 100)
+    download = fb.prepare_download(env.root, "grow.txt")
+    with open(target, "ab") as fh:
+        fh.write(b"b" * 100)
+    assert b"".join(download.chunks()) == b"a" * 100
+    shrink = fb.prepare_download(env.root, "grow.txt")
+    os.truncate(target, 10)
+    with pytest.raises(fb.DownloadChanged):
+        b"".join(shrink.chunks())
+    swap = fb.prepare_download(env.root, "notes.txt")
+    (env.approved / "notes.txt").unlink()
+    (env.approved / "notes.txt").write_text("a new file under the old name", encoding="utf-8")
+    assert b"".join(swap.chunks()) == b"hello owner\n"    # the checked descriptor, not the new file

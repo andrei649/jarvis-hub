@@ -25,6 +25,12 @@
   cannot be changed here.
 - Channels start with Nerva, so the panel tells you when a change waits for a restart. SMS
   account, numbers and token apply at once.
+- A token or password stays with the server it was typed for: change the ntfy server or the
+  mail host or port and the token or password is cleared, so you type it again for the new
+  server. The ntfy server must use `https://` (plain `http://` only on this machine).
+- Email now checks the mail servers' certificates (before, the IMAP and SMTP connections
+  accepted any certificate). A mail server on your own network with a self-signed certificate
+  keeps working only if you name it (or `email`) in `JARVIS_TLS_INSECURE_TARGETS`.
 
 **Your files in the HUD**
 - New Console panel **Files** (Admin group): browse the folders you approve, read a text file,

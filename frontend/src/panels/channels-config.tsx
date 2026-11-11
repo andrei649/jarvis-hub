@@ -13,7 +13,7 @@ import { Card, Tag, inpS, mono, refusalReason, useApi } from '../panel-kit';
 export const CHANNELS_CONFIG_PATH = '/api/admin/channels/config';
 
 type FieldState = { name: string; label: string; kind: string; secret: boolean; applies: 'now' | 'restart';
-  set: boolean; source: 'env' | 'hub' | 'managed' | null; editable: boolean; value?: string | null };
+  set: boolean; source: 'env' | 'hub' | 'managed' | null; editable: boolean; value?: string | null; needs_reentry?: boolean };
 type ChannelRow = { id: string; label: string; note: string; running: boolean; fields: FieldState[];
   restart_required: boolean; changed: string[] };
 
@@ -54,6 +54,7 @@ function FieldEditor({ channel, field, onChanged }: { channel: string; field: Fi
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', padding: '3px 0' }}>
       <label htmlFor={id} style={{ fontSize: 10.5, minWidth: 180 }}>{field.label}</label>
       {field.secret ? <Tag c={field.set ? 'var(--green)' : 'var(--ink-2)'}>{field.set ? 'set' : 'not set'}</Tag> : null}
+      {field.needs_reentry && <Tag c="var(--amber)">server changed · enter it again</Tag>}
       {field.source && <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{SOURCE[field.source] || field.source}</span>}
       {field.editable ? (
         <>
