@@ -15,7 +15,7 @@ from agents.core.paths import data_path
 from .persistence import JsonStore
 
 DEFAULT_PATH = data_path("channel_inbox.json")
-SUPPORTED_INBOX_CHANNELS = frozenset({"telegram", "web", "email", "slack", "discord", "ntfy"})
+SUPPORTED_INBOX_CHANNELS = frozenset({"telegram", "web", "email", "slack", "discord", "ntfy", "sms"})
 _MAX_TEXT = 4_000
 _PREVIEW = 240
 _REPLY_KEYS = {
@@ -27,6 +27,8 @@ _REPLY_KEYS = {
     "slack": ("slack_channel", "thread_ts"),
     "discord": ("channel_id",),
     "ntfy": ("ntfy_topic", "ntfy_context"),
+    # G16 (H098): the number that wrote; a reply goes back to it and nowhere else.
+    "sms": ("sms_to",),
 }
 
 

@@ -434,6 +434,19 @@ async def _test_video(entry) -> dict:
                        "so the first video's approval card is the test."}
 
 
+async def _test_channel(entry) -> dict:
+    """G16 (H098): an offline check of the SMS setup — nothing is sent (a message costs
+    money); the webhook's first signed message is the live proof."""
+    from agents.core.channels import sms
+
+    missing = sms.missing_config()
+    if missing:
+        return {"ok": False, "verdict": "not_configured",
+                "message": "SMS still needs: " + ", ".join(missing)}
+    return {"ok": True, "verdict": "ok",
+            "message": "configured; text your Twilio number from an allowed phone to test it"}
+
+
 @router.post("/api/admin/integrations/{entry_id}/test", dependencies=WRITE_GUARDS)
 async def integration_test(entry_id: str = Path(pattern=ENTRY_PATTERN)):
     from agents.core import integrations_catalog
@@ -444,6 +457,7 @@ async def integration_test(entry_id: str = Path(pattern=ENTRY_PATTERN)):
     try:
         result = await (_test_model(entry) if entry.kind == integrations_catalog.KIND_MODEL
                         else _test_video(entry) if entry.kind == integrations_catalog.KIND_VIDEO
+                        else _test_channel(entry) if entry.kind == integrations_catalog.KIND_CHANNEL
                         else _test_search(entry))
     except Exception as exc:  # noqa: BLE001 — a test failure is a result, never a 500
         logger.warning("integration test for %s failed (type=%s)", entry_id, type(exc).__name__)
@@ -577,6 +591,9 @@ async def integration_use(body: UseBody, entry_id: str = Path(pattern=ENTRY_PATT
         return await _use_search(entry, body)
     if entry.kind == integrations_catalog.KIND_VIDEO:
         return await _use_video(entry, body)
+    if entry.kind == integrations_catalog.KIND_CHANNEL:
+        return JSONResponse({"error": "nothing to choose: a channel key is used once it is set"},
+                            status_code=409)
     return await _use_model(entry, body)
 
 

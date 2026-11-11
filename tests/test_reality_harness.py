@@ -55,11 +55,11 @@ async def test_boot_registry_reality_cases_hold_for_every_wired_capability():
             if record.kind == "skill"} == default_skills
     assert default_skills.isdisjoint(optional_sources)
     assert len(default_skills | optional_sources) == 12
-    # 52 plugins: the A2A outbound plugin (plugin:a2a, Adopt lane slice 4) and the three
-    # default-off cloud video providers (G19) joined the registry.
-    assert sum(record.kind == "plugin" for record in records.values()) == 52
+    # 53 plugins: the A2A outbound plugin (plugin:a2a, Adopt lane slice 4), the three
+    # default-off cloud video providers (G19) and the SMS channel (G16) joined the registry.
+    assert sum(record.kind == "plugin" for record in records.values()) == 53
     assert sum(record.kind == "component" for record in records.values()) == 24
-    assert len(cases) == len(records) == 88 - len(optional_sources) == 81
+    assert len(cases) == len(records) == 89 - len(optional_sources) == 82
     assert results["plugin:a2a"] is True
     assert results["plugin:ntfy"] is True
     # The six disabled cloud-image plugins still have real manifest egress rails;

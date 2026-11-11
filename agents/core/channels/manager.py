@@ -30,7 +30,7 @@ _SAFE_CONTRACT_TOKEN = re.compile(r"^[A-Za-z0-9_.:/@\-]{1,200}$")
 # untrusted input and may only reach SMTP through the governed channel-reply
 # executor below.
 _SUPPORTED_SEND_CHANNELS = frozenset({"telegram", "web", "voice", "ntfy"})
-_SUPPORTED_REPLY_CHANNELS = frozenset({"telegram", "web", "email", "slack", "discord", "ntfy"})
+_SUPPORTED_REPLY_CHANNELS = frozenset({"telegram", "web", "email", "slack", "discord", "ntfy", "sms"})
 
 
 #: H081 — which send kwarg names the chat a reply goes to, per channel (for the ledger
@@ -42,6 +42,7 @@ _TARGET_KEYS = {
     "discord": ("channel_id",),
     "email": ("to",),
     "ntfy": ("ntfy_topic",),
+    "sms": ("sms_to",),
 }
 
 
@@ -49,6 +50,10 @@ def _delivery_target(channel: str, adapter, kwargs: dict) -> str:
     for key in _TARGET_KEYS.get(channel, ()):
         value = kwargs.get(key)
         if value not in (None, ""):
+            if channel == "sms":
+                # G16: a phone number is never written to the ledger, only its digest.
+                from .sms import target_ref
+                return target_ref(value)
             return str(value)
     if channel == "ntfy":
         return str(getattr(adapter, "publish_topic", "") or "default")

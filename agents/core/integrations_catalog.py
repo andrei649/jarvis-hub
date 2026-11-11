@@ -13,6 +13,8 @@ panel. This module lists them in one place, as data the panel renders:
 * **video** — the video providers adopted from Hermes (FAL, xAI Grok Imagine, DeepInfra;
   ``creative.video_providers``, G19): a key, then a consented choice
   (``JARVIS_VIDEO_PROVIDER``); each video is still one approval card with its cost;
+* **channel** — the SMS channel's Twilio auth token (G16, H098; ``channels/sms.py``):
+  only the secret lives here, the account, numbers and switch stay in ``.env``;
 * **skills** — the vendored Hermes skills catalog, as a summary that points at the Skills
   Import panel (installing stays there).
 
@@ -37,6 +39,7 @@ KIND_SEARCH = "search"
 KIND_MODEL = "model"
 KIND_SKILLS = "skills"
 KIND_VIDEO = "video"
+KIND_CHANNEL = "channel"
 VIDEO_CHOICE = "JARVIS_VIDEO_PROVIDER"
 ORIGIN_NATIVE = "native"
 ORIGIN_HERMES = "hermes"
@@ -178,8 +181,21 @@ def video_entries() -> list[Entry]:
     return out
 
 
+def channel_entries() -> list[Entry]:
+    """G16 (H098): the SMS channel's Twilio auth token. Nothing to choose; the token is used
+    for the webhook's signature check and for approved replies."""
+    return [Entry(
+        id=entry_id(KIND_CHANNEL, "sms"), kind=KIND_CHANNEL, name="sms", display_name="SMS (Twilio)",
+        origin=ORIGIN_NATIVE, keys=("JARVIS_SMS_AUTH_TOKEN",), host="api.twilio.com", host_country=None,
+        data_policy="unknown",
+        data_policy_note="Twilio carries the text of each SMS; how it retains them has not been verified",
+        price_known="no",
+        price_note="every SMS reply is billed by Twilio per message part; each reply waits for your approval",
+        selectable=False)]
+
+
 def entries() -> list[Entry]:
-    return search_entries() + model_entries() + video_entries()
+    return search_entries() + model_entries() + video_entries() + channel_entries()
 
 
 def find(eid: str) -> Entry | None:
@@ -273,6 +289,10 @@ def _status(entry: Entry, key: dict, selected: str, primary: str) -> str:
         return "active" if primary == entry.name else "key_set"
     if entry.kind == KIND_VIDEO:
         return "active" if _video_choice() == entry.name else "key_set"
+    if entry.kind == KIND_CHANNEL:
+        from agents.core.channels import sms
+
+        return "active" if sms.configured() else "key_set"
     if entry.kind == KIND_MODEL:
         try:
             from agents.core.llm import provider_probe
@@ -298,6 +318,8 @@ def _receives(kind: str) -> str:
         return "your search queries"
     if kind == KIND_VIDEO:
         return "your video prompts and the images you ask it to animate"
+    if kind == KIND_CHANNEL:
+        return "the text of the SMS replies you approve, and the numbers they go to"
     return "your conversations (the prompts and replies of the turns it answers)"
 
 
@@ -366,5 +388,5 @@ def listing() -> dict:
             "precedence": "env"}
 
 
-__all__ = ["KIND_MODEL", "KIND_SEARCH", "KIND_SKILLS", "KIND_VIDEO", "LAST_TEST", "SEARCH_ROWS",
-           "VIDEO_CHOICE", "WEB_BACKEND", "entries", "video_entries", "find", "listing", "managed_keys", "skills_summary"]
+__all__ = ["KIND_CHANNEL", "KIND_MODEL", "KIND_SEARCH", "KIND_SKILLS", "KIND_VIDEO", "LAST_TEST", "SEARCH_ROWS",
+           "VIDEO_CHOICE", "WEB_BACKEND", "channel_entries", "entries", "video_entries", "find", "listing", "managed_keys", "skills_summary"]

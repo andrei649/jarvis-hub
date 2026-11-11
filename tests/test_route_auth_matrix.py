@@ -59,6 +59,9 @@ INTENTIONALLY_OPEN = {
     "POST /v1/chat/completions",
     "POST /v1/responses",
     "DELETE /v1/responses/{response_id}",
+    # G16 (H098): Twilio's inbound SMS. 404 unless SMS is configured; X-Twilio-Signature
+    # (HMAC-SHA1 over URL + sorted params, constant-time) and the account SID in the handler.
+    "POST /api/channels/sms/webhook",
     # Nerva Workspace public entry points (spec §6/§7). Each answers 404 while
     # NERVA_WORKSPACE is off, requires a same-origin Origin/Sec-Fetch-Site and a JSON
     # body (check_public_origin), and is throttled by the workspace itself.
@@ -190,6 +193,7 @@ IN_HANDLER_GUARDED = {
     "GET /v1/responses/{response_id}": "OpenAI-compatible API key (bearer), the key that stored it",
     "DELETE /v1/responses/{response_id}": "OpenAI-compatible API key (bearer), the key that stored it",
     "GET /v1/models": "OpenAI-compatible API key (bearer), API switched on",
+    "POST /api/channels/sms/webhook": "Twilio X-Twilio-Signature (HMAC-SHA1, the SMS auth token)",
 }
 
 # H511 review: the read half is partitioned exactly like the mutators — an open GET

@@ -2250,7 +2250,7 @@ class Orchestrator:
                                if kwargs.get("pending_input_eligible", True) is True else None)
                 if intercepted is not None:
                     if intercepted:
-                        if channel in {"slack", "discord", "ntfy"}:
+                        if channel in {"slack", "discord", "ntfy", "sms"}:
                             self._queue_workspace_reply(channel, inbox_message_id, intercepted)
                         else:
                             await self.channel_manager.send(channel, intercepted, **kwargs)
@@ -2329,7 +2329,7 @@ class Orchestrator:
             # ChannelManager.send's contract gate (_SUPPORTED_SEND_CHANNELS).
             decision = self._delivery_router.resolve(source, text=response or "")
             if decision.send and decision.target:
-                if channel in {"slack", "discord", "ntfy"}:
+                if channel in {"slack", "discord", "ntfy", "sms"}:
                     self._queue_workspace_reply(channel, inbox_message_id, response)
                 else:
                     await self.channel_manager.send(decision.target.channel, response, **kwargs)
@@ -2999,7 +2999,7 @@ class Orchestrator:
         owner turned streaming off, or the router would not deliver to this source."""
         # Full workspace replies are approved through channel.reply. An editable
         # transport alone is not authority to publish tokens before that decision.
-        if channel in {"slack", "discord", "ntfy"}:
+        if channel in {"slack", "discord", "ntfy", "sms"}:
             return None
         try:
             if self.get_setting("channels.streaming_replies", True) is not True:

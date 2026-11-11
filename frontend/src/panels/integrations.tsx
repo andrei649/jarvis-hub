@@ -30,7 +30,7 @@ type KeyState = { names: string[]; name: string; primary?: string; set: boolean;
 type Facts = { host: string; host_country: string | null; data_policy: string; data_policy_note: string;
   price_known: 'yes' | 'some' | 'no'; price_note: string; receives: string };
 export type Integration = {
-  id: string; kind: 'search' | 'model' | 'video'; name: string; display_name: string; origin: 'native' | 'hermes';
+  id: string; kind: 'search' | 'model' | 'video' | 'channel'; name: string; display_name: string; origin: 'native' | 'hermes';
   status: 'not_set_up' | 'key_set' | 'shared' | 'active' | 'error'; key: KeyState; facts: Facts;
   selectable: boolean; selected: boolean; choice_editable: boolean; models: string[];
   last_test?: { ok: boolean; message: string } | null;
@@ -228,11 +228,11 @@ function IntegrationDetail({ item, onChanged }: { item: Integration; onChanged: 
   );
 }
 
-const KINDS = [['all', 'all'], ['search', 'search'], ['model', 'models'], ['video', 'video']] as const;
+const KINDS = [['all', 'all'], ['search', 'search'], ['model', 'models'], ['video', 'video'], ['channel', 'channels']] as const;
 
 export function IntegrationsPanel() {
   const { d, e, reload } = useApi(INTEGRATIONS_PATH, true, true);
-  const [kind, setKind] = useState<'all' | 'search' | 'model' | 'video'>('all');
+  const [kind, setKind] = useState<'all' | 'search' | 'model' | 'video' | 'channel'>('all');
   const [q, setQ] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);

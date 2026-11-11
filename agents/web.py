@@ -600,6 +600,9 @@ async def lifespan(application: FastAPI):
             # a `/start <token>` redeemed here came back on the owner's next save.
             pairing=gateway.pairing,
         )
+        # G16 (H070): a MEDIA: attachment crosses the Action Kernel when it is on.
+        from agents.core.kernel.binding import make_action_kernel
+        telegram_ch.media_kernel = make_action_kernel(orch)
         await orch.register_channel(telegram_ch)
         logger.info("Telegram channel wired with bot token")
     else:
@@ -664,6 +667,22 @@ async def lifespan(application: FastAPI):
         )
         await orch.register_channel(slack_ch)
         logger.info("Slack channel wired")
+
+    # G16 (H098) — SMS through Twilio. Default-off (JARVIS_SMS_ENABLED + account, number,
+    # auth token); inbound arrives on the signed webhook (routers/channels_sms.py) and a
+    # reply leaves only as an approved channel.reply task at the money tier.
+    from agents.core.channels import sms as _sms
+    if _sms.enabled() and safe_mode.enabled():
+        safe_mode.note("outbound_webhooks")
+    elif _sms.enabled():
+        # Wired whenever switched on: the webhook and the sender check the account, number
+        # and token on every request, so a token set later in the HUD works without a restart.
+        sms_ch = _sms.SmsChannel(handler=gateway.route, pairing=gateway.pairing)
+        gateway.register_channel(sms_ch.channel_id)
+        await orch.register_channel(sms_ch)
+        missing = _sms.missing_config()
+        logger.info("SMS channel wired (Twilio)%s",
+                    f"; answering 404 until set: {', '.join(missing)}" if missing else "")
 
     # H12.16 — broaden governed channels (WhatsApp/Signal/Matrix/Teams/Google
     # Chat). Configured via JARVIS_WEBHOOK_CHANNELS = {"<kind>": {<config>}}.
@@ -2003,6 +2022,7 @@ from agents.core.routers.model_setup import router as _model_setup_router  # noq
 from agents.core.routers.permissions import router as _permissions_router  # noqa: E402
 from agents.core.routers.report import router as _report_router  # noqa: E402
 from agents.core.routers.openai_compat import router as _openai_compat_router  # noqa: E402
+from agents.core.routers.channels_sms import router as _channels_sms_router  # noqa: E402
 from agents.core.routers.brain import router as _brain_router  # noqa: E402
 from agents.core.routers.browser import router as _browser_router  # noqa: E402
 from agents.core.routers.canvas import router as _canvas_router  # noqa: E402
@@ -2155,6 +2175,9 @@ app.include_router(_report_router)
 # G12 (H560/H614): OpenAI-compatible API. Off unless openai_api.enabled; each route checks
 # its own bearer key in the handler (never the hub tokens), see routers/openai_compat.py.
 app.include_router(_openai_compat_router)
+# G16 (H098): Twilio's inbound SMS webhook. 404 unless SMS is configured; the handler checks
+# X-Twilio-Signature (HMAC-SHA1) and the account, never a hub token (routers/channels_sms.py).
+app.include_router(_channels_sms_router)
 
 # Nerva Workspace — the B2B pilot app (docs/business/WORKSPACE_PILOT_SPEC.md). Every
 # /api/workspace route answers 404 workspace_disabled while NERVA_WORKSPACE is off and

@@ -13563,6 +13563,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/channels/sms/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sms Webhook
+         * @description Inbound SMS from Twilio: signature, account, replay and sender checks, then the turn.
+         */
+        post: operations["sms_webhook_api_channels_sms_webhook_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspace/session": {
         parameters: {
             query?: never;
@@ -38458,6 +38478,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sms_webhook_api_channels_sms_webhook_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

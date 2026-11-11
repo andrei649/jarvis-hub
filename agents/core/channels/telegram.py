@@ -17,7 +17,7 @@ from typing import Callable, NamedTuple, Optional
 
 import httpx
 
-from . import delivery_ledger
+from . import audio_container, delivery_ledger, media_delivery
 from .backfill import (
     COMMAND_REFUSED,
     TAP_REFUSED,
@@ -63,6 +63,8 @@ from ..owner_once_context import OwnerReplySource, bind_owner_reply_source, clos
 logger = logging.getLogger("jarvis.channels.telegram")
 
 TELEGRAM_MAX_MESSAGE_LENGTH = 4096
+#: G16: the longest one attachment's checks may take before it is refused.
+MEDIA_RESOLVE_TIMEOUT_S = 10.0
 #: The file suffix a spoken reply is posted with, by its audio type ("bin" for any other).
 VOICE_SUFFIX = {"audio/mpeg": "mp3", "audio/ogg": "ogg", "audio/wav": "wav", "audio/mp4": "m4a",
                 "audio/flac": "flac"}
@@ -77,11 +79,14 @@ _STREAM_CURSOR = " ▍"
 class _TurnScope:
     """One turn of one chat while it runs (see :data:`_RUNNING_TURN`)."""
 
-    __slots__ = ("channel", "chat_id", "running", "message_thread_id")
+    __slots__ = ("channel", "chat_id", "running", "message_thread_id", "turn_id")
 
     def __init__(self, channel, chat_id, message_thread_id=None) -> None:
         self.channel, self.chat_id, self.running = channel, chat_id, True
         self.message_thread_id = message_thread_id
+        #: G16: keys this turn's attachments, so a retry within the turn sends a file once
+        #: and the owner asking for it again in a later turn gets it again.
+        self.turn_id = uuid.uuid4().hex
 
     def answers(self, channel, chat_id) -> bool:
         """Is a reply to *chat_id* on *channel*, sent in this scope, this turn's own reply?"""
@@ -207,7 +212,8 @@ class TelegramDraft:
     def _preview_source(self) -> str:
         footer = ("\n\n" + "\n".join(self._footer)) if self._footer else ""
         budget = self._cap - len(_STREAM_CURSOR) - 1 - len(footer)
-        source = self._text
+        # G16: a `MEDIA: /path` line is never streamed; finish() attaches the file.
+        source = media_delivery.strip_partial(self._text)
         if len(source) > budget:
             source = source[:budget] + "…"
         return source + _STREAM_CURSOR + footer
@@ -223,6 +229,17 @@ class TelegramDraft:
         text = self._text if final_text is None else str(final_text or "")
         if not text.strip():
             return False
+        # G16 (H070): MEDIA: lines in a streamed reply are attached after the final edit.
+        cleaned, media = self._channel._take_media(
+            self._chat_id, final_text if final_text is not None else text, plain=False)
+        if media:
+            if self._message_id is None:
+                if not str(cleaned or "").strip():
+                    return await self._channel._deliver_media(self._chat_id, media)
+                ok = await self._channel.send(cleaned, chat_id=self._chat_id)
+                await self._channel._deliver_media(self._chat_id, media)
+                return ok
+            final_text, text = cleaned, str(cleaned or "") or "\u2026"
         if self._message_id is None:
             # A FootedReply goes to send() whole, so its footer stays out of the voice note.
             return await self._channel.send(
@@ -244,6 +261,8 @@ class TelegramDraft:
             # the reply alone (the footer's status lines are for reading).
             await self._channel._after_reply(
                 self._chat_id, text if final_text is None else spoken_text(final_text))
+        if media:
+            await self._channel._deliver_media(self._chat_id, media)
         return ok
 
 
@@ -317,6 +336,9 @@ class TelegramChannel(ChannelAdapter):
                  pre_turn_interrupt: Optional[Callable] = None,
                  pre_turn_refused: Optional[Callable] = None):
         super().__init__("telegram", handler)
+        #: G16 (H070): the bound ``kernel.authorize`` a MEDIA: attachment crosses when the
+        #: Action Kernel is on (web.py binds it). None while the kernel is on refuses it.
+        self.media_kernel: Optional[Callable] = None
         self.pending_reply_handler = pending_reply_handler
         self.pending_callback_handler = pending_callback_handler
         self.pre_turn_interrupt = pre_turn_interrupt
@@ -574,6 +596,11 @@ class TelegramChannel(ChannelAdapter):
                     return False
             # System notices neither speak nor consume a pending voice turn.
             return True
+        # G16 (H070): a reply of this chat's running turn may name files it produced
+        # (`MEDIA: /path` lines); they are taken out of the words and attached after them.
+        message, media = self._take_media(cid, message, plain=plain)
+        if media and not str(message or "").strip():
+            return await self._deliver_media(cid, media)
         for index, piece in enumerate(chunk(str(message or ""), self.descriptor.max_message_length)):
             sent = await self._send_plain_chunk(cid, piece) if plain else await self._send_chunk(cid, piece)
             if not sent:
@@ -581,6 +608,8 @@ class TelegramChannel(ChannelAdapter):
                     # H081: earlier parts arrived; the ledger records a partial delivery.
                     delivery_ledger.note_partial()
                 return False
+        if media:
+            await self._deliver_media(cid, media)
         # The words are delivered; a voice note follows only if this chat asked.
         # `voice=False` marks a service line (a transcript echo, an unreadable-attachment
         # notice, a pairing reply, a reason acknowledgement) that is never spoken and
@@ -670,6 +699,188 @@ class TelegramChannel(ChannelAdapter):
         response = await self.client.post(self.api_base + '/sendDocument',
             data={'chat_id': str(chat_id)}, files={'document': (filename, data, mime)})
         return self._scheduled_ack(response)
+
+    # ── G16 (H070): files a turn produced, attached to its reply ─────────────────
+
+    def _take_media(self, cid, message, *, plain: bool):
+        """(the message without its ``MEDIA:`` lines, the paths they name).
+
+        Only a reply of *this chat's running turn* is read for directives: a notice from
+        outside (``plain``), an ephemeral system line, a digest or another chat's send
+        keeps its text exactly as written and attaches nothing."""
+        if plain or isinstance(message, EphemeralReply):
+            return message, []
+        scope = _RUNNING_TURN.get()
+        if scope is None or not scope.answers(self, cid):
+            return message, []
+        text = str(message or "")
+        if "MEDIA:" not in text:
+            return message, []
+        if isinstance(message, FootedReply):
+            reply, paths = media_delivery.extract_directives(message.spoken)
+            footer = text[len(message.spoken.rstrip()):].strip().splitlines()
+            if not paths:
+                return message, []
+            return (FootedReply(reply, footer) if reply.strip() else ""), paths
+        cleaned, paths = media_delivery.extract_directives(text)
+        return (cleaned if paths else message), paths
+
+    def _media_recipient_allowed(self, cid) -> bool:
+        """Files leave only to the owner, inside the owner's own turn (the turn principal
+        the orchestrator bound for this message is the owner's)."""
+        try:
+            from ..orchestrator import current_principal
+
+            principal = current_principal()
+            # The owner's private chat only: in a group every member would receive the file.
+            # Telegram private chats have positive ids equal to the user's; groups are negative.
+            return (principal.admin is True and principal.channel == "telegram"
+                    and principal.scope == "dm" and str(principal.chat or "") == str(cid)
+                    and str(cid).isdigit())
+        except Exception:
+            return False
+
+    def _media_kernel_denial(self, cid, item: "media_delivery.DeliverableFile") -> Optional[str]:
+        """Cross the Action Kernel as a reply into this chat (``channel.reply``) when it is
+        on. None = may send; otherwise why not. The kernel off leaves the allowlist and the
+        owner-only rule as the gates."""
+        from ..kernel import Action, Verdict, kernel_enabled
+
+        if not kernel_enabled():
+            return None
+        kernel = self.media_kernel
+        if not callable(kernel):
+            return "the Action Kernel is not bound here"
+        try:
+            from ..action_origin import current_action_origin
+
+            decision = kernel(Action(
+                kind="channel.reply", agent="jarvis", title=f"Attach {item.name} to a Telegram reply",
+                payload={"channel": "telegram", "reply": {"chat_id": cid},
+                         "attachment": {"name": item.name, "mime": item.mime, "bytes": len(item.data),
+                                        "sha256": item.sha256}},
+                origin=current_action_origin()))
+        except Exception:
+            logger.warning("Attachment kernel check failed; not sent", exc_info=True)
+            return "the Action Kernel could not decide"
+        if decision.verdict is Verdict.GRANT:
+            return None
+        if decision.verdict is Verdict.QUEUE:
+            return "attachments need your approval in the current autonomy mode"
+        return "the Action Kernel refused it"
+
+    async def _deliver_media(self, cid, paths: list) -> bool:
+        """Attach each allowed file after the words. Refusals are told as one line, never
+        with the path. True when every named file was delivered."""
+        lines: list[str] = []
+        delivered_all = True
+        if not self._media_recipient_allowed(cid):
+            await self.send("Files are sent only to the owner, in a private chat; none were attached.",
+                            chat_id=cid, voice=False, plain=True)
+            return False
+        scope = _RUNNING_TURN.get()
+        turn = getattr(scope, "turn_id", None) or uuid.uuid4().hex
+        store = delivery_ledger.store()
+        for index, path in enumerate(paths, start=1):
+            if index > media_delivery.MAX_FILES_PER_REPLY:
+                lines.append(media_delivery.refusal_line(index, media_delivery.Refusal(
+                    media_delivery.REASON_TOO_MANY)))
+                delivered_all = False
+                break
+            try:
+                item = await asyncio.wait_for(asyncio.to_thread(media_delivery.resolve, path),
+                                              timeout=MEDIA_RESOLVE_TIMEOUT_S)
+            except TimeoutError:
+                item = media_delivery.Refusal(media_delivery.REASON_TIMEOUT)
+            if isinstance(item, media_delivery.Refusal):
+                logger.info("Telegram attachment %d refused: %s", index, item.reason)
+                lines.append(media_delivery.refusal_line(index, item))
+                delivered_all = False
+                continue
+            denied = self._media_kernel_denial(cid, item)
+            if denied:
+                lines.append(f"Attachment {index} was not sent: {denied}.")
+                delivered_all = False
+                continue
+            # H081 x G16: one receipt per file, keyed so the same file is not sent twice to
+            # this chat (a retried or repeated reply attaches it once).
+            delivery = None
+            if store is not None:
+                try:
+                    delivery = store.open_delivery("telegram", cid, f"[file {item.mime} {len(item.data)}]",
+                                                   key=f"media:{cid}:{turn}:{item.sha256}")
+                except Exception:
+                    logger.warning("Delivery ledger unavailable for an attachment", exc_info=True)
+            if delivery is not None and not delivery.send:
+                if not delivery.already_sent:
+                    # In flight, unknown or given up: say so, never claim it was delivered.
+                    lines.append(f"Attachment {index} was not sent again: an earlier try may "
+                                 "still arrive.")
+                    delivered_all = False
+                continue   # this turn already delivered it
+            outcome, token = delivery_ledger.begin_outcome()
+            try:
+                if delivery is not None:
+                    delivery.attempting()
+                ok = await self.send_file(cid, item)
+            finally:
+                delivery_ledger.end_outcome(token)
+            if delivery is not None:
+                delivery.finished(ok, outcome)
+            if not ok:
+                lines.append(f"Attachment {index} could not be delivered.")
+                delivered_all = False
+        if lines:
+            await self.send("\n".join(lines), chat_id=cid, voice=False, plain=True)
+        return delivered_all
+
+    async def send_file(self, cid, item: "media_delivery.DeliverableFile") -> bool:
+        """Post one checked file: a photo, a voice note for audio, a video, else a document."""
+        topic = {k: str(v) for k, v in self._topic_args(cid).items()}
+        try:
+            if item.kind == "audio":
+                clip = await asyncio.to_thread(audio_container.prepare_voice, item.data,
+                                               declared_mime=item.mime, stem=item.name.rsplit(".", 1)[0])
+                return await self._post_clip(cid, clip)
+            method, field = {"image": ("sendPhoto", "photo"), "video": ("sendVideo", "video")}.get(
+                item.kind, ("sendDocument", "document"))
+            if method == "sendPhoto" and len(item.data) > 10 * 1024 * 1024:
+                method, field = "sendDocument", "document"   # Telegram's photo limit
+            resp = await self.client.post(f"{self.api_base}/{method}", data={"chat_id": str(cid), **topic},
+                                          files={field: (item.name, item.data, item.mime)})
+            if resp.status_code == 400 and method != "sendDocument":
+                resp = await self.client.post(f"{self.api_base}/sendDocument",
+                                              data={"chat_id": str(cid), **topic},
+                                              files={"document": (item.name, item.data, item.mime)})
+            if not resp.is_success:
+                delivery_ledger.note_send_failure(status=resp.status_code)
+            return self._scheduled_ack(resp)
+        except Exception as exc:
+            delivery_ledger.note_send_failure(exc=exc)
+            logger.warning("Telegram attachment failed: %s", type(exc).__name__)
+            return False
+
+    async def _post_clip(self, cid, clip: "audio_container.VoiceClip") -> bool:
+        """sendVoice for a voice-ready clip (one sendAudio retry on a 400); sendAudio with
+        the reason as caption when it could not be made a voice note."""
+        topic = {k: str(v) for k, v in self._topic_args(cid).items()}
+        if clip.mode == "document":
+            # Not audio by its bytes: never handed to a converter, sent as a plain file.
+            resp = await self.client.post(f"{self.api_base}/sendDocument", data={"chat_id": str(cid), **topic},
+                                          files={"document": (clip.filename, clip.data, clip.mime)})
+            return self._scheduled_ack(resp)
+        if clip.mode == "voice":
+            resp = await self.client.post(f"{self.api_base}/sendVoice", data={"chat_id": str(cid), **topic},
+                                          files={"voice": (clip.filename, clip.data, clip.mime)})
+            if resp.status_code != 400:
+                return self._scheduled_ack(resp)
+            logger.info("Telegram refused the clip as a voice message; sending it as audio")
+        data = {"chat_id": str(cid), **topic}
+        if clip.note:
+            data["caption"] = clip.note
+        resp = await self.client.post(f"{self.api_base}/sendAudio", data=data,
+                                      files={"audio": (clip.filename, clip.data, clip.mime)})
+        return self._scheduled_ack(resp)
 
     async def _send_chunk(self, cid, piece: str) -> bool:
         try:
@@ -2052,30 +2263,21 @@ class TelegramChannel(ChannelAdapter):
         return await speaker(text, lang=lang)
 
     async def _send_voice(self, chat_id, audio: Audio) -> bool:
-        """POST the clip as a voice message; as an audio file if Telegram refuses the format.
+        """POST the clip as a voice message; as an audio file if it cannot be one.
 
-        Telegram plays an ``.ogg``/OPUS, ``.mp3`` or ``.m4a`` body inline as a voice
-        message; anything it refuses with a 400 is sent once more as a plain audio
-        file rather than dropped. True only when Telegram acknowledged a message.
+        G16 (H528): the real container is sniffed from the bytes, not taken from the
+        engine's MIME. Ogg/Opus, MP3 and M4A go to ``sendVoice`` as they are; anything
+        else is converted to Ogg/Opus with ffmpeg first, and without ffmpeg (or when the
+        conversion fails) it is sent with ``sendAudio`` and a one-line caption saying why
+        it is not a voice note. A 400 on ``sendVoice`` is retried once as ``sendAudio``.
+        True only when Telegram acknowledged a message.
         """
-        suffix = VOICE_SUFFIX.get(audio.mime, "bin")
-        filename = f"reply.{suffix}"
         try:
-            resp = await self.client.post(
-                f"{self.api_base}/sendVoice",
-                data={"chat_id": str(chat_id), **{k: str(v) for k, v in self._topic_args(chat_id).items()}},
-                files={"voice": (filename, audio.data, audio.mime)},
-            )
-            if resp.status_code == 400:
-                logger.info("Telegram refused the clip as a voice message; sending it as audio")
-                resp = await self.client.post(
-                    f"{self.api_base}/sendAudio",
-                    data={"chat_id": str(chat_id), **{k: str(v) for k, v in self._topic_args(chat_id).items()}},
-                    files={"audio": (filename, audio.data, audio.mime)},
-                )
-            return self._scheduled_ack(resp)
+            clip = await asyncio.to_thread(audio_container.prepare_voice, audio.data,
+                                           declared_mime=audio.mime, stem="reply")
+            return await self._post_clip(chat_id, clip)
         except Exception as e:
-            logger.warning("Telegram sendVoice failed: %s", e)
+            logger.warning("Telegram sendVoice failed: %s", type(e).__name__)
             return False
 
     async def _read_image(self, attachment) -> Description:

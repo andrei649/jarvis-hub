@@ -524,6 +524,18 @@ BUILTIN_PLUGINS = {
         allowed_domains=["api.telnyx.com"],
         agents_served=["all"],
     ),
+    # G16 (H098): SMS replies through Twilio's Messages API (channels/sms.py). Only an
+    # approved channel.reply task at the money tier reaches this egress.
+    "channel_sms": PluginManifest(
+        id="channel_sms",
+        name="Channel: SMS (Twilio)",
+        version="0.1.0",
+        description="Approved SMS replies via the Twilio Messages API",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.TRANSMITTED,
+        allowed_domains=["api.twilio.com"],
+        agents_served=["all"],
+    ),
     # Governed webhook channels (channels/webhook_channels.py) — id per channel.
     "channel_whatsapp": PluginManifest(
         id="channel_whatsapp",

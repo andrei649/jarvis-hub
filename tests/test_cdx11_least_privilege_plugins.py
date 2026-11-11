@@ -91,6 +91,8 @@ def test_all_external_write_wildcards_are_restricted_under_hardening():
         "writeback_google_calendar", "call_twilio", "call_telnyx",
         "channel_whatsapp", "channel_google_chat", "channel_teams",
         "channel_signal", "channel_matrix",
+        # G16 (H098): approved SMS replies through Twilio.
+        "channel_sms",
         # A2A outbound (Adopt lane slice 4): sends owner text to configured peer agents.
         "a2a",
     }

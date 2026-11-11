@@ -300,7 +300,12 @@ def channel_open_acknowledged() -> bool:
 #: Channels that carry a per-channel allowlist of the owner's own sender ids, and the
 #: env var that holds it. Read by the runtime gate and by the boot guard, so the two
 #: cannot disagree about which channels have one. (Hermes absorption 5b)
-CHANNEL_ALLOWLIST_ENVS: dict[str, str] = {"telegram": "TELEGRAM_ALLOWED_USER_IDS"}
+CHANNEL_ALLOWLIST_ENVS: dict[str, str] = {
+    "telegram": "TELEGRAM_ALLOWED_USER_IDS",
+    # G16 (H098): the owner's own numbers in E.164 (``+15551234567``); the parse below keeps
+    # their digits, which is the sender id the SMS adapter threads.
+    "sms": "JARVIS_SMS_ALLOWED_NUMBERS",
+}
 
 
 def parse_sender_allowlist(raw: object) -> tuple[str, ...]:

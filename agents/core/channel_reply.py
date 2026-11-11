@@ -35,6 +35,11 @@ logger = logging.getLogger("jarvis.channel_reply")
 CHANNEL_REPLY_CONTRACT_KIND = "channel_reply"
 CHANNEL_REPLY_TASK_KIND = "channel.reply"
 _RISK_TIER = 2
+#: G16 (H098): an SMS reply costs money per message, so it is the irreversible/money tier
+#: (3): the policy answers ASK at that tier in every mode, and the kernel can only QUEUE it.
+_SMS_RISK_TIER = 3
+_SMS_REPLY_DEFAULT_MAX_PER_HOUR = 10
+_E164 = re.compile(r"\+[1-9][0-9]{6,14}")
 _TEXT_CAP = 4_000
 # STAB-4 (#933): governed email replies are capped per recipient. The cap is
 # enforced in ChannelReplyBroker.execute, immediately before SMTP, never at
@@ -94,6 +99,9 @@ def _contract_template() -> ContractTemplate:
                 isinstance(target, (str, int)) and not isinstance(target, bool)
                 and re.fullmatch(r"[1-9][0-9]{0,19}", str(target)) is not None
             )
+        if channel == "sms":
+            return (set(reply) == {"sms_to"} and isinstance(reply.get("sms_to"), str)
+                    and _E164.fullmatch(reply["sms_to"]) is not None)
         if channel == "ntfy":
             return (isinstance(reply.get("ntfy_topic"), str)
                     and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", reply["ntfy_topic"]) is not None
@@ -141,6 +149,16 @@ def _contract_template() -> ContractTemplate:
 
 
 CHANNEL_REPLY_CONTRACT = _contract_template()
+
+
+def _risk_tier(channel) -> int:
+    return _SMS_RISK_TIER if channel == "sms" else _RISK_TIER
+
+
+def _sms_reply_cap_from_env() -> int:
+    """Per-number hourly SMS reply cap (JARVIS_SMS_REPLY_MAX_PER_HOUR, default 10); junk
+    or a non-positive value keeps the default, never removes the cap."""
+    return env_int("JARVIS_SMS_REPLY_MAX_PER_HOUR", _SMS_REPLY_DEFAULT_MAX_PER_HOUR, minimum=1)
 
 
 def _normalize_email_address(value) -> str:
@@ -227,6 +245,8 @@ class ChannelReplyBroker:
         self._email_reply_limiter = (email_reply_limiter
                                      or EmailReplyRateLimiter(
                                          max_per_hour=email_reply_max_per_hour))
+        # G16 (H098): paid SMS replies, capped per number before Twilio is called.
+        self._sms_reply_limiter = EmailReplyRateLimiter(max_per_hour=_sms_reply_cap_from_env())
 
     async def deliver_prompt(self, message_id: str, text: str, *, channel: str,
                              sender: str, markup: dict | None, current: Callable,
@@ -379,11 +399,12 @@ class ChannelReplyBroker:
                     return {"ok": False, "reason": "invalid_prompt_content"}
                 pending.content = content
             pending.payload = json.loads(json.dumps(payload))
+        tier = _risk_tier(payload["channel"])
         contract_payload = {
             **payload,
             "kind": CHANNEL_REPLY_TASK_KIND,
             "agent": agent or self.agent,
-            "risk_tier": _RISK_TIER,
+            "risk_tier": tier,
         }
         try:
             decision = CHANNEL_REPLY_CONTRACT.evaluate(contract_payload, now=time.time())
@@ -400,7 +421,7 @@ class ChannelReplyBroker:
             "kind": CHANNEL_REPLY_TASK_KIND,
             "title": title,
             "payload": payload,
-            "risk_tier": _RISK_TIER,
+            "risk_tier": tier,
         })
         autonomy_level = "ask"
         if self._kernel is not None:
@@ -410,7 +431,8 @@ class ChannelReplyBroker:
                     kind=CHANNEL_REPLY_TASK_KIND,
                     agent=agent or self.agent,
                     title=title,
-                    payload=payload,
+                    # An SMS reply states its money tier to the policy (stricter only).
+                    payload={**payload, "risk_tier": tier} if tier != _RISK_TIER else payload,
                     origin=origin,
                 ))
                 if verdict.verdict is Verdict.DENY:
@@ -426,8 +448,8 @@ class ChannelReplyBroker:
                 CHANNEL_REPLY_TASK_KIND,
                 title,
                 payload=payload,
-                risk_tier=_RISK_TIER,
-                autonomy_level=autonomy_level,
+                risk_tier=tier,
+                autonomy_level="ask" if tier >= _SMS_RISK_TIER else autonomy_level,
                 origin=origin,
             )
         except Exception:
@@ -488,6 +510,21 @@ class ChannelReplyBroker:
                 return {"status": "blocked", "reason": "sender_not_allowlisted", "channel": channel}
             if self._email_reply_limiter.blocked(recipient):
                 return {"status": "blocked", "reason": "email_reply_rate_limited", "channel": channel}
+        if channel == "sms":
+            # G16 (H098), enforced here — the last step before Twilio. The reply goes to
+            # the exact number that wrote the inbound message it answers (that number
+            # passed the allowlist/pairing check on arrival), at most N per hour.
+            from .channels.sms import sender_id
+
+            recipient = str(reply.get("sms_to") or "")
+            inbound = self._inbox.get_message(message_id) if message_id else None
+            if (not inbound or inbound.get("direction") != "in" or inbound.get("channel") != "sms"
+                    or inbound.get("thread_id") != thread_id or inbound.get("reply") != reply):
+                return {"status": "blocked", "reason": "inbound_binding_changed", "channel": channel}
+            if inbound.get("sender") != sender_id(recipient):
+                return {"status": "blocked", "reason": "reply_recipient_mismatch", "channel": channel}
+            if self._sms_reply_limiter.blocked(recipient):
+                return {"status": "blocked", "reason": "sms_reply_rate_limited", "channel": channel}
         if self._channel_manager is None:
             return {"status": "failed", "reason": "channel_manager_unavailable",
                     "channel": channel}
@@ -495,8 +532,12 @@ class ChannelReplyBroker:
         if not callable(send_reply):
             return {"status": "failed", "reason": "reply_transport_unavailable",
                     "channel": channel}
+        extra = {}
+        if channel == "sms" and type(getattr(task, "id", None)) is int:
+            # H081 x G16: a retried task never sends the paid message twice.
+            extra["delivery_key"] = f"channel.reply:{task.id}"
         try:
-            sent = await send_reply(channel, text, **reply)
+            sent = await send_reply(channel, text, **reply, **extra)
         except Exception:
             logger.warning("channel reply send failed", exc_info=True)
             return {"status": "failed", "reason": "send_failed", "channel": channel}
@@ -505,6 +546,8 @@ class ChannelReplyBroker:
         if channel == "email":
             # Only a successful send consumes rate-limit quota.
             self._email_reply_limiter.record(_normalize_email_address(reply.get("to")))
+        if channel == "sms":
+            self._sms_reply_limiter.record(str(reply.get("sms_to") or ""))
         self._inbox.record_outbound(
             channel,
             text,

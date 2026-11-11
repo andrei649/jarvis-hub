@@ -75,6 +75,7 @@
   "plugin:channel_google_chat": "wired",
   "plugin:channel_matrix": "wired",
   "plugin:channel_signal": "wired",
+  "plugin:channel_sms": "wired",
   "plugin:channel_teams": "wired",
   "plugin:channel_whatsapp": "wired",
   "plugin:cloud-image": "wired",

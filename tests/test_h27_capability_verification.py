@@ -291,9 +291,10 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
     _assert_h696_boot_skill_split(records)
     # Six independent, default-off image-provider manifests each need a policy case, and so
     # does the G14 ``a2a`` egress manifest.
-    # 88 before H696: + plugin:a2a (A2A outbound) and the three default-off cloud video
-    # providers (G19); H696 moved the optional skills out of the boot registry.
-    assert len(records) == len(cases) == len(by_ref) == 88 - len(H696_OPTIONAL_SKILL_TITLES) == 81
+    # 89 before H696: + plugin:a2a (A2A outbound), the three default-off cloud video
+    # providers (G19) and plugin:channel_sms (G16); H696 moved the optional skills out of
+    # the boot registry.
+    assert len(records) == len(cases) == len(by_ref) == 89 - len(H696_OPTIONAL_SKILL_TITLES) == 82
     assert by_ref["reality-v1:plugin:cloud-image"].capability_id == "plugin:cloud-image"
     assert by_ref["reality-v1:plugin:kanban-attachments"].capability_id == "plugin:kanban-attachments"
     assert by_ref["reality-v1:plugin:ntfy"].capability_id == "plugin:ntfy"
@@ -301,18 +302,18 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
         kind: sum(case.capability_id.startswith(f"{kind}:") for case in cases)
         for kind in ("plugin", "component", "skill")
     } == {
-        "plugin": 52,
+        "plugin": 53,
         "component": 24,
         "skill": 5,
     }
-    assert len({case.capability_id for case in cases}) == 81
+    assert len({case.capability_id for case in cases}) == 82
     for record in records:
         assert record.verification in by_ref
         assert by_ref[record.verification].capability_id == record.id
 
     combined = all_reality_cases(orch)
     assert combined[: len(CASES)] == CASES
-    assert len(combined) == len(CASES) + 81
+    assert len(combined) == len(CASES) + 82
     all_refs = [case.ref for case in combined]
     assert len(all_refs) == len(set(all_refs))
 
@@ -327,8 +328,8 @@ def test_every_boot_registry_verification_ref_matches_one_real_case():
             "action:provider.custom_endpoint") in verification_pairs
     assert len(ACTION_CAPABILITY_MANIFESTS) == 42
     assert len(tool_records) == 2
-    # + the three default-off cloud video providers
-    assert len(verification_pairs) == 42 + 2 + 81 == 125
+    # + the three default-off cloud video providers, + channel_sms (G16)
+    assert len(verification_pairs) == 42 + 2 + 82 == 126
     for verification_ref, capability_id in verification_pairs:
         matches = [case for case in combined if case.ref == verification_ref]
         assert len(matches) == 1
@@ -346,8 +347,8 @@ async def test_registry_policy_cases_pass_while_default_off_plugins_remain_seams
     by_id = {item["capability_id"]: item for item in result["results"]}
 
     _assert_h696_boot_skill_split(records.values())
-    assert result["total"] == 81
-    assert result["passed"] == 80
+    assert result["total"] == 82
+    assert result["passed"] == 81
     assert by_id["plugin:ntfy"]["passed"] is True
     assert result["skipped"] == 0
     assert all(

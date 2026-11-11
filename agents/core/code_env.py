@@ -65,6 +65,8 @@ _MANAGED_NAMES = frozenset({
     "TAVILY_API_KEY",
     # G19: the FAL key (cloud images and the adopted FAL video provider; the panel sets it).
     "FAL_KEY",
+    # G16 (H098): the SMS channel's Twilio auth token (the panel sets it).
+    "JARVIS_SMS_AUTH_TOKEN",
 }) | ADOPTED_MODEL_PROVIDER_KEYS  # the model providers adopted from Hermes (Adopt lane, slice 2)
 
 # These names either load code, alter the host's controlled child base, or carry
