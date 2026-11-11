@@ -16,15 +16,30 @@ Workspace session (``agents/core/workspace/auth.py``) cut down to the single own
   everywhere, idle for :data:`IDLE_SECONDS`, past :data:`ABSOLUTE_SECONDS`, or when the
   admin credential it was opened with stops being valid (rotated, revoked, expired):
   the store keeps the credential's hash and the hub re-checks it on every use.
-* **CSRF.** Cookie authentication is accepted only with browser evidence of the same
-  origin (``Sec-Fetch-Site`` / ``Origin``, also on a WebSocket upgrade), and a mutating
-  request must echo the session's synchronizer token in ``X-CSRF-Token``. A request that
-  authenticates with a header token never consults the cookie, so the existing token
-  routes do not become CSRF-able because a cookie exists.
-* **Throttling.** Failed sign-ins are counted per client address (5 per 15 minutes) and
-  overall (30 per 15 minutes), and each attempt is counted *before* its secret is
-  checked, so a burst of parallel guesses cannot outrun the limit. A lockout never
-  locks the owner out of the box: header tokens and the loopback posture are untouched.
+* **CSRF.** Cookie authentication needs *positive* browser evidence of the same origin:
+  ``Sec-Fetch-Site: same-origin`` (with any ``Origin`` matching), or, from a browser that
+  sends no ``Sec-Fetch-Site``, an ``Origin`` equal to the hub's own. A request with
+  neither header (curl, a replayed cookie) is not cookie-authenticated, and the CSRF
+  token is never handed out without that evidence. A mutating request must also echo
+  the session's synchronizer token in ``X-CSRF-Token``. A request that authenticates
+  with a header token never consults the cookie, so the existing token routes do not
+  become CSRF-able because a cookie exists.
+* **Transport.** Over plain HTTP a browser sends a cookie to every port of the host, so
+  any other service there could read and replay it. Browser sign-in from another
+  device is therefore refused over plain HTTP unless the owner sets
+  ``JARVIS_ALLOW_INSECURE_SIGNIN=1``; a browser on the hub's own machine (loopback) and
+  any HTTPS origin (directly or through a listed proxy) are always allowed.
+* **Throttling.** Failed sign-ins are counted per client address: the 6th within 15
+  minutes from one address is refused before its secret is checked. Failures from all
+  addresses together (30 per 15 minutes) never refuse a *correct* secret — that would
+  let anyone lock the owner out — but every further wrong guess is answered only after
+  :data:`GLOBAL_BACKOFF_SECONDS`. Loopback is exempt. The secret's entropy (256-bit
+  managed tokens) is the real defence; the throttle bounds noise. Header tokens and the
+  loopback posture are untouched by any lockout.
+* **Cost.** Session lookups are cached in memory for :data:`CACHE_SECONDS` (dropped on
+  sign-out), malformed cookie values never reach the database, and only user-initiated
+  requests (writes, and the HUD's session read) count toward the idle clock — polling
+  and WebSocket loops do not keep a session alive.
 
 Loopback behaviour does not change: with no admin credential configured, a direct
 loopback caller is still the owner without signing in, and nothing here runs for it.
@@ -32,9 +47,12 @@ loopback caller is still the owner without signing in, and nothing here runs for
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
 import math
+import os
+import re
 import secrets
 import sqlite3
 import threading
@@ -56,6 +74,12 @@ TOUCH_INTERVAL_SECONDS = 60
 LOGIN_WINDOW_SECONDS = 15 * 60
 LOGIN_IP_LIMIT = 5
 LOGIN_GLOBAL_LIMIT = 30
+GLOBAL_BACKOFF_SECONDS = 2.0
+CACHE_SECONDS = 5.0
+_CACHE_MAX = 256
+#: What ``secrets.token_urlsafe(32)`` produces; anything else is refused before the DB.
+_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
+INSECURE_SIGNIN_ENV = "JARVIS_ALLOW_INSECURE_SIGNIN"
 MAX_SECRET_LENGTH = 4096
 MAX_USER_AGENT = 300
 
@@ -79,7 +103,13 @@ class BrowserSessionStore:
     def __init__(self, db_path: str | None = None):
         self._path = Path(db_path) if db_path else data_path("security", "browser_sessions.db")
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        # Owner-only file: session hashes and sign-in addresses are nobody else's business.
+        fd = os.open(str(self._path), os.O_CREAT | os.O_RDWR, 0o600)
+        os.close(fd)
+        with contextlib.suppress(OSError):  # a filesystem without POSIX modes keeps its ACLs
+            os.chmod(self._path, 0o600)
         self._lock = threading.Lock()
+        self._cache: dict[str, tuple[dict[str, Any], float]] = {}
         self._conn = sqlite3.connect(str(self._path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript("""
@@ -127,24 +157,43 @@ class BrowserSessionStore:
             self._conn.commit()
         return {"token": token, "csrf": csrf, "expires_at": expires_at}
 
-    def resolve(self, token: str, now: float | None = None) -> dict[str, Any] | None:
-        """The live session behind *token*, or ``None``; refreshes its idle clock (≤ 1/min)."""
-        if not token or len(token) > 256:
+    def resolve(self, token: str, now: float | None = None, *,
+                touch: bool = False) -> dict[str, Any] | None:
+        """The live session behind *token*, or ``None``.
+
+        A malformed token never reaches the database. A live row is cached for
+        :data:`CACHE_SECONDS`; :meth:`revoke` / :meth:`revoke_all` drop the cache, so a
+        sign-out takes effect at once. With *touch* (a user-initiated request) the idle
+        clock is refreshed, at most once a minute."""
+        if not token or not _TOKEN_RE.match(token):
             return None
         stamp = now if now is not None else time.time()
         id_hash = token_hash(token)
         with self._lock:
-            row = self._conn.execute("SELECT * FROM sessions WHERE id_hash = ?",
-                                     (id_hash,)).fetchone()
+            cached = self._cache.get(id_hash)
+            if cached is not None and stamp - cached[1] < CACHE_SECONDS and stamp >= cached[1]:
+                row = cached[0]
+            else:
+                found = self._conn.execute("SELECT * FROM sessions WHERE id_hash = ?",
+                                           (id_hash,)).fetchone()
+                row = dict(found) if found is not None else None
+                if row is not None:
+                    if len(self._cache) >= _CACHE_MAX:
+                        self._cache.clear()
+                    self._cache[id_hash] = (row, stamp)
+                else:
+                    self._cache.pop(id_hash, None)
             if row is None or row["revoked_at"] is not None or row["expires_at"] <= stamp \
                     or row["last_seen_at"] + IDLE_SECONDS <= stamp:
                 return None
-            if stamp - row["last_seen_at"] >= TOUCH_INTERVAL_SECONDS:
+            if touch and stamp - row["last_seen_at"] >= TOUCH_INTERVAL_SECONDS:
                 self._conn.execute("UPDATE sessions SET last_seen_at = ? WHERE id_hash = ?",
                                    (stamp, id_hash))
                 self._conn.commit()
+                row = {**row, "last_seen_at": stamp}
+                self._cache[id_hash] = (row, stamp)
         session = dict(row)
-        session["idle_expires_at"] = max(row["last_seen_at"], stamp) + IDLE_SECONDS
+        session["idle_expires_at"] = row["last_seen_at"] + IDLE_SECONDS
         return session
 
     def revoke(self, id_hash: str, now: float | None = None) -> bool:
@@ -155,6 +204,7 @@ class BrowserSessionStore:
                 "UPDATE sessions SET revoked_at = ? WHERE id_hash = ? AND revoked_at IS NULL",
                 (stamp, id_hash))
             self._conn.commit()
+            self._cache.pop(id_hash, None)
         return cursor.rowcount == 1
 
     def revoke_all(self, now: float | None = None) -> int:
@@ -165,6 +215,7 @@ class BrowserSessionStore:
                 "UPDATE sessions SET revoked_at = ? WHERE revoked_at IS NULL AND expires_at > ?",
                 (stamp, stamp))
             self._conn.commit()
+            self._cache.clear()
         return int(cursor.rowcount or 0)
 
     def live_count(self, now: float | None = None) -> int:
@@ -177,12 +228,16 @@ class BrowserSessionStore:
 
     # ── sign-in throttle ──────────────────────────────────────────────────────────
 
-    def reserve_attempt(self, ip: str, now: float | None = None) -> int:
-        """Check the throttle and count this attempt as a failure, atomically.
+    def reserve_attempt(self, ip: str, now: float | None = None) -> tuple[int, int | None]:
+        """Check the per-address throttle and count this attempt as a failure, atomically.
 
-        Raises :class:`Throttled` when the address or the hub as a whole is over its
-        limit (a refused attempt is not stored, so the lock lifts as the window slides).
-        Returns the attempt id; :meth:`settle_success` flips it on a correct secret.
+        Raises :class:`Throttled` when *this address* is over its limit (a refused
+        attempt is not stored, so the lock lifts as the window slides). The hub-wide
+        count never refuses here: it is returned as the second element (seconds until it
+        drops below :data:`LOGIN_GLOBAL_LIMIT`, or ``None``), and the caller still checks
+        the secret, so a correct one always gets through while a wrong one is slowed and
+        refused. Returns ``(attempt_id, global_wait)``; :meth:`settle_success` flips the
+        attempt on a correct secret.
         """
         stamp = now if now is not None else time.time()
         since = stamp - LOGIN_WINDOW_SECONDS
@@ -197,15 +252,15 @@ class BrowserSessionStore:
             overall = [r[0] for r in self._conn.execute(
                 "SELECT ts FROM login_attempts WHERE ok = 0 AND ts > ? ORDER BY id DESC LIMIT ?",
                 (since, LOGIN_GLOBAL_LIMIT))]
-            waits = [w for w in (_retry_after(per_ip, LOGIN_IP_LIMIT, stamp),
-                                 _retry_after(overall, LOGIN_GLOBAL_LIMIT, stamp)) if w]
-            if waits:
+            per_ip_wait = _retry_after(per_ip, LOGIN_IP_LIMIT, stamp)
+            if per_ip_wait:
                 self._conn.commit()
-                raise Throttled(max(waits))
+                raise Throttled(per_ip_wait)
+            global_wait = _retry_after(overall, LOGIN_GLOBAL_LIMIT, stamp)
             cursor = self._conn.execute(
                 "INSERT INTO login_attempts (ip, ok, ts) VALUES (?, 0, ?)", (ip, stamp))
             self._conn.commit()
-        return int(cursor.lastrowid)
+        return int(cursor.lastrowid), global_wait
 
     def settle_success(self, attempt_id: int) -> None:
         with self._lock:
@@ -270,18 +325,15 @@ def cookie_path(request) -> str:
 
 
 def cookie_token(request) -> str:
-    """The session token the request carries under either name ('' when none).
+    """The session token under the one name this transport sets ('' when none or malformed).
 
-    The ``__Host-`` name is read only over HTTPS, where a browser would have set it."""
+    Over HTTPS at the root path only ``__Host-nerva_session`` is read — never a plain
+    ``nerva_session`` that a sibling host or an HTTP page could have planted."""
     cookies = getattr(request, "cookies", None)
     if not cookies:
         return ""
-    names = COOKIE_NAMES if is_https(request) else (SESSION_COOKIE,)
-    for name in names:
-        value = cookies.get(name)
-        if value:
-            return value
-    return ""
+    value = cookies.get(cookie_name(request)) or ""
+    return value if _TOKEN_RE.match(value) else ""
 
 
 def _expected_origin(request) -> str:
@@ -295,21 +347,48 @@ def _expected_origin(request) -> str:
 def same_origin(request) -> bool:
     """Browser evidence says same-origin, or there is no browser evidence at all.
 
-    ``Sec-Fetch-Site`` is computed by the browser and cannot be set by page script, so
-    ``same-origin``/``none`` is believed; ``same-site``/``cross-site`` is refused even
-    when ``Origin`` would match. Otherwise ``Origin`` must equal this hub's own origin.
-    A request with neither header is not from a browser page (curl, the CLI)."""
+    The lenient check for sign-in and sign-out only (they need no session): a
+    ``same-site``/``cross-site`` ``Sec-Fetch-Site`` is refused, and an ``Origin``, when
+    sent, must equal this hub's own. A request with neither header is not from a browser
+    page (curl, the CLI). Cookie *use* needs :func:`positive_same_origin` instead."""
     headers = _headers(request)
     site = (headers.get("sec-fetch-site") or "").strip().lower()
-    if site in ("same-origin", "none"):
-        return True
-    if site:
+    if site and site not in ("same-origin", "none"):
         return False
     origin = headers.get("origin")
     if origin is not None:
         expected = _expected_origin(request)
         return bool(expected) and origin.strip().rstrip("/").lower() == expected
     return True
+
+
+def positive_same_origin(request) -> bool:
+    """Positive browser evidence that the request comes from this hub's own pages.
+
+    ``Sec-Fetch-Site: same-origin`` (and any ``Origin`` sent with it matching), or — from
+    a browser that sends no ``Sec-Fetch-Site`` — an ``Origin`` equal to this hub's own.
+    ``none`` (a typed URL, a bookmark) and a request with neither header are not
+    evidence: cookie authentication and the CSRF token need this to be true."""
+    headers = _headers(request)
+    site = (headers.get("sec-fetch-site") or "").strip().lower()
+    origin = headers.get("origin")
+    expected = _expected_origin(request)
+    origin_ok = origin is not None and bool(expected) \
+        and origin.strip().rstrip("/").lower() == expected
+    if site:
+        return site == "same-origin" and (origin is None or origin_ok)
+    return origin_ok
+
+
+def insecure_signin_allowed() -> bool:
+    """The owner's explicit opt-in to browser sign-in over plain HTTP from the network."""
+    from agents.core.env_config import env_flag
+    return env_flag(INSECURE_SIGNIN_ENV, False)
+
+
+def transport_ok(request, *, loopback: bool) -> bool:
+    """HTTPS, a loopback browser, or the owner's opt-in (:data:`INSECURE_SIGNIN_ENV`)."""
+    return is_https(request) or loopback or insecure_signin_allowed()
 
 
 def is_json(request) -> bool:
@@ -329,7 +408,8 @@ def _method(request) -> str:
 NONE, OK, CSRF_FAILED = "none", "ok", "csrf_failed"
 
 
-def session_state(request, credential_valid) -> tuple[str, dict[str, Any] | None]:
+def session_state(request, credential_valid, *,
+                  touch: bool | None = None) -> tuple[str, dict[str, Any] | None]:
     """Classify the request's owner cookie: ``(NONE|OK|CSRF_FAILED, session)``.
 
     *credential_valid* is ``fn(cred_hash) -> bool``: whether the admin credential the
@@ -337,13 +417,17 @@ def session_state(request, credential_valid) -> tuple[str, dict[str, Any] | None
     whose credential died is revoked on the spot. ``CSRF_FAILED`` means a live session
     was presented on a mutating request without its synchronizer token — the guards
     answer 403 rather than 401, so the HUD does not ask the owner to sign in again.
-    Never cached: a WebSocket handler re-runs its guard on the same request object to
-    notice a sign-out mid-stream, so every call reads the store afresh."""
+    Not cached per request: a WebSocket handler re-runs its guard on the same request
+    object to notice a sign-out mid-stream (the store's short cache is dropped on
+    sign-out). *touch* defaults to "this is a write": only user-initiated requests
+    refresh the idle clock, never a poll or a WebSocket loop."""
     result: tuple[str, dict[str, Any] | None] = (NONE, None)
     token = cookie_token(request)
-    if token and same_origin(request):
+    if token and positive_same_origin(request):
         store = get_session_store()
-        session = store.resolve(token)
+        if touch is None:
+            touch = _method(request) in MUTATING_METHODS
+        session = store.resolve(token, touch=touch)
         if session is not None and not credential_valid(session["cred_hash"]):
             store.revoke(session["id_hash"])
             session = None
@@ -375,3 +459,8 @@ def clear_session_cookies(response, request) -> None:
             continue   # a browser refuses a __Host- cookie without Secure anyway
         response.delete_cookie(name, path=cookie_path(request), secure=secure,
                                httponly=True, samesite="strict")
+
+
+def cookie_present(request) -> bool:
+    """Cheap pre-check (no DB): does the request carry a well-formed session cookie?"""
+    return bool(cookie_token(request))

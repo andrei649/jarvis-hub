@@ -46,6 +46,12 @@ def _client(request: Request) -> str:
     return request.client.host if request.client else ""
 
 
+def _loopback(request: Request) -> bool:
+    """A browser on the hub's own machine (the localhost gate's origin, HF-7)."""
+    web = _web()
+    return web._real_client_host(request) in web._LOCALHOSTS
+
+
 def _session_payload(session: dict | None) -> dict:
     if not session:
         return {"signed_in": False}
@@ -58,14 +64,22 @@ def _session_payload(session: dict | None) -> dict:
 async def auth_session(request: Request):
     """Whether this browser holds a live owner session (and its CSRF token if so).
 
-    Open by design: an anonymous caller learns only ``signed_in: false`` and whether the
-    hub has an owner credential to sign in with. The CSRF token comes back solely for a
-    valid same-origin session cookie."""
+    Open by design: an anonymous caller learns only ``signed_in: false``, whether the hub
+    has an owner credential to sign in with, and whether this transport allows browser
+    sign-in. The CSRF token comes back solely for a valid session cookie sent with
+    positive same-origin evidence. Reading it counts as use (the HUD reads it on load),
+    so it refreshes the idle clock."""
     web = _web()
-    state, session = await asyncio.to_thread(
-        bs.session_state, request, web._owner_credential_hash_valid)
-    payload = _session_payload(session if state != bs.NONE else None)
-    payload["sign_in_available"] = bool(web._admin_configured())
+    transport_ok = bs.transport_ok(request, loopback=_loopback(request))
+    session = None
+    if transport_ok and bs.cookie_present(request):
+        state, found = await asyncio.to_thread(
+            bs.session_state, request, web._owner_credential_hash_valid, touch=True)
+        session = found if state != bs.NONE else None
+    payload = _session_payload(session)
+    payload["sign_in_available"] = bool(web._admin_configured()) and transport_ok
+    if not transport_ok:
+        payload["reason"] = "https_required"
     return nocache_json(payload)
 
 
@@ -73,10 +87,13 @@ async def auth_session(request: Request):
 async def auth_login(request: Request):
     """Exchange the owner secret for a browser session cookie.
 
-    Same-origin and ``application/json`` only (a cross-site form cannot send either),
-    throttled per address and overall before the secret is checked, and compared in
-    constant time. Each sign-in rotates the session: the one the browser presented is
-    revoked."""
+    Same-origin and ``application/json`` only (a cross-site form cannot send either);
+    over plain HTTP from another device only with ``JARVIS_ALLOW_INSECURE_SIGNIN=1``.
+    Throttled per address before the secret is checked; the hub-wide failure count
+    never refuses a correct secret (anyone could otherwise lock the owner out), it only
+    slows and refuses wrong ones. Loopback is exempt from both. The secret is compared
+    in constant time. Each sign-in rotates the session: the one the browser presented
+    is revoked."""
     web = _web()
     client = _client(request)
     if not bs.same_origin(request):
@@ -99,21 +116,38 @@ async def auth_login(request: Request):
                        "this hub has no owner credential yet; a direct loopback browser is "
                        "already the owner. Set JARVIS_ADMIN_TOKEN (or mint one with "
                        "scripts/token_recover.py rotate admin) to sign in from the network")
+    loopback = _loopback(request)
+    if not bs.transport_ok(request, loopback=loopback):
+        return _refuse(403, "https_required",
+                       "browser sign-in from another device needs HTTPS: over plain HTTP the "
+                       "session cookie would be sent to every service on this host. Put the "
+                       "hub behind HTTPS, or set JARVIS_ALLOW_INSECURE_SIGNIN=1 to accept the "
+                       "risk on a trusted network")
     store = bs.get_session_store()
     ip = web._client_ip(request) or client
-    try:
-        attempt = await asyncio.to_thread(store.reserve_attempt, ip)
-    except bs.Throttled as exc:
-        submit_auth_event("auth_failure", tier="admin", reason="throttled", client=client)
-        return _refuse(429, "too_many_attempts", "too many failed sign-ins; try again later",
-                       retry_after_seconds=exc.retry_after)
+    attempt, global_wait = None, None
+    if not loopback:
+        try:
+            attempt, global_wait = await asyncio.to_thread(store.reserve_attempt, ip)
+        except bs.Throttled as exc:
+            submit_auth_event("auth_failure", tier="admin", reason="throttled", client=client)
+            return _refuse(429, "too_many_attempts", "too many failed sign-ins; try again later",
+                           retry_after_seconds=exc.retry_after)
     # Only an admin credential opens an owner session: a guest's user token, an API key
     # or anything else is a wrong secret (and counted as one).
     ok = await asyncio.to_thread(web._admin_credential_ok, secret)
     if not ok:
+        if global_wait:
+            # Many failures hub-wide: slow every further wrong guess and say so, but
+            # never refuse the right secret (that would be a lockout anyone can cause).
+            await asyncio.sleep(bs.GLOBAL_BACKOFF_SECONDS)
+            submit_auth_event("auth_failure", tier="admin", reason="throttled", client=client)
+            return _refuse(429, "too_many_attempts", "too many failed sign-ins; try again later",
+                           retry_after_seconds=global_wait)
         submit_auth_event("auth_failure", tier="admin", reason="invalid", client=client)
         return _refuse(401, "invalid_secret", "that is not this hub's owner secret")
-    await asyncio.to_thread(store.settle_success, attempt)
+    if attempt is not None:
+        await asyncio.to_thread(store.settle_success, attempt)
     previous = bs.cookie_token(request)
     if previous:
         await asyncio.to_thread(store.revoke, bs.token_hash(previous))

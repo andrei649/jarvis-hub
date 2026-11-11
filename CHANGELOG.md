@@ -8,11 +8,19 @@
 - Open the HUD from your phone or another computer and Nerva now asks you to sign in, once,
   with the owner secret (your admin token). It no longer pops up a token prompt or keeps the
   token in the browser: the hub gives the browser a session cookie the page itself cannot read.
+- Owner sign-in from another device needs HTTPS (put the hub behind an HTTPS proxy). Over
+  plain HTTP a browser hands the session to every service on that machine, so it is refused
+  unless you set `JARVIS_ALLOW_INSECURE_SIGNIN=1` for a network you trust. Meanwhile the
+  sign-in screen still lets you use a token, as before.
+- Signed in from another device, you reach the same routes your admin token reaches there:
+  the assistant's user routes need `JARVIS_USER_TOKEN` to be set, as they always did.
 - A session lasts up to 7 days and ends after a day without use. "OWNER · SIGNED IN" in the
   bottom-left corner signs this browser out, or every browser at once. Rotating or revoking
   the admin token also signs out every browser that used it.
-- Five wrong secrets from one address (or thirty from anywhere) lock sign-in for 15 minutes.
-  The token in a header and a browser on the hub's own machine keep working meanwhile.
+- Five wrong secrets from one address lock sign-in from that address for 15 minutes. Wrong
+  guesses from many addresses only slow every further wrong guess down: nobody can lock you
+  out by failing on purpose, your right secret always gets in. A browser on the hub's own
+  machine is never throttled, and the token in a header keeps working.
 - Another web site cannot act with your session: writes must come from the HUD's own page.
   A guest's user token never becomes the owner, also when used in the owner's browser.
 - On the hub's own machine nothing changes: with no admin token set, a local browser is the

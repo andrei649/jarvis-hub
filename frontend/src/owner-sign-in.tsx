@@ -21,6 +21,11 @@ function needsSignIn(s: OwnerSession | null, wanted: boolean): boolean {
   return wanted || s.sign_in_available === true;
 }
 
+/* Over plain HTTP from another device the hub refuses browser sign-in unless the owner
+   opted in (JARVIS_ALLOW_INSECURE_SIGNIN): a browser sends the cookie to every port of
+   the host. The screen then says why and offers the token instead. */
+const HTTPS_REQUIRED = 'Owner sign-in from another device needs HTTPS: over plain HTTP your browser would send the session to every service on this machine. Use the hub over HTTPS, or ask the owner to allow it (JARVIS_ALLOW_INSECURE_SIGNIN=1). You can still use a token below.';
+
 export function OwnerSignIn() {
   const networked = isNetworkedOrigin();
   const [session, setSession] = useState<OwnerSession | null>(ownerSession());
@@ -59,6 +64,7 @@ export function OwnerSignIn() {
   }
 
   if (!needsSignIn(session, wanted)) return null;
+  const httpsRequired = session?.reason === 'https_required';
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,7 +95,7 @@ export function OwnerSignIn() {
           {guest ? 'USE A GUEST TOKEN' : 'SIGN IN TO NERVA'}
         </div>
         <div style={{ fontSize: 12.5, lineHeight: 1.45, color: 'var(--ink-2, #9fb3c4)' }}>
-          {guest
+          {httpsRequired && !guest ? HTTPS_REQUIRED : guest
             ? 'Paste the user token the owner gave you. It is kept in this browser only.'
             : 'This hub is reached over the network. Enter the owner secret (the admin token) to open a session in this browser.'}
         </div>

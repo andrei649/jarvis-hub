@@ -263,15 +263,29 @@ def _owner_session(request) -> str:
     """The request's owner browser session (H509): ``"ok"``, ``"csrf_failed"`` or ``"none"``.
 
     Consulted only where no header credential authenticated the request, so a header
-    token route never becomes cookie-driven. Same-origin evidence is required, and a
-    mutating request must carry the session's ``X-CSRF-Token``
-    (``agents/core/security/browser_session.py``)."""
+    token route never becomes cookie-driven. Positive same-origin evidence is required,
+    a mutating request must carry the session's ``X-CSRF-Token``, and over plain HTTP
+    from another device the cookie counts only with ``JARVIS_ALLOW_INSECURE_SIGNIN=1``
+    (``agents/core/security/browser_session.py``). A request with no well-formed session
+    cookie never touches the store."""
+    if not _browser_session.cookie_present(request):
+        return _browser_session.NONE
+    if not _browser_session.transport_ok(
+            request, loopback=_real_client_host(request) in _LOCALHOSTS):
+        return _browser_session.NONE
     try:
         state, _session = _browser_session.session_state(request, _owner_credential_hash_valid)
     except Exception:
         logger.warning("owner browser session could not be read; treated as absent", exc_info=True)
         return _browser_session.NONE
     return state
+
+
+async def _owner_session_async(request) -> str:
+    """``_owner_session`` off the event loop (the store is SQLite) when a cookie is present."""
+    if not _browser_session.cookie_present(request):
+        return _browser_session.NONE
+    return await asyncio.to_thread(_owner_session, request)
 
 
 def _owner_session_ok(request) -> bool:
@@ -292,7 +306,7 @@ async def _admin_guard(request: Request):
         submit_auth_event("auth_success", tier="admin", reason="credential", client=client)
         return
     # H509: the owner's browser session (cookie + same origin + CSRF on writes).
-    session = _owner_session(request) if not supplied else _browser_session.NONE
+    session = await _owner_session_async(request) if not supplied else _browser_session.NONE
     if session == _browser_session.OK:
         submit_auth_event("auth_success", tier="admin", reason="session", client=client)
         return
@@ -391,17 +405,16 @@ async def _user_guard(request: Request):
             reason = "admin_credential" if admin_supplied and not user_supplied else "credential"
             submit_auth_event("auth_success", tier="user", reason=reason, client=client)
             return
-    # H509: the owner's browser session admits user routes too (owner ⊇ user), but only
-    # when no header credential was presented — a header is judged on its own.
-    session = (_owner_session(request) if not (user_supplied or admin_supplied)
-               else _browser_session.NONE)
-    if session == _browser_session.OK:
-        submit_auth_event("auth_success", tier="user", reason="session", client=client)
-        return
-    if session == _browser_session.CSRF_FAILED and (
-            _user_credential_required() or _real_client_host(request) not in _LOCALHOSTS):
-        raise _csrf_refusal("user", client)
-    if _user_credential_required():
+        # H509: the owner's browser session admits user routes too (owner ⊇ user), but
+        # only where an admin header would (a user credential is configured: HF-1), and
+        # only when no header credential was presented — a header is judged on its own.
+        session = (await _owner_session_async(request) if not (user_supplied or admin_supplied)
+                   else _browser_session.NONE)
+        if session == _browser_session.OK:
+            submit_auth_event("auth_success", tier="user", reason="session", client=client)
+            return
+        if session == _browser_session.CSRF_FAILED:
+            raise _csrf_refusal("user", client)
         reason = "invalid" if (user_supplied or admin_supplied) else "missing"
         submit_auth_event("auth_failure", tier="user", reason=reason, client=client)
         raise HTTPException(status_code=401, detail="user token required")

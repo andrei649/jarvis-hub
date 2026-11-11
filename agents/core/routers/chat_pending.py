@@ -36,9 +36,6 @@ def http_actor(request: Request):
     else:
         peer = web._real_client_host(request)
         if peer not in web._LOCALHOSTS:
-            if not (admin or user) and web._owner_session_ok(request):   # H509
-                identity = f"session\0{web._browser_session.cookie_token(request)}"
-                return hashlib.sha256(identity.encode()).hexdigest()
             return None
         identity = f"localhost\0{peer}\0{web._web_principal(request).admin}"
     return hashlib.sha256(identity.encode()).hexdigest()

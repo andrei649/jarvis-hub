@@ -125,6 +125,25 @@ describe('owner browser sign-in (H509)', () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/api/auth/logout'))).toBe(true));
   });
 
+  it('over plain HTTP the screen explains that owner sign-in needs HTTPS', async () => {
+    setHost('192.168.1.20');
+    global.fetch = vi.fn().mockResolvedValue(
+      ok({ signed_in: false, sign_in_available: false, reason: 'https_required' }));
+    const { ui, session } = await fresh();
+    session.requireSignIn();
+    render(<ui.OwnerSignIn />);
+    expect((await screen.findByText(/needs HTTPS/)).textContent).toContain('JARVIS_ALLOW_INSECURE_SIGNIN');
+  });
+
+  it('a cookie-signed-in owner counts as the owner for admin-only controls', async () => {
+    setHost('nerva.lan');
+    global.fetch = vi.fn().mockResolvedValue(ok({ signed_in: true, csrf: 'c' }));
+    const { session } = await fresh();
+    expect(session.ownerSignedIn()).toBe(false);
+    await session.loadOwnerSession();
+    expect(session.ownerSignedIn()).toBe(true);
+  });
+
   it('loopback is unchanged: no screen and no session request', async () => {
     setHost('localhost');
     const fetchMock = vi.fn().mockResolvedValue(ok({ ok: true }));

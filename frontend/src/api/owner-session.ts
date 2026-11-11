@@ -12,6 +12,7 @@ export type OwnerSession = {
   expires_at?: number;
   idle_expires_at?: number;
   sign_in_available?: boolean;
+  reason?: string;
 };
 
 let _session: OwnerSession | null = null;
@@ -29,6 +30,8 @@ export function isNetworkedOrigin(): boolean {
 export function ownerSession(): OwnerSession | null { return _session; }
 export function csrfToken(): string { return _session?.signed_in ? _session.csrf || '' : ''; }
 export function signInWanted(): boolean { return _wanted; }
+/** True while this browser holds an owner session (a cookie-signed-in owner). */
+export function ownerSignedIn(): boolean { return !!_session?.signed_in; }
 
 function publish(): void {
   _subs.forEach((fn) => { try { fn(_session, _wanted); } catch { /* a bad subscriber must not break auth */ } });
