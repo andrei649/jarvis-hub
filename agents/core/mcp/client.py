@@ -537,6 +537,10 @@ class MCPServer:
         self.secret_headers = {str(k): str(v) for k, v in dict(secret_headers or {}).items()}
         self.oauth = dict(oauth or {})
         self.origin = dict(origin or {})
+        #: G11 (H545) — the editor conversation this server was handed for, or None for a
+        #: configured server. A scoped server's tools are offered to that conversation's
+        #: turns only, and it is never written to the saved server list (:meth:`MCPManager.to_config`).
+        self.session_scope: str | None = None
         self.tools: list[MCPTool] = []
         #: H552 — list_resources / read_resource / list_prompts / get_prompt, offered only
         #: for the capabilities the server declared on ``initialize``.
@@ -1300,6 +1304,8 @@ class MCPManager:
                 "tool": tool.name,
                 "qualified_name": tool.qualified_name,
                 **({"utility": True} if tool.utility else {}),
+                # G11 (H545): only for a server an editor handed over for one conversation.
+                **({"session_scope": srv.session_scope} if srv.session_scope else {}),
             })
         return rows
 
@@ -1505,7 +1511,8 @@ class MCPManager:
             await srv.close()
 
     def to_config(self) -> list[dict]:
-        """Export all servers to config format for persistence."""
+        """Export the configured servers to config format for persistence. A server an
+        editor handed over for one conversation (G11, ``session_scope``) is never saved."""
         return [
             {
                 "name": srv.name,
@@ -1527,6 +1534,7 @@ class MCPManager:
                 **({"origin": dict(srv.origin)} if srv.origin else {}),
             }
             for srv in self.servers.values()
+            if not srv.session_scope
         ]
 
     def load_from_config(self, configs: list[dict]):

@@ -4,6 +4,29 @@
 
 ### What changed for you — 2026-11-11
 
+**Nerva in your code editor (Agent Client Protocol)**
+- `nerva acp` makes Nerva the coding agent of Zed, JetBrains IDEs and other ACP editors.
+  Each editor thread is a Nerva conversation of its own, working in the folder the editor
+  opened (it must be inside your file roots). Answers stream in; tool calls appear as cards;
+  Nerva's checklist fills the editor's plan panel; Nerva's slash commands autocomplete.
+- When a turn needs your OK, the editor shows the real diff of the file change or the exact
+  command. Your answer is the same decision as the approval card in the HUD. If you do not
+  answer, cancel, or close the editor, the card is rejected. Nerva never writes files through
+  the editor.
+- MCP servers your editor passes along are asked about first, run for that thread only,
+  are never saved, and are removed when the thread ends.
+- Setup for Zed and JetBrains: `docs/ACP_EDITORS.md`; check it with `nerva acp --check`.
+  `--token-file` reads your admin token from a private file, so the editor's settings
+  hold no token.
+- **Security fixes (same day):** the file written after you accept is now always the file
+  whose diff you saw (a relative path used to be resolved again later, against your first
+  file root; this also affected `/worktree` sessions). The diff is drawn against the file on
+  disk, and unsaved editor changes are named. Pages or buffers the editor attaches are
+  handed to Nerva as attached content, never as your own words. An editor session the hub
+  no longer holds (after a restart, or once `nerva acp` stopped renewing it for five
+  minutes) is refused instead of running outside its folder; the editor then opens a new
+  one and tells you. Editor MCP servers stop within five minutes of the editor going away.
+
 **The desktop app starts Nerva, a hotkey from anywhere, notifications and `nerva://` links**
 - The desktop app now starts the hub itself when none is running (from your checkout's
   `.venv`, like `start.sh`) and opens the HUD only once the hub says it is ready. Quitting

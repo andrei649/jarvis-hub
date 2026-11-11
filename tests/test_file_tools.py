@@ -410,7 +410,9 @@ async def test_gated_write_never_writes_inline(tools, workspace):
     call = queue.calls[0]
     assert call["kind"] == "toolrpc.file_write" and call["autonomy_level"] == "ask"
     assert call["payload"] == {"tool": "file_write",
-                               "args": {"path": "notes.txt", "content": "evil"},
+                               # G11 review B1: stored absolute, as resolved at intake.
+                               "args": {"path": str(tools.scope.roots[0] / "notes.txt"),
+                                        "content": "evil"},
                                "target": "file_write"}
     out = await server.handle({"tool": "file_delete", "args": {"path": "notes.txt"}})
     assert out["reason"] == "approval_required"
@@ -429,7 +431,7 @@ async def test_gated_write_out_of_scope_refused_before_enqueue(tools):
     out = await server.handle({"tool": "file_write",
                                "args": {"path": "a.txt", "content": "x", "mode": "0777"}})
     assert out["reason"] == "approval_required" and queue.calls[0]["payload"]["args"] == {
-        "path": "a.txt", "content": "x",
+        "path": str(tools.scope.roots[0] / "a.txt"), "content": "x",   # G11 B1: absolute
     }
 
 

@@ -394,6 +394,24 @@ class ContinuationStore:
             raise ContinuationRefused("continuation_unavailable", 503) from None
 
 
+#: G11 — the refusal an editor conversation gets once the hub no longer holds it.
+EDITOR_SESSION_CLOSED = "editor_session_closed"
+
+
+def editor_session_closed(sid) -> bool:
+    """G11 — *sid* names an editor conversation (``acp_…``) with no live binding."""
+    from .acp import sessions as acp_sessions
+
+    return isinstance(sid, str) and sid.startswith(acp_sessions.PREFIX) and acp_sessions.get(sid) is None
+
+
+def _fresh_editor_session(sid) -> bool:
+    """G11 — *sid* is an editor conversation this process opened and still holds open."""
+    from .acp import sessions as acp_sessions
+
+    return acp_sessions.get(sid) is not None
+
+
 def _load_locked(orch, sid):
     """Caller holds manager then conversation lock; never switches current ID."""
     from .foreign_history import seed as foreign_seed
@@ -435,6 +453,10 @@ def _load_locked(orch, sid):
                     or digest != head[2]):
                 raise ContinuationRefused("invalid_history")
         if not turns:
+            if head is None and _fresh_editor_session(sid):
+                # G11: the empty conversation this hub opened for an editor (POST
+                # /api/acp/sessions) before its first turn; nothing to seed or verify.
+                return turns
             if head is None or conversation.revisions.get(sid) != head[1]:
                 raise ContinuationRefused("invalid_history")
         else:
@@ -519,6 +541,10 @@ async def prepare_session(orch, sid):
     from .foreign_history import ForeignHistoryRefused
     if not is_valid_session_id(sid):
         raise ContinuationRefused("invalid_identifier", 422)
+    if editor_session_closed(sid):
+        # G11 review M3: an editor conversation the hub no longer holds (a restart, an
+        # expired lease) has no folder binding: it is refused, never run unconfined.
+        raise ContinuationRefused(EDITOR_SESSION_CLOSED, 410)
     if orch.checkpoints._conn is None:
         raise ContinuationRefused("continuation_unavailable", 503)
     with orch.checkpoints._lock:

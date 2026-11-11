@@ -505,6 +505,11 @@ class ToolRPCServer:
         # spec for the same reason as ``_parallel_safe``: the consent hash and the
         # snapshotted offer rows must not move when a tool says what it writes.
         self._effects: dict[str, tuple[str, RollbackContract | None]] = {}
+        # G11 (H545) — a tool offered to one conversation only (an MCP server an editor
+        # handed over for that session): absent from :meth:`tools` and refused by
+        # :meth:`handle` whenever its predicate is not true. Beside the spec, like the two
+        # above, so the consent hash and the snapshotted offer rows do not move.
+        self._visible: dict[str, Callable[[], bool]] = {}
         self._secrets = secret_broker
         self._enqueue = enqueue
         self._audit = audit
@@ -544,6 +549,7 @@ class ToolRPCServer:
         parallel_safe: bool | None = None,
         risk: str | None = None,
         rollback: RollbackContract | None = None,
+        visible: Callable[[], bool] | None = None,
     ) -> "ToolRPCServer":
         """Expose one tool. ``gated=True`` ⇒ external/mutating ⇒ needs approval.
 
@@ -600,6 +606,11 @@ class ToolRPCServer:
         (``tests/test_tool_surface.py``). Like ``parallel_safe`` it is not part of
         :meth:`tools` or of the consent registration: read it with
         :meth:`declared_effect`.
+
+        ``visible`` (G11, H545) narrows who is offered the tool: when given, the tool is
+        left out of :meth:`tools` and refused by :meth:`handle` (as if not registered)
+        unless the predicate answers ``True``; a predicate that raises hides it. An
+        approved card still runs through :meth:`execute`, which the owner decided.
         """
         if name in BRIDGE_TOOL_NAMES:
             # G8 (H585): the tool-search bridge names are the loop's, unwrapped before a
@@ -692,7 +703,22 @@ class ToolRPCServer:
             self._effects.pop(name, None)
         else:
             self._effects[name] = effect
+        if visible is None:
+            self._visible.pop(name, None)
+        else:
+            if not callable(visible):
+                raise ValueError("visible must be a zero-argument callable")
+            self._visible[name] = visible
         return self
+
+    def _is_visible(self, name: str) -> bool:
+        predicate = getattr(self, "_visible", {}).get(name)
+        if predicate is None:
+            return True
+        try:
+            return predicate() is True
+        except Exception:
+            return False
 
     async def unregister_tool(
         self,
@@ -714,6 +740,7 @@ class ToolRPCServer:
             return False
         self._parallel_safe.pop(str(name or ""), None)
         self._effects.pop(key, None)
+        getattr(self, "_visible", {}).pop(key, None)
         current = asyncio.current_task()
         tasks = [task for task in tuple(spec.get("active_tasks", ())) if task is not current]
         if cancel_inflight:
@@ -753,6 +780,8 @@ class ToolRPCServer:
         so a surface that answers without a token serves the static schema."""
         tools = []
         for name, spec in sorted(self._tools.items()):
+            if not self._is_visible(name):
+                continue
             description, schema = advertised_schema(
                 name, spec["description"], spec["input_schema"],
                 spec.get("schema_overrides") if live else None)
@@ -823,8 +852,9 @@ class ToolRPCServer:
             return refused("job_toolset_not_allowed")
 
         spec = self._tools.get(name)
-        if spec is None:
-            # Not on the allowlist — the sandbox cannot reach it.
+        if spec is None or not self._is_visible(name):
+            # Not on the allowlist — the sandbox cannot reach it. A tool scoped to another
+            # conversation (G11) answers exactly like one that does not exist.
             return refused("tool_not_allowed")
 
         if spec.get("gated_review") is not None:

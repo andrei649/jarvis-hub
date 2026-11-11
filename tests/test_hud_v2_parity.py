@@ -55,6 +55,7 @@ RULES = [
     ("/api/memory/search-tool", "NOT_IN_HUD"),
     ("/api/security/dependencies/audit", "NOT_IN_HUD"),  # H022 host CLI inventories its own install
     ("/api/curator/", "NOT_IN_HUD"),  # H027 owner CLI; existing inbox decides its exact cards
+    ("/api/acp/", "NOT_IN_HUD"),  # G11 `nerva acp`: an editor's ACP agent opens/closes its sessions
     # T-0.29 PWA: fetched by the BROWSER (install prompt / SW registration), never
     # rendered as a panel — a HUD surface for them would be meaningless.
     ("/manifest.webmanifest", "NOT_IN_HUD"),
@@ -527,6 +528,12 @@ _CLIENT_GLOBS = (
 # inheriting a bare list. The audit's own count came down from 86 to 68 precisely because
 # entries like these had been miscounted as missing UI.
 MACHINE_FACING: dict[str, str] = {
+    "/api/acp/sessions": "G11: `nerva acp` opens a conversation for an editor folder (ACP session/new)",
+    "/api/acp/sessions/{session_id}": "G11: `nerva acp` closes an editor session and its MCP servers",
+    "/api/acp/sessions/{session_id}/lease": "G11 review: `nerva acp` renews its sessions' lease while the editor is connected",
+    "/api/acp/sessions/{session_id}/mcp": (
+        "G11 (H545): `nerva acp` registers an editor-supplied MCP server for one session, after "
+        "the owner accepted it in the editor"),
     "/api/curator/status": "H027: owner `nerva curator status`; dedicated curator browsing is CLI administration",
     "/api/curator/usage": "H027: owner `nerva curator usage`; authenticated host CLI telemetry",
     "/api/curator/list-unmanaged": "H027: owner `nerva curator list-unmanaged`; explicit adoption preview input",
