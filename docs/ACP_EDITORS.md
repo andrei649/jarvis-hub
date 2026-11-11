@@ -16,7 +16,16 @@ stdin/stdout. Rows: G11 / H542, H543, H544, H545, H056.
   (`AGENTS.md`, `CLAUDE.md`, …) resolve inside the folder the editor opened, exactly like a
   `/worktree new` session. The folder must lie inside the hub's file roots
   (`JARVIS_FILE_ROOTS`); otherwise the session is refused (`cwd_outside_file_roots`). The
-  editor can narrow what the tools reach, never widen it.
+  editor can narrow what the tools reach, never widen it. A file change a turn queues is
+  stored with its **absolute** path and the folder it was made in, so the file written after
+  you accept is exactly the one whose diff you saw, even though it runs later, outside the
+  turn.
+- **A lease, not a promise.** `nerva acp` renews each session's lease on the hub every minute.
+  When the process ends (or is killed), the lease runs out within five minutes and the hub
+  closes the session and its MCP servers. A conversation the hub no longer holds (expired, or
+  forgotten by a hub restart) is refused, never run without its folder. `nerva acp` then opens
+  a new conversation for the same folder and tells you; earlier messages and editor MCP
+  servers do not carry over.
 - **Live rendering.** Answers stream as message chunks; each tool call appears as a card with
   its kind (read, edit, execute, search, fetch…) and status. The tool's arguments and
   results are not shown on these cards, which is the same rule the HUD's tool trail follows.
@@ -33,9 +42,10 @@ When a turn needs your decision (a file write, a command, anything the kernel qu
 does what it always does: it queues an **approval card** and the turn stops. For each card
 **this turn** queued, the editor shows a permission request:
 
-- a file write or delete is drawn as the **real diff**: the current text (the editor's own
-  buffer when it offers `fs/read_text_file`, otherwise the file on disk) against the exact
-  bytes the write would leave;
+- a file write or delete is drawn as the **real diff**: the file **on disk**, which is what
+  the write replaces, against the exact bytes it would leave. If the editor has unsaved
+  changes to that file, the card says so: they are not in the diff, and the write replaces
+  the disk file;
 - a command shows the **exact command**; anything else shows its payload;
 - the card says its tier and whether it is **irreversible**.
 
@@ -55,9 +65,15 @@ Nerva never writes files through the editor (`fs/write_text_file` is not used): 
 write goes through the hub's governed file tool, with its snapshot and rollback, and the
 editor sees the file change on disk.
 
-Deciding needs the owner's credential: set `JARVIS_ADMIN_TOKEN` (or `NERVA_ADMIN_TOKEN`) in the
-agent's environment. Without it, turns still run, the cards stay queued, and the editor tells
-you to decide them in the HUD or with `nerva approvals`.
+Deciding needs the owner's credential. Prefer a **token file**: `--token-file PATH` reads it
+from a file of yours with mode `0600` (not a link, at most 4 KiB), so the editor's settings
+file holds no token. `JARVIS_ADMIN_TOKEN` (or `NERVA_ADMIN_TOKEN`) in the agent's environment
+also works, but puts the token in plain text in the editor's JSON. Without a credential,
+turns still run, the cards stay queued, and the editor tells you to decide them in the HUD or
+with `nerva approvals`.
+
+The hub records the decision like any admin decision (`decided_by: admin`); the reason it
+carries says the editor made it ("accepted in the editor", "no answer from the editor", …).
 
 Timeout: `--permission-timeout SECONDS`, or `NERVA_ACP_PERMISSION_TIMEOUT` (default 300).
 
@@ -74,19 +90,23 @@ each one as a **new MCP server**, which needs your consent:
   trust tier, tool filters, approval cards for mutating tools, egress rules and the
   stdio environment allowlist all apply. Its trust tier is `read-only` unless
   `NERVA_ACP_MCP_TRUST=full`;
+- the permission card shows the command exactly as the hub will run it (`shlex.join` of
+  the command and its arguments);
 - it is **never saved** to the MCP server list. It is removed when the editor closes the
-  session or the `nerva acp` process ends. If that process was killed, the session is
-  reaped the next time an editor opens or closes a session after 12 idle hours, and a hub
-  restart drops it too;
+  session or the `nerva acp` process ends; if that process was killed, the hub's timer
+  removes it when the session's lease runs out (within five minutes), and a hub restart
+  drops it too;
 - only stdio servers are accepted; HTTP/SSE servers are refused. Safe mode and a managed pin on
   `mcp.servers` refuse it as they refuse any added server.
 
 ## Setup
 
-1. Start the hub (`python serve.py`) and check from a terminal:
+1. Start the hub (`python serve.py`), put your admin token in a private file and check from
+   a terminal:
 
    ```bash
-   NERVA_ADMIN_TOKEN=… python scripts/nerva.py acp --check
+   install -m 600 /dev/null ~/.config/nerva/admin-token   # then paste the token into it
+   python scripts/nerva.py acp --check --token-file ~/.config/nerva/admin-token
    ```
 
 2. Configure the editor. Use the virtualenv's Python and the absolute path of your checkout.
@@ -99,11 +119,9 @@ each one as a **new MCP server**, which needs your consent:
   "agent_servers": {
     "Nerva": {
       "command": "/home/you/jarvis-hub/.venv/bin/python",
-      "args": ["/home/you/jarvis-hub/scripts/nerva.py", "acp"],
-      "env": {
-        "NERVA_ADMIN_TOKEN": "<your admin token>",
-        "NERVA_HUB_URL": "http://127.0.0.1:8080"
-      }
+      "args": ["/home/you/jarvis-hub/scripts/nerva.py", "acp",
+               "--token-file", "/home/you/.config/nerva/admin-token"],
+      "env": { "NERVA_HUB_URL": "http://127.0.0.1:8080" }
     }
   }
 }
@@ -118,8 +136,8 @@ Then open the Agent panel and start a new **Nerva** thread.
   "agent_servers": {
     "Nerva": {
       "command": "/home/you/jarvis-hub/.venv/bin/python",
-      "args": ["/home/you/jarvis-hub/scripts/nerva.py", "acp"],
-      "env": { "NERVA_ADMIN_TOKEN": "<your admin token>" }
+      "args": ["/home/you/jarvis-hub/scripts/nerva.py", "acp",
+               "--token-file", "/home/you/.config/nerva/admin-token"]
     }
   }
 }
@@ -132,8 +150,12 @@ environment. stdout carries only protocol messages; diagnostics go to stderr.
 
 - One message is at most 4 MiB on the wire; a prompt is at most 4,096 characters, the
   hub's chat limit. Attach files as references (they become `@file:` references, read by the
-  hub under its own file scope) instead of pasting them. A reference outside the editor's
-  folder is left out.
+  hub under its own file scope) instead of pasting them. A file reference (link or embedded)
+  outside the editor's folder is left out. Other content the editor embeds (a fetched page, an
+  untitled buffer) is **attached**, not typed: the hub puts it in the turn's attached section,
+  fenced as content and scanned for injection, never stores it as your words, and the turn is
+  treated as having read untrusted content (actions it plans ask for approval). At most 8
+  attachments of 64,000 characters.
 - Images and audio in prompts are not accepted. `session/load`, session modes and model
   switching are not offered: the editor's thread is the conversation, and the model is the
   hub's routing.

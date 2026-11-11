@@ -1,6 +1,6 @@
 """G11 — the hub routes behind ``nerva acp`` (an editor's coding agent over ACP).
 
-Three routes, all admin-guarded (the owner's credential, the same one that adds an MCP
+Four routes, all admin-guarded (the owner's credential, the same one that adds an MCP
 server or decides an approval card):
 
 * ``POST /api/acp/sessions`` — open a conversation of its own for an editor folder. The
@@ -13,8 +13,14 @@ server or decides an approval card):
   server (safe mode, a managed pin on ``mcp.servers``), its trust tier is ``read-only``
   unless ``JARVIS_ACP_MCP_TRUST=full``, it is never saved, and its tools are offered to
   this conversation's turns only.
+* ``POST /api/acp/sessions/{id}/lease`` — ``nerva acp`` renews the session's lease every
+  minute while the editor is connected. A lease older than five minutes is reaped by a timer
+  here (its MCP servers removed); 410 tells the editor the hub no longer holds the session.
 * ``DELETE /api/acp/sessions/{id}`` — the editor closed the session: its MCP servers are
   removed and the binding forgotten.
+
+A conversation the hub no longer holds (reaped, or forgotten by a restart) is refused by
+``prepare_session`` with 410 ``editor_session_closed``, never run without its folder.
 
 Turns themselves go through ``POST /chat/stream`` and approvals through the autonomy
 decision routes, unchanged: this router adds no second agent path.
@@ -100,10 +106,31 @@ async def _open_conversation(orch, session_id: str) -> None:
         await asyncio.to_thread(conversation._save_snapshot, sid)
 
 
+_REAPER: asyncio.Task | None = None
+
+
+def _ensure_reaper(orch) -> None:
+    """G11 review: expired leases are reaped on a timer, not only when another editor
+    opens or closes a session. The task runs while any editor session is open."""
+    global _REAPER
+    if _REAPER is not None and not _REAPER.done():
+        return
+
+    async def loop() -> None:
+        while acp_sessions.count():
+            await asyncio.sleep(acp_sessions.REAP_INTERVAL_SECONDS)
+            try:
+                await _reap(orch)
+            except Exception:
+                logger.warning("editor session reap failed", exc_info=True)
+
+    _REAPER = asyncio.ensure_future(loop())
+
+
 async def _reap(orch) -> None:
-    for session_id in acp_sessions.idle():
+    for session_id in acp_sessions.expired():
         removed = await acp_sessions.close(session_id, getattr(orch, "mcp", None))
-        logger.info("idle editor session closed; %d MCP server(s) removed", len(removed))
+        logger.info("editor session lease expired; %d MCP server(s) removed", len(removed))
 
 
 @router.post("/api/acp/sessions", dependencies=[Depends(admin_guard)])
@@ -118,14 +145,30 @@ async def acp_open_session(body: AcpSessionBody):
         return JSONResponse({"error": refusal}, status_code=409 if refusal == "cwd_outside_file_roots" else 400)
     session_id = acp_sessions.new_session_id()
     try:
-        await _open_conversation(orch, session_id)
+        # Registered first: a full registry refuses before any conversation is made.
         acp_sessions.register(session_id, folder)
     except OverflowError:
         return JSONResponse({"error": "too_many_sessions"}, status_code=429)
+    try:
+        await _open_conversation(orch, session_id)
     except Exception:
+        acp_sessions.pop(session_id)
         logger.warning("editor conversation could not be opened", exc_info=True)
         return JSONResponse({"error": "session_unavailable"}, status_code=503)
-    return nocache_json({"ok": True, "session_id": session_id, "cwd": str(folder)})
+    _ensure_reaper(orch)
+    return nocache_json({"ok": True, "session_id": session_id, "cwd": str(folder),
+                         "lease_seconds": acp_sessions.LEASE_SECONDS})
+
+
+@router.post("/api/acp/sessions/{session_id}/lease", dependencies=[Depends(admin_guard)])
+async def acp_renew_session(session_id: str):
+    """`nerva acp` renews its sessions' lease while the editor is connected; a session
+    whose lease runs out is reaped (its MCP servers removed) and refused from then on."""
+    if re.fullmatch(_SESSION_ID, session_id) is None:
+        return JSONResponse({"error": "invalid session_id"}, status_code=400)
+    if not acp_sessions.renew(session_id):
+        return JSONResponse({"error": "editor_session_closed"}, status_code=410)
+    return nocache_json({"ok": True, "lease_seconds": acp_sessions.LEASE_SECONDS})
 
 
 @router.post("/api/acp/sessions/{session_id}/mcp", dependencies=[Depends(admin_guard)])

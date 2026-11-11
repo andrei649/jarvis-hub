@@ -10660,6 +10660,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/acp/sessions/{session_id}/lease": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Acp Renew Session
+         * @description `nerva acp` renews its sessions' lease while the editor is connected; a session
+         *     whose lease runs out is reaped (its MCP servers removed) and refused from then on.
+         */
+        post: operations["acp_renew_session_api_acp_sessions__session_id__lease_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/acp/sessions/{session_id}/mcp": {
         parameters: {
             query?: never;
@@ -15907,6 +15928,13 @@ export interface components {
              */
             source: string;
         };
+        /** ChatAttachment */
+        ChatAttachment: {
+            /** Name */
+            name: string;
+            /** Text */
+            text: string;
+        };
         /** ChatRequest */
         ChatRequest: {
             /** Message */
@@ -15925,6 +15953,8 @@ export interface components {
              * @default false
              */
             tool_events: boolean;
+            /** Attachments */
+            attachments?: components["schemas"]["ChatAttachment"][] | null;
         };
         /** ChatResponse */
         ChatResponse: {
@@ -35191,6 +35221,37 @@ export interface operations {
                 "application/json": components["schemas"]["AcpSessionBody"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acp_renew_session_api_acp_sessions__session_id__lease_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

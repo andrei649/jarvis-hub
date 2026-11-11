@@ -568,6 +568,13 @@ async def _begin_project_context(orch) -> None:
             editor_cwd = acp_sessions.cwd_for(session)
             if editor_cwd is not None:
                 record = {"path": str(editor_cwd)}
+            elif str(session).startswith(acp_sessions.PREFIX):
+                # G11 review M3: an editor conversation the hub no longer holds never runs
+                # unbound (prepare_session refuses it first; this is the floor).
+                from .session_continuation import EDITOR_SESSION_CLOSED, ContinuationRefused
+
+                worktrees.apply_session_tree(None)
+                raise ContinuationRefused(EDITOR_SESSION_CLOSED, 410)
         tree = worktrees.apply_session_tree(record)
         if tree is not None and FileScope.from_env().root_for(tree) is None:
             tree = worktrees.apply_session_tree(None)    # a tree outside the file roots binds nothing

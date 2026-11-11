@@ -1266,6 +1266,13 @@ def _enrich_agents() -> list[dict]:
     return result
 
 
+class ChatAttachment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=1, max_length=200)
+    text: str = Field(..., min_length=1, max_length=64_000)
+
+
 class ChatRequest(BaseModel):
     # Unknown fields still fail; explicit sessions are validated and hydrated.
     model_config = ConfigDict(extra="forbid")
@@ -1277,6 +1284,10 @@ class ChatRequest(BaseModel):
     # G11 (H544): /chat/stream only — also send the turn's bounded tool events (tool, call
     # id, status; never arguments or results) as `tool` events, for an editor's tool cards.
     tool_events: bool = False
+    # G11 review M2: content an editor attaches beside the prompt (a fetched page, a buffer,
+    # a file outside its folder). Attached like an @file: reference — fenced as content,
+    # never the owner's words, and the turn is tainted.
+    attachments: list[ChatAttachment] | None = Field(default=None, max_length=8)
 
     @field_validator("session_id")
     @classmethod
@@ -1657,6 +1668,9 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
         # or prefixed to it.
         checkpoint_command = preappend_command_name(req.message) is not None
         expansion = None if checkpoint_command else await asyncio.to_thread(context_refs.expand, req.message)
+        if expansion is not None and req.attachments:   # G11 review M2: editor content, fenced
+            expansion = context_refs.attach_editor_content(
+                expansion, req.message, [item.model_dump() for item in req.attachments])
         # H10.21: inject the active session's notes as persistent context.
         message = req.message
         notes = getattr(orch, "notes", None)
@@ -1950,6 +1964,9 @@ async def chat_stream(req: ChatRequest, request: Request):
     checkpoint_command = preappend_command_name(req.message) is not None   # see /chat
     expansion = (None if checkpoint_command or refused is not None
                  else await asyncio.to_thread(context_refs.expand, req.message))
+    if expansion is not None and req.attachments:   # G11 review M2: editor content, fenced
+        expansion = context_refs.attach_editor_content(
+            expansion, req.message, [item.model_dump() for item in req.attachments])
     # H10.21 parity (Q2): the stream path injects the session's notes block the
     # same way /chat does — before this, persistent notes silently stopped
     # applying the moment the cockpit switched to streaming.

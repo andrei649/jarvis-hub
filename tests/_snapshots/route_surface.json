@@ -455,6 +455,7 @@
   "POST /api/a2a/peers",
   "POST /api/a2a/task",
   "POST /api/acp/sessions",
+  "POST /api/acp/sessions/{session_id}/lease",
   "POST /api/acp/sessions/{session_id}/mcp",
   "POST /api/acquisition/ledger/purge",
   "POST /api/acquisition/{name}/revoke",

@@ -1635,6 +1635,8 @@ class FileTools:
         shape = spec["preflight"]
 
         def _bound(args: dict) -> Mapping:
+            if name in ("file_write", "file_delete"):
+                return self._preflight_mutation(name, shape, args)
             clean = dict(shape(args))
             path = clean.get("path")
             if path is None and name in ("file_list", "file_search"):
@@ -1651,6 +1653,59 @@ class FileTools:
             return clean
 
         return _bound
+
+    def _preflight_mutation(self, name: str, shape: Callable[[dict], Mapping], args: dict) -> Mapping:
+        """G11 review B1 — the card names the exact file that is written.
+
+        A gated write is approved in a turn and executed later by the autonomy worker,
+        outside any turn. A relative path used to be stored as the model spelled it and
+        resolved again at execution against whatever scope was current there, so a turn
+        bound to a tree (an editor's folder, a ``/worktree new`` session) could show the
+        owner ``<tree>/a.txt`` and write ``<first root>/a.txt``. Now the path is resolved
+        once, at intake, in the turn's own scope and stored **absolute**; the tree the turn
+        was bound to is stored beside it (``tree``), and an execution outside any binding
+        is held to that tree again: a path that is no longer inside it is refused. A
+        ``tree`` a caller supplies only ever narrows (it must lie inside the scope), and
+        inside a bound turn the binding wins.
+        """
+        from . import worktrees
+
+        raw = dict(args)
+        recorded = raw.pop("tree", None)
+        clean = dict(shape(raw))
+        bound = worktrees.bound_tree()
+        scope = self.scope
+        tree: Path | None = bound
+        if bound is None and recorded is not None:
+            if not isinstance(recorded, str) or not recorded or "\x00" in recorded:
+                raise ToolRPCValidationError("outside_scope")
+            candidate = Path(recorded)
+            try:
+                resolved_tree = candidate.resolve(strict=True)
+            except (OSError, RuntimeError):
+                raise ToolRPCValidationError("outside_scope") from None
+            if (not candidate.is_absolute() or not resolved_tree.is_dir()
+                    or scope.root_for(resolved_tree) is None):
+                raise ToolRPCValidationError("outside_scope")
+            tree, scope = resolved_tree, FileScope([resolved_tree])
+        try:
+            target = scope.resolve(clean.get("path"))
+        except FileScopeError as exc:
+            raise ToolRPCValidationError(exc.reason) from None
+        if tree is not None and target != tree and tree not in target.parents:
+            raise ToolRPCValidationError("outside_scope")
+        # Stored as the absolute *spelling* (lexical, not symlink-followed): the name the
+        # caller wrote still classes the card (H506), and the scope re-resolves it at
+        # execution exactly as here.
+        spelled = Path(clean["path"]).expanduser()
+        if not spelled.is_absolute():
+            spelled = scope.roots[0] / spelled
+        clean["path"] = os.path.normpath(str(spelled))
+        if tree is not None:
+            clean["tree"] = str(tree)
+        if name == "file_write" and len(clean["content"].encode("utf-8")) > self.max_bytes:
+            raise ToolRPCValidationError("too_large")
+        return clean
 
     def _record(self, action: str, why: str, **meta) -> None:
         if self._audit is None:
@@ -3044,14 +3099,28 @@ def register_file_tools(
     async def _search(args: dict) -> dict:
         return await _current_instance().search_files(args)
 
+    async def _in_recorded_tree(args: dict, run):
+        # G11 review B1: the card carries the tree its turn was bound to (preflight
+        # already held the absolute path to it); the write runs confined to that tree.
+        call = dict(args)
+        tree = call.pop("tree", None)
+        if tree is None:
+            return await run(_current_instance(), call)
+        from . import worktrees
+
+        if worktrees.bound_tree() is not None:
+            return await run(_current_instance(), call)
+        with worktrees.tree_scope(tree):
+            return await run(_current_instance(), call)
+
     async def _write(args: dict) -> dict:
         # Reached only through ToolRPCServer.execute after durable approval
         # (gated tools never run inline from handle()), and only after that
         # execute matched the call's H506 class against the approved card.
-        return await _current_instance().write_file(args, approved=True)
+        return await _in_recorded_tree(args, lambda tools, call: tools.write_file(call, approved=True))
 
     async def _delete(args: dict) -> dict:
-        return await _current_instance().delete_file(args, approved=True)
+        return await _in_recorded_tree(args, lambda tools, call: tools.delete_file(call, approved=True))
 
     def _classify(args: dict) -> Mapping[str, Any] | None:
         # H506 — server-owned, registered here, never selectable by call data: a

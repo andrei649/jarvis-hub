@@ -530,6 +530,7 @@ _CLIENT_GLOBS = (
 MACHINE_FACING: dict[str, str] = {
     "/api/acp/sessions": "G11: `nerva acp` opens a conversation for an editor folder (ACP session/new)",
     "/api/acp/sessions/{session_id}": "G11: `nerva acp` closes an editor session and its MCP servers",
+    "/api/acp/sessions/{session_id}/lease": "G11 review: `nerva acp` renews its sessions' lease while the editor is connected",
     "/api/acp/sessions/{session_id}/mcp": (
         "G11 (H545): `nerva acp` registers an editor-supplied MCP server for one session, after "
         "the owner accepted it in the editor"),

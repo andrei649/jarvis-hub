@@ -46,6 +46,7 @@ import asyncio
 import logging
 import re
 import secrets
+import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -67,6 +68,9 @@ logger = logging.getLogger("nerva.acp")
 MAX_PROMPT_CHARS = 4096
 #: Prompt blocks one ``session/prompt`` may carry.
 MAX_PROMPT_BLOCKS = 64
+#: Embedded resources one prompt may attach, and their size (the hub's attachment bounds).
+MAX_ATTACHMENTS = 8
+MAX_ATTACHMENT_CHARS = 64_000
 #: Sessions one editor process may hold open.
 MAX_SESSIONS = 16
 #: MCP servers one session may be handed.
@@ -78,6 +82,9 @@ MAX_MCP_TEXT = 4096
 DEFAULT_PERMISSION_TIMEOUT = 300.0
 #: How long an accepted card is followed until the hub reports it done.
 DEFAULT_RESULT_WAIT = 120.0
+#: How often the editor's sessions renew their lease on the hub (the hub's lease is
+#: ``agents.core.acp.sessions.LEASE_SECONDS``).
+DEFAULT_LEASE_INTERVAL = 60.0
 #: Hub commands an editor thread does not offer: they move the hub's conversation, and in
 #: an editor a fresh conversation is a fresh thread.
 _SESSION_COMMANDS = frozenset({"new", "reset", "undo"})
@@ -103,7 +110,8 @@ class Backend(Protocol):
     async def close_session(self, session_id: str) -> None: ...
     async def commands(self) -> list[dict[str, Any]]: ...
     async def stream_turn(self, session_id: str, message: str, on_event: Any,
-                          cancel: asyncio.Event) -> dict[str, Any] | None: ...
+                          cancel: asyncio.Event, *,
+                          attachments: list[dict[str, str]]) -> dict[str, Any] | None: ...
     async def approvals(self) -> list[dict[str, Any]]: ...
     async def decide(self, task_id: int, action: str, reason: str | None) -> str: ...
     async def consent(self, task_id: int, revision: str, choice: str) -> str: ...
@@ -111,12 +119,16 @@ class Backend(Protocol):
     async def answer_question(self, prompt_id: str, answer: str | None) -> bool: ...
     async def add_session_mcp(self, session_id: str, server: dict[str, Any]) -> dict[str, Any]: ...
     async def todo(self, session_id: str) -> list[dict[str, Any]]: ...
+    async def renew(self, session_id: str) -> None: ...
 
 
 @dataclass
 class _Session:
     id: str
     root: Path
+    #: The hub conversation this editor session runs in. It starts as ``id`` and changes
+    #: only when the hub refused a closed one and a new one was opened (G11 review M3).
+    hub: str = ""
     pending_mcp: list[dict[str, Any]] = field(default_factory=list)
     running: bool = False
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
@@ -125,16 +137,23 @@ class _Session:
     tool_calls: dict[str, str] = field(default_factory=dict)
     closed: bool = False
 
+    def __post_init__(self) -> None:
+        if not self.hub:
+            self.hub = self.id
+
 
 class AcpServer:
     def __init__(self, backend: Backend, *, version: str = "",
                  permission_timeout: float = DEFAULT_PERMISSION_TIMEOUT,
-                 result_wait: float = DEFAULT_RESULT_WAIT, poll_interval: float = 1.0) -> None:
+                 result_wait: float = DEFAULT_RESULT_WAIT, poll_interval: float = 1.0,
+                 lease_interval: float = DEFAULT_LEASE_INTERVAL) -> None:
         self.backend = backend
         self.version = version
         self.permission_timeout = max(0.05, float(permission_timeout))
         self.result_wait = max(0.0, float(result_wait))
         self.poll_interval = max(0.01, float(poll_interval))
+        #: Seconds between lease renewals (0 = none, for tests that drive no hub).
+        self.lease_interval = max(0.0, float(lease_interval))
         self.conn: JsonRpcConnection | None = None
         self.client_caps: dict[str, Any] = {}
         self.initialized = False
@@ -149,9 +168,12 @@ class AcpServer:
 
     async def serve(self, reader: Any, writer: Any) -> None:
         conn = self.connect(reader, writer)
+        beat = asyncio.ensure_future(self.heartbeat()) if self.lease_interval > 0 else None
         try:
             await conn.serve()
         finally:
+            if beat is not None:
+                beat.cancel()
             await self.shutdown()
 
     async def shutdown(self) -> None:
@@ -168,7 +190,7 @@ class AcpServer:
             return
         session.closed = True
         try:
-            await self.backend.close_session(session.id)
+            await self.backend.close_session(session.hub)
         except Exception:  # noqa: BLE001 - teardown is best effort, and logged
             logger.warning("ACP session %s could not be closed on the hub", session.id)
 
@@ -319,9 +341,19 @@ class AcpServer:
         return session
 
     def _prompt_text(self, session: _Session, blocks: Any) -> str:
+        """The owner's message only (see :meth:`_prompt_parts`)."""
+        return self._prompt_parts(session, blocks)[0]
+
+    def _prompt_parts(self, session: _Session, blocks: Any) -> tuple[str, list[dict[str, str]]]:
+        """``(message, attachments)``. The message is what the owner typed plus ``@file:``
+        references to files of the session's folder. Any other content the editor embeds
+        (a fetched page, an untitled buffer) is never put in the owner's words: it goes as
+        an attachment, which the hub fences as content and which taints the turn
+        (G11 review M2). A file outside the session's folder is left out either way."""
         if not isinstance(blocks, list) or not blocks or len(blocks) > MAX_PROMPT_BLOCKS:
             raise RpcError(INVALID_PARAMS, "prompt must be a non-empty list of content blocks")
         parts: list[str] = []
+        attachments: list[dict[str, str]] = []
         for block in blocks:
             if not isinstance(block, dict):
                 raise RpcError(INVALID_PARAMS, "prompt blocks are objects")
@@ -332,11 +364,20 @@ class AcpServer:
                 parts.append(self._reference(session, block.get("uri"), block.get("name")))
             elif kind == "resource" and isinstance(block.get("resource"), dict):
                 resource = block["resource"]
-                ref = self._reference(session, resource.get("uri"), None, quiet=True)
-                if ref:
-                    parts.append(ref)
-                elif isinstance(resource.get("text"), str):
-                    parts.append(f"[{render.safe_line(resource.get('uri'), 200)}]\n{resource['text']}")
+                uri = resource.get("uri")
+                if isinstance(uri, str) and uri.startswith("file://"):
+                    # Inside the folder: an @file: reference the hub reads under its own
+                    # scope. Outside: left out, exactly like a resource link.
+                    parts.append(self._reference(session, uri, None))
+                elif isinstance(resource.get("text"), str) and resource["text"]:
+                    if len(attachments) >= MAX_ATTACHMENTS:
+                        raise RpcError(INVALID_PARAMS, f"at most {MAX_ATTACHMENTS} embedded resources")
+                    text = resource["text"]
+                    if len(text) > MAX_ATTACHMENT_CHARS:
+                        raise RpcError(INVALID_PARAMS,
+                                       f"an embedded resource is over {MAX_ATTACHMENT_CHARS} characters")
+                    attachments.append({"name": render.safe_line(uri or "untitled", 200) or "untitled",
+                                        "text": text})
             else:
                 raise RpcError(INVALID_PARAMS, f"prompt block type {render.safe_line(kind, 32)!r} is not supported")
         text = "\n".join(part for part in parts if part).strip()
@@ -345,7 +386,7 @@ class AcpServer:
         if len(text) > MAX_PROMPT_CHARS:
             raise RpcError(INVALID_PARAMS, f"the prompt is over {MAX_PROMPT_CHARS} characters; "
                                            "attach large files as references instead of pasting them")
-        return text
+        return text, attachments
 
     @staticmethod
     def _reference(session: _Session, uri: Any, name: Any, *, quiet: bool = False) -> str:
@@ -367,7 +408,7 @@ class AcpServer:
         session = self._session(params)
         if session.running:
             raise RpcError(INVALID_REQUEST, "a prompt is already running in this session")
-        text = self._prompt_text(session, params.get("prompt"))
+        text, attachments = self._prompt_parts(session, params.get("prompt"))
         session.running = True
         session.cancel = asyncio.Event()
         try:
@@ -380,7 +421,7 @@ class AcpServer:
                 await self._say(session, "This editor thread is its own Nerva conversation; start a "
                                          "new thread in the editor for a fresh one.")
                 return {"stopReason": "end_turn"}
-            end = await self._run_turn(session, text)
+            end = await self._run_turn(session, text, attachments)
             if session.cancel.is_set():
                 return {"stopReason": "cancelled"}
             await self._decide_cards(session, (end or {}).get("pending_approvals"))
@@ -389,7 +430,8 @@ class AcpServer:
             await self._reject_open(session, "the editor turn ended before an answer")
             session.running = False
 
-    async def _run_turn(self, session: _Session, text: str) -> dict[str, Any] | None:
+    async def _run_turn(self, session: _Session, text: str,
+                        attachments: list[dict[str, str]] | None = None) -> dict[str, Any] | None:
         streamed = {"any": False}
 
         async def on_event(event: dict[str, Any]) -> None:
@@ -402,11 +444,16 @@ class AcpServer:
             elif kind == "clarify":
                 await self._clarify(session, event)
 
-        try:
-            end = await self.backend.stream_turn(session.id, text, on_event, session.cancel)
-        except BackendRefused as exc:
-            await self._say(session, _hub_refusal("The hub refused this turn", exc))
-            return None
+        for attempt in (1, 2):
+            try:
+                end = await self.backend.stream_turn(session.hub, text, on_event, session.cancel,
+                                                     attachments=attachments or [])
+                break
+            except BackendRefused as exc:
+                if exc.status == 410 and attempt == 1 and await self._reopen(session):
+                    continue
+                await self._say(session, _hub_refusal("The hub refused this turn", exc))
+                return None
         if end and not streamed["any"] and isinstance(end.get("text"), str) and end["text"]:
             await self._say(session, end["text"])
         for call_id, state in list(session.tool_calls.items()):
@@ -417,11 +464,43 @@ class AcpServer:
         session.tool_calls.clear()
         return end
 
+    async def _reopen(self, session: _Session) -> bool:
+        """The hub no longer holds this editor session (a restart, an expired lease): its
+        conversation is refused rather than run unbound. Open a new one for the same folder
+        and say so; the earlier history and the session's MCP servers do not carry over."""
+        try:
+            session.hub = await self.backend.open_session(str(session.root))
+        except BackendRefused as exc:
+            await self._say(session, _hub_refusal("The hub closed this editor session and did not "
+                                                  "open a new one", exc))
+            session.closed = True
+            return False
+        await self._say(session, "The hub had closed this editor session (a restart or an expired "
+                                 "lease), so this thread now runs in a new Nerva conversation for the "
+                                 "same folder. Earlier messages and editor MCP servers did not carry over.\n\n")
+        return True
+
+    async def heartbeat(self) -> None:
+        """Renew every open session's lease on the hub while the editor is connected, so a
+        session (and its MCP servers) ends soon after this process does."""
+        while True:
+            await asyncio.sleep(self.lease_interval)
+            for session in list(self.sessions.values()):
+                if session.closed:
+                    continue
+                try:
+                    await self.backend.renew(session.hub)
+                except BackendRefused as exc:
+                    if exc.status in (404, 410):
+                        logger.info("hub dropped editor session %s; reopened at its next prompt", session.id)
+                except Exception:  # noqa: BLE001 - a missed beat is retried on the next one
+                    logger.debug("lease renewal failed", exc_info=True)
+
     async def _tool_event(self, session: _Session, event: dict[str, Any]) -> None:
         name = str(event.get("event") or "")
         if name == "todo_updated":
             try:
-                plan = await self.backend.todo(session.id)
+                plan = await self.backend.todo(session.hub)
             except Exception:  # noqa: BLE001 - the plan panel is a view
                 return
             await self._notify(session, {"sessionUpdate": "plan", "entries": render.plan_entries(plan)})
@@ -505,7 +584,13 @@ class AcpServer:
         return selected if selected in allowed else None
 
     async def _draw(self, session: _Session, card: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
-        """The real before/after of a file card, or (None, why-not)."""
+        """The real before/after of a file card, or (None, why-not).
+
+        The "before" is the file **on disk**, which is what the hub's write replaces
+        (G11 review). When the editor offers its buffer and the buffer differs (unsaved
+        changes), the owner is told: those changes are not in the diff and the write
+        replaces the disk file. The card's path is the absolute path the hub stored at
+        intake, so the diff names the file that is written."""
         tool, raw_path, new_text = render.card_target(card)
         if raw_path is None or new_text is None:
             return None, None
@@ -513,28 +598,24 @@ class AcpServer:
             path = confine(session.root, raw_path)
         except AcpPathError:
             return None, f"Target is outside this session's folder: {render.safe_line(raw_path, 300)}"
-        old: str | None = None
         try:
-            if self._can_read_buffer() and self.conn is not None:
-                answer = await self.conn.request("fs/read_text_file",
-                                                 {"sessionId": session.id, "path": str(path)}, timeout=10.0)
-                content = answer.get("content") if isinstance(answer, dict) else None
-                old = content if isinstance(content, str) else None
-            else:
-                old = await asyncio.to_thread(read_text, path)
-        except (RpcError, TimeoutError):
-            # The editor could not read it (a new file, say): read the disk instead.
-            try:
-                old = await asyncio.to_thread(read_text, path)
-            except AcpPathError as exc:
-                return None, f"The current file could not be read ({exc.reason}); compare before accepting."
+            old = await asyncio.to_thread(read_text, path)
         except AcpPathError as exc:
             return None, f"The current file could not be read ({exc.reason}); compare before accepting."
-        except ConnectionClosed:
-            return None, None
+        note = None
+        if self._can_read_buffer() and self.conn is not None and old is not None:
+            try:
+                answer = await self.conn.request("fs/read_text_file",
+                                                 {"sessionId": session.id, "path": str(path)}, timeout=10.0)
+                buffer = answer.get("content") if isinstance(answer, dict) else None
+            except (RpcError, TimeoutError, ConnectionClosed):
+                buffer = None
+            if isinstance(buffer, str) and buffer != old:
+                note = ("The editor has unsaved changes to this file. The diff is against the file "
+                        "on disk, which the write replaces; the unsaved changes are not in it.")
         if len(new_text) > render.MAX_DIFF_CHARS or (old is not None and len(old) > render.MAX_DIFF_CHARS):
             return None, "The change is too large to draw here; review it in the HUD before accepting."
-        return {"path": str(path), "oldText": old, "newText": new_text}, None
+        return {"path": str(path), "oldText": old, "newText": new_text}, note
 
     async def _decide_cards(self, session: _Session, pending: Any) -> None:
         ids = [i for i in (pending if isinstance(pending, list) else []) if type(i) is int and i > 0][:32]
@@ -633,7 +714,7 @@ class AcpServer:
             if session.cancel.is_set():
                 return
             env_names = ", ".join(sorted(server["env"])) or "none"
-            command = " ".join([server["command"], *server["args"]])
+            command = shlex.join([server["command"], *server["args"]])   # as the hub registers it
             call = {
                 "toolCallId": f"mcp-{server['name']}-{secrets.token_hex(4)}",
                 "title": render.safe_line(f"Connect MCP server '{server['name']}' for this session"),
@@ -655,7 +736,7 @@ class AcpServer:
                 await self._card_done(session, call, "failed", "Not connected.")
                 continue
             try:
-                result = await self.backend.add_session_mcp(session.id, server)
+                result = await self.backend.add_session_mcp(session.hub, server)
             except BackendRefused as exc:
                 await self._card_done(session, call, "failed", _hub_refusal("The hub refused it", exc))
                 continue

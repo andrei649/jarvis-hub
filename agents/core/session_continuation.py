@@ -394,6 +394,17 @@ class ContinuationStore:
             raise ContinuationRefused("continuation_unavailable", 503) from None
 
 
+#: G11 — the refusal an editor conversation gets once the hub no longer holds it.
+EDITOR_SESSION_CLOSED = "editor_session_closed"
+
+
+def editor_session_closed(sid) -> bool:
+    """G11 — *sid* names an editor conversation (``acp_…``) with no live binding."""
+    from .acp import sessions as acp_sessions
+
+    return isinstance(sid, str) and sid.startswith(acp_sessions.PREFIX) and acp_sessions.get(sid) is None
+
+
 def _fresh_editor_session(sid) -> bool:
     """G11 — *sid* is an editor conversation this process opened and still holds open."""
     from .acp import sessions as acp_sessions
@@ -530,6 +541,10 @@ async def prepare_session(orch, sid):
     from .foreign_history import ForeignHistoryRefused
     if not is_valid_session_id(sid):
         raise ContinuationRefused("invalid_identifier", 422)
+    if editor_session_closed(sid):
+        # G11 review M3: an editor conversation the hub no longer holds (a restart, an
+        # expired lease) has no folder binding: it is refused, never run unconfined.
+        raise ContinuationRefused(EDITOR_SESSION_CLOSED, 410)
     if orch.checkpoints._conn is None:
         raise ContinuationRefused("continuation_unavailable", 503)
     with orch.checkpoints._lock:

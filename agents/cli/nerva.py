@@ -14,6 +14,7 @@ import os
 import re
 import shlex
 import sqlite3
+import stat
 import sys
 import time
 import uuid
@@ -905,6 +906,9 @@ def build_parser() -> argparse.ArgumentParser:
     acp.add_argument("--permission-timeout", type=float, metavar="SECONDS", default=None,
                      help="seconds the editor has to answer a permission before it is a reject "
                           "(default JARVIS_ACP_PERMISSION_TIMEOUT, else 300)")
+    acp.add_argument("--token-file", metavar="PATH",
+                     help="read the owner's admin token from PATH (your own file, mode 0600, not a "
+                          "link) instead of the environment, so the editor's settings hold no token")
 
     send = verbs.add_parser(
         "send",
@@ -5683,6 +5687,32 @@ def _write_usage(path: str, report: dict[str, Any], ctx: Context) -> None:
                 os.unlink(temporary)
 
 
+def read_token_file(path: str) -> str:
+    """The admin token from *path* (G11): a regular file of this user's, not a link, not
+    readable or writable by group or others (on POSIX), at most 4 KiB, one token."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise ValueError(f"cannot open it ({exc.strerror or 'error'}; a link is refused)") from None
+    with os.fdopen(fd, "rb") as handle:
+        info = os.fstat(handle.fileno())
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError("not a regular file")
+        if os.name == "posix":
+            if info.st_uid != os.getuid():
+                raise ValueError("not owned by you")
+            if info.st_mode & 0o077:
+                raise ValueError("readable or writable by others; chmod 600 it")
+        data = handle.read(4097)
+    if len(data) > 4096:
+        raise ValueError("larger than 4 KiB")
+    token = data.decode("utf-8", errors="strict").strip() if data else ""
+    if not token or any(ch.isspace() for ch in token):
+        raise ValueError("it must hold exactly one token")
+    return token
+
+
 def cmd_acp(ns: argparse.Namespace, ctx: Context) -> int:
     """``nerva acp`` (G11): the ACP agent on stdio. stdout is the protocol channel."""
     from agents.core.acp.server import DEFAULT_PERMISSION_TIMEOUT
@@ -5695,6 +5725,12 @@ def cmd_acp(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.err.write("--permission-timeout must be between 1 and 86400 seconds\n")
         return EXIT_USAGE
     client = ctx.client()
+    if ns.token_file:
+        try:
+            client.admin_token = read_token_file(ns.token_file)
+        except ValueError as exc:
+            ctx.err.write(f"--token-file refused: {exc}\n")
+            return EXIT_USAGE
     if ns.check:
         health = client.get("/api/commands")
         commands = len((health or {}).get("commands") or []) if isinstance(health, dict) else 0

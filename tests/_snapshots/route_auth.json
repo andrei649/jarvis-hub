@@ -1,6 +1,7 @@
 {
   "DELETE /api/a2a/peers/{peer_id}": "admin",
   "DELETE /api/a2a/peers/{peer_id}/outbound": "admin",
+  "DELETE /api/acp/sessions/{session_id}": "admin",
   "DELETE /api/admin/backup/restore": "admin",
   "DELETE /api/admin/channels/{channel_id}/secret/{name}": "admin",
   "DELETE /api/admin/integrations/search-choice": "admin",
@@ -457,6 +458,9 @@
   "POST /api/a2a/inbox/{task_id}/decide": "admin",
   "POST /api/a2a/peers": "admin",
   "POST /api/a2a/task": "open",
+  "POST /api/acp/sessions": "admin",
+  "POST /api/acp/sessions/{session_id}/lease": "admin",
+  "POST /api/acp/sessions/{session_id}/mcp": "admin",
   "POST /api/acquisition/ledger/purge": "admin",
   "POST /api/acquisition/{name}/revoke": "admin",
   "POST /api/acquisition/{name}/rollback": "admin",
@@ -837,8 +841,5 @@
   "PUT /api/skills/setup/{name}/{var}": "admin",
   "PUT /api/workflows/{pipeline_id}": "admin",
   "PUT /api/workspace/admin/smtp": "ws_admin",
-  "PUT /plugins/{plugin_id}/toggle": "admin",
-  "DELETE /api/acp/sessions/{session_id}": "admin",
-  "POST /api/acp/sessions": "admin",
-  "POST /api/acp/sessions/{session_id}/mcp": "admin"
+  "PUT /plugins/{plugin_id}/toggle": "admin"
 }

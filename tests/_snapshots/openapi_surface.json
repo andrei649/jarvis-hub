@@ -455,6 +455,7 @@
   "POST /api/a2a/peers": "a2a_add_peer_api_a2a_peers_post",
   "POST /api/a2a/task": "a2a_receive_task_api_a2a_task_post",
   "POST /api/acp/sessions": "acp_open_session_api_acp_sessions_post",
+  "POST /api/acp/sessions/{session_id}/lease": "acp_renew_session_api_acp_sessions__session_id__lease_post",
   "POST /api/acp/sessions/{session_id}/mcp": "acp_add_session_mcp_api_acp_sessions__session_id__mcp_post",
   "POST /api/acquisition/ledger/purge": "acquisition_purge_api_acquisition_ledger_purge_post",
   "POST /api/acquisition/{name}/revoke": "acquisition_revoke_api_acquisition__name__revoke_post",

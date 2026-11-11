@@ -13,20 +13,30 @@ process that opened it, and nothing here may outlive a hub restart:
   (``MCPServer.session_scope``), they are never written to the saved server list, and
   :func:`close` removes them.
 
-A session the editor never closed (a killed process) is reaped after
-:data:`IDLE_SECONDS` without a turn, the next time any editor opens or closes one.
+**A lease, not trust (G11 review).** ``nerva acp`` renews each session's lease while the
+editor is connected (``POST /api/acp/sessions/{id}/lease``, every minute); a turn renews
+it too. A session whose lease is older than :data:`LEASE_SECONDS` is reaped by the hub's
+timer (``routers/acp.py``), which removes its MCP children. A conversation the hub no
+longer holds — reaped, or forgotten by a restart — is **refused** from then on
+(``session_continuation.editor_session_closed``, HTTP 410), never run without its folder
+binding; ``nerva acp`` then opens a new one and tells the editor.
 """
 
 from __future__ import annotations
 
+import logging
 import secrets
 import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-#: An editor conversation with no turn for this long is closed at the next reap.
-IDLE_SECONDS = 12 * 3600
+logger = logging.getLogger("jarvis.acp")
+
+#: A session whose lease was not renewed for this long is reaped (its MCP children killed).
+LEASE_SECONDS = 5 * 60
+#: How often the hub's timer looks for expired leases.
+REAP_INTERVAL_SECONDS = 60
 MAX_SESSIONS = 64
 MAX_SERVERS_PER_SESSION = 8
 PREFIX = "acp_"
@@ -66,8 +76,25 @@ def get(session_id: object) -> AcpSession | None:
         return _SESSIONS.get(session_id)
 
 
+def count() -> int:
+    with _LOCK:
+        return len(_SESSIONS)
+
+
+def renew(session_id: object) -> bool:
+    """Renew the lease; False when the hub no longer holds the session."""
+    if not isinstance(session_id, str):
+        return False
+    with _LOCK:
+        record = _SESSIONS.get(session_id)
+        if record is None:
+            return False
+        record.seen = time.monotonic()
+        return True
+
+
 def cwd_for(session_id: object) -> Path | None:
-    """The folder a turn of *session_id* is bound to (and a touch of its idle clock)."""
+    """The folder a turn of *session_id* is bound to (and a renewal of its lease)."""
     if not isinstance(session_id, str) or not session_id.startswith(PREFIX):
         return None
     with _LOCK:
@@ -93,11 +120,15 @@ def pop(session_id: str) -> AcpSession | None:
         return _SESSIONS.pop(session_id, None)
 
 
-def idle(now: float | None = None) -> list[str]:
-    """Session ids idle past :data:`IDLE_SECONDS`."""
+def expired(now: float | None = None) -> list[str]:
+    """Session ids whose lease is older than :data:`LEASE_SECONDS`."""
     moment = time.monotonic() if now is None else now
     with _LOCK:
-        return [sid for sid, record in _SESSIONS.items() if moment - record.seen > IDLE_SECONDS]
+        return [sid for sid, record in _SESSIONS.items() if moment - record.seen > LEASE_SECONDS]
+
+
+#: The earlier name.
+idle = expired
 
 
 def server_name(session_id: str, name: str) -> str:
@@ -107,18 +138,25 @@ def server_name(session_id: str, name: str) -> str:
 
 
 async def close(session_id: str, manager) -> list[str]:
-    """Forget the session and remove every MCP server it owned. Returns their names."""
+    """Forget the session and remove every MCP server it owned. Returns their names. One
+    server that fails to close does not keep the others running (each is tried, the
+    failures are logged)."""
     record = pop(session_id)
     if record is None:
         return []
     removed = []
     for name in record.mcp:
         server = getattr(manager, "servers", {}).get(name) if manager is not None else None
-        if server is not None and getattr(server, "session_scope", None) == session_id:
-            try:
-                await manager.remove_server(name)
-            finally:
-                removed.append(name)
+        if server is None or getattr(server, "session_scope", None) != session_id:
+            continue
+        try:
+            await manager.remove_server(name)
+        except Exception:  # noqa: BLE001 - keep closing the rest
+            logger.warning("editor MCP server %s did not close cleanly", name, exc_info=True)
+            servers = getattr(manager, "servers", None)
+            if isinstance(servers, dict):
+                servers.pop(name, None)       # never left offered to anyone
+        removed.append(name)
     return removed
 
 
@@ -127,5 +165,5 @@ def _reset_for_tests() -> None:
         _SESSIONS.clear()
 
 
-__all__ = ["AcpSession", "IDLE_SECONDS", "PREFIX", "add_server", "close", "cwd_for", "get", "idle",
-           "new_session_id", "pop", "register", "server_name"]
+__all__ = ["AcpSession", "LEASE_SECONDS", "PREFIX", "REAP_INTERVAL_SECONDS", "add_server", "close", "count",
+           "cwd_for", "expired", "get", "new_session_id", "pop", "register", "renew", "server_name"]

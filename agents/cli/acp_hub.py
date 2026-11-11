@@ -72,6 +72,9 @@ class HubBackend:
     async def close_session(self, session_id: str) -> None:
         await self._call("DELETE", f"/api/acp/sessions/{quote(session_id, safe='')}")
 
+    async def renew(self, session_id: str) -> None:
+        await self._call("POST", f"/api/acp/sessions/{quote(session_id, safe='')}/lease")
+
     async def commands(self) -> list[dict[str, Any]]:
         reply = await self._call("GET", "/api/commands")
         rows = reply.get("commands") if isinstance(reply, dict) else None
@@ -130,13 +133,17 @@ class HubBackend:
 
     # ── the turn ─────────────────────────────────────────────────────────────
 
-    async def stream_turn(self, session_id: str, message: str, on_event, cancel: asyncio.Event):
+    async def stream_turn(self, session_id: str, message: str, on_event, cancel: asyncio.Event, *,
+                          attachments=None):
         """``POST /chat/stream`` read event by event on a worker thread. A cancel closes
         the connection; the hub cancels a turn whose stream went away."""
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue = asyncio.Queue()
         holder: dict[str, Any] = {}
-        body = json.dumps({"message": message, "session_id": session_id, "tool_events": True}).encode("utf-8")
+        payload: dict[str, Any] = {"message": message, "session_id": session_id, "tool_events": True}
+        if attachments:
+            payload["attachments"] = list(attachments)
+        body = json.dumps(payload).encode("utf-8")
         headers = self.client._headers()
         headers["Accept"] = "text/event-stream"
         request = urllib.request.Request(f"{self.client.base_url}/chat/stream", data=body, method="POST",
