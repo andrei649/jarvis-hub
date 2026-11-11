@@ -2107,30 +2107,6 @@
       ]
     },
     {
-      "id": "H123",
-      "row_sha256": "684b386efc8255726816269f8b0353fe4e1f6aa0edc72778eff34863071285b3",
-      "status": "missing",
-      "summary": "Fresh assessment 2026-10-13 (9f92d937): No DingTalk, Feishu/Lark, WeCom, WeCom Callback or Yuanbao adapter exists. The webhook-channel registry holds only whatsapp, signal, matrix, teams and google_chat (agents/core/channels/webhook_channels.py:359-365). The only mentions of these platforms are Hermes toolset names in the kanban upstream compat list (agents/core/kanban/upstream/compat.py:61-63), which is a name table, not an adapter. Re-read 2026-10-21 (batch 1c: H393 repetition-loop guard in every backend finalizer plus a live stream guard; H010 quick state snapshot, nerva backup verbs with the irreversible-tier confirmation, and an in-place restore staged for the next boot with a hub self-restart): every citation of this row into the changed files was re-resolved by content (unchanged or moved only) and no claim changed. Re-read 2026-10-21 after main (#1256 Nerva Workspace, deps #1271/#1272/#1275): the merge added the workspace routers, ws_user/ws_admin route tiers, the backup CLI archive-name check and pypdf/tzdata; every citation of this row into the changed files was re-resolved by content (unchanged or moved only) and no claim changed. Re-read after batch 4 (H006 H039 H221 H303 H354 H403 H414 H486) changed files this row pins\n\nCombined B2/H391 collateral reread at e074fbc6: reviewed the changed pinned paths (agents/web.py); their current behavior does not change this claim or its recorded remaining work. Verdict retained.\n\nCurrent integration at 97fd09fe supersedes the earlier isolated-candidate boundary: reviewed Task23/30 source, API/types, HUD build and parity metadata are committed. Canonical functional 423, API/parity 61, readiness 99 and frontend 2,681 pass. Task30 keeps the custom action WIRED through a dedicated non-promotable owner-receipt negative case. These are scoped source checks, not a new full-backend/live/platform result; this row retains its contract verdict and remaining scope.\n\nReviewed Task28/31/34 integration: H396 whole-turn/file accounting and bounded session console-message/image observations retain this row’s frozen verdict except primary H396. Canonical 741 common regressions pass; isolated reviewed local Chrome 35 and independent settled-journal focused case pass. Frontend 2,688 is a native collected count: that full run recorded 2,687 passes and one Workspace initial-render failure, under separate diagnosis. No new full-backend/live/provider/native acceptance is claimed.\n\nCurrent source re-read 2026-10-29: reviewed H686 metrics/layout, bounded uncaught browser errors, outcome/CLI protocol reconciliation and security-scanner fixes preserve this frozen verdict except the explicit H686/observation updates below. Changed citations were resolved by content and containing semantics; selected-provider, authority and native/live requirements gain no automatic credit. The latest complete backend remains the failed ae618ee8 milestone; all its 14 failing cases pass in the current integrated focused regression. A new complete run is required. Re-read 2026-11-02 after Hermes batch 1 (H019 service status and slot holders, H026 named skill bundles, H422 core memory budgets, usage headers and owner switch, H462 goal and subgoal entry points): every hunk of this row's changed evidence was read against the row, citations were re-resolved by content, and no claim changed. Re-read 2026-11-02 after Hermes batch 2 (H381 persisted egress ledger and no-bare-client structural scan, H448 malloc_trim after turns, H255 settings env interpolation, H325 tool surface snapshot and honest labels, H430 per-turn recall line; registry planning keeps the risk context): every hunk of this row's changed evidence was read against the row, citations were re-resolved by content, and no claim changed.\n\nRe-read 2026-11-03 (Hermes batch 3, b8a60fcd): H058 changes Matrix/Signal/Google Chat scope handling around the webhook registry, but _REGISTRY still names only whatsapp, signal, matrix, teams and google_chat; no DingTalk, Feishu/Lark, WeCom or Yuanbao adapter was added. Missing verdict and listed adapter/egress/test gaps remain. Re-read 2026-11-09 after the Nerva product-surface rename and the SEC-B6 guard fixes (PR #1347): the pinned files changed only in product-name strings (HUD wordmark, page titles, banners, desktop productName with the pre-rename name kept for uninstall) and three route guards; every citation was re-resolved by content and no claim changed. Re-read 2026-11-09 after the H440 review fixes (PR #1347: archive, pin, sweep and retention act on a whole lineage; exact-object schema titles with a free-text fallback for a refusing server; lineage-aware resolve; rename bounds): every citation of this row into the changed files was re-resolved by content and no claim changed. Re-read 2026-11-10 after the second H440 fix round (PR #1347: one list row per unfinished session, backups kept through a whole-conversation delete, distinct automatic-title suffix, schema refusal read from the error body, lineage indexes): every citation of this row into the changed files was re-resolved by content and no claim changed.\n\nMain integration #1346 review (merged 2026-11-10): Current source review at 92c3a33d: The changed chat projection adds optional selected current-turn usage_detail to the existing outcome, without another RPC or a new transport contract (agents/web.py:1397-1433). The original entry and governance path remain as recorded; this does not close the specific clauses in remaining. Historical implementation boundary: Fresh assessment 2026-10-13 (9f92d937): No DingTalk, Feishu/Lark, WeCom, WeCom Callback or Yuanbao adapter exists. Governance and side effects remain bounded by the original contract and the open clauses below. Test boundary: no new targeted end-to-end acceptance is claimed for this row.",
-      "remaining": "- DingTalk Stream Mode adapter with AI Cards and emoji reactions\n- Feishu/Lark adapter: group admission rules, signed webhook mode, approval cards, document-comment reply with access-control CLI, meeting events, six doc/drive tools\n- WeCom adapter with msgtype stream and per-chat token-bucket send queue, plus WeCom Callback adapter with WXBizMsgCrypt\n- Yuanbao adapter (protocol, SignManager auth, COS media, stickers, five agent tools)\n- Egress allowlist entries, flags and tests for each",
-      "evidence": [
-        "agents/core/channels/webhook_channels.py",
-        "agents/core/kanban/upstream/compat.py",
-        "agents/web.py"
-      ]
-    },
-    {
-      "id": "H124",
-      "row_sha256": "648e699fc6f2bfab69fe31a9535b47409e0bfa78e5552acea157e4d569d6f43b",
-      "status": "missing",
-      "summary": "Fresh assessment 2026-10-13 (9f92d937): No IRC, LINE, SimpleX, Mattermost, Raft or Buzz (Nostr) adapter exists. Channels wired at startup are Telegram, Discord, ntfy, email and Slack in agents/web.py plus the five webhook kinds in agents/core/channels/webhook_channels.py:359-365; none of the six long-tail protocols appears there. There is no POST /wake wake-channel route. Re-read 2026-10-21 (batch 1c: H393 repetition-loop guard in every backend finalizer plus a live stream guard; H010 quick state snapshot, nerva backup verbs with the irreversible-tier confirmation, and an in-place restore staged for the next boot with a hub self-restart): every citation of this row into the changed files was re-resolved by content (unchanged or moved only) and no claim changed. Re-read 2026-10-21 after main (#1256 Nerva Workspace, deps #1271/#1272/#1275): the merge added the workspace routers, ws_user/ws_admin route tiers, the backup CLI archive-name check and pypdf/tzdata; every citation of this row into the changed files was re-resolved by content (unchanged or moved only) and no claim changed. Re-read after batch 4 (H006 H039 H221 H303 H354 H403 H414 H486) changed files this row pins Combined source re-read at e074fbc6: The integrated H391/B2 changes do not deliver this row's remaining irc adapter with plain-text (no-markdown) rendering; the existing missing verdict remains.\n\nCurrent integration at 97fd09fe supersedes the earlier isolated-candidate boundary: reviewed Task23/30 source, API/types, HUD build and parity metadata are committed. Canonical functional 423, API/parity 61, readiness 99 and frontend 2,681 pass. Task30 keeps the custom action WIRED through a dedicated non-promotable owner-receipt negative case. These are scoped source checks, not a new full-backend/live/platform result; this row retains its contract verdict and remaining scope.\n\nReviewed Task28/31/34 integration: H396 whole-turn/file accounting and bounded session console-message/image observations retain this row’s frozen verdict except primary H396. Canonical 741 common regressions pass; isolated reviewed local Chrome 35 and independent settled-journal focused case pass. Frontend 2,688 is a native collected count: that full run recorded 2,687 passes and one Workspace initial-render failure, under separate diagnosis. No new full-backend/live/provider/native acceptance is claimed.\n\nCurrent source re-read 2026-10-29: reviewed H686 metrics/layout, bounded uncaught browser errors, outcome/CLI protocol reconciliation and security-scanner fixes preserve this frozen verdict except the explicit H686/observation updates below. Changed citations were resolved by content and containing semantics; selected-provider, authority and native/live requirements gain no automatic credit. The latest complete backend remains the failed ae618ee8 milestone; all its 14 failing cases pass in the current integrated focused regression. A new complete run is required. Re-read 2026-11-02 after Hermes batch 1 (H019 service status and slot holders, H026 named skill bundles, H422 core memory budgets, usage headers and owner switch, H462 goal and subgoal entry points): every hunk of this row's changed evidence was read against the row, citations were re-resolved by content, and no claim changed. Re-read 2026-11-02 after Hermes batch 2 (H381 persisted egress ledger and no-bare-client structural scan, H448 malloc_trim after turns, H255 settings env interpolation, H325 tool surface snapshot and honest labels, H430 per-turn recall line; registry planning keeps the risk context): every hunk of this row's changed evidence was read against the row, citations were re-resolved by content, and no claim changed.\n\nRe-read 2026-11-03 (Hermes batch 3, b8a60fcd): H058 adds webhook slash-command scope handling; the five-kind registry and web startup still have no IRC, LINE, SimpleX, Mattermost, Raft or Buzz adapter, nor a /wake route. Missing verdict and listed protocol/test gaps remain. Re-read 2026-11-09 after the Nerva product-surface rename and the SEC-B6 guard fixes (PR #1347): the pinned files changed only in product-name strings (HUD wordmark, page titles, banners, desktop productName with the pre-rename name kept for uninstall) and three route guards; every citation was re-resolved by content and no claim changed. Re-read 2026-11-09 after the H440 review fixes (PR #1347: archive, pin, sweep and retention act on a whole lineage; exact-object schema titles with a free-text fallback for a refusing server; lineage-aware resolve; rename bounds): every citation of this row into the changed files was re-resolved by content and no claim changed. Re-read 2026-11-10 after the second H440 fix round (PR #1347: one list row per unfinished session, backups kept through a whole-conversation delete, distinct automatic-title suffix, schema refusal read from the error body, lineage indexes): every citation of this row into the changed files was re-resolved by content and no claim changed.\n\nMain integration #1346 review (merged 2026-11-10): Current source review at 92c3a33d: The changed chat projection adds optional selected current-turn usage_detail to the existing outcome, without another RPC or a new transport contract (agents/web.py:1397-1433). The original entry and governance path remain as recorded; this does not close the specific clauses in remaining. Historical implementation boundary: Fresh assessment 2026-10-13 (9f92d937): No IRC, LINE, SimpleX, Mattermost, Raft or Buzz (Nostr) adapter exists. Governance: the observed read path grants no write authority; any action behind the surface retains its own gate. Test boundary: no new targeted end-to-end acceptance is claimed for this row.",
-      "remaining": "- IRC adapter with plain-text (no-markdown) rendering\n- LINE Messaging API webhook adapter with bubble splitter, tokenized media endpoint and slow-LLM postback\n- SimpleX Chat adapter with channel enumeration and DM pairing\n- Mattermost WebSocket adapter with thread reply modes and image batching\n- Raft wake-channel bridge (POST /wake + activity telemetry)\n- Buzz/Nostr adapter with NIP-42 signing and Blossom media\n- Tests for each",
-      "evidence": [
-        "agents/core/channels/webhook_channels.py",
-        "agents/web.py",
-        "agents/core/channels/manager.py"
-      ]
-    },
-    {
       "id": "H126",
       "row_sha256": "092fe5f5076ace9752e2fbdee30846b9f72cae24888e97bb004c59064b997809",
       "status": "partial",
@@ -6696,18 +6672,6 @@
         "agents/core/llm/tool_protocol.py",
         "tests/test_xai_responses.py",
         "docs/superpowers/plans/2026-09-15-xai-responses.md"
-      ]
-    },
-    {
-      "id": "H365",
-      "row_sha256": "192a2aad717d9f7e30be9d48e9cc7ab00b56ecbd5f3d8e6c5e45dfaa33453cfa",
-      "status": "missing",
-      "summary": "Fresh assessment 2026-10-13 (9f92d937): No keyless cloud-tenant inference exists. The built-in provider profiles are LM Studio, Ollama, Gemini, Anthropic, OpenRouter, DeepInfra, Nous vision, xAI, OpenAI Responses and a generic OpenAI-compatible endpoint (agents/core/llm/providers/__init__.py:327-423); the backend-to-protocol table has no Bedrock, Vertex or Azure backend (agents/core/llm/host_protocol.py:49-59). The only Bedrock awareness is a host pattern used to refuse a mismatched protocol aimed at bedrock-runtime hosts (agents/core/llm/host_protocol.py:69), not a client. HybridRouter builds only Gemini, xAI, Responses, DeepInfra, OpenRouter, Claude and Ollama backends (agents/core/llm/hybrid_router.py:379-491). No boto3, google.auth or azure-identity usage anywhere under agents/. Source re-read 2026-10-28: signed admission additions, collateral kernel actions and current citations were reviewed against this row; unchanged frozen contracts keep their existing verdict without broader equivalence or live acceptance credit. Combined source re-read at e074fbc6: The integrated H391/B2 changes do not deliver this row's remaining bedrock converse backend using the aws sdk credential chain (no api key), with guardrail config and cross; the existing missing verdict remains.\n\nCurrent integration at 97fd09fe supersedes the earlier isolated-candidate boundary: reviewed Task23/30 source, API/types, HUD build and parity metadata are committed. Canonical functional 423, API/parity 61, readiness 99 and frontend 2,681 pass. Task30 keeps the custom action WIRED through a dedicated non-promotable owner-receipt negative case. These are scoped source checks, not a new full-backend/live/platform result; this row retains its contract verdict and remaining scope.\n\nCurrent source re-read 2026-10-29: reviewed H686 metrics/layout, bounded uncaught browser errors, outcome/CLI protocol reconciliation and security-scanner fixes preserve this frozen verdict except the explicit H686/observation updates below. Changed citations were resolved by content and containing semantics; selected-provider, authority and native/live requirements gain no automatic credit. The latest complete backend remains the failed ae618ee8 milestone; all its 14 failing cases pass in the current integrated focused regression. A new complete run is required. Re-read 2026-11-01 (PR #1321 review fixes: the settings selection gate and settings init, the built-in history row bound, the browser session fixes, the workspace invite throttle and extraction sampler, checkpoint inventory and prune batches, the CLI credential transport, the streamed usage scope, the micro-view cap and the cache epochs): every hunk of this row's changed evidence was read against the row, citations were re-resolved by content, and no claim changed. Re-read 2026-11-10 after the Adopt lane slice 2 merge (PR #1347: 19 Hermes model-provider profile modules vendored and bridged onto Nerva's OpenAI-compatible backend with a destination pin, per-provider keys, selection acknowledgements and a reasoning clamp; probe-all limited to the selected adopted provider; signed packages layered over native built-ins only): every citation of this row into the changed files was re-resolved by content and no claim changed.",
-      "remaining": "- Bedrock Converse backend using the AWS SDK credential chain (no API key), with guardrail config and cross-region inference profiles\n- Vertex backend minting short-lived OAuth2 tokens from a service-account JSON or ADC, in front of the OpenAI-compatible Vertex endpoint\n- Azure AI Foundry backend using azure-identity DefaultAzureCredential as a token provider for the OpenAI client\n- Provider profiles, router wiring, owner-facing setup (settings/CLI) and tests for all three",
-      "evidence": [
-        "agents/core/llm/providers/__init__.py",
-        "agents/core/llm/host_protocol.py",
-        "agents/core/llm/hybrid_router.py"
       ]
     },
     {
@@ -11357,21 +11321,6 @@
       ]
     },
     {
-      "id": "H582",
-      "row_sha256": "ebe71de9b4ad5560bef47280aa5e60f69997892c61b59565458f02529b192756",
-      "status": "missing",
-      "summary": "Fresh assessment 2026-10-13 (9f92d937): No x_search tool exists in Nerva's tool surface. agents/core/llm/xai.py:1 is an xAI Responses chat backend, not a search tool; agents/core/social.py:73 covers governed X writes. The opt-in embedded upstream Hermes runtime (agents/core/hermes_runtime/service.py:34, gated by JARVIS_HERMES_ENABLED) routes upstream tool calls through Nerva's broker with every non-read tool on an approval floor (agents/core/hermes_runtime/policy.py:49); it runs downloaded upstream code, and no Nerva code or test establishes this capability through it. Re-read 2026-10-21 after merging #1251: web search now runs through a provider registry (agents/core/plugins/websearch.py:4-6) whose only built-in backends are Tavily, SearXNG and DuckDuckGo (agents/core/plugins/web_providers.py:290), none of which searches X. The registry lets first-party code register another backend (agents/core/plugins/web_providers.py:293-298), so an X search backend could be added there, but none is registered anywhere in the code; the verdict stays missing.\n\nCombined B2/H391 collateral reread at e074fbc6: reviewed the changed pinned paths (agents/core/llm/xai.py); their current behavior does not change this claim or its recorded remaining work. Verdict retained. Re-read 2026-11-10 after the Adopt lane slice 1 merge (PR #1347: Hermes's Exa, Brave and Parallel search code vendored under agents/vendor/hermes with a compat layer through Nerva's egress client; per-provider key allowlists; a lazy cost_estimator import in turn_usage): every citation of this row into the changed files was re-resolved by content and no claim changed.",
-      "remaining": "Build an X/Twitter search capability: for example a first-party search provider registered through register_search_provider (or a dedicated read tool) backed by the X or xAI search API, with its own egress manifest, owner-configured key and tests.",
-      "evidence": [
-        "agents/core/llm/xai.py",
-        "agents/core/social.py",
-        "agents/core/plugins/websearch.py",
-        "agents/core/plugins/web_providers.py",
-        "agents/core/hermes_runtime/service.py",
-        "agents/core/hermes_runtime/policy.py"
-      ]
-    },
-    {
       "id": "H583",
       "row_sha256": "203e2ee0ad26a9c0397a82e50a2663d8ea6ad8fff56266b6ab8bf8c89d01363a",
       "status": "partial",
@@ -13869,18 +13818,6 @@
       "reason": "Owner directive 2026-09-27: full functional Hermes parity, including previously excluded capabilities; implementation must be assessed separately."
     },
     {
-      "id": "H123",
-      "row_sha256": "684b386efc8255726816269f8b0353fe4e1f6aa0edc72778eff34863071285b3",
-      "decided_at": "2026-09-27T00:00:00Z",
-      "reason": "Owner directive 2026-09-27: full functional Hermes parity, including previously excluded capabilities; implementation must be assessed separately."
-    },
-    {
-      "id": "H124",
-      "row_sha256": "648e699fc6f2bfab69fe31a9535b47409e0bfa78e5552acea157e4d569d6f43b",
-      "decided_at": "2026-09-27T00:00:00Z",
-      "reason": "Owner directive 2026-09-27: full functional Hermes parity, including previously excluded capabilities; implementation must be assessed separately."
-    },
-    {
       "id": "H126",
       "row_sha256": "092fe5f5076ace9752e2fbdee30846b9f72cae24888e97bb004c59064b997809",
       "decided_at": "2026-09-27T00:00:00Z",
@@ -14073,12 +14010,6 @@
       "reason": "Owner directive 2026-09-27: full functional Hermes parity, including previously excluded capabilities; implementation must be assessed separately."
     },
     {
-      "id": "H365",
-      "row_sha256": "192a2aad717d9f7e30be9d48e9cc7ab00b56ecbd5f3d8e6c5e45dfaa33453cfa",
-      "decided_at": "2026-09-27T00:00:00Z",
-      "reason": "Owner directive 2026-09-27: full functional Hermes parity, including previously excluded capabilities; implementation must be assessed separately."
-    },
-    {
       "id": "H375",
       "row_sha256": "920ecd9697a9cdc5aae3bbad1974ee7bc9998ee34b3d87df5fd0761dee428ee6",
       "decided_at": "2026-09-27T00:00:00Z",
@@ -14183,12 +14114,6 @@
     {
       "id": "H574",
       "row_sha256": "3f00ec990487cbf4c482bcae1e1aaa56a25f8972ff84845ef432aa56a7efa516",
-      "decided_at": "2026-09-27T00:00:00Z",
-      "reason": "Owner directive 2026-09-27: full functional Hermes parity, including previously excluded capabilities; implementation must be assessed separately."
-    },
-    {
-      "id": "H582",
-      "row_sha256": "ebe71de9b4ad5560bef47280aa5e60f69997892c61b59565458f02529b192756",
       "decided_at": "2026-09-27T00:00:00Z",
       "reason": "Owner directive 2026-09-27: full functional Hermes parity, including previously excluded capabilities; implementation must be assessed separately."
     },

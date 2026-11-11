@@ -55,3 +55,21 @@ The reasons per row are in `docs/hermes/missing-rows-plan-2026-11-10.md` §3.
 - Candidates for "deferred": H123, H124, H127, H348.
 - A cheap Adopt candidate: H582 (`x_search`).
 - Excluded natively but exposed by the sidecar: H032, H214, H238, H590, H657.
+
+## 5. Follow-up, 2026-11-11: the contested rows
+
+The owner answered the open calls above:
+
+- **ACP editor agent: build it.** H542–H545 are built natively (Own lane), with every approval going
+  through Nerva's ordinary cards; H056 ("serve the agent to an editor over ACP") is covered by the same
+  build and stays reopened.
+- **Contested skip rows: build what is buildable.** Rows that only need code stay reopened and are built:
+  H055 and H564 (with H597, language servers), H163 (with H021/H514/H408, event hooks), H496 (per-identity
+  credential isolation), H127 (Matrix end-to-end encryption) and H348 (skill consolidation).
+- **Excluded, because they cannot be used at all without paid services or new third-party accounts:**
+  H365 (Bedrock / Vertex / Azure Foundry enterprise credentials), H582 (`x_search` on xAI), H123 (regional
+  enterprise chat platforms) and H124 (long-tail chat protocols). Their reopenings and reviews are archived
+  under `follow_up_2026_11_11` in `docs/hermes/evidence/2026-11-10-scope-exclusions.json`. Excluded rows:
+  36; accepted scope: 661.
+- **Tool search:** `auto` stays the default (on when the MCP tool schemas exceed the budget), as in Hermes.
+- **SMS replies:** every reply keeps waiting for the owner's approval; no unattended spend.
