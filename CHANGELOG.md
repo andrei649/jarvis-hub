@@ -21,6 +21,46 @@
   Skills in a source that fail the checks are listed as refused and cannot be installed.
 - The panel says which upstream commit each source installs at. The two official ones differ on
   purpose (the network import must be a release); `docs/SKILLS_CATALOG.md` explains it.
+**Restart Nerva and see whether it is behind, from the HUD**
+- New Console panel **Restart / Update** (Admin group): the version, branch and commit Nerva
+  runs, whether its folder has uncommitted changes, and how many commits it is behind its
+  upstream, with how long ago that was last checked. "Check now" asks the upstream and shows
+  the log while it runs.
+- "Restart" asks once, restarts Nerva and waits until it answers again. If Nerva was not
+  started by `serve.py` (systemd, `START.bat`, the service do it), the panel says to restart
+  it that way instead.
+- Updating from the HUD is not offered yet: Nerva has no way to check that new code is code
+  you trust (no signed releases or pinned version), so the panel says why and the steps in
+  `docs/UPGRADE.md` stay the way to update.
+
+**Channel settings in the HUD**
+- New Console panel **Channels** (Admin group): Telegram, Discord, Slack, email, ntfy and SMS,
+  each saying whether it is running. Open one to set its token or password, hosts, ports, your
+  owner ids or numbers. No more editing `.env` for a channel.
+- Tokens and passwords are stored encrypted by Nerva and never shown again, not even their last
+  characters. A value set in `.env` wins and is changed there; a value your administrator pinned
+  cannot be changed here.
+- Channels start with Nerva, so the panel tells you when a change waits for a restart. SMS
+  account, numbers and token apply at once.
+- A token or password stays with the server it was typed for: change the ntfy server or the
+  mail host or port and the token or password is cleared, so you type it again for the new
+  server. The ntfy server must use `https://` (plain `http://` only on this machine).
+- Email now checks the mail servers' certificates (before, the IMAP and SMTP connections
+  accepted any certificate). A mail server on your own network with a self-signed certificate
+  keeps working only if you name it (or `email`) in `JARVIS_TLS_INSECURE_TARGETS`.
+
+**Your files in the HUD**
+- New Console panel **Files** (Admin group): browse the folders you approve, read a text file,
+  download a file, upload new files (pick them or drop them on the list) and make folders. By
+  default it shows Nerva's own `workspace`, `outputs` and `reports` folders; list others in
+  `JARVIS_FILE_BROWSER_DIRS`. Your home folder, `/`, Nerva's data folder and code, and anything
+  holding keys or settings can never be one of them.
+- Keys, passwords, tokens, `.env`, SSH and GPG folders, databases and hidden files are never
+  shown, read or written, even inside an approved folder; the list says how many it hid. Links
+  are never followed and a file with a second name (a hard link) is never read. Up to 100 MB per
+  file (`JARVIS_FILE_BROWSER_MAX_BYTES`). An upload never replaces an existing file.
+- Rename and delete are never done on the click: each becomes a card in your decision inbox and
+  happens only when you accept it, and only if the file is still the one on the card.
 
 **Files and voice notes in Telegram replies, and SMS as a channel**
 - When Nerva makes a file for you (a chart, an image, a report, a recording), it can now send it

@@ -306,7 +306,10 @@ _RAW_ENV_READ = re.compile(r"os\.getenv\(|os\.environ\.get\(|os\.environ\[")
 
 # Lower this when you migrate reads. Raising it should be a deliberate,
 # explained choice in the PR — not a reflex to get CI green.
-MAX_RAW_ENV_READS = 107  # RB-2: the bind guard reads its tokens and host under either spelling
+MAX_RAW_ENV_READS = 110  # RB-2: the bind guard reads its tokens and host under either spelling;
+# G21: channel_config places and withdraws channel values in the process environment itself
+# (two `os.environ[name] = value` writes) and reads each spelling raw in one helper to know
+# which values it placed — env_config's merged, pin-aware read cannot answer that.
 
 
 def _raw_env_read_sites():
