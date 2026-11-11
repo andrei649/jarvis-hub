@@ -47,8 +47,9 @@ Safe mode only takes things away. It leaves out, at boot and at every later relo
   conversation or as the hub-wide default (``personality_overlays.json``); the choices
   are kept for the next normal boot, and ``/personality`` refuses to change them.
 
-There are no shell hooks to leave out: Nerva runs no owner-configured hook commands (the
-voice command providers above are the one owner-configured program, and they stay off).
+- (G17) owner hooks: no owner hook runs, on any event (the ``owner_hooks`` layer); a
+  ``tool.before`` guard does not block either. The definitions are kept for the next
+  normal boot.
 
 Nothing is relaxed: the kernel, the approval floor, the plugin gate and the egress
 policy do not read this flag. It is said on ``/healthz``, ``/readyz``, ``/status``,
@@ -88,6 +89,8 @@ LAYERS = (
     "company_mode",
     # H592 — the /personality style overlays (owner files and persisted choices).
     "personality_overlays",
+    # G17 — owner event hooks (H163/H021/H514/H408): none runs in safe mode.
+    "owner_hooks",
 )
 #: H490 — settings an owner can set looser than the shipped default (an approval that
 #: stops being asked, a wider tool offer, a bigger budget), each with how to take the

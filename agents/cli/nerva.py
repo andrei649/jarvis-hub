@@ -587,6 +587,40 @@ def build_parser() -> argparse.ArgumentParser:
     pairing_clear.add_argument("--confirm", action="store_true", help="actually drop them")
     pairing_clear.add_argument("--json", action="store_true")
 
+    hooks = verbs.add_parser(
+        "hooks", help="owner event hooks: programs that run on agent events, each behind an approval card (admin, G17)")
+    hooks_verbs = hooks.add_subparsers(dest="action", required=True, metavar="action")
+    hooks_list = hooks_verbs.add_parser(
+        "list", aliases=["ls"], help="every hook with its event, state and last run, and whether hooks can run here")
+    hooks_list.add_argument("--json", action="store_true")
+    hooks_add = hooks_verbs.add_parser(
+        "add", help="define a hook: queues an approval card showing the exact command; nothing runs until accepted")
+    hooks_add.add_argument("event", help="tool.before, tool.after, message.received, turn.completed, "
+                                         "session.started, session.ended, command.completed, "
+                                         "approval.requested or approval.decided")
+    hooks_add.add_argument("argv", nargs="+",
+                           help="the program (absolute path) and its fixed arguments; put -- before them")
+    hooks_add.add_argument("--matcher", help="tool events only: a tool name or glob (terminal_*)")
+    hooks_add.add_argument("--guard", action="store_true",
+                           help="tool.before only: if the hook fails, block the call (fail closed)")
+    hooks_add.add_argument("--timeout", type=int, help="seconds before the hook is killed")
+    hooks_add.add_argument("--name", help="a label")
+    hooks_add.add_argument("--replaces", help="the id of a hook this one replaces once accepted")
+    hooks_add.add_argument("--json", action="store_true")
+    for verb, text in (("disable", "switch a hook off now (no card)"),
+                       ("enable", "turn a switched-off hook back on (queues an approval card)"),
+                       ("remove", "delete a hook now (no card)")):
+        sub = hooks_verbs.add_parser(verb, aliases=["rm"] if verb == "remove" else [], help=text)
+        sub.add_argument("hook_id")
+        sub.add_argument("--json", action="store_true")
+    hooks_test = hooks_verbs.add_parser(
+        "test", help="run one active hook once against a synthetic event (audited as a test)")
+    hooks_test.add_argument("hook_id")
+    hooks_test.add_argument("--tool", default="terminal_run", help="the tool name in the synthetic event")
+    hooks_test.add_argument("--payload-file", help="a JSON object used as the synthetic tool_input")
+    hooks_test.add_argument("--json", action="store_true")
+    hooks_verbs.add_parser("doctor", help="check every hook: files unchanged since approval, and the blockers")
+
     memory = verbs.add_parser(
         "memory", help="the long-term memory every prompt carries: what it holds, reset it, switch it off (H422)")
     memory_verbs = memory.add_subparsers(dest="action", metavar="action")
@@ -6749,6 +6783,91 @@ def cmd_project(ns: argparse.Namespace, ctx: Context) -> int:
     return code if 0 <= code <= 255 and (code != 0 or result.get("ok") is True) else EXIT_FAILED
 
 
+def cmd_hooks(ns: argparse.Namespace, ctx: Context) -> int:
+    """G17 — the owner's event hooks, over the same admin routes as the HUD's Hooks panel
+    (agents/core/routers/hooks.py). ``add`` and ``enable`` only queue an approval card;
+    ``disable`` and ``remove`` narrow what runs and apply at once."""
+    client = ctx.client()
+    action = {"ls": "list", "rm": "remove"}.get(ns.action, ns.action)
+    if action in ("list", "doctor"):
+        reply = client.get("/api/hooks")
+        hooks = reply.get("hooks") if isinstance(reply, dict) else None
+        if not isinstance(hooks, list):
+            ctx.err.write("unexpected reply from the hub: no list of hooks in it\n")
+            return EXIT_FAILED
+        if getattr(ns, "json", False):
+            ctx.dump(reply)
+            return EXIT_OK
+        status = reply.get("status") if isinstance(reply.get("status"), dict) else {}
+        blockers = status.get("blockers") or []
+        ctx.say("hooks can run here" if status.get("ready") else
+                "hooks cannot run here: " + ", ".join(str(b) for b in blockers))
+        if not hooks:
+            ctx.say("no hooks")
+        problems = 0
+        for hook in hooks:
+            if not isinstance(hook, dict):
+                continue
+            flags = [hook.get("status") or "?"]
+            if hook.get("guard"):
+                flags.append("guard")
+            if hook.get("matcher"):
+                flags.append(f"tools={hook['matcher']}")
+            if hook.get("binding_current") is False:
+                flags.append("FILES CHANGED since approval: it will not run")
+                problems += 1
+            last = hook.get("last_run") if isinstance(hook.get("last_run"), dict) else None
+            if last:
+                flags.append(f"last run {last.get('outcome')}")
+            ctx.say(f"{hook.get('id')}  {hook.get('event')}  {' · '.join(flags)}")
+            ctx.say(f"    {hook.get('command')}")
+        if action == "doctor":
+            return EXIT_FAILED if problems or blockers else EXIT_OK
+        return EXIT_OK
+    if action == "add":
+        body: dict[str, Any] = {"event": ns.event, "argv": list(ns.argv), "guard": bool(ns.guard)}
+        for key, value in (("matcher", ns.matcher), ("timeout_s", ns.timeout), ("name", ns.name),
+                           ("replaces", ns.replaces)):
+            if value is not None:
+                body[key] = value
+        reply = client.post("/api/hooks", body)
+    elif action == "remove":
+        reply = client.request("DELETE", f"/api/hooks/{quote(ns.hook_id, safe='')}")
+    elif action == "test":
+        body = {"tool": ns.tool}
+        if ns.payload_file:
+            try:
+                with open(ns.payload_file, encoding="utf-8") as fh:
+                    tool_input = json.load(fh)
+            except (OSError, ValueError) as exc:
+                ctx.err.write(f"could not read {ns.payload_file}: {exc}\n")
+                return EXIT_USAGE
+            if not isinstance(tool_input, dict):
+                ctx.err.write("the payload file must hold a JSON object\n")
+                return EXIT_USAGE
+            body["tool_input"] = tool_input
+        reply = client.post(f"/api/hooks/{quote(ns.hook_id, safe='')}/test", body)
+    else:
+        reply = client.post(f"/api/hooks/{quote(ns.hook_id, safe='')}/{action}")
+    reply = reply if isinstance(reply, dict) else {}
+    if getattr(ns, "json", False):
+        ctx.dump(reply)
+        return EXIT_OK
+    if action in ("add", "enable"):
+        ctx.say(f"approval card {reply.get('task_id')} queued for hook {(reply.get('hook') or {}).get('id')}; "
+                "it runs only after you accept it (nerva approvals)")
+    elif action == "test":
+        run = reply.get("run") if isinstance(reply.get("run"), dict) else {}
+        ctx.say(f"{run.get('outcome')}" + (" · would block" if run.get("blocked") else "")
+                + (f" · {run.get('reason')}" if run.get("reason") else "")
+                + (f" · {run.get('message')}" if run.get("message") else ""))
+    elif action == "remove":
+        ctx.say(f"removed {reply.get('removed')}")
+    else:
+        ctx.say(f"{ns.hook_id} switched off")
+    return EXIT_OK
+
+
 _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "secrets": cmd_secrets,
     "kanban": cmd_kanban,
@@ -6772,6 +6891,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "company": cmd_company,
     "goal": cmd_goal,
     "pairing": cmd_pairing,
+    "hooks": cmd_hooks,
     "memory": cmd_memory,
     "agents": cmd_agents,
     # argparse names the verb as typed, so each alias dispatches too.

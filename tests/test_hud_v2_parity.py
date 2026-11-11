@@ -213,6 +213,7 @@ RULES = [
     # admin (settings / env / models / llm lifecycle / oauth / oracle / plugins / voice / prompts / stats)
     ("/api/admin/", "admin"),
     ("/api/files/", "admin"),  # G21 (H142): the owner's file browser (Files panel)
+    ("/api/hooks", "admin"),  # G17 (H163/H021/H514/H408): owner event hooks (Hooks panel)
     ("/plugins", "admin"),
     ("/api/plugins/extensions", "admin"),  # S1 inspection view pending below; CLI exists
     ("/api/models", "admin"),

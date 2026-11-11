@@ -418,6 +418,8 @@ HUB_ENV_SUFFIXES = frozenset({
     "SMS_REPLY_MAX_PER_HOUR", "SMS_WEBHOOK_URL",
     # G21: the owner's HUD file browser (H142).
     "FILE_BROWSER_DIRS", "FILE_BROWSER_MAX_BYTES",
+    # G17: owner event hooks (H163/H021/H514/H408).
+    "HOOKS", "HOOKS_MAX_TIMEOUT_S",
 })
 
 #: Name families built at run time (``JARVIS_ROLE_<NAME>_MODEL``, ``JARVIS_VLM_<PRESET>…``,

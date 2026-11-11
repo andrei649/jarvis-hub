@@ -4,6 +4,12 @@
 
 ### What changed for you — 2026-11-11
 
+**Your own programs on agent events, each behind an approval card (hooks)**
+- Console → **Hooks** (or `nerva hooks add <event> -- /path/to/program …`) runs a program of yours when something happens: before or after a tool call, when a message arrives or a turn ends, when a session starts or ends, after a slash command, when an approval is asked or decided. The event reaches the program as JSON on its stdin, in the same shape Hermes uses, so hook scripts carry over.
+- Adding a hook only puts a card in your decision inbox showing the exact command and the fingerprint of every file it runs. Nothing runs until you accept that card. If you edit the script afterwards, the hook stops until you approve it again. Switching a hook off or removing it is immediate.
+- A hook on `tool.before` can stop a tool call (exit code 2, or `{"decision": "block"}`). It can never let through a call that would otherwise wait for you or be refused, and it cannot change the call. Mark it a **guard** and a hook that crashes or times out blocks the call too; otherwise the call goes ahead and the failure is logged.
+- Hooks run without the hub's keys in their environment, in a private folder, with a timeout. They need an admin token on the hub, and none run in safe mode or while the emergency stop is on. `NERVA_HOOKS=0` switches them all off. Details: `docs/HOOKS.md`.
+
 **The desktop app starts Nerva, a hotkey from anywhere, notifications and `nerva://` links**
 - The desktop app now starts the hub itself when none is running (from your checkout's
   `.venv`, like `start.sh`) and opens the HUD only once the hub says it is ready. Quitting

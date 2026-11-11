@@ -89,6 +89,15 @@ def score_scope(snapshot: Mapping):
             yield observation
 
 
+def _hooks_watch(event: str) -> bool:
+    try:
+        from ..hooks.store import active_for
+
+        return bool(active_for(event))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def requested(snapshot: Mapping) -> None:
     """Observe one validated physical send attempt without affecting the request."""
     try:
@@ -107,7 +116,8 @@ def requested(snapshot: Mapping) -> None:
         # Reuse only an already-redacted bounded excerpt for the decided event.
         observation.excerpts = {key: clean[key][:200] for key in ("command", "description")}
         report = EXTENSION_EVENTS.emit("approval.smart.requested", **clean)
-        observation.dispatched = report is not None
+        # G17: an owner hook that watches the decision pairs with this request too.
+        observation.dispatched = report is not None or _hooks_watch("approval.decided")
     except Exception:  # noqa: BLE001 — observers never decide whether a request proceeds
         logger.debug("smart request observation skipped")
 

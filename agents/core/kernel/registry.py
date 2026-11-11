@@ -140,6 +140,10 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # first; a durable accepted task is required before any process exists, and
     # the irreversible tier keeps this at the approval QUEUE floor.
     "terminal.exec": Mediation.KERNEL,
+    # G17 owner hooks: each run of an owner-approved hook program crosses the kernel.
+    # It is granted only through the receipt of the human-accepted ``hooks.define``
+    # task that activated that exact hook (argv + file digests), never by policy alone.
+    "hook.exec": Mediation.KERNEL,
     # Owner checkpoint effects still require an exact human task at the producer
     # and executor; this classification makes their kernel crossing visible.
     "checkpoint.restore": Mediation.KERNEL,

@@ -225,8 +225,15 @@ class LocalHostTransport:
         timeout: int | None = None,
         max_output: int | None = None,
         checkpoint_intent: TerminalCheckpointIntent | None = None,
+        stdin_data: bytes | None = None,
     ) -> dict[str, Any]:
-        """Execute ``argv`` verbatim; every refusal is a named reason, never an exception."""
+        """Execute ``argv`` verbatim; every refusal is a named reason, never an exception.
+
+        ``stdin_data`` (G17 owner hooks) is written to the child's stdin, which is then
+        closed; without it stdin is ``/dev/null`` as before. It is data, never argv: no byte
+        of it reaches the command line."""
+        if stdin_data is not None and (not isinstance(stdin_data, bytes) or checkpoint_intent is not None):
+            return {"ok": False, "reason": "invalid_stdin"}
         invalid = self.validate_argv(argv)
         if invalid is not None:
             return {"ok": False, "reason": invalid}
@@ -392,7 +399,7 @@ class LocalHostTransport:
                 *argv_list,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                stdin=asyncio.subprocess.DEVNULL,
+                stdin=asyncio.subprocess.DEVNULL if stdin_data is None else asyncio.subprocess.PIPE,
                 cwd=str(workdir),
                 env=env,
             )
@@ -428,11 +435,27 @@ class LocalHostTransport:
 
         from .output_capture import OutputCapture
         capture = OutputCapture()
+
+        async def feed_stdin() -> None:
+            # Written alongside the reads, so a child that prints before it reads (or never
+            # reads) cannot deadlock on a full pipe; a child that exits early is not an error.
+            if stdin_data is None or getattr(proc, "stdin", None) is None:
+                return
+            try:
+                proc.stdin.write(stdin_data)
+                await proc.stdin.drain()
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
+            finally:
+                with contextlib.suppress(Exception):
+                    proc.stdin.close()
+
         try:
-            (out_head, out_tail, out_total), (err_head, err_tail, err_total) = await asyncio.wait_for(
+            (out_head, out_tail, out_total), (err_head, err_tail, err_total), _fed = await asyncio.wait_for(
                 asyncio.gather(
                     read_capped_stream(proc.stdout, max_content_bytes=cap, sink=capture.feed),
                     read_capped_stream(proc.stderr, max_content_bytes=cap),
+                    feed_stdin(),
                 ),
                 timeout=bounded,
             )

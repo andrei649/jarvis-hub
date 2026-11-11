@@ -12,6 +12,7 @@
  "file.write": "kernel",
  "goal.approve": "kernel",
  "hermes.runtime": "kernel",
+ "hook.exec": "kernel",
  "host.control": "kernel",
  "house.control": "kernel",
  "house.recovery": "kernel",

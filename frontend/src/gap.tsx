@@ -52,6 +52,7 @@ import { LlmRoutingPanel } from './panels/llm-routing';
 import { CustomEndpointsPanel } from './panels/custom-endpoints';
 import { IntegrationsPanel } from './panels/integrations';
 import { FilesPanel } from './panels/files';
+import { HooksPanel } from './panels/hooks';
 import { ChannelsConfigPanel } from './panels/channels-config';
 import { SystemUpdatePanel } from './panels/system-update';
 import { WorkflowTracesPanel } from './panels/workflows-advanced';
@@ -5742,6 +5743,7 @@ const PANEL_COMPONENTS = {
   SupportVoicePanel,
   BackupPanel,
   FilesPanel,
+  HooksPanel,
   ChannelsConfigPanel,
   SystemUpdatePanel,
   OAuthPanel,

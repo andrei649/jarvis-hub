@@ -89,7 +89,7 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert set(tree) == {
         "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "inspect", "logs", "estop", "jobs", "sessions", "chat", "send", "completion",
         "prompt-size", "desktop", "security", "todo", "skills", "company", "auth", "checkpoints", "kanban", "project", "secrets", "support",
-        "uninstall", "backup", "pairing", "webhook", "provider", "goal", "memory", "agents",
+        "uninstall", "backup", "pairing", "hooks", "webhook", "provider", "goal", "memory", "agents",
         "journey", "learning", "memory-graph", "mcp", "curator",
     }
     # H027: owner-governed skill curation. Reads (status, usage, ledger, lists) change nothing;

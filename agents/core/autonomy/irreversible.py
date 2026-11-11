@@ -47,6 +47,8 @@ BUILTIN_KINDS: dict[str, tuple[str, str]] = {
     # G21 · H142: the HUD file browser's rename and delete, re-walked before they apply.
     "files.delete": ("agents.core.file_browser", "apply_approved"),
     "files.rename": ("agents.core.file_browser", "apply_approved"),
+    # G17 · H163/H021/H514/H408: an owner hook runs a program on this machine on an event.
+    "hooks.define": ("agents.core.hooks.store", "apply_approved"),
 }
 _APPLY: dict[str, Apply] = {}
 #: Kinds some processes must leave for another one: kind → (module, function), the

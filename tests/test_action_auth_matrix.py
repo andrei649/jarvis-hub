@@ -1141,6 +1141,37 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
             assert code == (503 if enabled and spy._verdict is Verdict.DENY else 202)
         finally:
             rig.q.close()
+    elif kind == "hook.exec":
+        # G17: every run of an owner-approved hook asks the kernel before a process exists.
+        import asyncio
+        import sys as _sys
+        from types import SimpleNamespace
+
+        from agents.core.hooks import runner, store
+
+        monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "hooks-home"))
+        script = tmp_path / "hook.py"
+        script.write_text("import sys; sys.stdin.read()\n", encoding="utf-8")
+        tasks = []
+        autonomy = SimpleNamespace(govern_enqueue=lambda **kw: tasks.append(kw) or len(tasks))
+        orch = SimpleNamespace(autonomy=autonomy, intent_log=None, kill_switch=None)
+        hook = store.request_define(orch, event="tool.before", argv=[_sys.executable, str(script)])
+        task = SimpleNamespace(id=hook["pending"], decision="accept", decided_by="owner",
+                               payload=dict(tasks[-1]["payload"]))
+        assert asyncio.run(store.apply_approved(task, orch))["status"] == "ok"
+        ran = []
+
+        class _Transport:
+            async def run(self, argv, **_kw):
+                ran.append(argv)
+                return {"ok": True, "exit_code": 0, "stdout": "", "stderr": ""}
+
+        monkeypatch.setattr(runner, "admin_credential_configured", lambda: True)
+        monkeypatch.setattr(runner, "kernel_for", lambda _orch: (lambda action, **_kw: spy(action)))
+        monkeypatch.setattr(runner, "transport_for", lambda _timeout: _Transport())
+        asyncio.run(runner.before_tool("terminal_run", {"command": "ls"}, orch=orch))
+        if spy.calls and spy._verdict is not Verdict.GRANT:
+            assert not ran
     elif kind == "session.loop_tick":
         # H460/H578: every /loop wakeup asks the kernel before its turn runs.
         from types import SimpleNamespace
