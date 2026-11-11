@@ -358,3 +358,121 @@ async def ops_restart(body: RestartBody):
                             status_code=409)
     await _ops_audit("hub restart requested from the HUD", "ops_restart")
     return nocache_json({**record, "restart": "requested"}, status_code=202)
+
+
+# ── H624: trusted update, verified restart, rollback (each act behind an approval card) ──
+
+class UpdateApplyBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    ref: StrictStr | None = Field(default=None, min_length=1, max_length=200)
+    dirty_policy: StrictStr = Field(default="refuse", pattern=r"^(refuse|stash)$")
+
+
+class UpdateRollbackBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    restore_data: bool | None = None
+
+
+class UpdateTrustBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    mode: StrictStr = Field(pattern=r"^(ssh|gpg|pinned)$")
+    keys: list[StrictStr] | None = Field(default=None, max_length=8)
+    principal: StrictStr | None = Field(default=None, max_length=64)
+    public_key: StrictStr | None = Field(default=None, max_length=64000)
+    fingerprints: list[StrictStr] | None = Field(default=None, max_length=8)
+    commit: StrictStr | None = Field(default=None, max_length=64)
+
+
+_UPDATE_REFUSAL_STATUS = {"invalid_ref": 400, "invalid_dirty_policy": 400, "invalid_mode": 400,
+                          "invalid_commit": 400, "invalid_principal": 400, "invalid_key": 400,
+                          "invalid_fingerprint": 400, "fingerprint_mismatch": 400,
+                          "approval_queue_unavailable": 503, "approval_queue_refused": 503}
+
+
+def _update_refusal(exc):
+    return nocache_json({"error": exc.code, "detail": exc.detail},
+                        status_code=_UPDATE_REFUSAL_STATUS.get(exc.code, 409))
+
+
+@router.get("/api/admin/ops/update/plan", dependencies=[Depends(admin_guard)])
+async def ops_update_plan(ref: str | None = None, dirty_policy: str = "refuse"):
+    """What applying ``ref`` (default: the pinned commit, else the tracked upstream) would
+    change — commits, files, dependency lock, possible migrations, versions, the trust
+    verdict — and every reason it would be refused. Reads only."""
+    import asyncio
+
+    from agents.core import hub_update_apply
+
+    try:
+        return nocache_json(await asyncio.to_thread(hub_update_apply.plan, ref, dirty_policy))
+    except hub_update_apply.UpdateRefused as exc:
+        return _update_refusal(exc)
+
+
+@router.get("/api/admin/ops/update/receipts", dependencies=[Depends(admin_guard)])
+async def ops_update_receipts():
+    """The pinned trust, the update in flight and the update/rollback receipts."""
+    import asyncio
+
+    from agents.core import hub_update_apply
+
+    return nocache_json(await asyncio.to_thread(hub_update_apply.status))
+
+
+async def _queue_update(fn, *args):
+    import asyncio
+
+    from agents.core import hub_update_apply
+
+    orch = get_orch()
+    if orch is None:
+        return None, nocache_json({"error": "hub_not_ready"}, status_code=503)
+    try:
+        return await asyncio.to_thread(fn, orch, *args), None
+    except hub_update_apply.UpdateRefused as exc:
+        return None, _update_refusal(exc)
+
+
+@router.post("/api/admin/ops/update/apply", dependencies=_OPS_WRITE)
+async def ops_update_apply(body: UpdateApplyBody):
+    """Queue a ``hub.update`` card (irreversible tier) for the verified target; nothing
+    changes until a person accepts it."""
+    from agents.core import hub_update_apply
+
+    result, refused = await _queue_update(hub_update_apply.request_apply, body.ref, body.dirty_policy)
+    if refused is not None:
+        return refused
+    plan = result["plan"]
+    await _ops_audit(f"update to {plan['to']} queued for approval (task {result['pending']})", "ops_update_apply")
+    return nocache_json({"status": "pending_approval", "task_id": result["pending"], "from": plan["from"],
+                         "to": plan["to"], "plan": plan}, status_code=202)
+
+
+@router.post("/api/admin/ops/update/rollback", dependencies=_OPS_WRITE)
+async def ops_update_rollback(body: UpdateRollbackBody):
+    """Queue a ``hub.update_rollback`` card for the last verified update."""
+    from agents.core import hub_update_apply
+
+    result, refused = await _queue_update(hub_update_apply.request_rollback, body.restore_data)
+    if refused is not None:
+        return refused
+    plan = result["plan"]
+    await _ops_audit(f"rollback to {plan['to']} queued for approval (task {result['pending']})",
+                     "ops_update_rollback")
+    return nocache_json({"status": "pending_approval", "task_id": result["pending"], "plan": plan},
+                        status_code=202)
+
+
+@router.post("/api/admin/ops/update/trust", dependencies=_OPS_WRITE)
+async def ops_update_trust(body: UpdateTrustBody):
+    """Queue a ``hub.update_trust`` card: which signing keys (SSH or OpenPGP) or which one
+    commit an update may apply."""
+    from agents.core import hub_update_apply
+
+    result, refused = await _queue_update(hub_update_apply.request_trust, body.model_dump(exclude_none=True))
+    if refused is not None:
+        return refused
+    await _ops_audit(f"update trust change ({result['mode']}) queued for approval (task {result['pending']})",
+                     "ops_update_trust")
+    return nocache_json({"status": "pending_approval", "task_id": result["pending"], "mode": result["mode"]},
+                        status_code=202)

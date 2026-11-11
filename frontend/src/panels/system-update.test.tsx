@@ -79,6 +79,37 @@ describe('Restart / Update panel', () => {
     expect((screen.getByText('restart…') as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it('with trust pinned, plans the update and queues an approval card (H624)', async () => {
+    const READY = { ...CHECK, dirty: false, can_apply: true, apply_refused: [],
+      trust: { configured: true, mode: 'gpg', fingerprints: ['ABCDEF'] }, in_progress: null, last_receipt: null };
+    const PLAN = { can_apply: true, refused: [], from: 'a'.repeat(40), to: 'b'.repeat(40), from_version: '1.0.0', to_version: '1.1.0',
+      commit_count: 1, file_count: 2, migrations: [], dependencies: { changed: false, command: null },
+      commits: [{ sha: 'b'.repeat(40), subject: 'release 1.1.0' }] };
+    const calls = hub((url, method) => {
+      if (url.includes('/api/admin/ops/update/plan')) return { status: 200, body: PLAN };
+      if (url.includes('/api/admin/ops/update/apply')) return { status: 202, body: { task_id: 7, status: 'pending_approval' } };
+      return { status: 200, body: READY };
+    });
+    render(<SystemUpdatePanel />);
+    expect(await screen.findByText(/gpg · ABCDEF/)).toBeTruthy();
+    fireEvent.click(screen.getByText('plan'));
+    expect(await screen.findByText(/release 1.1.0/)).toBeTruthy();
+    fireEvent.click(screen.getByText('request update'));
+    expect(await screen.findByText(/approval card #7 queued/)).toBeTruthy();
+    expect(calls.find((c) => c.url.includes('/update/apply')).body).toEqual({});
+  });
+
+  it('offers a rollback card after a verified update and shows one in flight', async () => {
+    const DONE = { ...CHECK, dirty: false, behind: 0, trust: { configured: true, mode: 'pinned', commit: 'c'.repeat(40) },
+      in_progress: null, last_receipt: { id: 'r1', kind: 'update', from: 'a'.repeat(40), to: 'b'.repeat(40), result: 'verified' } };
+    const calls = hub((url) => (url.includes('/update/rollback') ? { status: 202, body: { task_id: 9 } } : { status: 200, body: DONE }));
+    render(<SystemUpdatePanel />);
+    expect(await screen.findByText(/update aaaaaaaaaaaa → bbbbbbbbbbbb · verified/)).toBeTruthy();
+    fireEvent.click(screen.getByText('request rollback'));
+    expect(await screen.findByText(/approval card #9 queued: roll back to aaaaaaaaaaaa/)).toBeTruthy();
+    expect(calls.some((c) => c.url.includes('/update/rollback') && c.method === 'POST')).toBe(true);
+  });
+
   it('formats ages', () => {
     expect(ago(null)).toBe('never fetched');
     expect(ago(30)).toBe('30s ago');

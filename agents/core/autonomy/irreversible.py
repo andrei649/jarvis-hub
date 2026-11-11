@@ -51,12 +51,19 @@ BUILTIN_KINDS: dict[str, tuple[str, str]] = {
     "lsp.install": ("agents.core.codeintel.lsp.install", "apply_approved"),
     # G17 · H163/H021/H514/H408: an owner hook runs a program on this machine on an event.
     "hooks.define": ("agents.core.hooks.store", "apply_approved"),
+    # H624: updating the hub's own code, rolling it back, and which commits it may update to.
+    "hub.update": ("agents.core.hub_update_apply", "apply_approved"),
+    "hub.update_rollback": ("agents.core.hub_update_apply", "apply_approved"),
+    "hub.update_trust": ("agents.core.hub_update_apply", "apply_approved"),
 }
 _APPLY: dict[str, Apply] = {}
 #: Kinds some processes must leave for another one: kind → (module, function), the
 #: function answering ``task`` with a reason to leave it APPROVED here, or None.
 BUILTIN_HOLDS: dict[str, tuple[str, str]] = {
     "backup.restore": ("agents.core.backup", "restore_held_here"),   # H010 review r6
+    # H624: only the hub can restart itself into the new (or previous) code.
+    "hub.update": ("agents.core.hub_update_apply", "held_here"),
+    "hub.update_rollback": ("agents.core.hub_update_apply", "held_here"),
 }
 
 

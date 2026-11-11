@@ -575,6 +575,14 @@ MACHINE_FACING: dict[str, str] = {
     "/api/admin/backup/restore":
         "H010: queued by `nerva backup restore` (agents/cli/nerva.py) as an irreversible-tier "
         "card; the HUD accepts it in the decision inbox like any other approval",
+    "/api/admin/ops/update/trust":
+        "H624: queued by `nerva update trust` (agents/cli/nerva.py) from a key file on the "
+        "owner's machine as an irreversible-tier card; the HUD shows the pinned trust from "
+        "GET /api/admin/ops/update and accepts the card in the decision inbox",
+    "/api/admin/ops/update/receipts":
+        "H624: the receipt history read by `nerva update status` (agents/cli/nerva.py); the "
+        "HUD's Restart / Update panel shows the in-flight and last receipt from "
+        "GET /api/admin/ops/update",
     "/api/vlm/composer/status":
         "legacy vision preview read by `nerva chat --image`; the web composer uses "
         "prompt-bound /api/vlm/composer/prepare instead",

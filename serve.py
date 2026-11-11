@@ -167,6 +167,22 @@ def _leave_refused(refused) -> None:
     raise SystemExit(refused.exit_status) from None
 
 
+def update_boot_guard() -> bool:
+    """H624: count the boots of an update that has not been verified yet; when the new code
+    has failed to start too many times, move the checkout back to the previous commit (and
+    stage the pre-update backup when a migration may have run) before anything else loads.
+    POSIX re-executes so only the previous code runs; elsewhere the next start does."""
+    from agents.core import hub_update_apply
+
+    if not hub_update_apply.boot_guard():
+        return False
+    print("Nerva: the updated code did not start; rolled back to the previous commit", file=sys.stderr)
+    if os.name != "nt":
+        os.execv(sys.executable, list(sys.orig_argv))  # nosec B606 - this process's own argv
+    return True
+
+
+update_boot_guard()
 apply_staged_restore()
 
 # O26-P0.6 (F6): the boot guards moved to agents/core/boot_guards.py so the

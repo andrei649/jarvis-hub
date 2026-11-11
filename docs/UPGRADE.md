@@ -29,11 +29,40 @@ From a **release bundle** instead of git: download `jarvis-<ver>.tar.gz`, verify
 (`sha256sum -c SHA256SUMS`, and `gpg --verify` if signed — see [RELEASE.md](RELEASE.md)),
 unpack, and re-run the install step.
 
-**From the HUD (check and restart only):** Console → Admin → **Restart / Update** shows the
-version, branch, commit, whether the tree has uncommitted changes and how many commits the
-checkout is behind its upstream as of the last fetch ("check now" fetches). It restarts Nerva
-when it was started by `serve.py`. It does **not** apply an update: this repository has no
-signature or pinned-ref check for its own code, so pulling new code stays the manual steps above.
+**From Nerva itself (git checkouts, H624):** pin trust once, then plan, apply, and roll back.
+
+```bash
+nerva update trust --ssh-key ~/.ssh/release_signing.pub   # or --gpg-key key.asc --fingerprint <FPR>, or --pin <commit>
+nerva update plan                                         # commits, files, lock, migrations, version from → to
+nerva update apply                                        # queues an approval card; accept it in the approval queue
+nerva update status                                       # trust, the update in flight, the receipts
+nerva update rollback                                     # queues a card that returns to the commit before the last update
+```
+
+- **Trust.** Nerva applies only a commit (or a tag pointing at it) whose signature verifies against
+  the keys you pinned, or the one commit you pinned. SSH keys go into Nerva's own allowed-signers
+  file and OpenPGP keys into a dedicated keyring, both under `<data root>/update/`; your global
+  git and gpg configuration is not used, and the repository's own git config cannot choose the
+  program that verifies. With no trust pinned every apply is refused. Changing trust is itself an
+  approval card at the irreversible tier.
+- **Apply.** After you accept the card: HEAD, the target and its signature are re-checked, a full
+  backup is created and verified, a receipt is written (`<data root>/update/receipts.jsonl`), the
+  checkout is fast-forwarded to the verified sha (never a merge), `requirements-beta.lock` is
+  installed with `--require-hashes --only-binary :all: --no-deps` if it changed (wheels only, so
+  no package build script runs), and Nerva restarts. Schema migrations run as each store opens.
+  The log is shown in Console → Restart / Update and kept in the receipt.
+- **Check after restart.** The restarted hub polls its own `/readyz` and checks it booted from the
+  target commit and reports the target's version (`JARVIS_UPDATE_VERIFY_SECONDS`, default 180).
+  If not, it returns to the previous commit, reinstalls the previous lock if it had changed,
+  stages the pre-update backup for restore when a migration may have run, and restarts. If the
+  new code cannot start at all, `serve.py` does the same after `JARVIS_UPDATE_MAX_BOOTS`
+  (default 3) failed starts.
+- **Dirty tree.** Uncommitted changes refuse the update; `nerva update apply --stash` stashes them
+  first (never discards them) and the receipt names the stash.
+- **Requirements.** The hub must be able to restart itself (started by `serve.py`, a service with
+  the restart marker) so the new code can be checked; containers update by image.
+- **Not done by the updater:** rebuilding the HUD when `frontend/` changed (the plan says so),
+  channel `/update` commands, and release bundles (below).
 
 ## Database migrations — automatic
 
@@ -54,6 +83,12 @@ Stop the running server and start the new one. Shutdown is **graceful** (H23.11)
 checkpoints before exiting, bounded by `JARVIS_SHUTDOWN_TIMEOUT`.
 
 ## Rollback
+
+After an update made by Nerva: `nerva update rollback` (an approval card; `--restore-data yes|no`
+chooses whether the pre-update backup is restored — by default only when a migration may have
+run), or with the hub stopped `nerva update rollback --offline --yes`.
+
+By hand:
 
 1. Restore the pre-upgrade **backup** (covers data + settings at rest).
 2. Check out the previous **git tag** / unpack the previous **release bundle**.

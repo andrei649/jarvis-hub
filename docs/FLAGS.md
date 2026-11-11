@@ -2110,3 +2110,13 @@ Names that stay `JARVIS_`-only because nothing in the hub reads them through the
 `JARVIS_WORLDVIEW` (a comment in the systemd env template; no code reads it) and the
 `$JARVIS_ADMIN_TOKEN` / `$JARVIS_USER_TOKEN` shell variables in the generated API sweep
 snippets (`scripts/gen_api_sweep.py`, text for a human to paste).
+
+## Updating the hub (H624)
+
+| Variable | Default | What it changes |
+| --- | --- | --- |
+| `JARVIS_UPDATE_VERIFY_SECONDS` | `180` (minimum 10) | How long the restarted hub waits for its own `/readyz`, the target commit and the target version before it rolls the update back. |
+| `JARVIS_UPDATE_MAX_BOOTS` | `3` | How many starts of an unverified update `serve.py` allows before it rolls the checkout back without the new code. |
+
+Trust (which keys or commit an update may apply) is not an environment variable: it is pinned by an
+approval card (`nerva update trust`) and kept under `<data root>/update/`.

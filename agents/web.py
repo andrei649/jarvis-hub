@@ -792,6 +792,10 @@ async def lifespan(application: FastAPI):
     # restart) and mark this run as not yet cleanly stopped.
     from agents.core import resource_pressure
     resource_pressure.monitor().start()
+    # H624: after an update's restart, check that this hub serves the new commit and roll
+    # the update back when it does not (a background check; a no-op with no update in flight).
+    from agents.core import hub_update_apply
+    hub_update_apply.on_boot()
     # Nerva Workspace: say now, not at the first sign-in, when this hub's audit key is not
     # the trail's (it then refuses every write with 503; reads the database read-only).
     from agents.core.workspace import audit as workspace_audit

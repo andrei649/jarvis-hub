@@ -29,6 +29,22 @@
 - Everything the member asks for runs here as that member, never as you: your own approval rules and emergency stops apply, a read-only tool answers at once, anything that changes something becomes a card in your inbox. You can pause a room's remote members with the `room:<id>` kill-switch scope.
 - Revoke a member and its next call is refused. Change its tools and its permission stops working until you invite it again. Its permission expires after an hour of dispatching (renewed automatically) and for good after a week without renewal.
 - Hub-to-hub messages are signed with keys each hub remembers for the other, so a copied permission, a changed message or a replayed one is refused. Keys and permissions are never shown.
+**Update Nerva from the HUD or the command line, and undo it**
+- First pin what Nerva may update to, once: your SSH or OpenPGP signing keys, or one exact
+  commit (`nerva update trust --ssh-key ~/.ssh/id_ed25519.pub`, `--gpg-key key.asc
+  --fingerprint …`, or `--pin <commit>`). Changing it is an approval card. Without it Nerva
+  refuses every update and says why.
+- `nerva update plan` (or "plan" in Console → Restart / Update) shows the commits, files,
+  whether the dependency lock changed, files that may migrate, and the version from → to.
+- `nerva update apply` queues an approval card. When you accept it, Nerva takes and verifies a
+  full backup, moves the checkout forward to the signed commit only, installs the hash-pinned
+  lock if it changed, restarts, and checks that it now serves the new version. If that check
+  fails it goes back to the previous commit (restoring the backup when a migration may have
+  run) and restarts again. A receipt records every step.
+- `nerva update rollback` undoes the last update, again behind an approval card;
+  `nerva update rollback --offline --yes` works when Nerva cannot start.
+- Uncommitted changes in the checkout stop an update, unless you ask for them to be stashed
+  (`--stash`); they are never discarded.
 
 **Merge overlapping skills, only when you say so**
 - In the Decision Inbox, "find overlaps" shows which of your skills cover the same ground

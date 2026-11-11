@@ -12942,6 +12942,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/ops/update/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ops Update Plan
+         * @description What applying ``ref`` (default: the pinned commit, else the tracked upstream) would
+         *     change — commits, files, dependency lock, possible migrations, versions, the trust
+         *     verdict — and every reason it would be refused. Reads only.
+         */
+        get: operations["ops_update_plan_api_admin_ops_update_plan_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ops/update/receipts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ops Update Receipts
+         * @description The pinned trust, the update in flight and the update/rollback receipts.
+         */
+        get: operations["ops_update_receipts_api_admin_ops_update_receipts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ops/update/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ops Update Apply
+         * @description Queue a ``hub.update`` card (irreversible tier) for the verified target; nothing
+         *     changes until a person accepts it.
+         */
+        post: operations["ops_update_apply_api_admin_ops_update_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ops/update/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ops Update Rollback
+         * @description Queue a ``hub.update_rollback`` card for the last verified update.
+         */
+        post: operations["ops_update_rollback_api_admin_ops_update_rollback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ops/update/trust": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ops Update Trust
+         * @description Queue a ``hub.update_trust`` card: which signing keys (SSH or OpenPGP) or which one
+         *     commit an update may apply.
+         */
+        post: operations["ops_update_trust_api_admin_ops_update_trust_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/media/devices": {
         parameters: {
             query?: never;
@@ -18974,6 +19078,21 @@ export interface components {
              */
             purge: boolean;
         };
+        /** UpdateApplyBody */
+        UpdateApplyBody: {
+            /** Ref */
+            ref?: string | null;
+            /**
+             * Dirty Policy
+             * @default refuse
+             */
+            dirty_policy: string;
+        };
+        /** UpdateRollbackBody */
+        UpdateRollbackBody: {
+            /** Restore Data */
+            restore_data?: boolean | null;
+        };
         /** UpdateTaskBody */
         UpdateTaskBody: {
             /** Status */
@@ -19012,6 +19131,21 @@ export interface components {
              * @default false
              */
             clear_reasoning_effort: boolean;
+        };
+        /** UpdateTrustBody */
+        UpdateTrustBody: {
+            /** Mode */
+            mode: string;
+            /** Keys */
+            keys?: string[] | null;
+            /** Principal */
+            principal?: string | null;
+            /** Public Key */
+            public_key?: string | null;
+            /** Fingerprints */
+            fingerprints?: string[] | null;
+            /** Commit */
+            commit?: string | null;
         };
         /** UseBody */
         UseBody: {
@@ -38975,6 +39109,157 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RestartBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ops_update_plan_api_admin_ops_update_plan_get: {
+        parameters: {
+            query?: {
+                ref?: string | null;
+                dirty_policy?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ops_update_receipts_api_admin_ops_update_receipts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    ops_update_apply_api_admin_ops_update_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateApplyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ops_update_rollback_api_admin_ops_update_rollback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRollbackBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ops_update_trust_api_admin_ops_update_trust_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTrustBody"];
             };
         };
         responses: {

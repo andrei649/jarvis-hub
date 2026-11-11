@@ -547,6 +547,38 @@ def build_parser() -> argparse.ArgumentParser:
     engage.add_argument("--reason", default="")
     estop_verbs.add_parser("resume", help="lift the emergency stop (admin)")
 
+    update = verbs.add_parser(
+        "update", help="update this install to a trusted commit, verify it, roll it back (admin, H624)")
+    update_verbs = update.add_subparsers(dest="action", required=True, metavar="action")
+    update_status = update_verbs.add_parser("status", help="trust, the update in flight and the last receipts")
+    update_status.add_argument("--json", action="store_true")
+    update_plan = update_verbs.add_parser(
+        "plan", help="what an update would change (commits, files, lock, migrations) and why it is refused")
+    update_plan.add_argument("--ref", default=None, help="a tag, branch or full commit (default: the pinned "
+                             "commit, else the tracked upstream)")
+    update_plan.add_argument("--json", action="store_true")
+    update_apply = update_verbs.add_parser(
+        "apply", help="queue an approval card for the update; a person accepts it in the approval queue")
+    update_apply.add_argument("--ref", default=None)
+    update_apply.add_argument("--stash", action="store_true",
+                              help="stash uncommitted changes first instead of refusing (never discards them)")
+    update_rollback = update_verbs.add_parser(
+        "rollback", help="queue a card to roll the last update back (--offline: the hub is not running)")
+    update_rollback.add_argument("--restore-data", choices=("yes", "no"), default=None,
+                                 help="restore the pre-update backup (default: when a migration may have run)")
+    update_rollback.add_argument("--offline", action="store_true",
+                                 help="roll back here, with no hub running (the owner at the machine)")
+    update_rollback.add_argument("--yes", action="store_true", help="confirm an --offline rollback")
+    update_trust = update_verbs.add_parser(
+        "trust", help="queue a card pinning which signing keys or commit an update may apply")
+    trust_how = update_trust.add_mutually_exclusive_group(required=True)
+    trust_how.add_argument("--ssh-key", action="append", metavar="FILE", help="an SSH public key file (repeatable)")
+    trust_how.add_argument("--gpg-key", metavar="FILE", help="an ASCII-armored OpenPGP public key block")
+    trust_how.add_argument("--pin", metavar="COMMIT", help="one exact commit (40 hex)")
+    update_trust.add_argument("--fingerprint", action="append", default=[],
+                              help="with --gpg-key: each primary key fingerprint, declared explicitly")
+    update_trust.add_argument("--principal", default="owner", help="with --ssh-key: the signer's name")
+
     lsp = verbs.add_parser("lsp", help="language servers for code diagnostics (H055)")
     lsp_verbs = lsp.add_subparsers(dest="action", required=True, metavar="action")
     lsp_verbs.add_parser("status", help="isolation, running servers and the broken set").add_argument(
@@ -4034,6 +4066,94 @@ def cmd_estop(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+def cmd_update(ns: argparse.Namespace, ctx: Context) -> int:
+    """H624: update the install to a trusted commit, through the hub's approval queue."""
+    if ns.action == "rollback" and ns.offline:
+        from agents.core import hub_update_apply
+
+        if not ns.yes:
+            ctx.say("an offline rollback moves the checkout back and may restore data: add --yes")
+            return EXIT_USAGE
+        try:
+            done = hub_update_apply.rollback_offline(
+                None if ns.restore_data is None else ns.restore_data == "yes")
+        except hub_update_apply.UpdateRefused as exc:
+            ctx.say(f"refused: {exc.code}{' — ' + exc.detail if exc.detail else ''}")
+            return EXIT_FAILED
+        ctx.say(f"checkout moved back to {str(done.get('to') if done.get('kind') == 'rollback' else done.get('from'))[:12]}"
+                + ("; the pre-update backup is staged for the next start" if done.get("data_restored") else "")
+                + " — start Nerva again")
+        return EXIT_OK if done.get("phase") == "rolled_back_restarting" else EXIT_FAILED
+    client = ctx.client()
+    if ns.action == "status":
+        body = client.get("/api/admin/ops/update/receipts") or {}
+        if ns.json:
+            ctx.dump(body)
+            return EXIT_OK
+        trust = body.get("trust") or {}
+        if trust.get("configured"):
+            pinned = trust.get("commit") or ", ".join(trust.get("fingerprints") or [])
+            ctx.say(f"trust: {trust.get('mode')} · {pinned}")
+        else:
+            ctx.say("trust: none — every apply is refused (`nerva update trust`)")
+        flight = body.get("in_progress")
+        if flight:
+            ctx.say(f"in progress: {flight.get('kind')} {str(flight.get('from'))[:12]} → "
+                    f"{str(flight.get('to'))[:12]} ({flight.get('phase')})")
+        for row in (body.get("receipts") or [])[-10:]:
+            ctx.say(f"  {row.get('id')} {row.get('kind'):<8} {str(row.get('from'))[:12]} → "
+                    f"{str(row.get('to'))[:12]} {row.get('result') or row.get('phase')}"
+                    + (f" ({row.get('reason')})" if row.get("reason") else ""))
+        return EXIT_OK
+    if ns.action == "plan":
+        query = urlencode({"ref": ns.ref}) if ns.ref else ""
+        body = client.get("/api/admin/ops/update/plan" + (f"?{query}" if query else "")) or {}
+        if ns.json:
+            ctx.dump(body)
+            return EXIT_OK
+        ctx.say(f"{str(body.get('from'))[:12]} ({body.get('from_version')}) → {str(body.get('to'))[:12]} "
+                f"({body.get('to_version')}) · {body.get('commit_count')} commit(s), {body.get('file_count')} file(s)")
+        verdict = body.get("verdict") or {}
+        ctx.say(f"  trust: {'verified (' + str(verdict.get('how')) + ')' if verdict.get('trusted') else verdict.get('reason') or 'unchecked'}")
+        deps = body.get("dependencies") or {}
+        ctx.say(f"  dependencies: {deps.get('command') or 'lock unchanged'}")
+        ctx.say(f"  migrations: {', '.join(body.get('migrations') or []) or 'none expected'}")
+        for commit in (body.get("commits") or [])[:20]:
+            ctx.say(f"    {str(commit.get('sha'))[:12]} {commit.get('subject', '')}")
+        if body.get("refused"):
+            ctx.say(f"  refused: {', '.join(body['refused'])}")
+            return EXIT_FAILED
+        ctx.say("  can apply: `nerva update apply` queues the approval card")
+        return EXIT_OK
+    if ns.action == "apply":
+        reply = client.post("/api/admin/ops/update/apply",
+                            {**({"ref": ns.ref} if ns.ref else {}), "dirty_policy": "stash" if ns.stash else "refuse"}) or {}
+        ctx.say(f"approval card #{reply.get('task_id')} queued: update {str(reply.get('from'))[:12]} → "
+                f"{str(reply.get('to'))[:12]} — accept it in the approval queue")
+        return EXIT_OK
+    if ns.action == "rollback":
+        body = {} if ns.restore_data is None else {"restore_data": ns.restore_data == "yes"}
+        reply = client.post("/api/admin/ops/update/rollback", body) or {}
+        plan = reply.get("plan") or {}
+        ctx.say(f"approval card #{reply.get('task_id')} queued: roll back to {str(plan.get('to'))[:12]}"
+                f"{' and restore ' + str(plan.get('backup')) if plan.get('restore_data') else ''} — accept it "
+                f"in the approval queue")
+        return EXIT_OK
+    # trust
+    if ns.pin:
+        body = {"mode": "pinned", "commit": ns.pin}
+    elif ns.ssh_key:
+        body = {"mode": "ssh", "principal": ns.principal,
+                "keys": [Path(path).read_text(encoding="utf-8").strip() for path in ns.ssh_key]}
+    else:
+        body = {"mode": "gpg", "public_key": Path(ns.gpg_key).read_text(encoding="utf-8"),
+                "fingerprints": ns.fingerprint}
+    reply = client.post("/api/admin/ops/update/trust", body) or {}
+    ctx.say(f"approval card #{reply.get('task_id')} queued: pin update trust ({reply.get('mode')}) — accept it "
+            f"in the approval queue")
+    return EXIT_OK
+
+
 def cmd_lsp(ns: argparse.Namespace, ctx: Context) -> int:
     """H055: language servers, through the hub (it owns the running processes)."""
     client = ctx.client()
@@ -7153,6 +7273,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "skills": cmd_skills,
     "estop": cmd_estop,
     "lsp": cmd_lsp,
+    "update": cmd_update,
     "company": cmd_company,
     "goal": cmd_goal,
     "pairing": cmd_pairing,
