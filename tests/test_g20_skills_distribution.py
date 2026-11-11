@@ -171,30 +171,80 @@ def test_runnable_skill_refuses_while_missing_then_gets_only_its_own_values(monk
     assert skill.to_dict()["setup_needed"] == []
 
 
-def test_code_execution_env_is_scoped_to_the_declaring_skill(monkeypatch):
+def test_stored_values_never_reach_execute_code_even_after_a_view(monkeypatch):
+    """G20 review M1: the interpreter runs model-written code and the view may be the
+    model's own call, so a stored per-skill value never enters it; the hub's .env still does."""
     from agents.core.code_tools import CodeExecutionTool
 
-    owner_skill = _skill("weather-tool", ("G20_TOOL_KEY",))
-    other_skill = _skill("other-tool", ("G20_TOOL_KEY", "G20_OTHER_KEY"))
-    skill_secrets.set_value(owner_skill, "G20_TOOL_KEY", SECRET)
-    skill_secrets.set_value(other_skill, "G20_OTHER_KEY", "other-value-1234567890")
+    skill = _skill("weather-tool", ("G20_TOOL_KEY", "G20_OTHER_KEY"))
+    skill_secrets.set_value(skill, "G20_TOOL_KEY", SECRET)
     registry = CodeEnvRegistry()
     tool = CodeExecutionTool(None, sandbox=lambda: None, settings=lambda key, default: default,
-                             environment_registry=registry, environment_source={})
-
-    def env_for(session):
-        context, _rev = tool._execution_context(SimpleNamespace(principal="owner", agent="a", session_id=session))
-        return (context or {}).get("env", {})
-
-    registry.declare(agent="a", principal="owner", session_id="s1", skill_id="weather-tool", names=["G20_TOOL_KEY"])
-    assert env_for("s1").get("G20_TOOL_KEY") == SECRET
-    # Another skill declaring the same name does not receive weather-tool's value.
-    registry.declare(agent="a", principal="owner", session_id="s2", skill_id="other-tool",
+                             environment_registry=registry, environment_source={"G20_OTHER_KEY": "from-hub-env"})
+    registry.declare(agent="a", principal="owner", session_id="s1", skill_id="weather-tool",
                      names=["G20_TOOL_KEY", "G20_OTHER_KEY"])
-    env2 = env_for("s2")
-    assert "G20_TOOL_KEY" not in env2 and env2.get("G20_OTHER_KEY") == "other-value-1234567890"
-    # No declaration in the scope: nothing stored is handed out, and nothing is in os.environ.
-    assert "G20_TOOL_KEY" not in env_for("s3") and "G20_TOOL_KEY" not in os.environ
+    context, _rev = tool._execution_context(SimpleNamespace(principal="owner", agent="a", session_id="s1"))
+    env = (context or {}).get("env", {})
+    assert "G20_TOOL_KEY" not in env and SECRET not in json.dumps(env)
+    assert env.get("G20_OTHER_KEY") == "from-hub-env"          # H595 behaviour unchanged
+    assert "G20_TOOL_KEY" not in os.environ
+
+
+def test_value_is_bound_to_the_install_and_cleared_on_removal(monkeypatch, tmp_path):
+    """G20 review m3: another skill that later takes the name does not inherit the value."""
+    first = tmp_path / "first" / "weather-tool"
+    first.mkdir(parents=True)
+    skill = _skill()
+    skill.path = first
+    skill_secrets.set_value(skill, "G20_TOOL_KEY", SECRET)
+    assert dict(skill_secrets.skill_env(skill)) == {"G20_TOOL_KEY": SECRET}
+    other = tmp_path / "second" / "weather-tool"
+    other.mkdir(parents=True)
+    impostor = _skill()
+    impostor.path = other
+    assert dict(skill_secrets.skill_env(impostor)) == {}
+    row = skill_secrets.requirements(impostor)[0]
+    assert row["set"] is False and row["stale"] is True
+    assert skill_secrets.missing(impostor) == ["G20_TOOL_KEY"]
+    # Removing the skill for good (the loader's removal hook) clears the stored value.
+    from agents.core.skills.loader import SkillLoader
+
+    loader = SkillLoader.__new__(SkillLoader)
+    loader._usage = None
+    loader.forget_usage("weather-tool")
+    assert dict(skill_secrets.skill_env(skill)) == {}
+
+
+def test_reserved_names_do_not_say_whether_the_hub_has_them(monkeypatch):
+    """G20 review nit: a reserved/hub name is reported only as reserved."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-hub-value-0123456789")
+    with_key = _skill(declared=("OPENAI_API_KEY",))
+    row = skill_secrets.requirements(with_key)[0]
+    assert row["reserved"] is True and "set" not in row and "source" not in row
+    assert skill_secrets.missing(with_key) == []
+    monkeypatch.delenv("OPENAI_API_KEY")
+    assert skill_secrets.requirements(with_key)[0] == row
+
+
+def test_skill_error_text_is_scrubbed_of_its_values_in_common_encodings(caplog):
+    import base64
+    import logging
+    from urllib.parse import quote
+
+    async def handle(command, args, context):
+        key = context["skill_env"]["G20_TOOL_KEY"]
+        raise RuntimeError(f"bad {key} {quote(key, safe='')} {base64.b64encode(key.encode()).decode()}")
+
+    skill = _skill()
+    skill.module = SimpleNamespace(handle=handle)
+    value = SECRET + "/+="
+    skill_secrets.set_value(skill, "G20_TOOL_KEY", value)
+    with caplog.at_level(logging.DEBUG):
+        reply = asyncio.run(skill.execute("go", "", {"channel": ""}))
+    for text in (reply, caplog.text):
+        assert SECRET not in text and quote(value, safe="") not in text
+        assert base64.b64encode(value.encode()).decode().rstrip("=") not in text
+    assert "[REDACTED]" in reply
 
 
 def test_skill_view_reports_setup_needed(monkeypatch):

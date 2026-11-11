@@ -5,6 +5,11 @@ The registry stores names, never values. A fresh validator can bind a declaratio
 to the exact skill/catalog/trust snapshot that was viewed. The spawn path resolves
 names in its trusted invocation scope and supplies a scoped value reader to
 ``prepare_code_env`` before starting the interpreter.
+
+H342 (G20 review): the values the owner stores for a skill (``skills/skill_secrets``)
+never enter this environment. An interpreter runs code the model wrote, and a
+``skill_view`` that declares names can be the model's own call, so only the hub's
+environment (the owner's ``.env``) is read here, as before.
 """
 
 from __future__ import annotations
@@ -281,28 +286,6 @@ class CodeEnvRegistry:
                     entries.pop(skill_id, None)
                     if not entries:
                         self._entries.pop(scope, None)
-
-    def resolve_skill_names(
-        self,
-        *,
-        agent: str,
-        principal: str,
-        session_id: str,
-    ) -> dict[str, frozenset[str]]:
-        """H342 — which skill declared which names in this exact scope (still-valid
-        declarations only). The spawn path reads a skill's own stored values with it, so a
-        value set for one skill never reaches a name another skill declared."""
-        if principal != "owner":
-            return {}
-        scope = self._scope(agent, principal, session_id)
-        with self._lock:
-            try:
-                now = self._now()
-            except (TypeError, ValueError, OverflowError):
-                self._entries.clear()
-                return {}
-            self._sweep(now)
-            return {skill_id: entry.names for skill_id, entry in self._entries.get(scope, {}).items()}
 
     def resolve_names(
         self,

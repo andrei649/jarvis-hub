@@ -3,8 +3,8 @@
 ``/api/skills/setup/{name}`` says which variables a skill declares, which are set (and
 where: stored for this skill, or the hub's environment) and which are missing. A value
 goes in through ``PUT`` and is never sent back, not even in part
-(``skills/skill_secrets.py``); it is stored encrypted and handed only to that skill's own
-code. Validation errors answer without FastAPI's detail, which would repeat the input.
+(``skills/skill_secrets.py``); it is stored encrypted, bound to the install it was set for,
+and handed only to that skill's own commands (never to ``execute_code``). Validation errors answer without FastAPI's detail, which would repeat the input.
 """
 
 from __future__ import annotations
@@ -83,7 +83,7 @@ def _setup_view(skill) -> dict:
     from agents.core.skills import skill_secrets
 
     rows = skill_secrets.requirements(skill)
-    missing = [r["name"] for r in rows if not r["optional"] and not r["set"]]
+    missing = [r["name"] for r in rows if not r.get("reserved") and not r["optional"] and not r["set"]]
     return {"skill": skill.name, "requirements": rows, "missing": missing, "ready": not missing}
 
 

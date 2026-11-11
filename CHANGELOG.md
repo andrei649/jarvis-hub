@@ -8,8 +8,10 @@
 - A skill can say which keys or settings it needs (an API key, an account name). Skills Import →
   **Skill setup** lists them, which are set and which are missing. A value you type there is
   stored encrypted on the hub and never shown again, not even its last characters. It goes only
-  to that skill's own code — never into the hub's environment, and never to another skill that
-  asks for the same name. A skill that needs a missing value refuses to run and says which one.
+  to that skill's own commands — never into the hub's environment, never into the code
+  interpreter (which runs code the model writes), and never to another skill, even one installed
+  later under the same name. Removing the skill clears it, and an error message from the skill
+  has the value blanked out. A skill that needs a missing value refuses to run and says which one.
 - **Skill sources (taps).** Next to the two official Hermes sources (the catalog shipped with
   Nerva, and the pinned network import), you can add a GitHub repository at an exact commit as a
   source, marked trusted or community. Adding one only puts an approval card in your inbox;

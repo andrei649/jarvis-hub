@@ -126,9 +126,10 @@ export function SkillSetup({ initial = '' }: { initial?: string }) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                   <span style={{ ...mono, color: 'var(--accent-light)' }}>{String(r.name)}</span>
-                  {r.set ? <Tag c="var(--green)">set · {r.source === 'skill' ? 'for this skill' : 'hub environment'}</Tag>
+                  {r.reserved ? <Tag c="var(--red)">reserved name · cannot be set for a skill</Tag>
+                    : r.set ? <Tag c="var(--green)">set · {r.source === 'skill' ? 'for this skill' : 'hub environment'}</Tag>
                     : <Tag c={r.optional ? 'var(--ink-2)' : 'var(--amber)'}>{r.optional ? 'optional' : 'missing'}</Tag>}
-                  {r.refused ? <Tag c="var(--red)">reserved name</Tag> : null}
+                  {r.stale ? <Tag c="var(--amber)">set for an earlier install · set it again</Tag> : null}
                 </div>
                 <div style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 2 }}>{String(r.prompt || '')}{r.help ? ` · ${String(r.help)}` : ''}</div>
               </div>
@@ -148,8 +149,9 @@ export function SkillSetup({ initial = '' }: { initial?: string }) {
             </Row>
           ))}
           <Note>values are stored encrypted on the hub, never shown again (not even in part), and handed only
-            to this skill’s own code — never to the hub’s environment or another skill. A runnable skill refuses
-            while a required one is missing.</Note>
+            to this skill’s own commands, for this install of it — never to the hub’s environment, to another
+            skill, or to the code interpreter (it runs code the model writes; it keeps reading only the hub’s
+            .env). Removing the skill clears them. A runnable skill refuses while a required one is missing.</Note>
         </>
       )}
     </div>

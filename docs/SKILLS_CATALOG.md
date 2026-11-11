@@ -159,6 +159,10 @@ owner added.
 environment variables it needs (`required_environment_variables`, `setup.collect_secrets`). The
 panel lists which are set (stored for this skill, or in the hub's environment) and which are
 missing; a value set there is stored encrypted, never shown again, never placed in the hub's
-environment, and handed only to that skill's own code (its commands, or a code interpreter started
-after you viewed that skill). A runnable skill with a required value missing refuses to run and
-says which. Managed provider keys and control names (`PATH`, `JARVIS_*` …) cannot be set for a skill.
+environment, and handed only to that skill's own commands, for the install you set it for. It never
+reaches the code interpreter (`execute_code` runs code the model writes; it keeps reading only the
+hub's `.env`), and a skill's error text is scrubbed of it (as is, URL-encoded, base64). Another
+skill that later takes the same name does not get it, and removing the skill clears it. A runnable
+skill with a required value missing refuses to run and says which. Managed provider keys and
+control names (`PATH`, `JARVIS_*` …) cannot be set for a skill; the panel says only that they are
+reserved, not whether the hub has them.

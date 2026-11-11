@@ -1380,6 +1380,13 @@ def run_batch(operations: Any, loader: Any, *, create_root: Path | None = None, 
                             warnings.append(f"the usage sidecar could not be written: the usage row of "
                                             f"{target.name} (its pin and counters) is still in the file and "
                                             "is removed when the sidecar can next be written")
+                if not archive_rows:
+                    # H342: a skill deleted for good takes its stored setup values with it
+                    # (an archived one keeps them; they stay bound to its install).
+                    from . import skill_secrets
+
+                    for target in removed:
+                        skill_secrets.forget_skill(_usage_name(target))
             backup = None
             if backup_dir is not None and any(t.existing for t in order):
                 backup = Path(backup_dir) / f"{time.strftime('%Y%m%dT%H%M%S')}-{batch_id}"
