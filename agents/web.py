@@ -1720,7 +1720,8 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
                         from agents.core.routers.chat_pending import http_actor
                         try:
                             with turn_interrupts.track(http_actor(request),
-                                                       req.session_id or getattr(orch, "session_id", None)) as live:
+                                                       req.session_id or getattr(orch, "session_id", None),
+                                                       request.headers.get(turn_interrupts.TURN_ID_HEADER)) as live:
                                 try:
                                     reply = await orch.handle_input(message, channel="web", agent_override=req.agent if req.agent != "jarvis" else None,
                                                                    **({"session_id": req.session_id} if req.session_id is not None else {}))

@@ -138,6 +138,10 @@ def hub_open(request, timeout: float = 30.0):
     return urllib.request.build_opener(*handlers).open(request, timeout=timeout)
 
 
+#: Headers only the client itself sets (content type and credentials).
+_OWN_HEADERS = frozenset({"accept", "content-type", "x-admin-token", "x-user-token"})
+
+
 class HubClient:
     def __init__(
         self,
@@ -179,10 +183,13 @@ class HubClient:
         return headers
 
     def request(self, method: str, path: str, body: Any = None, *,
-                timeout: float | None = None) -> Any:
+                timeout: float | None = None, headers: Mapping[str, str] | None = None) -> Any:
+        """*headers* are added to this call's own (never replacing the credential ones)."""
         data = None if body is None else json.dumps(body).encode("utf-8")
+        sent = {**{k: v for k, v in (headers or {}).items() if k.lower() not in _OWN_HEADERS},
+                **self._headers()}
         request = urllib.request.Request(
-            f"{self.base_url}{path}", data=data, method=method, headers=self._headers()
+            f"{self.base_url}{path}", data=data, method=method, headers=sent
         )
         try:
             with self._opener(request, timeout=self._timeout if timeout is None else timeout) as response:
@@ -205,10 +212,11 @@ class HubClient:
     def get(self, path: str) -> Any:
         return self.request("GET", path)
 
-    def post(self, path: str, body: Any = None, *, timeout: float | None = None) -> Any:
+    def post(self, path: str, body: Any = None, *, timeout: float | None = None,
+             headers: Mapping[str, str] | None = None) -> Any:
         """*timeout* is this call's own, for a route that waits on a model longer than
         the client's default (the vision turn: review-H586 m1)."""
-        return self.request("POST", path, body if body is not None else {}, timeout=timeout)
+        return self.request("POST", path, body if body is not None else {}, timeout=timeout, headers=headers)
 
 
 def _error_reason(exc: urllib.error.HTTPError) -> str:

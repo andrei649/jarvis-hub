@@ -21,7 +21,8 @@ Tab / Shift+Tab        cycle completions: the hub's slash commands
                        (``GET /api/commands``, what this credential may run), this
                        client's own commands, and ``@file:`` paths
                        (``GET /api/context-refs``)
-Up / Down              history (persistent, owner-only file, ``--no-history`` off)
+Up / Down              history (persistent, owner-only file in the user's config
+                       dir; ``--no-history`` or ``NERVA_CHAT_HISTORY=off`` keeps none)
 paste                  bracketed paste: a multi-line paste is one draft, not N turns
 =====================  ==========================================================
 
@@ -34,9 +35,10 @@ any hub command — goes to the hub as a message, where the command plane judges
 A message typed while a turn runs is queued and sent, in order, when the turn ends.
 
 Security: nothing the hub or the model writes is ever executed here; their text is
-stripped of control sequences before it is drawn. The editor is the owner's own
-``$VISUAL``/``$EDITOR`` argv (no shell). A line that looks like a key or token is kept
-out of the history file.
+stripped of control sequences, C1 controls and bidi/zero-width characters before it is
+drawn. The editor is the owner's own ``$VISUAL``/``$EDITOR`` argv (no shell). A line that
+looks like a key, a token or a stated password/PIN is kept out of the history file,
+which is never followed through a symlink.
 """
 
 from __future__ import annotations
@@ -86,6 +88,12 @@ KEY_HELP: tuple[str, ...] = (
 
 HISTORY_LIMIT = 1000
 EXIT_ARM_SECONDS = 3.0
+#: Tab asks the hub for ``@file:`` paths with this budget; an unreachable hub is not
+#: asked again for COMPLETION_BACKOFF seconds, so Tab never freezes the prompt.
+COMPLETION_TIMEOUT = 1.0
+COMPLETION_BACKOFF = 30.0
+#: The variable that turns the history file off (``NERVA_`` or ``JARVIS_`` spelling).
+HISTORY_ENV = "JARVIS_CHAT_HISTORY"
 _SESSION_ID = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
 
 #: readline bindings (GNU syntax). Each is data, so a test can read the table.
@@ -144,8 +152,10 @@ def completions(text: str, *, line: str, begin: int, commands: Iterable[str],
         names = sorted(set(commands) | set(LOCAL_COMMANDS))
         return [name for name in names if name.startswith(text)]
     if text.startswith("@file:") and refs is not None:
+        # The hub's refs are whole references already (``@file:path``, quoted when the
+        # path has a space): used as they are, never prefixed again.
         prefix = text[len("@file:"):]
-        return [f"@file:{ref}" for ref in refs(prefix)]
+        return [ref for ref in refs(prefix) if ref.startswith("@file:")]
     if text.startswith("@") and "@file:".startswith(text):
         return ["@file:"]
     return []
@@ -154,22 +164,80 @@ def completions(text: str, *, line: str, begin: int, commands: Iterable[str],
 # ── history ──────────────────────────────────────────────────────────────────
 
 def history_path(environ: Mapping[str, str]) -> Path:
-    from agents.core.paths import data_path
+    """The history file in the user's own config directory — not the hub's data root,
+    so it is in no hub backup: ``$XDG_CONFIG_HOME/nerva``, ``%APPDATA%\\Nerva`` on
+    Windows, ``~/Library/Application Support/Nerva`` on macOS, else ``~/.config/nerva``.
+    Read from *environ* (the CLI's own environment), never from the hub's settings."""
+    import sys
 
-    return data_path("cli", "chat_history.jsonl")
+    def absolute(name: str) -> Path | None:
+        value = (environ.get(name) or "").strip()
+        return Path(value) if value and os.path.isabs(value) else None
+
+    home = absolute("HOME") or absolute("USERPROFILE") or Path(os.path.expanduser("~"))
+    xdg = absolute("XDG_CONFIG_HOME")
+    if xdg is not None:
+        base = xdg / "nerva"
+    elif sys.platform == "win32":
+        base = (absolute("APPDATA") or home / "AppData" / "Roaming") / "Nerva"
+    elif sys.platform == "darwin":
+        base = home / "Library" / "Application Support" / "Nerva"
+    else:
+        base = home / ".config" / "nerva"
+    return base / "chat_history.jsonl"
+
+
+def history_enabled(environ: Mapping[str, str]) -> bool:
+    """``NERVA_CHAT_HISTORY=off`` (or ``JARVIS_CHAT_HISTORY``) keeps no history file;
+    unset or anything unrecognised keeps it (the default)."""
+    from agents.core.env_config import resolve_spellings, truthy
+
+    value, _ = resolve_spellings(environ, HISTORY_ENV)
+    return truthy(value, True)
+
+
+#: A password, passcode, passphrase or PIN stated in plain words ("my pin is 4821",
+#: "password: hunter2", "parola este ..."): kept out of the history like a token.
+_STATED_SECRET = re.compile(
+    r"\b(?:pin(?:\s*code)?|pass(?:word|code|phrase)|passwd|pwd|parol[aă]|codul?\s+pin)s?\b"
+    r"[^\n]{0,40}?(?:\bis\b|\bwas\b|\beste\b|\be\b|[:=])\s*\S",
+    re.IGNORECASE)
+
+
+def keep_out_of_history(entry: str) -> bool:
+    """Whether *entry* must not be remembered: a key/token shape, or a stated secret."""
+    from .chat_prompts import looks_like_secret
+
+    return bool(_STATED_SECRET.search(entry)) or looks_like_secret(entry)
+
+
+_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+
+
+def _refuse_link(path: Path) -> None:
+    """A history path (or its folder) that is a symlink is not ours to follow."""
+    if path.is_symlink() or path.parent.is_symlink():
+        raise OSError(f"{path} is a symbolic link; the history is not kept there")
 
 
 def load_history(path: Path, limit: int = HISTORY_LIMIT) -> list[str]:
     """Entries of the history file, oldest first (one JSON string per line, so a
     multi-line message stays one entry). A file someone else can read is not trusted
-    to be ours: it is re-permissioned, not skipped, and a broken line is ignored."""
+    to be ours: it is re-permissioned, not skipped, and a broken line is ignored. A
+    symlinked path is refused (``O_NOFOLLOW``), so the history never reads another file."""
     try:
-        raw = path.read_text(encoding="utf-8")
+        _refuse_link(path)
+        fd = os.open(path, os.O_RDONLY | _NOFOLLOW)
+    except OSError:
+        return []
+    try:
+        with os.fdopen(fd, "r", encoding="utf-8") as handle:
+            with contextlib.suppress(OSError):
+                if os.fstat(handle.fileno()).st_mode & 0o077 and hasattr(os, "fchmod"):
+                    os.fchmod(handle.fileno(), 0o600)
+            raw = handle.read()
     except (OSError, UnicodeDecodeError):
         return []
-    with contextlib.suppress(OSError):
-        if path.stat().st_mode & 0o077:
-            os.chmod(path, 0o600)
     entries: list[str] = []
     for row in raw.splitlines():
         try:
@@ -182,24 +250,34 @@ def load_history(path: Path, limit: int = HISTORY_LIMIT) -> list[str]:
 
 
 def append_history(path: Path, entry: str, limit: int = HISTORY_LIMIT) -> bool:
-    """Append one entry (owner-only file, 0600); the file is cut to *limit* entries."""
-    from .chat_prompts import looks_like_secret
+    """Append one entry (owner-only file, 0600); the file is cut to *limit* entries.
 
-    if not entry.strip() or looks_like_secret(entry):
+    Never through a symlink: the file is opened ``O_NOFOLLOW``, and the trimmed copy is
+    written to a fresh ``O_CREAT|O_EXCL|O_NOFOLLOW`` 0600 file that is then renamed over it."""
+    if not entry.strip() or keep_out_of_history(entry):
         return False
     try:
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        _refuse_link(path)
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | _NOFOLLOW, 0o600)
         with os.fdopen(fd, "a", encoding="utf-8") as handle:
+            if hasattr(os, "fchmod"):
+                os.fchmod(handle.fileno(), 0o600)
             handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
-        os.chmod(path, 0o600)
         entries = load_history(path, limit=limit * 2)
         if len(entries) > limit:
-            temp = path.with_name(path.name + ".tmp")
-            fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                handle.writelines(json.dumps(e, ensure_ascii=False) + "\n" for e in entries[-limit:])
-            os.replace(temp, path)
+            import secrets
+
+            temp = path.with_name(f".{path.name}.{secrets.token_hex(8)}.tmp")
+            fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW, 0o600)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    handle.writelines(json.dumps(e, ensure_ascii=False) + "\n" for e in entries[-limit:])
+                os.replace(temp, path)
+            except OSError:
+                with contextlib.suppress(OSError):
+                    os.unlink(temp)
+                raise
         return True
     except OSError:
         return False
@@ -257,14 +335,23 @@ class Repl:
         self.session_id = session_id
         self.agent = agent
         self.reasoning = reasoning
-        self.history_file = history_path(ctx.environ) if history else None
+        self.history_file = history_path(ctx.environ) if history and history_enabled(ctx.environ) else None
         self._reader = reader or input
         self._rl = readline_module
         self._lock = threading.RLock()
         self._wake = threading.Condition(self._lock)
         self.queue: collections.deque[Outgoing] = collections.deque()
-        self.asks: collections.deque[tuple[str, Any]] = collections.deque()
+        #: (kind, payload, session) — the session is the asking turn's, not the current one
+        self.asks: collections.deque[tuple[str, Any, str | None]] = collections.deque()
         self.running = False
+        #: The turn on the wire: its session and turn id as sent, the switch generation
+        #: it was sent in, its kind. A /switch during it never retargets Ctrl+C (review M2)
+        #: and is not undone by its reply (review M3).
+        self.inflight: dict[str, Any] | None = None
+        self._generation = 0
+        #: Ctrl+C stopped a turn: queued messages wait for the next Enter (review m5).
+        self.queue_held = False
+        self._refs_down_until = 0.0
         self.stopped = False
         self.exit_armed_at: float | None = None
         self.staged_images: list[str] = []
@@ -274,6 +361,7 @@ class Repl:
         self._draft_at_interrupt = ""
         self._prefill = ""
         self._reading = False
+        self._ctrl_c_read = False
         self._worker: threading.Thread | None = None
 
     # output -----------------------------------------------------------------
@@ -324,17 +412,34 @@ class Repl:
         self.commands = names
 
     def file_refs(self, prefix: str) -> list[str]:
-        from .client import HubError
+        """The hub's ``@file:`` references for *prefix* (``GET /api/context-refs``), as the
+        hub wrote them. Asked with a short budget; an unreachable hub is not asked again
+        for a while, so Tab never freezes the prompt. A reference with a control, bidi or
+        zero-width character is dropped, not drawn (and not "fixed": it would not resolve)."""
+        from .chat_prompts import terminal_unsafe
+        from .client import HubError, HubUnavailable
 
+        if time.monotonic() < self._refs_down_until:
+            return []
+        path = f"/api/context-refs?prefix={quote(prefix[:1024], safe='')}"
+        client = self.ctx.client()
+        request = getattr(client, "request", None)
         try:
-            reply = self.ctx.client().get(f"/api/context-refs?prefix={quote(prefix[:1024], safe='')}")
+            if callable(request) and _accepts(request, "timeout"):
+                reply = request("GET", path, timeout=COMPLETION_TIMEOUT)
+            else:
+                reply = client.get(path)
+        except HubUnavailable:
+            self._refs_down_until = time.monotonic() + COMPLETION_BACKOFF
+            return []
         except HubError:
             return []
         items = reply.get("items") if isinstance(reply, dict) else None
         refs = []
         for item in items if isinstance(items, list) else []:
             ref = item.get("ref") if isinstance(item, dict) else None
-            if isinstance(ref, str) and ref and not any(ord(c) < 32 for c in ref):
+            if isinstance(ref, str) and ref.startswith("@file:") and len(ref) <= 2048 \
+                    and not terminal_unsafe(ref):
                 refs.append(ref)
         return refs[:200]
 
@@ -386,12 +491,14 @@ class Repl:
     def read_line(self, prompt: str) -> str | None:
         """One line; None at end of input. Ctrl+C is handled here (never raised)."""
         self._draft_at_interrupt = ""
+        self._ctrl_c_read = False
         self._reading = True
         try:
             return self._reader(prompt)
         except EOFError:
             return None
         except KeyboardInterrupt:
+            self._ctrl_c_read = True
             self.on_ctrl_c(self._draft_at_interrupt)
             return ""
         finally:
@@ -415,9 +522,24 @@ class Repl:
         return action
 
     def interrupt(self) -> None:
+        """Stop the turn on the wire — the one that was sent, in the session it was sent
+        to, whatever /switch did since (review M2). Nothing is sent when no turn is, and a
+        request always names the turn (its session, or the turn id sent with it)."""
         from .client import HubError
 
-        body = {"session_id": self.session_id} if self.session_id else {}
+        with self._lock:
+            turn = dict(self.inflight) if self.inflight else None
+        if turn is None:
+            self.say("(nothing to stop)")
+            return
+        if turn.get("kind") == "vision":
+            self.say("an image turn cannot be stopped from here; it finishes on its own")
+            return
+        body = {key: turn[key] for key in ("session_id", "turn_id") if turn.get(key)}
+        if not body:
+            self.say("this turn cannot be stopped yet (the hub has not named its conversation); "
+                     "it finishes on its own")
+            return
         try:
             reply = self.ctx.client().post("/chat/interrupt", body)
         except HubError as exc:
@@ -430,7 +552,18 @@ class Repl:
             return
         count = reply.get("interrupted") if isinstance(reply, dict) else None
         if type(count) is int and count > 0:
-            self.say("(stopping the turn…)")
+            with self._lock:
+                if self.inflight is not None and self.inflight.get("turn_id") == turn.get("turn_id"):
+                    self.inflight["stopped"] = True
+                # the stopped turn's questions are moot; approvals already queued stay
+                kept = [ask for ask in self.asks if ask[0] != "question"]
+                self.asks.clear()
+                self.asks.extend(kept)
+                held = len(self.queue)
+                self.queue_held = held > 0
+            self.say("(stopping the turn… a step that is already running may still finish)")
+            if held:
+                self.say(f"({held} queued message(s) held: Enter sends them, /queue clear drops them)")
         else:
             self.say("(nothing to stop: the turn had already finished)")
 
@@ -506,7 +639,9 @@ class Repl:
         from .client import HubError
 
         if rest == "new":
-            self.session_id = None
+            with self._lock:
+                self.session_id = None
+                self._generation += 1
             self.say("the next message starts in the hub's current conversation "
                      "(send /new to start a fresh one)")
             return
@@ -539,8 +674,11 @@ class Repl:
             self.say("not one of your sessions; /switch lists them")
             return
         if self.running:
-            self.say("switched; the running turn finishes in its own conversation")
-        self.session_id = chosen
+            self.say("switched; the running turn finishes in its own conversation "
+                     "(Ctrl+C still stops it)")
+        with self._lock:
+            self.session_id = chosen
+            self._generation += 1
         self.say(f"now in {chosen}")
 
     def model(self, rest: str) -> None:
@@ -596,12 +734,9 @@ class Repl:
             return
         if self.history_file is not None:
             append_history(self.history_file, text)
-            if self._rl is not None:
-                from .chat_prompts import looks_like_secret
-
-                if not looks_like_secret(text):
-                    with contextlib.suppress(Exception):
-                        self._rl.add_history(text)
+            if self._rl is not None and not keep_out_of_history(text):
+                with contextlib.suppress(Exception):
+                    self._rl.add_history(text)
         item = Outgoing(text, list(self.staged_images), self.staged_clipboard)
         self.staged_images, self.staged_clipboard = [], False
         with self._wake:
@@ -614,7 +749,7 @@ class Repl:
     def _work(self) -> None:
         while True:
             with self._wake:
-                while not self.queue and not self.stopped:
+                while (not self.queue or self.queue_held) and not self.stopped:
                     self._wake.wait(0.5)
                 if self.stopped:
                     return
@@ -632,25 +767,49 @@ class Repl:
                     self._wake.notify_all()
 
     def run_turn(self, item: Outgoing) -> None:
-        from .chat_prompts import POLL_SECONDS, _pending, _PollRefused, _post_turn
+        import secrets
+
+        with self._lock:
+            session, generation = self.session_id, self._generation
+            self.inflight = {"session_id": session, "turn_id": None, "generation": generation,
+                             "kind": "vision" if item.images or item.clipboard_image else "chat",
+                             "stopped": False}
+        try:
+            if item.images or item.clipboard_image:
+                self.vision_turn(item)
+                return
+            self._chat_turn(item, session, generation, secrets.token_hex(16))
+        finally:
+            with self._lock:
+                self.inflight = None
+
+    def _chat_turn(self, item: Outgoing, session: str | None, generation: int, turn_id: str) -> None:
+        from .chat_prompts import POLL_SECONDS, TURN_TIMEOUT_SECONDS, _pending, _PollRefused
         from .client import HubError, HubUnavailable
 
-        if item.images or item.clipboard_image:
-            self.vision_turn(item)
-            return
         body: dict[str, Any] = {"message": item.message}
-        if self.session_id:
-            body["session_id"] = self.session_id
+        if session:
+            body["session_id"] = session
         if self.agent:
             body["agent"] = self.agent
         if self.reasoning:
             body["reasoning"] = self.reasoning
         client = self.ctx.client()
         box: dict[str, Any] = {}
+        # The turn id goes in a header (an older hub ignores it; the body's schema is
+        # strict): before the hub names the conversation, Ctrl+C names the turn by it.
+        post_kwargs: dict[str, Any] = {}
+        if _accepts(client.post, "timeout"):
+            post_kwargs["timeout"] = TURN_TIMEOUT_SECONDS
+        if _accepts(client.post, "headers"):
+            post_kwargs["headers"] = {"X-Nerva-Turn-Id": turn_id}
+            with self._lock:
+                if self.inflight is not None:
+                    self.inflight["turn_id"] = turn_id
 
         def post() -> None:
             try:
-                box["reply"] = _post_turn(client, body)
+                box["reply"] = client.post("/chat", body, **post_kwargs)
             except BaseException as exc:  # noqa: BLE001 — handed to this thread
                 box["error"] = exc
 
@@ -660,7 +819,7 @@ class Repl:
         polling = True
         while poster.is_alive():
             poster.join(POLL_SECONDS)
-            if not poster.is_alive() or not polling:
+            if not poster.is_alive() or not polling or (self.inflight or {}).get("stopped"):
                 continue
             try:
                 questions = _pending(client, body.get("session_id"))
@@ -675,7 +834,7 @@ class Repl:
                 if prompt_id and prompt_id not in seen:
                     seen.add(prompt_id)
                     with self._lock:
-                        self.asks.append(("question", question))
+                        self.asks.append(("question", question, session))
                     self.say("? the turn asks you something — press Enter to answer it")
         if "error" in box:
             exc = box["error"]
@@ -688,9 +847,11 @@ class Repl:
             else:
                 raise exc
             return
-        self.show_reply(box.get("reply"))
+        self.show_reply(box.get("reply"), generation=generation)
 
-    def show_reply(self, reply: Any) -> None:
+    def show_reply(self, reply: Any, *, generation: int | None = None) -> None:
+        """Draw a turn's reply. The conversation the hub names becomes this chat's only
+        when the user has not switched since the turn was sent (review M3)."""
         from .nerva import _pending_ids, _recall_lines
 
         if not isinstance(reply, dict):
@@ -698,7 +859,9 @@ class Repl:
             return
         returned = reply.get("session_id")
         if isinstance(returned, str) and _SESSION_ID.match(returned):
-            self.session_id = returned
+            with self._lock:
+                if generation is None or generation == self._generation:
+                    self.session_id = returned
         for line in _recall_lines(reply):
             self.say(line)
         self.answer(str(reply.get("reply", "")))
@@ -710,7 +873,7 @@ class Repl:
         pending, _ = _pending_ids(reply.get("pending_approvals"))
         if pending:
             with self._lock:
-                self.asks.append(("approvals", list(pending)))
+                self.asks.append(("approvals", list(pending), None))
             self.say(f"! this turn queued {len(pending)} approval(s) — press Enter to decide them here")
 
     def vision_turn(self, item: Outgoing) -> None:
@@ -735,14 +898,14 @@ class Repl:
             with self._lock:
                 if not self.asks:
                     return
-                kind, payload = self.asks.popleft()
+                kind, payload, session = self.asks.popleft()
             try:
                 if kind == "question":
                     if payload.get("kind") == "secret":
                         _answer_secret(self.ctx, self.ctx.client(), payload,
-                                       self.ctx.secret_reader or _getpass(self.ctx), self.session_id)
+                                       self.ctx.secret_reader or _getpass(self.ctx), session)
                     else:
-                        _answer_clarify(self.ctx, self.ctx.client(), payload, self.session_id)
+                        _answer_clarify(self.ctx, self.ctx.client(), payload, session)
                 else:
                     decide_queued(self.ctx, payload)
             except KeyboardInterrupt:
@@ -764,6 +927,13 @@ class Repl:
             return False
         if self.stopped:
             return False
+        try:
+            return self._handle(line)
+        finally:
+            if not self._ctrl_c_read:
+                self.release_queue()      # any Enter lets held messages go (review m5)
+
+    def _handle(self, line: str) -> bool:
         if line.strip():
             self.exit_armed_at = None
         kind, text = route_line(line)
@@ -771,6 +941,21 @@ class Repl:
             return True
         if kind == "continue":
             self.continued.append(text)
+            return True
+        if self.continued and kind == "local":
+            # A client command (Ctrl+X Ctrl+E's "/edit", /exit, ...) acts on the
+            # backslash-continued draft; it is never sent half-written (review m6).
+            head, _, rest = text.partition(" ")
+            draft = "\n".join([*self.continued, *([rest] if rest.strip() else [])])
+            if head == "/edit":
+                self.continued = []
+                self.local(f"/edit {draft}")
+            elif head in ("/exit", "/quit"):
+                self.continued = []
+                self.say("(the unsent draft was discarded)")
+                self.local(head)
+            else:
+                self.local(text)          # the draft stays; the prompt still says "…"
             return True
         if self.continued:
             text = "\n".join([*self.continued, line])
@@ -781,6 +966,13 @@ class Repl:
         else:
             self.submit(text)
         return True
+
+    def release_queue(self) -> None:
+        with self._wake:
+            if not self.queue_held:
+                return
+            self.queue_held = False
+            self._wake.notify_all()
 
     def run(self) -> int:
         self.load_catalog()
@@ -809,6 +1001,17 @@ class Repl:
             if previous is not None:
                 signal.signal(signal.SIGINT, previous)
         return 0
+
+
+def _accepts(function: Any, name: str) -> bool:
+    """Whether *function* takes the keyword *name* (a test's fake client may not)."""
+    import inspect
+
+    try:
+        parameters = inspect.signature(function).parameters
+    except (TypeError, ValueError):
+        return False
+    return name in parameters or any(p.kind is p.VAR_KEYWORD for p in parameters.values())
 
 
 def _getpass(ctx) -> Callable[[str], str]:

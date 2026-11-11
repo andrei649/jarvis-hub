@@ -70,7 +70,9 @@ def _repl(tmp_path, monkeypatch, hub=None, lines=(), **kwargs):
     monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "home"))
     hub = hub or FakeHub()
     out, err = io.StringIO(), io.StringIO()
-    ctx = Context(environ={"EDITOR": "true"}, out=out, err=err, inp=io.StringIO(),
+    environ = {"EDITOR": "true", "XDG_CONFIG_HOME": str(tmp_path / "config"),
+               **kwargs.pop("environ", {})}
+    ctx = Context(environ=environ, out=out, err=err, inp=io.StringIO(),
                   client_factory=lambda env: hub)
     feed = list(lines)
 
@@ -108,13 +110,19 @@ def test_a_continued_draft_counts_as_a_draft(tmp_path, monkeypatch):
     assert repl.on_ctrl_c("") == "clear" and repl.continued == []
 
 
+def _in_flight(repl, session="sess_1", turn_id=None, kind="chat"):
+    repl.running = True
+    repl.inflight = {"session_id": session, "turn_id": turn_id, "generation": repl._generation,
+                     "kind": kind, "stopped": False}
+
+
 def test_ctrl_c_during_a_turn_interrupts_the_callers_own_turn(tmp_path, monkeypatch):
     hub = FakeHub({("POST", "/chat/interrupt"): {"ok": True, "interrupted": 1}})
     repl, hub, _out, err = _repl(tmp_path, monkeypatch, hub, session_id="sess_1")
-    repl.running = True
+    _in_flight(repl)
     assert repl.on_ctrl_c("") == "interrupt"
     assert hub.calls == [("POST", "/chat/interrupt", {"session_id": "sess_1"})]
-    assert "stopping the turn" in err.getvalue()
+    assert "stopping the turn" in err.getvalue() and "may still finish" in err.getvalue()
     assert not repl.stopped
 
 
@@ -122,9 +130,174 @@ def test_ctrl_c_during_a_turn_interrupts_the_callers_own_turn(tmp_path, monkeypa
 def test_an_interrupt_the_hub_refuses_is_said(tmp_path, monkeypatch, status, said):
     hub = FakeHub({("POST", "/chat/interrupt"): HubError(status, "x")})
     repl, _hub, _out, err = _repl(tmp_path, monkeypatch, hub)
-    repl.running = True
+    _in_flight(repl)
     repl.on_ctrl_c("")
     assert said in err.getvalue()
+
+
+# review m2: an interrupt always names a turn, and is never sent without one
+
+def test_no_interrupt_is_sent_when_no_turn_is_on_the_wire(tmp_path, monkeypatch):
+    repl, hub, _out, err = _repl(tmp_path, monkeypatch, session_id="sess_1")
+    repl.running = True                       # the worker took an item, nothing sent yet
+    assert repl.on_ctrl_c("") == "interrupt"
+    assert hub.calls == [] and "nothing to stop" in err.getvalue()
+
+
+def test_the_first_turn_is_named_by_its_turn_id_before_a_session_exists(tmp_path, monkeypatch):
+    hub = FakeHub({("POST", "/chat/interrupt"): {"ok": True, "interrupted": 1}})
+    repl, hub, _out, _err = _repl(tmp_path, monkeypatch, hub)
+    _in_flight(repl, session=None, turn_id="f" * 32)
+    repl.on_ctrl_c("")
+    assert hub.calls == [("POST", "/chat/interrupt", {"turn_id": "f" * 32})]
+
+
+def test_a_turn_with_no_name_is_not_interrupted_blindly(tmp_path, monkeypatch):
+    repl, hub, _out, err = _repl(tmp_path, monkeypatch)
+    _in_flight(repl, session=None, turn_id=None)   # a client that cannot send the header
+    repl.on_ctrl_c("")
+    assert hub.calls == [] and "finishes on its own" in err.getvalue()
+    _in_flight(repl, kind="vision")
+    repl.on_ctrl_c("")
+    assert hub.calls == [] and "image turn" in err.getvalue()
+
+
+class HeaderHub(FakeHub):
+    """A client whose post() takes headers, like HubClient."""
+
+    def post(self, path, body=None, *, timeout=None, headers=None):
+        self.calls.append(("POST", path, body, dict(headers or {})))
+        answer = self.answers.get(("POST", path))
+        return answer(body, headers) if callable(answer) else answer
+
+
+def test_the_chat_turn_carries_a_turn_id_header_that_ctrl_c_names(tmp_path, monkeypatch):
+    import threading
+
+    gate, entered = threading.Event(), threading.Event()
+
+    def chat(body, headers):
+        entered.set()
+        gate.wait(5)
+        return {"reply": "stopped", "session_id": "web_new"}
+
+    hub = HeaderHub({("POST", "/chat"): chat, ("POST", "/chat/interrupt"): {"interrupted": 1},
+                     ("GET", "/chat/pending"): {"questions": []}})
+    repl, hub, _out, _err = _repl(tmp_path, monkeypatch, hub)
+    worker = threading.Thread(target=lambda: (setattr(repl, "running", True), repl.run_turn(R.Outgoing("x"))),
+                              daemon=True)
+    worker.start()
+    assert entered.wait(5)
+    repl.on_ctrl_c("")
+    gate.set()
+    worker.join(5)
+    chat_call = next(c for c in hub.calls if c[1] == "/chat")
+    stop_call = next(c for c in hub.calls if c[1] == "/chat/interrupt")
+    turn_id = chat_call[3]["X-Nerva-Turn-Id"]
+    assert len(turn_id) == 32 and stop_call[2] == {"turn_id": turn_id}
+    assert repl.session_id == "web_new" and repl.inflight is None
+
+
+# review M2/M3: /switch during a turn
+
+class GatedHub(FakeHub):
+    def __init__(self):
+        import threading
+
+        super().__init__({("GET", "/sessions"): {"sessions": [{"session_id": "web_a"}, {"session_id": "web_b"}]},
+                          ("GET", "/chat/pending"): {"questions": []}})
+        self.gate, self.entered = threading.Event(), threading.Event()
+
+    def post(self, path, body=None, *, timeout=None):
+        self.calls.append(("POST", path, body))
+        if path == "/chat":
+            self.entered.set()
+            self.gate.wait(10)
+            return {"reply": "done", "session_id": body.get("session_id", "web_a")}
+        hit = body.get("session_id") == "web_a"
+        if hit:
+            self.gate.set()
+        return {"ok": True, "interrupted": int(hit)}
+
+
+def _turn_in_thread(repl, hub):
+    import threading
+
+    def work():
+        repl.running = True
+        try:
+            repl.run_turn(R.Outgoing("long job"))
+        finally:
+            repl.running = False
+
+    thread = threading.Thread(target=work, daemon=True)
+    thread.start()
+    assert hub.entered.wait(5)
+    return thread
+
+
+def test_ctrl_c_after_a_switch_stops_the_turn_that_runs_not_the_new_session(tmp_path, monkeypatch):
+    hub = GatedHub()
+    repl, hub, _out, err = _repl(tmp_path, monkeypatch, hub, session_id="web_a")
+    thread = _turn_in_thread(repl, hub)
+    repl.local("/switch 2")
+    assert "Ctrl+C still stops it" in err.getvalue()
+    repl.on_ctrl_c("")
+    hub.gate.set()
+    thread.join(5)
+    assert [c[2] for c in hub.calls if c[1] == "/chat/interrupt"] == [{"session_id": "web_a"}]
+    assert "stopping the turn" in err.getvalue()
+
+
+def test_a_switch_during_a_turn_is_not_undone_by_its_reply(tmp_path, monkeypatch):
+    hub = GatedHub()
+    repl, hub, *_ = _repl(tmp_path, monkeypatch, hub, session_id="web_a")
+    thread = _turn_in_thread(repl, hub)
+    repl.local("/switch 2")
+    hub.gate.set()
+    thread.join(5)
+    assert repl.session_id == "web_b"
+    repl.local("/switch new")                  # "new" is a switch too
+    assert repl.session_id is None
+
+
+# review m5 + nit: an interrupt holds the queue and drops the stopped turn's questions
+
+def test_an_interrupt_holds_the_queue_until_the_next_enter(tmp_path, monkeypatch):
+    hub = FakeHub({("POST", "/chat/interrupt"): {"interrupted": 1}})
+    repl, hub, _out, err = _repl(tmp_path, monkeypatch, hub, lines=[KeyboardInterrupt, ""])
+    _in_flight(repl)
+    repl.queue.extend([R.Outgoing("next one"), R.Outgoing("and another")])
+    repl.asks.extend([("question", {"id": "q"}, "sess_1"), ("approvals", [3], None)])
+    repl.answer_asks = lambda: None            # leave the asks for this test to read
+    assert repl.step()                         # Ctrl+C at the prompt: stops the turn
+    assert repl.queue_held and len(repl.queue) == 2
+    assert "2 queued message(s) held" in err.getvalue()
+    assert list(repl.asks) == [("approvals", [3], None)]
+    assert repl.step()                         # Enter: they go
+    assert not repl.queue_held and len(repl.queue) == 2
+
+
+def test_a_held_queue_is_not_sent_by_the_worker(tmp_path, monkeypatch):
+    import threading
+
+    sent = []
+    hub = FakeHub({("POST", "/chat"): lambda body: sent.append(body["message"]) or {"reply": "ok"},
+                   ("GET", "/chat/pending"): {"questions": []}})
+    repl, *_ = _repl(tmp_path, monkeypatch, hub)
+    repl.queue_held = True
+    repl.queue.append(R.Outgoing("held"))
+    worker = threading.Thread(target=repl._work, daemon=True)
+    worker.start()
+    time.sleep(0.3)
+    assert sent == []
+    repl.release_queue()
+    deadline = time.monotonic() + 5
+    while not sent and time.monotonic() < deadline:
+        time.sleep(0.02)
+    repl.stopped = True
+    worker.join(5)
+    assert sent == ["held"]
 
 
 def test_read_line_turns_ctrl_c_into_the_ladder_and_eof_into_none(tmp_path, monkeypatch):
@@ -159,6 +332,23 @@ def test_a_backslash_continues_and_alt_enter_text_is_one_message(tmp_path, monke
     assert sent == ["first\nsecond", "a\nb"]
 
 
+def test_client_commands_act_on_a_continued_draft_instead_of_sending_it(tmp_path, monkeypatch):
+    # review m6: Ctrl+X Ctrl+E is the macro "\C-a/edit \C-j"
+    repl, *_ = _repl(tmp_path, monkeypatch, lines=["first\\", "/edit second", "one\\", "/keys",
+                                                    "two", "draft\\", "/exit"], readline_module=FakeReadline())
+    sent, edited = [], []
+    repl.submit = sent.append
+    monkeypatch.setattr(R, "compose_in_editor", lambda env, draft, err: edited.append(draft) or draft)
+    assert repl.step() and repl.step()
+    assert sent == [] and edited == ["first\nsecond"] and repl.continued == []
+    assert repl._prefill == "first\nsecond"   # back as the draft, not sent
+    assert repl.step() and repl.step()        # /keys runs, the draft stays
+    assert sent == [] and repl.continued == ["one"]
+    assert repl.step() and sent == ["one\ntwo"]
+    assert repl.step() and repl.step() is True
+    assert repl.stopped and sent == ["one\ntwo"]
+
+
 # ── completion sources ────────────────────────────────────────────────────────
 
 def test_slash_completion_merges_the_hubs_catalog_and_local_commands():
@@ -172,13 +362,61 @@ def test_slash_completion_merges_the_hubs_catalog_and_local_commands():
 def test_file_reference_completion_asks_the_hub():
     asked = []
 
-    def refs(prefix):
+    def refs(prefix):            # the hub's shape: whole references (review M1)
         asked.append(prefix)
-        return ["docs/", "docs/ARCHITECTURE.md"]
+        return ["@file:docs/", "@file:docs/ARCHITECTURE.md", '@file:"docs/my notes.md"']
 
     got = R.completions("@file:do", line="read @file:do", begin=5, commands=[], refs=refs)
-    assert got == ["@file:docs/", "@file:docs/ARCHITECTURE.md"] and asked == ["do"]
+    assert got == ["@file:docs/", "@file:docs/ARCHITECTURE.md", '@file:"docs/my notes.md"']
+    assert asked == ["do"]
     assert R.completions("@f", line="@f", begin=0, commands=[], refs=refs) == ["@file:"]
+
+
+def test_file_completion_against_the_real_context_refs_answer(tmp_path, monkeypatch):
+    from urllib.parse import unquote
+
+    from agents.core import context_refs
+
+    base = tmp_path / "work"
+    base.mkdir()
+    (base / "notes.md").write_text("x\n", encoding="utf-8")
+    (base / "my notes.md").write_text("y\n", encoding="utf-8")
+    monkeypatch.setenv("JARVIS_FILE_ROOTS", str(base))
+
+    class Hub:
+        def get(self, path):
+            return {"ok": True, "items": context_refs.complete(unquote(path.split("=", 1)[1]))}
+
+    repl, *_ = _repl(tmp_path, monkeypatch, Hub(), history=False)
+    got = R.completions("@file:", line="read @file:", begin=5, commands=[], refs=repl.file_refs)
+    assert got == ['@file:"my notes.md"', "@file:notes.md"]
+    for ref in got:
+        expansion = context_refs.expand(f"look at {ref}")
+        assert expansion is not None and "no such file" not in (expansion.block or "")
+
+
+def test_file_refs_drop_c1_bidi_and_zero_width_names(tmp_path, monkeypatch):
+    hub = FakeHub({("GET", "/api/context-refs"): {"items": [
+        {"ref": "@file:\u009d52;c;cm0gLXJmIH4=\u009c.txt"}, {"ref": "@file:invoice\u202efdp.exe"},
+        {"ref": "@file:zero\u200bwidth"}, {"ref": "@file:bom\ufeff"}, {"ref": "@file:ok.txt"},
+        {"ref": "bare.txt"}]}})
+    repl, *_ = _repl(tmp_path, monkeypatch, hub, history=False)
+    assert repl.file_refs("") == ["@file:ok.txt"]
+
+
+def test_tab_asks_with_a_short_budget_and_backs_off_an_unreachable_hub(tmp_path, monkeypatch):
+    from agents.cli.client import HubUnavailable
+
+    hub = FakeHub({("GET", "/api/context-refs"): HubUnavailable("http://127.0.0.1:8080", "refused")})
+    seen = []
+    original = hub.request
+    hub.request = lambda method, path, body=None, *, timeout=None: (seen.append(timeout),
+                                                                     original(method, path, body))[1]
+    repl, *_ = _repl(tmp_path, monkeypatch, hub, history=False)
+    assert repl.file_refs("a") == [] and seen == [R.COMPLETION_TIMEOUT] and R.COMPLETION_TIMEOUT <= 1.0
+    assert repl.file_refs("ab") == [] and len(seen) == 1     # not asked again while it is down
+    repl._refs_down_until = 0.0
+    assert repl.file_refs("abc") == [] and len(seen) == 2
 
 
 def test_catalog_and_refs_come_from_the_hubs_routes_and_are_filtered(tmp_path, monkeypatch):
@@ -186,12 +424,12 @@ def test_catalog_and_refs_come_from_the_hubs_routes_and_are_filtered(tmp_path, m
         ("GET", "/api/commands"): {"ok": True, "commands": [
             {"command": "/recap"}, {"command": "/bad name"}, {"command": "/\x1b[31mx"}, {"nope": 1}]},
         ("GET", "/api/context-refs"): {"ok": True, "items": [
-            {"ref": "a.txt", "kind": "file"}, {"ref": "bad\x07", "kind": "file"}]},
+            {"ref": "@file:a.txt", "kind": "file"}, {"ref": "@file:bad\x07", "kind": "file"}]},
     })
     repl, hub, *_ = _repl(tmp_path, monkeypatch, hub)
     repl.load_catalog()
     assert repl.commands == ["/recap"]
-    assert repl.file_refs("a b") == ["a.txt"]
+    assert repl.file_refs("a b") == ["@file:a.txt"]
     assert hub.calls[-1][1] == "/api/context-refs?prefix=a%20b"
 
 
@@ -310,7 +548,81 @@ def test_no_history_keeps_no_file(tmp_path, monkeypatch):
     repl, *_ = _repl(tmp_path, monkeypatch, history=False)
     repl.submit("hello")
     assert repl.history_file is None
-    assert not (tmp_path / "home" / "cli").exists()
+    assert not (tmp_path / "config").exists() and not (tmp_path / "home" / "cli").exists()
+
+
+@pytest.mark.parametrize("name", ["NERVA_CHAT_HISTORY", "JARVIS_CHAT_HISTORY"])
+def test_the_history_variable_turns_the_file_off(tmp_path, monkeypatch, name):
+    repl, *_ = _repl(tmp_path, monkeypatch, environ={name: "off"})
+    repl.submit("hello")
+    assert repl.history_file is None and not (tmp_path / "config").exists()
+    on, *_ = _repl(tmp_path, monkeypatch, environ={name: "nonsense"})
+    assert on.history_file is not None             # unrecognised: the default (kept)
+
+
+def test_history_lives_in_the_users_config_dir_not_the_hub_data_root(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "hubdata"))
+    assert R.history_path({"XDG_CONFIG_HOME": str(tmp_path / "cfg")}) == tmp_path / "cfg" / "nerva" / \
+        "chat_history.jsonl"
+    if sys.platform not in ("win32", "darwin"):
+        assert R.history_path({"HOME": str(tmp_path / "h")}) == tmp_path / "h" / ".config" / "nerva" / \
+            "chat_history.jsonl"
+    assert R.history_path({"XDG_CONFIG_HOME": "relative/dir", "HOME": str(tmp_path / "h")}) != \
+        Path("relative/dir/nerva/chat_history.jsonl")
+    assert str(tmp_path / "hubdata") not in str(R.history_path({"XDG_CONFIG_HOME": str(tmp_path / "c")}))
+
+
+@pytest.mark.parametrize("line", [
+    "my pin is 4821", "PIN: 4821", "the password is hunter2", "Passcode = 0000",
+    "my passphrase was correct horse battery", "parola este Secret1", "wifi password: abcd"])
+def test_history_keeps_out_plainly_stated_secrets(tmp_path, line):
+    path = tmp_path / "h.jsonl"
+    assert not R.append_history(path, line)
+    assert R.load_history(path) == []
+
+
+def test_history_keeps_ordinary_lines_about_passwords(tmp_path):
+    path = tmp_path / "h.jsonl"
+    assert R.append_history(path, "how do I reset a forgotten password")
+    assert R.load_history(path) == ["how do I reset a forgotten password"]
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink") or sys.platform == "win32", reason="POSIX symlinks")
+def test_a_symlinked_history_path_is_refused(tmp_path):
+    victim = tmp_path / "victim.txt"
+    victim.write_text("precious\n", encoding="utf-8")
+    link = tmp_path / "h.jsonl"
+    link.symlink_to(victim)
+    assert not R.append_history(link, "hello")
+    assert R.load_history(link) == []
+    assert victim.read_text(encoding="utf-8") == "precious\n"
+    folder = tmp_path / "real"
+    folder.mkdir()
+    (tmp_path / "linked").symlink_to(folder, target_is_directory=True)
+    assert not R.append_history(tmp_path / "linked" / "h.jsonl", "hello")
+    assert not (folder / "h.jsonl").exists()
+
+
+def test_the_trimmed_history_is_written_through_a_fresh_owner_only_file(tmp_path, monkeypatch):
+    path = tmp_path / "h.jsonl"
+    opened = []
+    real_open = os.open
+
+    def spy(file, flags, mode=0o777, *args, **kwargs):
+        opened.append((str(file), flags, mode))
+        return real_open(file, flags, mode, *args, **kwargs)
+
+    for index in range(3):
+        R.append_history(path, f"m{index}", limit=2)
+    monkeypatch.setattr(R.os, "open", spy)
+    R.append_history(path, "m3", limit=2)
+    temps = [(f, flags, mode) for f, flags, mode in opened if f.endswith(".tmp")]
+    assert temps, opened
+    for _f, flags, mode in temps:
+        assert flags & os.O_EXCL and flags & os.O_CREAT and mode == 0o600
+        assert flags & getattr(os, "O_NOFOLLOW", 0) == getattr(os, "O_NOFOLLOW", 0)
+    assert R.load_history(path) == ["m2", "m3"]
+    assert not [p for p in tmp_path.iterdir() if p.name.endswith(".tmp")]
 
 
 # ── $EDITOR ───────────────────────────────────────────────────────────────────
@@ -396,7 +708,7 @@ def test_the_worker_sends_in_order_adopts_the_session_and_sanitises(tmp_path, mo
     assert sent[0]["agent"] == "athena"
     assert "re: one" in out.getvalue() and "\x1b" not in out.getvalue()
     assert "\x1b" not in err.getvalue() and "ℹ You stopped" in err.getvalue()
-    assert ("approvals", [7]) in repl.asks
+    assert ("approvals", [7], None) in repl.asks
 
 
 def test_a_question_mid_turn_is_handed_to_the_keyboard_thread(tmp_path, monkeypatch):
@@ -419,7 +731,7 @@ def test_a_question_mid_turn_is_handed_to_the_keyboard_thread(tmp_path, monkeypa
         time.sleep(0.01)
     gate.set()
     worker.join(5)
-    assert list(repl.asks) == [("question", question)]          # asked once, not per poll
+    assert list(repl.asks) == [("question", question, None)]    # asked once, not per poll
     answered = []
     monkeypatch.setattr("agents.cli.chat_prompts._answer_clarify",
                         lambda ctx, client, q, sid=None: answered.append(q["id"]))
@@ -539,7 +851,9 @@ def test_turn_registry_interrupts_only_the_named_actor():
 
         mine = asyncio.create_task(turn("actor-a", "s1"))
         await started.wait()
-        assert T.interrupt("actor-b") == 0 and T.interrupt(None) == 0
+        assert T.interrupt("actor-b", "s1") == 0 and T.interrupt(None, "s1") == 0
+        assert T.interrupt("actor-a") == 0               # names no turn: stops nothing
+        assert T.interrupt("actor-a", "s1", "e" * 32) == 0   # both names must match
         assert T.interrupt("actor-a", "other-session") == 0
         assert T.running("actor-a") == 1
         assert T.interrupt("actor-a", "s1") == 1
@@ -592,19 +906,32 @@ async def test_interrupt_route_stops_only_the_callers_own_turn(tmp_path, monkeyp
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app),
                                      base_url="http://localhost") as client:
             turn = asyncio.create_task(client.post("/chat", json={"message": "long job"},
-                                                   headers={"x-user-token": owner}))
+                                                   headers={"x-user-token": owner,
+                                                            "X-Nerva-Turn-Id": "c" * 32}))
             await asyncio.wait_for(entered.wait(), 5)
-            other = await client.post("/chat/interrupt", json={}, headers={"x-user-token": stranger})
+            turn_id = "c" * 32
+            other = await client.post("/chat/interrupt", json={"turn_id": turn_id},
+                                      headers={"x-user-token": stranger})
             assert other.status_code == 200 and other.json()["interrupted"] == 0
-            anonymous = await client.post("/chat/interrupt", json={})
+            anonymous = await client.post("/chat/interrupt", json={"turn_id": turn_id})
             assert anonymous.status_code in (401, 403)
             bad = await client.post("/chat/interrupt", json={"session_id": "../x"},
                                     headers={"x-user-token": owner})
             assert bad.status_code == 422
             extra = await client.post("/chat/interrupt", json={"turn": 1}, headers={"x-user-token": owner})
             assert extra.status_code == 422
+            # review m2: a request that names no turn stops nothing; it is refused
+            unnamed = await client.post("/chat/interrupt", json={}, headers={"x-user-token": owner})
+            assert unnamed.status_code == 422
+            bad_id = await client.post("/chat/interrupt", json={"turn_id": "NOT-HEX"},
+                                       headers={"x-user-token": owner})
+            assert bad_id.status_code == 422
+            wrong = await client.post("/chat/interrupt", json={"turn_id": "d" * 32},
+                                      headers={"x-user-token": owner})
+            assert wrong.status_code == 200 and wrong.json()["interrupted"] == 0
             assert not turn.done()
-            mine = await client.post("/chat/interrupt", json={}, headers={"x-user-token": owner})
+            mine = await client.post("/chat/interrupt", json={"turn_id": turn_id},
+                                     headers={"x-user-token": owner})
             assert mine.status_code == 200 and mine.json()["interrupted"] == 1
             response = await asyncio.wait_for(turn, 5)
         assert response.status_code == 200
@@ -637,7 +964,7 @@ _CHILD = textwrap.dedent("""
                 return {{"reply": "ok"}}
             return {{}}
 
-    ctx = Context(environ={{}}, out=sys.stdout, err=sys.stdout, inp=sys.stdin,
+    ctx = Context(environ={{"XDG_CONFIG_HOME": {config!r}}}, out=sys.stdout, err=sys.stdout, inp=sys.stdin,
                   client_factory=lambda env: Hub())
     code = R.Repl(ctx, history=True, readline_module=R.load_readline()).run()
     print("EXITED", code, flush=True)
@@ -652,7 +979,8 @@ def _drive(tmp_path, keystrokes):
     if readline is None or "libedit" in (readline.__doc__ or ""):
         pytest.skip("GNU readline is not available")
     script = tmp_path / "child.py"
-    script.write_text(_CHILD.format(root=str(Path(__file__).resolve().parents[1])), encoding="utf-8")
+    script.write_text(_CHILD.format(root=str(Path(__file__).resolve().parents[1]),
+                                    config=str(tmp_path / "config")), encoding="utf-8")
     env = {**os.environ, "JARVIS_HOME": str(tmp_path / "home"), "TERM": "xterm", "INPUTRC": "/dev/null"}
     pid, fd = pty.fork()
     if pid == 0:  # pragma: no cover — the child
@@ -701,6 +1029,6 @@ def test_real_terminal_keys(tmp_path):
     assert 'SENT "/recap"' in transcript
     assert "press Ctrl+C again" in transcript
     assert "EXITED 0" in transcript
-    history = tmp_path / "home" / "cli" / "chat_history.jsonl"
+    history = tmp_path / "config" / "nerva" / "chat_history.jsonl"
     assert stat.S_IMODE(history.stat().st_mode) == 0o600
     assert json.loads(history.read_text().splitlines()[0]) == "a\nb"

@@ -9,13 +9,16 @@
   it separately. A line ending in `\` also continues on the next line. A multi-line paste
   arrives as one message.
 - Ctrl+C clears what you are typing. On an empty line while Nerva is working, it stops that
-  turn; only a turn your own credential started can be stopped. When nothing is running, a
-  second Ctrl+C (or Ctrl+D) leaves.
+  turn, even after a `/switch`; only a turn your own credential started can be stopped, and
+  a step already running may still finish. Messages you queued wait for your next Enter.
+  When nothing is running, a second Ctrl+C (or Ctrl+D) leaves.
 - Ctrl+X Ctrl+E or `/edit` opens your `$VISUAL`/`$EDITOR` on a private temporary file, and
   the text comes back as your draft. Ctrl+L redraws the screen. Esc Esc discards the draft,
   and Ctrl+Y brings it back.
 - Tab completes slash commands you may run and `@file:` paths. Up and Down go through your
-  history, which is kept in a private file (`--no-history` to keep none).
+  history, which is kept in a private file in your own config folder (never in a hub
+  backup); `--no-history` or `NERVA_CHAT_HISTORY=off` keeps none, and a line that states a
+  password or PIN is never kept.
 - Messages you type while a turn runs wait in a queue (`/queue` to see or drop them).
   `/image PATH` or `/paste-image` sends your next message, with the image, to the vision
   model. `/switch` moves between your sessions. `/model` picks the hub's local model

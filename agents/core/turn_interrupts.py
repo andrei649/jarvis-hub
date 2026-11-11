@@ -4,8 +4,11 @@ A turn the web door runs is registered here, while the model works on it, under 
 **credential that started it** (:func:`agents.core.routers.chat_pending.http_actor`, a
 hash of the token, browser session or localhost peer — never a name the request
 carries). ``POST /chat/interrupt`` cancels only the turns registered under the
-caller's own credential, optionally narrowed to one session: another credential's turn
-is not found, not refused, so a caller cannot even learn that it exists.
+caller's own credential, and only the one the caller names — by its session, or by the
+turn id its client chose and sent in the ``X-Nerva-Turn-Id`` header of ``POST /chat``
+(the first turn of a chat has no session id the client knows yet). A request that
+names neither stops nothing. Another credential's turn is not found, not refused, so
+a caller cannot even learn that it exists.
 
 Cancelling is the same thing the hub already does when the HTTP client goes away
 (``http_chat_binding``'s disconnect watcher, ``/chat/stream``'s runner): the turn's
@@ -19,13 +22,25 @@ it only stops work that its caller started.
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 
 INTERRUPTED_REPLY = "Interrupted. Nothing more was done for this message."
 NOTICE_CODE = "turn_interrupted"
-NOTICE_TEXT = "You stopped this turn; any step it had not finished was not done."
+NOTICE_TEXT = ("You stopped this turn. A step that was already running may still finish; "
+               "nothing after it was started.")
+
+#: The client-chosen id of one ``POST /chat`` turn (header ``X-Nerva-Turn-Id``).
+TURN_ID_HEADER = "x-nerva-turn-id"
+TURN_ID_PATTERN = r"^[0-9a-f]{32}$"
+_TURN_ID = re.compile(TURN_ID_PATTERN)
+
+
+def turn_id_from(value: object) -> str | None:
+    """A well-formed client turn id, or None (anything else is ignored, never an error)."""
+    return value if isinstance(value, str) and _TURN_ID.match(value) else None
 
 
 @dataclass(eq=False)
@@ -33,6 +48,7 @@ class LiveTurn:
     actor: str
     session_id: str
     task: asyncio.Task
+    turn_id: str | None = None
     interrupted: bool = False
 
 
@@ -40,7 +56,8 @@ _live: dict[str, set[LiveTurn]] = {}
 
 
 @contextmanager
-def track(actor: str | None, session_id: str | None) -> Iterator[LiveTurn | None]:
+def track(actor: str | None, session_id: str | None,
+          turn_id: str | None = None) -> Iterator[LiveTurn | None]:
     """Register the current task as *actor*'s running turn for the block's duration.
 
     ``actor`` None (no credential could be derived) registers nothing: such a turn
@@ -49,7 +66,7 @@ def track(actor: str | None, session_id: str | None) -> Iterator[LiveTurn | None
     if not actor or task is None:
         yield None
         return
-    turn = LiveTurn(actor, str(session_id or ""), task)
+    turn = LiveTurn(actor, str(session_id or ""), task, turn_id_from(turn_id))
     _live.setdefault(actor, set()).add(turn)
     try:
         yield turn
@@ -61,13 +78,16 @@ def track(actor: str | None, session_id: str | None) -> Iterator[LiveTurn | None
                 del _live[actor]
 
 
-def interrupt(actor: str | None, session_id: str | None = None) -> int:
-    """Cancel *actor*'s running turns (in *session_id* only, when given); how many."""
-    if not actor:
+def interrupt(actor: str | None, session_id: str | None = None, turn_id: str | None = None) -> int:
+    """Cancel *actor*'s running turns that match every name given (*session_id*,
+    *turn_id*); how many. Naming neither stops nothing: there is no "stop them all"."""
+    if not actor or (session_id is None and turn_id is None):
         return 0
     stopped = 0
     for turn in tuple(_live.get(actor, ())):
         if session_id is not None and turn.session_id != session_id:
+            continue
+        if turn_id is not None and turn.turn_id != turn_id:
             continue
         if turn.task.done() or turn.interrupted:
             continue
