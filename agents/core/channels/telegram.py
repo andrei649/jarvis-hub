@@ -1277,6 +1277,8 @@ class TelegramChannel(ChannelAdapter):
         self._enter_catch_up()
         if failure.fatal:
             self.health.failed_fatally(failure.kind, reprobe_in=FATAL_REPROBE_S)
+            # FP: logs the failure kind and the env-var name only; the token itself is never logged.
+            # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
             logger.error("Telegram channel stopped: the Bot API refused the bot token (%s). "
                          "Fix TELEGRAM_BOT_TOKEN; Nerva looks again every %.0f min.",
                          failure.kind, FATAL_REPROBE_S / 60)

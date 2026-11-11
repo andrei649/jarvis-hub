@@ -382,6 +382,8 @@ def verify_bindings() -> list[str]:
             integration_keys._PLACED.pop(secret, None)
             _WITHHELD.add(secret)
             withheld.append(secret)
+            # FP: logs the env-var NAME of the withheld secret, never its value.
+            # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
             logger.warning("channel secret %s withheld: its server changed since it was entered; "
                            "enter it again in the Channels panel", secret)
     return withheld

@@ -37,6 +37,8 @@ def _tls_context(host: str):
 
     verdict = verify_for("email", f"imaps://{host}")
     if verdict is False:
+        # Owner's explicit, logged opt-in (JARVIS_TLS_INSECURE_TARGETS); refused in the hardened profile.
+        # nosemgrep: python.lang.security.unverified-ssl-context.unverified-ssl-context
         return ssl._create_unverified_context()  # nosec B323 - the owner's explicit, logged opt-in
     return verdict
 

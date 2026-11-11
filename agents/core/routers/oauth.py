@@ -164,6 +164,9 @@ async def mcp_oauth_callback(request: Request, code: str = "", state: str = "", 
         response = HTMLResponse(_CALLBACK_PAGE.format(html.escape(page)), status_code=exc.status)
     else:
         audit_sign_in(get_orch(), result, via="hub")
+        # FP: the only dynamic value (the server name) is html.escape()d; the rule does not
+        # recognise the stdlib escaper as a sanitizer (it expects Django's).
+        # nosemgrep: python.django.security.injection.raw-html-format.raw-html-format
         response = HTMLResponse(_CALLBACK_PAGE.format(
             f"Signed in to {html.escape(result['server'])}. Return to Nerva and press connect. "
             "You can close this tab."))

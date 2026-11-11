@@ -346,7 +346,8 @@ describe('SkillsImportPanel — the vendored Hermes catalog', () => {
 
 describe('SkillSetup — H342 declared variables, values never shown', () => {
   it('lists missing names, PUTs a value once and never renders it', async () => {
-    const SECRET = 'sk-live-0123456789abcdefWXYZ';
+    // A distinctive placeholder, deliberately not key-shaped, so the secret scan stays quiet.
+    const VALUE = 'fixture-weather-value-not-a-real-key';
     const view = (set) => ({ skill: 'weather-tool', ready: set, missing: set ? [] : ['WEATHER_KEY'],
       requirements: [{ name: 'WEATHER_KEY', prompt: 'Enter WEATHER_KEY', optional: false, set,
         source: set ? 'skill' : null, settable: true }] });
@@ -362,13 +363,13 @@ describe('SkillSetup — H342 declared variables, values never shown', () => {
     fireEvent.change(screen.getByLabelText('skill to set up'), { target: { value: 'weather-tool' } });
     fireEvent.click(btn('show setup'));
     await waitFor(() => expect(screen.getByText(/missing WEATHER_KEY/)).toBeTruthy());
-    fireEvent.change(screen.getByLabelText('value for WEATHER_KEY'), { target: { value: SECRET } });
+    fireEvent.change(screen.getByLabelText('value for WEATHER_KEY'), { target: { value: VALUE } });
     fireEvent.click(btn('save WEATHER_KEY'));
     await waitFor(() => expect(screen.getByText(/set · for this skill/)).toBeTruthy());
     const put = fn.mock.calls.find((c) => String((c[1] && c[1].method) || '').toUpperCase() === 'PUT');
-    expect(bodyOf(put)).toEqual({ value: SECRET });
+    expect(bodyOf(put)).toEqual({ value: VALUE });
     expect(put[1].headers['X-Admin-Token']).toBe('owner-token');
-    expect(container.innerHTML).not.toContain(SECRET);
+    expect(container.innerHTML).not.toContain(VALUE);
     expect(screen.getByLabelText('value for WEATHER_KEY').value).toBe('');
   });
 });

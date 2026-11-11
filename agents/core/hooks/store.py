@@ -262,7 +262,8 @@ def run_dir() -> Path:
     path = Path(data_path("hooks", "run"))
     path.mkdir(parents=True, exist_ok=True)
     with contextlib.suppress(OSError):
-        os.chmod(path, 0o700)
+        # Owner-only private dir: 0o700 is stricter than the rule's suggested 0o644.
+        os.chmod(path, 0o700)  # nosec B103  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
     return path
 
 
@@ -342,7 +343,8 @@ def _write(data: dict) -> None:
     path = _store_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     with contextlib.suppress(OSError):
-        os.chmod(path.parent, 0o700)
+        # Owner-only private dir: 0o700 is stricter than the rule's suggested 0o644.
+        os.chmod(path.parent, 0o700)  # nosec B103  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
     fd, tmp = tempfile.mkstemp(prefix=".hooks-", dir=str(path.parent))   # created 0600
     try:
         with contextlib.suppress(OSError):

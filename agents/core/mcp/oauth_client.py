@@ -643,6 +643,8 @@ async def complete(state: str, code: str, binding: str, *, server: str | None = 
     try:
         status, body = await _post_form(client, flow.token_endpoint, form, auth=basic)
     except Exception as exc:
+        # FP: logs the server name and the exception type only, no token material.
+        # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
         logger.warning("MCP OAuth token exchange failed (server=%s type=%s)", flow.server, type(exc).__name__)
         raise OAuthError("token_exchange_failed", "the token exchange did not answer", status=502) from exc
     finally:

@@ -598,6 +598,8 @@ def read_secret(server: str, var: str) -> str | None:
     try:
         return _store().get(secret_name(server, var))
     except Exception:
+        # FP: logs the server and the variable NAME, never the secret value.
+        # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
         logger.warning("MCP server secret unreadable (server=%s name=%s)", server, var)
         return None
 

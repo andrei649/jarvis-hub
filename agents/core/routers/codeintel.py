@@ -79,7 +79,7 @@ async def codeintel_reindex():
 
 _LSP_STATUS = {"unknown_server": 404, "manual_only": 409, "toolchain_missing": 409,
                "already_pending": 409, "not_installed": 409, "outside_scope": 403,
-               "symlink_escape": 403, "secret_path": 403, "bad_path": 422, "not_a_directory": 422,
+               "symlink_escape": 403, "secret_path": 403, "bad_path": 422, "not_a_directory": 422,  # nosec B105 - refusal code -> HTTP status, not a password
                "approval_queue_unavailable": 503, "approval_queue_refused": 503, "unknown_kind": 503,
                "sandbox_unavailable": 409, "start_failed": 502, "broken": 409, "lsp_disabled": 409,
                "disabled": 409, "not_a_git_workspace": 409, "workspace_not_trusted": 409,

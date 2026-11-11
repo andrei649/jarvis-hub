@@ -284,6 +284,8 @@ def share(kind: str, name: str, *, by: str = "owner", note: str = "", audit: Any
         _audit(audit, "credential_shared_with_guests", integration, by)
         shares[integration] = {"at": time.time(), "by": str(by)[:64], "note": note}
         _write(shares)
+    # FP: logs the integration key ("kind:name") and the actor, never credential material.
+    # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
     logger.info("credential %s shared with guests by %s", integration, by)
     return {"integration": integration, "shared": True, **shares[integration]}
 
@@ -317,6 +319,8 @@ def check(kind: str, name: str, *, principal: Any = None, origin: str | None = N
     except ValueError:
         integration = f"{kind}:?"
     identity = turn_identity(principal, origin)
+    # FP: logs the integration key ("kind:name") and the channel, never credential material.
+    # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
     logger.warning("guest turn refused the owner's credential %s (channel=%s)",
                    integration, identity.channel)
     raise CredentialNotShared(integration)
