@@ -73,6 +73,9 @@ os.environ.setdefault("JARVIS_RATE_LIMIT", "0")
 # non-strict so plugin tests that hit real/mock hosts aren't blocked; the
 # dedicated egress tests opt back into strict via monkeypatch.setenv.
 os.environ.setdefault("JARVIS_STRICT_EGRESS", "0")
+# H055/H564: a file write would otherwise start whatever language server the developer's
+# PATH holds. The suite's LSP tests opt back in with a fake server (tests/test_lsp_rows.py).
+os.environ.setdefault("JARVIS_LSP", "0")
 
 from fastapi import APIRouter, FastAPI
 

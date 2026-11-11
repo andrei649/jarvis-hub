@@ -47,6 +47,8 @@ BUILTIN_KINDS: dict[str, tuple[str, str]] = {
     # G21 · H142: the HUD file browser's rename and delete, re-walked before they apply.
     "files.delete": ("agents.core.file_browser", "apply_approved"),
     "files.rename": ("agents.core.file_browser", "apply_approved"),
+    # H055: a language server is third-party code; installing one is a pinned registry fetch.
+    "lsp.install": ("agents.core.codeintel.lsp.install", "apply_approved"),
 }
 _APPLY: dict[str, Apply] = {}
 #: Kinds some processes must leave for another one: kind → (module, function), the

@@ -1418,6 +1418,104 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Auth Session
+         * @description Whether this browser holds a live owner session (and its CSRF token if so).
+         *
+         *     Open by design: an anonymous caller learns only ``signed_in: false``, whether the hub
+         *     has an owner credential to sign in with, and whether this transport allows browser
+         *     sign-in. The CSRF token comes back solely for a valid session cookie sent with
+         *     positive same-origin evidence. Reading it counts as use (the HUD reads it on load),
+         *     so it refreshes the idle clock.
+         */
+        get: operations["auth_session_api_auth_session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Login
+         * @description Exchange the owner secret for a browser session cookie.
+         *
+         *     Same-origin and ``application/json`` only (a cross-site form cannot send either);
+         *     over plain HTTP from another device only with ``JARVIS_ALLOW_INSECURE_SIGNIN=1``.
+         *     Throttled per address before the secret is checked; the hub-wide failure count
+         *     never refuses a correct secret (anyone could otherwise lock the owner out), it only
+         *     slows and refuses wrong ones. Loopback is exempt from both. The secret is compared
+         *     in constant time. Each sign-in rotates the session: the one the browser presented
+         *     is revoked.
+         */
+        post: operations["auth_login_api_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Logout
+         * @description Sign this browser out: revoke the session it presents and expire the cookie.
+         *
+         *     Needs no other credential — it can only end the session it is shown — but a
+         *     cross-origin request is refused so another site cannot sign the owner out.
+         */
+        post: operations["auth_logout_api_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/logout-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Logout All
+         * @description Sign out everywhere: revoke every owner browser session (owner only; a cookie
+         *     caller must send its CSRF token, which the admin guard checks).
+         */
+        post: operations["auth_logout_all_api_auth_logout_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/quickbar/resolve": {
         parameters: {
             query?: never;
@@ -2661,6 +2759,86 @@ export interface paths {
          * @description Rebuild the cached project index (admin).
          */
         post: operations["codeintel_reindex_api_codeintel_reindex_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/codeintel/lsp/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lsp Status
+         * @description Language servers: known, found (Nerva's tools dir or PATH), running, broken.
+         */
+        get: operations["lsp_status_api_codeintel_lsp_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/codeintel/lsp/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lsp Install
+         * @description Queue an approval card for a pinned install; nothing is downloaded yet.
+         */
+        post: operations["lsp_install_api_codeintel_lsp_install_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/codeintel/lsp/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lsp Start
+         * @description Start (or reuse) a server for a workspace root inside the file scope.
+         */
+        post: operations["lsp_start_api_codeintel_lsp_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/codeintel/lsp/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lsp Stop
+         * @description Stop running servers: every one, one server's, or one root's.
+         */
+        post: operations["lsp_stop_api_codeintel_lsp_stop_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -16710,6 +16888,25 @@ export interface components {
             /** Provider */
             provider?: ("lm-studio" | "ollama") | null;
         };
+        /** LspServerBody */
+        LspServerBody: {
+            /** Server */
+            server: string;
+        };
+        /** LspStartBody */
+        LspStartBody: {
+            /** Server */
+            server: string;
+            /** Root */
+            root?: string | null;
+        };
+        /** LspStopBody */
+        LspStopBody: {
+            /** Server */
+            server?: string | null;
+            /** Root */
+            root?: string | null;
+        };
         /** MCPServerConfig */
         MCPServerConfig: {
             /** Name */
@@ -20861,6 +21058,86 @@ export interface operations {
             };
         };
     };
+    auth_session_api_auth_session_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    auth_login_api_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    auth_logout_api_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    auth_logout_all_api_auth_logout_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     quickbar_resolve_api_quickbar_resolve_post: {
         parameters: {
             query?: never;
@@ -22929,6 +23206,125 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    lsp_status_api_codeintel_lsp_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    lsp_install_api_codeintel_lsp_install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LspServerBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lsp_start_api_codeintel_lsp_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LspStartBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lsp_stop_api_codeintel_lsp_stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LspStopBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

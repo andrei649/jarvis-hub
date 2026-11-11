@@ -27,6 +27,7 @@
    apiPost DOES carry the refusal body, so reindex renders err.body verbatim. */
 import React, { useState } from 'react';
 import { useApi, arr, mono, asLive, Card, State, Row, Tag, actA, inpS } from '../panel-kit';
+import { LspSection } from './lsp';
 
 const STATS_PATH = '/api/codeintel/stats';
 const SEARCH_PATH = '/api/codeintel/search';
@@ -262,6 +263,8 @@ export function CodeIntelPanel() {
         as fresh as the last reindex or restart. It returns structure only — names, kinds, paths,
         line numbers and one docstring line — never file contents.
       </div>
+
+      <LspSection />
     </Card>
   );
 }

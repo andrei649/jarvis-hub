@@ -1329,7 +1329,24 @@ class FileTools:
         data = content.encode("utf-8")
         if len(data) > self.max_bytes:
             return {"ok": False, "reason": "too_large"}
-        result = await self._mutate(args.get("path"), "write", data, approved=approved)
+        lsp = self._lsp_baseline(args.get("path"))
+        if lsp is None:
+            result = await self._mutate(args.get("path"), "write", data, approved=approved)
+        else:
+            # H564/H597: baseline the running language server, write, re-query, and hand
+            # the model only the diagnostics its own edit introduced. Any failure on the
+            # server's side leaves the write's own result exactly as it was.
+            from .codeintel.lsp import diagnose_write
+
+            target, root, old_text = lsp
+            result, report = await diagnose_write(
+                target, old_text, content, root,
+                lambda: self._mutate(args.get("path"), "write", data, approved=approved))
+            if report is not None:
+                result["lsp_diagnostics"] = report
+                if report.get("new"):
+                    # Third-party text: the loop fences a declared-tainted result as data.
+                    result["tainted"] = True
         if result.get("ok") is True:
             # H507: warn-only — the model reads what it just wrote that looks dangerous.
             from .code_guidance import result_fields
@@ -1339,6 +1356,36 @@ class FileTools:
             except Exception:
                 logger.warning("code guidance for a file write failed", exc_info=True)
         return result
+
+    def _lsp_baseline(self, raw_path: object) -> tuple[Path, Path, str | None] | None:
+        """``(target, scope root, current text or None for a new file)`` when a language
+        server could check this write; None (no cost) when LSP is off or nothing serves
+        the file's type. Refusals are left for :meth:`_mutate` to report."""
+        from .codeintel.lsp import manager as lsp_manager
+        from .codeintel.lsp.registry import candidates_for
+
+        if not lsp_manager.enabled():
+            return None
+        try:
+            target = self.scope.resolve(raw_path)
+        except FileScopeError:
+            return None
+        root = self.scope.root_for(target)
+        if root is None or target == root or not candidates_for(target):
+            return None
+        if lsp_manager.get_manager().server_for(target) is None:
+            return None
+        old_text: str | None = None
+        try:
+            if target.is_file():
+                if target.stat().st_size > lsp_manager.MAX_EDIT_BYTES:
+                    return None
+                old_text = target.read_bytes().decode("utf-8")
+            elif target.exists():
+                return None
+        except (OSError, UnicodeDecodeError):
+            return None
+        return target, root, old_text
 
     async def delete_file(self, args: Mapping[str, Any], *, approved: bool = False) -> dict:
         return await self._mutate(args.get("path"), "delete", b"", approved=approved)

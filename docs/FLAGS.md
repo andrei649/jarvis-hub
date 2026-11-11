@@ -1493,6 +1493,30 @@ newcomer rather than killing a running cell.
 **Revert:** set it back to `false` and restart. The next call is a one-shot again, and
 says nothing about continuity — the fallback is named in the result shape, not silent.
 
+## H055/H564/H597 — language servers (code diagnostics after an edit)
+
+Code: `agents/core/codeintel/lsp/`. After `file_write` replaces a file a language server
+serves, the running server's diagnostics are taken before and after the write and only the
+ones the edit introduced are added to the tool result as `lsp_diagnostics` (bounded to 20,
+attributed to the edited lines, injection-scanned; a result carrying any is `tainted`, so the
+loop fences it as data). No server for the file type, or `JARVIS_LSP=0`: the result is
+exactly as before. Servers run under `bwrap` when it works (no network, workspace read-only,
+the owner's home and the data root hidden), otherwise with resource limits only and the
+status says so. Installing a server is an `lsp.install` approval card (pinned package, one
+registry); nothing is fetched before a person accepts it.
+
+- **`JARVIS_LSP`** — default **on** (`codeintel/lsp/manager.py` `FLAG`). `0` turns the
+  diagnostics and the start route off; status and install requests still answer.
+- **`JARVIS_LSP_DISABLED`** — empty. Comma-separated server ids (`gopls,clangd`) never started.
+- **`JARVIS_LSP_TOOLS_DIR`** — default `<data root>/tools/lsp`: where approved installs land
+  (`npm/`, `venv/<id>/`, `go/bin`) and each server's private state directory.
+- **`JARVIS_LSP_IDLE_SECONDS`** — default **600** (minimum 30): a server unused this long is killed.
+- **`JARVIS_LSP_TIMEOUT_SECONDS`** — default **10** (cap 120): the wait for one diagnostics
+  answer; initialisation may take three times this.
+- **`JARVIS_LSP_MEMORY_MB`** — default **2048** (minimum 256): the data-segment limit of a server process.
+- **`JARVIS_LSP_REQUIRE_SANDBOX`** — default off. On: a server never starts without `bwrap`
+  isolation (`sandbox_unavailable`).
+
 ## H010 — in-place restore and the hub's self-restart
 
 An approved `backup.restore` is staged; the hub then restarts itself and `serve.py` applies
@@ -1720,6 +1744,7 @@ failed query to a second configured provider. **Revert:** unset the variable.
 | `JARVIS_MCP_STDIO_ENV_BASELINE` | **on** (`mcp/client.py` `STDIO_ENV_BASELINE_FLAG`) | stdio MCP subprocesses are handed only `STDIO_ENV_ALLOWLIST` + `JARVIS_MCP_STDIO_ALLOWED_ENV` + the per-server `env` — they are not handed the hub's API keys, tokens or proxies; one INFO line per connect reports the withheld **count** of host values (never names or values) and `GET /api/admin/mcp` reports `env_baseline` per spawning row (`null` for rows that spawn nothing) | **Defence in depth, not a boundary:** the child is same-UID, so a hostile server still reads the hub env from `/proc/<ppid>/environ`; the boundary needs the unshipped command screener + process isolation. A server that relied on inheriting a hub credential stops seeing it — the remedy is `JARVIS_MCP_STDIO_ALLOWED_ENV`, **not** the per-server `env` (in-process only, no config surface) | `JARVIS_MCP_STDIO_ENV_BASELINE=0` + reconnect: full parent env inherited again, for every stdio server at once |
 | `JARVIS_MCP_STDIO_ALLOWED_ENV` | empty (`mcp/client.py` `STDIO_ENV_ALLOW_FLAG`) | Comma-separated host variable **names** stdio MCP servers may keep inheriting on top of the allow-list; a listed name passes through even if it looks like a credential | Host-wide, not per-server: every stdio MCP server sees every listed name — list the minimum. Still narrower than `=0`, which surrenders the whole environment | Remove the name + reconnect: that variable is withheld again |
 | `JARVIS_MCP_AUTOCONNECT` | off (`web.py` lifespan → `MCPManager.start`) | Every saved MCP server is connected in the background at boot, in parallel (4 at a time, 30 s each); the reconnect supervisor runs either way | One more child process per saved stdio server from boot onwards | Unset: servers connect when the owner presses connect |
+| `JARVIS_LSP` (+ `JARVIS_LSP_DISABLED`, `JARVIS_LSP_TOOLS_DIR`, `JARVIS_LSP_IDLE_SECONDS`, `JARVIS_LSP_TIMEOUT_SECONDS`, `JARVIS_LSP_MEMORY_MB`, `JARVIS_LSP_REQUIRE_SANDBOX`) | **on** · none · `<data root>/tools/lsp` · 600 · 10 · 2048 · off (`codeintel/lsp/`) | A `file_write` of a served file type starts (lazily) the language server found in the tools dir or on PATH and returns the diagnostics the edit introduced | A third-party server process per language and workspace, sandboxed (bwrap: no network, read-only workspace) or rlimit-only where bwrap is unavailable; installs only through an `lsp.install` card | `JARVIS_LSP=0`: no server starts, write results are unchanged; `nerva lsp stop` kills running ones |
 | `JARVIS_MCP_SAMPLING_DAILY_TOKENS` | 20000 (`mcp/host_requests.py` `DAILY_TOKENS_ENV`) | The daily allowance for completions MCP servers request (only servers whose `sampling` is `ask` or `auto`) | Local model time spent on a third party's prompts | `0`: every sampling request is refused |
 | `JARVIS_VLM_PRESET` | unset (absolute pixels assumed) | Names a pinned open grounder from `vlm.py:VLM_PRESETS` so `LocalVLMLocator` normalizes 0–1000-relative vs absolute-on-resized coordinates before a click | Right preset = clicks land where the model meant; **wrong** preset = mis-clicks (why it is explicit). Still needs `JARVIS_VLM_MODEL` (`vlm_model_unset`); unknown id → `vlm_preset_unknown` | Unset: the locator assumes absolute pixels on the original screenshot |
 | `JARVIS_ROLE_<NAME>_*` (H277: `DEEP_MODEL`, `VISION_PROVIDER/_MODEL/_BASE_URL`, `VIDEO_*`, `APPROVAL_JUDGE_*`) | unset (`llm/model_roles.py`) | Picks a model per job; the `JARVIS_VLM_*` / `JARVIS_DEEP_MODEL` names stay the fallbacks. `APPROVAL_JUDGE_MODEL` turns on an advisory judge that scores queued tool-call approvals off the request path | The judge sees each queued call's arguments: local by default; remote only with `JARVIS_ROLE_APPROVAL_JUDGE_ALLOW_REMOTE=1`, never under strict-local / `cloud_fallback=never` / safe mode / H378 findings, never for local-policy agents or tainted items. It decides nothing | Unset: roles fall back to the legacy names; no judge |

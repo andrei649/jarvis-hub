@@ -4,6 +4,24 @@
 
 ### What changed for you — 2026-11-11
 
+**The agent sees the type errors its own edit just introduced (language servers)**
+- When the agent writes a file that a language server understands (Python, TypeScript/
+  JavaScript, Go, Rust, C/C++, shell, YAML, JSON, CSS, HTML, Dockerfile and more), Nerva asks
+  the server for its errors before and after the write and hands the agent only the new
+  ones — at most 20, each pointing at the line the edit changed — so it can fix them in
+  the next step. Errors that were already there are left out. If no server is installed for
+  that kind of file, nothing changes. `JARVIS_LSP=0` turns this off.
+- Language servers already on your machine (on `PATH`) are found automatically. To add one,
+  press **install…** in the HUD's Code Intel panel or run `nerva lsp install pyright`
+  (`nerva lsp install-all` for every one Nerva knows how to install): this only puts an
+  approval card in front of you, showing the exact package, version and registry. Nothing
+  is downloaded until you accept it, and it lands in Nerva's own tools folder.
+- Servers are third-party code, so they run sandboxed where the system allows it (no
+  network, your project read-only, your home folder hidden), with memory and CPU limits,
+  and are stopped after 10 idle minutes. The Code Intel panel and `nerva lsp status` show
+  what is running, the sandbox in force, and any server that answers but never reports.
+  `nerva lsp list | which | start | stop | restart` manage them.
+
 **The desktop app starts Nerva, a hotkey from anywhere, notifications and `nerva://` links**
 - The desktop app now starts the hub itself when none is running (from your checkout's
   `.venv`, like `start.sh`) and opens the HUD only once the hub says it is ready. Quitting

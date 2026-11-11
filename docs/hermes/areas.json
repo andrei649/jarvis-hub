@@ -156,6 +156,7 @@
         "tests/test_job_url_monitor.py",
         "tests/test_jobs_doctor.py",
         "tests/test_log_tail.py",
+        "tests/test_lsp_rows.py",
         "tests/test_marketplace.py",
         "tests/test_memory_api.py",
         "tests/test_nerva_cli.py",
@@ -2175,6 +2176,7 @@
         "H564"
       ],
       "suite": [
+        "tests/test_lsp_rows.py",
         "tests/test_mcp_admin.py",
         "tests/test_mcp_client.py"
       ]
@@ -2466,6 +2468,7 @@
         "tests/test_image_generation_api_flow.py",
         "tests/test_image_mediation_composition.py",
         "tests/test_jobs_routes.py",
+        "tests/test_lsp_rows.py",
         "tests/test_mcp_hardening.py",
         "tests/test_mcp_tool_filters.py",
         "tests/test_mcp_transports.py",
