@@ -16,11 +16,20 @@
   (`nerva lsp install-all` for every one Nerva knows how to install): this only puts an
   approval card in front of you, showing the exact package, version and registry. Nothing
   is downloaded until you accept it, and it lands in Nerva's own tools folder.
-- Servers are third-party code, so they run sandboxed where the system allows it (no
-  network, your project read-only, your home folder hidden), with memory and CPU limits,
-  and are stopped after 10 idle minutes. The Code Intel panel and `nerva lsp status` show
-  what is running, the sandbox in force, and any server that answers but never reports.
-  `nerva lsp list | which | start | stop | restart` manage them.
+- A server only starts in a project (a git repository) you have trusted for this, in the
+  Code Intel panel or with `nerva lsp trust <folder>`: a language server reads what the
+  project ships, and some can be led by it into running the project's own code.
+  `nerva lsp untrust <folder>` takes it back and stops its servers.
+- Servers are third-party code, so they run in a sandbox that sees only the system, the
+  server itself and your project (read-only): no network, and your home folder and Nerva's
+  data folder are not there at all. Each server uses its own bundled copy of its runtime
+  (TypeScript's own tsserver, a fixed Python), never one the project ships. Where the
+  sandbox is unavailable no server starts, unless you set `JARVIS_LSP_REQUIRE_SANDBOX=0`.
+  They have memory and CPU limits and are stopped after 10 idle minutes. The Code Intel
+  panel and `nerva lsp status` show what is running, the sandbox in force, the trusted
+  projects and any server that answers but never reports.
+  `nerva lsp list | which | start | stop | restart | clear` manage them; a failed install
+  can be cleared and asked for again.
 
 **The desktop app starts Nerva, a hotkey from anywhere, notifications and `nerva://` links**
 - The desktop app now starts the hub itself when none is running (from your checkout's

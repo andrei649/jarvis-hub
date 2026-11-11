@@ -1,8 +1,10 @@
 """lsp — language servers for code intelligence (Hermes H055, H564, H597).
 
 * :mod:`.registry` — the servers Nerva knows and their pinned install recipes.
-* :mod:`.confine` — how a server (third-party code) is started: scrubbed env,
-  ``bwrap`` namespaces with no network where available, resource limits.
+* :mod:`.trust` — the git workspaces the owner trusted; no server starts elsewhere.
+* :mod:`.profiles` — each server's own runtime, and what a workspace can still influence.
+* :mod:`.confine` — how a server (third-party code) is started: scrubbed env, an
+  allowlist ``bwrap`` sandbox with no network (required by default), resource limits.
 * :mod:`.client` — one server over JSON-RPC on stdio, bounded and narrow.
 * :mod:`.manager` — discovery, lazy start, idle reaping, the broken set, and the
   before/after diagnostics of an edit (:func:`.manager.diagnose_write`).

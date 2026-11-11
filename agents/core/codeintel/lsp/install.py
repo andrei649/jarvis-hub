@@ -40,6 +40,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from agents.core.env_config import env_str
+
 from . import confine
 from .registry import REGISTRIES, ServerSpec, spec
 
@@ -68,13 +70,44 @@ def _state_path(base: Path) -> Path:
     return base / "installs.json"
 
 
+#: An "installing" row older than this was interrupted (the hub stopped mid-install):
+#: every plan step is bounded by INSTALL_TIMEOUT_SECONDS, and no plan has more than two.
+STALE_INSTALL_SECONDS = 2 * INSTALL_TIMEOUT_SECONDS + 60
+
+
 def install_state(base: Path) -> dict[str, dict]:
+    """The install records; an interrupted ``installing`` row reads as ``failed``."""
     try:
         data = json.loads(_state_path(base).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     rows = data.get("servers") if isinstance(data, dict) else None
-    return {k: v for k, v in rows.items() if isinstance(v, dict)} if isinstance(rows, dict) else {}
+    rows = {k: v for k, v in rows.items() if isinstance(v, dict)} if isinstance(rows, dict) else {}
+    now = time.time()
+    for row in rows.values():
+        started = row.get("started_at")
+        if row.get("status") == "installing" and (not isinstance(started, (int, float))
+                                                  or now - started > STALE_INSTALL_SECONDS):
+            row.update({"status": "failed", "error": "interrupted"})
+    return rows
+
+
+def clear_install(server_id: str) -> dict:
+    """Forget a failed install (or a card that is no longer waiting): the owner's reset."""
+    row = spec(server_id)
+    if row is None:
+        raise InstallRefused("unknown_server")
+    base = _tools()
+    with _LOCK:
+        rows = install_state(base)
+        current = rows.get(row.id)
+        if current is None:
+            raise InstallRefused("not_found")
+        if current.get("status") in ("installing", "installed"):
+            raise InstallRefused("not_clearable", str(current.get("status")))
+        rows.pop(row.id)
+        _write_state(base, rows)
+    return {"server": row.id, "cleared": True}
 
 
 def _write_state(base: Path, rows: dict[str, dict]) -> None:
@@ -92,7 +125,9 @@ def toolchain(kind: str) -> str | None:
     if kind == "go":
         return shutil.which("go")
     if kind == "pip":
-        return sys.executable
+        # The real interpreter, not a venv's link to it: the new venv must not depend on a
+        # path (the hub's own venv) the sandbox does not mount.
+        return str(Path(sys.executable).resolve())
     return None
 
 
@@ -171,11 +206,35 @@ def _install_env(row: ServerSpec, base: Path) -> dict[str, str]:
                 "GOPROXY": REGISTRIES["go"], "GOSUMDB": "sum.golang.org", "GONOSUMDB": "", "GOFLAGS": "-mod=mod",
                 "GOBIN": str(base / "go" / "bin"), "GOPATH": str(base / "go" / "path"),
                 "GOMODCACHE": str(base / "go" / "mod"), "GOCACHE": str(base / "cache" / "go")})
+    # The hub's own egress settings, so an install works behind the owner's proxy.
+    for name in PROXY_ENV:
+        value = env_str(name, "")
+        if value:
+            env[name] = value
+    ca = ca_files()
+    if ca:
+        env.setdefault("SSL_CERT_FILE", str(ca[0]))
+        env.setdefault("NODE_EXTRA_CA_CERTS", str(ca[0]))
+        env.setdefault("PIP_CERT", str(ca[0]))
     return env
 
 
+PROXY_ENV = ("HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy")
+CA_ENV = ("JARVIS_CA_BUNDLE", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "PIP_CERT")
+
+
+def ca_files() -> tuple[Path, ...]:
+    """Extra CA bundles the hub trusts (``JARVIS_CA_BUNDLE`` first), bound into the install."""
+    found: list[Path] = []
+    for name in CA_ENV:
+        raw = env_str(name, "").strip()
+        if raw and os.path.isfile(raw):
+            found.append(Path(raw).resolve())
+    return tuple(dict.fromkeys(found))
+
+
 async def _run(argv: list[str], env: dict[str, str], base: Path) -> tuple[int, str]:
-    wrapped, _ = confine.wrap(argv, root=base, state_dir=base, network=True)
+    wrapped, _ = confine.wrap(argv, root=base, state_dir=base, network=True, read_only=ca_files())
     kwargs: dict[str, Any] = {"start_new_session": True} if os.name == "posix" else {}
     proc = await asyncio.create_subprocess_exec(  # nosec B603 — fixed argv from the registry, no shell
         *wrapped, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
@@ -214,27 +273,39 @@ async def apply_approved(task: Any, orch: Any) -> dict:
         if any(payload.get(k) != v for k, v in expected.items()):
             return {"status": "refused", "reason": "payload_changed"}
         current["status"] = "installing"
+        current["started_at"] = time.time()
         current["approved_by"] = str(getattr(task, "decided_by", "") or "owner")
         _write_state(base, rows)
-    env = _install_env(row, base)
-    code, tail = 0, ""
-    for argv in plan(row, base):
-        code, tail = await _run(argv, env, base)
-        if code != 0:
-            break
-    from .manager import get_manager
+    code, tail, error = -1, "", "internal_error"
+    binary: str | None = None
+    ok = False
+    try:
+        env = _install_env(row, base)
+        code = 0
+        for argv in plan(row, base):
+            code, tail = await _run(argv, env, base)
+            if code != 0:
+                break
+        from .manager import get_manager
 
-    binary, source = get_manager().locate(row)
-    ok = code == 0 and source == "nerva"
-    with _LOCK:
-        rows = install_state(base)
-        entry = rows.get(row.id) or {}
-        entry.update({"status": "installed" if ok else "failed", "finished_at": time.time(),
-                      "binary": binary if ok else None,
-                      "error": "" if ok else (f"exit {code}" if code else "binary_missing"),
-                      "output_tail": tail})
-        rows[row.id] = entry
-        _write_state(base, rows)
+        binary, source = get_manager().locate(row)
+        ok = code == 0 and source == "nerva"
+        error = "" if ok else (f"exit {code}" if code else "binary_missing")
+    except confine.ConfinementRefused as exc:
+        error = exc.reason
+    except OSError as exc:
+        error = f"spawn_failed:{type(exc).__name__}"
+    finally:
+        # Whatever happened (a refusal, an exception, a cancelled task), the row ends in a
+        # terminal state, so a later request is never refused as already pending.
+        with _LOCK:
+            rows = install_state(base)
+            entry = rows.get(row.id) or {}
+            entry.update({"status": "installed" if ok else "failed", "finished_at": time.time(),
+                          "binary": binary if ok else None, "error": "" if ok else error,
+                          "output_tail": tail})
+            rows[row.id] = entry
+            _write_state(base, rows)
     _audit(orch, entry.get("approved_by", "owner"), "lsp.install",
            f"language server {row.id} {row.recipe.version}: {entry['status']} (task {task_id})",
            {"server": row.id, "packages": list(row.recipe.packages), "status": entry["status"]})
@@ -250,5 +321,5 @@ def _audit(orch: Any, actor: str, action: str, why: str, metadata: dict) -> None
             logger.warning("language-server install audit failed", exc_info=True)
 
 
-__all__ = ["APPROVAL_KIND", "InstallRefused", "apply_approved", "install_state", "plan", "request_install",
-           "toolchain"]
+__all__ = ["APPROVAL_KIND", "InstallRefused", "apply_approved", "ca_files", "clear_install", "install_state", "plan",
+           "request_install", "toolchain"]

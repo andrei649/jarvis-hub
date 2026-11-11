@@ -129,7 +129,7 @@ import threading
 import time
 import uuid
 from collections import OrderedDict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -758,6 +758,21 @@ def _bounded_int(value: object, default: int, *, minimum: int, maximum: int) -> 
     return max(minimum, min(maximum, value))
 
 
+def _lsp_old_text(target: Path) -> str | None | bool:
+    """The text a language server's baseline sees: the file's, None for a new file, or
+    False (no baseline) when it is too large, not UTF-8 or not a regular file."""
+    from .codeintel.lsp.manager import MAX_EDIT_BYTES
+
+    try:
+        if target.is_file():
+            if target.stat().st_size > MAX_EDIT_BYTES:
+                return False
+            return target.read_bytes().decode("utf-8")
+        return False if target.exists() else None
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
 def _valid_offset(value: object) -> bool:
     """An int in ``0..MAX_OFFSET`` — not a bool, not a float, not a string of digits."""
     return (not isinstance(value, bool) and isinstance(value, int)
@@ -1329,20 +1344,38 @@ class FileTools:
         data = content.encode("utf-8")
         if len(data) > self.max_bytes:
             return {"ok": False, "reason": "too_large"}
-        lsp = self._lsp_baseline(args.get("path"))
+        lsp = self._lsp_target(args.get("path"))
         if lsp is None:
             result = await self._mutate(args.get("path"), "write", data, approved=approved)
         else:
             # H564/H597: baseline the running language server, write, re-query, and hand
-            # the model only the diagnostics its own edit introduced. Any failure on the
-            # server's side leaves the write's own result exactly as it was.
-            from .codeintel.lsp import diagnose_write
+            # the model only the diagnostics its own edit introduced. The baseline (and
+            # so any server start) happens only once the write has passed its contract,
+            # kernel and approval checks — inside _mutate, just before the effect. Any
+            # failure on the server's side leaves the write's own result as it was.
+            from .codeintel.lsp import manager as lsp_manager
 
-            target, root, old_text = lsp
-            result, report = await diagnose_write(
-                target, old_text, content, root,
-                lambda: self._mutate(args.get("path"), "write", data, approved=approved))
-            if report is not None:
+            target, root = lsp
+            tickets: list[Any] = []
+
+            async def baseline() -> None:
+                try:
+                    old_text = await asyncio.to_thread(_lsp_old_text, target)
+                    if old_text is not False:
+                        tickets.append(await lsp_manager.get_manager().before_edit(target, old_text, root))
+                except Exception:
+                    logger.warning("language-server baseline failed", exc_info=True)
+
+            result = await self._mutate(args.get("path"), "write", data, approved=approved,
+                                        before_effect=baseline)
+            ticket = tickets[0] if tickets else None
+            if ticket is not None and result.get("ok") is True:
+                try:
+                    report = await lsp_manager.get_manager().after_edit(ticket, content)
+                except Exception:
+                    logger.warning("language-server diagnostics failed", exc_info=True)
+                    report = {"server": ticket.server, "status": "unavailable", "reason": "internal_error",
+                              "notice": lsp_manager.NOTICE}
                 result["lsp_diagnostics"] = report
                 if report.get("new"):
                     # Third-party text: the loop fences a declared-tainted result as data.
@@ -1357,10 +1390,10 @@ class FileTools:
                 logger.warning("code guidance for a file write failed", exc_info=True)
         return result
 
-    def _lsp_baseline(self, raw_path: object) -> tuple[Path, Path, str | None] | None:
-        """``(target, scope root, current text or None for a new file)`` when a language
-        server could check this write; None (no cost) when LSP is off or nothing serves
-        the file's type. Refusals are left for :meth:`_mutate` to report."""
+    def _lsp_target(self, raw_path: object) -> tuple[Path, Path] | None:
+        """``(target, scope root)`` when a language server could check this write; None (no
+        cost, nothing started) when LSP is off or nothing serves the file's type.
+        Refusals are left for :meth:`_mutate` to report."""
         from .codeintel.lsp import manager as lsp_manager
         from .codeintel.lsp.registry import candidates_for
 
@@ -1375,22 +1408,13 @@ class FileTools:
             return None
         if lsp_manager.get_manager().server_for(target) is None:
             return None
-        old_text: str | None = None
-        try:
-            if target.is_file():
-                if target.stat().st_size > lsp_manager.MAX_EDIT_BYTES:
-                    return None
-                old_text = target.read_bytes().decode("utf-8")
-            elif target.exists():
-                return None
-        except (OSError, UnicodeDecodeError):
-            return None
-        return target, root, old_text
+        return target, root
 
     async def delete_file(self, args: Mapping[str, Any], *, approved: bool = False) -> dict:
         return await self._mutate(args.get("path"), "delete", b"", approved=approved)
 
-    async def _mutate(self, raw_path: object, op: str, data: bytes, *, approved: bool) -> dict:
+    async def _mutate(self, raw_path: object, op: str, data: bytes, *, approved: bool,
+                      before_effect: Callable[[], Awaitable[None]] | None = None) -> dict:
         try:
             target = self.scope.resolve(raw_path)
         except FileScopeError as exc:
@@ -1499,6 +1523,10 @@ class FileTools:
                 "class": INSTRUCTION_CLASS,
                 "snapshot_ref": snap.ref,
             }, target, op, "refused")
+
+        if before_effect is not None:
+            # H564: the language-server baseline, only now that every fence has passed.
+            await before_effect()
 
         # The distinct physical attempt begins only after the existing contract,
         # Kernel and approval fences passed; the history worker rechecks scope

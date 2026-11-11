@@ -109,7 +109,8 @@ class LspClient:
 
     def __init__(self, server_id: str, argv: list[str], *, root: Path, env: dict[str, str],
                  isolation: str, preexec: Callable[[], None] | None = None,
-                 timeout: float = 10.0) -> None:
+                 timeout: float = 10.0, cwd: Path | None = None,
+                 init_options: dict | None = None, settings: dict | None = None) -> None:
         self.server_id = server_id
         self.argv = list(argv)
         self.root = root.resolve()
@@ -117,6 +118,10 @@ class LspClient:
         self.isolation = isolation
         self._preexec = preexec
         self.timeout = timeout
+        #: Where the process runs: its private state directory, not the workspace.
+        self.cwd = cwd
+        self.init_options = dict(init_options or {})
+        self.settings = dict(settings or {})
         self.proc: asyncio.subprocess.Process | None = None
         self.loop: asyncio.AbstractEventLoop | None = None
         self.started_at = 0.0
@@ -157,7 +162,7 @@ class LspClient:
         try:
             self.proc = await asyncio.create_subprocess_exec(  # nosec B603 — argv list, no shell
                 *self.argv, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE, cwd=str(self.root), env=self.env, limit=MAX_HEADER_BYTES,
+                stderr=asyncio.subprocess.PIPE, cwd=str(self.cwd or self.root), env=self.env, limit=MAX_HEADER_BYTES,
                 **kwargs)
         except OSError as exc:
             self.state, self.error = "broken", f"spawn_failed:{type(exc).__name__}"
@@ -181,10 +186,12 @@ class LspClient:
                     "workspace": {"workspaceFolders": True, "configuration": True},
                     "window": {"workDoneProgress": False},
                 },
-                "initializationOptions": {},
+                "initializationOptions": self.init_options,
             })
             self.capabilities = dict((result or {}).get("capabilities") or {}) if isinstance(result, dict) else {}
             await self.notify("initialized", {})
+            if self.settings:
+                await self.notify("workspace/didChangeConfiguration", {"settings": self.settings})
         except BaseException:
             await self.kill()
             self.state = "broken"
@@ -304,7 +311,8 @@ class LspClient:
     async def _answer(self, ident: Any, method: str, params: Any) -> None:
         if method == "workspace/configuration":
             items = params.get("items") if isinstance(params, dict) else None
-            result: Any = [None] * (len(items) if isinstance(items, list) else 0)
+            result: Any = [self._section(item.get("section") if isinstance(item, dict) else None)
+                           for item in (items if isinstance(items, list) else [])]
             reply = {"jsonrpc": "2.0", "id": ident, "result": result}
         elif method in ("client/registerCapability", "client/unregisterCapability",
                         "window/workDoneProgress/create", "window/showMessageRequest",
@@ -317,6 +325,17 @@ class LspClient:
                      "error": {"code": -32601, "message": "not supported by this client"}}
         with contextlib.suppress(LspError):
             await self._send(reply)
+
+    def _section(self, section: object) -> Any:
+        """Nerva's own settings for a ``workspace/configuration`` section (dotted), else None."""
+        if not isinstance(section, str) or not section:
+            return None
+        node: Any = self.settings
+        for part in section.split("."):
+            if not isinstance(node, dict) or part not in node:
+                return None
+            node = node[part]
+        return node
 
     def _inside_root(self, path: Path | None) -> bool:
         return path is not None and (path == self.root or self.root in path.parents)

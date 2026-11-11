@@ -562,6 +562,12 @@ def build_parser() -> argparse.ArgumentParser:
     lsp_stop = lsp_verbs.add_parser("stop", help="stop running servers (admin)")
     lsp_stop.add_argument("server", nargs="?", default=None)
     lsp_stop.add_argument("--root", default=None)
+    lsp_trust = lsp_verbs.add_parser("trust", help="allow language servers in one git workspace (admin)")
+    lsp_trust.add_argument("root")
+    lsp_untrust = lsp_verbs.add_parser("untrust", help="stop allowing them there, and stop its servers (admin)")
+    lsp_untrust.add_argument("root")
+    lsp_clear = lsp_verbs.add_parser("clear", help="forget a failed install (admin)")
+    lsp_clear.add_argument("server")
 
     company = verbs.add_parser("company", help="company-mode work runs (user)")
     company_verbs = company.add_subparsers(dest="action", required=True, metavar="action")
@@ -3970,6 +3976,18 @@ def cmd_lsp(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.say(f"approval card #{reply.get('task_id')} queued: install {reply.get('server')} "
                 f"({', '.join(reply.get('packages') or [])}) — accept it in the approval queue")
         return EXIT_OK
+    if ns.action in ("trust", "untrust"):
+        reply = client.post("/api/codeintel/lsp/trust",
+                            {"root": ns.root, "trusted": ns.action == "trust"}) or {}
+        if ns.action == "trust":
+            ctx.say(f"language servers may start in {reply.get('root')}")
+        else:
+            ctx.say(f"{reply.get('root')} no longer trusted; stopped {reply.get('stopped', 0)} server(s)")
+        return EXIT_OK
+    if ns.action == "clear":
+        client.request("DELETE", f"/api/codeintel/lsp/install/{quote(ns.server, safe='')}")
+        ctx.say(f"install record for {ns.server} cleared")
+        return EXIT_OK
     if ns.action == "install-all":
         status = client.get("/api/codeintel/lsp/status") or {}
         asked: set[tuple] = set()
@@ -4032,7 +4050,12 @@ def cmd_lsp(ns: argparse.Namespace, ctx: Context) -> int:
     if status.get("isolation") != "bwrap":
         ctx.say("  warning: no namespace sandbox — servers run with resource limits and a scrubbed "
                 "environment only")
+    if not status.get("can_start", True):
+        ctx.say("  no server will start: bubblewrap is unavailable and JARVIS_LSP_REQUIRE_SANDBOX is on "
+                "(set it to 0 to run servers with limits only)")
     ctx.say(f"  available: {', '.join(s['id'] for s in servers if s.get('available')) or 'none'}")
+    trusted = [row.get("root") for row in status.get("trusted_workspaces") or []]
+    ctx.say(f"  trusted workspaces: {', '.join(trusted) or 'none (`nerva lsp trust <git root>`)'}")
     for row in status.get("running") or []:
         ctx.say(f"  running  {row.get('server'):<16} {row.get('root')} pid {row.get('pid')} "
                 f"({row.get('diagnostics_served')} checks)")

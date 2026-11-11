@@ -140,10 +140,10 @@ def introduced(old_text: str, before: Sequence[dict], new_text: str, after: Sequ
                 "in_edit": _in_edit(line, edited)}
         code = diag.get("code")
         if code is not None:
-            item["code"] = clean(code, 60)
+            item["code"] = _guard(clean(code, 60))
         source = diag.get("source")
         if source:
-            item["source"] = clean(source, 40)
+            item["source"] = _guard(clean(source, 40))
         reported.append(item)
     reported.sort(key=lambda d: (not d["in_edit"], d["severity"] != "error", d["line"], d["column"]))
     return {

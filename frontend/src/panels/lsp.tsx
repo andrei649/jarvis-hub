@@ -6,12 +6,14 @@
    it queues an `lsp.install` approval card and says so. Start/stop are admin writes; a
    refusal shows the backend's own code verbatim. */
 import React, { useState } from 'react';
-import { useApi, arr, mono, Row, Tag, State, actA } from '../panel-kit';
+import { useApi, arr, mono, Row, Tag, State, actA, inpS } from '../panel-kit';
+import { apiDelete } from '../api/client';
 
 const STATUS_PATH = '/api/codeintel/lsp/status';
 const INSTALL_PATH = '/api/codeintel/lsp/install';
 const START_PATH = '/api/codeintel/lsp/start';
 const STOP_PATH = '/api/codeintel/lsp/stop';
+const TRUST_PATH = '/api/codeintel/lsp/trust';
 
 const refusalText = (err) => {
   const b = err && err.body;
@@ -21,7 +23,8 @@ const refusalText = (err) => {
 };
 
 export function LspSection() {
-  const status = useApi(STATUS_PATH);
+  const status = useApi(STATUS_PATH, true, true);   // admin: it names absolute paths
+  const [root, setRoot] = useState('');
   const s = status.d;
   const [note, setNote] = useState(null);
   const [busy, setBusy] = useState('');
@@ -35,9 +38,19 @@ export function LspSection() {
       (err) => { setBusy(''); setNote({ kind: 'err', text: refusalText(err) }); status.reload(); });
   };
 
+  const clearInstall = (id) => {
+    if (busy) return;
+    setBusy('c:' + id);
+    setNote(null);
+    apiDelete(INSTALL_PATH + '/' + encodeURIComponent(id), { admin: true })
+      .then(() => { setBusy(''); setNote({ kind: 'ok', text: `install record for ${id} cleared` }); status.reload(); })
+      .catch((err) => { setBusy(''); setNote({ kind: 'err', text: refusalText(err) }); status.reload(); });
+  };
+
   const servers = arr(s, 'servers');
   const running = arr(s, 'running');
   const broken = arr(s, 'broken');
+  const trusted = arr(s, 'trusted_workspaces');
 
   return (
     <div style={{ marginTop: 10, borderTop: '1px solid var(--line, #333)', paddingTop: 8 }}>
@@ -54,10 +67,35 @@ export function LspSection() {
       <State e={status.e} loading={status.loading} n={s ? 1 : 0} />
       {s && s.isolation !== 'bwrap' && (
         <div style={{ fontSize: 10, color: 'var(--amber)' }}>
-          no namespace sandbox on this host — servers run with resource limits and a scrubbed
-          environment only
+          {s.can_start === false
+            ? 'no namespace sandbox on this host, and one is required — no language server will start (JARVIS_LSP_REQUIRE_SANDBOX=0 runs them with limits only)'
+            : 'no namespace sandbox on this host — servers run with resource limits and a scrubbed environment only'}
         </div>
       )}
+      <Row>
+        <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>trusted workspaces</span>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+          {trusted.length === 0 && <Tag c="var(--ink-2)">none — no server starts anywhere</Tag>}
+          {trusted.map((t) => (
+            <span key={t.root} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <Tag>{t.root}</Tag>
+              <button className="tool-btn" disabled={!!busy}
+                onClick={() => act('u:' + t.root, TRUST_PATH, { root: t.root, trusted: false },
+                  (r) => `${r && r.root} no longer trusted · stopped ${r && r.stopped} server(s)`)}
+              >untrust</button>
+            </span>
+          ))}
+        </span>
+      </Row>
+      <Row>
+        <input value={root} onChange={(ev) => setRoot(ev.target.value)}
+          placeholder="git workspace to trust (absolute path inside the file roots)"
+          style={{ ...inpS, flex: 1, minWidth: 120 }} />
+        <button className="tool-btn" disabled={!!busy || !root.trim()}
+          onClick={() => act('t:' + root, TRUST_PATH, { root: root.trim(), trusted: true },
+            (r) => `language servers may start in ${r && r.root}`)}
+        >trust</button>
+      </Row>
       {servers.map((row) => {
         const recipe = (row && row.recipe) || {};
         const install = row && row.install;
@@ -69,7 +107,10 @@ export function LspSection() {
               {row.available
                 ? <Tag>found · {row.source}</Tag>
                 : <Tag c="var(--ink-2)">not installed</Tag>}
-              {install && install.status && <Tag c={install.status === 'failed' ? 'var(--red)' : undefined}>install {install.status}</Tag>}
+              {install && install.status && <Tag c={install.status === 'failed' ? 'var(--red)' : undefined}>install {install.status}{install.error ? ` · ${install.error}` : ''}</Tag>}
+              {install && install.status === 'failed' && (
+                <button className="tool-btn" disabled={!!busy} onClick={() => clearInstall(row.id)}>clear</button>
+              )}
               {!row.available && row.installable && (
                 <button className="tool-btn" disabled={!!busy}
                   title={`queue an approval card: ${arr(recipe, 'packages').join(', ')} via ${recipe.kind}`}
@@ -118,7 +159,9 @@ export function LspSection() {
         </div>
       )}
       <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>
-        After the agent writes a file, the running server's diagnostics are compared before and after
+        Servers start only in a git workspace you trusted here, because a server reads — and some can
+        be led to run — what the workspace ships. After the agent writes a file, the running server's
+        diagnostics are compared before and after
         the edit, and only the errors the edit introduced go back to the agent (bounded, fenced as
         third-party text). Servers are confined to their workspace with no network, bounded in memory
         and CPU, and killed when idle. Install queues an approval card for a pinned package from one

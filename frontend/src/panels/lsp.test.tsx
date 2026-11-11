@@ -19,6 +19,8 @@ const STATUS = {
   ],
   running: [{ server: 'pyright', root: '/w', pid: 42, diagnostics_served: 3 }],
   broken: [],
+  can_start: true,
+  trusted_workspaces: [],
 };
 
 function mockRoutes(handler) {
@@ -70,5 +72,42 @@ describe('LspSection', () => {
     await waitFor(() => expect(screen.getByText('stop')).toBeTruthy());
     fireEvent.click(screen.getByText('stop'));
     await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/refused · 403 · admin token required/));
+  });
+
+  it('trusting a workspace posts its root; with none trusted the panel says no server starts', async () => {
+    const fn = mockRoutes((u, m) => {
+      if (u.includes('/api/codeintel/lsp/status')) return { status: 200, body: STATUS };
+      if (u.includes('/api/codeintel/lsp/trust') && m === 'POST') return { status: 200, body: { ok: true, root: '/w' } };
+      return null;
+    });
+    render(<LspSection />);
+    await waitFor(() => expect(screen.getByText(/no server starts anywhere/)).toBeTruthy());
+    fireEvent.change(screen.getByPlaceholderText(/git workspace to trust/), { target: { value: '/w' } });
+    fireEvent.click(screen.getByText('trust'));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/may start in \/w/));
+    const post = fn.mock.calls.find((c) => String(c[0]).includes('/lsp/trust'));
+    expect(JSON.parse(post[1].body)).toEqual({ root: '/w', trusted: true });
+  });
+
+  it('without a sandbox and with it required, the panel says nothing will start', async () => {
+    mockRoutes((u) => (u.includes('/api/codeintel/lsp/status')
+      ? { status: 200, body: { ...STATUS, isolation: 'rlimits', can_start: false } } : null));
+    render(<LspSection />);
+    await waitFor(() => expect(screen.getByText(/no language server will start/)).toBeTruthy());
+  });
+
+  it('a failed install shows its error and can be cleared with an admin DELETE', async () => {
+    const failed = { ...STATUS, servers: STATUS.servers.map((r) => (r.id === 'gopls'
+      ? { ...r, install: { status: 'failed', error: 'sandbox_unavailable' } } : r)) };
+    const fn = mockRoutes((u, m) => {
+      if (u.includes('/api/codeintel/lsp/status')) return { status: 200, body: failed };
+      if (u.includes('/api/codeintel/lsp/install/gopls') && m === 'DELETE') return { status: 200, body: { ok: true } };
+      return null;
+    });
+    render(<LspSection />);
+    await waitFor(() => expect(screen.getByText(/install failed · sandbox_unavailable/)).toBeTruthy());
+    fireEvent.click(screen.getByText('clear'));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(/install record for gopls cleared/));
+    expect(fn.mock.calls.some((c) => String(c[0]).includes('/lsp/install/gopls') && c[1] && c[1].method === 'DELETE')).toBe(true);
   });
 });

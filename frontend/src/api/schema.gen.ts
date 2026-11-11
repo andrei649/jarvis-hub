@@ -2845,6 +2845,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/codeintel/lsp/trust": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lsp Trust
+         * @description The owner's action: allow (or stop allowing) language servers in one git workspace
+         *     inside the file roots. Revoking also stops every server running there.
+         */
+        post: operations["lsp_trust_api_codeintel_lsp_trust_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/codeintel/lsp/install/{server}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Lsp Install Clear
+         * @description Forget a failed install record, so the next request starts clean.
+         */
+        delete: operations["lsp_install_clear_api_codeintel_lsp_install__server__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/actions": {
         parameters: {
             query?: never;
@@ -16907,6 +16948,16 @@ export interface components {
             /** Root */
             root?: string | null;
         };
+        /** LspTrustBody */
+        LspTrustBody: {
+            /** Root */
+            root: string;
+            /**
+             * Trusted
+             * @default true
+             */
+            trusted: boolean;
+        };
         /** MCPServerConfig */
         MCPServerConfig: {
             /** Name */
@@ -23308,6 +23359,70 @@ export interface operations {
                 "application/json": components["schemas"]["LspStopBody"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lsp_trust_api_codeintel_lsp_trust_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LspTrustBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lsp_install_clear_api_codeintel_lsp_install__server__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
