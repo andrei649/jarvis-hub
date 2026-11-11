@@ -616,6 +616,7 @@
         "tests/test_extension_runtime.py",
         "tests/test_first_run_command_center.py",
         "tests/test_g21_ops_surfaces.py",
+        "tests/test_g22_desktop_shell.py",
         "tests/test_h011_manual_host_kernel.py",
         "tests/test_h011_rewind_session_backup.py",
         "tests/test_h011_terminal_queue_integration.py",

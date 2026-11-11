@@ -31,7 +31,7 @@ import { ArtifactsPanel, artifactsTabLabel } from './artifacts';
 import { NeuralMesh } from './mesh';
 import { initAnalytics, trackPageview } from './analytics';
 import { useDemoMode } from './demo-mode';
-import { DesktopControls, notifyDesktopConversation, useDesktopConversation } from './desktop';
+import { DesktopControls, notifyDesktopConversation, useDesktopConversation, useDesktopDecisionNotifications, useQuickEntryFocus } from './desktop';
 import { useListeningIndicator } from './listening';
 
 import { shouldShowFirstRun, FIRST_RUN_DISMISS_KEY } from './onboarding-state';
@@ -161,6 +161,8 @@ function App({ floating = false, shortcuts, onWorld }: {
   }, [selectSession]);
   const [thinking, setThinking] = useState(null);
   useDesktopConversation(setMessages, !!thinking, demo, selectedSessionId);
+  useQuickEntryFocus();
+  useDesktopDecisionNotifications(!floating && !demo);
   const [trace, setTrace] = useState(null);
   const [centerTab, setCenterTab] = useState('conversation');
   // bumped after every successful explicit save so the Artifacts tab refetches
