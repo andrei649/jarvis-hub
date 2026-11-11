@@ -539,6 +539,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chat/interrupt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Interrupt Turn
+         * @description H224 — stop the caller's own running ``POST /chat`` turn (Ctrl+C in `nerva chat -i`).
+         *
+         *     Turns are found by the credential that started them, never by a name in the body:
+         *     another credential's turn is simply not found. The body names which of the caller's
+         *     turns (its session, or the turn id sent with ``POST /chat``); one naming neither is
+         *     refused (422), so a client cannot stop every turn of a shared credential by accident. The stopped turn answers its own
+         *     request with the interrupted reply and a ``turn_interrupted`` notice.
+         */
+        post: operations["interrupt_turn_chat_interrupt_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/help/docs": {
         parameters: {
             query?: never;
@@ -13649,6 +13675,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/backup/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Backup Download
+         * @description Download one listed backup archive as it is on disk (H162).
+         *
+         *     The name is matched against the trusted listing (``resolve_backup``), so no request
+         *     value reaches a path; an encrypted archive stays encrypted. 404 for an unknown name.
+         */
+        get: operations["backup_download_api_admin_backup_download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/backup/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Backup Upload
+         * @description Add a backup archive from elsewhere to the listing, as the raw request body (H162).
+         *
+         *     The archive is restore-drilled before it is listed; one that fails the drill (or an
+         *     encrypted one this box has no key for) is deleted and refused with 422 and the drill's
+         *     verdict. 201 ``{ok, name, bytes, encrypted, verify}``. Nothing is restored: restoring
+         *     the uploaded archive is ``POST /api/admin/backup/restore`` with its name, which queues
+         *     the same irreversible-tier card as any other restore. A PUT always passes the
+         *     browser's CORS pre-check, and a cross-site write is refused (``same_origin_write``).
+         */
+        put: operations["backup_upload_api_admin_backup_upload_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/backup/checkpoints": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Backup Checkpoints
+         * @description The owner's file checkpoints, read-only, for the backup section (H162).
+         *
+         *     The same inventory ``/checkpoints list`` and ``nerva checkpoints list`` read; diff,
+         *     restore and maintenance stay on those paths (a restore is its own approval card).
+         *     503 when the inventory cannot be read.
+         */
+        get: operations["backup_checkpoints_api_admin_backup_checkpoints_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/export": {
         parameters: {
             query?: never;
@@ -18948,6 +19048,19 @@ export interface components {
              */
             outcome: "refused" | "unknown" | "applied_unverified";
         };
+        /** TurnInterrupt */
+        TurnInterrupt: {
+            /**
+             * Session Id
+             * @description Stop the caller's turn in this conversation.
+             */
+            session_id?: string | null;
+            /**
+             * Turn Id
+             * @description Stop the caller's turn sent with this X-Nerva-Turn-Id header (before a session id is known).
+             */
+            turn_id?: string | null;
+        };
         /** TurnNotice */
         TurnNotice: {
             /** Code */
@@ -20194,6 +20307,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["PendingAnswer"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    interrupt_turn_chat_interrupt_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TurnInterrupt"];
             };
         };
         responses: {
@@ -40266,6 +40412,88 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    backup_download_api_admin_backup_download_get: {
+        parameters: {
+            query: {
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backup_upload_api_admin_backup_upload_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    backup_checkpoints_api_admin_backup_checkpoints_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

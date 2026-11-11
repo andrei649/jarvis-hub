@@ -82,7 +82,7 @@ import stat
 import tarfile
 import tempfile
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Optional
@@ -809,6 +809,101 @@ def resolve_backup_arg(arg: str, out_dir: Optional[str] = None) -> Optional[Path
     if real.parent != real_out or real.name != found.name:
         return None
     return found
+
+
+# ── upload (H162) ─────────────────────────────────────────────────
+UPLOAD_MAX_BYTES = 16 * 1024 ** 3   # one uploaded archive; the drill's own limits still apply
+_UPLOAD_TAG = "upload-"             # an uploaded archive is "jarvis-backup-upload-<stamp>.tar.gz[.enc]"
+_GZIP_MAGIC = b"\x1f\x8b"
+
+
+class BackupUploadError(ValueError):
+    """An uploaded archive was refused; ``reason`` is a stable code for the HUD."""
+
+    def __init__(self, reason: str, report: Optional[dict] = None):
+        super().__init__(reason)
+        self.reason = reason
+        self.report = report
+
+
+class BackupUpload:
+    """Take an archive from outside (another box, an off-site copy) into the backups dir.
+
+    The bytes go to an owner-only dot-temp beside the archives (never listed, swept like
+    an abandoned backup temp if the process dies), are restore-drilled exactly like a local
+    archive, and only an archive that passes the drill is renamed into the listing under a
+    server-generated ``jarvis-backup-upload-<stamp>`` name. Nothing is restored here: a
+    restore of the uploaded archive is the same irreversible-tier card as any other.
+    Whether it is encrypted is read from the bytes (a plaintext archive is gzip); an
+    encrypted one opens only with this box's backup key.
+    """
+
+    def __init__(self, out_dir: Optional[str] = None, max_bytes: Optional[int] = None):
+        self.out = Path(out_dir) if out_dir else default_backup_dir()
+        self.out.mkdir(parents=True, exist_ok=True)
+        _sweep_abandoned_temps(self.out)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
+        self._stem = f"{_ARCHIVE_PREFIX}{_UPLOAD_TAG}{ts}_{secrets.token_hex(3)}.tar.gz"
+        self.tmp = self.out / f".{self._stem}.tmp-{secrets.token_hex(4)}"
+        flags = (os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                 | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0))
+        self._fh = os.fdopen(os.open(self.tmp, flags, 0o600), "wb")
+        self._staged: Optional[Path] = None
+        self.max_bytes = int(UPLOAD_MAX_BYTES if max_bytes is None else max_bytes)
+        self.size = 0
+        self._head = b""
+
+    def write(self, chunk: bytes) -> None:
+        self.size += len(chunk)
+        if self.size > self.max_bytes:
+            raise BackupUploadError("too_large")
+        if len(self._head) < 2:
+            self._head += chunk[:2 - len(self._head)]
+        self._fh.write(chunk)
+
+    def commit(self, key: Optional[str] = None) -> dict:
+        """Drill the upload; list it only if the drill passes. Raises BackupUploadError."""
+        self._fh.flush()
+        os.fsync(self._fh.fileno())
+        self._fh.close()
+        if self.size == 0:
+            raise BackupUploadError("empty")
+        encrypted = self._head != _GZIP_MAGIC
+        final = self._stem + (_ENC_SUFFIX if encrypted else "")
+        # The drill reads encryption from the name's suffix, so the staged temp ends with
+        # the final suffix; it still starts with "." and holds ".tmp-" (never listed, swept).
+        self._staged = self.tmp.with_name(f"{self.tmp.name}.tar.gz{_ENC_SUFFIX if encrypted else ''}")
+        os.replace(self.tmp, self._staged)
+        try:
+            report = verify_backup(str(self._staged), key=key)
+        except BackupKeyMissing as exc:
+            raise BackupUploadError("key_missing", {"problem": exc.reason}) from None
+        except (OSError, ValueError, tarfile.TarError, SecretStoreError, EOFError):
+            logger.warning("an uploaded backup could not be read", exc_info=True)
+            raise BackupUploadError("unreadable") from None
+        if not report["ok"]:
+            raise BackupUploadError("failed_drill", report)
+        target = self.out / final
+        if target.exists():
+            raise BackupUploadError("exists")
+        os.replace(self._staged, target)
+        self._staged = None
+        st = target.stat()
+        return {"name": final, "bytes": st.st_size, "encrypted": encrypted,
+                "verify": {"ok": True, "problem": None, "file_count": report["file_count"],
+                           "dbs": report["dbs"]},
+                "created_at": (report.get("manifest") or {}).get("created_at")}
+
+    def close(self) -> None:
+        """Remove whatever did not become a listed archive."""
+        with suppress(OSError):
+            self._fh.close()
+        for leftover in (self.tmp, self._staged):
+            if leftover is not None:
+                try:
+                    leftover.unlink(missing_ok=True)
+                except OSError:
+                    logger.warning("could not remove a refused backup upload")
 
 
 # ── safe extraction ───────────────────────────────────────────────

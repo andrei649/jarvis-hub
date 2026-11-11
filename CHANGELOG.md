@@ -4,6 +4,17 @@
 
 ### What changed for you — 2026-11-11
 
+**Backups: restore, download and upload from the Backup panel**
+- Each backup in the Console **Backup** panel has **restore…** and **download**. A restore
+  asks first (type RESTORE), then waits as a card in your decision inbox; nothing is restored
+  until you accept it there, and the hub applies it at its next start. A staged restore is
+  shown in the panel and can be withdrawn.
+- **upload a backup…** adds an archive from another machine or an off-site copy. The hub
+  checks it like any restore drill first; one that fails, or an encrypted one this box has
+  no key for, is refused and not kept.
+- The panel also lists your file checkpoints (read-only; diff and restore stay on
+  `/checkpoints` and `nerva checkpoints`).
+
 **An interactive chat in the terminal: `nerva chat -i`**
 - Enter sends. Alt+Enter adds a new line, and so does Shift+Enter on terminals that report
   it separately. A line ending in `\` also continues on the next line. A multi-line paste

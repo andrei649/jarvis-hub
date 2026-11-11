@@ -28,6 +28,7 @@ import { InspectorPanel } from './panels/inspector';
 import { refusalText } from './soul-edit';
 import { ConfirmAction, RISK_TIER } from './confirm';
 import { LogsPanel } from './panels/logs';
+import { BackupRowActions, BackupUpload, CheckpointList, StagedRestore } from './panels/backup-transfer';
 import { SessionsPanel } from './panels/sessions';
 import { ResetAll, ResetCategory, SettingsSearch, SettingsTransfer, UndoReset, settingMatches, shown as shownSetting } from './panels/settings-tools';
 import { useSelectionGuard, type GuardFlags } from './selection-guard';
@@ -3920,15 +3921,19 @@ export function BackupPanel() {
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             {b.encrypted && <Tag c="var(--green)">enc</Tag>}
             <Tag>{sz(b.bytes)}</Tag>
+            {b.name && <BackupRowActions name={b.name} onNote={(s) => { setMsg(s); reload(); }} />}
           </span>
         </Row>
       ))}
-      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+      <StagedRestore staged={d && d.pending_restore} onDone={(s) => { setMsg(s); reload(); }} />
+      <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
         <button className="tool-btn" onClick={create}>back up now</button>
         <button className="tool-btn" onClick={verify}>verify</button>
         <button className="tool-btn" onClick={exportMe}>export my data</button>
+        <BackupUpload onDone={(s) => { setMsg(s); reload(); }} />
       </div>
       {msg && <div style={{ fontSize: 10, color: 'var(--accent-light)', marginTop: 6 }}>{msg}</div>}
+      <CheckpointList />
       <div style={{ marginTop: 8 }}>
         <ConfirmAction tier={RISK_TIER.IRREVERSIBLE_OR_MONEY} label="forget me…" phrase="FORGET" armedLabel="confirm erase"
           prompt="type FORGET to erase all content (backup-first):" style={{ color: 'var(--red)' }} onConfirm={forget} />
