@@ -401,6 +401,11 @@ _REFUSALS_BY_KIND: dict[str, tuple[str, ...]] = {
     # a2a.outbound — checked by the A2A runtime when an approved call sends; its refusals
     # come back from the tool as ``ok: False`` reasons, never as a worker ``failed``.
     "a2a.outbound": (),
+    # hook.exec — G17's owner hooks cross the kernel inline in hooks.runner (its refusals
+    # are named reasons of the run, e.g. ``kernel_denied``), never as an autonomy task;
+    # the approval card is ``hooks.define`` (irreversible tier), so no handler here
+    # returns a refusal for it.
+    "hook.exec": (),
 }
 REFUSAL_REASONS_BY_KIND: dict[str, frozenset[str]] = {
     kind: frozenset(reasons) for kind, reasons in _REFUSALS_BY_KIND.items()}

@@ -242,6 +242,11 @@ NOT_A_MODEL_PROVIDER: dict[str, tuple[str, frozenset[str]]] = {
         "the one-shot loopback listener of `nerva mcp login`: a stdlib HTTP server on 127.0.0.1 that "
         "receives the sign-in redirect and serves one tiny page; it dials nothing and carries no prompt",
         frozenset({"_serve_until"})),
+    "agents/core/acp/server.py": (
+        "G11's ACP agent hands its own JSON-RPC dispatcher (AcpServer.handle_request, the "
+        "editor's stdio requests) to its connection; it is not an httpx transport, dials "
+        "nothing itself, and the prompt reaches the hub only through the Backend's hub routes",
+        frozenset({"AcpServer.connect"})),
     "agents/core/http_client.py": (
         "the plugin egress choke point itself; every request it sends is recorded in the "
         "same ledger under the plugin's row (cloud image providers dial through it)",

@@ -39,18 +39,19 @@ async def test_registered_mutation_intake_gets_final_args_and_file_labels_withou
     }, actor="worker")
     deleted = await server.handle({"tool": "file_delete", "args": {"path": "SOUL.md"}}, actor="worker")
 
+    # G11 review B1: intake stores the absolute path of the exact file the card names.
     assert instruction == {"ok": False, "reason": "approval_required", "tool": "file_write", "task_id": 1}
-    assert calls[0] == ("worker", "file_write", {"path": "SOUL.md", "content": "new"}, {
+    assert calls[0] == ("worker", "file_write", {"path": str(root / "SOUL.md"), "content": "new"}, {
         "class": "agent_instructions", "notice": "this file steers future runs", "steers_future_runs": True,
     })
     assert code["task_id"] == 2
     assert code["code_warnings"] == "py-eval@1"
     assert code["code_warning_count"] == 1
-    assert calls[1][0:3] == ("worker", "file_write", {"path": "job.py", "content": "eval(x)\n"})
+    assert calls[1][0:3] == ("worker", "file_write", {"path": str(root / "job.py"), "content": "eval(x)\n"})
     assert calls[1][3]["code_warnings"] == "py-eval@1"
     assert calls[1][3]["code_warning_count"] == 1
     assert deleted["task_id"] == 3
-    assert calls[2][0:3] == ("worker", "file_delete", {"path": "SOUL.md"})
+    assert calls[2][0:3] == ("worker", "file_delete", {"path": str(root / "SOUL.md")})
     assert calls[2][3]["class"] == "agent_instructions"
     assert (root / "SOUL.md").read_text(encoding="utf-8") == "original"
     assert not (root / "job.py").exists()

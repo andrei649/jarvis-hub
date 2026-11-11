@@ -56,7 +56,9 @@ async def test_gated_intake_only_queues_and_approved_execute_returns_applied_rec
     assert registered.target.read_text(encoding="utf-8") == "before"
     assert "mutation_receipt" not in intake
     assert len(registered.queued) == 1
-    assert registered.queued[0].payload["args"] == args
+    # G11 review B1: the card names the exact file written — the path is resolved at
+    # intake in the turn's scope and stored absolute (no tree: the turn is unbound).
+    assert registered.queued[0].payload["args"] == {**args, "path": str(registered.target)}
 
     result = await registered.server.execute(registered.queued[0],
                                              execution_context=registered.token)
