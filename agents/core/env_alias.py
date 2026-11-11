@@ -305,7 +305,7 @@ def refuse_conflicts(environ: Mapping[str, str] | None = None, *,
 #: A variable is path-typed by being listed here, by name.
 PATH_TYPED = frozenset({
     "HOME", "USER_HOME", "MEMORY_DIR", "APP_ROOT",                      # where the hub's own files live
-    "FILE_ROOTS", "TERMINAL_LOCAL_ROOTS", "MEDIA_ROOTS",                # what the tools may reach
+    "FILE_ROOTS", "TERMINAL_LOCAL_ROOTS", "MEDIA_ROOTS", "FILE_BROWSER_DIRS",  # what the tools may reach
     "KEY_DIR", "EXEC_TEMP_DIR", "FORGET_ARCHIVE_DIR", "PLAYWRIGHT_DOWNLOAD_DIR", "DRIVE_AI_DEST",
     "EVAL_STORE", "LOG_FILE", "RUNTIME_LOG", "RUNTIME_STATE", "SUBAGENT_SPAWN_LOG",
     "CA_BUNDLE", "WASM_PYTHON", "TERMINAL_SSH_KNOWN_HOSTS",

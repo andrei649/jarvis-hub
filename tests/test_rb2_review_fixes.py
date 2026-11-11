@@ -158,7 +158,7 @@ def test_every_hub_variable_that_names_a_path_is_on_the_list():
 
     looks_like_a_path = re.compile(r"(?:^|_)(?:ROOTS?|DIR|HOME|FILE|LOG|STATE|STORE|DEST|BUNDLE|PATH)(?:_|$)")
     not_a_path = {
-        "FILE_MAX_BYTES", "FILE_TOOLS", "LOG_BACKUPS", "LOG_LEVEL", "LOG_MAX_MB", "LOG_REDACTION",   # sizes, switches
+        "FILE_MAX_BYTES", "FILE_BROWSER_MAX_BYTES", "FILE_TOOLS", "LOG_BACKUPS", "LOG_LEVEL", "LOG_MAX_MB", "LOG_REDACTION",   # sizes, switches
         "HOME_ASSISTANT",                 # a switch (the Home Assistant integration)
         "ROOT_PATH",                      # an ASGI URL prefix, where "/" is a meaning of its own
         "RESTORE_STAGE_TTL_HOURS", "RUNTIME_RESTORE_GRACE_SECONDS", "RUNTIME_RESTORE_POLL",
