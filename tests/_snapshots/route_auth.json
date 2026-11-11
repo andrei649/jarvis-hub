@@ -509,6 +509,7 @@
   "POST /api/channels/pairing/link/revoke": "admin",
   "POST /api/channels/pairing/request": "open",
   "POST /api/channels/send": "admin",
+  "POST /api/channels/sms/webhook": "open",
   "POST /api/channels/{channel_id}/inbound": "user",
   "POST /api/coach/curriculum": "user",
   "POST /api/coach/review": "user",

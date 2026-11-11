@@ -318,6 +318,40 @@ def _api_probe(method, path, body=None):
 _CHAT = {"model": "nerva", "messages": [{"role": "user", "content": "h511"}]}
 
 
+def _probe_sms_webhook(client, monkeypatch, tmp_path):
+    """G16 (H098): the real Twilio signature check (channels/sms.py) on a configured SMS
+    channel whose turn is a recorder: a wrong signature, then none, then a valid one."""
+    import base64
+    from types import SimpleNamespace
+    from urllib.parse import urlencode
+
+    from agents.core import app_state
+    from agents.core.channels import sms
+
+    token, account = "h511-sms-token", "AC" + "c" * 32  # nosec B105 — probe credential
+    url = "http://127.0.0.1/api/channels/sms/webhook"
+    for name, value in ((sms.ENABLED_ENV, "1"), (sms.ACCOUNT_SID_ENV, account),
+                        (sms.AUTH_TOKEN_ENV, token), (sms.FROM_NUMBER_ENV, "+15550001111"),
+                        (sms.WEBHOOK_URL_ENV, url)):
+        monkeypatch.setenv(name, value)
+    accepted = []
+    channel = SimpleNamespace(accept_in_background=accepted.append)
+    monkeypatch.setattr(app_state, "get_orch", lambda: SimpleNamespace(channels={"sms": channel}))
+    params = {"MessageSid": "SM" + "d" * 32, "AccountSid": account, "From": "+15551234567",
+              "Body": "h511"}
+    body = urlencode(params)
+    payload = url + "".join(k + params[k] for k in sorted(params))
+    good = base64.b64encode(hmac.new(token.encode(), payload.encode(), hashlib.sha1).digest()).decode()
+    hdr = {"content-type": "application/x-www-form-urlencoded"}
+    assert client.post("/api/channels/sms/webhook", content=body,
+                       headers={**hdr, "x-twilio-signature": "AAAA" + good[4:]}).status_code == 403
+    denied = client.post("/api/channels/sms/webhook", content=body, headers=hdr)
+    allowed = client.post("/api/channels/sms/webhook", content=body,
+                          headers={**hdr, "x-twilio-signature": good})
+    assert (len(accepted) == 1) == (allowed.status_code == 200)
+    return denied, allowed
+
+
 # Route -> (probe, refusal statuses). A capability URL answers an unknown token
 # with 404 so it never confirms a token exists; a forged OAuth state is a 400.
 HTTP_PROBES = {
@@ -334,6 +368,7 @@ HTTP_PROBES = {
     "GET /v1/responses/{response_id}": (_api_probe("get", "/v1/responses/resp_probe"), {401}),
     "DELETE /v1/responses/{response_id}": (_api_probe("delete", "/v1/responses/resp_probe"), {401}),
     "GET /v1/models": (_api_probe("get", "/v1/models"), {401}),
+    "POST /api/channels/sms/webhook": (_probe_sms_webhook, {403}),
 }
 
 # Routes whose in-handler credential has more than one posture: each extra posture

@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### What changed for you — 2026-11-11
+
+**Files and voice notes in Telegram replies, and SMS as a channel**
+- When Nerva makes a file for you (a chart, an image, a report, a recording), it can now send it
+  in the Telegram chat after its answer, instead of telling you where it saved it. Only files in
+  Nerva's own output folders (`outputs`, `media/generated`, `reports` in its data folder) and
+  folders you list in `JARVIS_MEDIA_DELIVERY_DIRS` can be sent, up to 20 MB
+  (`JARVIS_MEDIA_DELIVERY_MAX_BYTES`), four per answer. Links, `..`, hidden folders, anything
+  that looks like a key, a password file, a database or settings are refused, and the chat is
+  told why without the path. Files go only to you (the owner), never to a paired guest, and the
+  same file is not sent to a chat twice. With the Action Kernel on, each file asks it first.
+- Audio arrives as a real voice note. Nerva checks what the audio really is; if Telegram cannot
+  play it as a voice note, it converts it with ffmpeg, and if ffmpeg is not installed it sends
+  an audio file with a line saying why.
+- New: text Nerva by **SMS** through Twilio — off until you switch it on. Only your own numbers
+  (`JARVIS_SMS_ALLOWED_NUMBERS`) and numbers you pair are heard; a stranger is never answered.
+  Every request must carry Twilio's signature and replays are dropped. Because every SMS costs
+  money, each reply waits for your approval, goes only to the number that wrote, and at most
+  10 per number per hour. The Twilio auth token is set in Integrations → channels. Setup:
+  `docs/SMS_SETUP.md`.
+
 ### What changed for you — 2026-11-09
 
 **Worktrees, background helpers that survive a restart, and an independent reviewer**

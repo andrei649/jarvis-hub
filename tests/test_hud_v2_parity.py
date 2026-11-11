@@ -564,6 +564,7 @@ MACHINE_FACING: dict[str, str] = {
     "/.well-known/oauth-protected-resource": "OAuth resource metadata, fetched by clients",
     "/api/a2a/card": "agent-to-agent discovery",
     "/api/a2a/task": "agent-to-agent task submission",
+    "/api/channels/sms/webhook": "G16 (H098): Twilio posts inbound SMS here, signed with X-Twilio-Signature",
     "/api/mcp/server/rpc": "MCP transport \u2014 remote MCP clients, not our UI",
     # G12 (H560/H614): the OpenAI-compatible API is for OTHER chat apps (Open WebUI, LibreChat,
     # the openai SDKs) holding an API key; the HUD talks to Nerva through /chat. Keys are issued

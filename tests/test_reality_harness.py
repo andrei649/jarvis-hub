@@ -48,7 +48,8 @@ async def test_boot_registry_reality_cases_hold_for_every_wired_capability():
     # Six default-off image-provider manifests now have separate policy cases.
     # 85: the A2A outbound plugin (plugin:a2a, Adopt lane slice 4) joined the wired set;
     # 88: the three default-off cloud video providers (G19) joined the registry.
-    assert len(cases) == len(records) == 88
+    # 89: + plugin:channel_sms (G16, approved SMS replies through Twilio).
+    assert len(cases) == len(records) == 89
     assert results["plugin:a2a"] is True
     assert results["plugin:ntfy"] is True
     # The six disabled cloud-image plugins still have real manifest egress rails;

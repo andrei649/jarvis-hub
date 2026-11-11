@@ -9449,6 +9449,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/channels/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Channels Deliveries
+         * @description H081 — delivery receipts: what happened to each outbound reply (sent, failed,
+         *     partial, unknown, skipped), the counts per state, the chats registered as gone, and
+         *     each channel's connection health (H100). No message text is stored or returned:
+         *     a row carries the channel, the chat it went to, its length and the failure kind.
+         *     ``state`` filters to one state (``unknown``, ``failed`` …).
+         */
+        get: operations["channels_deliveries_api_channels_deliveries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/dead-targets/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Channels Dead Target Clear
+         * @description H081 — lift a chat's "gone" flag so the next reply to it is tried again. The flag
+         *     also lifts by itself when that chat writes to the bot or a send to it succeeds.
+         */
+        post: operations["channels_dead_target_clear_api_channels_dead_targets_clear_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/channels/targets": {
         parameters: {
             query?: never;
@@ -13282,6 +13327,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/channels/sms/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sms Webhook
+         * @description Inbound SMS from Twilio: signature, account, replay and sender checks, then the turn.
+         */
+        post: operations["sms_webhook_api_channels_sms_webhook_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workspace/session": {
         parameters: {
             query?: never;
@@ -15351,6 +15416,13 @@ export interface components {
             name: string;
             /** Version */
             version?: number | null;
+        };
+        /** DeadTargetClearBody */
+        DeadTargetClearBody: {
+            /** Channel */
+            channel: string;
+            /** Target */
+            target: string;
         };
         /** DecisionBody */
         DecisionBody: {
@@ -32181,6 +32253,71 @@ export interface operations {
             };
         };
     };
+    channels_deliveries_api_channels_deliveries_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                state?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    channels_dead_target_clear_api_channels_dead_targets_clear_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeadTargetClearBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     channels_targets_api_channels_targets_get: {
         parameters: {
             query?: never;
@@ -37568,6 +37705,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sms_webhook_api_channels_sms_webhook_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
