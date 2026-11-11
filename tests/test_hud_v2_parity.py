@@ -214,6 +214,8 @@ RULES = [
     # admin (settings / env / models / llm lifecycle / oauth / oracle / plugins / voice / prompts / stats)
     ("/api/admin/", "admin"),
     ("/api/files/", "admin"),  # G21 (H142): the owner's file browser (Files panel)
+    ("/api/room-peers/peer/", "NOT_IN_HUD"),  # H658: hub-to-hub transport (signed, pinned keys)
+    ("/api/room-peers", "admin"),  # H658: remote room members (Remote Members panel)
     ("/api/hooks", "admin"),  # G17 (H163/H021/H514/H408): owner event hooks (Hooks panel)
     ("/plugins", "admin"),
     ("/api/plugins/extensions", "admin"),  # S1 inspection view pending below; CLI exists
@@ -591,6 +593,9 @@ MACHINE_FACING: dict[str, str] = {
     "/api/a2a/card": "agent-to-agent discovery",
     "/api/a2a/task": "agent-to-agent task submission",
     "/api/channels/sms/webhook": "G16 (H098): Twilio posts inbound SMS here, signed with X-Twilio-Signature",
+    "/api/room-peers/peer/accept": "H658: a member hub redeems an invitation (signed, pinned key)",
+    "/api/room-peers/peer/call": "H658: a member hub's signed call under its NervaRoom grant",
+    "/api/room-peers/peer/renew": "H658: a member hub renews its NervaRoom grant",
     "/api/mcp/server/rpc": "MCP transport \u2014 remote MCP clients, not our UI",
     # G12 (H560/H614): the OpenAI-compatible API is for OTHER chat apps (Open WebUI, LibreChat,
     # the openai SDKs) holding an API key; the HUD talks to Nerva through /chat. Keys are issued

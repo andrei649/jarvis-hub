@@ -826,6 +826,24 @@ class ToolRPCServer:
     def allows(self, name: str) -> bool:
         return name in self._tools
 
+    def remote_profile(self, name: str) -> Optional[dict]:
+        """H658 — what a room grant must know about a registered tool: whether it is
+        gated and whether it runs only from a trusted execution context (such a tool is
+        never offered to a member on another machine). ``None`` when not registered."""
+        spec = self._tools.get(name)
+        if spec is None:
+            return None
+        return {"gated": bool(spec["gated"]),
+                "trusted_execution": bool(spec.get("trusted_execution"))}
+
+    def classify_call(self, name: str, args: dict):
+        """H658 — the H506 labels for one call (``(labels, None)``/``(None, reason)``),
+        so an approval card raised elsewhere carries the class ``execute`` re-derives."""
+        spec = self._tools.get(name)
+        if spec is None:
+            return None, "tool_not_allowed"
+        return self._classify(spec, args)
+
     # ── the RPC entry point ──────────────────────────────────────────────────
 
     async def handle(self, request: dict, *, actor: Optional[str] = None,

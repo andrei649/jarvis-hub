@@ -352,6 +352,62 @@ def _probe_sms_webhook(client, monkeypatch, tmp_path):
     return denied, allowed
 
 
+def _room_peer_target(monkeypatch, tmp_path):
+    """H658: the real RoomPeerService as the target hub, with an approved invitation,
+    and a second service standing in for the member hub (its key signs the requests)."""
+    from types import SimpleNamespace
+
+    from agents.core import room_peers as rp
+    from agents.core.routers import room_peers as room_peers_router
+    from agents.core.tool_rpc import ToolRPCServer
+
+    rooms = SimpleNamespace(get=lambda rid: {"id": rid, "name": "probe"} if rid == "room1" else None)
+    tools = ToolRPCServer()
+
+    async def room_read(args):
+        return {"text": "probe"}
+
+    tools.register_tool("room_read", room_read, gated=False)
+    target = rp.RoomPeerService(state_path=None, key_path=None, hub_id="a" * 32,
+                                rooms=lambda: rooms, tool_rpc=lambda: tools,
+                                enqueue=lambda *a, **k: 1, enabled=lambda: True)
+    member = rp.RoomPeerService(state_path=None, key_path=None, hub_id="b" * 32,
+                                enabled=lambda: True)
+    monkeypatch.setattr(room_peers_router, "get_orch", lambda: SimpleNamespace(room_peers=target))
+    inv = target.invite("room1", "probe", ["room_read"], target_url="http://127.0.0.1:8000")
+    invitation = target._state.data["invitations"][inv["invitation"]["id"]]
+    assert target.approve_invitation(invitation["id"], target._terms_digest(invitation))["status"] == "ok"
+    bundle = rp.decode_bundle(target.issue_bundle(invitation["id"])["bundle"])
+    return rp, target, member, bundle
+
+
+def _room_peer_accept(client, rp, member, bundle, *, proof=True):
+    body = {"v": 1, "invite_id": bundle["invite_id"], "member_hub": "b" * 32,
+            "member_key": member.public_key}
+    raw, headers, _nonce = member.build_request(
+        rp.PATH_ACCEPT, body, proof_key=rp.code_key(bundle["code"]) if proof else None)
+    return client.post(rp.PATH_ACCEPT, content=raw, headers=headers)
+
+
+def _probe_room_peer_accept(client, monkeypatch, tmp_path):
+    """The invitation code's proof and the member key's signature, both required."""
+    rp, _target, member, bundle = _room_peer_target(monkeypatch, tmp_path)
+    return (_room_peer_accept(client, rp, member, bundle, proof=False),
+            _room_peer_accept(client, rp, member, bundle))
+
+
+def _room_peer_grant_probe(path, body):
+    def probe(client, monkeypatch, tmp_path):
+        """A NervaRoom grant this hub issued, signed by the member's pinned key."""
+        rp, _target, member, bundle = _room_peer_target(monkeypatch, tmp_path)
+        grant = _room_peer_accept(client, rp, member, bundle).json()["grant"]
+        raw, headers, _nonce = member.build_request(path, body)          # no grant
+        denied = client.post(path, content=raw, headers=headers)
+        raw, headers, _nonce = member.build_request(path, body, grant)
+        return denied, client.post(path, content=raw, headers=headers)
+    return probe
+
+
 # Route -> (probe, refusal statuses). A capability URL answers an unknown token
 # with 404 so it never confirms a token exists; a forged OAuth state is a 400.
 HTTP_PROBES = {
@@ -369,6 +425,11 @@ HTTP_PROBES = {
     "DELETE /v1/responses/{response_id}": (_api_probe("delete", "/v1/responses/resp_probe"), {401}),
     "GET /v1/models": (_api_probe("get", "/v1/models"), {401}),
     "POST /api/channels/sms/webhook": (_probe_sms_webhook, {403}),
+    "POST /api/room-peers/peer/accept": (_probe_room_peer_accept, {401}),
+    "POST /api/room-peers/peer/call": (_room_peer_grant_probe(
+        "/api/room-peers/peer/call", {"v": 1, "op": "dispatch", "tool": "room_read", "args": {}}), {401}),
+    "POST /api/room-peers/peer/renew": (_room_peer_grant_probe("/api/room-peers/peer/renew", {"v": 1}),
+                                        {401}),
 }
 
 # Routes whose in-handler credential has more than one posture: each extra posture

@@ -123,6 +123,7 @@ export const CONSOLE_PANELS = [
   {"id": "settings", "label": "Settings", "group": "Admin", "component": "SettingsPanel"},
   {"id": "prompts", "label": "Prompts", "group": "Admin", "component": "PromptsPanel"},
   {"id": "rooms", "label": "Rooms", "group": "Admin", "component": "RoomsPanel"},
+  {"id": "remote-members", "label": "Remote Members", "group": "Admin", "component": "RoomPeersPanel"},
   {"id": "lm-studio", "label": "LM Studio", "group": "Admin", "component": "LMStudioPanel"},
   {"id": "vlm-describe", "label": "Vlm Describe", "group": "Admin", "component": "VlmDescribePanel"},
   {"id": "auth-profiles", "label": "Auth Profiles", "group": "Admin", "component": "AuthProfilesPanel"},

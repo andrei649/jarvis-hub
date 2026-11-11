@@ -26,6 +26,7 @@ from urllib.parse import quote, urlencode
 
 from .client import HubClient, HubError, HubUnavailable, hub_url, is_loopback_url
 from .custom_endpoints import run as cmd_custom_provider
+from .rooms import run as cmd_rooms
 from .mcp_catalog import run as cmd_mcp
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -200,6 +201,8 @@ def build_parser() -> argparse.ArgumentParser:
     configure_custom_endpoints(verbs)
     from .mcp_catalog import register_parser as configure_mcp_catalog
     configure_mcp_catalog(verbs)
+    from .rooms import register_parser as configure_rooms
+    configure_rooms(verbs)
 
     from agents.core.kanban.cli_parser import build_parser as configure_kanban
     configure_kanban(verbs)
@@ -7159,6 +7162,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     # argparse names the verb as typed, so each alias dispatches too.
     **dict.fromkeys(("journey", *_JOURNEY_ALIASES), cmd_journey),
     "provider": cmd_custom_provider,
+    "rooms": cmd_rooms,
     "mcp": cmd_mcp,
     "webhook": cmd_webhook,
     "jobs": cmd_jobs,

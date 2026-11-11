@@ -382,6 +382,19 @@ BUILTIN_PLUGINS = {
         allowed_domains=[],
         agents_served=["all"],
     ),
+    # H658 — a member hub calls the target hubs of its room links. The allowlist is filled
+    # at call time with each link's host (``register_dynamic_domain``); a LAN target is
+    # reached by an IP literal only. What crosses is the member's own call and arguments.
+    "room-peers": PluginManifest(
+        id="room-peers",
+        name="Room Peers (remote room members)",
+        version="0.1.0",
+        description="Call the target hubs of this hub's remote room memberships (signed, pinned keys)",
+        network_access=NetworkAccess.RESTRICTED,
+        data_scope=DataScope.TRANSMITTED,
+        allowed_domains=[],
+        agents_served=["all"],
+    ),
     "kanban-attachments": PluginManifest(
         id="kanban-attachments",
         name="Kanban URL Attachments",

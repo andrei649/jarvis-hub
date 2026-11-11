@@ -2427,6 +2427,31 @@ class AutonomyCoordinator:
         )
         executor.register("node", self._orch.node_mesh.execute)
 
+        # H658 — remote room members: a member on another machine runs here under a
+        # grant this hub issued (signed, expiring, bound to an execution-policy digest)
+        # and can revoke. Every call crosses the plain bound kernel (never the B7
+        # mediation bridge: its intake is a separate card) as the member's own principal;
+        # gated calls and invitations are approval cards on this hub. Off unless
+        # JARVIS_ROOM_PEERS; the peer routes answer 404 until then.
+        from .room_peers import RoomPeerService
+
+        _orch = self._orch
+        bind_external_orchestrator_attribute(
+            self._orch,
+            "room_peers",
+            RoomPeerService(
+                rooms=lambda: getattr(_orch, "rooms", None),
+                tool_rpc=lambda: getattr(_orch, "tool_rpc", None),
+                kernel=lambda: _action_kernel,
+                capability_broker=getattr(self._orch, "capabilities", None),
+                kill_switch=getattr(self._orch, "kill_switch", None),
+                enqueue=self._governed_enqueue,
+                task_reader=getattr(getattr(self._orch, "autonomy_queue", None), "get", None),
+                audit=getattr(self._orch, "audit", None),
+            ),
+        )
+        executor.register("roompeer.", self._orch.room_peers.execute)
+
         # H20.1 — governed Tool-RPC surface for sandboxed zero-context pipelines.
         # Read-only tools run inline; gated tools enqueue an ask-tier task (and
         # run via this executor only after approval). Starter allowlist is safe

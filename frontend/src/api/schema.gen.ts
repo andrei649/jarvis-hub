@@ -14285,6 +14285,246 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/room-peers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Room Peers Status
+         * @description H658 — this hub's identity fingerprint, invitations, remote members and links (no credentials).
+         */
+        get: operations["room_peers_status_api_room_peers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/room-peers/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Room Peers Invite
+         * @description H658 — invite a remote member into a room; raises an approval card on this hub.
+         */
+        post: operations["room_peers_invite_api_room_peers_invitations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/room-peers/invitations/{invite_id}/bundle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Room Peers Bundle
+         * @description H658 — the one-time bundle of an approved invitation (a new call replaces the code).
+         */
+        post: operations["room_peers_bundle_api_room_peers_invitations__invite_id__bundle_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/room-peers/members/{membership_id}/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Room Peers Policy
+         * @description H658 — change a member's execution policy; its digest moves and every grant must be re-issued.
+         */
+        post: operations["room_peers_policy_api_room_peers_members__membership_id__policy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/room-peers/members/{membership_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Room Peers Revoke
+         * @description H658 — revoke a remote member: refused on its next call, the room's epoch moves.
+         */
+        delete: operations["room_peers_revoke_api_room_peers_members__membership_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/room-peers/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Room Peers Join
+         * @description H658 — redeem a target hub's bundle: pins its key and stores the grant (never shown).
+         */
+        post: operations["room_peers_join_api_room_peers_links_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/room-peers/links/{link_id}/call": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Room Peers Call
+         * @description H658 — act as the member on the target hub (its kernel and approvals decide).
+         */
+        post: operations["room_peers_call_api_room_peers_links__link_id__call_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/room-peers/links/{link_id}/renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Room Peers Renew
+         * @description H658 — ask the target hub to renew this link's grant (refused if its policy moved).
+         */
+        post: operations["room_peers_renew_api_room_peers_links__link_id__renew_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/room-peers/links/{link_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Room Peers Leave
+         * @description H658 — forget a link and its grant on this (member) hub.
+         */
+        delete: operations["room_peers_leave_api_room_peers_links__link_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/room-peers/peer/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Room Peers Peer Accept
+         * @description H658 peer — redeem an approved invitation (invite code proof + member key signature).
+         */
+        post: operations["room_peers_peer_accept_api_room_peers_peer_accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/room-peers/peer/call": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Room Peers Peer Call
+         * @description H658 peer — a member's dispatch/status call (NervaRoom grant + pinned-key signature).
+         */
+        post: operations["room_peers_peer_call_api_room_peers_peer_call_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/room-peers/peer/renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Room Peers Peer Renew
+         * @description H658 peer — renew a grant (refused when revoked or the execution-policy digest moved).
+         */
+        post: operations["room_peers_peer_renew_api_room_peers_peer_renew_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hooks": {
         parameters: {
             query?: never;
@@ -17077,6 +17317,24 @@ export interface components {
             /** Zip Base64 */
             zip_base64: string;
         };
+        /** InviteBody */
+        InviteBody: {
+            /** Room Id */
+            room_id: string;
+            /** Member Id */
+            member_id: string;
+            /** Tools */
+            tools: string[];
+            /** Permissions */
+            permissions?: string[];
+            /**
+             * Max Calls Per Hour
+             * @default 60
+             */
+            max_calls_per_hour: number;
+            /** Target Url */
+            target_url: string;
+        };
         /** JobCreateBody */
         JobCreateBody: {
             /** Name */
@@ -17159,6 +17417,16 @@ export interface components {
             /** Reason */
             reason?: string | null;
         };
+        /** JoinBody */
+        JoinBody: {
+            /** Bundle */
+            bundle: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+        };
         /** KanbanDispatchBody */
         KanbanDispatchBody: {
             /**
@@ -17218,6 +17486,25 @@ export interface components {
             parent_id: string;
             /** Child Id */
             child_id: string;
+        };
+        /** LinkCallBody */
+        LinkCallBody: {
+            /**
+             * Op
+             * @default dispatch
+             */
+            op: string;
+            /**
+             * Tool
+             * @default
+             */
+            tool: string;
+            /** Args */
+            args?: {
+                [key: string]: unknown;
+            };
+            /** Task Id */
+            task_id?: number | null;
         };
         /** LocalDocsIndexBody */
         LocalDocsIndexBody: {
@@ -17683,6 +17970,18 @@ export interface components {
         PlaybookBody: {
             /** Techniques */
             techniques?: string[];
+        };
+        /** PolicyBody */
+        PolicyBody: {
+            /** Tools */
+            tools: string[];
+            /** Permissions */
+            permissions?: string[];
+            /**
+             * Max Calls Per Hour
+             * @default 60
+             */
+            max_calls_per_hour: number;
         };
         /** Position */
         Position: {
@@ -40675,6 +40974,346 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    room_peers_status_api_room_peers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    room_peers_invite_api_room_peers_invitations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    room_peers_bundle_api_room_peers_invitations__invite_id__bundle_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invite_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    room_peers_policy_api_room_peers_members__membership_id__policy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                membership_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PolicyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    room_peers_revoke_api_room_peers_members__membership_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                membership_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    room_peers_join_api_room_peers_links_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JoinBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    room_peers_call_api_room_peers_links__link_id__call_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkCallBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    room_peers_renew_api_room_peers_links__link_id__renew_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    room_peers_leave_api_room_peers_links__link_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    room_peers_peer_accept_api_room_peers_peer_accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    room_peers_peer_call_api_room_peers_peer_call_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    room_peers_peer_renew_api_room_peers_peer_renew_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

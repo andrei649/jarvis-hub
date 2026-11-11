@@ -50,7 +50,7 @@ Fiecare rând aparține unui singur domeniu din [areas.json](docs/hermes/areas.j
 | [extensions](docs/HERMES_CAPABILITIES.md#area-extensions) — Extensions, hooks and deployment packaging | own/adopt | 9 | 1 | 6 | 0 | 2 | 0 | 13 | seed din dovezi |
 | [feature-pages](docs/HERMES_CAPABILITIES.md#area-feature-pages) — Upstream feature pages (cross-cutting) | own/adopt/run | 48 | 5 | 38 | 1 | 4 | 0 | 173 | seed din dovezi |
 | [user-journeys](docs/HERMES_CAPABILITIES.md#area-user-journeys) — User journeys from the rest of the docs (cross-cutting) | own | 33 | 5 | 24 | 1 | 3 | 0 | 66 | seed din dovezi |
-| [upstream-delta](docs/HERMES_CAPABILITIES.md#area-upstream-delta) — Upstream delta v2026.8.27 to v2026.8.31 (cross-cutting) | own/adopt/run | 42 | 21 | 17 | 3 | 1 | 0 | 150 | seed din dovezi |
+| [upstream-delta](docs/HERMES_CAPABILITIES.md#area-upstream-delta) — Upstream delta v2026.8.27 to v2026.8.31 (cross-cutting) | own/adopt/run | 42 | 21 | 18 | 2 | 1 | 0 | 151 | seed din dovezi |
 
 Suite subțiri: tui, editor-acp, agent-interop.
 

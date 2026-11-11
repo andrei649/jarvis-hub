@@ -62,6 +62,12 @@ INTENTIONALLY_OPEN = {
     # G16 (H098): Twilio's inbound SMS. 404 unless SMS is configured; X-Twilio-Signature
     # (HMAC-SHA1 over URL + sorted params, constant-time) and the account SID in the handler.
     "POST /api/channels/sms/webhook",
+    # H658: remote room members' peer transport. 404 unless JARVIS_ROOM_PEERS; a pinned
+    # Ed25519 signature plus the invitation code proof (accept) or the NervaRoom grant this
+    # hub issued (call/renew), with nonce/timestamp replay protection.
+    "POST /api/room-peers/peer/accept",
+    "POST /api/room-peers/peer/call",
+    "POST /api/room-peers/peer/renew",
     # Nerva Workspace public entry points (spec §6/§7). Each answers 404 while
     # NERVA_WORKSPACE is off, requires a same-origin Origin/Sec-Fetch-Site and a JSON
     # body (check_public_origin), and is throttled by the workspace itself.
@@ -202,6 +208,10 @@ IN_HANDLER_GUARDED = {
     "DELETE /v1/responses/{response_id}": "OpenAI-compatible API key (bearer), the key that stored it",
     "GET /v1/models": "OpenAI-compatible API key (bearer), API switched on",
     "POST /api/channels/sms/webhook": "Twilio X-Twilio-Signature (HMAC-SHA1, the SMS auth token)",
+    # H658: remote room members (a pinned Ed25519 key signs every request).
+    "POST /api/room-peers/peer/accept": "invitation code proof + the member key's Ed25519 signature",
+    "POST /api/room-peers/peer/call": "NervaRoom grant this hub issued + the pinned member key's signature",
+    "POST /api/room-peers/peer/renew": "NervaRoom grant this hub issued + the pinned member key's signature",
 }
 
 # H511 review: the read half is partitioned exactly like the mutators — an open GET

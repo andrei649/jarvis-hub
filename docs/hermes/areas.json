@@ -2747,6 +2747,7 @@
         "tests/test_h595_model_context.py",
         "tests/test_h595_oneshot_context.py",
         "tests/test_h595_product_interrupt.py",
+        "tests/test_h658_remote_members.py",
         "tests/test_h659_idempotency.py",
         "tests/test_h660_cell_grants.py",
         "tests/test_h660_default_sessions.py",

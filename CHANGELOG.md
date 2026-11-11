@@ -23,6 +23,12 @@
   `/image PATH` or `/paste-image` sends your next message, with the image, to the vision
   model. `/switch` moves between your sessions. `/model` picks the hub's local model
   (owner only). `/keys` lists every key.
+**A room member on another machine**
+- A member of one of your rooms can now live on another Nerva hub and use tools on this one, under a permission this hub gives it and can take back. Off until you set `JARVIS_ROOM_PEERS=1` on both hubs.
+- Invite from the Console **Remote Members** panel or `nerva rooms invite <room> <member> --tools a,b --url <this hub's address>`. The invitation is a card in your decision inbox; only after you accept it can you take the one-time bundle and hand it to the other hub's owner, who joins with it (`nerva rooms join`, bundle on stdin). Each hub shows a key fingerprint the two owners can compare.
+- Everything the member asks for runs here as that member, never as you: your own approval rules and emergency stops apply, a read-only tool answers at once, anything that changes something becomes a card in your inbox. You can pause a room's remote members with the `room:<id>` kill-switch scope.
+- Revoke a member and its next call is refused. Change its tools and its permission stops working until you invite it again. Its permission expires after an hour of dispatching (renewed automatically) and for good after a week without renewal.
+- Hub-to-hub messages are signed with keys each hub remembers for the other, so a copied permission, a changed message or a replayed one is refused. Keys and permissions are never shown.
 
 **Merge overlapping skills, only when you say so**
 - In the Decision Inbox, "find overlaps" shows which of your skills cover the same ground

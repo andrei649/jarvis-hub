@@ -2159,6 +2159,7 @@ from agents.core.routers.report import router as _report_router  # noqa: E402
 from agents.core.routers.openai_compat import router as _openai_compat_router  # noqa: E402
 from agents.core.routers.channels_sms import router as _channels_sms_router  # noqa: E402
 from agents.core.routers.files import router as _files_router  # noqa: E402
+from agents.core.routers.room_peers import router as _room_peers_router  # noqa: E402
 from agents.core.routers.hooks import router as _hooks_router  # noqa: E402  (G17 owner hooks)
 from agents.core.routers.channel_config import router as _channel_config_router  # noqa: E402
 from agents.core.routers.brain import router as _brain_router  # noqa: E402
@@ -2327,6 +2328,10 @@ app.include_router(_channels_sms_router)
 # G21 (H142): the owner's HUD file browser over approved folders. Admin-only; rename and
 # delete are approval cards at the irreversible tier, never applied by the request.
 app.include_router(_files_router)
+# H658: remote room members. Owner routes are admin-only; the /api/room-peers/peer/* routes
+# take no hub token — a pinned Ed25519 signature and the NervaRoom grant this hub issued
+# authenticate them — and every route answers 404 unless JARVIS_ROOM_PEERS is on.
+app.include_router(_room_peers_router)
 app.include_router(_hooks_router)
 # G21 (H151/H160): view and edit channel settings from the HUD. Admin-only; secrets only
 # through the integration-key store and never echoed; .env and managed pins win.
