@@ -25,7 +25,7 @@ import logging
 import sys
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Optional
+from typing import TYPE_CHECKING, Awaitable, Callable, Optional
 
 from agents.core.mcp.route_tools import (
     ROUTE_TOOL_PREFIX,
@@ -34,6 +34,9 @@ from agents.core.mcp.route_tools import (
     RouteTool,
     normalize_result,
 )
+
+if TYPE_CHECKING:
+    from agents.core.mcp.inbox_tools import InboxTools
 
 PROTOCOL_VERSION = "2025-11-25"
 SERVER_NAME = "jarvis-hub"
@@ -94,6 +97,7 @@ class JarvisMCPServer:
         route_tools: Optional[list[RouteTool]] = None,
         mutating_route_tools: Optional[list[MutatingRouteTool]] = None,
         agent_request_guard: Optional[AgentRequestGuard] = None,
+        inbox_tools: Optional[InboxTools] = None,
     ) -> None:
         """
         Parameters
@@ -112,6 +116,9 @@ class JarvisMCPServer:
             ``JARVIS_MCP_ROUTE_TOOLS`` AND ``JARVIS_MCP_MUTATING_TOOLS`` switches
             (see ``build_mutating_route_tools``). Every adapter invocation requires
             a successful durable audit authorization row first.
+        inbox_tools: G10 / H559 — the owner's conversations and approval cards
+            (``agents/core/mcp/inbox_tools.py``). Every one of them needs the
+            transport's owner verdict; ``None`` → not offered.
         """
         self.runner = runner
         self.agents = agents
@@ -136,6 +143,14 @@ class JarvisMCPServer:
         if _collision:
             raise ValueError(
                 f"route tool name(s) in both read-only and mutating sets: {sorted(_collision)}")
+        self.inbox_tools = inbox_tools
+        if inbox_tools is not None:
+            from agents.core.mcp.inbox_tools import INBOX_TOOL_NAMES
+
+            clash = [n for n in INBOX_TOOL_NAMES
+                     if n.startswith((ROUTE_TOOL_PREFIX, "ask_"))]
+            if clash:  # a name the agent or route dispatch would claim first
+                raise ValueError(f"inbox tool name(s) shadowed: {clash}")
 
     # ── tools ────────────────────────────────────────────────────────────────
 
@@ -168,6 +183,8 @@ class JarvisMCPServer:
         # at build time; each descriptor is marked ``"mutating": True``.
         for mt in self.mutating_route_tools.values():
             tools.append(mt.descriptor())
+        if self.inbox_tools is not None:
+            tools.extend(self.inbox_tools.descriptors())
         return tools
 
     async def call_tool(
@@ -175,6 +192,8 @@ class JarvisMCPServer:
         name: str,
         arguments: Optional[dict] = None,
         identity: object | None = None,
+        *,
+        owner: bool = False,
     ) -> dict:
         """Run a tool; return an MCP tool-result ({content, isError}).
 
@@ -183,8 +202,17 @@ class JarvisMCPServer:
         threaded into mutating route gates and the agent-request guard. Agent
         conversation remains identity-optional, but any lifecycle mutation
         hidden in an ``ask_*`` request can therefore require verified authority.
+
+        ``owner`` (or the transport's ``inbox_tools.transport_owner`` scope, which
+        ``routers/mcp.py`` sets) says the caller proved it is the owner; the
+        inbox/approval tools refuse every other caller.
         """
         arguments = arguments or {}
+        if self.inbox_tools is not None and self.inbox_tools.handles(name):
+            from agents.core.mcp.inbox_tools import current_transport_owner
+
+            return await self._call_inbox_tool(
+                name, arguments, owner=owner is True or current_transport_owner())
         if name.startswith(ROUTE_TOOL_PREFIX):
             return await self._call_route_tool(name, arguments, identity)
         agent_id = name[len("ask_"):] if name.startswith("ask_") else ""
@@ -263,20 +291,38 @@ class JarvisMCPServer:
 
         return self._tool_error(f"route '{name}' is not exposed over MCP")
 
+    async def _call_inbox_tool(self, name: str, arguments: dict, *, owner: bool) -> dict:
+        from agents.core.mcp.inbox_tools import InboxRefusal
+
+        try:
+            payload = await self.inbox_tools.call(name, arguments, owner=owner is True)
+        except InboxRefusal as exc:
+            return self._tool_error(str(exc))
+        except Exception as exc:  # never leak a stack trace to an external client
+            logger.warning("MCP owner tool %s failed (type=%s)", name, type(exc).__name__)
+            return self._tool_error(f"{name} failed")
+        return {
+            "content": [{"type": "text", "text": json.dumps(payload, default=str)}],
+            "isError": False,
+        }
+
     @staticmethod
     def _tool_error(message: str) -> dict:
         return {"content": [{"type": "text", "text": message}], "isError": True}
 
     # ── JSON-RPC dispatch ────────────────────────────────────────────────────
 
-    async def handle(self, message: dict, identity: object | None = None) -> Optional[dict]:
+    async def handle(
+        self, message: dict, identity: object | None = None, *, owner: bool = False,
+    ) -> Optional[dict]:
         """Dispatch one JSON-RPC 2.0 message; return the response (or None for a notification).
 
         ``identity`` is the caller's credential, supplied by the transport (the
         HTTP/SSE route in web.py reads the ``X-User-Token``/``X-Admin-Token``
         header; a stdio loop may pass it explicitly). It is forwarded to
         ``call_tool`` and enforced by mutating route tools and any hidden
-        lifecycle intent inside an agent request.
+        lifecycle intent inside an agent request. ``owner`` is the transport's
+        verdict that the caller is the owner (G10 inbox/approval tools).
         """
         msg_id = message.get("id")
         method = message.get("method", "")
@@ -294,7 +340,8 @@ class JarvisMCPServer:
             return self._ok(msg_id, {"tools": self.list_tools()})
         if method == "tools/call":
             name = params.get("name", "")
-            result = await self.call_tool(name, params.get("arguments"), identity=identity)
+            result = await self.call_tool(name, params.get("arguments"), identity=identity,
+                                          owner=owner)
             return self._ok(msg_id, result)
         if method == "ping":
             return self._ok(msg_id, {})
@@ -349,6 +396,9 @@ class JarvisMCPServer:
             "exposed_mutating_routes": [
                 mt.spec.name for mt in self.mutating_route_tools.values()
             ],
+            "exposed_owner_tools": (
+                list(self.inbox_tools.names()) if self.inbox_tools is not None else []
+            ),
             "tools": [t["name"] for t in self.list_tools()],
             "tool_inventory": self.tool_inventory(),
         }
@@ -459,6 +509,8 @@ class JarvisMCPServer:
                 "governance": "governed",
                 "controls": controls,
             })
+        if self.inbox_tools is not None:
+            inventory.extend(self.inbox_tools.inventory())
         return inventory
 
 

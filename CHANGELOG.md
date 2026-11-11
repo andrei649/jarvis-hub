@@ -4,6 +4,19 @@
 
 ### What changed for you — 2026-11-09
 
+**Your conversations and approval cards from an MCP client**
+- An MCP client you authorise (Claude Desktop, Cursor, another Nerva) can list your recent
+  conversations and read one, list the approval cards waiting for you, and approve or deny one.
+  The answer goes through the same decision as the HUD and `nerva approvals`, is recorded the
+  same way, and a card answered once cannot be answered again.
+- Only your own credential opens these tools: your admin token, or an MCP token you mint with
+  the `mcp:owner` scope (`POST /api/mcp/token`). A user or guest token sees nothing.
+  Conversations from Telegram and the other chat doors, from API keys or imported from
+  elsewhere are not listed. Reading a conversation never switches the one you have open.
+- Answering is offered only while the MCP write switches are on (`JARVIS_MCP_ROUTE_TOOLS` and
+  `JARVIS_MCP_MUTATING_TOOLS`; never in the hardened profile). A card marked IRREVERSIBLE can
+  be denied from the client but approved only in the HUD or with `nerva approvals accept`.
+
 **Worktrees, background helpers that survive a restart, and an independent reviewer**
 - `/review` starts a second-opinion reviewer on what this conversation produced and on the
   project's uncommitted changes (`/review --branch <name>` reviews a branch). The reviewer can

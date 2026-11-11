@@ -2421,6 +2421,30 @@ def _build_mcp_server():
         route_tools=route_tools,
         mutating_route_tools=mutating_route_tools,
         agent_request_guard=_mcp_agent_request_guard,
+        inbox_tools=_build_mcp_inbox_tools(),
+    )
+
+
+def _build_mcp_inbox_tools():
+    """G10 / H559 — the owner's conversations and approval cards over MCP.
+
+    Offered with the read surface (``JARVIS_MCP_ROUTE_TOOLS``, default OFF); every tool
+    still needs the transport's owner verdict. ``approval_respond`` is listed and callable
+    only while the write surface is on too (``JARVIS_MCP_MUTATING_TOOLS``, forced off by
+    the hardened profile), and answers through ``POST /autonomy/tasks/{id}/decision``'s
+    own handler. See ``agents/core/mcp/inbox_tools.py``.
+    """
+    from agents.core.mcp.route_tools import mutating_tools_enabled, route_tools_enabled
+
+    if not route_tools_enabled():
+        return None
+    from agents.core.app_state import get_orch
+    from agents.core.mcp.inbox_tools import InboxTools, build_orch_backend
+
+    return InboxTools(
+        build_orch_backend(get_orch),
+        writes_enabled=lambda: route_tools_enabled() and mutating_tools_enabled(),
+        auditor=orch.audit if orch else None,
     )
 
 

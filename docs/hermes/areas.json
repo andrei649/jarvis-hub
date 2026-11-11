@@ -2195,6 +2195,7 @@
       ],
       "suite": [
         "tests/test_cloud_tool_turns.py",
+        "tests/test_g10_mcp_approvals.py",
         "tests/test_h10_5_mcp_server.py",
         "tests/test_mcp_g6_g7_client.py",
         "tests/test_mcp_g6_g7_review.py",

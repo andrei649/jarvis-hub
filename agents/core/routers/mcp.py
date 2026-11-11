@@ -951,6 +951,7 @@ async def mcp_server_rpc(message: dict, request: Request):
         )
     w = _web()
     verified_identity = None
+    owner = False
     success_reason = "credential"
     if bool(orch.get_setting("mcp.oauth_required", False)):
         from agents.core.mcp.oauth import MCPResourceServer
@@ -969,12 +970,22 @@ async def mcp_server_rpc(message: dict, request: Request):
         verified_identity = VerifiedMCPIdentity(
             subject=str((result.get("claims") or {}).get("sub") or "").strip()
         )
+        # G10: an OAuth token is the owner's only when the owner minted it with the
+        # ``mcp:owner`` scope (``POST /api/mcp/token`` is itself admin-guarded).
+        from agents.core.mcp.inbox_tools import OWNER_SCOPE
+        scope = (result.get("claims") or {}).get("scope")
+        owner = isinstance(scope, str) and OWNER_SCOPE in scope.split()
         if not verified_identity.subject:
             _audit_mcp_auth(request, success=False, reason="invalid")
             return JSONResponse(
                 {"error": "unauthorized: OAuth subject required"}, status_code=401,
                 headers={"WWW-Authenticate": MCPResourceServer.challenge(resource)})
     else:
+        # G10: without OAuth the owner is decided exactly as ``admin_guard`` (and the
+        # HUD's principal) decides it — an admin credential in X-Admin-Token, or the
+        # fresh-box direct-localhost posture while no admin credential exists.
+        principal = getattr(w, "_web_principal", None)
+        owner = bool(principal(request).admin) if callable(principal) else False
         # SEC (review F1/F2, #294): with OAuth off, the MCP transport must enforce the
         # SAME posture as every other user route (HF-1) — a matching user/admin token if
         # JARVIS_USER_TOKEN is set, else localhost-only (fail closed behind an untrusted
@@ -1008,6 +1019,8 @@ async def mcp_server_rpc(message: dict, request: Request):
         request.headers.get("x-user-token") or request.headers.get("x-admin-token")
     )
     _audit_mcp_auth(request, success=True, reason=success_reason)
-    response = await w._build_mcp_server().handle(message, identity=identity)
+    from agents.core.mcp.inbox_tools import transport_owner
+    with transport_owner(owner):
+        response = await w._build_mcp_server().handle(message, identity=identity)
     # JSON-RPC notifications produce no response body.
     return nocache_json(response if response is not None else {"ok": True})
