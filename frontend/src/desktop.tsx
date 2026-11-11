@@ -83,3 +83,51 @@ export function DesktopControls({ floating = false }: { floating?: boolean }) {
     {error && <span role="alert">{error}</span>}
   </div>;
 }
+// H179: the shell's Quick Entry hotkey shows the floating chat and asks it to put the
+// cursor in the composer. Nothing is sent: the owner types and presses Enter as usual.
+export function useQuickEntryFocus() {
+  useEffect(() => {
+    if (!bridge()) return;
+    const focus = () => { document.querySelector<HTMLInputElement>('[data-composer="1"]')?.focus(); };
+    window.addEventListener('nerva-desktop-quick-entry', focus);
+    return () => window.removeEventListener('nerva-desktop-quick-entry', focus);
+  }, []);
+}
+// H181: the main HUD window watches the pending approvals it can already read and asks
+// the shell for a native notification for each new one. The shell only says so; its
+// click opens the Decision Inbox, where the owner decides on the normal card. Without
+// an admin session (401/403) the watch stops: no credential, no notifications.
+export const DECISION_POLL_MS = 20000;
+export function useDesktopDecisionNotifications(enabled: boolean) {
+  useEffect(() => {
+    if (!enabled || !bridge() || isFloatingDesktop()) return;
+    let stopped = false;
+    let seen: Set<string> | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      try {
+        const d = await apiGet<any>('/autonomy/approvals', { admin: true });
+        const pending: any[] = Array.isArray(d?.pending) ? d.pending : [];
+        if (stopped) return;
+        if (seen === null) {
+          // What was already waiting when the HUD opened is on the wall in front of the owner.
+          seen = new Set(pending.map((task) => String(task?.id ?? '')));
+        } else {
+          for (const task of pending) {
+            const id = String(task?.id ?? '');
+            if (!id || seen.has(id)) continue;
+            seen.add(id);
+            Promise.resolve(bridge()?.invoke('desktop_notify', {
+              kind: 'approval', id, title: 'Nerva needs a decision', body: String(task?.title || task?.kind || ''),
+            })).catch(() => {});
+          }
+        }
+      } catch (err: any) {
+        if (err?.status === 401 || err?.status === 403) stopped = true;
+      }
+      if (!stopped) timer = setTimeout(poll, DECISION_POLL_MS);
+    };
+    void poll();
+    return () => { stopped = true; if (timer) clearTimeout(timer); };
+  }, [enabled]);
+}

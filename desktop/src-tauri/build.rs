@@ -4,6 +4,7 @@ fn main() {
             "desktop_action",
             "desktop_capabilities",
             "desktop_listening",
+            "desktop_notify",
         ]),
     ))
     .expect("desktop build configuration");
