@@ -310,6 +310,7 @@ PATH_TYPED = frozenset({
     "EVAL_STORE", "LOG_FILE", "RUNTIME_LOG", "RUNTIME_STATE", "SUBAGENT_SPAWN_LOG",
     "CA_BUNDLE", "WASM_PYTHON", "TERMINAL_SSH_KNOWN_HOSTS",
     "MANAGED_DIR",                                                      # where the administrator's pins live (G1)
+    "LSP_TOOLS_DIR",                                                    # where approved language servers install (H055)
 })
 #: ``<X>`` of the hub variables whose VALUE is a credential — reviewed, by name. This is
 #: what the load refuses when a ``.env`` builds it from a ``${...}`` that nothing sets.

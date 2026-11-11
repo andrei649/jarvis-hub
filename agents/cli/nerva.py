@@ -544,6 +544,32 @@ def build_parser() -> argparse.ArgumentParser:
     engage.add_argument("--reason", default="")
     estop_verbs.add_parser("resume", help="lift the emergency stop (admin)")
 
+    lsp = verbs.add_parser("lsp", help="language servers for code diagnostics (H055)")
+    lsp_verbs = lsp.add_subparsers(dest="action", required=True, metavar="action")
+    lsp_verbs.add_parser("status", help="isolation, running servers and the broken set").add_argument(
+        "--json", action="store_true")
+    lsp_verbs.add_parser("list", help="every known server, its pinned recipe and where it was found")
+    lsp_which = lsp_verbs.add_parser("which", help="the binary a server would run, and its source")
+    lsp_which.add_argument("server")
+    lsp_install = lsp_verbs.add_parser("install", help="queue an approval card for a pinned install (admin)")
+    lsp_install.add_argument("server")
+    lsp_verbs.add_parser("install-all", help="queue a card for every installable server not yet found (admin)")
+    lsp_restart = lsp_verbs.add_parser("restart", help="stop then start a server for a workspace (admin)")
+    lsp_restart.add_argument("server")
+    lsp_restart.add_argument("--root", default=None)
+    lsp_start =lsp_verbs.add_parser("start", help="start a server for a workspace in the file roots (admin)")
+    lsp_start.add_argument("server")
+    lsp_start.add_argument("--root", default=None, help="workspace directory (default: the first file root)")
+    lsp_stop = lsp_verbs.add_parser("stop", help="stop running servers (admin)")
+    lsp_stop.add_argument("server", nargs="?", default=None)
+    lsp_stop.add_argument("--root", default=None)
+    lsp_trust = lsp_verbs.add_parser("trust", help="allow language servers in one git workspace (admin)")
+    lsp_trust.add_argument("root")
+    lsp_untrust = lsp_verbs.add_parser("untrust", help="stop allowing them there, and stop its servers (admin)")
+    lsp_untrust.add_argument("root")
+    lsp_clear = lsp_verbs.add_parser("clear", help="forget a failed install (admin)")
+    lsp_clear.add_argument("server")
+
     company = verbs.add_parser("company", help="company-mode work runs (user)")
     company_verbs = company.add_subparsers(dest="action", required=True, metavar="action")
     company_list = company_verbs.add_parser("list", help="every run and its honest headline")
@@ -3964,6 +3990,105 @@ def cmd_estop(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+def cmd_lsp(ns: argparse.Namespace, ctx: Context) -> int:
+    """H055: language servers, through the hub (it owns the running processes)."""
+    client = ctx.client()
+    if ns.action == "install":
+        reply = client.post("/api/codeintel/lsp/install", {"server": ns.server}) or {}
+        ctx.say(f"approval card #{reply.get('task_id')} queued: install {reply.get('server')} "
+                f"({', '.join(reply.get('packages') or [])}) — accept it in the approval queue")
+        return EXIT_OK
+    if ns.action in ("trust", "untrust"):
+        reply = client.post("/api/codeintel/lsp/trust",
+                            {"root": ns.root, "trusted": ns.action == "trust"}) or {}
+        if ns.action == "trust":
+            ctx.say(f"language servers may start in {reply.get('root')}")
+        else:
+            ctx.say(f"{reply.get('root')} no longer trusted; stopped {reply.get('stopped', 0)} server(s)")
+        return EXIT_OK
+    if ns.action == "clear":
+        client.request("DELETE", f"/api/codeintel/lsp/install/{quote(ns.server, safe='')}")
+        ctx.say(f"install record for {ns.server} cleared")
+        return EXIT_OK
+    if ns.action == "install-all":
+        status = client.get("/api/codeintel/lsp/status") or {}
+        asked: set[tuple] = set()
+        for row in status.get("servers") or []:
+            packages = tuple((row.get("recipe") or {}).get("packages") or [])
+            if row.get("available") or not row.get("installable") or packages in asked:
+                continue
+            asked.add(packages)   # one card per package (json/css/html share one)
+            try:
+                reply = client.post("/api/codeintel/lsp/install", {"server": row.get("id")}) or {}
+                ctx.say(f"  card #{reply.get('task_id')}: {row.get('id')} ({', '.join(packages)})")
+            except HubUnavailable:
+                raise
+            except HubError as exc:
+                ctx.say(f"  {row.get('id')}: {exc.reason}")
+        if not asked:
+            ctx.say("every installable server is already installed")
+        return EXIT_OK
+    if ns.action in ("start", "restart"):
+        body = {"server": ns.server, **({"root": ns.root} if ns.root else {})}
+        if ns.action == "restart":
+            client.post("/api/codeintel/lsp/stop", body)
+        row = (client.post("/api/codeintel/lsp/start", body) or {}).get("running") or {}
+        ctx.say(f"{row.get('server')} running for {row.get('root')} (pid {row.get('pid')}, "
+                f"isolation {row.get('isolation')})")
+        return EXIT_OK
+    if ns.action == "stop":
+        body = {k: v for k, v in (("server", ns.server), ("root", ns.root)) if v}
+        reply = client.post("/api/codeintel/lsp/stop", body) or {}
+        ctx.say(f"stopped {reply.get('stopped', 0)} server(s)")
+        return EXIT_OK
+    status = client.get("/api/codeintel/lsp/status") or {}
+    servers = status.get("servers") or []
+    if ns.action == "which":
+        row = next((s for s in servers if s.get("id") == ns.server), None)
+        if row is None:
+            ctx.say(f"unknown server: {ns.server}")
+            return EXIT_USAGE
+        if not row.get("available"):
+            ctx.say(f"{ns.server}: not installed")
+            return EXIT_FAILED
+        ctx.say(f"{row.get('binary')} ({row.get('source')})")
+        return EXIT_OK
+    if ns.action == "list":
+        for row in servers:
+            recipe = row.get("recipe") or {}
+            how = (", ".join(recipe.get("packages") or []) + f" via {recipe.get('kind')}"
+                   if row.get("installable") else (recipe.get("hint") or "manual"))
+            found = f"found ({row.get('source')})" if row.get("available") else "not installed"
+            if row.get("disabled"):
+                found = "disabled"
+            ctx.say(f"  {row.get('id'):<16} {'/'.join(row.get('languages') or []):<34} {found:<18} {how}")
+        return EXIT_OK
+    if getattr(ns, "json", False):
+        ctx.dump(status)
+        return EXIT_OK
+    state = "on" if status.get("enabled") else "off (JARVIS_LSP=0)"
+    ctx.say(f"diagnostics on write: {state} · isolation: {status.get('isolation')} · "
+            f"idle kill after {status.get('idle_seconds')}s · tools: {status.get('tools_dir')}")
+    if status.get("isolation") != "bwrap":
+        ctx.say("  warning: no namespace sandbox — servers run with resource limits and a scrubbed "
+                "environment only")
+    if not status.get("can_start", True):
+        ctx.say("  no server will start: bubblewrap is unavailable and JARVIS_LSP_REQUIRE_SANDBOX is on "
+                "(set it to 0 to run servers with limits only)")
+    ctx.say(f"  available: {', '.join(s['id'] for s in servers if s.get('available')) or 'none'}")
+    trusted = [row.get("root") for row in status.get("trusted_workspaces") or []]
+    ctx.say(f"  trusted workspaces: {', '.join(trusted) or 'none (`nerva lsp trust <git root>`)'}")
+    for row in status.get("running") or []:
+        ctx.say(f"  running  {row.get('server'):<16} {row.get('root')} pid {row.get('pid')} "
+                f"({row.get('diagnostics_served')} checks)")
+        if row.get("warning"):
+            ctx.say(f"           warning: {row.get('warning')}")
+    for row in status.get("broken") or []:
+        ctx.say(f"  broken   {row.get('server'):<16} {row.get('root')}: {row.get('reason')} "
+                f"(retry in {row.get('retry_in')}s)")
+    return EXIT_OK
+
+
 _RUN_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
@@ -6858,6 +6983,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "logs": cmd_logs,
     "skills": cmd_skills,
     "estop": cmd_estop,
+    "lsp": cmd_lsp,
     "company": cmd_company,
     "goal": cmd_goal,
     "pairing": cmd_pairing,

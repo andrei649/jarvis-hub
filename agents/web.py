@@ -816,6 +816,12 @@ async def lifespan(application: FastAPI):
         logger.exception("Nerva Workspace scheduler did not stop cleanly")
     from agents.core.hermes_runtime.service import get_service as get_hermes_runtime
     await get_hermes_runtime().stop()
+    # H055: no language server (third-party code) outlives the hub.
+    try:
+        from agents.core.codeintel.lsp import get_manager as _lsp_manager
+        await _lsp_manager().shutdown()
+    except Exception:
+        logger.exception("language servers did not stop cleanly")
     from agents.core import power
     power.KEEP_AWAKE.release_all()   # H182: no power assertion outlives the hub
     from agents.core.routers.cameras import stop_camera_ingestion

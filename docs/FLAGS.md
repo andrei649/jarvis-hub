@@ -1504,6 +1504,41 @@ newcomer rather than killing a running cell.
 **Revert:** set it back to `false` and restart. The next call is a one-shot again, and
 says nothing about continuity — the fallback is named in the result shape, not silent.
 
+## H055/H564/H597 — language servers (code diagnostics after an edit)
+
+Code: `agents/core/codeintel/lsp/`. After `file_write` replaces a file a language server
+serves, the running server's diagnostics are taken before and after the write and only the
+ones the edit introduced are added to the tool result as `lsp_diagnostics` (bounded to 20,
+attributed to the edited lines, injection-scanned; a result carrying any is `tainted`, so the
+loop fences it as data). No server for the file type, or `JARVIS_LSP=0`: the result is
+exactly as before. A server starts only in a **git workspace the owner trusted** for
+language servers (`nerva lsp trust <root>`, `POST /api/codeintel/lsp/trust`, admin; the
+record is `<data root>/codeintel/lsp-trust.json`), and only once the write passed its
+contract and kernel checks. Servers run under `bwrap` with an allowlisted filesystem (system
+dirs, the server's own runtime, the workspace read-only, a private state dir; no network;
+the owner's home and the data root are not mounted). Without a working `bwrap` no server
+starts unless the owner sets `JARVIS_LSP_REQUIRE_SANDBOX=0`. Each server uses its own
+bundled runtime (typescript's own tsserver, a pinned system Python for pyright/pylsp,
+rust-analyzer without build scripts or proc-macros); what a trusted workspace can still
+influence is listed in `agents/core/codeintel/lsp/profiles.py`. Installing a server is an
+`lsp.install` approval card (pinned package, one registry, the hub's proxy and CA bundle);
+nothing is fetched before a person accepts it; `nerva lsp clear <server>` forgets a failed
+install.
+
+- **`JARVIS_LSP`** — default **on** (`codeintel/lsp/manager.py` `FLAG`), but no server
+  starts in a workspace the owner has not trusted. `0` turns the diagnostics and the start
+  route off; status and install requests still answer.
+- **`JARVIS_LSP_DISABLED`** — empty. Comma-separated server ids (`gopls,clangd`) never started.
+- **`JARVIS_LSP_TOOLS_DIR`** — default `<data root>/tools/lsp`: where approved installs land
+  (`npm/`, `venv/<id>/`, `go/bin`) and each server's private state directory.
+- **`JARVIS_LSP_IDLE_SECONDS`** — default **600** (minimum 30): a server unused this long is killed.
+- **`JARVIS_LSP_TIMEOUT_SECONDS`** — default **10** (cap 120): the wait for one diagnostics
+  answer; initialisation may take three times this.
+- **`JARVIS_LSP_MEMORY_MB`** — default **2048** (minimum 256): the data-segment limit of a server process.
+- **`JARVIS_LSP_REQUIRE_SANDBOX`** — default **on**: no server (and no install) runs without
+  `bwrap` isolation (`sandbox_unavailable`, shown in the status). `0` is the owner's explicit
+  opt-out: servers then run with resource limits and a scrubbed environment only.
+
 ## H010 — in-place restore and the hub's self-restart
 
 An approved `backup.restore` is staged; the hub then restarts itself and `serve.py` applies
@@ -1731,6 +1766,7 @@ failed query to a second configured provider. **Revert:** unset the variable.
 | `JARVIS_MCP_STDIO_ENV_BASELINE` | **on** (`mcp/client.py` `STDIO_ENV_BASELINE_FLAG`) | stdio MCP subprocesses are handed only `STDIO_ENV_ALLOWLIST` + `JARVIS_MCP_STDIO_ALLOWED_ENV` + the per-server `env` — they are not handed the hub's API keys, tokens or proxies; one INFO line per connect reports the withheld **count** of host values (never names or values) and `GET /api/admin/mcp` reports `env_baseline` per spawning row (`null` for rows that spawn nothing) | **Defence in depth, not a boundary:** the child is same-UID, so a hostile server still reads the hub env from `/proc/<ppid>/environ`; the boundary needs the unshipped command screener + process isolation. A server that relied on inheriting a hub credential stops seeing it — the remedy is `JARVIS_MCP_STDIO_ALLOWED_ENV`, **not** the per-server `env` (in-process only, no config surface) | `JARVIS_MCP_STDIO_ENV_BASELINE=0` + reconnect: full parent env inherited again, for every stdio server at once |
 | `JARVIS_MCP_STDIO_ALLOWED_ENV` | empty (`mcp/client.py` `STDIO_ENV_ALLOW_FLAG`) | Comma-separated host variable **names** stdio MCP servers may keep inheriting on top of the allow-list; a listed name passes through even if it looks like a credential | Host-wide, not per-server: every stdio MCP server sees every listed name — list the minimum. Still narrower than `=0`, which surrenders the whole environment | Remove the name + reconnect: that variable is withheld again |
 | `JARVIS_MCP_AUTOCONNECT` | off (`web.py` lifespan → `MCPManager.start`) | Every saved MCP server is connected in the background at boot, in parallel (4 at a time, 30 s each); the reconnect supervisor runs either way | One more child process per saved stdio server from boot onwards | Unset: servers connect when the owner presses connect |
+| `JARVIS_LSP` (+ `JARVIS_LSP_DISABLED`, `JARVIS_LSP_TOOLS_DIR`, `JARVIS_LSP_IDLE_SECONDS`, `JARVIS_LSP_TIMEOUT_SECONDS`, `JARVIS_LSP_MEMORY_MB`, `JARVIS_LSP_REQUIRE_SANDBOX`) | **on** · none · `<data root>/tools/lsp` · 600 · 10 · 2048 · **on** (`codeintel/lsp/`) | In a git workspace the owner trusted, a `file_write` of a served file type starts (lazily) the language server found in the tools dir or on PATH and returns the diagnostics the edit introduced | A third-party server process per language and workspace, in an allowlist bwrap sandbox (no network, read-only workspace, home and data root absent); without bwrap nothing starts unless `JARVIS_LSP_REQUIRE_SANDBOX=0`; installs only through an `lsp.install` card | `JARVIS_LSP=0` or `nerva lsp untrust <root>`: no server starts, write results are unchanged; `nerva lsp stop` kills running ones |
 | `JARVIS_MCP_SAMPLING_DAILY_TOKENS` | 20000 (`mcp/host_requests.py` `DAILY_TOKENS_ENV`) | The daily allowance for completions MCP servers request (only servers whose `sampling` is `ask` or `auto`) | Local model time spent on a third party's prompts | `0`: every sampling request is refused |
 | `JARVIS_ACP_PERMISSION_TIMEOUT` | 300 s (`cli/nerva.py` `cmd_acp`) | Seconds an editor has to answer one ACP permission request | Longer: a card waits longer in the editor (never runs without an accept) | Shorter: unanswered cards are rejected sooner |
 | `JARVIS_ACP_MCP_TRUST` | `read-only` (`routers/acp.py`) | Trust tier of an editor-supplied, session-only MCP server; `full` offers its mutating tools as approval cards | A third-party server's mutating tools reach the model (still gated) | Unset: only tools the server marks read-only are offered |
