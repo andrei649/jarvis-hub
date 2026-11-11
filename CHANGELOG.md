@@ -4,6 +4,16 @@
 
 ### What changed for you — 2026-11-11
 
+**Channel settings in the HUD**
+- New Console panel **Channels** (Admin group): Telegram, Discord, Slack, email, ntfy and SMS,
+  each saying whether it is running. Open one to set its token or password, hosts, ports, your
+  owner ids or numbers. No more editing `.env` for a channel.
+- Tokens and passwords are stored encrypted by Nerva and never shown again, not even their last
+  characters. A value set in `.env` wins and is changed there; a value your administrator pinned
+  cannot be changed here.
+- Channels start with Nerva, so the panel tells you when a change waits for a restart. SMS
+  account, numbers and token apply at once.
+
 **Your files in the HUD**
 - New Console panel **Files** (Admin group): browse the folders you approve, read a text file,
   download a file, upload new files (pick them or drop them on the list) and make folders. By

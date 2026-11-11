@@ -67,6 +67,9 @@ _MANAGED_NAMES = frozenset({
     "FAL_KEY",
     # G16 (H098): the SMS channel's Twilio auth token (the panel sets it).
     "JARVIS_SMS_AUTH_TOKEN",
+    # G21: the channels' secrets the HUD's Channels panel can set (channel_config.secret_names).
+    "TELEGRAM_BOT_TOKEN", "DISCORD_BOT_TOKEN", "SLACK_BOT_TOKEN", "SLACK_APP_TOKEN", "SMTP_PASS",
+    "IMAP_PASS", "NTFY_TOKEN", "NTFY_TOPIC", "NTFY_PUBLISH_TOPIC",
 }) | ADOPTED_MODEL_PROVIDER_KEYS  # the model providers adopted from Hermes (Adopt lane, slice 2)
 
 # These names either load code, alter the host's controlled child base, or carry

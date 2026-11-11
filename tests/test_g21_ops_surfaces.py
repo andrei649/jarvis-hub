@@ -408,3 +408,220 @@ def test_no_approval_queue_means_nothing_changes(env, client):
     env.orch.autonomy = None
     response = client.post("/api/files/delete", headers=ADMIN, json={"root": env.root, "path": "notes.txt"})
     assert response.status_code == 503 and (env.approved / "notes.txt").exists()
+
+
+# ══ slice 2 — channel settings (H151 / H160) ═════════════════════════════════════
+
+CHANNEL_NAMES = ("TELEGRAM_BOT_TOKEN", "TELEGRAM_ALLOWED_USER_IDS", "DISCORD_BOT_TOKEN", "SLACK_BOT_TOKEN",
+                 "SLACK_APP_TOKEN", "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "IMAP_HOST", "IMAP_PORT",
+                 "IMAP_USER", "IMAP_PASS", "NTFY_URL", "NTFY_TOPIC", "NTFY_TOKEN", "NTFY_TITLE", "NTFY_INBOUND",
+                 "NTFY_PUBLISH_TOPIC", "NTFY_MARKDOWN", "JARVIS_SMS_ENABLED", "NERVA_SMS_ENABLED",
+                 "JARVIS_SMS_ACCOUNT_SID", "NERVA_SMS_ACCOUNT_SID", "JARVIS_SMS_AUTH_TOKEN", "NERVA_SMS_AUTH_TOKEN",
+                 "JARVIS_SMS_FROM_NUMBER", "NERVA_SMS_FROM_NUMBER", "JARVIS_SMS_ALLOWED_NUMBERS",
+                 "NERVA_SMS_ALLOWED_NUMBERS", "JARVIS_SMS_WEBHOOK_URL", "NERVA_SMS_WEBHOOK_URL")
+TG_TOKEN = "123456789:synthetic-telegram-bot-token-AAAA-ZZZZ"
+CBASE = "/api/admin/channels"
+
+
+@pytest.fixture
+def chub(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from agents import web
+    from agents.core import channel_config, integration_keys, managed_scope, settings_db
+    from agents.core.routers import channel_config as channel_router
+
+    for name in CHANNEL_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    integration_keys._PLACED.clear()
+    channel_config.reset_for_tests()
+    store = tmp_path / "security" / "secrets.enc"
+    monkeypatch.setattr(integration_keys, "_store_path", lambda: store)
+    monkeypatch.setattr(settings_db, "DB_PATH", tmp_path / "settings.db")
+    monkeypatch.setattr(settings_db, "_initialized", False)
+    monkeypatch.setattr(settings_db, "_wal_set", False)
+    monkeypatch.delenv("JARVIS_MANAGED_DIR", raising=False)
+    monkeypatch.delenv("NERVA_MANAGED_DIR", raising=False)
+    managed_scope.invalidate()
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "adm-g21")
+    monkeypatch.setattr(web, "USER_TOKEN", "usr-g21")
+    monkeypatch.setattr(web.app, "dependency_overrides", {})
+    orch = SimpleNamespace(audit=FakeAudit(), channels={"web": object(), "telegram": object()})
+    monkeypatch.setattr(channel_router, "get_orch", lambda: orch)
+    yield SimpleNamespace(client=TestClient(web.app), orch=orch, store=store, tmp=tmp_path)
+    integration_keys.reset_for_tests()
+    channel_config.reset_for_tests()
+    managed_scope.invalidate()
+    for name in CHANNEL_NAMES:
+        os.environ.pop(name, None)
+
+
+def _channel(chub, cid):
+    body = chub.client.get(f"{CBASE}/config", headers=ADMIN).json()
+    return next(c for c in body["channels"] if c["id"] == cid)
+
+
+def _field(row, name):
+    return next(f for f in row["fields"] if f["name"] == name)
+
+
+def test_every_channel_route_refuses_a_non_admin(chub):
+    calls = [("get", f"{CBASE}/config", None),
+             ("put", f"{CBASE}/telegram/config", {"values": {"TELEGRAM_ALLOWED_USER_IDS": "1"}}),
+             ("put", f"{CBASE}/telegram/secret", {"name": "TELEGRAM_BOT_TOKEN", "value": TG_TOKEN}),
+             ("delete", f"{CBASE}/telegram/secret/TELEGRAM_BOT_TOKEN", None)]
+    for headers in ({}, USER):
+        for method, path, body in calls:
+            kwargs = {"headers": headers}
+            if body is not None:
+                kwargs["json"] = body
+            assert chub.client.request(method.upper(), path, **kwargs).status_code in (401, 403), (method, path)
+    assert "TELEGRAM_BOT_TOKEN" not in os.environ and not chub.store.exists()
+
+
+def test_the_listing_shows_every_channel_and_whether_it_runs(chub):
+    body = chub.client.get(f"{CBASE}/config", headers=ADMIN).json()
+    ids = [c["id"] for c in body["channels"]]
+    assert ids == ["telegram", "discord", "slack", "email", "ntfy", "sms"]
+    assert _channel(chub, "telegram")["running"] is True and _channel(chub, "email")["running"] is False
+    token = _field(_channel(chub, "telegram"), "TELEGRAM_BOT_TOKEN")
+    assert token == {**token, "secret": True, "set": False, "source": None, "editable": True}
+    assert "value" not in token
+
+
+def test_a_secret_is_stored_encrypted_and_never_echoed(chub):
+    response = chub.client.put(f"{CBASE}/telegram/secret", headers=ADMIN,
+                               json={"name": "TELEGRAM_BOT_TOKEN", "value": TG_TOKEN})
+    assert response.status_code == 200, response.text
+    assert TG_TOKEN not in response.text and TG_TOKEN[-4:] not in response.text
+    assert response.json()["secret"] == {"name": "TELEGRAM_BOT_TOKEN", "set": True, "source": "hub"}
+    assert os.environ["TELEGRAM_BOT_TOKEN"] == TG_TOKEN
+    listing = chub.client.get(f"{CBASE}/config", headers=ADMIN)
+    assert TG_TOKEN not in listing.text and TG_TOKEN[-4:] not in listing.text
+    assert _channel(chub, "telegram")["restart_required"] is True
+    assert chub.store.exists() and TG_TOKEN not in chub.store.read_text(encoding="utf-8", errors="replace")
+    assert all(TG_TOKEN not in preview for _, preview in chub.orch.audit.rows)
+    # the start applies it from the store, after .env, before the channels are wired
+    from agents.core import integration_keys
+
+    integration_keys._PLACED.clear()
+    os.environ.pop("TELEGRAM_BOT_TOKEN")
+    assert "TELEGRAM_BOT_TOKEN" in integration_keys.apply_stored()
+    assert os.environ["TELEGRAM_BOT_TOKEN"] == TG_TOKEN
+    removed = chub.client.delete(f"{CBASE}/telegram/secret/TELEGRAM_BOT_TOKEN", headers=ADMIN)
+    assert removed.status_code == 200 and removed.json()["secret"]["set"] is False
+    assert "TELEGRAM_BOT_TOKEN" not in os.environ
+
+
+def test_a_malformed_secret_body_never_echoes_the_value(chub):
+    for body in ({"name": "TELEGRAM_BOT_TOKEN", "value": TG_TOKEN, "extra": TG_TOKEN},
+                 {"name": "telegram bot", "value": TG_TOKEN}, {"name": "TELEGRAM_BOT_TOKEN", "value": 5},
+                 {"name": "TELEGRAM_BOT_TOKEN", "value": TG_TOKEN + "\nX"}):
+        response = chub.client.put(f"{CBASE}/telegram/secret", headers=ADMIN, json=body)
+        assert response.status_code in (404, 422), (body, response.status_code)
+        assert TG_TOKEN not in response.text
+    assert "TELEGRAM_BOT_TOKEN" not in os.environ
+
+
+def test_a_secret_cannot_be_written_as_a_plain_setting_or_to_another_channel(chub):
+    plain = chub.client.put(f"{CBASE}/telegram/config", headers=ADMIN,
+                            json={"values": {"TELEGRAM_BOT_TOKEN": TG_TOKEN}})
+    assert plain.status_code == 404 and TG_TOKEN not in plain.text
+    other = chub.client.put(f"{CBASE}/discord/secret", headers=ADMIN,
+                            json={"name": "TELEGRAM_BOT_TOKEN", "value": TG_TOKEN})
+    assert other.status_code == 404
+    arbitrary = chub.client.put(f"{CBASE}/telegram/secret", headers=ADMIN,
+                                json={"name": "OPENAI_API_KEY", "value": TG_TOKEN})
+    assert arbitrary.status_code == 404
+    assert "OPENAI_API_KEY" not in os.environ and "TELEGRAM_BOT_TOKEN" not in os.environ
+
+
+def test_plain_settings_go_to_the_settings_database_validated(chub):
+    from agents.core import channel_config, settings_db
+
+    response = chub.client.put(f"{CBASE}/email/config", headers=ADMIN, json={"values": {
+        "SMTP_HOST": "smtp.example.org", "SMTP_PORT": 587, "SMTP_USER": "owner@example.org",
+        "IMAP_HOST": "imap.example.org", "IMAP_PORT": "993"}})
+    assert response.status_code == 200, response.text
+    assert settings_db.get_value("channels", "config", {})["SMTP_HOST"] == "smtp.example.org"
+    assert os.environ["SMTP_PORT"] == "587"
+    row = _channel(chub, "email")
+    assert _field(row, "SMTP_HOST") == {**_field(row, "SMTP_HOST"), "value": "smtp.example.org", "source": "hub"}
+    assert row["restart_required"] is True
+    for cid, bad in (("email", {"SMTP_PORT": 70000}), ("email", {"SMTP_HOST": "bad host;rm"}),
+                     ("email", {"SMTP_USER": "a\nb"}), ("ntfy", {"NTFY_URL": "file:///etc/passwd"})):
+        refused = chub.client.put(f"{CBASE}/{cid}/config", headers=ADMIN, json={"values": bad})
+        assert refused.status_code == 422, bad
+    assert os.environ["SMTP_PORT"] == "587"
+    cleared = chub.client.put(f"{CBASE}/email/config", headers=ADMIN, json={"values": {"SMTP_USER": None}})
+    assert cleared.status_code == 200 and "SMTP_USER" not in os.environ
+    # at the next start the stored values are placed again, before the channels are wired
+    channel_config.reset_for_tests()
+    assert "SMTP_HOST" not in os.environ
+    assert set(channel_config.apply_stored()) == {"SMTP_HOST", "SMTP_PORT", "IMAP_HOST", "IMAP_PORT"}
+    assert os.environ["IMAP_PORT"] == "993"
+
+
+def test_sms_settings_apply_now(chub):
+    response = chub.client.put(f"{CBASE}/sms/config", headers=ADMIN, json={"values": {
+        "JARVIS_SMS_ACCOUNT_SID": "AC00000000000000000000000000000000",
+        "JARVIS_SMS_FROM_NUMBER": "+15550001111", "JARVIS_SMS_ALLOWED_NUMBERS": "+15550002222, +15550003333"}})
+    assert response.status_code == 200, response.text
+    from agents.core.channels import sms
+
+    assert sms.allowed_numbers() == frozenset({"+15550002222", "+15550003333"})
+    assert _channel(chub, "sms")["restart_required"] is False
+    bad = chub.client.put(f"{CBASE}/sms/config", headers=ADMIN, json={"values": {"JARVIS_SMS_FROM_NUMBER": "555"}})
+    assert bad.status_code == 422
+
+
+def test_env_wins_over_the_hud(chub, monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "from-dot-env-token-0000000000")
+    monkeypatch.setenv("SMTP_HOST", "env.example.org")
+    secret = chub.client.put(f"{CBASE}/telegram/secret", headers=ADMIN,
+                             json={"name": "TELEGRAM_BOT_TOKEN", "value": TG_TOKEN})
+    assert secret.status_code == 409 and secret.json()["error"] == "env_managed"
+    plain = chub.client.put(f"{CBASE}/email/config", headers=ADMIN, json={"values": {"SMTP_HOST": "x.example.org"}})
+    assert plain.status_code == 409
+    assert os.environ["TELEGRAM_BOT_TOKEN"] == "from-dot-env-token-0000000000"
+    row = _channel(chub, "telegram")
+    token = _field(row, "TELEGRAM_BOT_TOKEN")
+    assert token["source"] == "env" and token["editable"] is False
+    assert "from-dot-env" not in chub.client.get(f"{CBASE}/config", headers=ADMIN).text
+
+
+def test_a_managed_pin_or_managed_mode_refuses_the_write(chub, monkeypatch):
+    from agents.core import managed_scope
+
+    directory = chub.tmp / "etc-nerva"
+    directory.mkdir()
+    monkeypatch.setenv("NERVA_MANAGED_DIR", str(directory))
+    monkeypatch.setattr(managed_scope, "_TRUST_ANY_OWNER_FOR_TESTS", True)
+    monkeypatch.setattr("agents.core.settings_db._LAST_VALID_PIN", {})
+    (directory / ".env").write_text("SMTP_HOST=pinned.example.org\nTELEGRAM_BOT_TOKEN=admin-token-000000000000\n",
+                                    encoding="utf-8")
+    managed_scope.invalidate()
+    refused = chub.client.put(f"{CBASE}/email/config", headers=ADMIN, json={"values": {"SMTP_HOST": "x.example.org"}})
+    assert refused.status_code == 409 and refused.json()["error"] == "managed"
+    secret = chub.client.put(f"{CBASE}/telegram/secret", headers=ADMIN,
+                             json={"name": "TELEGRAM_BOT_TOKEN", "value": TG_TOKEN})
+    assert secret.status_code == 409 and secret.json()["error"] == "managed"
+    assert TG_TOKEN not in secret.text
+    assert any(action == "settings_managed_refused" for action, _ in chub.orch.audit.rows)
+    (directory / ".env").unlink()
+    (directory / ".managed").write_text("ask your administrator\n", encoding="utf-8")
+    managed_scope.invalidate()
+    locked = chub.client.put(f"{CBASE}/email/config", headers=ADMIN, json={"values": {"IMAP_HOST": "i.example.org"}})
+    assert locked.status_code == 409 and "IMAP_HOST" not in os.environ
+
+
+def test_a_cross_site_channel_write_is_refused(chub):
+    response = chub.client.put(f"{CBASE}/email/config", headers={**ADMIN, "Sec-Fetch-Site": "cross-site"},
+                               json={"values": {"SMTP_HOST": "x.example.org"}})
+    assert response.status_code == 403 and "SMTP_HOST" not in os.environ
+
+
+def test_channel_secrets_never_reach_a_sandboxed_child(chub):
+    from agents.core import channel_config, code_env
+
+    assert channel_config.secret_names() <= code_env._MANAGED_NAMES

@@ -116,6 +116,7 @@ export const CONSOLE_PANELS = [
   {"id": "support-voice", "label": "Support Voice", "group": "Admin", "component": "SupportVoicePanel"},
   {"id": "backup", "label": "Backup", "group": "Admin", "component": "BackupPanel"},
   {"id": "files", "label": "Files", "group": "Admin", "component": "FilesPanel"},
+  {"id": "channels-config", "label": "Channels", "group": "Admin", "component": "ChannelsConfigPanel"},
   {"id": "o-auth", "label": "O Auth", "group": "Admin", "component": "OAuthPanel"},
   {"id": "settings", "label": "Settings", "group": "Admin", "component": "SettingsPanel"},
   {"id": "prompts", "label": "Prompts", "group": "Admin", "component": "PromptsPanel"},

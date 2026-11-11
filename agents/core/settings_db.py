@@ -482,6 +482,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="channels",key="streaming_replies", value=True,                 label="Write chat replies in place as they are produced (channels that can edit a message)", kind="toggle"),
     dict(category="channels",key="pending_inputs_enabled", value=False, label="Chat clarification preview (restart to apply)", kind="toggle"),
     dict(category="channels", key="owner_senders", value={}, label="Command owners: Slack team:user, Discord user ID or ntfy receive topic; current pairing required", kind="json"),
+    dict(category="channels", key="config", value={}, label="Channel settings set in the HUD Channels panel (no secrets; .env wins; restart to apply)", kind="json"),
     # G12 (H560/H614) — the OpenAI-compatible API (/v1/chat/completions, /v1/responses,
     # /v1/models). Off by default; an administrator can pin it (managed config.yaml).
     # Keys are issued with `python -m agents.core.openai_api keys issue`.

@@ -275,6 +275,12 @@ def _allowed_names() -> tuple[frozenset[str], dict[str, frozenset[str]]]:
         keys = integrations_catalog.managed_keys()
     except Exception:  # noqa: BLE001 — the static search rows still apply
         keys = frozenset(n for row in integrations_catalog.SEARCH_ROWS for n in row.keys)
+    try:            # G21: the channels' secrets, set in the HUD's Channels panel
+        from agents.core.channel_config import secret_names
+
+        keys = keys | secret_names()
+    except Exception:  # noqa: BLE001 — no channel secret is applied then
+        logger.warning("channel secret names unavailable; none applied")
     backends = frozenset(row.name for row in integrations_catalog.SEARCH_ROWS)
     try:
         from agents.core.creative.video_providers import PROVIDERS

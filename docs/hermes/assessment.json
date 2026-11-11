@@ -2612,14 +2612,14 @@
       "id": "H151",
       "row_sha256": "59b6e3661bb0ed03a39b992fbca9274903c473eea7d5e2070866b0375bfac66a",
       "status": "partial",
-      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Only the owner-pairing half of Telegram onboarding exists. `POST /api/channels/pairing/link` (agents/core/routers/pairing.py:149-179, admin) mints a single-use, expiring `t.me/<bot>?start=<token>` deeplink. The HUD PairingPanel offers it as \"pair a phone\", shows it once and can revoke it (frontend/src/gap.tsx:683-687, :724-737). Tests: frontend/src/test/pairing-deeplink.test.tsx:44-107 and tests/test_channel_pairing.py. Channel credentials are still environment-only: `TELEGRAM_BOT_TOKEN` is read from the environment at boot (agents/web.py:572-596). No UI card or route configures, enables or tests a channel.",
-      "remaining": "- One card per platform with a live state badge and a summary\n- An enable switch that has an effect, admin-tier and audited\n- A Test probe per channel\n- A CONFIGURE modal with client-side field validation that writes credentials to the vault / secret broker, not plaintext `.env`\n- A rendered QR for Telegram (today it is a text link) and WhatsApp QR onboarding\n- Restart banners when a change needs a restart",
+      "summary": "Assessed 2026-11-11 (G21 channel-config slice): the owner can now configure the messaging channels from the HUD. The Console CHANNELS panel (frontend/src/panels/channels-config.tsx) shows one card per channel (Telegram, Discord, Slack, email, ntfy, SMS) with a live running/not-running badge (the channel is registered in the orchestrator), a CONFIGURE section per field and a restart banner when a change waits for a restart. agents/core/routers/channel_config.py (admin-only, same-origin writes, validation errors never echo the body) and agents/core/channel_config.py: secrets (bot/app tokens, mail passwords, ntfy token and topics, the Twilio auth token) are written only through agents/core/integration_keys.py into the encrypted secret store under the broker-internal prefix, applied at start before the channels are wired, never echoed (only set and where); plain values (hosts, ports, users, owner id allowlist, SMS numbers and switch, ntfy URL/title/flags) are validated server-side by kind and stored in the settings database (`channels.config`), placed in the environment at start. `.env` wins and a managed pin or managed mode refuses (409, audited). The existing owner-pairing deeplink (agents/core/routers/pairing.py, PairingPanel) is unchanged. Tests: tests/test_g21_ops_surfaces.py (channel section), frontend/src/panels/channels-config.test.tsx.",
+      "remaining": "- An enable switch per channel (only SMS has one; the others start when their token is set and stop only when it is removed)\n- A Test probe per channel (a bot-token check, an SMTP/IMAP login, an ntfy publish)\n- Client-side field validation in the CONFIGURE form (validation is server-side only)\n- A rendered QR for the Telegram pairing deeplink (still a text link) and WhatsApp QR onboarding\n- Changes to Telegram/Discord/Slack/email/ntfy apply only after a restart (the panel says so; no hot re-wiring)",
       "evidence": [
+        "agents/core/channel_config.py",
+        "agents/core/routers/channel_config.py",
+        "frontend/src/panels/channels-config.tsx",
         "agents/core/routers/pairing.py",
-        "frontend/src/gap.tsx",
-        "frontend/src/test/pairing-deeplink.test.tsx",
-        "tests/test_channel_pairing.py",
-        "agents/web.py"
+        "tests/test_g21_ops_surfaces.py"
       ]
     },
     {
