@@ -545,6 +545,16 @@ Chain: `memory_logs/security/audit.db`, table `security_events`, per-row `row_ha
 | SEC-175 | ⏱ Kill-switch survives a restart | engage it (`POST /api/security/kill-switch {"engage":true,"scope":"global"}`), restart, `GET /api/security/kill-switch` | `{"global":true,"halted":{"global":{…}}}` — persisted in `<data root>/kill_switch.json`. Then disengage and confirm the card returns to `ARMED · operational` (`frontend/src/gap.tsx:362`) | **BLOCKER** if a restart silently clears a halt | ⚠️`tests/test_kernel_authorize.py` |
 | SEC-176 | Disengage always works (no self-brick) | with the kernel enabled and a halt engaged, `POST /api/security/kill-switch {"engage":false}` | 200 `{"ok":true,"disengaged":true}` — disengage is deliberately **not** kernel-mediated (`agents/core/routers/security.py:161-168`); likewise `POST /api/security/loop-breaker/reset` | **BLOCKER** if recovery is blocked by the thing being recovered | ✅`tests/test_kernel_authorize.py` |
 
+### 08.14b Owner browser sign-in on a networked hub (G13 / H509)
+
+| ID | Check | Do | Expect | Fail | Auto |
+|----|-------|----|--------|------|------|
+| SEC-217 | Sign-in opens an owner session | from another device open `http://<lan-ip>:<port>/v2/`; enter the admin token | the sign-in screen appears (no token prompt); after sign-in the HUD loads and admin panels answer; `Set-Cookie: nerva_session=…; HttpOnly; SameSite=strict; Max-Age=604800` (`__Host-nerva_session` + `Secure` over HTTPS) | **BLOCKER** if the cookie is readable by script or lacks SameSite | ✅`tests/test_g13_browser_signin.py` |
+| SEC-218 | Wrong secrets lock out | 5 wrong secrets from one device, then the right one | 401 `invalid_secret` ×5, then 429 `too_many_attempts` with `Retry-After`; another device and header tokens still work | **BLOCKER** if guessing is unbounded | ✅`tests/test_g13_browser_signin.py` |
+| SEC-219 | A cookie write needs the CSRF token | signed in, `curl -b 'nerva_session=<value>' -X POST -H 'Origin: http://<host>' $B/api/auth/logout-all` without `X-CSRF-Token`; then with `Origin: https://evil.example` | 403 `csrf token missing or wrong`; cross-origin: 401 (the cookie is not used at all) | **BLOCKER** | ✅`tests/test_g13_browser_signin.py` |
+| SEC-220 | Sign-out is server-side | copy the cookie value, sign out, replay it with curl | 401 — the session is revoked, not just forgotten by the browser; rotating the admin token (`scripts/token_recover.py rotate admin`) ends every session opened with the old one | **BLOCKER** | ✅`tests/test_g13_browser_signin.py` |
+| SEC-221 | Guests and loopback unchanged | sign in with a user (guest) token; on the hub's own machine with no admin token, open the HUD | guest: 401 `invalid_secret`, and a guest header in the owner's browser stays a guest; loopback: no sign-in screen, `POST /api/auth/login` answers 409 `no_owner_credential` | **BLOCKER** if a guest token becomes the owner | ✅`tests/test_g13_browser_signin.py` |
+
 ---
 
 ## 08.15 Privacy: camera consent, personal data, forget & export

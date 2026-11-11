@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### What changed for you — 2026-11-11
+
+**Sign in to a networked Nerva from your browser**
+- Open the HUD from your phone or another computer and Nerva now asks you to sign in, once,
+  with the owner secret (your admin token). It no longer pops up a token prompt or keeps the
+  token in the browser: the hub gives the browser a session cookie the page itself cannot read.
+- A session lasts up to 7 days and ends after a day without use. "OWNER · SIGNED IN" in the
+  bottom-left corner signs this browser out, or every browser at once. Rotating or revoking
+  the admin token also signs out every browser that used it.
+- Five wrong secrets from one address (or thirty from anywhere) lock sign-in for 15 minutes.
+  The token in a header and a browser on the hub's own machine keep working meanwhile.
+- Another web site cannot act with your session: writes must come from the HUD's own page.
+  A guest's user token never becomes the owner, also when used in the owner's browser.
+- On the hub's own machine nothing changes: with no admin token set, a local browser is the
+  owner without signing in.
+
 ### What changed for you — 2026-11-09
 
 **Worktrees, background helpers that survive a restart, and an independent reviewer**
