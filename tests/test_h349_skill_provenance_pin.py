@@ -54,6 +54,40 @@ ADMIN = {"X-Admin-Token": "t"}
 PIN = "/api/skills/pin"
 
 
+def serve_remote(monkeypatch, text_for):
+    """A remote import with its governance granted and the network stubbed.
+
+    Since main #1346 a remote import (openclaw, a GitHub repository) needs an exact pin, the
+    live skill.install kernel gate and governed egress; that governance is tested in
+    tests/test_h334_*. Here the kernel grants, and the pinned fetch — the network, and only
+    that — returns ``text_for(slug)``. The route, the importer's shared write path and its
+    H349 refusals are the real ones."""
+    from agents.core.kernel import Verdict, binding
+
+    granted = SimpleNamespace(verdict=Verdict.GRANT, reason="")
+    monkeypatch.setattr(binding, "make_action_kernel", lambda orch, **_kw: (lambda action: granted))
+
+    async def _import(self, repo, skill_name, *, pin, authorization, source):
+        slug = skill_name.strip().lower()
+        payload = self._install_payload(source, slug, pin)
+        self._check_install(authorization, payload)
+        assert authorization.egress_gate("skill-import", "GET", f"https://raw.githubusercontent.com/{pin.repo}",
+                                         "raw.githubusercontent.com") is None
+        self._check_install(authorization, payload)
+        return await self._save_skill(slug, source, skill_md_text=text_for(slug), reference_files={},
+                                      provenance={"source_repository": pin.repo, "source_commit": pin.commit,
+                                                  "source_path": pin.entry_path, "quarantined": True})
+
+    monkeypatch.setattr(SkillImporter, "_import_from_github", _import)
+
+
+def remote_body(source: str, skill: str) -> dict:
+    """POST /skills/import for a remote source, with the exact pin it now requires."""
+    repo = "openclaw/skills" if source == "openclaw" else source
+    return {"source": source, "skill": skill, "pin": {
+        "repo": repo, "commit": "c" * 40, "entry_path": f"skills/{skill}/SKILL.md", "content_sha256": "d" * 64}}
+
+
 def _md(name: str, description: str | None = None) -> str:
     return f"---\nname: {name}\ndescription: {description or 'Use when testing ' + name}\n---\n## Steps\n\nDo it.\n"
 
@@ -166,13 +200,9 @@ async def test_an_imported_skill_records_import_and_its_source(hub):
 
 def test_the_import_route_records_the_origin(hub, monkeypatch):
     hub.boot()
-    monkeypatch.setattr(web, "DEV_MODE", True)
 
-    async def _fetch(self, client, repo, branch, subdir, slug):    # the network, and only that
-        return _md(slug)
-
-    monkeypatch.setattr(SkillImporter, "_fetch_skill_md_flat", _fetch)
-    reply = hub.client.post("/skills/import", json={"source": "openclaw", "skill": "trip-planner"}, headers=ADMIN)
+    serve_remote(monkeypatch, lambda slug: _md(slug))
+    reply = hub.client.post("/skills/import", json=remote_body("openclaw", "trip-planner"), headers=ADMIN)
     assert reply.status_code == 200, reply.text
     usage = hub.listing()[hub.named("trip-planner")]["usage"]
     assert (usage["origin"], usage["source"]) == ("import", "openclaw")

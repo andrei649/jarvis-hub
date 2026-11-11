@@ -3079,6 +3079,97 @@
   run time keeps the last valid one, a self-restart hands on the process environment only, undeclared
   pins warn, provider packages are refused in managed mode. Follow-ups: chat `/approvals` (commands.py) answers a pinned mode with its generic "did not become
   effective" line; environment pins take effect at the next hub start.
+  **Batch 4 (2026-11-03, local):** H220 adds the reachable Usage console and Billing settings
+  tab, measured local/cloud/unknown token and estimated-spend splits, model/agent breakdowns,
+  and selected current-turn usage in the shared context meter without an extra RPC. Unknown
+  or unpriced data is not presented as free. H696 uses a v2 exact-release pin with 190 eligible
+  skill documents and 461 reference digests, verified complete staged imports, a smaller
+  five-default/seven-optional Nerva bundle, visible tiers and generated per-skill documentation.
+  Installs cross admin/kernel gates into quarantine; separate approval is bound to the exact
+  reviewed fingerprint. Independent reviews fixed legacy model accounting, zero-price route
+  inference and a racing empty-owner-directory replacement. The H026 long/optional bundle-path
+  regression and browser unload/cache lifetime regressions are separately tested. All 224
+  affected ledger rows were re-read (222 retained verdicts plus the two new equivalents), with
+  source claims, remaining work and citations corrected. `needs_review` 0; headline 146 → 148/697.
+  This is local source equivalence: native device/frozen-package, live provider/owner installation
+  and the complete scheduled browser matrix remain unclaimed. Generic import egress/governance
+  (H334), historical billing (H370), and SEC-B6 acceptance stay open.
+  **Batch 4 integration follow-up:** the first full run exposed moved-source imports,
+  obsolete boot-registry expectations and an omitted usage schema. Their regressions retain
+  exact default/optional membership, all nine research cases and closed usage provenance.
+  Usage/Billing now sends stored admin credentials. Bulk fingerprint preflight and approval
+  use one loader/orchestrator, proved with two real loaders. All 115 combined affected cases
+  pass; 52 affected ledger rows were re-read again, with verdicts retained and `needs_review` 0.
+  The fresh complete backend run passed 31,381 tests with 120 existing skips and zero failures
+  (31,501 collected); all 2,791 frontend tests, both TypeScript checks, build, Ruff and Bandit
+  pass. The earlier runtime cases also passed unchanged in the complete rerun; their initial
+  full-load causes remain unproven. This does not claim live provider or native-device acceptance.
+  **Read-privacy follow-up (2026-11-03):** the 132 rows affected by guarded reads, the public
+  safety projection, client compatibility and regenerated metadata were reread against source.
+  False open-read claims, moved citations and the obsolete missing-code claim for locally
+  implemented mobile session transitions were corrected; capability verdicts were retained.
+  Headline remains 148/697 with `needs_review` 0. Complete React/legacy/mobile suites pass
+  2,803/246/363 cases; the final checkpoint collects 31,515 backend cases, with its fresh complete
+  run tracked separately from the earlier batch-4 result. SEC-B6 post-merge acceptance stays open.
+  **Workflow campaign (2026-11-04, local/uncommitted):** the canonical execution workflow now
+  separates recorded implementation, impact/freshness and required external acceptance. The
+  explicit v3 migration preserves every frozen ID and exactly the previous 148 credited IDs;
+  it grants no new credit. H655 now completes its four-clause contributor contract with the
+  subsystem/source/doc map, current setup/security/platform guidance and loadable local review
+  checklists, supported by the real bounded development preflight. Its previous partial review
+  and source receipts remain in history. Recorded headline 148 → 149/697; this local delivery
+  is not on main and does not claim current full-suite, live-provider or native acceptance.
+  H022's complete governed dependency-audit contract is the next frozen implementation batch.
+  **H022 delivery (2026-11-04, local/uncommitted):** bare and explicit security audit now
+  enumerate installed interpreter distributions, managed declared-extension pins and exact
+  pinned MCP packages, and query OSV through an admin hub route with a per-request kernel
+  grant, shared SSRF/TLS transport and durable egress. Missing metadata, skipped surfaces,
+  mutable references and offline results stay explicit; known findings remain visible on
+  incomplete runs. Root's actual CLI/client/API/kernel integration reopens the egress store
+  after findings and an owner halt. The full frozen source contract is equivalent; external
+  undeclared files do not become a plugin installation/discovery claim. Recorded headline
+  149 → 150/697. The current complete backend passes 31,486 cases with 119 existing skips
+  (31,605 collected, zero failures/errors); frontend/type/build and generated/status/security
+  checks pass. Live OSV/no-proxy host and native/production acceptance remain separate pending
+  checks; inherited impact unknowns retain their pending state.
+
+  **H334 delivery (2026-11-04, local/uncommitted):** the admin Skills Import UI/API now
+  requires an immutable generic source pin or the server-owned Hermes pin, current
+  `skill.install` decisions before fetch and staging, and mandatory shared SSRF/TLS/egress
+  admission. Exact entry/reference bytes are verified and remain quarantined for separate
+  fingerprint-bound owner approval even on grant/queue. Actual API/importer/kernel tests
+  prove halt/origin refusal, safe-mode and persisted load-set exclusion; the governed local
+  migration CLI remains intact. Recorded totals are 151 equivalent, 433 partial and 113
+  missing; sixteen old impact unknowns remain. Only H334 adds functional credit in this
+  batch. Focused integration, full UI, type/build, preflight and security checks pass;
+  the complete frozen backend passes 31,537 cases with 119 existing skips (31,656 collected,
+  zero failures/errors), with source/input/count verification. Live upstream and native
+  platform acceptance remain separate. HEQ-1 remains open for all 697 frozen contracts;
+  H349 stays partial: bounded full-contract preparation also found view-as-use and a real
+  sync opt-in consumer owed with H345. H492 is the next independent candidate under review;
+  current integration still finishes first.
+
+  **H492 delivery (2026-11-04, local/uncommitted):** owner
+  `security.website_blocklist` settings now govern shared HTTP, browser navigation and
+  subresources, and real web search/extraction. Domain/glob/shared-file rules have bounded
+  profile caches and named unavailable refusal; owner edits invalidate a warm client.
+  Cross-origin redirect headers are filtered after auth/cookie processing, and explicit
+  CGNAT/RFC2544 plus translated IPv4 guards close the recorded address gaps. The complete
+  frozen functional contract is implemented; only H492 adds recorded credit (152
+  equivalent, 432 partial, 113 missing). Combined regressions pass 364/364, full UI passes
+  2,805/2,805, type/build/security and twelve-check local preflight pass. The frozen H492
+  backend passes 31,594 cases with 119 existing skips (31,713 collected, zero failures or
+  errors), with exact source/input/count checks. Live/native acceptance and sixteen older
+  unknown impacts remain unresolved. HEQ-1 stays open; H027's full curator contract proceeds.
+  **Main (#1346) merged into the integration branch (2026-11-10):** the schema-3 assessment
+  (evidence paths, area suites) is kept and main's verdicts are carried into it: H022, H220,
+  H334, H492, H655 and H696 become equivalent and thirteen partial rows take main's narrower
+  remaining work. H349 goes back to partial — main's full-contract correction holds (a served
+  `skill_view` bumps only the view counter, and the per-skill sync opt-in has no consumer,
+  H345); its origin and pin clauses stay delivered. H336 adds main's license-review item.
+  Headline 156 → 161/697. `POST /skills/import` is now admin-guarded with no DEV_MODE gate
+  (main's pinned, kernel- and egress-governed remote lane), and the vendored catalog lane
+  (`hermes-catalog`, `POST /api/skills/catalog/install`) stays beside it.
 
 ## Darwin feature absorption — 2026-09-09
 
@@ -6692,6 +6783,25 @@ owner's machine in 30 seconds, read-only.
   recorded, not on the decision alone. *Follow-up delivered:* the export/purge-drift gap is closed — #900
   (`2f81029`, Max «copper-nectar») added `tests/test_forget_export_purge_parity.py` asserting
   nothing an export names may sit on the forget KEEP list.
+  **Independent local review 2026-11-03: HOLD.** All 71 intentionally open GETs were resolved
+  against current handlers; the prescribed route-auth matrix passed 21 tests. Response-level
+  gaps remain: Oracle status carries session/task/conflict content, `/agents` includes
+  owner-authored SOUL descriptions, and the public kill-switch response includes a free-form
+  owner reason. See [findings and acceptance gate](docs/security/2026-11-03-open-read-review.md).
+  Remaining: fix and test those response boundaries, correct the per-handler evidence, and
+  record independent PASS on the final source. The earlier green matrix alone is insufficient.
+  **Local remediation and independent source review (2026-11-03): PASS on the candidate.**
+  Twelve additional owner-content reads now require user credentials, including stored dataset
+  labels, local-document paths, imported manifests, Arena labels and connected-tool descriptions.
+  Public kill-switch status exposes only coherent global/any-halted/count fields; full scopes and
+  reasons require the new admin details read. Client recovery preserves unknown state and scoped
+  halts, and stored browser tokens stay within the intended origin without mutating reused options.
+  The independent reviewer resolved all 59 remaining open reads against handler response bodies
+  at `47d2b4e6`; the 34-case matrix/privacy rerun passed. The final generated API, route, privacy,
+  asset and parity gate passed 187 cases; full React/legacy/mobile suites passed 2,803/246/363 cases.
+  Source fixes and local acceptance supersede the remediation work listed above. This item stays
+  open: the required independent post-merge review on current `main` is pending.
+  Local PASS does not satisfy that separate acceptance boundary.
   **Independent review recorded 2026-11-09 (#1347): HOLD, fixed, then PASS.** A read-only reviewer
   (not the builder) checked all 71 open GETs against handler source on `fcc3bef` and held on three
   rows that served personal data unauthenticated: `/api/oracle/status` (open conflicts, sessions, PR

@@ -125,15 +125,11 @@ PUBLIC_READS = {
     "GET /api/memory/eval/corpus",       # owned synthetic corpus, not user memory
     "GET /api/voice/capabilities",
     "GET /api/voice/wyoming",
-    "GET /sandbox/status",
     "GET /plugins",                      # config presence booleans, never key values
-    "GET /agents",                       # roster + aggregate stats + skill names
     # Aggregate observability (counts/rates/percentiles — no message content).
     "GET /api/analytics/cost",
     "GET /api/analytics/locality",
     "GET /api/analytics/model-tiers",
-    "GET /api/metrics/capabilities",
-    "GET /api/metrics/kernel",
     "GET /api/metrics/north-star",
     "GET /api/quality",                  # rolling average + alert flag; scores are guarded
     "GET /api/review/stats",
@@ -141,10 +137,6 @@ PUBLIC_READS = {
     "GET /bench/stats",
     "GET /memory/stats",
     "GET /heartbeat/status",
-    "GET /api/arena/leaderboard",        # scores only; match bodies are guarded
-    "GET /api/eval/datasets",
-    "GET /api/eval/datasets/{name}/runs",
-    "GET /api/eval/datasets/{name}/compare",
     "GET /api/autonomy/escalation/targets",
     # Deliberate transparency: the trust surface is readable by design (H18.18
     # reads it from mobile without tokens; writes stay admin-guarded).
@@ -172,7 +164,7 @@ PUBLIC_READS = {
 # credential, so they are listed in IN_HANDLER_GUARDED below and folded in there.)
 
 # Personal-data reads still open — SEC-B6 debt. Shrink-only.
-PENDING_READ_GUARD = set()  # SEC-B6 COMPLETE — every personal-content read now carries user_guard.
+PENDING_READ_GUARD = set()  # Known content reads are guarded; substance evidence is reviewed separately.
 
 
 # ── H511: credentials checked in the handler body ────────────────────────────

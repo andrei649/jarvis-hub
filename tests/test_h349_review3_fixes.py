@@ -40,7 +40,7 @@ from agents.core.skills.batch import run_batch  # noqa: E402
 from agents.core.skills.curator import SkillCurator  # noqa: E402
 from agents.core.skills.importer import SkillImporter  # noqa: E402
 from agents.core.skills.usage import SkillUsageStore  # noqa: E402
-from tests.test_h349_skill_provenance_pin import ADMIN, PIN, _md, hub  # noqa: E402,F401
+from tests.test_h349_skill_provenance_pin import ADMIN, PIN, _md, hub, remote_body, serve_remote  # noqa: E402,F401
 
 ZIP = "/api/skills/marketplace/install-zip"
 
@@ -110,13 +110,9 @@ def test_a_package_declaring_an_installed_skills_name_is_refused(hub, folder):
 def test_an_import_whose_skill_md_declares_an_installed_name_is_refused(hub, monkeypatch):
     _owner_skill(hub, "mine")
     before = hub.on_disk()
-    monkeypatch.setattr(web, "DEV_MODE", True)
 
-    async def _fetch(self, client, repo, branch, subdir, slug):       # the repository serves this for "zzz"
-        return _md("mine", "Use when shadowing the owner's skill")
-
-    monkeypatch.setattr(SkillImporter, "_fetch_skill_md_flat", _fetch)
-    reply = hub.client.post("/skills/import", json={"source": "someone/their-repo", "skill": "zzz"}, headers=ADMIN)
+    serve_remote(monkeypatch, lambda slug: _md("mine", "Use when shadowing the owner's skill"))
+    reply = hub.client.post("/skills/import", json=remote_body("someone/their-repo", "zzz"), headers=ADMIN)
     assert reply.status_code == 409 and reply.json()["reason"] == "name_taken", reply.text
     assert not (hub.home / "zzz").exists()
     assert hub.on_disk() == before and Path(hub.loader.skills["mine"].path).name == "mine"

@@ -1,5 +1,14 @@
 # Hermes ledger: adversarial audit of the `equivalent` rows (ultracode)
 
+> **Inactive 2026-11-04: historical bucket prompt, do not execute.** The active
+> local Hermes campaign follows [the canonical workflow](../../hermes/autonomous-development-objective.md)
+> and [cumulative handoff](../../hermes/CAMPAIGN_HANDOFF.md), verified against the
+> current checkout/SHA. Integrate the current batch first; finish the frozen 697
+> contracts using current bounded queries and concrete impact evidence. No stage,
+> commit, push, merge, deploy, PR update, paid activation or schedule reactivation.
+> The 2026-09-28 branch, bucket, protected-path and stale-citation instructions
+> below are dated receipts, not current authority. Preserve owner-only controls.
+
 > **Evidence model changed on 2026-11-10 — this section overrides the rest of this prompt.**
 > Owner decision 3 (`docs/decisions/2026-11-10-hermes-integration-by-feature.md`) retired hash-pinned
 > evidence. `docs/hermes/assessment.json` is schema 3: `evidence` is a list of repository paths, no
@@ -13,6 +22,10 @@
 >   touched (or read CI's `verify --junit` step), then `write && check`;
 > - when you make a row `equivalent`, add the test that proves it to its area's `suite`;
 > - if you move or rename a test file a suite names, update `areas.json` in the same change.
+
+<details>
+<summary>2026-09-28 bucket procedure — inactive archive</summary>
+
 
 You are working in `andrei649/jarvis-hub` on branch `claude/cto-session-recovery-qinvkg` (draft PR #1207).
 
@@ -260,3 +273,5 @@ Other sessions push to this branch in parallel: the missing, partial and needs_r
   - owner decisions needed, citing the `OWNER_TASKS` references;
   - known gaps left open;
   - the new headline (`equivalent/697`) compared with the starting one, and why it moved.
+
+</details>

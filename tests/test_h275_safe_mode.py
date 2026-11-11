@@ -200,7 +200,7 @@ def test_a_skill_approved_in_safe_mode_is_said_to_load_on_the_next_normal_boot(t
     monkeypatch.setattr(loader_mod, "SKILLS_DIR", tmp_path)
     monkeypatch.setattr(loader_mod, "_user_skills_dir", lambda: None)
     monkeypatch.setattr(loader_mod, "_skill_generation_allowed", lambda _contract: True)
-    monkeypatch.setattr(loader_mod.signing, "sign_skill", lambda _path: "signed")
+    monkeypatch.setattr(loader_mod.signing, "sign_skill", lambda _path, **_kwargs: "signed")
     loader = loader_mod.SkillLoader.__new__(loader_mod.SkillLoader)
     loader.skills = {}
     loader._approval_store = MagicMock()
@@ -208,7 +208,9 @@ def test_a_skill_approved_in_safe_mode_is_said_to_load_on_the_next_normal_boot(t
     monkeypatch.setattr(skills_routes, "get_orch", lambda: SimpleNamespace(skills=loader))
     _on(monkeypatch)
     with caplog.at_level(logging.INFO, logger=loader_mod.logger.name):
-        body = asyncio.run(skills_routes.approve_generated_skill("tidy"))
+        body = asyncio.run(skills_routes.approve_generated_skill(
+            "tidy", skills_routes.ReviewedSkillBody(
+                expected_fingerprint=loader.pending_skill_fingerprint("tidy"))))
     assert body["approved"] is True and body["loaded"] is False and "normal boot" in body["message"]
     assert "activated" not in caplog.text and "normal boot" in caplog.text
 
@@ -689,10 +691,13 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         "agents/core/llm/selection_guards.py",
         # H277: video analysis refuses execution entirely in safe mode.
         "agents/core/llm/video_policy.py",
+        # H027: only the error codes "source_unsafe_mode" / "unsafe_backup_mode" (a file's
+        # permission bits) contain the substring; the curator never reads the safe-mode flag.
+        "agents/core/skills/curator_operations.py",
         "agents/core/memory_tool.py",
         # H422: GET /api/memory only reports that safe mode keeps the curated memory out.
         "agents/core/routers/memory_kg.py",
-        # G12 (H560): the OpenAI-compatible API stays off in safe mode, whatever the setting.
+        # G12: the OpenAI-compatible API is a door the owner opened; safe mode keeps it shut.
         "agents/core/openai_api/policy.py",
         "agents/core/orchestrator.py",
         "agents/core/plugin_gate.py",

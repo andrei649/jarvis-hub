@@ -32,6 +32,9 @@ from .resilience import CircuitBreaker, get_circuit_breaker
 
 logger = logging.getLogger("jarvis.http_client")
 
+_CROSS_ORIGIN_SAFE_HEADERS = frozenset({"accept", "user-agent", "host"})
+_CROSS_ORIGIN_EXTENSION = "nerva_cross_origin_redirect"
+
 # B3 — durable audit of a strict-egress *downgrade* (JARVIS_STRICT_EGRESS=0 allowing a
 # policy violation). The orchestrator installs an AuditLogger adapter at boot; None = no-op
 # (the egress monitor still records the call live either way). Decoupled by design — this
@@ -408,6 +411,20 @@ class PluginHTTPClient:
         if parsed.scheme not in {"http", "https"} or not host:
             raise PluginEgressError("egress blocked: unsupported URL")
         try:
+            # Owner website refusals are independent of manifest/kernel choices and
+            # happen before even the first DNS lookup, including on redirect hops.
+            try:
+                from .security.website_policy import website_refusal
+
+                website_reason = await asyncio.to_thread(website_refusal, url)
+            except Exception:
+                website_reason = "website_policy_unavailable"
+            if website_reason is not None:
+                if type(website_reason) is not str or website_reason not in (
+                    "website_blocked", "website_policy_unavailable"
+                ):
+                    website_reason = "website_policy_unavailable"
+                raise PluginEgressError(f"egress blocked: {website_reason}")
             mode = self._manifest_mode(url)
             from .security.ssrf import resolve_and_validate
 
@@ -453,6 +470,10 @@ class PluginHTTPClient:
                 timeout=self.timeouts.to_httpx_timeout(),
                 follow_redirects=False,
                 trust_env=False,
+                # Request hooks run after httpx auth/cookie processors and immediately
+                # before the pinned transport. A caller or pooled jar cannot reattach
+                # credentials after a cross-origin redirect is sanitized here.
+                event_hooks={"request": [self._sanitize_cross_origin_request]},
                 # An injected transport decides its own TLS (that is what makes the
                 # SSRF tests hermetic); only a real dial consults the trust store.
                 **({} if transport is not None else {"verify": tls_verify()}),
@@ -461,6 +482,22 @@ class PluginHTTPClient:
             self._pinned_clients[target.pool_key] = client
             self._pinned_targets.append(target)
         return client
+
+    @staticmethod
+    async def _sanitize_cross_origin_request(request: httpx.Request) -> None:
+        if request.extensions.get(_CROSS_ORIGIN_EXTENSION):
+            for name in list(request.headers):
+                if name.lower() not in _CROSS_ORIGIN_SAFE_HEADERS:
+                    del request.headers[name]
+
+    @staticmethod
+    def _restrict_cross_origin(headers: dict[str, str], kwargs: dict) -> tuple[dict[str, str], dict]:
+        return (
+            {name: value for name, value in headers.items()
+             if name.lower() in {"accept", "user-agent"}},
+            {name: value for name, value in kwargs.items()
+             if name not in {"auth", "cookies", "params", "content", "data", "json", "files"}},
+        )
 
     @staticmethod
     def _without_headers(headers: dict[str, str], names: set[str]) -> dict[str, str]:
@@ -475,10 +512,13 @@ class PluginHTTPClient:
         follow_redirects = bool(kwargs.pop("follow_redirects", False))
         headers = dict(kwargs.pop("headers", {}) or {})
         current_method, current_url = method.upper(), url
+        restricted = False
         for hop in range(21):
             target = await self._prepare_target(current_method, current_url)
             request_headers = {**headers, "Host": target.host_header}
-            extensions = {**dict(kwargs.pop("extensions", {}) or {}), "sni_hostname": target.sni_hostname}
+            extensions = {**dict(kwargs.pop("extensions", {}) or {}),
+                          "sni_hostname": target.sni_hostname,
+                          _CROSS_ORIGIN_EXTENSION: restricted}
             response = await self._pinned_client(target).request(
                 current_method,
                 target.dial_url,
@@ -496,7 +536,8 @@ class PluginHTTPClient:
             next_url = urljoin(current_url, location)
             cross_origin = self._cross_origin(current_url, next_url)
             if cross_origin:
-                headers = self._without_headers(headers, {"authorization", "cookie", "proxy-authorization"})
+                restricted = True
+                headers, kwargs = self._restrict_cross_origin(headers, kwargs)
             if current_method == "POST" and response.status_code in {301, 302, 303}:
                 current_method = "GET"
                 kwargs = {key: value for key, value in kwargs.items() if key not in {"content", "data", "json", "files"}}
@@ -574,13 +615,16 @@ class PluginHTTPClient:
         follow_redirects = bool(kwargs.pop("follow_redirects", False))
         headers = dict(kwargs.pop("headers", {}) or {})
         current_method, current_url = method.upper(), url
+        restricted = False
         for hop in range(21):
             target = await self._prepare_target(current_method, current_url)
             context = self._pinned_client(target).stream(
                 current_method,
                 target.dial_url,
                 headers={**headers, "Host": target.host_header},
-                extensions={**dict(kwargs.pop("extensions", {}) or {}), "sni_hostname": target.sni_hostname},
+                extensions={**dict(kwargs.pop("extensions", {}) or {}),
+                            "sni_hostname": target.sni_hostname,
+                            _CROSS_ORIGIN_EXTENSION: restricted},
                 follow_redirects=False,
                 **kwargs,
             )
@@ -603,7 +647,8 @@ class PluginHTTPClient:
             next_url = urljoin(current_url, location)
             cross_origin = self._cross_origin(current_url, next_url)
             if cross_origin:
-                headers = self._without_headers(headers, {"authorization", "cookie", "proxy-authorization"})
+                restricted = True
+                headers, kwargs = self._restrict_cross_origin(headers, kwargs)
             if current_method == "POST" and response.status_code in {301, 302, 303}:
                 current_method = "GET"
                 kwargs = {key: value for key, value in kwargs.items() if key not in {"content", "data", "json", "files"}}
@@ -653,6 +698,35 @@ class PluginHTTPClient:
             f"PluginHTTPClient(plugin={self.plugin_name!r}, "
             f"timeouts={self.timeouts}, cb_state={cb_state!r})"
         )
+
+
+class RequiredEgressHTTPClient(PluginHTTPClient):
+    """Pinned transport with mandatory, request-scoped authorization.
+
+    Privileged remote reads supply a live kernel callback instead of relying on
+    the optional process-wide hook. Only an explicit ``None`` result permits a
+    request; failures remain visible in the shared egress ledger. Manifest,
+    DNS/IP, TLS and redirect checks all remain in the base transport.
+    """
+
+    def __init__(
+        self,
+        *args,
+        authorize_egress: Callable[[str, str, str, str], str | None],
+        **kwargs,
+    ):
+        if not callable(authorize_egress):
+            raise ValueError("required authorization must be callable")
+        self._authorize_egress = authorize_egress
+        super().__init__(*args, **kwargs)
+
+    def _enforce_kernel(self, method: str, url: str, host: str) -> None:
+        try:
+            result = self._authorize_egress(self.plugin_name, method, url, host)
+        except Exception:
+            raise PluginEgressError("egress blocked: required authorization failed") from None
+        if result is not None:
+            raise PluginEgressError("egress blocked: required authorization refused")
 
 
 async def close_all() -> None:

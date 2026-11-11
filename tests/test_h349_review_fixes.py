@@ -41,7 +41,15 @@ from agents.core.skills.batch import run_batch  # noqa: E402
 from agents.core.skills.curator import SkillCurator  # noqa: E402
 from agents.core.skills.importer import SkillImporter  # noqa: E402
 from agents.core.skills.usage import SkillUsageStore, clean_source  # noqa: E402
-from tests.test_h349_skill_provenance_pin import ADMIN, PIN, _md, _zip, hub  # noqa: E402,F401
+from tests.test_h349_skill_provenance_pin import (  # noqa: E402,F401
+    ADMIN,
+    PIN,
+    _md,
+    _zip,
+    hub,
+    remote_body,
+    serve_remote,
+)
 
 
 def _create(hub, name, actor="agent:steve"):
@@ -162,7 +170,7 @@ def test_uninstalling_a_pinned_package_works_and_a_reinstall_starts_clean(hub):
 async def test_the_curators_archive_keeps_what_a_restore_needs_and_nothing_a_new_skill_inherits(hub):
     hub.boot()
     name = _generate(hub, "file the receipts")
-    assert hub.loader.approve_generated_skill(name)
+    assert hub.loader.approve_generated_skill(name, hub.loader.pending_skill_fingerprint(name))
     hub.usage.bump(name, "use")
     folder = Path(hub.loader.skills[name].path)
     later = datetime.now(UTC) + timedelta(days=200)
@@ -187,7 +195,7 @@ async def test_the_curators_archive_keeps_what_a_restore_needs_and_nothing_a_new
 async def test_a_different_skill_under_an_archived_name_starts_clean(hub):
     hub.boot()
     name = _generate(hub, "file the receipts")
-    assert hub.loader.approve_generated_skill(name)
+    assert hub.loader.approve_generated_skill(name, hub.loader.pending_skill_fingerprint(name))
     folder = Path(hub.loader.skills[name].path)
     text = (folder / "SKILL.md").read_text(encoding="utf-8")
     later = datetime.now(UTC) + timedelta(days=200)
@@ -247,13 +255,9 @@ async def test_an_import_never_writes_into_a_skill_folder_it_did_not_create(hub,
     assert await importer._save_skill("alpha", "hermes", skill_md_text=_md("alpha", "Use when upstream says")) is False
     assert importer.last_conflict == "exists"
     # Through the route: a clear refusal, nothing written, the row untouched.
-    monkeypatch.setattr(web, "DEV_MODE", True)
 
-    async def _fetch(self, client, repo, branch, subdir, slug):
-        return _md(slug, "Use when upstream says")
-
-    monkeypatch.setattr(SkillImporter, "_fetch_skill_md_flat", _fetch)
-    reply = hub.client.post("/skills/import", json={"source": "openclaw", "skill": "alpha"}, headers=ADMIN)
+    serve_remote(monkeypatch, lambda slug: _md(slug, "Use when upstream says"))
+    reply = hub.client.post("/skills/import", json=remote_body("openclaw", "alpha"), headers=ADMIN)
     assert reply.status_code == 409 and reply.json()["reason"] == "exists", reply.text
     assert {p.relative_to(folder).as_posix(): p.read_bytes() for p in folder.rglob("*") if p.is_file()} == before
     row = _row(hub, "alpha")
@@ -524,7 +528,7 @@ def test_the_owners_own_batch_deletes_a_pinned_skill_and_an_agents_does_not(hub)
 def test_the_journeys_forget_still_refuses_a_pinned_skill_in_the_owners_words(hub):
     hub.boot()
     name = _generate(hub)
-    assert hub.loader.approve_generated_skill(name)
+    assert hub.loader.approve_generated_skill(name, hub.loader.pending_skill_fingerprint(name))
     hub.usage.pin(name)
     path = f"/api/dashboard/today/entries/{quote('skill:' + name, safe='')}"
     kept = hub.client.delete(path, headers=ADMIN)

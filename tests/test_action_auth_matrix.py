@@ -572,7 +572,7 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
         name = skills.generate_skill(agent_id="pepper", task_description="organize the morning inbox",
                                      solution_steps=["read inbox", "label", "archive"], command_name="tidy_inbox")
         assert name is not None and (root / name / "PENDING_REVIEW").exists()
-        assert skills.approve_generated_skill(name) is True
+        assert skills.approve_generated_skill(name, skills.pending_skill_fingerprint(name)) is True
         created = run_batch([{"name": "matrix-notes", "action": "create",
                               "content": "---\nname: matrix-notes\ndescription: Use when testing\n---\n"
                                          "## Steps\n\nDo the thing.\n"}],

@@ -8,7 +8,7 @@
    Exercises component → api/actions → client → fetch. */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { ObserveMode } from '../modes2';
 import { TrustMode } from '../modes';
 import { V2 } from '../data';
@@ -120,10 +120,47 @@ describe('ObserveMode — north-star meter is live', () => {
 });
 
 describe('TrustMode — audit chain is verified live', () => {
+  it('offers safe global engage after disengage POST succeeds but verification GET fails', async () => {
+    let reads = 0;
+    const fetcher = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (String(url).includes('/api/security/kill-switch')) {
+        if (init?.method === 'POST') return Promise.resolve({ ok: true, status: 200, json: async () => ({ engaged: false }) });
+        reads += 1;
+        return Promise.resolve(reads === 1
+          ? { ok: true, status: 200, json: async () => ({ global: true, any_halted: true, halted_count: 1 }) }
+          : { ok: false, status: 503, json: async () => ({ error: 'unavailable' }) });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ valid: true, first_invalid_id: null, entries: 1 }) });
+    });
+    global.fetch = fetcher as any;
+    render(<TrustMode t={t} />);
+    await waitFor(() => expect(screen.getByText(t.engaged)).toBeTruthy());
+    fireEvent.click(document.querySelector('.killbtn'));
+    await waitFor(() => expect(screen.getByText(/kill-switch status unknown/)).toBeTruthy());
+    expect(screen.getByText(/kill-switch status unknown/).className).not.toContain('armed');
+    expect(screen.queryByText(t.armed)).toBeNull();
+    fireEvent.click(document.querySelector('.killbtn'));
+    await waitFor(() => expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'POST').length).toBe(2));
+    const posts = fetcher.mock.calls.filter(([, init]) => init?.method === 'POST');
+    expect(posts.map(([, init]) => JSON.parse(init.body).engage)).toEqual([false, true]);
+  });
+
+  it('warns on a scoped halt while the global control still engages global', async () => {
+    const fn = mockJson({
+      '/api/security/audit/verify': { valid: true, first_invalid_id: null, entries: 1 },
+      '/api/security/kill-switch': { global: false, any_halted: true, halted_count: 1 },
+    });
+    render(<TrustMode t={t} />);
+    await waitFor(() => expect(screen.getByText(/1 scoped halt/)).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /STOP/ }));
+    await waitFor(() => expect(fn.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(true));
+    const post = fn.mock.calls.find(([, init]) => init?.method === 'POST');
+    expect(JSON.parse(post[1].body).engage).toBe(true);
+  });
   it('reflects a real {valid, entries} result from /api/security/audit/verify', async () => {
     mockJson({
       '/api/security/audit/verify': { valid: true, first_invalid_id: null, entries: 42 },
-      '/api/security/kill-switch': { halted: false },
+      '/api/security/kill-switch': { global: false, any_halted: false, halted_count: 0 },
     });
 
     render(<TrustMode t={t} localPct={100} />);
@@ -135,7 +172,7 @@ describe('TrustMode — audit chain is verified live', () => {
   it('surfaces a tamper result when the chain is broken', async () => {
     mockJson({
       '/api/security/audit/verify': { valid: false, first_invalid_id: 17, entries: 30 },
-      '/api/security/kill-switch': { halted: false },
+      '/api/security/kill-switch': { global: false, any_halted: false, halted_count: 0 },
     });
 
     render(<TrustMode t={t} localPct={100} />);

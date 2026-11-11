@@ -177,9 +177,11 @@ function Dossier({ id, onClose, onOpen, agents = undefined, onChanged = undefine
 /* ============ TRUST ============ */
 function TrustMode({ t, localPct = null }) {
   // Kill-switch is a REAL operator control: GET /api/security/kill-switch reflects
-  // live state, POST engages/disengages (admin-guarded). Optimistic flip with a
-  // re-sync from the server response so the UI never lies about halt state.
-  const [killed,setKilled]=useState(false);
+  // live state, POST engages/disengages (admin-guarded). Re-read the aggregate
+  // after an action so a remaining scoped halt stays visible.
+  const [killed,setKilled]=useState(false); // global switch only
+  const [scopedHaltCount,setScopedHaltCount]=useState(0);
+  const [killKnown,setKillKnown]=useState(false);
   const [busy,setBusy]=useState(false);
   const [killErr,setKillErr]=useState(false);
   const [,payTick]=useState(0);
@@ -204,21 +206,23 @@ function TrustMode({ t, localPct = null }) {
   };
   useEffect(() => {
     let alive = true;
-    // `halted` is a MAP {agent: reason}, not a bool — `s.halted ?? s.engaged` was {} (truthy)
-    // and falsely showed the kill-switch engaged (2026-07-24 QA finding). Engaged iff the
-    // global switch is on OR any agent is in the halted map.
-    getKillSwitch().then((s) => { if (alive && s) setKilled(!!(s.global || Object.keys(s.halted || {}).length || s.engaged)); }).catch(() => { if (alive) setKillErr(true); });
+    getKillSwitch().then((s) => { if (alive) { setKilled(s.global); setScopedHaltCount(!s.global && s.any_halted ? s.halted_count : 0); setKillKnown(true); } })
+      .catch(() => { if (alive) setKillErr(true); });
     return () => { alive = false; };
   }, []);
   const toggleKill = () => {
     if (busy) return;
-    const next = !killed;
-    setBusy(true); setKilled(next); // optimistic
+    const next = !(killKnown && !killErr && killed); // unknown always offers global engage
+    setBusy(true); setKilled(next); setKillKnown(false);
     setKillSwitch(next)
-      .then((r: any) => { if (r) setKilled(!!(r.engaged ?? next)); })
-      .catch(() => { setKilled(!next); setKillErr(true); }) // revert on failure — honest
+      .then(() => getKillSwitch().then(
+        (s) => { setKilled(s.global); setScopedHaltCount(!s.global && s.any_halted ? s.halted_count : 0); setKillKnown(true); setKillErr(false); },
+        () => { setKillKnown(false); setKillErr(true); }, // POST succeeded; verification is unavailable
+      ))
+      .catch(() => { setKillKnown(false); setKillErr(true); }) // POST outcome is unknown
       .finally(() => setBusy(false));
   };
+  const globalHalted = killKnown && !killErr && killed;
   return (
     <div className="panel scroll" style={{flex:1}}>
       <span className="bk tl"></span><span className="bk tr"></span><span className="bk bl"></span><span className="bk br"></span>
@@ -257,12 +261,17 @@ function TrustMode({ t, localPct = null }) {
           {/* right: kill + locality + caps + payments */}
           <div className="col">
             <div className="killbox panel" style={{borderRadius:'var(--radius)',background:'var(--surface-2)'}}>
-              <button className={'killbtn'+(killed?' engaged':'')} onClick={toggleKill} disabled={busy} title={busy?'updating…':killed?'disengage kill-switch':'halt all agents'}>
+              <button className={'killbtn'+(globalHalted?' engaged':'')} onClick={toggleKill} disabled={busy} title={busy?'updating…':globalHalted?'disengage kill-switch':'halt all agents'}>
                 <Icon d={ICONS.shield} size={26}/>
-                <span className="kt">{killed?'HALTED':'STOP'}</span>
+                <span className="kt">{globalHalted?'HALTED':'STOP'}</span>
                 <span className="ks">{t.killSub}</span>
               </button>
-              <div className={'kill-status '+(killed?'engaged':'armed')}>{killErr?'kill-switch unavailable':killed?t.engaged:t.armed}</div>
+              <div className={'kill-status'+(killErr || !killKnown ? '' : globalHalted || scopedHaltCount ? ' engaged' : ' armed')}>
+                {killErr || !killKnown ? 'kill-switch status unknown'
+                  : globalHalted ? t.engaged
+                  : scopedHaltCount ? `${scopedHaltCount} scoped halt${scopedHaltCount === 1 ? '' : 's'} active · global switch off`
+                  : t.armed}
+              </div>
             </div>
 
             {/* Locality is shown ONLY when a real source backs it (strict-local proof

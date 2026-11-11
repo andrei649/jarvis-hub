@@ -38,7 +38,15 @@ from agents.core.skills import usage as usage_mod  # noqa: E402
 from agents.core.skills.batch import run_batch  # noqa: E402
 from agents.core.skills.curator import SkillCurator  # noqa: E402
 from agents.core.skills.usage import SkillUsageStore, clean_source  # noqa: E402
-from tests.test_h349_skill_provenance_pin import ADMIN, PIN, _md, _zip, hub  # noqa: E402,F401
+from tests.test_h349_skill_provenance_pin import (  # noqa: E402,F401
+    ADMIN,
+    PIN,
+    _md,
+    _zip,
+    hub,
+    remote_body,
+    serve_remote,
+)
 
 BASE_COMMIT = "14ca282"
 
@@ -47,7 +55,7 @@ def _generate(hub, task="convert the thing to pdf", approve=False):
     hub.loader.generate_skill("steve", task, ["step one", "step two"])
     name = next(n for n in hub.loader.skills if task.split()[0] in n.lower())
     if approve:
-        assert hub.loader.approve_generated_skill(name)
+        assert hub.loader.approve_generated_skill(name, hub.loader.pending_skill_fingerprint(name))
     return name
 
 
@@ -205,13 +213,9 @@ async def test_an_install_into_a_new_folder_does_not_inherit_a_row_left_under_th
         hub.usage.bump(name, "use")
         shutil.rmtree(hub.home / name)                                 # by hand; the rows stay
     hub.loader.discover()
-    monkeypatch.setattr(web, "DEV_MODE", True)
 
-    async def _fetch(self, client, repo, branch, subdir, slug):
-        return _md(slug, "Use when upstream says")
-
-    monkeypatch.setattr(SkillImporter, "_fetch_skill_md_flat", _fetch)
-    reply = hub.client.post("/skills/import", json={"source": "openclaw", "skill": "trip-planner"}, headers=ADMIN)
+    serve_remote(monkeypatch, lambda slug: _md(slug, "Use when upstream says"))
+    reply = hub.client.post("/skills/import", json=remote_body("openclaw", "trip-planner"), headers=ADMIN)
     assert reply.status_code == 200, reply.text
     row = hub.on_disk()["trip-planner"]
     assert (row["pinned"], row["use_count"], row["origin"]) == (False, 0, "import")

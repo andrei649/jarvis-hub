@@ -35,9 +35,12 @@ beforeEach(() => { localStorage.clear(); });
 
 describe('SandboxPanel session kernels (K3)', () => {
   it('shows the mode and, with no kernel, says the first cell starts one', async () => {
+    localStorage.setItem('hud.user_token', 'owner-user');
     stub(SESSION);
     render(<SandboxPanel />);
     await waitFor(() => expect(screen.getByText('session')).toBeTruthy());
+    const statusRead = (global.fetch as any).mock.calls.find(([url]) => String(url).includes('/sandbox/status'));
+    expect(statusRead[1].headers['X-User-Token']).toBe('owner-user');
     expect(screen.getByText(/first cell starts one/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: /reset kernel/i })).toBeTruthy();
   });

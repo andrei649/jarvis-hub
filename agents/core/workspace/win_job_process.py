@@ -141,6 +141,8 @@ class _Win32Kernel:
             wt.HANDLE, ctypes.c_int, ctypes.c_void_p, wt.DWORD, ctypes.c_void_p)
         self.k.IsProcessInJob.restype = wt.BOOL
         self.k.IsProcessInJob.argtypes = (wt.HANDLE, wt.HANDLE, ctypes.POINTER(wt.BOOL))
+        self.k.AssignProcessToJobObject.restype = wt.BOOL
+        self.k.AssignProcessToJobObject.argtypes = (wt.HANDLE, wt.HANDLE)
         self.k.TerminateJobObject.restype = wt.BOOL
         self.k.TerminateJobObject.argtypes = (wt.HANDLE, wt.UINT)
         self.k.TerminateProcess.restype = wt.BOOL
@@ -225,20 +227,28 @@ class _Win32Kernel:
             wt.LPCWSTR, wt.LPWSTR, ctypes.c_void_p, ctypes.c_void_p,
             wt.BOOL, wt.DWORD, ctypes.c_void_p, wt.LPCWSTR,
             ctypes.POINTER(self.StartupInfoEx), ctypes.POINTER(self.ProcessInfo))
+        # Assign the Job with AssignProcessToJobObject while the thread is still
+        # suspended, not via PROC_THREAD_ATTRIBUTE_JOB_LIST. On a runner that
+        # already put this process in a Job, the attribute-list form of
+        # CreateProcessW can block forever inside the kernel (the child is
+        # suspended, so it never finishes the nested-job handshake). The
+        # suspended thread still cannot run until assign_process + IsProcessInJob
+        # succeed. `job` is accepted here so fakes can record it; the real
+        # kernel assigns only after CreateProcessW returns.
+        if job is None:
+            raise OSError('atomic owned process attributes required')
         size = ctypes.c_size_t()
-        k.InitializeProcThreadAttributeList(None, 2, 0, ctypes.byref(size))
+        k.InitializeProcThreadAttributeList(None, 1, 0, ctypes.byref(size))
         if not size.value:
             self._error('process attribute list unavailable')
         attributes = ctypes.create_string_buffer(size.value)
-        if not k.InitializeProcThreadAttributeList(attributes, 2, 0, ctypes.byref(size)):
+        if not k.InitializeProcThreadAttributeList(attributes, 1, 0, ctypes.byref(size)):
             self._error('process attribute list unavailable')
         handles = (wt.HANDLE * len(inherit_handles))(*inherit_handles)
-        jobs = (wt.HANDLE * 1)(job)
         try:
-            for key, value in ((0x20002, handles), (0x2000D, jobs)):
-                if not k.UpdateProcThreadAttribute(
-                        attributes, 0, key, value, ctypes.sizeof(value), None, None):
-                    self._error('atomic Job/handle-list attribute unavailable')
+            if not k.UpdateProcThreadAttribute(
+                    attributes, 0, 0x20002, handles, ctypes.sizeof(handles), None, None):
+                self._error('atomic handle-list attribute unavailable')
             startup = self.StartupInfoEx()
             startup.StartupInfo.cb = ctypes.sizeof(startup)
             startup.StartupInfo.dwFlags = 0x100  # STARTF_USESTDHANDLES
@@ -257,6 +267,10 @@ class _Win32Kernel:
             return info.hProcess, info.hThread
         finally:
             k.DeleteProcThreadAttributeList(attributes)
+
+    def assign_process(self, process, job):
+        if not self.k.AssignProcessToJobObject(job, process):
+            self._error('AssignProcessToJobObject failed')
 
     def is_process_in_job(self, process, job):
         answer = self.wt.BOOL()
@@ -379,6 +393,9 @@ class OwnedJobProcess:
             process_handle, thread = api.create_process(
                 command, cwd, env, job=job, stdio=child, inherit_handles=child,
                 suspended=True, breakaway=False)
+            assign = getattr(api, "assign_process", None)
+            if assign is not None:
+                assign(process_handle, job)
             if not api.is_process_in_job(process_handle, job):
                 raise OSError('atomic Windows OCR Job assignment failed')
             owned = True

@@ -50,6 +50,8 @@ BLOCKED_CIDR = [
     ipaddress.ip_network("192.168.0.0/16"),
     ipaddress.ip_network("127.0.0.0/8"),
     ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("100.64.0.0/10"),
+    ipaddress.ip_network("198.18.0.0/15"),
     ipaddress.ip_network("224.0.0.0/4"),
     ipaddress.ip_network("255.255.255.255/32"),
     ipaddress.ip_network("::/128"),
@@ -59,10 +61,14 @@ BLOCKED_CIDR = [
     ipaddress.ip_network("ff00::/8"),
 ]
 
+_IPV4_TRANSLATED = ipaddress.ip_network("::ffff:0:0:0/96")
+
 def _embedded_ipv4(addr: ipaddress.IPv6Address) -> Optional[ipaddress.IPv4Address]:
     mapped = addr.ipv4_mapped
     if mapped is not None:
         return mapped
+    if addr in _IPV4_TRANSLATED:
+        return ipaddress.IPv4Address(int(addr) & 0xFFFFFFFF)
     packed = addr.packed
     if packed[:12] == b"\x00" * 12 and addr != ipaddress.IPv6Address("::") and addr != ipaddress.IPv6Address("::1"):
         return ipaddress.IPv4Address(packed[12:])
@@ -98,6 +104,8 @@ def _safe_for_mode(address: str, mode: Literal["public", "lan"]) -> bool:
                 ipaddress.ip_network("192.168.0.0/16"),
             ))
         )
+    if any(addr in network for network in BLOCKED_CIDR):
+        return False
     return (
         addr.is_global
         and not addr.is_multicast

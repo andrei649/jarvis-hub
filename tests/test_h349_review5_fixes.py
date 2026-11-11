@@ -34,7 +34,7 @@ from agents.core.skills import loader as loader_mod  # noqa: E402
 from agents.core.skills.batch import run_batch  # noqa: E402
 from agents.core.skills.usage import SHELF_PER_NAME, SkillUsageStore  # noqa: E402
 from tests.test_h349_review4_fixes import site  # noqa: E402,F401
-from tests.test_h349_skill_provenance_pin import ADMIN, PIN, _md, hub  # noqa: E402,F401
+from tests.test_h349_skill_provenance_pin import ADMIN, PIN, _md, hub, remote_body  # noqa: E402,F401
 
 ZIP = "/api/skills/marketplace/install-zip"
 
@@ -46,9 +46,16 @@ def _zip(content: str) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
+def _shipped(folder):
+    """A product skill folder. H696 (main #1346) moved spotify, calendar and health to
+    optional-skills/; their folders still serve here as skills shipped in the app root."""
+    default = repo_root / "skills" / folder
+    return default if default.is_dir() else repo_root / "optional-skills" / folder
+
+
 def _bundled(site, *folders):  # noqa: F811
     for folder in folders:
-        shutil.copytree(repo_root / "skills" / folder, site.app / folder)
+        shutil.copytree(_shipped(folder), site.app / folder, dirs_exist_ok=True)
 
 
 def _install(site, name, text="A marketplace package"):  # noqa: F811
@@ -77,7 +84,7 @@ def test_an_exact_name_held_by_an_installed_skill_is_still_refused(site):  # noq
                     actor="agent:steve", create_root=site.own)
     assert out["ok"] is False and out["reason"] == "skill_batch_exists"
     site.serve(lambda slug: _md("mine", "Use when imported"))
-    reply = site.client.post("/skills/import", json={"source": "someone/repo", "skill": "zzz"}, headers=ADMIN)
+    reply = site.client.post("/skills/import", json=remote_body("someone/repo", "zzz"), headers=ADMIN)
     assert reply.status_code == 409 and reply.json()["reason"] == "name_taken"
     assert site.on_disk() == rows and site.served("mine") == folder
 
@@ -85,26 +92,28 @@ def test_an_exact_name_held_by_an_installed_skill_is_still_refused(site):  # noq
 # ── B1 (2): a bundled skill is not a holder for a folder in another root ─────────────
 
 def test_a_user_root_skill_named_like_a_bundled_one_is_allowed_as_on_base(site):  # noqa: F811
-    _bundled(site, "spotify", "calendar", "health")
+    # H696 (main #1346) left five bundled skills; spotify, calendar and health became
+    # optional, so the bundled ones stand in for them here.
+    _bundled(site, "brief", "pm", "weather")
     site.boot()
-    assert {"Spotify", "Calendar", "Health"} <= set(site.loader.skills)
+    assert {"Brief", "PM", "Weather Intel"} <= set(site.loader.skills)
     if site.layout == "two-root":
-        for name in ("spotify", "Spotify", "calendar"):               # the reviewer's s3
+        for name in ("brief", "Brief", "pm"):               # the reviewer's s3
             reply = _install(site, name)
             assert reply.status_code == 200, (name, reply.text)
-        out = run_batch([{"name": "health", "action": "create", "content": _md("health", "agent's own")}],
+        out = run_batch([{"name": "weather", "action": "create", "content": _md("weather", "agent's own")}],
                         site.loader, actor="agent:steve", create_root=site.own)
         assert out["ok"] is True, out
         # The owner's folder wins the name, by design; the shipped folder is untouched.
-        assert Path(site.loader.skills["Spotify"].path).parent == site.own
-        assert (site.app / "spotify" / "SKILL.md").read_bytes() == (repo_root / "skills/spotify/SKILL.md").read_bytes()
-        row = site.on_disk()["Spotify"]
+        assert Path(site.loader.skills["Brief"].path).parent == site.own
+        assert (site.app / "brief" / "SKILL.md").read_bytes() == (_shipped("brief") / "SKILL.md").read_bytes()
+        row = site.on_disk()["Brief"]
         assert (row["origin"], row["pinned"]) == ("import", False) and row["install_id"]    # its own row
     else:
         # One root: the package would land in, or beside, the shipped folder of that root.
-        assert _install(site, "Spotify").status_code == 422
-        assert (site.app / "spotify" / "SKILL.md").read_bytes() == (repo_root / "skills/spotify/SKILL.md").read_bytes()
-        out = run_batch([{"name": "calendar-sync", "action": "create", "content": _md("calendar-sync")}],
+        assert _install(site, "Brief").status_code == 422
+        assert (site.app / "brief" / "SKILL.md").read_bytes() == (_shipped("brief") / "SKILL.md").read_bytes()
+        out = run_batch([{"name": "pm-sync", "action": "create", "content": _md("pm-sync")}],
                         site.loader, actor="agent:steve", create_root=site.own)
         assert out["ok"] is True, out
 
@@ -113,22 +122,22 @@ def test_a_user_root_skill_named_like_a_bundled_one_is_allowed_as_on_base(site):
 
 def test_the_update_of_a_base_era_install_named_like_a_bundled_skill_goes_through(site):  # noqa: F811
     if site.layout != "two-root":
-        return                                                         # one root has one 'spotify' folder
-    _bundled(site, "spotify")
-    old = site.put("spotify", _md("spotify", "community spotify package v1"))
+        return                                                         # one root has one 'brief' folder
+    _bundled(site, "brief")
+    old = site.put("brief", _md("brief", "community brief package v1"))
     (old / loader_mod.EXTERNAL_SOURCE_MARKER).write_text("source=marketplace\n", encoding="utf-8")   # base-era
     site.boot()
-    assert {"Spotify", "spotify"} <= set(site.loader.skills)
+    assert {"Brief", "brief"} <= set(site.loader.skills)
     for _ in range(3):
-        site.usage.bump("spotify", "use")
-    pinned = site.client.post(PIN, json={"skill": "spotify", "pinned": True}, headers=ADMIN)   # m3: the exact name
-    assert pinned.status_code == 200 and pinned.json()["skill"] == "spotify", pinned.text
-    reply = _install(site, "spotify", "community spotify package v2")
+        site.usage.bump("brief", "use")
+    pinned = site.client.post(PIN, json={"skill": "brief", "pinned": True}, headers=ADMIN)   # m3: the exact name
+    assert pinned.status_code == 200 and pinned.json()["skill"] == "brief", pinned.text
+    reply = _install(site, "brief", "community brief package v2")
     assert reply.status_code == 200, reply.text                        # the reviewer's s3b
     assert "package v2" in (old / "SKILL.md").read_text(encoding="utf-8")
-    row = site.on_disk()["spotify"]
+    row = site.on_disk()["brief"]
     assert (row["pinned"], row["use_count"], row["install_id"]) == (True, 3, "")
-    assert site.on_disk()["Spotify"]["origin"] == "bundled"
+    assert site.on_disk()["Brief"]["origin"] == "bundled"
 
 
 def test_an_update_of_an_installed_package_is_not_refused_over_a_duplicate_holder(site):  # noqa: F811
@@ -185,7 +194,7 @@ def test_a_pending_removal_does_not_hit_a_regenerated_skill(site, monkeypatch): 
     site.boot()
     monkeypatch.setattr(site.loader, "_name_from_task", lambda task: "alpha_tool")
     site.loader.generate_skill("steve", "alpha tool for owner", ["one", "two"])
-    assert site.loader.approve_generated_skill("Alpha Tool")
+    assert site.loader.approve_generated_skill("Alpha Tool", site.loader.pending_skill_fingerprint("Alpha Tool"))
     good = _unwritable(site)
     gone = run_batch([{"name": "Alpha Tool", "action": "delete"}], site.loader, actor="owner")
     assert gone["ok"] is True and site.usage.pending_removals() == ["Alpha Tool"]

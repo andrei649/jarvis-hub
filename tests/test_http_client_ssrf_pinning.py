@@ -152,7 +152,7 @@ async def test_cross_origin_307_308_preserve_method_but_never_replay_entity_or_c
     assert all(header not in seen[1].headers for header in (
         "authorization", "cookie", "proxy-authorization", "content-type", "transfer-encoding", "expect",
     ))
-    assert seen[1].headers["content-length"] == "0"  # HTTP framing, not a replayed entity header
+    assert "content-length" not in seen[1].headers  # final request allowlist strips even empty framing
     await client.close()
 
 

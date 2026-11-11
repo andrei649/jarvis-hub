@@ -11,6 +11,7 @@ stay behind ``POST /skills/import``'s DEV_MODE gate. No test touches the network
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import sys
@@ -76,15 +77,21 @@ def test_the_owner_installs_a_catalog_skill_without_dev_mode(owner, ident):
     assert rows[0]["metadata"]["skill"] == SKILL and rows[0]["metadata"]["commit"] == body["commit"]
 
 
-def test_a_user_token_cannot_install_and_other_sources_keep_dev_mode(owner, monkeypatch):
+def test_a_user_token_cannot_install_and_skills_import_is_admin_only(owner, monkeypatch):
     monkeypatch.setattr(web, "USER_TOKEN", "u")
     for headers in ({}, {"X-User-Token": "u"}):
         assert owner.client.post(INSTALL, json={"skill": SKILL}, headers=headers).status_code in (401, 403)
     assert not (owner.home / SKILL).exists() and owner.log.rows == []
-    # POST /skills/import is unchanged: every source, the catalog's included, needs DEV_MODE.
+    # Since main #1346, POST /skills/import is an admin route with no DEV_MODE gate: a user
+    # token reaches no source, the catalog's included, and nothing is written.
     for source in ("hermes-catalog", "hermes", "openclaw", "someone/repo"):
+        reply = owner.client.post(IMPORT, json={"source": source, "skill": SKILL}, headers={"X-User-Token": "u"})
+        assert reply.status_code in (401, 403), source
+    assert not (owner.home / SKILL).exists()
+    # A remote source still needs its immutable pin before anything is fetched.
+    for source in ("openclaw", "someone/repo"):
         reply = owner.client.post(IMPORT, json={"source": source, "skill": SKILL}, headers=ADMIN)
-        assert reply.status_code == 403 and "DEV_MODE" in reply.json()["error"], source
+        assert reply.status_code == 422 and reply.json()["reason"] == "missing_pin", source
     assert not (owner.home / SKILL).exists()
     # The owner route takes the catalog only: there is no source to name.
     bad = owner.client.post(INSTALL, json={"skill": SKILL, "source": "someone/repo"}, headers=ADMIN)
@@ -173,15 +180,11 @@ def test_repair_refuses_local_edits_unless_forced_and_keeps_a_copy(owner, tmp_pa
 def test_repair_never_touches_a_skill_the_catalog_did_not_install(owner, monkeypatch):
     missing = owner.client.post(INSTALL, json={"skill": SKILL, "repair": True}, headers=ADMIN)
     assert missing.status_code == 404 and missing.json()["reason"] == "not_installed"
-    # An import of the same slug from another source (DEV_MODE, GitHub): not the catalog's.
-    monkeypatch.setattr(web, "DEV_MODE", True)
-
-    async def _fetch(self, client, repo, branch, subdir, slug):
-        return _md(SKILL, "Use when another source wrote it")
-
-    monkeypatch.setattr(SkillImporter, "_fetch_skill_md_flat", _fetch)
-    assert owner.client.post(IMPORT, json={"source": "someone/repo", "skill": SKILL},
-                             headers=ADMIN).status_code == 200
+    # A write of the same slug by another source (the importer's shared write path, as a
+    # pinned remote import makes): not the catalog's.
+    saved = asyncio.run(owner.orch.skill_importer._save_skill(
+        SKILL, "repo", skill_md_text=_md(SKILL, "Use when another source wrote it")))
+    assert saved is True
     before = _tree(owner.home)
     for body in ({"skill": SKILL, "repair": True}, {"skill": SKILL, "repair": True, "force": True}):
         reply = owner.client.post(INSTALL, json=body, headers=ADMIN)

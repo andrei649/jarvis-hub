@@ -46,7 +46,7 @@ from agents.core.skills.loader import SkillLoader  # noqa: E402
 from agents.core.skills.marketplace import SkillMarketplace  # noqa: E402
 from agents.core.skills.usage import SkillUsageStore  # noqa: E402
 from agents.core.skills.validate import declared_name, validate_skill_md  # noqa: E402
-from tests.test_h349_skill_provenance_pin import ADMIN, PIN, _md, hub  # noqa: E402,F401
+from tests.test_h349_skill_provenance_pin import ADMIN, PIN, _md, hub, remote_body, serve_remote  # noqa: E402,F401
 
 ZIP = "/api/skills/marketplace/install-zip"
 
@@ -84,10 +84,7 @@ def site(request, hub, monkeypatch):  # noqa: F811
         return path
 
     def serve(text_for):
-        async def _fetch(self, client, repo, branch, subdir, slug):   # the network, and only that
-            return text_for(slug)
-
-        monkeypatch.setattr(SkillImporter, "_fetch_skill_md_flat", _fetch)
+        serve_remote(monkeypatch, text_for)   # governance granted; the network, and only that, stubbed
 
     def served(name):
         skill = hub.loader.skills.get(name)
@@ -128,7 +125,7 @@ def test_an_import_declaring_a_name_held_anywhere_is_refused(site):
     folder = _owner(site)
     before, rows = _tree(site), site.on_disk()
     site.serve(lambda slug: _md("mine", "Use when a USER-tier import declares the owner's name"))
-    reply = site.client.post("/skills/import", json={"source": "someone/repo", "skill": "zzz"}, headers=ADMIN)
+    reply = site.client.post("/skills/import", json=remote_body("someone/repo", "zzz"), headers=ADMIN)
     assert reply.status_code == 409 and reply.json()["reason"] == "name_taken", reply.text
     assert _tree(site) == before and site.on_disk() == rows
     assert site.served("mine") == folder
@@ -161,7 +158,7 @@ def test_a_skill_the_load_set_or_safe_mode_keeps_unloaded_still_holds_its_name(s
     site.boot()
     assert "mine" not in site.loader.skills                            # installed, not loaded
     site.serve(lambda slug: _md("mine", "Use when imported"))
-    reply = site.client.post("/skills/import", json={"source": "someone/repo", "skill": "zzz"}, headers=ADMIN)
+    reply = site.client.post("/skills/import", json=remote_body("someone/repo", "zzz"), headers=ADMIN)
     assert reply.status_code == 409 and reply.json()["reason"] == "name_taken", reply.text
     reply = site.client.post(ZIP, json={"zip_base64": _zip(_md("mine", "Use when a package"))}, headers=ADMIN)
     assert reply.status_code == 422, reply.text
@@ -172,7 +169,7 @@ def test_a_skill_the_load_set_or_safe_mode_keeps_unloaded_still_holds_its_name(s
 def test_a_package_declaring_the_name_of_an_import_in_the_other_root_is_refused(site):
     site.boot()
     site.serve(lambda slug: _md("foo", "Use when the OWNER imported this"))
-    assert site.client.post("/skills/import", json={"source": "acme/skills", "skill": "foo"},
+    assert site.client.post("/skills/import", json=remote_body("acme/skills", "foo"),
                             headers=ADMIN).status_code == 200
     assert site.served("foo") == site.app / "foo"
     for _ in range(3):
@@ -245,7 +242,7 @@ def test_a_holder_is_named_as_the_loader_names_it(site):
     assert site.served("mine") == folder
     before = _tree(site)
     site.serve(lambda slug: _md("mine", "Use when a USER-tier import declares the owner's name"))
-    reply = site.client.post("/skills/import", json={"source": "someone/repo", "skill": "zzz"}, headers=ADMIN)
+    reply = site.client.post("/skills/import", json=remote_body("someone/repo", "zzz"), headers=ADMIN)
     assert reply.status_code == 409 and reply.json()["reason"] == "name_taken", reply.text
     reply = site.client.post(ZIP, json={"zip_base64": _zip(_md("mine", "Use when a package"))}, headers=ADMIN)
     assert reply.status_code == 422, reply.text
@@ -349,7 +346,7 @@ def test_a_counter_bump_does_not_wait_for_the_pin_routes_folder_read(site, monke
 def test_the_imported_listing_does_not_serve_install_ids(site):
     site.boot()
     site.serve(lambda slug: _md(slug))
-    assert site.client.post("/skills/import", json={"source": "acme/skills", "skill": "foo"},
+    assert site.client.post("/skills/import", json=remote_body("acme/skills", "foo"),
                             headers=ADMIN).status_code == 200
     stored = json.loads((site.app / "foo" / "manifest.json").read_text(encoding="utf-8"))
     assert usage_mod.clean_install_id(stored["install_id"])

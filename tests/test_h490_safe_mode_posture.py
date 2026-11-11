@@ -220,6 +220,10 @@ _NUMBERS_NOT_FORCED = {
     # the size and cadence of one review (how many a day is forced)
     "learning.review_max_tokens", "learning.review_every_n", "learning.review_idle_gap_s",
     "learning.review_max_facts",
+    # H027: how long an idle skill waits before the curator marks it stale or archives it, and
+    # the minimum archive age before an owner-approved purge. Each move is previewed, approved
+    # per card and recoverable from a verified backup; a window grants no authority.
+    "learning.curator_stale_days", "learning.curator_archive_days", "learning.curator_purge_days",
     # housekeeping, cadences and times of day
     "security.sandbox_temp_max_age_hours", "jobs.media_send_timeout_seconds", "jobs.run_timeout_seconds", "skills.max_skills",
     "system.poll_interval", "system.log_max_mb", "system.log_backups", "system.battery_defer_percent",

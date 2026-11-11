@@ -686,7 +686,20 @@ class AutonomyCoordinator:
                     and _cog.sub_enabled("review_enabled")
                     and is_night_window(datetime.now().hour, start=22, end=7)
                 ):
-                    await _cur.run()
+                    # H027: lifecycle effects use the same journal and live kernel
+                    # as owner operations. Pause affects scheduling; already
+                    # approved patch decisions remain independent of that pause.
+                    _ops = getattr(self._orch, "curator_operations", None)
+                    if _ops is not None:
+                        from .skills.curator_authority import curator_authorize
+
+                        await asyncio.to_thread(
+                            _ops.run_scheduled, authorize=curator_authorize(self._orch)
+                        )
+                    if _ops is not None:
+                        await asyncio.to_thread(_ops.apply_proposals)
+                    else:
+                        await asyncio.to_thread(_cur.apply_decisions)
                 # Continuous Ingestion Watcher (H5.1)
                 if self._orch.ingestion_watcher and self._orch.get_setting(
                     "system.ingestion_watcher_enabled", True

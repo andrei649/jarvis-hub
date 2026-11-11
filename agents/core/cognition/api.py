@@ -79,7 +79,15 @@ async def cognition_learning():
         if reviewer is not None and hasattr(reviewer, "status"):
             out["review"] = reviewer.status()
         curator = getattr(orch, "curator", None)
-        if curator is not None and hasattr(curator, "status"):
+        operations = getattr(orch, "curator_operations", None)
+        if operations is not None:
+            try:
+                # Preserve this user-facing projection; the full operations
+                # receipt, paths and owner controls stay on the admin API.
+                out["curator"] = await asyncio.to_thread(operations.legacy_status)
+            except Exception:
+                out["curator"] = {"available": False, "reason": "curator_status_unavailable"}
+        elif curator is not None and hasattr(curator, "status"):
             out["curator"] = curator.status()
         proposals = getattr(orch, "skill_proposals", None)
         if proposals is not None and hasattr(proposals, "stats"):

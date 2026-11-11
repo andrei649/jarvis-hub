@@ -11,6 +11,7 @@ code is listed, never installed from the catalog. No test touches the network.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
@@ -199,10 +200,13 @@ def test_an_instruction_skill_installs_through_the_import_path_with_hermes_prove
     assert again.status_code == 200, again.text
 
 
-def test_the_catalog_install_keeps_the_dev_mode_gate(owner, monkeypatch):
-    monkeypatch.setattr(web, "DEV_MODE", False)
-    reply = owner.client.post(IMPORT, json={"source": "hermes-catalog", "skill": INSTRUCTION}, headers=ADMIN)
-    assert reply.status_code == 403
+def test_the_catalog_lane_of_skills_import_is_admin_only(owner, monkeypatch):
+    # Since main #1346 POST /skills/import is admin-guarded (no DEV_MODE gate): a user token
+    # cannot install from the catalog, and nothing is written.
+    monkeypatch.setattr(web, "USER_TOKEN", "u")
+    for headers in ({}, {"X-User-Token": "u"}):
+        reply = owner.client.post(IMPORT, json={"source": "hermes-catalog", "skill": INSTRUCTION}, headers=headers)
+        assert reply.status_code in (401, 403)
     assert not (owner.home / INSTRUCTION).exists()
 
 
@@ -327,15 +331,10 @@ def test_injected_text_gets_the_treatment_of_any_imported_text(synthetic, owner,
     assert next(r for r in listed["skills"] if r["slug"] == "sneaky")["injection_flags"]
     reply = owner.client.post(IMPORT, json={"source": "hermes-catalog", "skill": "sneaky"}, headers=ADMIN)
     assert reply.status_code == 200, reply.text
-    # The same text through the pinned/GitHub import path, under another name.
+    # The same text through the importer's shared write path (what a pinned remote import
+    # writes once its pin, kernel and egress gates pass), under another name.
     twin = HOSTILE.replace("name: sneaky", "name: sneaky-twin")
-
-    async def _fetch(self, client, repo, branch, subdir, slug):
-        return twin
-
-    monkeypatch.setattr(SkillImporter, "_fetch_skill_md_flat", _fetch)
-    reply = owner.client.post(IMPORT, json={"source": "someone/repo", "skill": "sneaky-twin"}, headers=ADMIN)
-    assert reply.status_code == 200, reply.text
+    assert asyncio.run(owner.orch.skill_importer._save_skill("sneaky-twin", "repo", skill_md_text=twin))
     owner.boot()
     index = owner.loader.prompt_index()
     catalog_rows = str(owner.loader.prompt_catalog())

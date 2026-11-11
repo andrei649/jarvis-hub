@@ -154,26 +154,6 @@ _BUNDLED_SKILL_MANIFEST: dict[str, dict[str, str]] = {
         "SKILL.md": "795b049006d72fdf609c940eb2460b0b644f3f7aa9497c1a4a5dde473a44e88f",
         "main.py": "d0ff17b4bc5dbc29e97de38332400308eaffbf22440f99ee883dcefe35e27286",
     },
-    "calendar": {
-        "SKILL.md": "fd2ad826d907a07ed9c95f837acd4072ca280c285ac90ef8ba50cc17ca9d47c1",
-        "main.py": "41d0d438d27fe07b5924af212dd292be0b1d182ce4b3b0f2354a2cb34f5159f5",
-    },
-    "content": {
-        "SKILL.md": "b59dbbacde4c197930fc94e74054dc4f3664e26c7d6e0312e1de3011e6c53969",
-        "main.py": "be33a20faeaba93affa3dbc105ec05c0c7c7cc27b5a5174d9b655f87a7525bf5",
-    },
-    "email_triage": {
-        "SKILL.md": "9b66be20f7d7fb3a3de9131185bbafe8e19d741ec9a0fb095a57fa884af4f662",
-        "main.py": "84ef124d387e0af18d634866c6c13d781c143538974a0bee9105923622ced7d3",
-    },
-    "family_store": {
-        "SKILL.md": "d61c6524741361265804b6e9393e80d99099a0fb915685343ed8f9705edc908e",
-        "main.py": "95cc696e4b6be0fc2054a4b58c404b70c8bcd478cb0416e6fcb570dcf0c01e6d",
-    },
-    "health": {
-        "SKILL.md": "9dca801816cbbbf90e33fef36a3b3cfc0a8f9e987709981bba047dc0891aaa69",
-        "main.py": "e395a97304bc5720e6f757b776f39adc787a827558a23f435ce3e300d4b934a4",
-    },
     "pm": {
         "SKILL.md": "b67bd2a0927713436f358baa12bce75c73ec224251c28e2931a51391e2e767a8",
         "main.py": "6bbfea103e7cfb1d43c1224e7c62febfb81fb569d77661cd370724e28d2e1dd9",
@@ -182,20 +162,12 @@ _BUNDLED_SKILL_MANIFEST: dict[str, dict[str, str]] = {
         "SKILL.md": "959542c712e3ed1aa260870871156b692a3c9a4693decd5c95ba35665fc6dd5d",
         "main.py": "d781c8305a3307fba60de7e832e20576d55ef4ee03b5a30abd7796ab9bbbfea4",
     },
-    "spotify": {
-        "SKILL.md": "3c17dd7f8273f9fac8e7a3d8f19afefede4d52c9969e78f773acdd544de3b475",
-        "main.py": "fb57a311f27bbf2fb1450bc9e40fcdb0d8d1d8747fb7d8f5fdf6f0530ab30e4b",
-    },
     "system_monitor": {
         "SKILL.md": "42b9c0a86723a8e6eb8d867951b2732d87047706ff850286216ab91ca2e70c6c",
         "main.py": "a7b483539973c9f1ea739615b89a70242d8ff7944687f25f50b92de80f289c41",
     },
     "weather": {
         "SKILL.md": "b4fc491c3c113ae3652cf81e95ef87e80d12b20be98253ad5239e0705e8774ff",
-    },
-    "web_research": {
-        "SKILL.md": "2893457f1840d419d0e2d57e767bedd853818d08a81e9d8177043d3109bfb737",
-        "main.py": "a9f6b13997f885d2e10f9ed79150edc59d4cd8ca406b8b471f246dfccbe51737",
     },
 }
 _BUNDLED_IGNORED_CONTROLS = frozenset(
@@ -1726,7 +1698,7 @@ def register(skill):
         )
         return skill_name
 
-    def approve_generated_skill(self, name: str) -> bool:
+    def approve_generated_skill(self, name: str, expected_fingerprint: str | None = None) -> bool:
         """Persist an owner approval outside the skill tree, then activate it.
 
         Pending generated skills and quarantined legacy approvals are eligible.
@@ -1765,6 +1737,17 @@ def register(skill):
         )
         if not pending_marker.exists() and not legacy_reapproval:
             return False
+        if not isinstance(expected_fingerprint, str) or not expected_fingerprint.startswith("sha256:"):
+            self.last_approval_refusal = "review_fingerprint_required"
+            return False
+        try:
+            reviewed_snapshot = signing.source_snapshot(skill_dir)
+        except OSError:
+            self.last_approval_refusal = "reviewed_source_unavailable"
+            return False
+        if reviewed_snapshot.fingerprint != expected_fingerprint:
+            self.last_approval_refusal = "reviewed_source_changed"
+            return False
         if not _skill_generation_allowed(
             {
                 "kind": SKILL_GENERATION_CONTRACT_KIND,
@@ -1787,8 +1770,19 @@ def register(skill):
             self.last_approval_refusal = refused
             logger.warning("Generated skill '%s' not approved: the action kernel said %s", name, refused)
             return False
-        signing.sign_skill(skill_dir)
-        self._approval_store.approve(skill_dir)
+        try:
+            current = signing.source_snapshot(skill_dir)
+            if current.fingerprint != expected_fingerprint:
+                self.last_approval_refusal = "reviewed_source_changed"
+                return False
+            signing.sign_skill(skill_dir, snapshot=current)
+            if signing.source_snapshot(skill_dir).fingerprint != expected_fingerprint:
+                self.last_approval_refusal = "reviewed_source_changed"
+                return False
+            self._approval_store.approve(skill_dir, snapshot=current)
+        except OSError:
+            self.last_approval_refusal = "reviewed_source_unavailable"
+            return False
         legacy_marker.unlink(missing_ok=True)
         pending_marker.unlink(missing_ok=True)
         self._load_skill(skill_dir)
@@ -1844,10 +1838,17 @@ def register(skill):
         skill_dir = self._pending_skill_dir(name)
         if skill_dir is None:
             return None
+        try:
+            snapshot = signing.source_snapshot(skill_dir)
+        except OSError:
+            snapshot = None
+        captured = {item.relative_path: item.content for item in snapshot.files} if snapshot else {}
+        paths = ([skill_dir / rel for rel in sorted(captured)] if snapshot is not None
+                 else sorted(skill_dir.rglob("*")))
         files: list[dict] = []
         shown = 0
         more = 0
-        for path in sorted(skill_dir.rglob("*")):
+        for path in paths:
             rel = path.relative_to(skill_dir).as_posix()
             if rel == "PENDING_REVIEW" or (path.is_dir() and not path.is_symlink()):
                 continue
@@ -1859,12 +1860,15 @@ def register(skill):
                 entry["symlink"] = True
                 files.append(entry)
                 continue
-            try:
-                raw = path.read_bytes()
-            except OSError:
-                entry["unreadable"] = True
-                files.append(entry)
-                continue
+            if snapshot is not None:
+                raw = captured[rel]
+            else:
+                try:
+                    raw = path.read_bytes()
+                except OSError:
+                    entry["unreadable"] = True
+                    files.append(entry)
+                    continue
             entry["size"] = len(raw)
             entry["sha256"] = hashlib.sha256(raw).hexdigest()
             try:
@@ -1901,7 +1905,18 @@ def register(skill):
             "files": files,
             "more_files": more,
             "warnings": warnings,
+            "fingerprint": snapshot.fingerprint if snapshot is not None else None,
         }
+
+    def pending_skill_fingerprint(self, name: str) -> str | None:
+        """Current stable source identity of one still-quarantined skill."""
+        skill_dir = self._pending_skill_dir(name)
+        if skill_dir is None:
+            return None
+        try:
+            return signing.source_snapshot(skill_dir).fingerprint
+        except OSError:
+            return None
 
     def discard_generated_skill(self, name: str, archive_dir: Path) -> Optional[Path]:
         """Reject a quarantined skill (H331): its folder leaves the skills tree for

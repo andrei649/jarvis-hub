@@ -15,7 +15,7 @@ sys.path.insert(0, str(repo_root / "agents"))
 
 
 def _load():
-    path = repo_root / "skills" / "email_triage" / "main.py"
+    path = repo_root / "optional-skills" / "email_triage" / "main.py"
     spec = importlib.util.spec_from_file_location("email_triage_skill_test", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

@@ -183,7 +183,7 @@ module-level env reads. So the rows marked **(import-time)** are ignored when se
 | `JARVIS_CORS_ORIGINS` | `agents/web.py:416` (`env_list`) | CORS allowlist; middleware only added when non-empty | unset | same-origin only |
 | `JARVIS_CSP` | `agents/web.py:518` | overrides the CSP header | the `_DEFAULT_CSP` string | default CSP |
 | `JARVIS_DISABLE_CSP` | `agents/web.py:519` | drop the CSP header | off | CSP sent |
-| `DEV_MODE` **(import-time)** | `agents/web.py:48` | enables `/sandbox/execute`, skill import, unconfirmed memory clear | off | those return 403/400 |
+| `DEV_MODE` **(import-time)** | `agents/web.py:48` | enables `/sandbox/execute`, unconfirmed memory clear; remote skill import instead requires admin and kernel admission | off | sandbox/clear return 403/400; import remains governed |
 | `JARVIS_HUD` | `agents/web.py:739` | `v1` serves the legacy HUD at `/` | v2 | v2 cockpit |
 | `JARVIS_A2A_ENABLED` | `agents/core/a2a.py:88` | exposes `/.well-known/agent-card` + `POST /api/a2a/task` | off | those 404 |
 | `JARVIS_A2A_KEY` | `a2a.py` | peer signing secret | unset | signed tasks 401 |

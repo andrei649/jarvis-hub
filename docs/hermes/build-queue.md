@@ -1,5 +1,13 @@
 # Hermes build queue — the 93 small-effort rows, re-evaluated 2026-09-22
 
+> **Historical planning queue, not the current pick order (2026-11-04).** Follow
+> [the active Hermes workflow](autonomous-development-objective.md) and the
+> [cumulative handoff](CAMPAIGN_HANDOFF.md): integrate the current local batch
+> first, verify checkout/SHA and query the relevant frozen contract. The dated
+> estimates, closure notes and critic links below remain useful evidence; a top
+> row or old “next” instruction does not authorize new work, PR publication or
+> equivalence credit. Current work remains local with no stage or commit.
+
 **Current review, 2026-10-10:** dated closure notes below are historical. The
 first batch repaired H004/H161/H328/H450. The second repairs H413's small title
 model, H689's shared installation identity and H256's corrupt-store consent
@@ -39,7 +47,12 @@ Generated from the 2026-09-22 HEQ-1 re-evaluation of every small-effort (`S`) ro
 
 **Closed 2026-11-10** (#1347): H440 — built, then four adversarial reviews with a fix round after each of the first three; its record is in the ledger and its plan below is kept only as the anchor.
 
-**How to use it.** Pick from the top (smallest honest estimate first), read the row with `python3 scripts/hermes_status.py show <ID>`, then its plan here **and every critic note it links** — 60 of the 93 plans overlap another plan or rest on a premise the critic corrected, and building two of them separately would collide. Estimates are hours for a careful engineer including tests, not a schedule. A plan is a starting point, not a contract: the requirement in the frozen inventory wins. When a row closes, its ledger entry changes in the same PR and it leaves this page.
+**How to use this archive.** When the active campaign selects a relevant row,
+read its current record with `scripts/hermes_status.py show <ID>`, then its plan
+here and every critic note it links. Sixty of the 93 plans overlap another plan
+or rest on a premise the critic corrected. Estimates are historical careful-
+engineer hours, not a schedule or priority. The frozen contract wins over a
+plan; update the ledger only from current evidence under the active workflow.
 
 **Closed by lot 1** (#1204, 2026-09-23): H691, H661, H344, H583, H368, H242, H503, H313 — each built red-first, adversarially reviewed, fixed and independently verified on the integrated head; their plans left this page with their ledger entries. 85 rows remain.
 

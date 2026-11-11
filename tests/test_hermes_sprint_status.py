@@ -453,6 +453,29 @@ def test_cli_unknown_row_is_a_named_failure(capsys):
     assert "not found" in capsys.readouterr().err
 
 
+def test_show_recorded_keeps_the_stored_review_beside_a_demoted_assessment(sample):
+    """Main's `show --recorded` (historical reviews made explicit), carried into schema 3: the
+    stored review is diagnostic history; the current assessment a failing suite demoted wins."""
+    ledger, data, areas, _ = sample
+    item = copy.deepcopy(add_review(sample))
+    _, rows = judged(sample, ("tests.test_example", "test_core", "failure"), *GREEN[1:])
+    shown = hs.show_payload(ledger, data, areas, rows["H002"], recorded=True)
+    assert shown["assessment"]["status"] == "needs_review" and shown["assessment"]["basis"] == "suite_failed"
+    assert shown["recorded_review"] == item and shown["recorded_review"]["status"] == "equivalent"
+    assert shown["original"] == ledger["capabilities"][1] and shown["area"]["id"] == "core"
+    plain = hs.show_payload(ledger, data, areas, rows["H001"])
+    assert "recorded_review" not in plain
+    assert hs.show_payload(ledger, data, areas, rows["H001"], recorded=True)["recorded_review"] is None
+
+
+def test_cli_show_recorded_flag_is_reachable(capsys):
+    assert hs.main(["show", "--recorded", "h001"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert set(payload) == {"assessment", "area", "original", "recorded_review"}
+    assert hs.main(["show", "h999", "--recorded"]) == 1
+    assert "not found: h999" in capsys.readouterr().err
+
+
 def test_cli_verify_reads_a_junit_result_without_running_tests(tmp_path, capsys):
     _, _, areas = hs.load()
     area = next(a for a in areas["areas"] if a["id"] == "agent-interop")

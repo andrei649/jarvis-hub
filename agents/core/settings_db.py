@@ -233,7 +233,7 @@ _STATUS_FIELDS = (
 DEFAULTS: list[dict[str, Any]] = [
     # H135: only explicit owner choices; empty preserves device motion defaults.
     dict(category="appearance", key="preferences", value={}, label="Appearance preferences", kind="json"),
-    dict(category="display", key="status_bar_fields", value=["latency"],
+    dict(category="display", key="status_bar_fields", value=["latency", "context_detail", "context_pct"],
          label="Visible chat status fields", kind="tags",
          opts=list(_STATUS_FIELDS)),
     # general
@@ -371,6 +371,8 @@ DEFAULTS: list[dict[str, Any]] = [
     # security
     dict(category="security",key="data_training_ack", value={}, label="Audited unattended provider acknowledgments", kind="json"),
     dict(category="security",key="data_training_role_ack", value={}, label="Audited model role acknowledgments", kind="json"),
+    dict(category="security",key="website_blocklist", value={"enabled": False, "domains": [], "shared_files": []},
+         label="Owner website blocklist: JSON enabled, domains and shared_files; URL-taking tools refuse matches", kind="json"),
     dict(category="security",key="guardrails_mode",  value="WARN",                label="Guardrails mode",    kind="select",  opts=["WARN","REDACT","BLOCK"]),
     dict(category="security",key="scan_input",       value=True,                  label="Scan user input",    kind="toggle"),
     dict(category="security",key="scan_output",      value=True,                  label="Scan LLM output",    kind="toggle"),
@@ -467,6 +469,9 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="learning", key="review_every_n", value=3, label="Review every N turns (cadence every_n_turns)", kind="number"),
     dict(category="learning", key="review_idle_gap_s", value=90, label="Seconds between reviews (cadence idle_gap)", kind="number"),
     dict(category="learning", key="review_max_facts", value=3, label="Facts a review may keep, per ring (0 = none; corrections are capped apart)", kind="number"),
+    dict(category="learning", key="curator_stale_days", value=30, label="Mark eligible curator skills stale after idle days (1-36500)", kind="number"),
+    dict(category="learning", key="curator_archive_days", value=90, label="Archive eligible curator skills after idle days (1-36500; moves recoverable bytes)", kind="number"),
+    dict(category="learning", key="curator_purge_days", value=0, label="Minimum archive age for explicit owner-approved curator purge (days, 0 = disabled; never automatic)", kind="number"),
     # Owner-authored media reminders: one deadline for the complete delivery.
     dict(category="jobs", key="media_send_timeout_seconds", value=300, label="Scheduled media total delivery deadline (1–300 seconds)", kind="number"),
     # H288 (Hermes HERMES_CRON_TIMEOUT): one wall clock for a whole plain cron run.
@@ -1080,13 +1085,20 @@ def get_value(category: str, key: str, default=None):
         return _pinned(category, key, _recover_value(category, key, exc))
 
 
-def read_setting(category: str, key: str) -> tuple[bool, Any]:
+def read_setting(category: str, key: str, *, readonly: bool = False) -> tuple[bool, Any]:
     """``(found, value)`` for one setting, raising :class:`SettingsUnreadable` when the
     store cannot be read. For a guard that must fail closed: ``get_value`` turns every
-    error into the default, which for an "on by default" switch means on."""
+    error into the default, which for an "on by default" switch means on.
+    ``readonly`` skips database creation, schema initialization and migration.
+    SQLite may still need WAL sidecars when reading an existing store.
+    """
     try:
-        _ensure_init()
-        conn = get_conn()
+        if readonly:
+            conn = sqlite3.connect(DB_PATH.resolve().as_uri() + "?mode=ro", uri=True, timeout=0)
+            conn.row_factory = sqlite3.Row
+        else:
+            _ensure_init()
+            conn = get_conn()
         try:
             row = conn.execute(
                 "SELECT value FROM settings WHERE category=? AND key=?",
@@ -1195,6 +1207,9 @@ def _changed_as_used(category: str, values: dict[str, Any]) -> None:
     """Tell the listeners what a write stored, each value as it is used: a ``${env:…}``
     reference reaches them expanded (H255), whichever writer stored it (a category write,
     an import, a reset, an undo)."""
+    if category == "security" and "website_blocklist" in values:
+        from .security.website_policy import invalidate_cache
+        invalidate_cache()
     _changed(category, {key: _interpolated(category, key, value) for key, value in values.items()})
 
 
@@ -1261,6 +1276,9 @@ _TURN_CEILING_KEYS = frozenset({"tool_loop_web_search_cap", "tool_loop_subagent_
 #: H262 — the data lifecycle's whole-number knobs and their bounds, per (category, key):
 #: a day count or an interval, never a fraction, a bool or a negative.
 _LIFECYCLE_INT_BOUNDS: dict[tuple[str, str], tuple[int, int]] = {
+    ("learning", "curator_stale_days"): (1, 36500),
+    ("learning", "curator_archive_days"): (1, 36500),
+    ("learning", "curator_purge_days"): (0, 36500),
     ("retention", "conversation_ttl_days"): (0, 36500), ("retention", "audit_ttl_days"): (0, 36500),
     ("retention", "ingestion_ttl_days"): (0, 36500), ("retention", "min_interval_hours"): (1, 720),
     ("retention", "min_vacuum_interval_days"): (0, 365), ("memory", "auto_archive_days"): (0, 3650),
@@ -1633,6 +1651,9 @@ def validate_category(cat: str, data: dict[str, Any], *, references: bool = True
         if err is None and (cat, key) == ("skills", "channel_disabled"):
             from .skills.switches import channel_map_problem
             err = channel_map_problem(value)
+        if err is None and (cat, key) == ("security", "website_blocklist"):
+            from .security.website_policy import configuration_problem
+            err = configuration_problem(value)
         if err is None and (cat, key) == ("mcp", "servers"):
             err = _mcp_servers_problem(value)
         if err is None and (cat, key) == ("context", "memory_trim"):
