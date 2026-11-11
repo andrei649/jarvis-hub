@@ -715,8 +715,15 @@ def test_background_from_colorfgbg_at_every_edge(fgbg, want):
 
 
 def test_a_stderr_that_cannot_be_inspected_is_no_journal(monkeypatch):
-    def boom(_fd):
-        raise OSError("closed")
+    real = hi.os.fstat
+
+    # ``hi.os`` is the process-wide ``os``: fail only the probe of fd 2, so a thread left
+    # running by another test that calls ``os.fstat`` meanwhile does not die (pytest >= 9.2
+    # fails the running test on any unhandled thread exception).
+    def boom(fd, *args, **kwargs):
+        if fd == 2:
+            raise OSError("closed")
+        return real(fd, *args, **kwargs)
 
     monkeypatch.setattr(hi.os, "fstat", boom)
     assert hi._stderr_id() is None

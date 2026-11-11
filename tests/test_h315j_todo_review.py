@@ -44,8 +44,15 @@ def test_an_fstat_error_other_than_ebadf_keeps_the_lock(tmp_path, monkeypatch):
     root = tmp_path / "kernel-rpc"
     manager = _manager(root)
 
-    def fstat(fd):
-        raise OSError(errno.ENOMEM, "Cannot allocate memory")
+    real = os.fstat
+
+    # ``sk.os`` is the process-wide ``os``: fail only the lock's descriptor, so another
+    # thread calling ``os.fstat`` meanwhile is unaffected (pytest >= 9.2 fails the running
+    # test on any unhandled thread exception).
+    def fstat(fd, *args, **kwargs):
+        if fd == manager._owner_fd:
+            raise OSError(errno.ENOMEM, "Cannot allocate memory")
+        return real(fd, *args, **kwargs)
 
     monkeypatch.setattr(sk.os, "fstat", fstat)
     assert sk._lock_state(root / manager._owner, manager._owner_fd) == sk.LOCK_UNKNOWN

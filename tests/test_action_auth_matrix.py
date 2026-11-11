@@ -1144,20 +1144,32 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
     elif kind == "hook.exec":
         # G17: every run of an owner-approved hook asks the kernel before a process exists.
         import asyncio
-        import sys as _sys
         from types import SimpleNamespace
 
         from agents.core.hooks import runner, store
+        from tests.support.trusted_python import NO_TRUSTED_PYTHON, trusted_dir, trusted_python
 
+        # The program must pass the hook validator: CI's tool-cache Python sits under a
+        # world-writable directory and is (rightly) refused, so use an interpreter the
+        # validator accepts, else the system shell (the transport below never spawns it).
+        python = trusted_python()
+        folder = trusted_dir(tmp_path / "hook-scripts")
+        if python is not None:
+            argv0, script = python, folder / "hook.py"
+            script.write_text("import sys; sys.stdin.read()\n", encoding="utf-8")
+        elif not store.inspect_argv(["/bin/sh"])[0][0].startswith("argv[0]:"):
+            argv0, script = "/bin/sh", folder / "hook.sh"
+            script.write_text("cat >/dev/null\n", encoding="utf-8")
+        else:
+            pytest.skip(NO_TRUSTED_PYTHON)
+        script.chmod(0o644)
         monkeypatch.setenv("JARVIS_HOME", str(tmp_path / "hooks-home"))
-        script = tmp_path / "hook.py"
-        script.write_text("import sys; sys.stdin.read()\n", encoding="utf-8")
         tasks = []
         accepted = {}
         autonomy = SimpleNamespace(govern_enqueue=lambda **kw: tasks.append(kw) or len(tasks),
                                    queue=SimpleNamespace(get=accepted.get))
         orch = SimpleNamespace(autonomy=autonomy, intent_log=None, kill_switch=None)
-        hook = store.request_define(orch, event="tool.before", argv=[_sys.executable, str(script)])
+        hook = store.request_define(orch, event="tool.before", argv=[argv0, str(script)])
         task = SimpleNamespace(id=hook["pending"], kind="hooks.define", decision="accept", decided_by="owner",
                                status="done", payload=dict(tasks[-1]["payload"]))
         assert asyncio.run(store.apply_approved(task, orch))["status"] == "ok"

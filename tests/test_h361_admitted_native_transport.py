@@ -398,12 +398,29 @@ async def test_native_egress_action_matches_manifest_and_real_kernel_refusals(tm
         actions.append(action) or authorize(action, policy=AutonomyPolicy(),
                                             approval_check=lambda candidate: candidate == action)
         if action.kind == 'plugin.egress' else original_authorizer(action))
-    token = bind_action_origin('inbound')
+    # An inbound turn is a guest (H496): until the owner shares this provider with guests,
+    # it is refused before the kernel is even asked and before any egress.
+    from agents.core.security import credential_scope
+    credential_scope.set_ledger_path_for_tests(tmp_path / 'credential_shares.json')
     try:
-        with pytest.raises(ProviderHookRuntimeError, match='native_egress_unavailable'):
-            await prepared_post(client, url, headers, {'model': 'm'})
+        token = bind_action_origin('inbound')
+        try:
+            with pytest.raises(ProviderHookRuntimeError, match='native_egress_unavailable'):
+                await prepared_post(client, url, headers, {'model': 'm'})
+        finally:
+            reset_action_origin(token)
+        assert not seen and len(actions) == 2
+        # Shared with guests, the inbound turn reaches the real kernel with its origin
+        # bound into the Action, and the kernel still refuses it.
+        credential_scope.share(credential_scope.KIND_PROVIDER, client._transport.profile.id)
+        token = bind_action_origin('inbound')
+        try:
+            with pytest.raises(ProviderHookRuntimeError, match='native_egress_unavailable'):
+                await prepared_post(client, url, headers, {'model': 'm'})
+        finally:
+            reset_action_origin(token)
     finally:
-        reset_action_origin(token)
+        credential_scope.set_ledger_path_for_tests(None)
     assert not seen and len(actions) == 3 and actions[-1].origin == 'inbound'
     await client.aclose()
 

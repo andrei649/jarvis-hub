@@ -27,9 +27,12 @@ from agents.core.autonomy.policy import AutonomyPolicy
 from agents.core.hooks import runner, store
 from agents.core.kernel import Decision, Verdict
 from agents.core.security.capability import KillSwitch
+from tests.support.trusted_python import NO_TRUSTED_PYTHON, trusted_dir, trusted_python
 
 ADMIN = {"X-Admin-Token": "owner-test"}
-PY = sys.executable
+# The hook interpreter: one the validator itself accepts. ``sys.executable`` is not always
+# one (CI's tool-cache Python sits under a world-writable directory, rightly refused).
+PY = trusted_python() or sys.executable
 
 SCRIPT = textwrap.dedent('''\
     import json, os, sys, time
@@ -110,10 +113,12 @@ def orch(monkeypatch, tmp_path):
 
 @pytest.fixture()
 def hook_files(tmp_path):
-    folder = tmp_path / "hooks"
-    folder.mkdir(mode=0o755)
+    if trusted_python() is None:
+        pytest.skip(NO_TRUSTED_PYTHON)
+    folder = trusted_dir(tmp_path / "hooks")
     script = folder / "hook.py"
     script.write_text(SCRIPT, encoding="utf-8")
+    script.chmod(0o644)
     out = tmp_path / "out.jsonl"
     return SimpleNamespace(script=script, out=out, mode=lambda m: (tmp_path / "out.jsonl.mode").write_text(m))
 
