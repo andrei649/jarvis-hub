@@ -26,8 +26,8 @@ from urllib.parse import quote, urlencode
 
 from .client import HubClient, HubError, HubUnavailable, hub_url, is_loopback_url
 from .custom_endpoints import run as cmd_custom_provider
-from .rooms import run as cmd_rooms
 from .mcp_catalog import run as cmd_mcp
+from .rooms import run as cmd_rooms
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

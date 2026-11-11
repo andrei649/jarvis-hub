@@ -11,8 +11,8 @@ Din acestea, **161** au fost reevaluate pe cod în această livrare; **0** păst
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
 | Echivalent | 161 | 23.1% |
-| Parțial | 490 | 70.3% |
-| Lipsă | 10 | 1.4% |
+| Parțial | 491 | 70.4% |
+| Lipsă | 9 | 1.3% |
 | Exclus intenționat | 36 | 5.2% |
 | De reverificat | 0 | 0.0% |
 
