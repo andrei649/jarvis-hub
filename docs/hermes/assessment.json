@@ -2945,11 +2945,14 @@
     {
       "id": "H171",
       "row_sha256": "15e3b2dce34fc8aa7f5f0e5cce7188b1430f56f95e3b4747a65fdeaf7d725a77",
-      "status": "missing",
-      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): The desktop shell still starts no backend. desktop/src-tauri/src/main.rs:200-311 builds the two webviews on http://127.0.0.1:8080 and a tray menu. Nothing resolves, spawns, records ownership of, reaps or probes a backend process. The backend is still started by start.sh or scripts/bootstrap.py.",
-      "remaining": "- A resolution ladder, spawn with a nonce and ownership record, and a cross-platform process start marker\n- A claim policy that degrades and never kills a healthy backend, and never kills a backend the shell does not own\n- Orphan reap on boot\n- A readiness probe and a WebSocket handshake probe\n- A per-profile backend pool with LRU eviction and an idle reaper",
+      "status": "partial",
+      "summary": "Assessed 2026-11-11 (G22 desktop shell): The shell now owns the hub it starts, and only that one. desktop/src-tauri/src/hub_policy.rs (std only) holds the resolution ladder (`NERVA_DESKTOP_HUB=external` never spawns; `NERVA_DESKTOP_HUB_DIR`, else the first ancestor of the executable or working directory holding serve.py and agents/web.py; the checkout's .venv interpreter, never a guessed system Python), a strict ownership record (pid, OS process start time, per-launch nonce, interpreter path, owning shell pid; malformed means absent), the claim policy (re-adopt our live process, use and never stop a hub someone else runs or another live shell owns, spawn only on an empty port) and the `GET /readyz` probe. desktop/src-tauri/src/hub.rs carries it out with sysinfo: `serve.py` started like start.sh (JARVIS_HUD=v2 unless chosen), output to hub.log, the record written atomically, an adopted orphan that never becomes ready stopped and replaced, and quit (RunEvent::Exit) stopping the owned hub with SIGTERM then kill only while the live process still has the recorded start time and executable. main.rs opens the HUD windows only after readiness (start_hub_then_hud). The shell reads no hub credential. Tests: hub_policy unit tests under rustc via tests/test_g22_desktop_shell.py; an end-to-end Rust test on real processes (the_shell_starts_adopts_and_stops_only_its_own_hub: spawn, re-adopt after a shell crash, stop on quit, an external hub and a forged record never stopped). Smoke-run under Xvfb on Linux: spawn, readiness, windows, orphan adoption after kill -9 of the shell, and a second app copy using rather than adopting the hub.",
+      "remaining": "- A per-profile backend pool (one hub per JARVIS_PROFILE) with LRU eviction and an idle reaper\n- A WebSocket handshake probe beside /readyz\n- The hub port is fixed at 8080 (the HUD origin); a hub configured for another port is not followed\n- Native acceptance on macOS and Windows (process start time and polite stop are only exercised on Linux)",
       "evidence": [
-        "desktop/src-tauri/src/main.rs"
+        "desktop/src-tauri/src/hub_policy.rs",
+        "desktop/src-tauri/src/hub.rs",
+        "desktop/src-tauri/src/main.rs",
+        "tests/test_g22_desktop_shell.py"
       ]
     },
     {
@@ -3064,13 +3067,15 @@
     {
       "id": "H179",
       "row_sha256": "8a525bfe731677d2221d774ac1319b11952891cf8cc148dfd3a5181d1c7ab01a",
-      "status": "missing",
-      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): There is no OS-level hotkey. The `global_shortcut` field in desktop/src-tauri/src/main.rs:23 is a capability flag that `detect()` always sets to false (:47). No shortcut is registered: the Tauri dependency has only the `tray-icon` feature (desktop/src-tauri/Cargo.toml). The only shortcuts are in-page, such as ⌘K for the palette in frontend/src/shell.tsx.",
-      "remaining": "- A global hotkey (default CommandOrControl+Shift+Space) that opens a small capture window\n- A canonicalising accelerator validator that requires a modifier and forbids Escape, with persisted settings\n- Hand-off of the captured text to the normal prompt path, never submit-and-approve",
+      "status": "partial",
+      "summary": "Assessed 2026-11-11 (G22 desktop shell): Quick Entry exists. desktop/src-tauri/src/hotkey.rs (std only) canonicalises the accelerator from `NERVA_DESKTOP_QUICK_ENTRY` (default CommandOrControl+Shift+Space, `off` disables): modifier aliases, one order, one key; it requires CommandOrControl, Control, Alt or Super (Shift alone is refused) and forbids Escape. main.rs registers it with tauri-plugin-global-shortcut after the HUD opens; a conflict (another program holds it) or Wayland leaves it off with a stderr line, and desktop_capabilities reports globalShortcut truthfully. The hotkey toggles the floating chat and dispatches nerva-desktop-quick-entry; frontend/src/desktop.tsx useQuickEntryFocus only focuses the composer ([data-composer]); the prompt goes out through the chat's normal send. Tests: hotkey unit tests under rustc (tests/test_g22_desktop_shell.py); frontend/src/test/desktop-g22.test.tsx. The conflict path was observed under Xvfb (a second app copy found the accelerator taken and left Quick Entry off).",
+      "remaining": "- A persisted setting in the HUD (settings page with a recorder) instead of an environment variable\n- A dedicated small capture window (Quick Entry reuses the floating chat)\n- Native acceptance on macOS and Windows",
       "evidence": [
+        "desktop/src-tauri/src/hotkey.rs",
         "desktop/src-tauri/src/main.rs",
-        "desktop/src-tauri/Cargo.toml",
-        "frontend/src/shell.tsx"
+        "frontend/src/desktop.tsx",
+        "frontend/src/test/desktop-g22.test.tsx",
+        "tests/test_g22_desktop_shell.py"
       ]
     },
     {
@@ -3088,11 +3093,16 @@
     {
       "id": "H181",
       "row_sha256": "fa2802c5b9f1cd1c10c5976a27af05fedd7b1d1e108db07cf8406104b34221cc",
-      "status": "missing",
-      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nerva has no OS notification path. desktop/src-tauri/src/main.rs registers no notification plugin or command (handlers at :204-208 are desktop_action, desktop_capabilities and desktop_listening). frontend/src never calls the Web Notification API. Owner notifications still go out through chat channels and in-app panels only.",
-      "remaining": "- Native notifications deduplicated by kind and session, with icon, silent and action options\n- Click to focus and jump to the session\n- Action buttons that post to the approval queue through the kernel, with irreversible-tier tasks refused from a notification\n- A Notifications settings page with a master switch, per-kind toggles, a completion sound and a test button",
+      "status": "partial",
+      "summary": "Assessed 2026-11-11 (G22 desktop shell): Native notifications for pending approvals exist. The main HUD window (frontend/src/desktop.tsx useDesktopDecisionNotifications) polls GET /autonomy/approvals with its own session every 20 s, seeds what was already waiting silently, and invokes `desktop_notify` for each new id; 401/403 stops the watch. The shell command (main.rs, capability allow-desktop-notify, main window only) validates through desktop/src-tauri/src/notify.rs (std only: kind `approval` only, bounded id, one bounded line without control or bidi characters), deduplicates by kind and id (bounded), skips when the HUD is focused, and shows it with notify-rust. A notification can only open the decision: its click and its single action \"Review in Nerva\" (freedesktop) bring the main window to /v2/console/decision-inbox through the route policy; it has no approve or deny action, so every decision is made on the normal HUD card through the hub's normal decision route. `NERVA_DESKTOP_NOTIFICATIONS=off` silences them. Tests: notify unit tests under rustc; desktop-g22 vitest (new id notifies once, no credential reaches the shell, no admin session means no watch).",
+      "remaining": "- Click and action routing on macOS and Windows (notify-rust shows the notification without a click route there)\n- Other kinds (turn finished while hidden, errors) with per-session deduplication\n- A Notifications settings page: master switch, per-kind toggles, completion sound, test button\n- Native acceptance on a desktop session",
       "evidence": [
-        "desktop/src-tauri/src/main.rs"
+        "desktop/src-tauri/src/notify.rs",
+        "desktop/src-tauri/src/main.rs",
+        "desktop/src-tauri/capabilities/desktop.json",
+        "frontend/src/desktop.tsx",
+        "frontend/src/test/desktop-g22.test.tsx",
+        "tests/test_g22_desktop_shell.py"
       ]
     },
     {
@@ -3113,13 +3123,15 @@
     {
       "id": "H183",
       "row_sha256": "969244804fec73f80ab3e6d8daa0685d55945136fd3e185e58509b86a1470a4a",
-      "status": "missing",
-      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): There is no URL-scheme registration or deep-link routing. The only `nerva://` strings are internal evidence URIs (agents/core/reflection_evaluation.py:81, :961-963). desktop/src-tauri/src/main.rs and desktop/src-tauri/Cargo.toml register no protocol and no single-instance plugin.",
-      "remaining": "- Registering the `nerva://` scheme in the installer manifest and again at runtime, plus a separate dev scheme\n- Deep-link routing into the single-instance owner\n- A `nerva://mcp/install` flow with a validating parser that crosses `skill.install` / `mcp.mutating` into the approval queue",
+      "status": "partial",
+      "summary": "Assessed 2026-11-11 (G22 desktop shell): `nerva://` links exist. tauri.conf.json registers the scheme for the installer (plugins.deep-link), Linux and a Windows dev build register it at runtime, and tauri-plugin-single-instance (deep-link feature) hands a second launch's link to the running app. desktop/src-tauri/src/deeplink.rs (std only) parses strictly: printable ASCII only, at most 34 KB, one known target, only that target's parameters, no fragment, duplicate or unknown keys refused, percent-escapes decoded to printable ASCII only. Targets: open/chat, open/decision-inbox, open/mcp, and mcp/install with name= (catalog) or name= plus config= (base64, at most 32 KB, the Cursor/Hermes shape). main.rs open_hud navigates the main window only to a page the route policy admits; a link received before the HUD is ready waits for it; the raw link is never logged. The MCP install link only opens the G9 install card (/v2/console/mcp?install= or ?link=&config=), which shows exactly what would run and installs only after the owner ticks and confirms, with the plan digest checked by the hub. Tests: deeplink unit tests under rustc; static checks in tests/test_g22_desktop_shell.py. Observed under Xvfb: a launch with nerva://open/decision-inbox opened that page after readiness.",
+      "remaining": "- A separate dev scheme so a dev build does not take the installed app's links\n- Scheme registration and single-instance hand-off verified on macOS and Windows installers\n- On Linux without a session bus the single-instance hand-off is unavailable (a second copy starts; it uses, never adopts, the hub)",
       "evidence": [
-        "agents/core/reflection_evaluation.py",
+        "desktop/src-tauri/src/deeplink.rs",
         "desktop/src-tauri/src/main.rs",
-        "desktop/src-tauri/Cargo.toml"
+        "desktop/src-tauri/tauri.conf.json",
+        "frontend/src/panels/mcp.tsx",
+        "tests/test_g22_desktop_shell.py"
       ]
     },
     {
@@ -3154,7 +3166,7 @@
       "id": "H186",
       "row_sha256": "95bfabf5412e432bce8d9b98f80df93c9f87af5594962818ae9a0e9c5f759358",
       "status": "partial",
-      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Only governed worktree add and conservative removal for kanban task workspaces exist. They were adapted from Hermes worktree_ops in agents/core/kanban/workspaces.py. `plan_workspace` (:235-307) resolves a `.worktrees/<task>` path inside FileScope and refuses an occupied or foreign target. `materialize_workspace` (:378-428) reuses the branch or creates it under a live consumed run. `_clean_worktree` and `cleanup_workspace` (:464-484, :487) remove a terminal task's worktree only when it is clean and fully pushed. Tests: tests/test_hermes_kanban_workspaces.py:46-147 and tests/test_hermes_kanban_child_cleanup.py. No owner-facing worktree list or switch exists, and nothing provides a review or ship pane.",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Only governed worktree add and conservative removal for kanban task workspaces exist. They were adapted from Hermes worktree_ops in agents/core/kanban/workspaces.py. `plan_workspace` (:235-307) resolves a `.worktrees/<task>` path inside FileScope and refuses an occupied or foreign target. `materialize_workspace` (:378-428) reuses the branch or creates it under a live consumed run. `_clean_worktree` and `cleanup_workspace` (:464-484, :487) remove a terminal task's worktree only when it is clean and fully pushed. Tests: tests/test_hermes_kanban_workspaces.py:46-147 and tests/test_hermes_kanban_child_cleanup.py. No owner-facing worktree list or switch exists, and nothing provides a review or ship pane. Re-assessed 2026-11-11 during G22: unchanged. The desktop shell work (hub ownership, Quick Entry, notifications, deep links) adds no worktree list, review or ship pane; the remaining list stands.",
       "remaining": "- Owner-facing worktree list, add, remove and switch, branch listing and a base-branch picker\n- A review pane with Uncommitted, Branch and Last-turn diff scopes, stage, unstage and revert\n- Commit-message generation, Commit, Commit&Push and Create PR through `gh`, crossing `repo.sync` into the irreversible approval bucket\n- Repo scan and PR comment fetch",
       "evidence": [
         "agents/core/kanban/workspaces.py",
@@ -3420,7 +3432,7 @@
       "id": "H203",
       "row_sha256": "0dae93a4414d8d5251782f498a5b381ea2975cbe1cd0ab00fa7052dce3c1a3b2",
       "status": "partial",
-      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Profile isolation exists, but there is no export or import flow and no scope chip. Since H689, `JARVIS_PROFILE` gives each profile its own data root, with its own settings store, memory, secret store and `.env` (agents/core/paths.py:143-147, `data_root` :201-207). Editing config in a profile's hub therefore changes only that profile. A backup taken under a profile archives only that root (agents/core/backup.py:548). Tests: tests/test_h689_install_identity.py:195 (a profile is its own data root) and :385 (the default hub's forget and backup never reach a profile). There is no profile bundle export or import, and the HUD has no \"Applies to\" scope on config pages.",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Profile isolation exists, but there is no export or import flow and no scope chip. Since H689, `JARVIS_PROFILE` gives each profile its own data root, with its own settings store, memory, secret store and `.env` (agents/core/paths.py:143-147, `data_root` :201-207). Editing config in a profile's hub therefore changes only that profile. A backup taken under a profile archives only that root (agents/core/backup.py:548). Tests: tests/test_h689_install_identity.py:195 (a profile is its own data root) and :385 (the default hub's forget and backup never reach a profile). There is no profile bundle export or import, and the HUD has no \"Applies to\" scope on config pages. Re-assessed 2026-11-11 during G22: unchanged. No profile bundle export or import and no \"Applies to\" scope chip were added; the desktop shell starts one hub for the default profile only (the per-profile hub pool is H171 remaining work).",
       "remaining": "- Profile export as a bundle, and import back through `skill.install` with the plugin_gate scan, never trusted because the owner picked the file\n- \"Applies to\" profile scope chips on config pages, hidden when only one profile exists, with `?profile=` on config routes",
       "evidence": [
         "agents/core/paths.py",
@@ -13474,7 +13486,7 @@
       "id": "H690",
       "row_sha256": "274feb2b9284922f308ab1140a9c9fb9b53fcca867beb567c23cbee26719cc12",
       "status": "missing",
-      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nothing anchors the interpreter for macOS TCC. A search for tcc, tccutil and codesign across agents/, scripts/, install.sh and desktop/src-tauri/src finds no Python or Rust code. Nerva still depends on those grants through its accessibility backend (agents/core/desktop_host.py:272-275). install.sh creates the venv with no anchoring, boot gate or rollback.",
+      "summary": "Assessed 2026-11-10 (first review of this row since the 2026-09-07 baseline): Nothing anchors the interpreter for macOS TCC. A search for tcc, tccutil and codesign across agents/, scripts/, install.sh and desktop/src-tauri/src finds no Python or Rust code. Nerva still depends on those grants through its accessibility backend (agents/core/desktop_host.py:272-275). install.sh creates the venv with no anchoring, boot gate or rollback. Re-assessed 2026-11-11 during G22: unchanged and not doable in this Linux container. macOS TCC anchoring needs a macOS host with codesign and a managed interpreter to verify; nothing was built rather than ship an unverified installer step.",
       "remaining": "- copy the managed interpreter to a stable venv path (real-file copies, never symlinks) and pin its signature\n- hardlink libpython into venv/lib\n- a pre-install boot gate (import encodings, sys.prefix == venv) with rollback of the staged file\n- run only from install/update, no-op off macOS and for unmanaged interpreters, never raising",
       "evidence": [
         "agents/core/desktop_host.py",

@@ -4,6 +4,26 @@
 
 ### What changed for you — 2026-11-11
 
+**The desktop app starts Nerva, a hotkey from anywhere, notifications and `nerva://` links**
+- The desktop app now starts the hub itself when none is running (from your checkout's
+  `.venv`, like `start.sh`) and opens the HUD only once the hub says it is ready. Quitting
+  the app stops the hub it started, and only that one: a hub you started yourself keeps
+  running. If the app crashed, the next launch picks up the hub it left behind instead of
+  starting a second one. `NERVA_DESKTOP_HUB=external` makes it only wait for yours.
+- **Quick Entry:** press CommandOrControl+Shift+Space anywhere to bring up the floating
+  chat with the cursor in it; press it again to hide it. Nothing is sent until you press
+  Enter. `NERVA_DESKTOP_QUICK_ENTRY` picks another shortcut or `off`. If another program
+  already uses the shortcut, Quick Entry stays off rather than take it.
+- **Notifications:** when something new waits for your decision and the HUD is not in
+  front, you get a system notification. Clicking it (or "Review in Nerva" on Linux) opens
+  the Decision Inbox; you approve or deny there, as always — a notification never decides
+  anything. `NERVA_DESKTOP_NOTIFICATIONS=off` silences them.
+- **`nerva://` links** open a page of the HUD: `nerva://open/chat`,
+  `nerva://open/decision-inbox`, `nerva://open/mcp`, and `nerva://mcp/install?name=…`
+  (optionally `&config=…` from a vendor), which opens the MCP install card showing exactly
+  what would run. Nothing is installed until you read it, tick the box and press Install.
+  Malformed or oversized links do nothing.
+
 **Skills that need a key ask for it, and skill sources you trust**
 - A skill can say which keys or settings it needs (an API key, an account name). Skills Import →
   **Skill setup** lists them, which are set and which are missing. A value you type there is

@@ -11,8 +11,8 @@ Din acestea, **161** au fost reevaluate pe cod în această livrare; **0** păst
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
 | Echivalent | 161 | 23.1% |
-| Parțial | 473 | 67.9% |
-| Lipsă | 31 | 4.4% |
+| Parțial | 477 | 68.4% |
+| Lipsă | 27 | 3.9% |
 | Exclus intenționat | 32 | 4.6% |
 | De reverificat | 0 | 0.0% |
 
@@ -32,7 +32,7 @@ Fiecare rând aparține unui singur domeniu din [areas.json](docs/hermes/areas.j
 | [gateway](docs/HERMES_CAPABILITIES.md#area-gateway) — Always-on gateway and slash commands | own/run | 33 | 3 | 27 | 1 | 2 | 0 | 103 | seed din dovezi |
 | [platforms](docs/HERMES_CAPABILITIES.md#area-platforms) — Messaging platforms and channels | own | 39 | 3 | 29 | 3 | 4 | 0 | 40 | seed din dovezi |
 | [web](docs/HERMES_CAPABILITIES.md#area-web) — Web dashboard and HUD | own/run | 40 | 13 | 24 | 1 | 2 | 0 | 67 | seed din dovezi |
-| [desktop](docs/HERMES_CAPABILITIES.md#area-desktop) — Desktop app: jobs done in the HUD and Tauri shell | own | 54 | 5 | 42 | 5 | 2 | 0 | 51 | **subțire**, seed din dovezi |
+| [desktop](docs/HERMES_CAPABILITIES.md#area-desktop) — Desktop app: jobs done in the HUD and Tauri shell | own | 54 | 5 | 46 | 1 | 2 | 0 | 52 | seed din dovezi |
 | [tui](docs/HERMES_CAPABILITIES.md#area-tui) — Terminal UI: jobs done in the HUD and nerva CLI | own | 25 | 2 | 19 | 2 | 2 | 0 | 25 | **subțire**, seed din dovezi |
 | [config](docs/HERMES_CAPABILITIES.md#area-config) — Configuration and settings | own | 18 | 9 | 9 | 0 | 0 | 0 | 30 | seed din dovezi |
 | [env](docs/HERMES_CAPABILITIES.md#area-env) — Environment, install and execution targets | own | 28 | 6 | 21 | 0 | 1 | 0 | 157 | seed din dovezi |
@@ -52,7 +52,7 @@ Fiecare rând aparține unui singur domeniu din [areas.json](docs/hermes/areas.j
 | [user-journeys](docs/HERMES_CAPABILITIES.md#area-user-journeys) — User journeys from the rest of the docs (cross-cutting) | own | 33 | 5 | 24 | 1 | 3 | 0 | 66 | seed din dovezi |
 | [upstream-delta](docs/HERMES_CAPABILITIES.md#area-upstream-delta) — Upstream delta v2026.8.27 to v2026.8.31 (cross-cutting) | own/adopt/run | 42 | 21 | 17 | 3 | 1 | 0 | 150 | seed din dovezi |
 
-Suite subțiri: desktop, tui, editor-acp, agent-interop.
+Suite subțiri: tui, editor-acp, agent-interop.
 
 ## Actualizare
 
