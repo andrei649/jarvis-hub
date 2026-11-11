@@ -83,6 +83,20 @@ def current_mcp_agent_request_authorized() -> bool:
     return bool(_agent_request_authorized.get())
 
 
+def _caller_key(identity: object | None) -> str:
+    """An opaque grouping key for the presented credential (refusal audit coalescing).
+    A token is hashed, never kept; an OAuth identity keys on its subject."""
+    import hashlib
+
+    if isinstance(identity, VerifiedMCPIdentity):
+        raw = "oauth:" + identity.subject
+    elif isinstance(identity, str) and identity:
+        raw = "token:" + identity
+    else:
+        return "anonymous"
+    return hashlib.sha256(raw.encode("utf-8", "replace")).hexdigest()[:16]
+
+
 def _tool_name(agent_id: str) -> str:
     return f"ask_{agent_id}"
 
@@ -157,7 +171,7 @@ class JarvisMCPServer:
     def _exposed(self) -> list[str]:
         return [a for a in self.agents if a in self.allowed]
 
-    def list_tools(self) -> list[dict]:
+    def list_tools(self, *, owner_tools: bool = True) -> list[dict]:
         """MCP tool descriptors: one per exposed agent, plus allow-listed routes.
 
         Route tools are appended only when this server was built with them (the
@@ -183,7 +197,8 @@ class JarvisMCPServer:
         # at build time; each descriptor is marked ``"mutating": True``.
         for mt in self.mutating_route_tools.values():
             tools.append(mt.descriptor())
-        if self.inbox_tools is not None:
+        # G10 review nit: a caller who is not the owner is not shown the owner tools.
+        if self.inbox_tools is not None and owner_tools:
             tools.extend(self.inbox_tools.descriptors())
         return tools
 
@@ -212,7 +227,8 @@ class JarvisMCPServer:
             from agents.core.mcp.inbox_tools import current_transport_owner
 
             return await self._call_inbox_tool(
-                name, arguments, owner=owner is True or current_transport_owner())
+                name, arguments, owner=owner is True or current_transport_owner(),
+                caller=_caller_key(identity))
         if name.startswith(ROUTE_TOOL_PREFIX):
             return await self._call_route_tool(name, arguments, identity)
         agent_id = name[len("ask_"):] if name.startswith("ask_") else ""
@@ -291,11 +307,13 @@ class JarvisMCPServer:
 
         return self._tool_error(f"route '{name}' is not exposed over MCP")
 
-    async def _call_inbox_tool(self, name: str, arguments: dict, *, owner: bool) -> dict:
+    async def _call_inbox_tool(self, name: str, arguments: dict, *, owner: bool,
+                               caller: str = "unknown") -> dict:
         from agents.core.mcp.inbox_tools import InboxRefusal
 
         try:
-            payload = await self.inbox_tools.call(name, arguments, owner=owner is True)
+            payload = await self.inbox_tools.call(name, arguments, owner=owner is True,
+                                                  caller=caller)
         except InboxRefusal as exc:
             return self._tool_error(str(exc))
         except Exception as exc:  # never leak a stack trace to an external client
@@ -337,7 +355,10 @@ class JarvisMCPServer:
         if method in ("notifications/initialized", "initialized"):
             return None  # notification — no response
         if method == "tools/list":
-            return self._ok(msg_id, {"tools": self.list_tools()})
+            from agents.core.mcp.inbox_tools import current_transport_owner
+
+            return self._ok(msg_id, {"tools": self.list_tools(
+                owner_tools=owner is True or current_transport_owner())})
         if method == "tools/call":
             name = params.get("name", "")
             result = await self.call_tool(name, params.get("arguments"), identity=identity,

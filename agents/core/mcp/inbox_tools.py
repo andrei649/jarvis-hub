@@ -31,13 +31,17 @@ Security model (each point is enforced here, not by the client):
 * **Irreversible cards are not approved over MCP.** Denying one is allowed (it stops
   something); approving one is refused with a pointer to the HUD or ``nerva approvals``.
 * **Audited.** Every answer writes a durable ``authorized`` row through the hub's audit
-  sink before the decision runs (no sink, no answer), then its outcome; refusals and reads
-  are recorded best-effort. Rows carry ids and tool names, never conversation text.
-* **The owner's own conversations.** Imported or derived histories, channel conversations
-  (``ch_…``: Telegram and the other doors, where other people speak), OpenAI-compatible API
-  conversations (``oai-…``: a key may belong to a guest) and anything the hub's own records
-  mark as not the owner's word (``Orchestrator.session_unclean_evidence``) are neither
-  listed nor readable. A read never resumes or activates a conversation.
+  sink before the decision runs (no sink, no answer), then its outcome; reads are recorded
+  best-effort, refusals at most once a minute per caller, tool and outcome (with a count of
+  the ones folded in). Rows carry ids and tool names, never conversation text.
+* **Text is data.** Conversation turns, titles and card titles/payloads come back inside
+  the hub's ``<<UNTRUSTED ...>>`` fence with invisible characters removed and injection
+  flags named; only hub-controlled card fields (id, kind, tier, ...) are plain.
+* **The owner's own conversations.** Only a conversation the hub's trust ledger holds as
+  clean (``Orchestrator.session_trust``) is listed or readable. A guest speaking in the
+  shared HUD conversation, an inbound message, a web page, file or image read, a flagged
+  recall, an import, a channel (``ch_…``) or API-key (``oai-…``) conversation, and a
+  conversation older than the ledger all hide it. A read never resumes or activates it.
 
 Not here (H558 residual): per-identity MCP tokens for other household members. A token is
 the owner's or it reaches none of these tools.
@@ -72,6 +76,11 @@ MAX_LIST_LIMIT = 50
 DEFAULT_TURN_LIMIT = 50
 MAX_TURN_LIMIT = 200
 MAX_TURN_CHARS = 20_000
+#: conversations_list stops scanning the session store after this many rows.
+MAX_SCAN_ROWS = 2_000
+#: Refusal audit rows: one per (caller, tool, outcome) per window, a bounded key table.
+REFUSAL_AUDIT_WINDOW_S = 60.0
+REFUSAL_AUDIT_KEYS = 512
 
 #: Decision word over MCP → the action the HUD/CLI decision route takes.
 DECISIONS = {"approve": "accept", "deny": "reject"}
@@ -239,6 +248,9 @@ class InboxTools:
         self.backend = backend
         self.writes_enabled = writes_enabled
         self.auditor = auditor
+        # Refusal rows coalesced per (caller, tool, outcome): first row written, later
+        # ones in the window counted and reported on the next row (review m4).
+        self._refusals: dict[tuple[str, str, str], list] = {}
 
     # -- surface --
 
@@ -302,6 +314,23 @@ class InboxTools:
 
     # -- audit --
 
+    def _refused(self, caller: str, tool: str, outcome: str, detail: str = "") -> None:
+        """A refusal row, at most one per caller, tool and outcome a minute; the
+        refusals in between are counted and carried on the next row written."""
+        key = (caller, tool, outcome)
+        now = time.monotonic()
+        slot = self._refusals.get(key)
+        if slot is not None and now - slot[0] < REFUSAL_AUDIT_WINDOW_S:
+            slot[1] += 1
+            return
+        suppressed = slot[1] if slot is not None else 0
+        if slot is None and len(self._refusals) >= REFUSAL_AUDIT_KEYS:
+            # Bounded: forget the oldest window (its count is lost, its first row stands).
+            del self._refusals[min(self._refusals, key=lambda k: self._refusals[k][0])]
+        self._refusals[key] = [now, 0]
+        extra = f" suppressed={suppressed}" if suppressed else ""
+        self._audit(tool, outcome, f"{detail}{extra}".strip())
+
     def _audit(self, tool: str, outcome: str, detail: str = "", *, required: bool = False) -> None:
         if self.auditor is None or not callable(getattr(self.auditor, "log", None)):
             if required:
@@ -324,11 +353,17 @@ class InboxTools:
 
     # -- dispatch --
 
-    async def call(self, name: str, arguments: dict | None, *, owner: bool) -> Any:
-        """Run one tool and return its JSON payload, or raise :class:`InboxRefusal`."""
+    async def call(self, name: str, arguments: dict | None, *, owner: bool,
+                   caller: str = "unknown") -> Any:
+        """Run one tool and return its JSON payload, or raise :class:`InboxRefusal`.
+
+        *caller* is an opaque key for the presented credential (never logged); it only
+        groups refusal audit rows. Text that people or models wrote (turns, titles, card
+        titles and payloads) comes back fenced as data, invisible characters removed.
+        """
         arguments = arguments if isinstance(arguments, dict) else {}
         if not owner:
-            self._audit(name, "refused-identity")
+            self._refused(caller, name, "refused-identity")
             raise InboxRefusal(f"{name} requires the owner's MCP credential")
         allowed = set(_DESCRIPTORS[name]["inputSchema"].get("properties", {}))
         unknown = sorted(k for k in arguments if k not in allowed)
@@ -338,24 +373,25 @@ class InboxTools:
             limit = parse_limit(arguments.get("limit"), DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT)
             rows = await self.backend.list_conversations(limit)
             self._audit(name, "ok", f"count={len(rows)}")
-            return {"conversations": rows[:limit]}
+            return {"conversations": [_public_conversation(r) for r in rows[:limit]
+                                      if isinstance(r, dict)], "untrusted": True}
         if name == CONVERSATION_READ:
             sid = parse_session_id(arguments.get("session_id"))
             limit = parse_limit(arguments.get("limit"), DEFAULT_TURN_LIMIT, MAX_TURN_LIMIT)
             result = await self.backend.read_conversation(sid, limit)
             self._audit(name, "ok", f"session={sid}")
-            return result
+            return _public_transcript(result)
         if name == APPROVALS_LIST:
             payload = await self.backend.list_approvals()
             self._audit(name, "ok")
-            return payload
+            return _public_approvals(payload)
         if name == APPROVAL_RESPOND:
-            return await self._respond(arguments)
+            return await self._respond(arguments, caller)
         raise InboxRefusal(f"unknown tool: {name}")
 
-    async def _respond(self, arguments: dict) -> Any:
+    async def _respond(self, arguments: dict, caller: str = "unknown") -> Any:
         if not self._writes_on():
-            self._audit(APPROVAL_RESPOND, "refused-read-only")
+            self._refused(caller, APPROVAL_RESPOND, "refused-read-only")
             raise InboxRefusal("the MCP server is read-only: approval_respond is not available "
                                "(JARVIS_MCP_ROUTE_TOOLS and JARVIS_MCP_MUTATING_TOOLS)")
         try:
@@ -363,7 +399,7 @@ class InboxTools:
             decision = parse_decision(arguments.get("decision"))
             reason = parse_reason(arguments.get("reason"))
         except InboxRefusal:
-            self._audit(APPROVAL_RESPOND, "refused-input")
+            self._refused(caller, APPROVAL_RESPOND, "refused-input")
             raise
         detail = f"card={card_id} decision={decision}"
         listing = await self.backend.list_approvals()
@@ -372,10 +408,10 @@ class InboxTools:
             raise InboxRefusal("the approval queue is unavailable")
         card = next((c for c in pending if isinstance(c, dict) and c.get("id") == card_id), None)
         if card is None:
-            self._audit(APPROVAL_RESPOND, "refused-unknown-card", detail)
+            self._refused(caller, APPROVAL_RESPOND, "refused-unknown-card", detail)
             raise InboxRefusal(f"card {card_id} is not pending (unknown, or already answered)")
         if decision == "approve" and card.get("reversible") is not True:
-            self._audit(APPROVAL_RESPOND, "refused-irreversible", detail)
+            self._refused(caller, APPROVAL_RESPOND, "refused-irreversible", detail)
             raise InboxRefusal(
                 f"card {card_id} is irreversible: approve it in the HUD or with "
                 f"`nerva approvals accept {card_id}`; it can be denied here")
@@ -391,7 +427,99 @@ class InboxTools:
             error = payload.get("error") if isinstance(payload, dict) else None
             raise InboxRefusal(f"card {card_id} was not answered: {error or 'decision refused'}")
         self._audit(APPROVAL_RESPOND, "ok", detail)
-        return payload
+        task = payload.get("task") if isinstance(payload, dict) else None
+        return {"ok": True, "task": _public_card(task) if isinstance(task, dict) else None,
+                "untrusted": True}
+
+
+# ── what leaves the hub: text marked as data (review m2) ─────────────────────
+
+def _clean(value: Any) -> Any:
+    """Every string inside *value* without invisible characters (TAG block, format and
+    other zero-width characters, stray C0/C1 controls); newlines and tabs stay."""
+    from agents.core.security.quarantine import strip_format_chars
+
+    if isinstance(value, str):
+        return strip_format_chars(value)
+    if isinstance(value, dict):
+        return {_clean(k): _clean(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_clean(v) for v in value]
+    return value
+
+
+def _fenced(text: Any, source: str) -> str:
+    """*text* inside the same four-line DATA fence the hub puts round tool results."""
+    from agents.core.security.quarantine import fence_text
+
+    return fence_text(_clean(text) if isinstance(text, str) else "", source=source)
+
+
+def _flags(text: Any) -> list[str]:
+    from agents.core.security.quarantine import fence_flags
+
+    return fence_flags(_clean(text)) if isinstance(text, str) else []
+
+
+def _public_conversation(row: dict) -> dict:
+    out = {k: _clean(row.get(k)) for k in ("session_id", "title_source", "started_at",
+                                           "ended_at", "turn_count")}
+    out["title"] = _fenced(row.get("title") or "", "nerva.conversation_title")
+    return out
+
+
+def _public_transcript(result: Any) -> dict:
+    if not isinstance(result, dict):
+        raise InboxRefusal("conversation is unavailable")
+    turns = []
+    for turn in result.get("turns") or []:
+        if not isinstance(turn, dict):
+            continue
+        content = turn.get("content")
+        row = {k: _clean(turn.get(k)) for k in ("role", "agent_id", "timestamp")}
+        row["content"] = _fenced(content, "nerva.conversation")
+        flags = _flags(content)
+        if flags:
+            row["injection_flags"] = flags
+        if turn.get("truncated"):
+            row["truncated"] = True
+        turns.append(row)
+    return {
+        "session_id": _clean(result.get("session_id")),
+        "title": _fenced(result.get("title") or "", "nerva.conversation_title"),
+        "title_source": _clean(result.get("title_source")),
+        "total_turns": result.get("total_turns"),
+        "untrusted": True,
+        "turns": turns,
+    }
+
+
+#: The structured card fields an MCP client gets as they are (hub-controlled values).
+_CARD_FIELDS = ("id", "agent", "kind", "status", "risk_tier", "tier_name", "reversible",
+                "reversibility", "origin", "created_at", "updated_at", "approval_mode",
+                "capability_id", "decided_by", "decision")
+
+
+def _public_card(card: dict) -> dict:
+    import json as _json
+
+    out = {k: _clean(card.get(k)) for k in _CARD_FIELDS if k in card}
+    out["title"] = _fenced(card.get("title") or "", "nerva.approval_card")
+    payload = card.get("payload")
+    encoded = _json.dumps(payload, default=str, ensure_ascii=False) if payload is not None else ""
+    out["payload"] = _fenced(encoded, "nerva.approval_card")
+    flags = _flags(card.get("title")) + _flags(encoded)
+    if flags:
+        out["injection_flags"] = sorted(set(flags))
+    return out
+
+
+def _public_approvals(payload: Any) -> dict:
+    if not isinstance(payload, dict):
+        raise InboxRefusal("the approval queue is unavailable")
+    pending = [_public_card(c) for c in payload.get("pending") or [] if isinstance(c, dict)]
+    return {"pending": pending, "counts": _clean(payload.get("counts")),
+            "mode": _clean(payload.get("mode")), "untrusted": True}
 
 
 # ── the live backend over the orchestrator ──────────────────────────────────
@@ -399,7 +527,10 @@ class InboxTools:
 def owner_conversation(orch: Any, session_id: str) -> bool:
     """Whether *session_id* is the owner's own conversation. Blocking (SQLite).
 
-    Fails closed: an unreadable origin, missing evidence check or any error is "no".
+    Only a conversation the hub's trust ledger holds as clean (``Orchestrator.session_trust``
+    == "clean": watched from its first turn and never touched by a guest, an inbound
+    message, outside text or a flagged recall) qualifies. Fails closed: an unreadable
+    origin or ledger, a missing check or any error is "no".
     """
     from agents.core.validation import is_valid_session_id
 
@@ -412,9 +543,16 @@ def owner_conversation(orch: Any, session_id: str) -> bool:
         if checkpoints is None or status(checkpoints, session_id).tainted:
             return False
         evidence = getattr(orch, "session_unclean_evidence", None)
-        if not callable(evidence):
+        if not callable(evidence) or evidence(session_id):
             return False
-        return not evidence(session_id)
+        # Review M1: the hub's trust ledger is the authority. A guest's turn, an inbound
+        # message, a web page or file read, a flagged recall: anything that took the
+        # conversation off the clean list hides it; so does a conversation the ledger
+        # never watched from its first turn ("unproven") and a ledger that cannot answer.
+        trust = getattr(orch, "session_trust", None)
+        if not callable(trust):
+            return False
+        return trust(session_id) == "clean"
     except Exception:
         return False
 
@@ -452,24 +590,34 @@ def build_orch_backend(get_orch: Callable[[], Any]) -> InboxBackend:
         checkpoints = getattr(orch, "checkpoints", None)
         if checkpoints is None:
             raise InboxRefusal("the conversation store is unavailable")
-        rows = await asyncio.to_thread(
-            checkpoints.get_sessions, limit=min(200, limit * 4), archived=False,
-            native_only=True, hide_continuations=True)
+        # Review m3: the store has no offset, so widen the window page by page until
+        # *limit* owner conversations are found, the store runs out, or the scan bound.
         out: list[dict] = []
-        for row in rows:
-            sid = row.get("id") or row.get("session_id")
-            if not await asyncio.to_thread(owner_conversation, orch, sid):
-                continue
-            out.append({
-                "session_id": sid,
-                **title_fields(row.get("metadata")),
-                "started_at": row.get("started_at"),
-                "ended_at": row.get("ended_at"),
-                "turn_count": row.get("turn_count"),
-            })
-            if len(out) >= limit:
-                break
-        return out
+        seen: set[str] = set()
+        window = min(MAX_SCAN_ROWS, max(limit * 4, 50))
+        while True:
+            rows = await asyncio.to_thread(
+                checkpoints.get_sessions, limit=window, archived=False,
+                native_only=True, hide_continuations=True)
+            for row in rows:
+                sid = row.get("id") or row.get("session_id")
+                if not isinstance(sid, str) or sid in seen:
+                    continue
+                seen.add(sid)
+                if not await asyncio.to_thread(owner_conversation, orch, sid):
+                    continue
+                out.append({
+                    "session_id": sid,
+                    **title_fields(row.get("metadata")),
+                    "started_at": row.get("started_at"),
+                    "ended_at": row.get("ended_at"),
+                    "turn_count": row.get("turn_count"),
+                })
+                if len(out) >= limit:
+                    return out
+            if len(rows) < window or window >= MAX_SCAN_ROWS:
+                return out
+            window = min(MAX_SCAN_ROWS, window * 2)
 
     async def read_conversation(session_id: str, limit: int) -> dict:
         from agents.core.session_titles import title_fields

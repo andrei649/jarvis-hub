@@ -47,15 +47,15 @@ def _token_rows(rig):
 
 def test_successful_mcp_signing_adds_one_fixed_lifecycle_row(rig):
     subject = "private-subject-issuance-sentinel"
-    scope = "private-scope-issuance-sentinel"
+    # G10 review m1: scopes are an allowlist now, so only the subject is a private value.
     response = rig.client.post(
         "/api/mcp/token", headers={"X-Admin-Token": "fixture-admin-secret"},
-        json={"subject": subject, "scopes": ["mcp", scope], "ttl": 120},
+        json={"subject": subject, "scopes": ["mcp"], "ttl": 120},
     )
     assert response.status_code == 200
     issued = response.json()
     assert issued["ok"] is True
-    assert issued["scopes"] == ["mcp", scope]
+    assert issued["scopes"] == ["mcp"]
     assert rig.server.validate(issued["token"], issued["resource"], required_scope="mcp")["ok"]
     rows = _token_rows(rig)
     assert len(rows) == 1
@@ -66,7 +66,7 @@ def test_successful_mcp_signing_adds_one_fixed_lifecycle_row(rig):
     }
     assert [row.event_type.value for row in rig.audit.query(limit=10)].count("auth_success") == 1
     stored = rig.audit._db_path.read_bytes()
-    for private in (issued["token"], subject, scope, issued["resource"], "fixture-admin-secret"):
+    for private in (issued["token"], subject, issued["resource"], "fixture-admin-secret"):
         assert private.encode() not in stored
 
 

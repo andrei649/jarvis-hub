@@ -901,6 +901,14 @@ async def mcp_protected_resource_metadata(request: Request):
     return nocache_json(protected_resource_metadata(resource, auth_servers or [resource]))
 
 
+#: The scopes ``POST /api/mcp/token`` may mint (G10 review m1).
+MCP_TOKEN_SCOPES = ("mcp", "mcp:owner")
+#: Lifetime caps: an owner token (approvals, conversations) 30 days, any other 90 days.
+#: There is no per-token revocation yet; rotating ``mcp.oauth_secret`` voids every token.
+MCP_OWNER_TOKEN_MAX_TTL = 30 * 24 * 3600
+MCP_TOKEN_MAX_TTL = 90 * 24 * 3600
+
+
 @router.post("/api/mcp/token", dependencies=[Depends(admin_guard)])
 async def mcp_issue_token(req: Request):
     """Issue a local LAN-only bearer token bound to this MCP resource (admin)."""
@@ -911,27 +919,47 @@ async def mcp_issue_token(req: Request):
         body = await req.json()
     except Exception:
         body = {}
+    if not isinstance(body, dict):
+        body = {}
     resource = _mcp_resource(req)
-    scopes = (body or {}).get("scopes") or ["mcp"]
+    # G10 review m1: only the scopes the hub reads may be minted; ``mcp`` is implied
+    # (the RPC transport requires it), ``mcp:owner`` opens the owner's inbox tools.
+    scopes = body.get("scopes") or ["mcp"]
+    if (not isinstance(scopes, list) or len(scopes) > len(MCP_TOKEN_SCOPES)
+            or any(not isinstance(s, str) or s not in MCP_TOKEN_SCOPES for s in scopes)):
+        return JSONResponse({"error": "scopes must be a list drawn from "
+                                      + ", ".join(MCP_TOKEN_SCOPES)}, status_code=400)
+    scopes = ["mcp"] + sorted(set(scopes) - {"mcp"})
+    owner_token = "mcp:owner" in scopes
+    subject = body.get("subject", "local-client")
+    if not isinstance(subject, str) or not subject.strip() or len(subject) > 128:
+        return JSONResponse({"error": "subject must be a non-empty string of at most 128 characters"},
+                            status_code=400)
     # A typo'd ttl is a client error, not a server error. Bare int() on request
     # data raised ValueError/TypeError straight out of the handler as a 500.
     try:
-        ttl = int((body or {}).get("ttl", 3600))
+        ttl = int(body.get("ttl", 3600))
     except (TypeError, ValueError):
         return JSONResponse({"error": "ttl must be an integer number of seconds"},
                             status_code=400)
     if ttl <= 0:
         return JSONResponse({"error": "ttl must be positive"}, status_code=400)
+    cap = MCP_OWNER_TOKEN_MAX_TTL if owner_token else MCP_TOKEN_MAX_TTL
+    if ttl > cap:
+        return JSONResponse({"error": f"ttl must be at most {cap} seconds"
+                                      + (" for an mcp:owner token" if owner_token else "")},
+                            status_code=400)
     token = _web()._get_mcp_rs().issue_token(
-        subject=(body or {}).get("subject", "local-client"),
-        resource=resource, scopes=scopes, ttl=ttl)
-    # Signing succeeded; audit delivery is best-effort and cannot hold the token.
+        subject=subject, resource=resource, scopes=scopes, ttl=ttl)
+    # Signing succeeded; audit delivery is best-effort and cannot hold the token. An
+    # owner token opens approvals and conversations: it is recorded at the admin tier.
     with suppress(Exception):
         submit_auth_event(
-            "token_issued", tier="user", reason="issue", count=1,
+            "token_issued", tier="admin" if owner_token else "user", reason="issue", count=1,
             revoke_env=False, surface="mcp",
         )
-    return nocache_json({"ok": True, "token": token, "resource": resource, "scopes": scopes})
+    return nocache_json({"ok": True, "token": token, "resource": resource, "scopes": scopes,
+                         "expires_in": ttl})
 
 
 @router.post("/api/mcp/server/rpc")

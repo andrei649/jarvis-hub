@@ -11,8 +11,12 @@
   same way, and a card answered once cannot be answered again.
 - Only your own credential opens these tools: your admin token, or an MCP token you mint with
   the `mcp:owner` scope (`POST /api/mcp/token`). A user or guest token sees nothing.
-  Conversations from Telegram and the other chat doors, from API keys or imported from
-  elsewhere are not listed. Reading a conversation never switches the one you have open.
+  Only conversations Nerva knows are yours alone are shown: one where a guest spoke (also
+  in the shared HUD chat), a message came in from a chat door or an API key, a web page or
+  file was read, or that was imported or predates the trust record is left out. Reading a
+  conversation never switches the one you have open, and what it returns is marked as data.
+- An `mcp:owner` token lasts at most 30 days (other MCP tokens 90) and is recorded at the
+  admin level when it is minted.
 - Answering is offered only while the MCP write switches are on (`JARVIS_MCP_ROUTE_TOOLS` and
   `JARVIS_MCP_MUTATING_TOOLS`; never in the hardened profile). A card marked IRREVERSIBLE can
   be denied from the client but approved only in the HUD or with `nerva approvals accept`.
