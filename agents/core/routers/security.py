@@ -144,6 +144,38 @@ async def data_handling_ack(body: DataHandlingAck):
         return nocache_json({"error": "consent audit or settings unavailable; no change granted"}, status_code=503)
 
 
+class CredentialShare(BaseModel):
+    """H496: share (or stop sharing) one of the owner's integrations with guest turns."""
+    model_config = ConfigDict(extra="forbid")
+    integration: StrictStr = Field(min_length=3, max_length=160)
+    shared: StrictBool
+    note: StrictStr = Field(default="", max_length=200)
+
+
+@router.post("/api/security/credential-shares", dependencies=[Depends(admin_guard)])
+async def credential_share(body: CredentialShare):
+    from agents.core.security import credential_scope
+    try:
+        kind, name = credential_scope.parse_integration(body.integration)
+    except ValueError as exc:
+        return nocache_json({"error": str(exc)}, status_code=422)
+    audit = getattr(get_orch(), "audit", None)
+    try:
+        if body.shared:
+            result = await asyncio.to_thread(credential_scope.share, kind, name, by="owner",
+                                             note=body.note, audit=audit)
+        else:
+            result = await asyncio.to_thread(credential_scope.unshare, kind, name, by="owner",
+                                             audit=audit)
+    except ValueError as exc:
+        return nocache_json({"error": str(exc)}, status_code=422)
+    except Exception:
+        logger.warning("credential share could not be recorded", exc_info=True)
+        return nocache_json({"error": "share audit or ledger unavailable; nothing changed"},
+                            status_code=503)
+    return nocache_json(result)
+
+
 def _admin_kernel_denial(orch, kind: str, cap_name: str, payload: dict, token_id: str):
     """ORIZONT-24 K1 wave-4a/4b: mediate an admin write through the Action Kernel
     (default-off).
@@ -469,6 +501,7 @@ async def security_posture():
     return nocache_json({
         "secrets": secrets_posture,
         "data_handling": _data_handling_posture(getattr(orch, "llm_router", None), role_context=orch),
+        "credential_shares": _credential_shares_posture(),
         "skills": {
             # signing_posture() rather than require_signed(): the latter raises on a
             # misconfigured gate (enforcement on, no key), which is correct for the
@@ -492,6 +525,15 @@ async def security_posture():
         # H501: the host's own posture (root, sshd passwords, container storage), read now.
         "host": await asyncio.to_thread(_host_posture),
     })
+
+
+def _credential_shares_posture():
+    """H496: which of the owner's integrations guest turns may use (none by default)."""
+    from agents.core.security import credential_scope
+    try:
+        return credential_scope.describe()
+    except Exception:
+        return {"kinds": list(credential_scope.KINDS), "shares": [], "error": "share ledger unavailable"}
 
 
 def _data_handling_posture(router_, *, role_context=None):

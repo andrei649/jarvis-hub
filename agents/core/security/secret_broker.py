@@ -49,6 +49,17 @@ class _DictStore:
         return sorted(self._d.keys())
 
 
+def _shared_with_turn(name: str) -> bool:
+    """H496: the broker's secrets are the owner's; a guest turn gets one only when the
+    owner shared that secret with guests. Undecidable reads as not shared."""
+    try:
+        from agents.core.security.credential_scope import KIND_SECRET, allowed
+
+        return allowed(KIND_SECRET, name)
+    except Exception:
+        return False
+
+
 class SecretBroker:
     def __init__(self, store=None, *, sources=None) -> None:
         self._store = store if store is not None else _DictStore()
@@ -117,6 +128,9 @@ class SecretBroker:
             if not approved:
                 blocked.append(name)
                 return f"[secret:{name} blocked — approval required]"
+            if not _shared_with_turn(name):
+                blocked.append(name)
+                return f"[secret:{name} blocked — not shared with this identity]"
             value = self._safe_get(name, external=True, owner_id=owner_id, background=background)
             if value is None:
                 blocked.append(name)

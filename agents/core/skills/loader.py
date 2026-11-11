@@ -822,6 +822,18 @@ class Skill:
             logger.info("Skill '%s' is %s; command '%s' refused", self.name, why, command)
             return f"[skill:{self.name}] is {why}"
         if runnable and self.required_env:
+            # H496 (review M1): a skill that declares credentials runs on the owner's — its
+            # stored setup values, or the same names from the hub's own environment, which
+            # its code reads. A guest turn runs it only when the owner shared the skill.
+            # Every path that runs a skill command (the model's tools, a plain-text
+            # ``skill command`` dispatched by the orchestrator) comes through here.
+            from agents.core.security.credential_scope import KIND_SKILL, allowed
+
+            if not allowed(KIND_SKILL, self.name):
+                logger.warning("Skill '%s' refused: its credentials are not shared with guests",
+                               self.name)
+                return (f"[skill:{self.name}] uses the owner's credentials, which are not "
+                        "shared with guests")
             # H342: a runnable skill whose required variables are set nowhere does not run.
             from . import skill_secrets
 

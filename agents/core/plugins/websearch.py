@@ -317,6 +317,14 @@ class WebSearchPlugin:
 
     async def _ask(self, provider: web_providers.SearchProvider, query: str,
                    max_results: int) -> list[dict]:
+        if not provider.keyless:
+            # H496: a configured backend answers with the owner's key or server; a guest
+            # turn may use it only when the owner shared that backend with guests.
+            from ..security.credential_scope import KIND_WEB_SEARCH, CredentialNotShared, check
+            try:
+                check(KIND_WEB_SEARCH, provider.name)
+            except CredentialNotShared as exc:
+                raise web_providers.PolicyBlock(exc.reason) from None
         try:
             raw = await provider.search(
                 self._egress(provider.plugin_id), self._view(), query, max_results)
@@ -361,7 +369,18 @@ class WebSearchPlugin:
             return SearchOutcome([], reason=selection.reason, missing=selection.missing,
                                  backend=selection.backend)
         primary = selection.primary
-        key = (selection.key, query, int(max_results))
+        # H496 (review): the cache is per identity class, and a guest's use of a keyed
+        # backend is share-checked before the cache is read — a guest never reads what the
+        # owner's key bought unless that backend is shared with guests.
+        from ..security.credential_scope import KIND_WEB_SEARCH, allowed, turn_identity
+
+        identity = turn_identity().kind
+        if (identity == "guest" and not primary.keyless
+                and not allowed(KIND_WEB_SEARCH, primary.name)):
+            logger.warning("web search refused for a guest turn: %s is not shared", primary.name)
+            return SearchOutcome([], provider=primary.name, reason="policy_blocked",
+                                 backend=selection.backend)
+        key = (selection.key, query, int(max_results), identity == "guest")
         now = self._clock()
         cached = self._cache_get(key, now)
         if cached is not None:

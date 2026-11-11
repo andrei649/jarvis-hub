@@ -33,7 +33,7 @@ import { ResetAll, ResetCategory, SettingsSearch, SettingsTransfer, UndoReset, s
 import { useSelectionGuard, type GuardFlags } from './selection-guard';
 import { PLANS_PATH, PlansInFlight } from './panels/plans';
 import { SKILL_CHANGES_PATH, SkillChangesInbox } from './panels/skill-changes';
-import { BatchReferences, SKILL_BATCHES_PATH, SkillBatchEditor, SkillBatchesInbox } from './panels/skill-batches';
+import { BatchReferences, SKILL_BATCHES_PATH, SkillBatchEditor, SkillBatchesInbox, SkillConsolidation } from './panels/skill-batches';
 import { RETENTION_KIND, RetentionBanner, RetentionCard, refusedWhy, saveOrder, sentFor } from './panels/retention';
 import { VOICE_COMMAND_KIND, VoiceCommandCard, VoiceCommands } from './panels/voice-commands';
 import { CodeIntelPanel } from './panels/codeintel';
@@ -74,6 +74,7 @@ import { QuickbarPanel } from './panels/quickbar';
 import { MemoryConsolidatePanel } from './panels/memory-consolidate';
 import { PermissionsPanel } from './panels/permissions';
 import { DataHandling } from './panels/data-handling';
+import { CredentialShares } from './panels/credential-shares';
 import { UsagePanel } from './panels/usage';
 
 import { useApi, arr, mono, asLive, PanelChip, Card, State, Row, Tag, Btn, act, actA, refusalReason, inpS, taS, Json } from './panel-kit';
@@ -1063,6 +1064,7 @@ export function PosturePanel() {
             </span>
           </Row>
           <DataHandling value={d.data_handling} reload={reload} />
+          <CredentialShares value={d.credential_shares} reload={reload} />
         </>
       )}
       {/* H165 — each switch above has a price; the flags doc names it. */}
@@ -3804,6 +3806,7 @@ export function DecisionInboxPanel() {
       <SkillChangesInbox reply={changes.d} error={changes.e} onDecided={changes.reload} />
       <SkillBatchesInbox reply={batches.d} error={batches.e} onDecided={batches.reload} />
       <SkillBatchEditor onApplied={batches.reload} />
+      <SkillConsolidation onProposed={batches.reload} />
       <PlansInFlight reply={plans.d} error={plans.e} />
     </Card></div>
   );

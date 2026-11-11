@@ -243,3 +243,47 @@ export function SkillBatchEditor({ onApplied }: { onApplied?: () => void }) {
     </details>
   );
 }
+
+export const SKILL_CONSOLIDATION_PATH = '/api/skills/consolidation/analyze';
+
+/* H348 — the owner asks which skills overlap. "find overlaps" only measures (local
+   similarity, no model); "draft umbrellas" has the local model draft one umbrella skill per
+   group, each proposed as a batch above — nothing changes until its card is approved, and
+   the absorbed skills are archived, not deleted. Never runs on its own. */
+export function SkillConsolidation({ onProposed }: { onProposed?: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [reply, setReply] = useState<any>(null);
+  const [error, setError] = useState('');
+  const run = (draft: boolean) => {
+    setBusy(true);
+    setError('');
+    actA(SKILL_CONSOLIDATION_PATH, { draft }, (r: any) => {
+      setReply(r);
+      setBusy(false);
+      if (draft && onProposed) onProposed();
+    }, (err: any) => { setError(refusalReason(err, 'the analysis failed')); setBusy(false); });
+  };
+  const groups = arr(reply, 'groups');
+  return (
+    <div style={{ marginTop: 10 }} data-testid="skill-consolidation">
+      <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', letterSpacing: 1 }}>OVERLAPPING SKILLS</div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+        <button className="tool-btn" disabled={busy} onClick={() => run(false)}>find overlaps</button>
+        <button className="tool-btn" disabled={busy} onClick={() => run(true)}>draft umbrellas (local model)</button>
+      </div>
+      {reply && groups.length === 0 && <div style={{ fontSize: 10, marginTop: 4 }}>no overlapping skills</div>}
+      {groups.map((g: any, i: number) => (
+        <Row key={i}>
+          <span style={{ ...mono, fontSize: 10.5 }}>{arr(g, 'members').join(' + ')}{g.umbrella ? ` → ${g.umbrella}` : ''}</span>
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+            <Tag>{Number(g.score || 0).toFixed(2)}</Tag>
+            <Tag c={g.status === 'proposed' ? 'var(--green)' : 'var(--ink-2)'}>
+              {g.status === 'proposed' ? 'awaiting your approval' : g.reason ? `${g.status} · ${g.reason}` : g.status}
+            </Tag>
+          </span>
+        </Row>
+      ))}
+      {error && <div role="alert" style={{ color: 'var(--red)', fontSize: 10 }}>{error}</div>}
+    </div>
+  );
+}

@@ -3249,6 +3249,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/security/credential-shares": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Credential Share */
+        post: operations["credential_share_api_security_credential_shares_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/security/spotlight": {
         parameters: {
             query?: never;
@@ -4285,6 +4302,29 @@ export interface paths {
          *     422 ``skill_batch_kernel_denied`` and nothing changes.
          */
         post: operations["skills_batch_api_skills_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/consolidation/analyze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Skills Consolidation Analyze
+         * @description H348 — find overlapping skills locally (TF-IDF similarity) and, with ``draft``, have the
+         *     local model draft one umbrella skill per group. Each draft becomes one skill batch
+         *     (create the umbrella, delete each member ``absorbed_into`` it) with one approval card;
+         *     nothing changes until the owner approves that card. Only ever runs when the owner asks.
+         */
+        post: operations["skills_consolidation_analyze_api_skills_consolidation_analyze_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -16484,6 +16524,21 @@ export interface components {
              */
             value: string;
         };
+        /**
+         * CredentialShare
+         * @description H496: share (or stop sharing) one of the owner's integrations with guest turns.
+         */
+        CredentialShare: {
+            /** Integration */
+            integration: string;
+            /** Shared */
+            shared: boolean;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+        };
         /** CredentialTarget */
         CredentialTarget: {
             /** Provider */
@@ -18191,6 +18246,27 @@ export interface components {
              * @default false
              */
             overwrite: boolean;
+        };
+        /**
+         * SkillConsolidationBody
+         * @description H348: the owner asks which skills overlap and, with ``draft``, for umbrella proposals.
+         */
+        SkillConsolidationBody: {
+            /**
+             * Threshold
+             * @default 0.35
+             */
+            threshold: number;
+            /**
+             * Max Groups
+             * @default 3
+             */
+            max_groups: number;
+            /**
+             * Draft
+             * @default true
+             */
+            draft: boolean;
         };
         /** SkillPinBody */
         SkillPinBody: {
@@ -24185,6 +24261,39 @@ export interface operations {
             };
         };
     };
+    credential_share_api_security_credential_shares_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CredentialShare"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     security_spotlight_api_security_spotlight_post: {
         parameters: {
             query?: never;
@@ -25466,6 +25575,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SkillBatchBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    skills_consolidation_analyze_api_skills_consolidation_analyze_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillConsolidationBody"];
             };
         };
         responses: {

@@ -112,11 +112,25 @@ class MCPModelBridge:
             if isinstance(row, dict) and str(row.get("name") or "").startswith(PROVIDER_NAME_PREFIX)
         ]
 
-    def _handler(self, name: str):
+    def _handler(self, name: str, server: str = "", session_scope: Any = None):
         async def handler(args: dict) -> Any:
             manager = self._manager()
             if manager is None:
                 raise MCPBridgeError("mcp_unavailable")
+            if not session_scope:
+                # H496: an owner-configured server connects with the owner's OAuth token
+                # and secrets; a guest turn reaches it only when the owner shared it. A
+                # server an editor handed over for one conversation is that
+                # conversation's own (G11 visibility rule).
+                from agents.core.security.credential_scope import (
+                    KIND_MCP,
+                    CredentialNotShared,
+                    check,
+                )
+                try:
+                    check(KIND_MCP, server or name)
+                except CredentialNotShared as exc:
+                    raise MCPBridgeError(exc.reason) from None
             result = await manager.call_tool(name, args)
             if result is None or result == {}:
                 # ``{}`` is what a server that is not connected, timed out or closed its
@@ -155,7 +169,7 @@ class MCPModelBridge:
                 try:
                     self._rpc.register_tool(
                         name,
-                        self._handler(name),
+                        self._handler(name, str(row.get("server") or ""), row.get("session_scope")),
                         gated=gated,
                         description=_description(row),
                         input_schema=row.get("input_schema"),
