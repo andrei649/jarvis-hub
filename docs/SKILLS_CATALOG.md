@@ -114,3 +114,55 @@ so it never overwrites your edits. Each repair that writes is recorded as `skill
   install whose code is scanned and is not run in-process without a keyed signature or your
   approval). A scanned, approved package path for these 55 is still open (Hermes ledger H336).
 - There is no uninstall verb here: remove the folder, or use the skill batch delete.
+
+## Two official pins, on purpose
+
+Nerva reaches Hermes's skills at two upstream commits, and the HUD says which one each row uses:
+
+| Source | Pin | Why this pin |
+|---|---|---|
+| `hermes-catalog` (this catalog, offline) | `9c0560f8` (main, 2026-11-10) | The Adopt lane vendors one main-branch commit for every slice (providers, skills, MCP manifests); `agents/vendor/hermes/NOTICE.md`. |
+| `hermes` (the network import, `POST /skills/import`) | `v2026.8.31` = `29112bef` | `hermes_pin_v2.json` must name a **release**: its loader refuses any other tag, and each page in `docs/skills/hermes/` cites it. |
+
+They are not aligned because the catalog commit is not a release, and moving the import pin to a
+main-branch commit would drop that guarantee; moving the catalog back would drop two months of
+upstream fixes. `GET /api/skills/taps` measures the gap on the two records
+(`pin_alignment`): of the 190 skills the import pin lists, 87 have byte-identical SKILL.md in the
+catalog, 68 changed and 35 are not in it (renamed or removed upstream). When Hermes cuts a release
+at or after the catalog commit, both can move to it together.
+
+## Skill sources (taps) and setup values
+
+**Taps** (`GET /api/skills/taps`, HUD → Skills Import → Skill sources) list every source the owner
+trusts: the two official ones above (built in, cannot be removed) and GitHub repositories the
+owner added.
+
+- **Adding a tap** (`POST /api/skills/taps`, admin) takes `repo`, an exact 40-hex `commit`, a
+  `path` (default `skills`) and a trust level (`trusted` or `community`; `official` is the
+  built-ins' alone). It only queues an approval card at the irreversible tier, with the source
+  URL on the card. Nothing is fetched or searchable until a person accepts the card. A branch or a
+  tag is refused: a tap moves to another commit only by remove + add.
+- **Refresh** (`POST /api/skills/taps/<id>/refresh`) reads the repository's tree and each
+  `<path>/<skill>/SKILL.md` (and `references/`) at that commit, through the governed egress client
+  (the kernel's `plugin.egress` for every request, only `api.github.com` and
+  `raw.githubusercontent.com`, no redirects, 8 MB a refresh, 100 skills a tap). Entries that fail
+  (an unsafe name or path, an invalid SKILL.md, a `name` that is not its folder) are listed as
+  refused and are never installable.
+- **Search** (`GET /api/skills/taps/search?q=`) covers every active source, ranked official >
+  trusted > community.
+- **Install** (`POST /api/skills/taps/install`, admin) hands the tap's pin (commit, path,
+  sha256 of the SKILL.md and of each reference) to `POST /skills/import`'s own import: the bytes
+  are fetched again at that commit and checked, `skill.install` is crossed before and after, and
+  the skill lands quarantined pending your review. Code in a tapped skill's folder is not copied.
+
+**Setup values** (`GET /api/skills/setup/<skill>`, HUD → Skill setup). A skill may declare the
+environment variables it needs (`required_environment_variables`, `setup.collect_secrets`). The
+panel lists which are set (stored for this skill, or in the hub's environment) and which are
+missing; a value set there is stored encrypted, never shown again, never placed in the hub's
+environment, and handed only to that skill's own commands, for the install you set it for. It never
+reaches the code interpreter (`execute_code` runs code the model writes; it keeps reading only the
+hub's `.env`), and a skill's error text is scrubbed of it (as is, URL-encoded, base64). Another
+skill that later takes the same name does not get it, and removing the skill clears it. A runnable
+skill with a required value missing refuses to run and says which. Managed provider keys and
+control names (`PATH`, `JARVIS_*` …) cannot be set for a skill; the panel says only that they are
+reserved, not whether the hub has them.

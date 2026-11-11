@@ -682,6 +682,15 @@ def _split_frontmatter(content: str) -> tuple[Optional[dict], str]:
     return _fm.split_frontmatter(content)
 
 
+def _scrubbed_error(exc: BaseException, secrets: tuple) -> str:
+    """An exception's text with the skill's own stored values taken out (H342)."""
+    if not secrets:
+        return str(exc)
+    from .skill_secrets import scrub
+
+    return scrub(str(exc), secrets)
+
+
 class Skill:
     def __init__(self, name: str, path: Path, manifest: dict):
         self.name = name
@@ -730,8 +739,17 @@ class Skill:
             "environments": self.environments,
             "requires_apps": self.requires_apps,
             "required_env": self.required_env,
+            # H342: the required names set nowhere (never a value).
+            "setup_needed": self._setup_needed(),
             "hermes": self.hermes_meta,
         }
+
+    def _setup_needed(self) -> list[str]:
+        if not self.required_env:
+            return []
+        from . import skill_secrets
+
+        return skill_secrets.missing(self)
 
     @property
     def description(self) -> str:
@@ -799,9 +817,25 @@ class Skill:
         cmd_fn = self.commands.get(command)
         runnable = bool(cmd_fn) or bool(self.module and hasattr(self.module, "handle"))
         ready, why = readiness(self) if runnable else ("ready", "")
+        secrets: tuple = ()     # H342: this call's own stored values, scrubbed from its errors
         if ready != "ready":
             logger.info("Skill '%s' is %s; command '%s' refused", self.name, why, command)
             return f"[skill:{self.name}] is {why}"
+        if runnable and self.required_env:
+            # H342: a runnable skill whose required variables are set nowhere does not run.
+            from . import skill_secrets
+
+            unset = skill_secrets.missing(self)
+            if unset:
+                logger.info("Skill '%s' needs setup (%d variable(s)); command '%s' refused",
+                            self.name, len(unset), command)
+                return skill_secrets.setup_message(self.name, unset)
+            stored = skill_secrets.skill_env(self)
+            secrets = tuple(stored.values())
+            if stored and (context or not cmd_fn):
+                # Its own stored values only, read-only, for this call; never os.environ.
+                # (A command called without a context keeps its one-argument call.)
+                context = {**(context or {}), "skill_env": stored}
         if self.usage_hook is not None:
             try:
                 self.usage_hook(self.name, "use")
@@ -813,17 +847,24 @@ class Skill:
                     return await cmd_fn(args, context)
                 return await cmd_fn(args)
             except Exception as e:
-                logger.error(f"Skill {self.name} command '{command}' failed: {e}")
-                return f"[skill:{self.name}] error: {e}"
+                detail = _scrubbed_error(e, secrets)
+                logger.error("Skill %s command '%s' failed: %s", self.name, command, detail)
+                return f"[skill:{self.name}] error: {detail}"
 
         if self.module and hasattr(self.module, "handle"):
             try:
                 return await self.module.handle(command, args, context or {})
             except Exception as e:
-                logger.warning(
-                    "Skill '%s' handle() raised for command '%s'", self.name, command, exc_info=True
-                )
-                return f"[skill:{self.name}] error: {e}"
+                detail = _scrubbed_error(e, secrets)
+                if secrets:
+                    # A traceback would carry the skill's own values (H342): message only, scrubbed.
+                    logger.warning("Skill '%s' handle() raised for command '%s': %s: %s",
+                                   self.name, command, type(e).__name__, detail)
+                else:
+                    logger.warning(
+                        "Skill '%s' handle() raised for command '%s'", self.name, command, exc_info=True
+                    )
+                return f"[skill:{self.name}] error: {detail}"
 
         return ""
 
@@ -1000,7 +1041,15 @@ class SkillLoader:
         (``SkillUsageStore.forget``). ``install_id`` names which install's row, when
         several folders have held the name. Only removal acts call this; a skill that is
         merely not seen keeps its row. Logged when it cannot be written (the sidecar then
-        keeps the removal pending and applies it at its next writable sync)."""
+        keeps the removal pending and applies it at its next writable sync).
+
+        H342: the skill's stored setup values go too (only that install's, when named)."""
+        try:
+            from . import skill_secrets
+
+            skill_secrets.forget_skill(name, install_id)
+        except Exception:
+            logger.warning("the setup values of the removed skill %r could not be cleared", name)
         forget = getattr(self._usage, "forget", None)
         if not callable(forget):
             return

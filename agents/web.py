@@ -2154,6 +2154,8 @@ from agents.core.routers.security import router as _security_router  # noqa: E40
 from agents.core.routers.security_hud import router as _security_hud_router  # noqa: E402
 from agents.core.routers.skills import router as _skills_router  # noqa: E402
 from agents.core.routers.skill_curator import router as _skill_curator_router  # noqa: E402
+from agents.core.routers.skill_setup import router as _skill_setup_router  # noqa: E402  (G20, H342)
+from agents.core.routers.skill_taps import router as _skill_taps_router  # noqa: E402  (G20, H025)
 from agents.core.routers.status import router as _status_router  # noqa: E402
 from agents.core.routers.status import status  # noqa: E402  (re-export: MCP route-tool + drift guard resolve web.status)
 from agents.core.routers.swarm import router as _swarm_router  # noqa: E402
@@ -2192,6 +2194,8 @@ app.include_router(_security_router)
 app.include_router(_security_hud_router)
 app.include_router(_skills_router)
 app.include_router(_skill_curator_router)
+app.include_router(_skill_setup_router)   # G20: a skill's declared variables (H342)
+app.include_router(_skill_taps_router)   # G20: skill taps, the trusted sources (H025)
 app.include_router(_status_router)
 app.include_router(_data_spaces_router)
 app.include_router(_design_manifest_router)

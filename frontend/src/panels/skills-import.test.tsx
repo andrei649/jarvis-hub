@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { SkillsImportPanel } from './skills-import';
+import { SkillsImportPanel, SkillSetup, SkillTaps } from './skills-import';
 
 const COMMIT = '29112bef099274229cadff79cdff7bf7b99c4b77';
 const DIGEST = 'a'.repeat(64);
@@ -341,5 +341,81 @@ describe('SkillsImportPanel — the vendored Hermes catalog', () => {
     expect(String(posts(fn)[0][0])).toBe('/skills/import');
     expect(bodyOf(posts(fn)[0])).toEqual({ skill: 'agentmail', source: 'hermes-catalog' });
     await waitFor(() => expect(screen.getByText(/imported · skill=agentmail · source=hermes-catalog/)).toBeTruthy());
+  });
+});
+
+describe('SkillSetup — H342 declared variables, values never shown', () => {
+  it('lists missing names, PUTs a value once and never renders it', async () => {
+    const SECRET = 'sk-live-0123456789abcdefWXYZ';
+    const view = (set) => ({ skill: 'weather-tool', ready: set, missing: set ? [] : ['WEATHER_KEY'],
+      requirements: [{ name: 'WEATHER_KEY', prompt: 'Enter WEATHER_KEY', optional: false, set,
+        source: set ? 'skill' : null, settable: true }] });
+    const fn = mockRoutes((u, method) => {
+      if (u === '/api/skills/setup/weather-tool' && method === 'GET') return { status: 200, body: view(false) };
+      if (u === '/api/skills/setup/weather-tool/WEATHER_KEY' && method === 'PUT') {
+        return { status: 200, body: { ok: true, ...view(true) } };
+      }
+      return null;
+    });
+    localStorage.setItem('hud.admin_token', 'owner-token');
+    const { container } = render(<SkillSetup />);
+    fireEvent.change(screen.getByLabelText('skill to set up'), { target: { value: 'weather-tool' } });
+    fireEvent.click(btn('show setup'));
+    await waitFor(() => expect(screen.getByText(/missing WEATHER_KEY/)).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('value for WEATHER_KEY'), { target: { value: SECRET } });
+    fireEvent.click(btn('save WEATHER_KEY'));
+    await waitFor(() => expect(screen.getByText(/set · for this skill/)).toBeTruthy());
+    const put = fn.mock.calls.find((c) => String((c[1] && c[1].method) || '').toUpperCase() === 'PUT');
+    expect(bodyOf(put)).toEqual({ value: SECRET });
+    expect(put[1].headers['X-Admin-Token']).toBe('owner-token');
+    expect(container.innerHTML).not.toContain(SECRET);
+    expect(screen.getByLabelText('value for WEATHER_KEY').value).toBe('');
+  });
+});
+
+describe('SkillTaps — H025 trusted sources behind an approval card', () => {
+  const TAPS = {
+    taps: [
+      { id: 'hermes-catalog', builtin: true, trust: 'official', status: 'active', commit: '9c0560f8e6856bc14c11bfe6d666df06be14d2de', repo: 'NousResearch/hermes-agent', skills: 185 },
+      { id: 'hermes', builtin: true, trust: 'official', status: 'active', commit: '29112bef099274229cadff79cdff7bf7b99c4b77', release_tag: 'v2026.8.31', repo: 'NousResearch/hermes-agent', skills: 190 },
+      { id: 'acme--skills', builtin: false, trust: 'community', status: 'pending', commit: 'c'.repeat(40), repo: 'acme/skills', path: 'skills', skills: 0 },
+    ],
+    pin_alignment: { available: true, aligned: false, import_pin: { release_tag: 'v2026.8.31', commit: '29112bef', skills: 190 },
+      catalog_pin: { commit: '9c0560f8', skills: 185 }, same_bytes: 87, changed: 68, not_in_catalog: 35, why: 'release vs main' },
+  };
+
+  it('shows both official pins, queues a card for a pinned tap, and installs through the tap route', async () => {
+    const fn = mockRoutes((u, method) => {
+      if (u === '/api/skills/taps' && method === 'GET') return { status: 200, body: TAPS };
+      if (u === '/api/skills/taps' && method === 'POST') return { status: 202, body: { ok: true, task_id: 7, status: 'pending_approval' } };
+      if (u.startsWith('/api/skills/taps/search')) {
+        return { status: 200, body: { results: [{ tap: 'acme--skills', trust: 'community', slug: 'good-skill', commit: 'c'.repeat(40),
+          installable: true, install: 'import', required_env: ['G20_TOOL_KEY'] }] } };
+      }
+      if (u === '/api/skills/taps/install' && method === 'POST') {
+        return { status: 200, body: { ok: true, status: 'installed_review_required', quarantined: true,
+          setup: { missing: ['G20_TOOL_KEY'] } } };
+      }
+      return null;
+    });
+    localStorage.setItem('hud.admin_token', 'owner-token');
+    render(<SkillTaps />);
+    await waitFor(() => expect(screen.getByText('awaiting approval')).toBeTruthy());
+    expect(screen.getByText(/87 have the same SKILL.md bytes/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'remove hermes' })).toBeNull();
+    fireEvent.change(screen.getByLabelText('tap repository'), { target: { value: 'acme/skills' } });
+    fireEvent.change(screen.getByLabelText('tap commit'), { target: { value: 'main' } });
+    expect(btn('ask to add tap').disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('tap commit'), { target: { value: 'c'.repeat(40) } });
+    fireEvent.click(btn('ask to add tap'));
+    await waitFor(() => expect(screen.getByText(/approval card #7 queued/)).toBeTruthy());
+    expect(bodyOf(posts(fn)[0])).toEqual({ repo: 'acme/skills', commit: 'c'.repeat(40), path: 'skills', trust: 'community' });
+    fireEvent.change(screen.getByLabelText('search all skill sources'), { target: { value: 'good' } });
+    fireEvent.click(btn('search'));
+    await waitFor(() => expect(screen.getByText('good-skill')).toBeTruthy());
+    fireEvent.click(btn('install good-skill from acme--skills'));
+    await waitFor(() => expect(screen.getByText(/quarantined, pending your review · needs G20_TOOL_KEY/)).toBeTruthy());
+    const install = posts(fn).find(([url]) => String(url) === '/api/skills/taps/install');
+    expect(bodyOf(install)).toEqual({ tap: 'acme--skills', skill: 'good-skill' });
   });
 });

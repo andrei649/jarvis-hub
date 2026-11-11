@@ -1146,6 +1146,16 @@ def read_skill(target: Any, name: Any, *, agent: str = "", session: str = "",
     if warning:
         reply["tainted"] = True
         reply["warning"] = warning
+    if getattr(skill, "required_env", None):
+        # H342: the instructions are still served, but the model is told the skill cannot
+        # do its work yet and which names the owner must set (never a value).
+        from .skill_secrets import missing, setup_message
+
+        unset = missing(skill)
+        if unset:
+            reply["readiness"] = "setup_needed"
+            reply["setup_needed"] = unset
+            reply["setup_note"] = setup_message(skill.name, unset)
     return reply, skill, rendered
 
 

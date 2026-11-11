@@ -5,6 +5,11 @@ The registry stores names, never values. A fresh validator can bind a declaratio
 to the exact skill/catalog/trust snapshot that was viewed. The spawn path resolves
 names in its trusted invocation scope and supplies a scoped value reader to
 ``prepare_code_env`` before starting the interpreter.
+
+H342 (G20 review): the values the owner stores for a skill (``skills/skill_secrets``)
+never enter this environment. An interpreter runs code the model wrote, and a
+``skill_view`` that declares names can be the model's own call, so only the hub's
+environment (the owner's ``.env``) is read here, as before.
 """
 
 from __future__ import annotations
