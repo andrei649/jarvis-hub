@@ -98,6 +98,7 @@ RULES = [
     ("/api/system/", "cockpit"),  # 0.62 System Profiles — usage-mode selector (system/home setting)
     ("/api/help/", "cockpit"),  # H165 in-app documentation — the console's Start group (DocsPanel)
     ("/api/trust/status", "topbar"),
+    ("/api/auth/", "topbar"),  # H509 owner browser sign-in screen + corner sign-out (owner-sign-in.tsx)
     # memory & knowledge
     ("/api/osint/", "knowledge"),  # P2 OSINT pack — the Knowledge/"Vision · OSINT" surface (modes4)
     ("/api/kg/", "memory"),

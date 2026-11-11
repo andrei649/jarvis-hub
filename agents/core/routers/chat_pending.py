@@ -29,6 +29,8 @@ def http_actor(request: Request):
             identity = f"admin\0{admin}"
         elif web._user_credential_ok(user_supplied=user, admin_supplied=""):
             identity = f"user\0{user}"
+        elif not (admin or user) and web._owner_session_ok(request):
+            identity = f"session\0{web._browser_session.cookie_token(request)}"   # H509
         else:
             return None
     else:

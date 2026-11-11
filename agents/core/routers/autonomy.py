@@ -451,7 +451,10 @@ def _consent_admin_current(request: Request, orch) -> bool:
         web = _web()
         if web is None or get_orch() is not orch:
             return False
-        if web._admin_credential_ok(request.headers.get('x-admin-token', '')):
+        supplied = request.headers.get('x-admin-token', '')
+        if web._admin_credential_ok(supplied):
+            return True
+        if not supplied and web._owner_session_ok(request):   # H509 owner browser session
             return True
         return (not web._admin_configured()
                 and web._real_client_host(request) in web._LOCALHOSTS)

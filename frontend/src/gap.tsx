@@ -11,6 +11,7 @@ import { navigateHud, routeHref } from './hud-routing';
 import { apiGet, apiPost, apiPut, apiPatch, apiDelete, actionFailures, onActionFailure, clearActionFailures } from './api/client';
 import { isKillSwitchState } from './api/actions';
 import { localModelStatus } from './api/live';
+import { ownerSignedIn } from './api/owner-session';
 import { approvalModeNote } from './api/loaders';
 import { setAgentAutonomyMode, agentModeRefusalNote } from './api/actions';
 import { OperatorPanel } from './operator-panel';
@@ -4333,7 +4334,7 @@ export function HousePanel() {
   const [confirmationText, setConfirmationText] = useState('');
   const [confirmationMessage, setConfirmationMessage] = useState('');
   let hasAdmin = false;
-  try { hasAdmin = !!localStorage.getItem('hud.admin_token'); } catch { /* unavailable */ }
+  try { hasAdmin = !!localStorage.getItem('hud.admin_token') || ownerSignedIn(); } catch { /* unavailable */ }
 
   const selectedLight = lightTarget || lights[0]?.entity_id || '';
   const selectedClimate = climateTarget || climates[0]?.entity_id || '';
@@ -4644,7 +4645,7 @@ export function CameraPanel() {
   const [discovery, setDiscovery] = useState(null);
   const [discoveryError, setDiscoveryError] = useState('');
   let hasAdmin = false;
-  try { hasAdmin = !!localStorage.getItem('hud.admin_token'); } catch { /* unavailable */ }
+  try { hasAdmin = !!localStorage.getItem('hud.admin_token') || ownerSignedIn(); } catch { /* unavailable */ }
 
   const source = searchResult || recent.d || {};
   const events = arr(source, 'events').slice(0, 100);
@@ -4769,7 +4770,7 @@ const PURGE_PHRASE = 'PURGE ACQUISITION DETAIL';
    Raw goals, research extracts, package paths, and receipt bodies never reach the HUD. */
 export function AcquisitionPanel() {
   let hasAdmin = false;
-  try { hasAdmin = !!localStorage.getItem('hud.admin_token'); } catch { /* unavailable */ }
+  try { hasAdmin = !!localStorage.getItem('hud.admin_token') || ownerSignedIn(); } catch { /* unavailable */ }
   const status = useApi('/api/acquisition/status');
   const audit = useApi('/api/acquisition/events?limit=100');
   // The drive control below needs a real request_id, and this list is the ONLY place

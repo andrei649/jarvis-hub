@@ -40,7 +40,7 @@ WORKSPACE_OWNER = "7 of `docs/business/WORKSPACE_PILOT_SPEC.md`"
 OWNER = {
     "a2a": "08", "acquisition": "10 · 12", "actions": "07", "admin": "05 · 08",
     "agent-templates": "05", "agents": "02", "ambient": "12", "analytics": "09",
-    "arena": "10", "autonomy": "07", "brain": "06", "browser": "12", "cameras": "12",
+    "arena": "10", "auth": "08", "autonomy": "07", "brain": "06", "browser": "12", "cameras": "12",
     "canvas": "05", "capabilities": "04", "capture": "09", "channels": "11",
     "coach": "05", "codeintel": "09", "cognition": "09", "context": "09", "cost": "09",
     "creative": "05", "dashboard": "05", "desktop": "06", "digest": "07", "eval": "10",

@@ -85,6 +85,7 @@ _LOCALHOSTS = {"127.0.0.1", "::1", "localhost"}
 # import edge back into web.
 from agents.core.security.token_store import get_token_store
 from agents.core.security.auth_audit import submit_auth_event
+from agents.core.security import browser_session as _browser_session
 
 
 def _admin_env_token() -> str:
@@ -244,6 +245,59 @@ def _admin_credential_ok(supplied: str) -> bool:
     return _env_admin_active() and secrets.compare_digest(supplied, _admin_env_token())
 
 
+def _owner_credential_hash_valid(cred_hash: str) -> bool:
+    """Whether the admin credential a browser session was opened with is still valid
+    (H509): a managed admin token still on file and unexpired, or the bootstrap env token
+    while it is active. Rotating or revoking the credential therefore signs every browser
+    session opened with it out on its next request."""
+    if not cred_hash:
+        return False
+    if get_token_store().scope_of_hash(cred_hash) == "admin":
+        return True
+    env = _admin_env_token()
+    return bool(env) and _env_admin_active() and secrets.compare_digest(
+        _browser_session.token_hash(env), cred_hash)
+
+
+def _owner_session(request) -> str:
+    """The request's owner browser session (H509): ``"ok"``, ``"csrf_failed"`` or ``"none"``.
+
+    Consulted only where no header credential authenticated the request, so a header
+    token route never becomes cookie-driven. Positive same-origin evidence is required,
+    a mutating request must carry the session's ``X-CSRF-Token``, and over plain HTTP
+    from another device the cookie counts only with ``JARVIS_ALLOW_INSECURE_SIGNIN=1``
+    (``agents/core/security/browser_session.py``). A request with no well-formed session
+    cookie never touches the store."""
+    if not _browser_session.cookie_present(request):
+        return _browser_session.NONE
+    if not _browser_session.transport_ok(
+            request, loopback=_real_client_host(request) in _LOCALHOSTS):
+        return _browser_session.NONE
+    try:
+        state, _session = _browser_session.session_state(request, _owner_credential_hash_valid)
+    except Exception:
+        logger.warning("owner browser session could not be read; treated as absent", exc_info=True)
+        return _browser_session.NONE
+    return state
+
+
+async def _owner_session_async(request) -> str:
+    """``_owner_session`` off the event loop (the store is SQLite) when a cookie is present."""
+    if not _browser_session.cookie_present(request):
+        return _browser_session.NONE
+    return await asyncio.to_thread(_owner_session, request)
+
+
+def _owner_session_ok(request) -> bool:
+    """True when the request carries a live owner browser session that passed CSRF."""
+    return _owner_session(request) == _browser_session.OK
+
+
+def _csrf_refusal(tier: str, client: str) -> HTTPException:
+    submit_auth_event("auth_failure", tier=tier, reason="csrf", client=client)
+    return HTTPException(status_code=403, detail="csrf token missing or wrong")
+
+
 async def _admin_guard(request: Request):
     """Authorize an /api/admin/* request or raise 401/403."""
     supplied = request.headers.get("x-admin-token", "")
@@ -251,6 +305,13 @@ async def _admin_guard(request: Request):
     if _admin_credential_ok(supplied):
         submit_auth_event("auth_success", tier="admin", reason="credential", client=client)
         return
+    # H509: the owner's browser session (cookie + same origin + CSRF on writes).
+    session = await _owner_session_async(request) if not supplied else _browser_session.NONE
+    if session == _browser_session.OK:
+        submit_auth_event("auth_success", tier="admin", reason="session", client=client)
+        return
+    if session == _browser_session.CSRF_FAILED:
+        raise _csrf_refusal("admin", client)
     # No admin credential configured at all → dev posture: trust a direct-localhost
     # origin (so a fresh box can mint its first token), reject the network. Behind
     # an untrusted reverse proxy _real_client_host returns "" → fails closed
@@ -344,6 +405,16 @@ async def _user_guard(request: Request):
             reason = "admin_credential" if admin_supplied and not user_supplied else "credential"
             submit_auth_event("auth_success", tier="user", reason=reason, client=client)
             return
+        # H509: the owner's browser session admits user routes too (owner ⊇ user), but
+        # only where an admin header would (a user credential is configured: HF-1), and
+        # only when no header credential was presented — a header is judged on its own.
+        session = (await _owner_session_async(request) if not (user_supplied or admin_supplied)
+                   else _browser_session.NONE)
+        if session == _browser_session.OK:
+            submit_auth_event("auth_success", tier="user", reason="session", client=client)
+            return
+        if session == _browser_session.CSRF_FAILED:
+            raise _csrf_refusal("user", client)
         reason = "invalid" if (user_supplied or admin_supplied) else "missing"
         submit_auth_event("auth_failure", tier="user", reason=reason, client=client)
         raise HTTPException(status_code=401, detail="user token required")
@@ -400,11 +471,13 @@ def _client_ip(request: Request) -> str:
 
 
 def _request_is_authed(request: Request) -> bool:
-    """True only if the request carries a *valid* user or admin token."""
-    return _user_credential_ok(
-        user_supplied=request.headers.get("x-user-token", ""),
-        admin_supplied=request.headers.get("x-admin-token", ""),
-    )
+    """True only if the request carries a *valid* user or admin token, or a live owner
+    browser session (H509)."""
+    user_supplied = request.headers.get("x-user-token", "")
+    admin_supplied = request.headers.get("x-admin-token", "")
+    if _user_credential_ok(user_supplied=user_supplied, admin_supplied=admin_supplied):
+        return True
+    return not (user_supplied or admin_supplied) and _owner_session_ok(request)
 
 
 def _rate_limited(ip: str, now: float) -> bool:
@@ -1427,7 +1500,10 @@ def _web_principal(request: Request):
     """
     from agents.core.commands import Principal
 
-    admin = _admin_credential_ok(request.headers.get("x-admin-token", ""))
+    supplied = request.headers.get("x-admin-token", "")
+    admin = _admin_credential_ok(supplied)
+    if not admin and not supplied and not request.headers.get("x-user-token", ""):
+        admin = _owner_session_ok(request)   # H509: the owner's browser session
     if not admin and not _admin_configured():
         admin = _real_client_host(request) in _LOCALHOSTS
     return Principal(channel="web", sender=None, admin=admin)
@@ -2055,6 +2131,7 @@ from agents.core.routers.system_profiles import router as _system_profiles_route
 from agents.core.routers.support import router as _support_router  # noqa: E402
 from agents.core.routers.codeintel import router as _codeintel_router  # noqa: E402
 from agents.core.routers.pairing import router as _pairing_router  # noqa: E402
+from agents.core.routers.browser_auth import router as _browser_auth_router  # noqa: E402
 from agents.core.routers.quickbar import router as _quickbar_router  # noqa: E402
 from agents.core.routers.commands import router as _commands_router  # noqa: E402
 from agents.core.routers.dashboard import router as _dashboard_router  # noqa: E402
@@ -2088,6 +2165,7 @@ from agents.core.routers.webhooks import router as _webhooks_router  # noqa: E40
 app.include_router(_webhooks_router)
 app.include_router(_a2a_router)
 app.include_router(_pairing_router)
+app.include_router(_browser_auth_router)   # H509 owner browser sign-in
 app.include_router(_quickbar_router)
 app.include_router(_commands_router)
 app.include_router(_canvas_router)

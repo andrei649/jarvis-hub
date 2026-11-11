@@ -70,6 +70,11 @@ INTENTIONALLY_OPEN = {
     "POST /api/workspace/login/sso",        # trusted-proxy peer + shared secret (compare_digest) + active user only
     "POST /api/workspace/invites/lookup",   # 32-byte single-use token authenticates; 30 tries/h/IP
     "POST /api/workspace/invites/accept",   # same token; consumes it, sets the password, mints the session
+    # H509 owner browser sign-in (routers/browser_auth.py): same-origin + JSON only, the
+    # owner secret checked in constant time after a per-IP and global failure throttle;
+    # sign-out can only revoke the session cookie it is shown, same-origin only.
+    "POST /api/auth/login",
+    "POST /api/auth/logout",
 }
 
 # Open mutating routes still awaiting a guard — SEC-3 backlog. Listed explicitly
@@ -162,6 +167,9 @@ PUBLIC_READS = {
     "GET /workspace/",
     "GET /workspace/{path:path}",
     "GET /api/workspace/session",
+    # H509: signed_in false + whether an owner credential exists for an anonymous caller;
+    # the CSRF token only for a live same-origin owner session cookie.
+    "GET /api/auth/session",
 }
 # (The widget capability-token reads are open too, but their handler checks a
 # credential, so they are listed in IN_HANDLER_GUARDED below and folded in there.)
@@ -214,6 +222,11 @@ PUBLIC_BY_DESIGN = {
     "POST /api/workspace/login/sso",
     "POST /api/workspace/invites/lookup",
     "POST /api/workspace/invites/accept",
+    # H509: the owner's browser sign-in and sign-out. Login checks the owner secret (an
+    # admin credential only; a guest token is refused), logout revokes only the presented
+    # cookie's session — both proved in tests/test_g13_browser_signin.py.
+    "POST /api/auth/login",
+    "POST /api/auth/logout",
 }
 
 # WebSocket upgrades whose guard runs in the handler body (an upgrade has no
@@ -317,6 +330,10 @@ IN_HANDLER_TIER_SITES = {
         "tests/test_pending_input_http_poll.py::test_revocation_retires_polled_or_unpolled_wait",
         _INH + "test_pending_input_actor_follows_the_credential"),
     "agents/core/routers/autonomy.py:_consent_admin_current": (_INH + "test_consent_recheck_follows_the_credential",),
+    # H509: the owner browser sign-in opens a session only for an admin credential.
+    "agents/core/routers/browser_auth.py:auth_login": (
+        "tests/test_g13_browser_signin.py::test_wrong_secret_is_refused_and_opens_nothing",
+        "tests/test_g13_browser_signin.py::test_guest_token_cannot_sign_in_or_escalate"),
     # Round 3: `_request_is_authed` / `_user_credential_required` / the MCP identity
     # checks are credential decisions too.
     "agents/web.py:_rate_limit": (

@@ -1,8 +1,11 @@
 import { appUrl } from '../base-path';
+import { csrfToken, isNetworkedOrigin, loadOwnerSession, ownerSession, requireSignIn } from './owner-session';
 /* HUD v2 · API client — same-origin fetch with an optional user token and graceful
    errors. The guarded endpoints (/api/agents, /dashboard, /tasks, /ticker) are
-   localhost-exempt, so the single-user local case needs no token; on a networked
-   deployment a 401 prompts once for X-User-Token and retries (mirrors v1 auth.js). */
+   localhost-exempt, so the single-user local case needs no token; on a loopback origin a
+   401 prompts once for X-User-Token and retries (mirrors v1 auth.js). On a networked
+   origin (H509) the owner signs in instead: the hub keeps an HttpOnly session cookie,
+   every write carries the session's X-CSRF-Token, and a 401 opens the sign-in screen. */
 
 const TOKEN_KEY = 'hud.user_token';
 const ADMIN_KEY = 'hud.admin_token';
@@ -17,12 +20,25 @@ export function getAdminToken(): string {
   try { return localStorage.getItem(ADMIN_KEY) || ''; } catch { return ''; }
 }
 
-function buildHeaders(admin?: boolean): Record<string, string> {
+const WRITES = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+function buildHeaders(admin?: boolean, method = 'GET'): Record<string, string> {
   const h: Record<string, string> = { Accept: 'application/json' };
   const u = getToken();
   if (u) h['X-User-Token'] = u;
   if (admin) { const a = getAdminToken(); if (a) h['X-Admin-Token'] = a; }
+  // H509: a cookie-authenticated write must echo the session's CSRF token. Sent only
+  // when no header credential rides along (a header request is judged on its own).
+  if (WRITES.has(method) && !h['X-User-Token'] && !h['X-Admin-Token']) {
+    const c = csrfToken();
+    if (c) h['X-CSRF-Token'] = c;
+  }
   return h;
+}
+
+/** On a networked origin, the session's CSRF token is learned before the first write. */
+function needsOwnerSession(method: string): boolean {
+  return WRITES.has(method) && isNetworkedOrigin() && !ownerSession();
 }
 
 /** Explicit one-attempt transport for proposals whose response can be lost.
@@ -34,7 +50,7 @@ export function apiFetchOnce(path: string, opts: {
   if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\') || /[\u0000-\u0020\u007f]/.test(path)) {
     return Promise.reject(new Error('same-origin path required'));
   }
-  const headers = buildHeaders(opts.admin);
+  const headers = buildHeaders(opts.admin, opts.method || 'GET');
   headers.Accept = opts.accept || 'application/json';
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
   return fetch(appUrl(path), { method: opts.method || 'GET', headers, signal: opts.signal,
@@ -50,12 +66,27 @@ async function request(
   body?: unknown,
   opts: { admin?: boolean; signal?: AbortSignal; _retried?: boolean } = {},
 ): Promise<Response> {
-  const init: RequestInit = { method, headers: buildHeaders(opts.admin), signal: opts.signal };
+  // Awaited only when needed: on loopback the fetch still starts synchronously.
+  if (needsOwnerSession(method)) await loadOwnerSession();
+  const init: RequestInit = { method, headers: buildHeaders(opts.admin, method), signal: opts.signal };
   if (body !== undefined) {
     (init.headers as Record<string, string>)['Content-Type'] = 'application/json';
     init.body = JSON.stringify(body);
   }
   const res = await fetch(appUrl(path), init);
+  if (isNetworkedOrigin() && typeof window !== 'undefined') {
+    // H509: a stale CSRF token (the session was re-opened in another tab) is re-read once.
+    if (res.status === 403 && WRITES.has(method) && !opts._retried && csrfToken()) {
+      let detail = '';
+      try { detail = String((await res.clone().json())?.detail || ''); } catch { /* not JSON */ }
+      if (detail.startsWith('csrf')) {
+        await loadOwnerSession(true);
+        return request(method, path, body, { ...opts, _retried: true });
+      }
+    }
+    if (res.status === 401 && !getToken()) requireSignIn();
+    return res;
+  }
   if (res.status === 401 && !opts._retried && typeof window !== 'undefined') {
     let tok = getToken();
     if (!tok && !_prompted) {
