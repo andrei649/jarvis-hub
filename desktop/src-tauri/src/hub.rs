@@ -2,8 +2,13 @@
 //!
 //! The shell never reads, writes or logs the hub's credentials: it starts `serve.py`
 //! with the owner's own environment (the hub reads its `.env` itself), probes the
-//! unauthenticated `GET /readyz`, and keeps only pid, start time, a launch nonce and
-//! the interpreter path in its ownership record.
+//! unauthenticated `GET /readyz`, and keeps only pid, start time, a launch nonce, the
+//! interpreter path and its own pid in its ownership record (mode 0600).
+//!
+//! Which checkout it may run is named, never searched for, and checked for ownership
+//! before every start (`hub_policy::resolve`, `hub_policy::check_launch`). When nothing
+//! qualifies the shell starts nothing and tells the owner to start the hub or set
+//! `NERVA_DESKTOP_HUB_DIR`.
 
 use crate::hub_policy::{self, Launch, Mode, Observed, Plan, Record};
 use std::net::SocketAddr;
@@ -24,6 +29,7 @@ pub struct Owner {
     addr: SocketAddr,
     boot_timeout: Duration,
     record_path: PathBuf,
+    dir_file: PathBuf,
     log_path: PathBuf,
     record: Mutex<Option<Record>>,
     child: Mutex<Option<Child>>,
@@ -60,11 +66,12 @@ fn still_ours(record: &Record) -> bool {
 }
 
 impl Owner {
-    pub fn new(data_dir: PathBuf, log_dir: PathBuf) -> Self {
+    pub fn new(data_dir: PathBuf, log_dir: PathBuf, config_dir: PathBuf) -> Self {
         Self {
             addr: SocketAddr::from(ADDR),
             boot_timeout: BOOT_TIMEOUT,
             record_path: data_dir.join(hub_policy::RECORD_FILE),
+            dir_file: config_dir.join(hub_policy::DIR_FILE),
             log_path: log_dir.join("hub.log"),
             record: Mutex::new(None),
             child: Mutex::new(None),
@@ -80,8 +87,23 @@ impl Owner {
     fn write_record(&self, record: &Record) -> Result<(), String> {
         let parent = self.record_path.parent().ok_or("no data directory")?;
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        let text = record
+            .encode()
+            .ok_or("the interpreter path cannot be recorded (not UTF-8 or has a newline)")?;
         let temp = self.record_path.with_extension("tmp");
-        std::fs::write(&temp, record.encode()).map_err(|e| e.to_string())?;
+        let _ = std::fs::remove_file(&temp);
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        {
+            use std::io::Write;
+            let mut file = options.open(&temp).map_err(|e| e.to_string())?;
+            file.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+        }
         std::fs::rename(temp, &self.record_path).map_err(|e| e.to_string())
     }
 
@@ -143,10 +165,33 @@ impl Owner {
                 if hub_policy::port_open(self.addr, Duration::from_millis(500)) {
                     return self.wait_external();
                 }
-                self.spawn()
+                self.spawn_or_wait()
             }
             Plan::UseExternal | Plan::Wait => self.wait_external(),
-            Plan::Spawn => self.spawn(),
+            Plan::Spawn => self.spawn_or_wait(),
+        }
+    }
+
+    /// Start a hub from a checkout that passes every check; otherwise start nothing,
+    /// say why, and wait for one the owner starts.
+    fn spawn_or_wait(&self) -> Result<Outcome, String> {
+        match self.resolve() {
+            Ok(launch) => self.spawn(launch),
+            Err(why) => {
+                eprintln!("Nerva hub: not starting one: {why}");
+                let _ = notify_rust::Notification::new()
+                    .appname("Nerva")
+                    .summary("Start the Nerva hub yourself")
+                    .body(&crate::notify::clean(
+                        &format!(
+                            "Run start.sh, or set {} to your Nerva folder. {why}",
+                            hub_policy::ENV_DIR
+                        ),
+                        200,
+                    ))
+                    .show();
+                self.wait_external()
+            }
         }
     }
 
@@ -163,22 +208,37 @@ impl Owner {
         }
     }
 
+    /// The checkout named by `NERVA_DESKTOP_HUB_DIR`, else by `hub-dir.txt` in the app's
+    /// config folder, else the fixed dev layout around the executable — never the
+    /// working directory and never any other ancestor — and only if it passes the
+    /// ownership checks.
     fn resolve(&self) -> Result<Launch, String> {
-        let explicit = std::env::var_os(hub_policy::ENV_DIR).map(PathBuf::from);
-        let mut starts = Vec::new();
-        if let Ok(exe) = std::env::current_exe() {
-            starts.push(exe);
-        }
-        if let Ok(cwd) = std::env::current_dir() {
-            starts.push(cwd);
-        }
-        hub_policy::resolve(explicit.as_deref(), &starts, cfg!(windows), &|p: &Path| {
-            p.exists()
-        })
+        #[cfg(unix)]
+        let uid = unsafe { libc::getuid() };
+        let explicit = match std::env::var_os(hub_policy::ENV_DIR) {
+            Some(dir) => Some(PathBuf::from(dir)),
+            None if self.dir_file.exists() => {
+                #[cfg(unix)]
+                hub_policy::trusted_path(&self.dir_file, uid)
+                    .map_err(|why| format!("{}: {why}", hub_policy::DIR_FILE))?;
+                let text = std::fs::read_to_string(&self.dir_file)
+                    .map_err(|e| format!("{}: {e}", self.dir_file.display()))?;
+                Some(hub_policy::parse_dir_file(&text)?)
+            }
+            None => None,
+        };
+        let exes: Vec<PathBuf> = std::env::current_exe().into_iter().collect();
+        let launch =
+            hub_policy::resolve(explicit.as_deref(), &exes, cfg!(windows), &|p: &Path| {
+                p.exists()
+            })?;
+        #[cfg(unix)]
+        hub_policy::check_launch(&launch, uid)
+            .map_err(|why| format!("{} is not safe to run: {why}", launch.dir.display()))?;
+        Ok(launch)
     }
 
-    fn spawn(&self) -> Result<Outcome, String> {
-        let launch = self.resolve()?;
+    fn spawn(&self, launch: Launch) -> Result<Outcome, String> {
         if let Some(parent) = self.log_path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
@@ -268,9 +328,7 @@ impl Owner {
         let record = self.record.lock().unwrap().clone();
         let mut child = self.child.lock().unwrap().take();
         if let Some(record) = record {
-            if still_ours(&record) {
-                stop(record.pid, child.as_mut());
-            }
+            stop(&record, child.as_mut());
             self.clear_record();
         }
         if let Some(mut child) = child {
@@ -279,50 +337,68 @@ impl Owner {
     }
 }
 
-/// Our own child stays a zombie until it is waited for, so it is asked directly; an
-/// adopted hub from an earlier launch is looked up by pid.
-fn exited(pid: u32, child: &mut Option<&mut Child>) -> bool {
+/// Whether the process is still the one we own. Our own child cannot have its pid
+/// reused before it is waited for, so it is asked directly; an adopted hub from an
+/// earlier launch must still have the recorded start time and executable (a pid whose
+/// start time changed is a different process: ours is gone).
+fn still_running(record: &Record, child: &mut Option<&mut Child>) -> bool {
     match child {
-        Some(c) => !matches!(c.try_wait(), Ok(None)),
-        None => live(pid).is_none(),
+        Some(c) => matches!(c.try_wait(), Ok(None)),
+        None => still_ours(record),
     }
 }
 
-fn stop(pid: u32, mut child: Option<&mut Child>) {
-    let Ok(mut sys) = System::new() else {
-        return;
-    };
+fn signal(pid: u32, how: Option<Signal>) -> Option<bool> {
+    let mut sys = System::new().ok()?;
     let spid = Pid::from_u32(pid);
     sys.refresh_processes_specifics(
         ProcessesToUpdate::Some(&[spid]),
         true,
         ProcessRefreshKind::nothing(),
     );
-    let Some(process) = sys.process(spid) else {
+    let process = sys.process(spid)?;
+    match how {
+        Some(sig) => process.kill_with(sig),
+        None => Some(process.kill()),
+    }
+}
+
+/// End it outright, re-checking ownership right before.
+fn hard_stop(record: &Record, child: &mut Option<&mut Child>) {
+    match child {
+        Some(c) => {
+            let _ = c.kill();
+        }
+        None => {
+            if still_ours(record) {
+                let _ = signal(record.pid, None);
+            }
+        }
+    }
+}
+
+fn stop(record: &Record, mut child: Option<&mut Child>) {
+    if !still_running(record, &mut child) {
         return;
-    };
+    }
     // A polite stop first (the hub flushes its stores on SIGTERM); Windows has no
     // equivalent for a windowless child, so it is stopped outright there.
-    if process.kill_with(Signal::Term).is_none() {
-        process.kill();
+    if signal(record.pid, Some(Signal::Term)).is_none() {
+        hard_stop(record, &mut child);
         return;
     }
     let deadline = std::time::Instant::now() + STOP_GRACE;
     while std::time::Instant::now() < deadline {
-        if exited(pid, &mut child) {
+        if !still_running(record, &mut child) {
             return;
         }
         std::thread::sleep(Duration::from_millis(200));
     }
-    eprintln!("Nerva hub: pid {pid} ignored the stop request; ending it");
-    sys.refresh_processes_specifics(
-        ProcessesToUpdate::Some(&[spid]),
-        true,
-        ProcessRefreshKind::nothing(),
+    eprintln!(
+        "Nerva hub: pid {} ignored the stop request; ending it",
+        record.pid
     );
-    if let Some(process) = sys.process(spid) {
-        process.kill();
-    }
+    hard_stop(record, &mut child);
 }
 
 #[cfg(test)]
@@ -367,7 +443,13 @@ mod tests {
     #[cfg(unix)]
     #[ignore = "starts python3; run with --ignored"]
     fn the_shell_starts_adopts_and_stops_only_its_own_hub() {
-        let root = std::env::temp_dir().join(format!("nerva-hub-test-{}", hub_policy::new_nonce()));
+        // What a runner's umask would otherwise make group-writable (and so refused).
+        unsafe { libc::umask(0o022) };
+        // Not the shared temp directory: the trust check refuses a checkout under it.
+        let home = PathBuf::from(std::env::var_os("HOME").expect("HOME"));
+        let root = home
+            .join(".cache")
+            .join(format!("nerva-hub-test-{}", hub_policy::new_nonce()));
         let port = TcpListener::bind("127.0.0.1:0")
             .unwrap()
             .local_addr()
@@ -377,7 +459,7 @@ mod tests {
         std::env::set_var(hub_policy::ENV_DIR, &dir);
         std::env::remove_var(hub_policy::ENV_MODE);
         let owner = |timeout| {
-            let mut o = Owner::new(root.join("data"), root.join("logs"));
+            let mut o = Owner::new(root.join("data"), root.join("logs"), root.join("config"));
             o.addr = SocketAddr::from(([127, 0, 0, 1], port));
             o.boot_timeout = timeout;
             o
@@ -387,6 +469,14 @@ mod tests {
         assert_eq!(first.ensure(), Ok(Outcome::Owned));
         let record = first.read_record().expect("an ownership record");
         assert!(still_ours(&record));
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&first.record_path)
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o600, "the record is the owner's alone");
+        }
 
         // The shell "crashed": a new shell finds its record and adopts the healthy hub.
         let second = owner(Duration::from_secs(20));
@@ -444,6 +534,23 @@ mod tests {
         let _ = theirs.kill();
         let _ = theirs.wait();
         std::env::remove_var(hub_policy::ENV_DIR);
+        // The same checkout under the shared temp directory is refused: nothing starts.
+        let shared =
+            std::env::temp_dir().join(format!("nerva-hub-test-{}", hub_policy::new_nonce()));
+        let planted = fake_checkout(&shared, port);
+        std::env::set_var(hub_policy::ENV_DIR, &planted);
+        let why = third.resolve().unwrap_err();
+        assert!(why.contains("not safe to run"), "{why}");
+        // A per-user hub-dir.txt names the checkout when the variable is unset.
+        std::env::remove_var(hub_policy::ENV_DIR);
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        std::fs::write(
+            root.join("config").join(hub_policy::DIR_FILE),
+            dir.to_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(third.resolve().map(|l| l.dir), Ok(dir.clone()));
+        let _ = std::fs::remove_dir_all(&shared);
         let _ = std::fs::remove_dir_all(&root);
     }
 }

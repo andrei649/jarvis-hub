@@ -117,3 +117,53 @@ def test_quick_entry_only_focuses_the_composer():
     desktop = (ROOT / "frontend" / "src" / "desktop.tsx").read_text(encoding="utf-8")
     hook = desktop.split("export function useQuickEntryFocus", 1)[1].split("export ", 1)[0]
     assert "focus()" in hook and "apiPost" not in hook and "invoke" not in hook
+
+
+# ── G22 security review (2026-11-11) ─────────────────────────────────────────
+
+
+def test_the_hub_checkout_is_named_never_searched_and_checked_before_it_runs():
+    """Blocker/Major: no working-directory search, no ancestor walk above an installed
+    (AppImage) executable, and ownership checks before every spawn."""
+    hub = (SRC / "hub.rs").read_text(encoding="utf-8")
+    resolve = hub.split("fn resolve(&self)", 1)[1].split("\n    fn ", 1)[0]
+    assert "std::env::current_dir" not in hub
+    assert "hub_policy::check_launch(&launch, uid)" in resolve
+    assert "hub_policy::trusted_path(&self.dir_file, uid)" in resolve
+    policy = (SRC / "hub_policy.rs").read_text(encoding="utf-8")
+    body = policy.split("pub fn resolve(", 1)[1].split("\n}\n", 1)[0]
+    assert ".ancestors()" not in body and "dev_checkout(exe)" in body
+    assert "mode() & 0o022" in policy
+    spawn_or_wait = hub.split("fn spawn_or_wait(", 1)[1].split("\n    fn ", 1)[0]
+    assert "self.wait_external()" in spawn_or_wait and "Start the Nerva hub yourself" in spawn_or_wait
+
+
+def test_the_ownership_record_is_private_and_line_safe():
+    hub = (SRC / "hub.rs").read_text(encoding="utf-8")
+    write = hub.split("fn write_record(", 1)[1].split("\n    fn ", 1)[0]
+    assert "options.mode(0o600)" in write and "create_new(true)" in write
+    policy = (SRC / "hub_policy.rs").read_text(encoding="utf-8")
+    assert "pub fn encode(&self) -> Option<String>" in policy
+
+
+def test_stopping_rechecks_ownership_before_each_signal():
+    hub = (SRC / "hub.rs").read_text(encoding="utf-8")
+    stop = hub.split("fn stop(record: &Record", 1)[1].split("\n}\n", 1)[0]
+    assert stop.index("still_running(record, &mut child)") < stop.index("Signal::Term")
+    hard = hub.split("fn hard_stop(", 1)[1].split("\n}\n", 1)[0]
+    assert "if still_ours(record)" in hard
+
+
+def test_notifications_are_rate_limited_and_markup_free():
+    main = (SRC / "main.rs").read_text(encoding="utf-8")
+    notify_cmd = main.split("fn desktop_notify(", 1)[1].split("\nfn ", 1)[0]
+    assert ".budget" in notify_cmd and ".allow(std::time::Instant::now())" in notify_cmd
+    show = main.split("fn show_notification(", 1)[1].split("\nfn ", 1)[0]
+    assert "notify::MAX_WAITING" in show
+    module = (SRC / "notify.rs").read_text(encoding="utf-8")
+    assert "matches!(c, '<' | '>' | '&')" in module
+
+
+def test_build_output_is_not_committed():
+    ignore = (TAURI / ".gitignore").read_text(encoding="utf-8").split()
+    assert "/target/" in ignore and "/gen/" in ignore

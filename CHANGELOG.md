@@ -23,6 +23,15 @@
   (optionally `&config=…` from a vendor), which opens the MCP install card showing exactly
   what would run. Nothing is installed until you read it, tick the box and press Install.
   Malformed or oversized links do nothing.
+- **Which Nerva folder the app may start (security fix, same day):** the app no longer
+  looks for a Nerva folder above itself or in the folder it was started from — an
+  AppImage runs from the shared temp folder, where another user could leave a fake one.
+  Name your folder with `NERVA_DESKTOP_HUB_DIR` or put its path in `hub-dir.txt` in the
+  app's settings folder (a development build still finds the checkout it was built in).
+  The app starts it only if that folder and every folder above it belong to you or the
+  system and nobody else can write to them; otherwise it starts nothing and tells you to
+  start the hub yourself. Notifications also drop `<`, `>` and `&` (they could carry
+  links on Linux) and are limited to six a minute.
 
 **Skills that need a key ask for it, and skill sources you trust**
 - A skill can say which keys or settings it needs (an API key, an account name). Skills Import →

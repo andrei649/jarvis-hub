@@ -4,13 +4,23 @@
 //! libraries needed). `main.rs` supplies the observations (is a recorded process still
 //! the one we started? does the hub answer?) and carries out the plan.
 //!
-//! * **Resolve**: `NERVA_DESKTOP_HUB=external` never starts a hub; otherwise the
-//!   checkout comes from `NERVA_DESKTOP_HUB_DIR`, else the first ancestor of the
-//!   executable or the working directory that holds `serve.py` and `agents/web.py`.
-//!   The interpreter is that checkout's `.venv` (the one `install.sh` / `INSTALL.bat`
-//!   make); without it the shell refuses to guess a system Python.
-//! * **Ownership record**: pid, the process's start time and a per-launch nonce,
-//!   written atomically next to the shell's data. A pid alone is not proof — pids are
+//! * **Resolve**: `NERVA_DESKTOP_HUB=external` never starts a hub. Otherwise the
+//!   checkout is named, never searched for: `NERVA_DESKTOP_HUB_DIR`, else the one line
+//!   of `hub-dir.txt` in the app's config directory, else — for a development run only —
+//!   the fixed layout `<checkout>/desktop/src-tauri/target/{debug,release}/<exe>`. The
+//!   working directory is never consulted and no other ancestor of the executable is
+//!   searched (an AppImage runs from a mount under the shared temp directory).
+//! * **Trust**: before anything runs, the checkout and every ancestor up to `/` must
+//!   belong to root or the current user and be writable by nobody else (a sticky,
+//!   world-writable directory such as `/tmp` is refused); `serve.py`, `agents/`, `.venv`
+//!   and `.venv/bin` must stay inside the checkout; the interpreter `.venv/bin/python`
+//!   points to may be the system or a pyenv Python, but it and its whole path must pass
+//!   the same ownership check. The interpreter is that checkout's `.venv` (the one
+//!   `install.sh` / `INSTALL.bat` make); without it the shell refuses to guess a system
+//!   Python. A refusal says why and nothing is started.
+//! * **Ownership record**: pid, the process's start time, the interpreter, the owning
+//!   shell's pid and a per-launch nonce (a label for logs; it proves nothing), written
+//!   atomically and readable only by the owner. A pid alone is not proof — pids are
 //!   reused — so the shell acts on a record only while the live process at that pid
 //!   still has the recorded start time and executable.
 //! * **Claim**: a recorded process that is still ours is adopted again (never killed
@@ -28,6 +38,8 @@ use std::time::Duration;
 pub const ENV_MODE: &str = "NERVA_DESKTOP_HUB";
 pub const ENV_DIR: &str = "NERVA_DESKTOP_HUB_DIR";
 pub const RECORD_FILE: &str = "hub-ownership.txt";
+/// The per-user setting naming the checkout, in the app's config directory.
+pub const DIR_FILE: &str = "hub-dir.txt";
 const RECORD_MAX_BYTES: usize = 4096;
 
 /// What the shell may do about a missing hub.
@@ -69,15 +81,49 @@ fn venv_python(dir: &Path, windows: bool) -> PathBuf {
     }
 }
 
-/// The resolution ladder. `explicit` is `NERVA_DESKTOP_HUB_DIR`; `starts` are the
-/// executable's and the working directory's paths, searched upward.
+/// The fixed development layout: a shell built inside its own checkout, at
+/// `<checkout>/desktop/src-tauri/target/{debug,release}/<exe>`. Nothing else above the
+/// executable is ever considered.
+pub fn dev_checkout(exe: &Path) -> Option<PathBuf> {
+    let name = |p: &Path| p.file_name().and_then(|n| n.to_str()).map(str::to_string);
+    let profile = exe.parent()?;
+    if !matches!(name(profile)?.as_str(), "debug" | "release") {
+        return None;
+    }
+    let target = profile.parent()?;
+    let tauri = target.parent()?;
+    let desktop = tauri.parent()?;
+    if name(target)? != "target" || name(tauri)? != "src-tauri" || name(desktop)? != "desktop" {
+        return None;
+    }
+    desktop.parent().map(Path::to_path_buf)
+}
+
+/// The one line of `hub-dir.txt`: an absolute path, nothing else.
+pub fn parse_dir_file(text: &str) -> Result<PathBuf, String> {
+    let line = text.trim();
+    if line.is_empty() || line.len() > 4096 || line.contains('\n') || line.contains('\0') {
+        return Err(format!("{DIR_FILE} must hold one absolute path"));
+    }
+    let path = PathBuf::from(line);
+    if !path.is_absolute() {
+        return Err(format!("{DIR_FILE} must hold one absolute path"));
+    }
+    Ok(path)
+}
+
+/// The resolution ladder. `explicit` is `NERVA_DESKTOP_HUB_DIR` or `hub-dir.txt`;
+/// `exes` are the shell's executable paths, used only for the fixed dev layout.
 pub fn resolve(
     explicit: Option<&Path>,
-    starts: &[PathBuf],
+    exes: &[PathBuf],
     windows: bool,
     exists: &dyn Fn(&Path) -> bool,
 ) -> Result<Launch, String> {
     let dir = if let Some(dir) = explicit {
+        if !dir.is_absolute() {
+            return Err(format!("{ENV_DIR} must be an absolute path"));
+        }
         if !is_checkout(dir, exists) {
             return Err(format!(
                 "{ENV_DIR}={} has no serve.py and agents/web.py",
@@ -86,13 +132,14 @@ pub fn resolve(
         }
         dir.to_path_buf()
     } else {
-        starts
-            .iter()
-            .flat_map(|start| start.ancestors())
+        exes.iter()
+            .filter_map(|exe| dev_checkout(exe))
             .find(|dir| is_checkout(dir, exists))
-            .map(Path::to_path_buf)
             .ok_or_else(|| {
-                format!("no Nerva checkout found; set {ENV_DIR} or start the hub yourself")
+                format!(
+                    "no Nerva checkout is configured; start the hub yourself (start.sh) or set \
+                     {ENV_DIR} (or put the path in {DIR_FILE} in the app's config folder)"
+                )
             })?
     };
     let python = venv_python(&dir, windows);
@@ -105,13 +152,64 @@ pub fn resolve(
     Ok(Launch { python, dir })
 }
 
+/// `path` (resolved) and every ancestor up to `/` belong to root or `uid` and are
+/// writable by nobody else. A sticky world-writable directory (`/tmp`) is refused too:
+/// anyone can create a name in it.
+#[cfg(unix)]
+pub fn trusted_path(path: &Path, uid: u32) -> Result<(), String> {
+    use std::os::unix::fs::MetadataExt;
+    let real = std::fs::canonicalize(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    for p in real.ancestors() {
+        let meta = std::fs::metadata(p).map_err(|e| format!("{}: {e}", p.display()))?;
+        if meta.uid() != 0 && meta.uid() != uid {
+            return Err(format!("{} belongs to another user", p.display()));
+        }
+        if meta.mode() & 0o022 != 0 {
+            return Err(format!(
+                "{} is writable by other users (group or world)",
+                p.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Whether the shell may run this checkout's interpreter. Checked before every spawn;
+/// the error names the path that failed. Unix only: Windows ACLs are not inspected
+/// (the checkout must still be named explicitly or be the dev layout).
+#[cfg(unix)]
+pub fn check_launch(launch: &Launch, uid: u32) -> Result<(), String> {
+    let dir =
+        std::fs::canonicalize(&launch.dir).map_err(|e| format!("{}: {e}", launch.dir.display()))?;
+    for rel in ["serve.py", "agents", "agents/web.py", ".venv", ".venv/bin"] {
+        let real = std::fs::canonicalize(dir.join(rel))
+            .map_err(|e| format!("{}: {e}", dir.join(rel).display()))?;
+        if !real.starts_with(&dir) {
+            return Err(format!(
+                "{} resolves outside the checkout ({})",
+                dir.join(rel).display(),
+                real.display()
+            ));
+        }
+    }
+    trusted_path(&dir, uid)?;
+    for rel in ["serve.py", "agents", "agents/web.py", ".venv", ".venv/bin"] {
+        trusted_path(&dir.join(rel), uid)?;
+    }
+    // The venv's python is usually a link to the system or a pyenv interpreter; what it
+    // resolves to must pass the same check (root's /usr/bin/python3 does).
+    trusted_path(&launch.python, uid)
+        .map_err(|why| format!("the interpreter {}: {why}", launch.python.display()))
+}
+
 /// The shell's proof that it started a process.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Record {
     pub pid: u32,
     /// The process's start time as the OS reports it (seconds since the epoch).
     pub started: u64,
-    /// A fresh random value per launch; it names the launch in logs and the record.
+    /// A fresh random value per launch: a label for the launch in logs and the record.
+    /// It is not verified and proves nothing; the start time and executable do.
     pub nonce: String,
     /// The interpreter that was started, compared against the live process.
     pub exe: PathBuf,
@@ -122,15 +220,16 @@ pub struct Record {
 }
 
 impl Record {
-    pub fn encode(&self) -> String {
-        format!(
+    /// `None` when a field would break the line format (a newline in the path).
+    pub fn encode(&self) -> Option<String> {
+        let exe = self.exe.to_str()?;
+        if exe.is_empty() || exe.contains(['\n', '\r', '\0']) || !valid_nonce(&self.nonce) {
+            return None;
+        }
+        Some(format!(
             "version=1\npid={}\nstarted={}\nnonce={}\nexe={}\nshell={}\n",
-            self.pid,
-            self.started,
-            self.nonce,
-            self.exe.display(),
-            self.shell
-        )
+            self.pid, self.started, self.nonce, exe, self.shell
+        ))
     }
 
     /// Strict: every field once, nothing unknown, a bounded size. A record that does
@@ -333,7 +432,122 @@ mod tests {
     }
 
     #[test]
-    fn resolution_finds_the_checkout_above_the_executable() {
+    fn only_the_fixed_dev_layout_is_found_from_the_executable() {
+        assert_eq!(
+            dev_checkout(Path::new(
+                "/src/nerva/desktop/src-tauri/target/release/nerva"
+            )),
+            Some(PathBuf::from("/src/nerva"))
+        );
+        for exe in [
+            "/usr/bin/jarvis-hub-desktop",
+            "/tmp/.mount_NervaAbC/usr/bin/jarvis-hub-desktop",
+            "/src/nerva/desktop/src-tauri/target/debug/deps/x",
+            "/src/nerva/desktop/x/target/debug/x",
+            "/src/nerva/other/src-tauri/target/debug/x",
+            "/target/debug/x",
+        ] {
+            assert_eq!(dev_checkout(Path::new(exe)), None, "{exe}");
+        }
+    }
+
+    #[test]
+    fn a_planted_checkout_above_an_installed_shell_or_in_the_cwd_is_never_used() {
+        // AppImage: the exe lives in $TMPDIR/.mount_*/usr/bin; /tmp holds planted files.
+        let exists = fs(&[
+            "/tmp/serve.py",
+            "/tmp/agents/web.py",
+            "/tmp/.venv/bin/python",
+            "/home/u/Downloads/pkg/serve.py",
+            "/home/u/Downloads/pkg/agents/web.py",
+            "/home/u/Downloads/pkg/.venv/bin/python",
+        ]);
+        for starts in [
+            vec![PathBuf::from(
+                "/tmp/.mount_NervaAbC123/usr/bin/jarvis-hub-desktop",
+            )],
+            vec![
+                PathBuf::from("/usr/bin/jarvis-hub-desktop"),
+                PathBuf::from("/home/u/Downloads/pkg/sub"),
+                PathBuf::from("/home/u/Downloads/pkg"),
+            ],
+        ] {
+            assert!(
+                resolve(None, &starts, false, &exists).is_err(),
+                "{starts:?}"
+            );
+        }
+        assert!(resolve(Some(Path::new("relative/dir")), &[], false, &exists).is_err());
+    }
+
+    #[test]
+    fn the_dir_file_holds_one_absolute_path() {
+        assert_eq!(
+            parse_dir_file(" /src/nerva \n"),
+            Ok(PathBuf::from("/src/nerva"))
+        );
+        for bad in ["", "relative", "/a\n/b", "/a\0"] {
+            assert!(parse_dir_file(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[cfg(unix)]
+    fn my_uid(dir: &Path) -> u32 {
+        use std::os::unix::fs::MetadataExt;
+        let probe = dir.join("uid-probe");
+        std::fs::write(&probe, b"").unwrap();
+        std::fs::metadata(&probe).unwrap().uid()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn shared_or_foreign_directories_are_not_trusted() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = std::env::temp_dir().join(format!("hp-trust-{}", new_nonce()));
+        std::fs::create_dir_all(&base).unwrap();
+        let uid = my_uid(&base);
+        // root's system directories are fine for root and for a user alike.
+        assert!(trusted_path(Path::new("/"), uid).is_ok());
+        assert!(trusted_path(Path::new("/"), uid + 12345).is_ok());
+        // A world-writable directory is refused, and so is anything beneath it.
+        let open = base.join("open");
+        std::fs::create_dir_all(open.join("inner")).unwrap();
+        std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o1777)).unwrap();
+        let err = trusted_path(&open.join("inner"), uid).unwrap_err();
+        assert!(err.contains("writable by other users"), "{err}");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_venv_linked_outside_the_checkout_is_refused() {
+        let base = std::env::temp_dir().join(format!("hp-venv-{}", new_nonce()));
+        let dir = base.join("checkout");
+        let elsewhere = base.join("elsewhere");
+        std::fs::create_dir_all(dir.join("agents")).unwrap();
+        std::fs::create_dir_all(elsewhere.join("bin")).unwrap();
+        std::fs::write(dir.join("serve.py"), b"").unwrap();
+        std::fs::write(dir.join("agents/web.py"), b"").unwrap();
+        std::fs::write(elsewhere.join("bin/python"), b"").unwrap();
+        std::os::unix::fs::symlink(&elsewhere, dir.join(".venv")).unwrap();
+        let uid = my_uid(&base);
+        let launch = Launch {
+            python: dir.join(".venv/bin/python"),
+            dir: dir.clone(),
+        };
+        let err = check_launch(&launch, uid).unwrap_err();
+        assert!(err.contains("outside the checkout"), "{err}");
+        // In the shared temp directory the checkout itself is refused as well.
+        std::fs::remove_file(dir.join(".venv")).unwrap();
+        std::fs::create_dir_all(dir.join(".venv/bin")).unwrap();
+        std::fs::write(dir.join(".venv/bin/python"), b"").unwrap();
+        let err = check_launch(&launch, uid).unwrap_err();
+        assert!(err.contains("writable by other users"), "{err}");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn the_dev_layout_resolves_its_own_checkout() {
         let exists = fs(&[
             "/src/nerva/serve.py",
             "/src/nerva/agents/web.py",
@@ -341,7 +555,9 @@ mod tests {
         ]);
         let got = resolve(
             None,
-            &[PathBuf::from("/src/nerva/desktop/src-tauri/target/debug")],
+            &[PathBuf::from(
+                "/src/nerva/desktop/src-tauri/target/debug/jarvis-hub-desktop",
+            )],
             false,
             &exists,
         )
@@ -381,14 +597,14 @@ mod tests {
     #[test]
     fn no_venv_means_no_guessing_a_system_python() {
         let exists = fs(&["/a/serve.py", "/a/agents/web.py"]);
-        let err = resolve(None, &[PathBuf::from("/a")], false, &exists).unwrap_err();
+        let err = resolve(Some(Path::new("/a")), &[], false, &exists).unwrap_err();
         assert!(err.contains("install.sh"));
         let exists = fs(&[
             "/a/serve.py",
             "/a/agents/web.py",
             "/a/.venv/Scripts/python.exe",
         ]);
-        assert!(resolve(None, &[PathBuf::from("/a")], true, &exists).is_ok());
+        assert!(resolve(Some(Path::new("/a")), &[], true, &exists).is_ok());
         assert!(resolve(None, &[PathBuf::from("/nowhere")], false, &fs(&[])).is_err());
     }
 
@@ -404,12 +620,16 @@ mod tests {
 
     #[test]
     fn the_record_round_trips() {
-        assert_eq!(Record::decode(&record().encode()), Some(record()));
+        assert_eq!(Record::decode(&record().encode().unwrap()), Some(record()));
+        // A field that would break the line format is never written.
+        let mut bad = record();
+        bad.exe = PathBuf::from("/x\npid=1");
+        assert_eq!(bad.encode(), None);
     }
 
     #[test]
     fn a_malformed_record_is_absent_and_can_never_lead_to_a_kill() {
-        let good = record().encode();
+        let good = record().encode().unwrap();
         for bad in [
             String::new(),
             good.replace("version=1", "version=2"),

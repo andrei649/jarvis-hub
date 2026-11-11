@@ -20,3 +20,6 @@ tauri-plugin-deep-link = "2"
 notify-rust = "4"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 sysinfo = { version = "0.40.1", default-features = false, features = ["system"] }
+
+[target."cfg(unix)".dependencies]
+libc = "0.2.191"

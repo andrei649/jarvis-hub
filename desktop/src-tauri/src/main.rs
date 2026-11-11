@@ -11,8 +11,8 @@ mod policy;
 mod throttling;
 use geometry::{recover_scaled, Rect};
 use policy::Action;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use tauri::utils::config::BackgroundThrottlingPolicy;
 use tauri::{
     Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
@@ -90,6 +90,8 @@ struct Shell {
     pending: Mutex<Option<String>>,
     quick_entry: AtomicBool,
     seen: Mutex<notify::Seen>,
+    budget: Mutex<notify::Budget>,
+    waiting: Arc<AtomicUsize>,
 }
 
 /// Bring the main window to a HUD page (`/v2/...`). The page must pass the same route
@@ -154,11 +156,21 @@ fn desktop_notify(
     if window.is_visible().unwrap_or(false) && window.is_focused().unwrap_or(false) {
         return Ok(false);
     }
-    show_notification(window.app_handle().clone(), request);
+    // A page cannot flood the desktop: a per-minute budget, and a cap on notifications
+    // still waiting for a click (one thread each). The inbox keeps what is dropped.
+    if !shell
+        .budget
+        .lock()
+        .unwrap()
+        .allow(std::time::Instant::now())
+    {
+        return Ok(false);
+    }
+    show_notification(window.app_handle().clone(), request, shell.waiting.clone());
     Ok(true)
 }
 
-fn show_notification(app: tauri::AppHandle, request: notify::Request) {
+fn show_notification(app: tauri::AppHandle, request: notify::Request, waiting: Arc<AtomicUsize>) {
     let mut note = notify_rust::Notification::new();
     note.appname("Nerva")
         .summary(&request.title)
@@ -172,23 +184,36 @@ fn show_notification(app: tauri::AppHandle, request: notify::Request) {
             note.action(id, label);
         }
         let path = request.kind.hud_path();
-        std::thread::spawn(move || match note.show() {
-            Ok(handle) => handle.wait_for_action(|action| {
-                if action == "default" || action == notify::ACTION_REVIEW {
-                    let app2 = app.clone();
-                    let _ = app.run_on_main_thread(move || {
-                        if let Err(e) = open_hud(&app2, path) {
-                            eprintln!("Decision Inbox not opened: {e}");
-                        }
-                    });
+        if waiting.fetch_add(1, Ordering::SeqCst) >= notify::MAX_WAITING {
+            waiting.fetch_sub(1, Ordering::SeqCst);
+            return;
+        }
+        std::thread::spawn(move || {
+            struct Done(Arc<AtomicUsize>);
+            impl Drop for Done {
+                fn drop(&mut self) {
+                    self.0.fetch_sub(1, Ordering::SeqCst);
                 }
-            }),
-            Err(e) => eprintln!("Notification not shown: {e}"),
+            }
+            let _done = Done(waiting);
+            match note.show() {
+                Ok(handle) => handle.wait_for_action(|action| {
+                    if action == "default" || action == notify::ACTION_REVIEW {
+                        let app2 = app.clone();
+                        let _ = app.run_on_main_thread(move || {
+                            if let Err(e) = open_hud(&app2, path) {
+                                eprintln!("Decision Inbox not opened: {e}");
+                            }
+                        });
+                    }
+                }),
+                Err(e) => eprintln!("Notification not shown: {e}"),
+            }
         });
     }
     #[cfg(not(all(unix, not(target_os = "macos"))))]
     {
-        let _ = app;
+        let _ = (app, waiting);
         std::thread::spawn(move || {
             if let Err(e) = note.show() {
                 eprintln!("Notification not shown: {e}");
@@ -509,7 +534,8 @@ fn main() {
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let log_dir = app.path().app_log_dir()?;
-            app.manage(hub::Owner::new(data_dir, log_dir));
+            let config_dir = app.path().app_config_dir()?;
+            app.manage(hub::Owner::new(data_dir, log_dir, config_dir));
             // H183: nerva:// links. The installer registers the scheme; Linux and a
             // Windows dev build register it at runtime as well.
             #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]

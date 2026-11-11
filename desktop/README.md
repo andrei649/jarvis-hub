@@ -6,29 +6,47 @@ The Tauri host loads the existing local HUD at `http://127.0.0.1:8080/v2/`.
 
 The app owns the hub it starts, and only that one. On launch it:
 
-1. reads its ownership record (`hub-ownership.txt` in the app's data directory: pid,
-   the process's start time, a per-launch nonce and the interpreter path). If that
-   process is still alive **with the recorded start time and executable**, it is the
-   hub this app started before (the app crashed or was killed): the app adopts it again
-   and never kills a healthy one. A record whose process is gone, or whose pid now
-   belongs to something else, is dropped and touches nothing.
+1. reads its ownership record (`hub-ownership.txt` in the app's data directory, mode
+   0600: pid, the process's start time, the interpreter path, the app's own pid and a
+   per-launch nonce that only labels the launch in logs). If that process is still
+   alive **with the recorded start time and executable**, it is the hub this app
+   started before (the app crashed or was killed): the app adopts it again and never
+   kills a healthy one. A record whose process is gone, or whose pid now belongs to
+   something else, is dropped and touches nothing. A hub another running copy of the
+   app owns is used, not adopted.
 2. if something already listens on `127.0.0.1:8080` (you ran `start.sh`, a service),
    the app uses it and never stops it.
 3. otherwise starts one: `<checkout>/.venv/bin/python serve.py` (Windows:
-   `.venv\Scripts\python.exe`) in the checkout given by `NERVA_DESKTOP_HUB_DIR`, else
-   the first folder above the app or the working directory that holds `serve.py` and
-   `agents/web.py`. Without a `.venv` it refuses to guess a system Python (run
-   `install.sh` first). `JARVIS_HUD=v2` is set as `start.sh` does, unless you chose a
-   HUD. Output goes to `hub.log` in the app's log directory.
+   `.venv\Scripts\python.exe`). The checkout is **named, never searched for**:
+   - `NERVA_DESKTOP_HUB_DIR` (an absolute path), else
+   - the one line of `hub-dir.txt` in the app's config folder (Linux
+     `~/.config/com.jarvis.hub/`, macOS `~/Library/Application Support/com.jarvis.hub/`,
+     Windows `%APPDATA%\com.jarvis.hub\`), else
+   - for a development run only, the checkout the app was built in
+     (`<checkout>/desktop/src-tauri/target/{debug,release}/<exe>`).
+
+   The working directory is never used and nothing else above the app is searched (an
+   AppImage runs from a mount under the shared temp folder, where anyone can plant a
+   `serve.py`). Before starting, on Linux and macOS, the checkout and every folder above
+   it must belong to you or root and be writable by nobody else (group or world; `/tmp`
+   is refused); `serve.py`, `agents/`, `.venv` and `.venv/bin` must stay inside the
+   checkout; and the interpreter `.venv/bin/python` points to (often the system or a
+   pyenv Python) must pass the same ownership check. Windows ACLs are not inspected.
+   If nothing qualifies, nothing is started: the app says why (stderr and a
+   notification) and waits for a hub you start. Without a `.venv` it refuses to guess a
+   system Python (run `install.sh` first). `JARVIS_HUD=v2` is set as `start.sh` does,
+   unless you chose a HUD. Output goes to `hub.log` in the app's log directory.
 4. opens the HUD windows only once `GET /readyz` answers 200 (up to two minutes). An
    adopted hub that never becomes ready is stopped (reaped) and a fresh one started.
 
-Quitting stops the hub the app owns (SIGTERM, then a kill after ten seconds), after
-checking the live process still has the recorded start time and executable. A hub the
-app did not start keeps running. `NERVA_DESKTOP_HUB=external` makes the app never start
-a hub and only wait for yours. The app reads no hub credential: the hub reads its own
-`.env`, readiness is the unauthenticated `/readyz`, and the HUD signs in as in a browser.
-The hub must listen on port 8080 (the HUD origin is fixed).
+Quitting stops the hub the app owns (SIGTERM, then a kill after ten seconds). Before
+each signal it checks again that the live process still has the recorded start time and
+executable; for a hub adopted from an earlier launch a changed start time means the hub
+is gone and nothing is signalled. A hub the app did not start keeps running.
+`NERVA_DESKTOP_HUB=external` makes the app never start a hub and only wait for yours.
+The app reads no hub credential: the hub reads its own `.env`, readiness is the
+unauthenticated `/readyz`, and the HUD signs in as in a browser. The hub must listen on
+port 8080 (the HUD origin is fixed).
 
 ## Quick Entry (H179)
 
@@ -46,8 +64,10 @@ says so on stderr; `desktop_capabilities` reports `globalShortcut` truthfully.
 The main HUD window watches the pending approvals it can already read with your
 session (`GET /autonomy/approvals`, every 20 s) and asks the shell (`desktop_notify`)
 to show a native notification for each new one, unless the HUD is already in front.
-Requests are validated (one kind, a bounded id, one bounded line of text, no control or
-bidi characters) and shown once per approval. The notification **only opens** the
+Requests are validated (one kind, a bounded id, one bounded line of text with no
+control or bidi characters and no `<`, `>` or `&`, which freedesktop servers read as
+markup) and shown once per approval, at most six a minute and at most eight waiting for
+a click; the rest stay in the inbox. The notification **only opens** the
 Decision Inbox: clicking it, or its single "Review in Nerva" action on Linux, brings the
 main window to `/v2/console/decision-inbox`, where you approve or deny on the normal
 card through the hub's normal decision route. There is no approve or deny button on a

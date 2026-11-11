@@ -127,7 +127,7 @@ pub fn parse(raw: &str) -> Result<Link, String> {
             let (k, v) = pair.split_once('=').ok_or("a parameter needs a value")?;
             let key = decode(k)?;
             if params.iter().any(|(seen, _)| *seen == key) {
-                return Err(format!("{key} appears twice"));
+                return Err("a parameter appears twice".into());
             }
             params.push((key, decode(v)?));
         }
@@ -140,7 +140,7 @@ pub fn parse(raw: &str) -> Result<Link, String> {
     };
     let allow_only = |keys: &[&str]| -> Result<(), String> {
         match params.iter().find(|(k, _)| !keys.contains(&k.as_str())) {
-            Some((k, _)) => Err(format!("{k} is not a parameter of this link")),
+            Some(_) => Err("a parameter this link does not take".into()),
             None => Ok(()),
         }
     };
@@ -250,6 +250,20 @@ mod tests {
             hud_path(&parse("nerva://mcp/install?name=a&config=a+b").unwrap()),
             "/v2/console/mcp?link=a&config=a%2Bb"
         );
+    }
+
+    #[test]
+    fn a_refusal_reason_never_echoes_the_link() {
+        for bad in [
+            "nerva://mcp/install?name=a&EVILKEY=1",
+            "nerva://mcp/install?name=a&EVILKEY=1&EVILKEY=2",
+            "nerva://open/chat?EVILKEY=1",
+            "nerva://EVILKEY/x",
+            "nerva://mcp/install?name=EVILKEY%20",
+        ] {
+            let why = parse(bad).unwrap_err();
+            assert!(!why.contains("EVILKEY"), "{why}");
+        }
     }
 
     #[test]
