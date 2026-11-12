@@ -14,6 +14,20 @@
   itself hits an internal error, it says so in one line, prints the same hint and exits
   instead of showing a traceback.
 
+**More in the terminal chat**
+- `/copy` puts the last answer on your clipboard (through your terminal, OSC 52; a terminal
+  that does not allow it ignores the request). `/where` shows the working directory, its git
+  branch and the battery; the chat shows the same line when it starts and warns once when
+  the battery runs low while discharging.
+- `/queue edit N` takes a queued message back into your draft so you can change it.
+- Tab on a command that does not exist offers the closest ones, by name or by what they do
+  (`/sesion` finds `/sessions`, `/quota` finds `/usage`).
+
+**A mistyped command gets a suggestion**
+- In any chat, an unknown `/command` now answers with the closest commands you may run, for
+  example "Did you mean /sessions (the five most recent sessions)?". Nothing is run for you,
+  and a guest is only offered commands a guest may use.
+
 ### What changed for you — 2026-11-11
 
 **See what Nerva ran while it answers**

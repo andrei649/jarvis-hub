@@ -162,10 +162,22 @@ off by default; while it is off the model has no `clarify` or `request_secret` t
 ## The interactive chat: `nerva chat -i` (H224)
 
 `nerva chat -i` keeps a conversation open on the terminal. It needs a terminal on stdin
-and stdout, writes no receipt, and refuses the scripted-turn flags (`MESSAGE`, `-f`, `-z`,
-`--json`, `--usage-file`, `--image`, `--no-prompts`). `--session`, `-r`/`-c` (the hub's
-own sessions), `--agent` and `--reasoning` apply to every turn. It is built on GNU
-readline from the standard library.
+and stdout, writes no receipt, and refuses the scripted-turn flags (`-f`, `-z`, `--json`,
+`--usage-file`, `--no-prompts`). `MESSAGE` (with `--image PATH` or `--clipboard-image`)
+is sent as the chat's first message (H223). `--session`, `-r`/`-c` (the hub's own
+sessions), `--agent` and `--reasoning` apply to every turn. It is built on GNU readline
+from the standard library.
+
+**Streaming (H223).** Each turn goes over `POST /chat/stream`: the answer is drawn a whole
+line at a time as it arrives (at a newline, or at the last space once it is as wide as
+the terminal), every line stripped of control, escape, bidi and zero-width characters,
+and the prompt is redrawn under it, so you can keep typing. Each tool the turn runs is one
+line (`⋯ name`, then `✓ name (ok)` or `✗ name (status)`), from the hub's tool events,
+which carry the tool's name and state only. The client sends `X-Nerva-Pending: poll`, so
+the turn's questions (a clarify question, a missing key) still arrive through
+`GET /chat/pending` as below. A hub without the stream route gets `POST /chat`. Every exit
+prints `resume this conversation: nerva chat -i -r <id>`; an internal error in the client
+ends the chat with one line, exit 1, and the same hint.
 
 | Key | What it does |
 |---|---|
@@ -176,7 +188,7 @@ readline from the standard library.
 | Ctrl+X Ctrl+E, `/edit [text]` | compose in `$VISUAL`/`$EDITOR`. The editor is run without a shell on an owner-only (0600) temporary file, which is removed afterwards; the saved text becomes the draft |
 | Ctrl+L | redraw |
 | Esc Esc | discard the draft (Ctrl+Y brings it back) |
-| Tab, Shift+Tab | cycle completions: the slash commands this credential may run (`GET /api/commands`), the client commands below, and `@file:` references as the hub writes them (`GET /api/context-refs`; a path with a space comes quoted). The hub gets 1 s to answer; an unreachable hub is not asked again for 30 s, so Tab never hangs. A name holding a control, bidi or zero-width character is not offered |
+| Tab, Shift+Tab | cycle completions: the slash commands this credential may run (`GET /api/commands`), the client commands below, and `@file:` references as the hub writes them (`GET /api/context-refs`; a path with a space comes quoted). When no command starts with what you typed (three characters or more), the closest commands by name or description are offered (`/sesion` → `/sessions`, `/quota` → `/usage`; H231). The hub gets 1 s to answer; an unreachable hub is not asked again for 30 s, so Tab never hangs. A name holding a control, bidi or zero-width character is not offered |
 | Up, Down | history |
 | paste | bracketed paste: a multi-line paste is one message |
 
@@ -185,7 +197,12 @@ next message goes to the vision model with the image, as `--image` does), `/swit
 (list your sessions, then `/switch N`, `/switch <id>` or `/switch new`), `/model` (the
 hub's local models; switching uses the owner's admin route, so a user token is told
 no), `/queue` (messages typed while a turn runs wait here: `/queue drop N`,
-`/queue clear`), `/keys`, `/exit`. Any other line, hub slash commands included, is sent
+`/queue clear`, `/queue edit N` to take one back into the draft), `/copy` (the last
+answer to the clipboard through the terminal, OSC 52: base64, so the answer cannot carry
+a terminal sequence; a terminal that does not allow OSC 52 ignores it), `/where` (the
+working directory, its git branch read from `.git/HEAD`, and the battery; also shown at
+start, and the chat warns once per 5 points when the battery is discharging at 15 % or
+less), `/keys`, `/exit`. Any other line, hub slash commands included, is sent
 to the hub. During a message continued with a trailing `\`, Ctrl+X Ctrl+E and `/edit`
 open the whole draft in the editor and `/exit` discards it: none of them sends the
 half-written message.
@@ -193,7 +210,7 @@ half-written message.
 **Stopping a turn.** Ctrl+C calls `POST /chat/interrupt` for the turn that is on the
 wire, named by the session it was sent to (still that one after a `/switch`) or, for the
 first turn of a chat that has no session yet, by the turn id the client sent in the
-`X-Nerva-Turn-Id` header of `POST /chat`. A request that names neither is refused (422):
+`X-Nerva-Turn-Id` header of `POST /chat` or `POST /chat/stream`. A request that names neither is refused (422):
 there is no "stop everything". The hub stops only turns started with the same credential
 as the caller. The stopped turn answers *Interrupted. Nothing more was done for this
 message.* with a `turn_interrupted` notice: a step that was already running may still

@@ -1,8 +1,8 @@
 # Sprint curent: echivalarea celor 697 de capabilități Hermes
 
-**164 / 697 = 23.5% echivalente complet în evaluarea documentată.**
+**165 / 697 = 23.7% echivalente complet în evaluarea documentată.**
 
-Din acestea, **164** au fost reevaluate pe cod în această livrare; **0** păstrează verdictul auditului din 7 septembrie.
+Din acestea, **165** au fost reevaluate pe cod în această livrare; **0** păstrează verdictul auditului din 7 septembrie.
 
 **Acesta este un status inițial conservator, nu o reauditare completă a celor 697.** Verdictele moștenite și cele actualizate sunt vizibile pentru fiecare rând. Procentul de 88% discutat anterior privea altă listă și nu se aplică aici.
 
@@ -10,13 +10,13 @@ Din acestea, **164** au fost reevaluate pe cod în această livrare; **0** păst
 
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
-| Echivalent | 164 | 23.5% |
-| Parțial | 489 | 70.2% |
+| Echivalent | 165 | 23.7% |
+| Parțial | 488 | 70.0% |
 | Lipsă | 8 | 1.1% |
 | Exclus intenționat | 36 | 5.2% |
 | De reverificat | 0 | 0.0% |
 
-**Ținta acceptată în produs:** 661 rânduri; progres 164/661 = **24.8%**. Excluderi active: 36. Readmise explicit din vechiul audit: 71; readmiterea nu acordă credit de implementare.
+**Ținta acceptată în produs:** 661 rânduri; progres 165/661 = **25.0%**. Excluderi active: 36. Readmise explicit din vechiul audit: 71; readmiterea nu acordă credit de implementare.
 
 **Acoperirea reevaluării curente:** 661/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
 
@@ -33,7 +33,7 @@ Fiecare rând aparține unui singur domeniu din [areas.json](docs/hermes/areas.j
 | [platforms](docs/HERMES_CAPABILITIES.md#area-platforms) — Messaging platforms and channels | own | 39 | 3 | 30 | 0 | 6 | 0 | 41 | seed din dovezi |
 | [web](docs/HERMES_CAPABILITIES.md#area-web) — Web dashboard and HUD | own/run | 40 | 15 | 23 | 0 | 2 | 0 | 70 | seed din dovezi |
 | [desktop](docs/HERMES_CAPABILITIES.md#area-desktop) — Desktop app: jobs done in the HUD and Tauri shell | own | 54 | 5 | 46 | 1 | 2 | 0 | 53 | seed din dovezi |
-| [tui](docs/HERMES_CAPABILITIES.md#area-tui) — Terminal UI: jobs done in the HUD and nerva CLI | own | 25 | 3 | 19 | 1 | 2 | 0 | 27 | **subțire**, seed din dovezi |
+| [tui](docs/HERMES_CAPABILITIES.md#area-tui) — Terminal UI: jobs done in the HUD and nerva CLI | own | 25 | 4 | 18 | 1 | 2 | 0 | 29 | **subțire**, seed din dovezi |
 | [config](docs/HERMES_CAPABILITIES.md#area-config) — Configuration and settings | own | 18 | 9 | 9 | 0 | 0 | 0 | 30 | seed din dovezi |
 | [env](docs/HERMES_CAPABILITIES.md#area-env) — Environment, install and execution targets | own | 28 | 6 | 21 | 0 | 1 | 0 | 157 | seed din dovezi |
 | [tools](docs/HERMES_CAPABILITIES.md#area-tools) — Agent-callable tools and toolsets | adopt/own | 32 | 9 | 22 | 0 | 1 | 0 | 81 | seed din dovezi |

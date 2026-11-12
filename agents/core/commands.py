@@ -179,6 +179,26 @@ class CommandRegistry:
             if (command.tier == USER or principal.admin) and (allowed is None or command.name in allowed)
         ]
 
+    def _suggest(self, name: str, principal: Principal) -> str:
+        """H231: the closest commands *principal* may run here, by name and description
+        (``agents.core.fuzzy_match``), as " Did you mean /a (…) or /b (…)?" — or "".
+        Only commands :meth:`visible` lists are named, so a guest never learns an owner
+        command, and nothing is run: a guess is a suggestion, never a dispatch."""
+        try:
+            from .fuzzy_match import rank
+
+            visible = self.visible(principal)
+            names = rank(name, [(command.name, command.description) for command in visible])
+        except Exception:      # a suggestion never breaks the unknown-command reply
+            logger.debug("command suggestion failed", exc_info=True)
+            return ""
+        if not names:
+            return ""
+        described = {command.name: command.description for command in visible}
+        options = [f"/{item} ({described[item][:60]})" for item in names]
+        joined = options[0] if len(options) == 1 else ", ".join(options[:-1]) + " or " + options[-1]
+        return f" Did you mean {joined}?"
+
     @staticmethod
     def parse(text: str) -> tuple[str, str] | None:
         match = _COMMAND_RE.match((text or "").strip())
@@ -208,7 +228,7 @@ class CommandRegistry:
             # Deliberately NOT observed. `name` here is whatever the sender typed, so
             # emitting it would push arbitrary message text through a field that
             # promises to carry command names — a body leak wearing a safe label.
-            return CommandOutcome(name, "unknown", f"Unknown command /{name}. Try /help.")
+            return CommandOutcome(name, "unknown", f"Unknown command /{name}.{self._suggest(name, principal)} Try /help.")
         from .slash_access import refusal
 
         # H058, the cold path: the access gate answers first — before any handler, and

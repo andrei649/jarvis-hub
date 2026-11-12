@@ -29,7 +29,8 @@ paste                  bracketed paste: a multi-line paste is one draft, not N t
 Client commands (never sent to the hub): ``/edit``, ``/image PATH``, ``/paste-image``,
 ``/switch [N|id|new]`` (your sessions, ``GET /sessions``), ``/model [N|id]`` (the hub's
 local models; switching is the owner's admin route and is refused otherwise),
-``/queue [clear|drop N]``, ``/keys``, ``/exit``. Everything else — ``/help``, ``/recap``,
+``/queue [clear|drop N]``, ``/copy`` (the last answer, OSC 52), ``/where`` (directory, git
+branch, battery), ``/keys``, ``/exit``. Everything else — ``/help``, ``/recap``,
 any hub command — goes to the hub as a message, where the command plane judges it.
 
 A message typed while a turn runs is queued and sent, in order, when the turn ends.
@@ -74,7 +75,9 @@ LOCAL_COMMANDS: dict[str, str] = {
     "/paste-image": "attach the clipboard's image to the next message",
     "/switch": "list your sessions; /switch N, /switch <id> or /switch new",
     "/model": "list the hub's local models; /model N or /model <id> switches (owner only)",
-    "/queue": "messages waiting for the running turn; /queue clear, /queue drop N",
+    "/queue": "messages waiting for the running turn; /queue clear, /queue drop N, /queue edit N",
+    "/copy": "copy the last answer to the clipboard (OSC 52; the terminal must allow it)",
+    "/where": "this terminal: working directory, git branch and battery",
     "/keys": "the keyboard reference",
     "/exit": "leave (also /quit, Ctrl+D, or Ctrl+C twice)",
     "/quit": "leave",
@@ -96,6 +99,10 @@ KEY_HELP: tuple[str, ...] = (
 )
 
 HISTORY_LIMIT = 1000
+#: H235: what /copy can carry, and the battery warning's level and polling interval.
+COPY_LIMIT = 64_000
+BATTERY_WARN = 15
+BATTERY_POLL_SECONDS = 60.0
 EXIT_ARM_SECONDS = 3.0
 #: Tab asks the hub for ``@file:`` paths with this budget; an unreachable hub is not
 #: asked again for COMPLETION_BACKOFF seconds, so Tab never freezes the prompt.
@@ -152,14 +159,26 @@ def route_line(line: str) -> tuple[str, str]:
 
 
 def completions(text: str, *, line: str, begin: int, commands: Iterable[str],
-                refs: Callable[[str], list[str]] | None = None) -> list[str]:
+                refs: Callable[[str], list[str]] | None = None,
+                described: Iterable[tuple[str, str]] = ()) -> list[str]:
     """Candidates for the word *text* that starts at *begin* in *line*.
 
     A ``/word`` at the start of the line completes from the hub's commands and this
-    client's own; ``@file:prefix`` anywhere completes from *refs* (the hub's scope)."""
+    client's own; when no name starts with it, the closest names by name and
+    *described* description are offered instead (H231/H235, ``agents.core.fuzzy_match``:
+    ``/sesion`` → ``/sessions``, ``/quota`` → ``/usage``). ``@file:prefix`` anywhere
+    completes from *refs* (the hub's scope)."""
     if text.startswith("/") and not line[:begin].strip():
         names = sorted(set(commands) | set(LOCAL_COMMANDS))
-        return [name for name in names if name.startswith(text)]
+        matches = [name for name in names if name.startswith(text)]
+        if matches or len(text) < 3:
+            return matches
+        from agents.core.fuzzy_match import rank
+
+        catalog = dict.fromkeys(names, "")
+        catalog.update(LOCAL_COMMANDS)
+        catalog.update({name: text for name, text in described if name in catalog})
+        return rank(text, catalog.items(), limit=5)
     if text.startswith("@file:") and refs is not None:
         # The hub's refs are whole references already (``@file:path``, quoted when the
         # path has a space): used as they are, never prefixed again.
@@ -366,6 +385,8 @@ class Repl:
         self.staged_images: list[str] = []
         self.staged_clipboard = False
         self.commands: list[str] = []
+        #: (command, card-safe description) from the hub's catalog, for fuzzy completion
+        self.described: list[tuple[str, str]] = []
         self.continued: list[str] = []
         self._draft_at_interrupt = ""
         self._prefill = ""
@@ -376,6 +397,10 @@ class Repl:
         #: route (every later turn uses ``POST /chat``).
         self._stream_ok: bool | None = None
         self._startup: Outgoing | None = None
+        #: H235: the last answer (for /copy), and the battery's last reading and warning
+        self.last_answer = ""
+        self._battery_checked = 0.0
+        self._battery_warned: int | None = None
 
     # output -----------------------------------------------------------------
     def say(self, text: str = "") -> None:
@@ -416,13 +441,18 @@ class Repl:
             reply = self.ctx.client().get("/api/commands")
         except HubError:
             return
+        from .chat_prompts import card_safe
+
         rows = reply.get("commands") if isinstance(reply, dict) else None
         names = []
+        described = []
         for row in rows if isinstance(rows, list) else []:
             command = row.get("command") if isinstance(row, dict) else None
             if isinstance(command, str) and re.fullmatch(r"/[a-z0-9][a-z0-9_-]{0,63}", command):
                 names.append(command)
+                described.append((command, card_safe(row.get("description"))[:200]))
         self.commands = names
+        self.described = described
 
     def file_refs(self, prefix: str) -> list[str]:
         """The hub's ``@file:`` references for *prefix* (``GET /api/context-refs``), as the
@@ -475,7 +505,8 @@ class Repl:
             if index == 0:
                 line = rl.get_line_buffer()
                 state["c"] = completions(text, line=line, begin=rl.get_begidx(),
-                                         commands=self.commands, refs=self.file_refs)
+                                         commands=self.commands, refs=self.file_refs,
+                                         described=self.described)
             options = state.get("c", [])
             return options[index] if index < len(options) else None
 
@@ -606,6 +637,69 @@ class Repl:
             self.switch(rest)
         elif head == "/model":
             self.model(rest)
+        elif head == "/copy":
+            self.copy_answer()
+        elif head == "/where":
+            for line in self.where_lines():
+                self.say(line)
+
+    # where it runs (H235) ---------------------------------------------------
+    def where_lines(self) -> list[str]:
+        from . import term_info
+
+        def absolute(name: str) -> Path | None:
+            value = (self.ctx.environ.get(name) or "").strip()
+            return Path(value) if value and os.path.isabs(value) else None
+
+        try:
+            cwd = Path.cwd()
+        except OSError:
+            return ["working directory: (gone)"]
+        branch = term_info.git_branch(cwd)
+        charge = term_info.battery()
+        parts = [term_info.cwd_label(cwd, absolute("HOME") or absolute("USERPROFILE")),
+                 f"git {branch}" if branch else "not in a git repository"]
+        if charge is not None:
+            parts.append(charge.label())
+        return [" · ".join(parts)]
+
+    def copy_answer(self) -> None:
+        from . import term_info
+        from .nerva import _answer_text
+
+        text = _answer_text(self.last_answer).strip("\n")
+        if not text:
+            self.say("no answer to copy yet")
+            return
+        sequence = term_info.osc52(text, self.ctx.environ)
+        if sequence is None:
+            self.say("the last answer is too long to copy through the terminal")
+            return
+        with self._lock:
+            try:
+                self.ctx.out.write(sequence)
+                self.ctx.out.flush()
+            except (OSError, ValueError):
+                return
+        self.say(f"copied {len(text):,} characters (OSC 52: a terminal that does not allow it ignores this)")
+
+    def check_battery(self, *, now: float | None = None) -> None:
+        """Battery polling: at most once a minute, a warning when the battery is
+        discharging at or below BATTERY_WARN %, again for every 5 points it drops."""
+        from . import term_info
+
+        now = time.monotonic() if now is None else now
+        if now - self._battery_checked < BATTERY_POLL_SECONDS:
+            return
+        self._battery_checked = now
+        charge = term_info.battery()
+        if charge is None or charge.charging or charge.percent > BATTERY_WARN:
+            self._battery_warned = None
+            return
+        if self._battery_warned is not None and charge.percent > self._battery_warned - 5:
+            return
+        self._battery_warned = charge.percent
+        self.say(f"battery {charge.percent}% and discharging")
 
     def stage_image(self, path: str) -> None:
         from .nerva import VISION_MAX_IMAGES, _plain, _read_image
@@ -633,6 +727,21 @@ class Repl:
                 dropped = len(self.queue)
                 self.queue.clear()
                 self.say(f"dropped {dropped} queued message(s)")
+                return
+            if rest.startswith("edit"):
+                # H225: take a queued message back into the draft to change it; it is
+                # sent again (at the end of the queue) when Enter is pressed.
+                arg = rest[4:].strip()
+                if arg.isdigit() and 1 <= int(arg) <= len(self.queue):
+                    item = self.queue[int(arg) - 1]
+                    del self.queue[int(arg) - 1]
+                    self._prefill = item.message
+                    self.staged_images = [*item.images, *self.staged_images]
+                    self.staged_clipboard = self.staged_clipboard or item.clipboard_image
+                    self.say(f"queued message {arg} is back in your draft" if self._rl is not None else
+                             f"queued message {arg} was taken out of the queue: {_plain(item.message, 300)}")
+                else:
+                    self.say("usage: /queue edit N")
                 return
             if rest.startswith("drop"):
                 arg = rest[4:].strip()
@@ -874,6 +983,8 @@ class Repl:
         if not isinstance(reply, dict):
             self.say("the hub's reply is malformed")
             return
+        if isinstance(reply.get("reply"), str):
+            self.last_answer = reply["reply"][:COPY_LIMIT]
         returned = reply.get("session_id")
         if isinstance(returned, str) and _SESSION_ID.match(returned):
             with self._lock:
@@ -1042,6 +1153,7 @@ class Repl:
     def step(self) -> bool:
         """Read and handle one line; False at end of input."""
         self.answer_asks()
+        self.check_battery()
         line = self.read_line(self.prompt())
         if line is None:
             if self.running:
@@ -1106,6 +1218,9 @@ class Repl:
         self._worker.start()
         self.say("Nerva chat. Enter sends · Alt+Enter newline · Ctrl+C clears / stops / exits · "
                  "/keys for the rest")
+        with contextlib.suppress(Exception):      # where it runs: never a reason not to start
+            for line in self.where_lines():
+                self.say(line)
         code = 0
         try:
             self.send_startup()

@@ -711,6 +711,8 @@
         "tests/test_h224_terminal_interaction.py",
         "tests/test_h226_cli_governance_prompts.py",
         "tests/test_h227_prompt_preview_clients.py",
+        "tests/test_h231_fuzzy_commands.py",
+        "tests/test_h235_terminal_info.py",
         "tests/test_h247_mic_lease.py",
         "tests/test_h277_nous_auth_surface.py",
         "tests/test_h277_vision_selection_cli.py",
