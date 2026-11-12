@@ -54,7 +54,7 @@ it('owns one turn synchronously across image and text submissions',async()=>{
   await act(async()=>resolveVision(answer()));
   act(()=>submit('normal text'));
   await screen.findByText('Text answer');
-  expect(JSON.parse(requests.find(r=>r.path==='/chat/stream').body)).toEqual({message:'normal text',agent:'jarvis'});
+  expect(JSON.parse(requests.find(r=>r.path==='/chat/stream').body)).toEqual({message:'normal text',agent:'jarvis',tool_events:true});
 });
 it('uses the returned generation after /new and reopens an exact older topic',async()=>{
   vi.stubGlobal('fetch',vi.fn().mockImplementation(async(path,init)=>{

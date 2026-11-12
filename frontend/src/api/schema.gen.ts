@@ -539,6 +539,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chat/interrupt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Interrupt Turn
+         * @description H224 — stop the caller's own running ``POST /chat`` turn (Ctrl+C in `nerva chat -i`).
+         *
+         *     Turns are found by the credential that started them, never by a name in the body:
+         *     another credential's turn is simply not found. The body names which of the caller's
+         *     turns (its session, or the turn id sent with ``POST /chat``); one naming neither is
+         *     refused (422), so a client cannot stop every turn of a shared credential by accident. The stopped turn answers its own
+         *     request with the interrupted reply and a ``turn_interrupted`` notice.
+         */
+        post: operations["interrupt_turn_chat_interrupt_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/help/docs": {
         parameters: {
             query?: never;
@@ -13627,7 +13653,11 @@ export interface paths {
         put?: never;
         /**
          * Backup Restore
-         * @description Ask to restore a snapshot over the live data root. Body: {name}.
+         * @description Ask to restore a snapshot over the live data root. Body: {name, replace_credentials?}.
+         *
+         *     H162 review: ``replace_credentials`` (strictly ``true``) also replaces the credential
+         *     store (security/) and the hooks (hooks/) with the archive's copies; by default they stay
+         *     as they are. The choice is on the card, and an uploaded archive's card says so.
          *
          *     Answers 202 ``{"pending": task id}``: the restore waits for a human in the decision
          *     inbox at the irreversible tier (``nerva approvals accept <id>``); a card for the same
@@ -13644,6 +13674,86 @@ export interface paths {
          *     ``backups/restore-history.jsonl``.
          */
         delete: operations["backup_restore_cancel_api_admin_backup_restore_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/backup/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Backup Download
+         * @description Download one listed backup archive as it is on disk (H162).
+         *
+         *     The name is matched against the trusted listing and the entry's real location must be
+         *     the backups directory (``resolve_backup_arg``: a listed entry that is a link to a file
+         *     elsewhere names no backup), so no request value reaches a path; an encrypted archive
+         *     stays encrypted. 404 for an unknown name.
+         */
+        get: operations["backup_download_api_admin_backup_download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/backup/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Backup Upload
+         * @description Add an encrypted backup archive from elsewhere to the listing, as the raw body (H162).
+         *
+         *     H162 review M1: only an archive encrypted with this box's backup key is accepted
+         *     (Fernet is authenticated, so it proves the owner made it); a plaintext archive is
+         *     refused with 422 ``plaintext_refused``, an archive the key does not open with
+         *     ``wrong_key``, no key on this box with ``key_missing``. The archive is restore-drilled
+         *     before it is listed (anything under backups/ fails the drill); a refused one is
+         *     deleted. Free space is checked before the first byte (507 ``no_space``) and while
+         *     streaming. 201 ``{ok, name, bytes, encrypted, origin, verify}``. Nothing is restored:
+         *     restoring it is ``POST /api/admin/backup/restore``, whose card says it was uploaded.
+         *     A PUT always passes the browser's CORS pre-check, and a cross-site write is refused
+         *     (``same_origin_write``).
+         */
+        put: operations["backup_upload_api_admin_backup_upload_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/backup/checkpoints": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Backup Checkpoints
+         * @description The owner's file checkpoints, read-only, for the backup section (H162).
+         *
+         *     The same inventory ``/checkpoints list`` and ``nerva checkpoints list`` read; diff,
+         *     restore and maintenance stay on those paths (a restore is its own approval card).
+         *     503 when the inventory cannot be read.
+         */
+        get: operations["backup_checkpoints_api_admin_backup_checkpoints_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -18948,6 +19058,19 @@ export interface components {
              */
             outcome: "refused" | "unknown" | "applied_unverified";
         };
+        /** TurnInterrupt */
+        TurnInterrupt: {
+            /**
+             * Session Id
+             * @description Stop the caller's turn in this conversation.
+             */
+            session_id?: string | null;
+            /**
+             * Turn Id
+             * @description Stop the caller's turn sent with this X-Nerva-Turn-Id header (before a session id is known).
+             */
+            turn_id?: string | null;
+        };
         /** TurnNotice */
         TurnNotice: {
             /** Code */
@@ -20194,6 +20317,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["PendingAnswer"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    interrupt_turn_chat_interrupt_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TurnInterrupt"];
             };
         };
         responses: {
@@ -40266,6 +40422,88 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    backup_download_api_admin_backup_download_get: {
+        parameters: {
+            query: {
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    backup_upload_api_admin_backup_upload_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    backup_checkpoints_api_admin_backup_checkpoints_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -4,6 +4,38 @@
 
 ### What changed for you — 2026-11-11
 
+**See what Nerva ran while it answers**
+- In the browser chat, each tool a reply uses appears as a small card above the reply
+  (running, done, failed), updated as the turn goes. Only the tool's name and state are
+  shown, never its inputs or output.
+- When a reply asked for something that needs your decision, the reply says so and names
+  the cards, with a link to the Decision Inbox.
+
+**The mode rail folds, and becomes a menu on a phone**
+- The `»` / `«` button at the top of the rail widens it with labels beside the icons or
+  folds it back; the choice is remembered in this browser.
+- On a phone-width screen the rail is replaced by a **☰ modes** button that opens the modes
+  in a drawer; tap a mode, the dark backdrop or press Escape to close it.
+- Pages can put their own buttons beside the page title (Automations has **refresh
+  automations**); they disappear when you switch pages.
+
+**Backups: restore, download and upload from the Backup panel**
+- Each backup in the Console **Backup** panel has **restore…** and **download**. A restore
+  asks first (type RESTORE), then waits as a card in your decision inbox; nothing is restored
+  until you accept it there, and the hub applies it at its next start. A staged restore is
+  shown in the panel and can be withdrawn.
+- **upload a backup…** adds an off-site copy of your backups. It must be encrypted with
+  this box's backup key (a plaintext archive is refused: it could carry someone else's
+  passwords and approvals). The hub checks it like any restore drill first; one that fails
+  is refused and not kept. Its restore card says it was uploaded. Uploads are limited to
+  512 MiB; larger archives are restored with `nerva backup restore`.
+- A restore now keeps your current credentials and hooks unless you tick **creds** before
+  asking for it; the card says which.
+- Downloads go straight to disk through your browser.
+- A reply's queued cards link straight to that card in the Decision Inbox.
+- The panel also lists your file checkpoints (read-only; diff and restore stay on
+  `/checkpoints` and `nerva checkpoints`).
+
 **An interactive chat in the terminal: `nerva chat -i`**
 - Enter sends. Alt+Enter adds a new line, and so does Shift+Enter on terminals that report
   it separately. A line ending in `\` also continues on the next line. A multi-line paste

@@ -644,3 +644,25 @@ describe('H277 Decision Inbox advisory judge', () => {
     expect(screen.getByText(/advisory.*taking longer/i)).toBeTruthy();
   });
 });
+
+describe('H137 — ?card=<id> opens the inbox on that card', () => {
+  afterEach(() => { history.replaceState(null, '', '/'); });
+  it('puts the linked card first, outlined and scrolled into view; a decided one is said to be gone', async () => {
+    const scrolled = vi.fn();
+    Element.prototype.scrollIntoView = scrolled;
+    history.replaceState(null, '', '/v2/console/decision-inbox?card=42');
+    const tasks = Array.from({ length: 12 }, (_, i) => ({ id: i + 31, title: `task ${i + 31}`, kind: 'x', status: 'blocked' }));
+    mockFetch({ tasks });
+    const { container } = render(<DecisionInboxPanel />);
+    await screen.findByText('task 42');
+    const first = container.querySelector('[id^="decision-card-"]');
+    expect(first.id).toBe('decision-card-42');
+    expect(first.getAttribute('data-focused')).toBe('true');
+    await waitFor(() => expect(scrolled).toHaveBeenCalled());
+    cleanup();
+    history.replaceState(null, '', '/v2/console/decision-inbox?card=99');
+    mockFetch({ tasks });
+    render(<DecisionInboxPanel />);
+    expect(await screen.findByText(/card #99 is no longer waiting/)).toBeTruthy();
+  });
+});

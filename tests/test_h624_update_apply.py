@@ -632,7 +632,7 @@ def test_restoring_an_older_backup_keeps_the_live_update_trust_and_receipts(upd,
     (upd.data / "update" / "receipts.jsonl").write_text('{"id": "old"}\n{"id": "new"}\n', encoding="utf-8")
     (upd.data / "notes.txt").write_text("v2\n", encoding="utf-8")
     result = backup.restore_backup(made["archive"], str(upd.data), force=True)
-    assert result["ok"] and result["kept_live"] == ["update"]
+    assert result["ok"] and result["kept_live"] == ["update", "security", "hooks"]   # H162 review: credentials and hooks too
     assert (upd.data / "notes.txt").read_text(encoding="utf-8") == "v1\n"   # the data came back
     assert hub_update_apply.trust_status()["commit"] == "b" * 40          # the trust did not
     assert len(hub_update_apply.receipts()) == 2

@@ -16,15 +16,17 @@ backup-first "forget me" purge of the user's structured content at rest.
 
 import asyncio
 import logging
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse
 
 from agents.core import backup as _backup
 from agents.core import data_export as _export
 from agents.core import data_purge as _purge
 from agents.core.app_state import get_orch
 from agents.core.routers._deps import admin_guard
+from agents.core.routers.integrations_setup import same_origin_write
 from agents.core.web_helpers import nocache_json
 
 logger = logging.getLogger("jarvis.web")
@@ -97,7 +99,11 @@ async def backup_verify(req: Request):
 
 @router.post("/api/admin/backup/restore", dependencies=[Depends(admin_guard)])
 async def backup_restore(req: Request):
-    """Ask to restore a snapshot over the live data root. Body: {name}.
+    """Ask to restore a snapshot over the live data root. Body: {name, replace_credentials?}.
+
+    H162 review: ``replace_credentials`` (strictly ``true``) also replaces the credential
+    store (security/) and the hooks (hooks/) with the archive's copies; by default they stay
+    as they are. The choice is on the card, and an uploaded archive's card says so.
 
     Answers 202 ``{"pending": task id}``: the restore waits for a human in the decision
     inbox at the irreversible tier (``nerva approvals accept <id>``); a card for the same
@@ -115,8 +121,11 @@ async def backup_restore(req: Request):
     name = (body or {}).get("name") if isinstance(body, dict) else None
     if not isinstance(name, str) or not name:
         return JSONResponse({"error": "name is required (see GET /api/admin/backup)"}, status_code=400)
+    replace = body.get("replace_credentials", False)
+    if not isinstance(replace, bool):
+        return JSONResponse({"error": "replace_credentials must be true or false"}, status_code=400)
     try:
-        request = await asyncio.to_thread(_backup.restore_request, name)
+        request = await asyncio.to_thread(_backup.restore_request, name, replace)
     except FileNotFoundError:
         return JSONResponse({"error": "backup not found"}, status_code=404)
     except (OSError, ValueError) as e:
@@ -127,7 +136,9 @@ async def backup_restore(req: Request):
                              "verify": request["preview"]["verify"]}, status_code=422)
     orch = get_orch()
     for task in await asyncio.to_thread(irreversible.pending, orch, _backup.APPROVAL_KIND):
-        if (getattr(task, "payload", None) or {}).get("name") == request["payload"]["name"]:
+        payload = getattr(task, "payload", None) or {}
+        if (payload.get("name") == request["payload"]["name"]
+                and (payload.get("replace_credentials") is True) == replace):
             return nocache_json({"pending": int(task.id), "existing": True,
                                 "restart": _restart_mode()}, status_code=202)
     queued = irreversible.enqueue(orch, _backup.APPROVAL_KIND, **request)
@@ -171,6 +182,123 @@ async def backup_restore_cancel():
     return JSONResponse({"error": "no staged restore to cancel" if status == 404
                          else "the restore is being applied and can no longer be cancelled",
                          **result}, status_code=status)
+
+
+async def _not_cross_site(request: Request) -> None:
+    """H162: a backup download carries every secret the data root holds, so a browser that
+    says the request is cross-site (a link on another page) is refused outright."""
+    if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+        raise HTTPException(status_code=403, detail="a backup download must come from this origin")
+
+
+@router.get("/api/admin/backup/download",
+            dependencies=[Depends(admin_guard), Depends(_not_cross_site)])
+async def backup_download(name: str = Query(..., min_length=1, max_length=255)):
+    """Download one listed backup archive as it is on disk (H162).
+
+    The name is matched against the trusted listing and the entry's real location must be
+    the backups directory (``resolve_backup_arg``: a listed entry that is a link to a file
+    elsewhere names no backup), so no request value reaches a path; an encrypted archive
+    stays encrypted. 404 for an unknown name."""
+    if "/" in name or "\\" in name or name.startswith("."):
+        return JSONResponse({"error": "backup not found"}, status_code=404)
+    path = await asyncio.to_thread(_backup.resolve_backup_arg, name)
+    if path is None:
+        return JSONResponse({"error": "backup not found"}, status_code=404)
+    logger.info("backup download: %s", path.name)
+    safe = path.name.encode("ascii", "replace").decode("ascii").replace('"', "_")
+    return FileResponse(path, media_type="application/octet-stream", headers={
+        "Content-Disposition": f"attachment; filename=\"{safe}\"; filename*=UTF-8''{quote(path.name)}",
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-store",
+    })
+
+
+_UPLOAD_STATUS = {"too_large": 413, "empty": 400, "exists": 409, "key_missing": 422,
+                  "unreadable": 422, "failed_drill": 422, "plaintext_refused": 422,
+                  "wrong_key": 422, "no_space": 507}
+_UPLOAD_BATCH = 1024 * 1024   # write in batches off the event loop, not one thread hop per chunk
+
+
+@router.put("/api/admin/backup/upload",
+            dependencies=[Depends(admin_guard), Depends(same_origin_write)])
+async def backup_upload(request: Request):
+    """Add an encrypted backup archive from elsewhere to the listing, as the raw body (H162).
+
+    H162 review M1: only an archive encrypted with this box's backup key is accepted
+    (Fernet is authenticated, so it proves the owner made it); a plaintext archive is
+    refused with 422 ``plaintext_refused``, an archive the key does not open with
+    ``wrong_key``, no key on this box with ``key_missing``. The archive is restore-drilled
+    before it is listed (anything under backups/ fails the drill); a refused one is
+    deleted. Free space is checked before the first byte (507 ``no_space``) and while
+    streaming. 201 ``{ok, name, bytes, encrypted, origin, verify}``. Nothing is restored:
+    restoring it is ``POST /api/admin/backup/restore``, whose card says it was uploaded.
+    A PUT always passes the browser's CORS pre-check, and a cross-site write is refused
+    (``same_origin_write``)."""
+    declared_header = request.headers.get("content-length", "")
+    declared = (int(declared_header) if declared_header.isascii() and declared_header.isdigit()
+                else None)
+    if declared is not None and declared > _backup.UPLOAD_MAX_BYTES:
+        return JSONResponse({"error": "too_large", "max_bytes": _backup.UPLOAD_MAX_BYTES},
+                            status_code=413)
+
+    def refusal(e: "_backup.BackupUploadError") -> JSONResponse:
+        body = {"error": e.reason, "max_bytes": _backup.UPLOAD_MAX_BYTES}
+        if e.report:
+            body["verify"] = {k: e.report.get(k) for k in ("ok", "problem", "file_count", "dbs")
+                              if k in e.report}
+        return JSONResponse(body, status_code=_UPLOAD_STATUS.get(e.reason, 422))
+
+    try:
+        upload = await asyncio.to_thread(_backup.BackupUpload, declared=declared)
+    except _backup.BackupUploadError as e:
+        return refusal(e)
+    except OSError as e:
+        logger.warning("backup upload could not start: %s", e)
+        return JSONResponse({"error": "the backups directory is not writable"}, status_code=500)
+    try:
+        pending: list[bytes] = []
+        size = 0
+        async for chunk in request.stream():
+            if not chunk:
+                continue
+            if upload.size == 0 and not pending:
+                await asyncio.to_thread(upload.write, chunk)   # the first bytes: plaintext check now
+                continue
+            pending.append(chunk)
+            size += len(chunk)
+            if size >= _UPLOAD_BATCH:
+                await asyncio.to_thread(upload.write, b"".join(pending))
+                pending, size = [], 0
+        if pending:
+            await asyncio.to_thread(upload.write, b"".join(pending))
+        result = await asyncio.to_thread(upload.commit)
+    except _backup.BackupUploadError as e:
+        return refusal(e)
+    except OSError as e:
+        logger.warning("backup upload failed: %s", e)
+        return JSONResponse({"error": "upload failed"}, status_code=500)
+    finally:
+        await asyncio.to_thread(upload.close)
+    logger.info("backup uploaded: %s (%d bytes)", result["name"], result["bytes"])
+    return nocache_json({"ok": True, **result}, status_code=201)
+
+
+@router.get("/api/admin/backup/checkpoints", dependencies=[Depends(admin_guard)])
+async def backup_checkpoints(limit: int = Query(20, ge=1, le=500)):
+    """The owner's file checkpoints, read-only, for the backup section (H162).
+
+    The same inventory ``/checkpoints list`` and ``nerva checkpoints list`` read; diff,
+    restore and maintenance stay on those paths (a restore is its own approval card).
+    503 when the inventory cannot be read."""
+    from agents.core.checkpoint_commands import list_checkpoints
+
+    try:
+        result = await asyncio.to_thread(list_checkpoints, limit)
+    except Exception:  # the inventory reads the owner's roots and the snapshot store
+        logger.warning("checkpoint inventory unavailable", exc_info=True)
+        return JSONResponse({"error": "checkpoint inventory unavailable"}, status_code=503)
+    return nocache_json(result)
 
 
 @router.post("/api/admin/export", dependencies=[Depends(admin_guard)])

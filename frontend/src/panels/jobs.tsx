@@ -25,6 +25,7 @@ import { JobCreateDialog } from './job-create-dialog';
 import { apiDelete, apiGet, apiPatch, apiPut } from '../api/client';
 import { useApi, arr, mono, asLive, Card, State, Row, Tag, actA, refusalReason, inpS } from '../panel-kit';
 import { useSelectionGuard, type GuardFlags } from '../selection-guard';
+import { usePageHeader } from '../page-header';
 
 /** H450 — a one-shot's time, in the viewer's clock: "once at 2026-10-01 09:00". */
 export function onceAt(job: any): string {
@@ -330,11 +331,14 @@ export function JobsPanel() {
 
 /** A full-width home for jobs, usable even before other Autonomy telemetry is connected. */
 export function JobsWorkspace() {
+  // H132 — the page's toolbar sits in the shell's page header (cleared when the mode changes).
+  const [generation, setGeneration] = useState(0);
+  usePageHeader(<button className="tool-btn" onClick={() => setGeneration((n) => n + 1)}>refresh automations</button>);
   return <section aria-label="Scheduled automations" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 24px' }}>
     <header style={{ marginBottom: 20 }}>
       <h1 style={{ margin: '0 0 8px' }}>Scheduled automations</h1>
       <p style={{ margin: 0, color: 'var(--ink-2)' }}>Manage recurring work, review runs, or start from one of sixteen blueprints.</p>
     </header>
-    <JobsPanel />
+    <JobsPanel key={generation} />
   </section>;
 }

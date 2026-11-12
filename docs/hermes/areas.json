@@ -495,6 +495,7 @@
         "tests/test_h153e_webhook_review.py",
         "tests/test_h157b_settings_review.py",
         "tests/test_h161_resource_pressure.py",
+        "tests/test_h162_backup_transfer.py",
         "tests/test_h277_claude_vision.py",
         "tests/test_h277_gemini_image.py",
         "tests/test_h277_image_turn_memory.py",

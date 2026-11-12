@@ -11,7 +11,16 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, lazy 
 import { V2, restoreDemoCorpora } from './data';
 import { localityFigure } from './locality';
 import { useClock, fmtTimeShort, Icon, ICONS, Glyph } from './primitives';
-import { TopBar, Ticker, Rail, Tabs, RosterColumn, ContextColumn, Palette, Ambient, CinemaMesh } from './shell';
+import { TopBar, Ticker, Rail, RailDrawer, Tabs, RosterColumn, ContextColumn, Palette, Ambient, CinemaMesh, MODES, useRailCollapsed } from './shell';
+import { PageHeaderBar, PageHeaderProvider } from './page-header';
+import { approvalIds, mergeToolEvent } from './turn-tools';
+
+/** H132 — the page header's title: the mode's own label from the rail. */
+function modeTitle(mode: string, t: any): string {
+  if (mode === 'jobs') return 'Automations';
+  const m = MODES.find((x) => x.id === mode);
+  return (m && m.tkey && t[m.tkey]) || mode;
+}
 import {
   type Overrides, bindings as shortcutBindings, chordOf, displayChord, firesInInputs, matchAction, useShortcutOverrides,
 } from './shortcuts';
@@ -107,6 +116,7 @@ function App({ floating = false, shortcuts, onWorld }: {
   const lang = appearance.preferences.lang;
   const setLang = useCallback((value: string) => appearance.setPreference('lang', value), [appearance.setPreference]);
   const ia = 'rail' as 'rail' | 'tabs';
+  const [railCollapsed, toggleRail] = useRailCollapsed();
   // DEMO mode (opt-in, watermarked): OFF by default → the HUD shows ONLY real
   // backend data + honest empty states; ON → fills the seeded demo corpus.
   const [demo, setDemo] = useDemoMode();
@@ -433,7 +443,7 @@ function App({ floating = false, shortcuts, onWorld }: {
     setCenterTab('conversation');
     setThinking({ label: t.think + ' · routing', route: null });
     const updateBubble=(change:(message:any)=>any)=>setMessages((messages)=>messages.map(message=>message._turnId===id?change(message):message));
-    postStream('/chat/stream', { message: text, agent: activeId,
+    postStream('/chat/stream', { message: text, agent: activeId, tool_events: true,
       ...(sessionId.current ? { session_id: sessionId.current } : {}) }, (evt) => {
       if(closed||epoch!==turnEpoch.current||ctl.signal.aborted)return;
       if (evt.type === 'start') {
@@ -449,6 +459,9 @@ function App({ floating = false, shortcuts, onWorld }: {
         // No-op unless a voice turn opened a session (typed turns stay silent).
         try { if(source==='voice')voiceRef.current?.pushSpeakDelta(evt.text || ''); } catch { /* never break the stream over TTS */ }
         updateBubble(message=>({...message,text:streamed}));
+      } else if (evt.type === 'tool') {
+        // H137 — one card per tool call, updated in place (no arguments or results ride here).
+        updateBubble(message=>({...message,tools:mergeToolEvent(message.tools,evt.event)}));
       } else if (evt.type === 'outcome_progress') {
         if (id === latestTextTurn.current) setCurrentOutcome(turnOutcome(evt.outcome));
       } else if (evt.type === 'end') {
@@ -470,7 +483,7 @@ function App({ floating = false, shortcuts, onWorld }: {
           }
           setMessages([{ role: 'agent', who: evt.agent || activeId, role_label: '', ts: fmtTimeShort(new Date()), text: finalText }]);
         } else {
-          updateBubble(message=>({...message,text:finalText,who:evt.agent||activeId}));
+          updateBubble(message=>({...message,text:finalText,who:evt.agent||activeId,approvals:approvalIds(evt.pending_approvals)}));
         }
         // H674: what the owner should know beside the reply (e.g. the summary was deferred).
         const notes = noticeMessages(evt, fmtTimeShort(new Date()));
@@ -712,11 +725,14 @@ function App({ floating = false, shortcuts, onWorld }: {
         <DesktopControls />
         <Ticker items={ticker} t={t} hidden={mode === 'chat'} />
 
-        <div className="main" data-ia={ia}>
-          {ia === 'rail' && <Rail mode={mode} setMode={setMode} gateway={statusChrome.gateway} t={t} />}
+        <div className="main" data-ia={ia} data-rail={railCollapsed ? 'collapsed' : 'expanded'}>
+          {ia === 'rail' && <Rail mode={mode} setMode={setMode} gateway={statusChrome.gateway} t={t} collapsed={railCollapsed} onToggle={toggleRail} />}
           <div style={{ minHeight: 0, display: 'flex', flexDirection: 'column', gap: 'var(--gap)' }}>
             {ia === 'tabs' && <Tabs mode={mode} setMode={setMode} t={t} />}
+            {ia === 'rail' && <RailDrawer mode={mode} setMode={setMode} gateway={statusChrome.gateway} t={t} />}
 
+            <PageHeaderProvider routeKey={mode}>
+            <PageHeaderBar title={modeTitle(mode, t)} />
             <RouteBoundary routeKey={`${route.path}:${demo}`}>
             {mode === 'cockpit' ? (
               <div className="workzone cockpit" style={{ flex: 1, minHeight: 0 }}>
@@ -768,6 +784,7 @@ function App({ floating = false, shortcuts, onWorld }: {
               </div>
             )}
             </RouteBoundary>
+            </PageHeaderProvider>
           </div>
         </div>
       </div>

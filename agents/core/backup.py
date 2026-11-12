@@ -82,7 +82,7 @@ import stat
 import tarfile
 import tempfile
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Optional
@@ -129,6 +129,12 @@ _SELECTION_LEASE_SUFFIX = ".selection.lock"
 # its absence) is put back after the extract; trust changes only through its own
 # ``hub.update_trust`` card. A restore into a new, empty directory keeps the archive's copy.
 _LIVE_STATE_DIRS = ("update",)
+#: H162 review M2: never written by any restore or drill (the archives and the restore trace).
+_NEVER_RESTORED = ("backups",)
+#: H162 review M1: the credential store (security/: tokens, the secret store, the
+#: credential-shares ledger) and the owner's hooks stay live on an in-place restore unless
+#: the owner asked on the restore card to replace them (``replace_credentials``).
+_CREDENTIAL_DIRS = ("security", "hooks")
 
 
 def _is_selection_lease(name: str) -> bool:
@@ -388,6 +394,7 @@ def prune_pre_forget_archives(keep: Optional[int] = None,
     for stale in archives[keep:]:
         try:
             stale.unlink()
+            _drop_origin(stale)
             removed.append(stale.name)
         except OSError:
             logger.warning("could not prune stale pre-forget archive %s", stale.name)
@@ -425,6 +432,7 @@ def prune_backups(keep: Optional[int] = None,
     for stale in archives[keep:]:
         try:
             stale.unlink()
+            _drop_origin(stale)
             removed.append(stale.name)
         except OSError:
             # A file we cannot remove is reported by its absence from `removed`
@@ -756,6 +764,7 @@ def list_backups(out_dir: Optional[str] = None) -> list[dict]:
             "encrypted": _is_encrypted(p.name),
             "quick": p.name.startswith(_ARCHIVE_PREFIX + _QUICK_TAG),
             "rollback": _is_rollback_point(p.name),
+            "uploaded": is_uploaded(p),
             "modified_at": datetime.fromtimestamp(st.st_mtime, timezone.utc).isoformat(),
         })
     rows.sort(key=lambda r: r["modified_at"], reverse=True)
@@ -811,6 +820,168 @@ def resolve_backup_arg(arg: str, out_dir: Optional[str] = None) -> Optional[Path
     return found
 
 
+# ── upload (H162) ─────────────────────────────────────────────────
+# H162 review M1: an archive from elsewhere is accepted only ENCRYPTED with this box's
+# backup key. Fernet is authenticated, so an archive that opens with the key was made by
+# someone holding it — the owner — and not crafted by whoever can reach the upload route.
+# Decrypting a Fernet token needs the whole token in memory (the local drill does the
+# same), so the cap is far below the archive limits: larger archives are restored with
+# `nerva backup restore` from the backups directory.
+UPLOAD_MAX_BYTES = 512 * 1024 ** 2
+UPLOAD_FREE_FLOOR_BYTES = 1024 ** 3   # stop an upload when the disk gets this close to full
+_UPLOAD_TAG = "upload-"             # an uploaded archive is "jarvis-backup-upload-<stamp>.tar.gz.enc"
+_UPLOAD_PARTIAL = ".nerva-upload-"  # its partial file: never an archive-temp name, so never swept mid-drill
+_UPLOAD_ABANDONED_SECONDS = 6 * 3600.0
+_ORIGIN_SUFFIX = ".origin.json"     # sidecar beside an uploaded archive: where it came from
+_GZIP_MAGIC = b"\x1f\x8b"
+_FREE_CHECK_EVERY = 64 * 1024 ** 2
+PLAINTEXT_REFUSED = ("an uploaded backup must be encrypted with this box's backup key "
+                     "(JARVIS_BACKUP_KEY or the key file): a plaintext archive could carry anyone's "
+                     "credentials and approvals, and the key proves you made it")
+
+
+class BackupUploadError(ValueError):
+    """An uploaded archive was refused; ``reason`` is a stable code for the HUD."""
+
+    def __init__(self, reason: str, report: Optional[dict] = None):
+        super().__init__(reason)
+        self.reason = reason
+        self.report = report
+
+
+def _free_bytes(path: Path) -> Optional[int]:
+    try:
+        return shutil.disk_usage(path).free
+    except OSError:
+        return None
+
+
+def _sweep_abandoned_uploads(out: Path, *, now: Optional[float] = None) -> None:
+    moment = time.time() if now is None else float(now)
+    for p in out.iterdir():
+        if not p.name.startswith(_UPLOAD_PARTIAL):
+            continue
+        try:
+            if (p.is_file() and not p.is_symlink()
+                    and moment - p.stat().st_mtime > _UPLOAD_ABANDONED_SECONDS):
+                p.unlink()
+        except OSError:
+            logger.warning("could not sweep an abandoned backup upload")
+
+
+def is_uploaded(path: Path) -> bool:
+    """An archive that came in through the upload route (its name or its origin sidecar)."""
+    return (path.name.startswith(_ARCHIVE_PREFIX + _UPLOAD_TAG)
+            or path.with_name(path.name + _ORIGIN_SUFFIX).exists())
+
+
+def _drop_origin(path: Path) -> None:
+    with suppress(OSError):
+        path.with_name(path.name + _ORIGIN_SUFFIX).unlink(missing_ok=True)
+
+
+class BackupUpload:
+    """Take an encrypted archive from outside (an off-site copy) into the backups dir.
+
+    Refused before any byte is kept: no backup key on this box (``key_missing``), less free
+    space than the declared length plus the drill's room and a floor (``no_space``).
+    While streaming: a plaintext (gzip) archive (``plaintext_refused``), the size cap
+    (``too_large``), the disk dropping under the floor (``no_space``). The bytes go to an
+    owner-only partial file whose name the archive-temp sweep never matches, are
+    restore-drilled exactly like a local archive (and refused if anything would land in
+    ``backups/``), and only an archive that passes is listed as
+    ``jarvis-backup-upload-<stamp>.tar.gz.enc`` with an origin sidecar. Nothing is restored
+    here; the restore card of an uploaded archive says where it came from.
+    """
+
+    def __init__(self, out_dir: Optional[str] = None, max_bytes: Optional[int] = None,
+                 declared: Optional[int] = None, key: Optional[str] = None):
+        self.max_bytes = int(UPLOAD_MAX_BYTES if max_bytes is None else max_bytes)
+        self.key = key
+        _source, missing = _backup_key_source(key)
+        if missing is not None:
+            raise BackupUploadError("key_missing", {"problem": missing})
+        self.out = Path(out_dir) if out_dir else default_backup_dir()
+        self.out.mkdir(parents=True, exist_ok=True)
+        free = _free_bytes(self.out)
+        # The partial file, the decrypted copy and the drill's extracted tree.
+        need = 3 * int(declared or 0) + UPLOAD_FREE_FLOOR_BYTES
+        if free is not None and free < need:
+            raise BackupUploadError("no_space", {"problem": f"{free} bytes free, {need} needed"})
+        _sweep_abandoned_temps(self.out)
+        _sweep_abandoned_uploads(self.out)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
+        self._final = f"{_ARCHIVE_PREFIX}{_UPLOAD_TAG}{ts}_{secrets.token_hex(3)}.tar.gz{_ENC_SUFFIX}"
+        # Ends with the encrypted suffix so the drill reads it as encrypted; starts with a
+        # prefix no archive glob and no archive-temp sweep matches.
+        self.tmp = self.out / f"{_UPLOAD_PARTIAL}{secrets.token_hex(8)}.tar.gz{_ENC_SUFFIX}"
+        flags = (os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                 | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0))
+        self._fh = os.fdopen(os.open(self.tmp, flags, 0o600), "wb")
+        self._listed = False
+        self.size = 0
+        self._head = b""
+        self._since_check = 0
+
+    def write(self, chunk: bytes) -> None:
+        self.size += len(chunk)
+        if self.size > self.max_bytes:
+            raise BackupUploadError("too_large")
+        if len(self._head) < 2:
+            self._head += chunk[:2 - len(self._head)]
+            if len(self._head) == 2 and self._head == _GZIP_MAGIC:
+                raise BackupUploadError("plaintext_refused", {"problem": PLAINTEXT_REFUSED})
+        self._fh.write(chunk)
+        self._since_check += len(chunk)
+        if self._since_check >= _FREE_CHECK_EVERY:
+            self._since_check = 0
+            free = _free_bytes(self.out)
+            if free is not None and free < UPLOAD_FREE_FLOOR_BYTES:
+                raise BackupUploadError("no_space", {"problem": f"only {free} bytes left free"})
+
+    def commit(self) -> dict:
+        """Drill the upload; list it only if the drill passes. Raises BackupUploadError."""
+        self._fh.flush()
+        os.fsync(self._fh.fileno())
+        self._fh.close()
+        if self.size == 0:
+            raise BackupUploadError("empty")
+        try:
+            report = verify_backup(str(self.tmp), key=self.key)
+        except BackupKeyMissing as exc:
+            raise BackupUploadError("key_missing", {"problem": exc.reason}) from None
+        except SecretStoreError:
+            raise BackupUploadError("wrong_key", {"problem": "the archive does not open with "
+                                                   "this box's backup key"}) from None
+        except (OSError, ValueError, tarfile.TarError, EOFError):
+            logger.warning("an uploaded backup could not be read", exc_info=True)
+            raise BackupUploadError("unreadable") from None
+        if not report["ok"]:
+            raise BackupUploadError("failed_drill", report)
+        target = self.out / self._final
+        if target.exists():
+            raise BackupUploadError("exists")
+        os.replace(self.tmp, target)
+        self._listed = True
+        st = target.stat()
+        _write_json(target.with_name(target.name + _ORIGIN_SUFFIX),
+                    {"origin": "upload", "uploaded_at": _now_iso(), "bytes": st.st_size})
+        return {"name": target.name, "bytes": st.st_size, "encrypted": True, "origin": "upload",
+                "verify": {"ok": True, "problem": None, "file_count": report["file_count"],
+                           "dbs": report["dbs"]},
+                "created_at": (report.get("manifest") or {}).get("created_at")}
+
+    def close(self) -> None:
+        """Remove whatever did not become a listed archive."""
+        with suppress(OSError):
+            self._fh.close()
+        if not self._listed:
+            try:
+                self.tmp.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("could not remove a refused backup upload")
+
+
 # ── safe extraction ───────────────────────────────────────────────
 # There is deliberately no backup-local extractor any more (H503): verify and restore
 # both call archive_safe.extract_tar, the same module the marketplace install uses.
@@ -832,12 +1003,19 @@ def verify_backup(archive: str, key: Optional[str] = None) -> dict:
     with _readable_archive(arc, key) as tarpath, tempfile.TemporaryDirectory() as tmp:
         tmpp = Path(tmp)
         stale: list[tuple[str, ...]] = []
+        excluded: list[tuple[str, ...]] = []
         written = archive_safe.extract_tar_path(tarpath, tmpp, limits=backup_limits(),
                                                 compression="gz", last_wins=(_MANIFEST_NAME,),
-                                                superseded=stale)
+                                                superseded=stale, exclude_top=_NEVER_RESTORED,
+                                                excluded=excluded)
         report["file_count"] = len(written)
         report["manifest"] = _read_manifest(tmpp, written)
         report["problem"] = _manifest_problem(report["manifest"], written, stale=len(stale))
+        if excluded:
+            # H162 review M2: no archive Nerva makes holds backups/ (create_backup leaves its
+            # own output out); one that does would rewrite the restore trace and the archives.
+            report["problem"] = (f"the archive holds {len(excluded)} file(s) under backups/, "
+                                 "which no Nerva backup contains; it is not restorable")
         if report["problem"]:
             report["ok"] = False
         for db in _state_dbs(tmpp):
@@ -884,7 +1062,7 @@ def _manifest_problem(manifest: Optional[dict], written: list[tuple[str, ...]],
 
 # ── restore ───────────────────────────────────────────────────────
 def restore_backup(archive: str, target_root: str, force: bool = False,
-                   key: Optional[str] = None) -> dict:
+                   key: Optional[str] = None, replace_credentials: bool = False) -> dict:
     """Extract a backup into ``target_root``. Refuses a non-empty target unless force.
 
     Deliberately requires an *explicit* target (never silently overwrites the live
@@ -893,6 +1071,11 @@ def restore_backup(archive: str, target_root: str, force: bool = False,
     archives are decrypted first. Into a non-empty root the live update state
     (:data:`_LIVE_STATE_DIRS`: the pinned update trust and the update receipts) is kept
     as it is, never replaced by the archive's copy.
+
+    H162 review: nothing is ever written under ``backups/`` (the archives and the restore
+    trace), and into a non-empty root the credential store and the owner's hooks
+    (:data:`_CREDENTIAL_DIRS`) stay live unless ``replace_credentials`` — the owner's
+    explicit choice on the restore card.
     """
     arc = Path(archive)
     if not arc.exists():
@@ -908,13 +1091,14 @@ def restore_backup(archive: str, target_root: str, force: bool = False,
             f"target {target} is not empty — pass force=True to overwrite")
     target.mkdir(parents=True, exist_ok=True)
     keep = _keep_live_state(target) if in_place else None
+    untouched = _NEVER_RESTORED + (_CREDENTIAL_DIRS if in_place and not replace_credentials else ())
     try:
-        result = _restore_into(arc, target, key)
+        result = _restore_into(arc, target, key, exclude=untouched)
     finally:
         if keep is not None:
             _put_back_live_state(target, *keep)
     if keep is not None:
-        result["kept_live"] = list(_LIVE_STATE_DIRS)
+        result["kept_live"] = list(_LIVE_STATE_DIRS) + [d for d in untouched if d not in _NEVER_RESTORED]
     return result
 
 
@@ -945,8 +1129,10 @@ def _put_back_live_state(target: Path, aside: Path, present: dict[str, bool]) ->
         shutil.rmtree(aside, ignore_errors=True)
 
 
-def _restore_into(arc: Path, target: Path, key: Optional[str]) -> dict:
+def _restore_into(arc: Path, target: Path, key: Optional[str],
+                  exclude: tuple[str, ...] = _NEVER_RESTORED) -> dict:
     stale: list[tuple[str, ...]] = []
+    excluded: list[tuple[str, ...]] = []
     # An archive made before process marks were left out may carry one: the live root's
     # own mark (or its absence) is put back after the extract, never the archive's pid.
     live_marks: dict[str, Optional[bytes]] = {}
@@ -958,7 +1144,8 @@ def _restore_into(arc: Path, target: Path, key: Optional[str]) -> dict:
     with _readable_archive(arc, key) as tarpath:
         written = archive_safe.extract_tar_path(tarpath, target, limits=backup_limits(),
                                                 compression="gz", last_wins=(_MANIFEST_NAME,),
-                                                superseded=stale)
+                                                superseded=stale, exclude_top=exclude,
+                                                excluded=excluded)
     for mark, before in live_marks.items():
         if (mark,) not in written:
             continue
@@ -980,9 +1167,11 @@ def _restore_into(arc: Path, target: Path, key: Optional[str]) -> dict:
             for sidecar in _SQLITE_SIDECARS:
                 db.with_name(db.name + sidecar).unlink(missing_ok=True)
     # Post-restore drill on the live target so a corrupt or shortened restore is caught now.
-    problem = _manifest_problem(_read_manifest(target, written), written, stale=len(stale))
+    problem = _manifest_problem(_read_manifest(target, written), written,
+                                stale=len(stale) + len(excluded))
     dbs = {str(p.relative_to(target)): _integrity_check(p) for p in _state_dbs(target)}
     return {"restored_to": str(target), "file_count": len(written), "dbs": dbs,
+            "not_restored": sorted({parts[0] for parts in excluded}),
             "problem": problem,
             "ok": problem is None and all(v == "ok" for v in dbs.values())}
 
@@ -1397,7 +1586,7 @@ def prune_quick_backups(keep: Optional[int] = None, out_dir: Optional[str] = Non
 
 def stage_restore(name: str, source_root=None, key: Optional[str] = None,
                   requested_by: str = "", task_id: Optional[int] = None,
-                  restart: Optional[str] = None) -> dict:
+                  restart: Optional[str] = None, replace_credentials: bool = False) -> dict:
     """Drill backup *name* and, when it verifies, stage it for an in-place restore.
 
     ``restart`` (``"self"`` / ``"manual"``, an approved task's apply only) is written on
@@ -1430,7 +1619,11 @@ def stage_restore(name: str, source_root=None, key: Optional[str] = None,
               "expires_at": datetime.fromtimestamp(now.timestamp() + stage_ttl_seconds(),
                                                    timezone.utc).isoformat(),
               "requested_by": requested_by, "task_id": task_id,
-              "file_count": report["file_count"]}
+              "file_count": report["file_count"],
+              # H162 review: whether the credential store and hooks are replaced too (the
+              # owner's choice on the card), and whether the archive came from elsewhere.
+              "replace_credentials": replace_credentials is True,
+              "origin": "upload" if is_uploaded(path) else "local"}
     if restart in ("self", "manual"):
         staged["restart"] = restart
     _write_json(out / _PENDING_RESTORE, staged)
@@ -1644,7 +1837,8 @@ def _apply_locked(root: Path, out: Path, key: Optional[str], runtime_wait: float
                 logger.warning("could not prune old quick rollback points")
             _write_json(journal_path, {**base, "phase": "restoring", "pid": os.getpid(),
                                        "rollback": result["rollback"]})
-            restored = restore_backup(str(path), str(root), force=True, key=key)
+            restored = restore_backup(str(path), str(root), force=True, key=key,
+                                      replace_credentials=staged.get("replace_credentials") is True)
         except archive_safe.ArchiveRejected as exc:
             result.update(status="failed", reason="archive_rejected", ok=False,
                           partial=bool(exc.partial), detail=str(exc))
@@ -1669,9 +1863,13 @@ def _expired(out: Path, staged: dict) -> dict:
 APPROVAL_KIND = "backup.restore"
 
 
-def restore_request(name: str) -> dict:
+def restore_request(name: str, replace_credentials: bool = False) -> dict:
     """The card for restoring *name* over the live root: the archive's identity (an
-    accept is refused if it changed since) and the drill's verdict as the preview."""
+    accept is refused if it changed since) and the drill's verdict as the preview.
+
+    H162 review: the card says whether the archive was uploaded (it came from elsewhere)
+    and whether the credential store and the hooks are replaced too; that choice is in the
+    payload, so an accept applies exactly what the card said."""
     path = resolve_backup(name)
     if path is None:
         raise FileNotFoundError(f"no such backup: {name}")
@@ -1679,10 +1877,27 @@ def restore_request(name: str) -> dict:
     st = path.stat()
     manifest = report.get("manifest") or {}
     mode = manifest.get("mode", "full")
+    uploaded = is_uploaded(path)
+    replace = replace_credentials is True
+    kept_dirs = "update/" if replace else "update/, security/ (tokens, secrets, credential shares) and hooks/"
+    if uploaded:
+        origin_note = ("uploaded archive: it came from outside this box and replaces the approvals "
+                       "and installed code (skills, plugins, settings) with the archive's copies"
+                       + ("; it ALSO replaces the credentials (security/) and hooks (hooks/)"
+                          if replace else "; credentials (security/) and hooks (hooks/) stay as they are now"))
+    else:
+        origin_note = ("made on this box" + ("; the credentials (security/) and hooks (hooks/) are "
+                                             "replaced with the archive's copies" if replace else ""))
+    title = (f"Restore {'UPLOADED ' if uploaded else ''}backup {path.name} over the live data root"
+             + (" including credentials and hooks" if replace else "") + " (the hub restarts)")
     return {
-        "title": f"Restore backup {path.name} over the live data root (the hub restarts)",
-        "payload": {"name": path.name, "bytes": st.st_size, "mtime": st.st_mtime},
+        "title": title,
+        "payload": {"name": path.name, "bytes": st.st_size, "mtime": st.st_mtime,
+                    "replace_credentials": replace, "origin": "upload" if uploaded else "local"},
         "preview": {
+            "origin": "upload" if uploaded else "local",
+            "origin_note": origin_note,
+            "replace_credentials": replace,
             "verify": {"ok": report["ok"], "problem": report["problem"],
                        "file_count": report["file_count"], "dbs": report["dbs"]},
             "created_at": manifest.get("created_at"), "mode": mode,
@@ -1690,7 +1905,7 @@ def restore_request(name: str) -> dict:
                       "not hold are kept); a "
                       + ("quick" if mode == "quick" else "full")
                       + " rollback snapshot of the current state is taken first",
-            "kept": "the update trust and update receipts (update/) stay as they are now; "
+            "kept": f"{kept_dirs} stay as they are now, and backups/ is never written; "
                     "update trust changes only through its own card",
         },
     }
@@ -1772,7 +1987,8 @@ async def apply_approved(task, orch) -> dict:
     staged = await asyncio.to_thread(stage_restore, name,
                                      requested_by=str(getattr(task, "decided_by", "") or ""),
                                      task_id=task_id if isinstance(task_id, int) else None,
-                                     restart=planned)
+                                     restart=planned,
+                                     replace_credentials=payload.get("replace_credentials") is True)
     if not staged["ok"]:
         return await _refuse(task, "backup_failed_verify", problem=staged["problem"])
     restart = "requested" if planned == "self" and hub_restart.request(APPROVAL_KIND) else "manual"

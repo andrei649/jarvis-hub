@@ -123,6 +123,14 @@ def _query(principal: Principal, query: dict) -> dict:
     return getattr(inventory, query["action"])(principal, **kwargs)
 
 
+def list_checkpoints(limit: int = 20) -> dict:
+    """The owner's checkpoint list for the HUD backup section (H162): read-only metadata,
+    the same inventory ``/checkpoints list`` answers. Runs off the event loop."""
+    query = {"action": "list", "project": None, "limit": limit}
+    CheckpointInventory._arguments(None, limit)
+    return _query(Principal(channel="hud", admin=True), query)
+
+
 def _notice(code: str, text: str) -> str:
     record_turn_notice(code, text)
     return text
