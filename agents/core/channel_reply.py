@@ -150,6 +150,70 @@ def _contract_template() -> ContractTemplate:
 
 CHANNEL_REPLY_CONTRACT = _contract_template()
 
+_SHA256 = re.compile(r"[a-f0-9]{64}")
+_ATTACHMENT_KEYS = frozenset({"path", "name", "mime", "bytes", "sha256"})
+
+
+def _email_attachments(text: str):
+    """H096 — split an email reply into its words and the files its ``MEDIA:`` lines name,
+    each resolved under :mod:`channels.media_delivery` (approved folders only, no secrets,
+    bounded size). A refused file refuses the whole reply: the drafter is told why rather
+    than the owner approving a mail that silently lost an attachment."""
+    from .channels import media_delivery
+
+    words, paths = media_delivery.extract_directives(text)
+    if not paths:
+        return text, []
+    if len(paths) > media_delivery.MAX_FILES_PER_REPLY:
+        return "", f"attachment_refused:{media_delivery.REASON_TOO_MANY}"
+    files = []
+    for path in paths:
+        item = media_delivery.resolve(path)
+        if isinstance(item, media_delivery.Refusal):
+            return "", f"attachment_refused:{item.reason}"
+        files.append({"path": path, "name": item.name, "mime": item.mime,
+                      "bytes": len(item.data), "sha256": item.sha256})
+    return words, files
+
+
+def _folder(path: str) -> str:
+    import os.path
+
+    return os.path.dirname(path) or "/"
+
+
+def _human_size(size: int) -> str:
+    value = float(size)
+    for unit in ("bytes", "KB", "MB"):
+        if value < 1024 or unit == "MB":
+            return f"{int(value)} bytes" if unit == "bytes" else f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{size} bytes"
+
+
+def _approved_attachments(listed):
+    """H096 — re-resolve each approved attachment just before SMTP and insist on the very
+    bytes the owner approved (same SHA-256 and size); anything else blocks the send."""
+    from .channels import media_delivery
+
+    if (not isinstance(listed, list) or not listed
+            or len(listed) > media_delivery.MAX_FILES_PER_REPLY):
+        return "attachment_binding_invalid"
+    files = []
+    for entry in listed:
+        if (not isinstance(entry, dict) or set(entry) != _ATTACHMENT_KEYS
+                or not isinstance(entry.get("path"), str)
+                or not isinstance(entry.get("sha256"), str)
+                or _SHA256.fullmatch(entry["sha256"]) is None):
+            return "attachment_binding_invalid"
+        item = media_delivery.resolve(entry["path"])
+        if isinstance(item, media_delivery.Refusal):
+            return f"attachment_refused:{item.reason}"
+        if item.sha256 != entry["sha256"] or len(item.data) != entry.get("bytes"):
+            return "attachment_changed"
+        files.append(item)
+    return files
+
 
 def _risk_tier(channel) -> int:
     return _SMS_RISK_TIER if channel == "sms" else _RISK_TIER
@@ -323,7 +387,8 @@ class ChannelReplyBroker:
             if inbound is None:
                 return {"ok": False, "reason": "unknown_inbound_message"}
             thread = {**thread, "last_message_id": inbound["id"],
-                      "reply": dict(inbound.get("reply") or {})}
+                      "reply": dict(inbound.get("reply") or {}),
+                      "sender_auth": inbound.get("sender_auth")}
         return self._request(thread, text, agent=agent, source=source)
 
     def request_for_message(self, message_id: str, text: str, *, channel: str,
@@ -337,13 +402,25 @@ class ChannelReplyBroker:
         if (message is None or message.get("direction") != "in"
                 or message.get("channel") != channel):
             return {"ok": False, "reason": "unknown_inbound_message"}
-        return self._request({
+        # H120: one card per provider message. A second request for the same stored turn,
+        # or for a redelivery of the same provider message (after the gateway's window,
+        # after a restart), gets the existing task instead of a second approval card.
+        existing = self._inbox.reply_task_for(message)
+        if existing is not None:
+            self._record("channel_reply.duplicate", channel, thread_id=message["thread_id"])
+            return {"ok": True, "queued": False, "duplicate": True, "task_id": existing,
+                    "kind": CHANNEL_REPLY_TASK_KIND}
+        result = self._request({
             "thread_id": message["thread_id"],
             "last_message_id": message["id"],
             "channel": channel,
             "reply": dict(message.get("reply") or {}),
             "from": message.get("sender", ""),
+            "sender_auth": message.get("sender_auth"),
         }, text, agent=agent, source=source)
+        if result.get("queued") and type(result.get("task_id")) is int:
+            self._inbox.mark_reply_task(message["id"], result["task_id"])
+        return result
 
     def _request(self, thread: dict, text: str, *, agent: str | None, source: str,
                  pending: _PromptDelivery | None = None, native_prompt: dict | None = None) -> dict:
@@ -371,6 +448,18 @@ class ChannelReplyBroker:
             payload["ephemeral_ttl"] = min(ephemeral_ttl(text, default=default), 86400)
         if native_prompt is not None:
             payload["native_prompt"] = native_prompt
+        if payload["channel"] == "email" and pending is None:
+            # H096: `MEDIA:` lines in an email reply become attachments. Each file is
+            # resolved under the media-delivery policy NOW, and its name, size and SHA-256
+            # go on the approval card; execute() sends only those exact bytes.
+            words, files = _email_attachments(clean_text)
+            if isinstance(files, str):
+                return {"ok": False, "reason": files}
+            if files:
+                if not words:
+                    return {"ok": False, "reason": "missing_text"}
+                payload["text"] = words
+                payload["attachments"] = files
         payload = mark_if_untrusted(payload, origin)
         if pending is not None:
             from .autonomy.mediation import canonical_json
@@ -417,6 +506,19 @@ class ChannelReplyBroker:
             return {"ok": False, "reason": denial, "kind": CHANNEL_REPLY_TASK_KIND}
 
         title = f"Reply via {thread['channel']}: {thread.get('from') or thread['thread_id']}"
+        if thread["channel"] == "email":
+            # H096: the card says what the receiving server made of the sender, and
+            # which files would leave.
+            from .channels.email_inbound import SenderAuth, clean_sender_auth
+
+            auth = clean_sender_auth(thread.get("sender_auth"))
+            title += f" ({SenderAuth(**auth).label if auth else 'unverified sender'})"
+            if payload.get("attachments"):
+                # What leaves, readably: the file, the folder it is read from, its size
+                # and the start of its SHA-256 (the full digest is in the payload).
+                title += " + attaching " + "; ".join(
+                    f"{a['name']} from {_folder(a['path'])} ({_human_size(a['bytes'])}, "
+                    f"sha256 {a['sha256'][:12]})" for a in payload["attachments"])
         preview = preview_task({
             "kind": CHANNEL_REPLY_TASK_KIND,
             "title": title,
@@ -449,7 +551,9 @@ class ChannelReplyBroker:
                 title,
                 payload=payload,
                 risk_tier=tier,
-                autonomy_level="ask" if tier >= _SMS_RISK_TIER else autonomy_level,
+                # A file leaving by email always waits for the owner's card (H096).
+                autonomy_level=("ask" if tier >= _SMS_RISK_TIER or payload.get("attachments")
+                                else autonomy_level),
                 origin=origin,
             )
         except Exception:
@@ -488,6 +592,7 @@ class ChannelReplyBroker:
                     or message.get("channel") != channel or message.get("thread_id") != thread_id
                     or message.get("reply") != reply):
                 return {"status": "blocked", "reason": "inbound_binding_changed", "channel": channel}
+        extra_files: list = []
         if channel == "email":
             # STAB-4 (#933), enforced here — the last step before SMTP.
             # 1. The reply recipient must be exactly the inbound sender who
@@ -508,8 +613,18 @@ class ChannelReplyBroker:
                 return {"status": "blocked", "reason": "reply_recipient_mismatch", "channel": channel}
             if self._email_allowlist is not None and recipient not in self._email_allowlist:
                 return {"status": "blocked", "reason": "sender_not_allowlisted", "channel": channel}
+            # H096: the threading headers are the inbound message's own, never the task's.
+            inbound_reply = inbound.get("reply") if isinstance(inbound.get("reply"), dict) else {}
+            if any(str(reply.get(k) or "") != str(inbound_reply.get(k) or "")
+                   for k in ("in_reply_to", "references")):
+                return {"status": "blocked", "reason": "inbound_binding_changed", "channel": channel}
             if self._email_reply_limiter.blocked(recipient):
                 return {"status": "blocked", "reason": "email_reply_rate_limited", "channel": channel}
+            if "attachments" in payload:
+                files = await asyncio.to_thread(_approved_attachments, payload["attachments"])
+                if isinstance(files, str):
+                    return {"status": "blocked", "reason": files, "channel": channel}
+                extra_files = files
         if channel == "sms":
             # G16 (H098), enforced here — the last step before Twilio. The reply goes to
             # the exact number that wrote the inbound message it answers (that number
@@ -533,6 +648,8 @@ class ChannelReplyBroker:
             return {"status": "failed", "reason": "reply_transport_unavailable",
                     "channel": channel}
         extra = {}
+        if channel == "email" and extra_files:
+            extra["attachments"] = extra_files
         if channel == "sms" and type(getattr(task, "id", None)) is int:
             # H081 x G16: a retried task never sends the paid message twice.
             extra["delivery_key"] = f"channel.reply:{task.id}"

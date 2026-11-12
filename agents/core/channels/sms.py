@@ -358,7 +358,8 @@ class SmsChannel(ChannelAdapter):
             self.counts["empty"] += 1
             return "empty"
         self.counts["routed"] += 1
-        await self.receive(text, sender=sender_id(number), sms_to=number, chat_type="private")
+        await self.receive(text, sender=sender_id(number), sms_to=number, chat_type="private",
+                           provider_id=sid)
         # The return value is never sent from here: a reply leaves only as an approved
         # channel.reply task (the orchestrator queues it).
         return "routed"

@@ -718,6 +718,8 @@ async def lifespan(application: FastAPI):
         # so this branch never ran until the config shape was corrected.
         email_ch = EmailChannel(
             handler=gateway.route,
+            # H096: attachments are opened only for senders this gate admits.
+            pairing=gateway.pairing,
             smtp_config={
                 "host": smtp_host, "port": env_int("SMTP_PORT", 587),
                 "user": os.environ.get("SMTP_USER", ""),

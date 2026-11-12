@@ -79,7 +79,7 @@ def test_matrix_build_send():
     ch = MatrixChannel(config={"homeserver": "https://hs/", "token": "T", "default_room": "!r:hs"})
     spec = ch.build_send("hi", {})
     assert spec["url"] == "https://hs/_matrix/client/v3/rooms/!r:hs/send/m.room.message"
-    assert spec["json"] == {"msgtype": "m.text", "body": "hi"}
+    assert spec["json"] == {"msgtype": "m.text", "body": "hi", "io.nerva.origin": True}  # H120 origin mark
 
 
 def test_teams_and_google_chat_build_send():

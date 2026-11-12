@@ -6,6 +6,7 @@ Provides consistent message routing, rate limiting, and channel health.
 
 import logging
 import time
+from collections import OrderedDict
 from typing import Any, Callable, Optional
 
 from ..action_origin import origin_for_channel
@@ -14,6 +15,11 @@ from ..security import taint
 from ..security.quarantine import detect_injection_normalized
 
 logger = logging.getLogger("jarvis.gateway")
+
+#: H120 — how long a provider message id is remembered, and how many are kept.
+DEDUP_WINDOW_S = 600.0
+DEDUP_MAX = 4096
+_DEDUP_KEY_MAX = 256
 
 
 class Gateway:
@@ -45,6 +51,9 @@ class Gateway:
         self._rate_limits: dict[str, list[float]] = {}
         self._max_rate = 10
         self._window = 60.0
+        # H120: (channel, provider message id) -> first seen, upstream of pairing,
+        # the handler and so of the approval queue: a provider retry is one turn.
+        self._seen_ids: OrderedDict[tuple[str, str], float] = OrderedDict()
 
     def register_channel(self, channel_id: str, metadata: dict = None):
         self._channels[channel_id] = {
@@ -73,6 +82,18 @@ class Gateway:
     async def route(self, text: str, channel: str = "web", **kwargs) -> Optional[str]:
         if channel not in self._channels:
             self.register_channel(channel)
+
+        # H120: an adapter that knows the provider's id for this message passes it as
+        # `dedup_key`; the same id again within the window (a webhook retry, a
+        # redelivery after a reconnect) is dropped before anything else sees it.
+        dedup_key = kwargs.pop("dedup_key", None)
+        provider_id = kwargs.get("provider_id")
+        if dedup_key is None and isinstance(provider_id, str) and provider_id:
+            dedup_key = f"{channel}:{provider_id}"
+        if self.is_duplicate(channel, dedup_key):
+            self._channels[channel]["duplicates"] = self._channels[channel].get("duplicates", 0) + 1
+            logger.info("Gateway: duplicate inbound on '%s' dropped", log_safe(channel))
+            return None
 
         # An observed group message (Hermes absorption 0.4) is recorded, never answered,
         # so it neither spends the reply rate budget nor earns a reply of any kind.
@@ -217,6 +238,27 @@ class Gateway:
         except Exception:
             logger.warning("Gateway: pending callback not applied")
             return None
+
+    def is_duplicate(self, channel: str, key, *, now: float | None = None) -> bool:
+        """H120 — True when *key* was already seen on *channel* within the window (and
+        remember it otherwise). A missing or malformed key is never a duplicate."""
+        if (not isinstance(key, str) or not key or len(key) > _DEDUP_KEY_MAX
+                or not key.isprintable()):
+            return False
+        now = time.monotonic() if now is None else now
+        seen = self._seen_ids
+        while seen:
+            oldest_key, oldest = next(iter(seen.items()))
+            if now - oldest <= DEDUP_WINDOW_S and len(seen) <= DEDUP_MAX:
+                break
+            seen.pop(oldest_key)
+        ident = (str(channel), key)
+        if ident in seen:
+            return True
+        seen[ident] = now
+        if len(seen) > DEDUP_MAX:
+            seen.popitem(last=False)
+        return False
 
     def _check_rate_limit(self, channel: str) -> bool:
         now = time.time()

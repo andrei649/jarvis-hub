@@ -5,7 +5,7 @@
 > Source of truth for backlog: [BACKLOG.md](BACKLOG.md)
 >
 <!-- project-status:go-live-header:start -->
-> Generated project status: **v1.0.0** · backend **34,360** · frontend **2,965** · mobile **365** · **874** routes · **18** active agents · open owner gates: **A1, A3, A4, A6** · backlog: **289 done · 24 open or blocked of 313 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · commit `9d9ac9c21c79`.
+> Generated project status: **v1.0.0** · backend **34,433** · frontend **2,965** · mobile **365** · **874** routes · **18** active agents · open owner gates: **A1, A3, A4, A6** · backlog: **289 done · 24 open or blocked of 313 horizon rows** (proof status: [`docs/OWNER_TASKS.md`](docs/OWNER_TASKS.md) → Production-verification checklist) · commit `88d4970eab7f`.
 <!-- project-status:go-live-header:end -->
 >
 > **2026-07-11 — the 1.0 gate expanded (owner decision) — superseded 2026-08-28:** the July framing

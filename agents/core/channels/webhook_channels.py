@@ -33,6 +33,21 @@ logger = logging.getLogger("jarvis.channels.webhook")
 _MATRIX_LOOKUP_SECONDS = 5.0
 
 
+#: H120 — a provider message id handed to the gateway's dedup window, bounded.
+_DEDUP_ID_MAX = 200
+
+
+def _dedup(channel: str, value: Any) -> dict:
+    """``{"dedup_key": "channel:id"}`` for the gateway's duplicate window, or ``{}`` when
+    the payload carries no usable id."""
+    if isinstance(value, bool) or not isinstance(value, (str, int)):
+        return {}
+    text = str(value)
+    if not text or len(text) > _DEDUP_ID_MAX or not text.isprintable():
+        return {}
+    return {"dedup_key": f"{channel}:{text}"}
+
+
 def _matrix_id(value: Any, sigil: str) -> bool:
     """A Matrix room (``!``) or user (``@``) id as the spec bounds it: 255 printable chars."""
     return (isinstance(value, str) and 1 < len(value) <= 255 and value.startswith(sigil)
@@ -124,9 +139,20 @@ class WebhookChannel(ChannelAdapter):
         text = parsed.get("text", "")
         if not text:
             return None
+        if self.is_own_message(parsed):
+            # H120: our own outbound read back (an echo) is never a turn: on Signal or
+            # Matrix it would be a reply loop that runs until a rate limit or a bill.
+            self.echoes_dropped = getattr(self, "echoes_dropped", 0) + 1
+            logger.info("%s: own message read back, ignored", self.channel_id)
+            return None
         parsed = await self.enrich_inbound(parsed)
         meta = {k: v for k, v in parsed.items() if k != "text"}
         return await self.receive(text, **meta)
+
+    def is_own_message(self, parsed: dict) -> bool:
+        """H120 provider hook: whether *parsed* was written by this bot itself."""
+        own = self.config.get("own_id")
+        return isinstance(own, str) and bool(own) and parsed.get("sender") == own
 
     async def enrich_inbound(self, parsed: dict) -> dict:
         """Provider hook: what the payload alone does not say but the provider's API does
@@ -152,10 +178,18 @@ class WebhookChannel(ChannelAdapter):
         raise NotImplementedError
 
 
+#: H120 — WhatsApp message types that are not something a person said to the agent.
+_WHATSAPP_NOT_A_TURN = frozenset({"system", "unsupported", "ephemeral", "revoked"})
+_WHATSAPP_BROADCAST_SUFFIXES = ("@broadcast", "@newsletter")
+
+
 class WhatsAppChannel(WebhookChannel):
     """WhatsApp Cloud API (Meta Graph)."""
 
     channel_id = "whatsapp"
+
+    def is_own_message(self, parsed):
+        return parsed.pop("_own", False) is True or super().is_own_message(parsed)
 
     def build_send(self, message, kwargs):
         to = kwargs.get("to") or self.config.get("default_to")
@@ -175,12 +209,23 @@ class WhatsAppChannel(WebhookChannel):
             value = payload["entry"][0]["changes"][0]["value"]
             msg = value["messages"][0]
         except (KeyError, IndexError, TypeError):
+            # Delivery/read `statuses` callbacks carry no message: never a turn.
+            return None
+        if not isinstance(msg, dict) or msg.get("type") in _WHATSAPP_NOT_A_TURN:
             return None
         text = (msg.get("text") or {}).get("body", "") or (msg.get("button") or {}).get("text", "")
         sender = msg.get("from", "")
-        if not text or not sender:
+        if not text or not isinstance(sender, str) or not sender:
             return None
-        parsed = {"text": text, "sender": sender, "to": sender}
+        if sender.endswith(_WHATSAPP_BROADCAST_SUFFIXES) or sender == "status":
+            # H120: status updates, broadcast lists and channels are not conversations.
+            return None
+        own = ((value.get("metadata") or {}).get("display_phone_number")
+               if isinstance(value, dict) else None)
+        parsed = {"text": text, "sender": sender, "to": sender,
+                  **_dedup("whatsapp", msg.get("id"))}
+        if isinstance(own, str) and own and own.lstrip("+") == sender.lstrip("+"):
+            parsed["_own"] = True
         if msg.get("group_id"):
             # H058: the Cloud API names the group a participant wrote in; judged in group scope.
             parsed["chat_type"] = "group"
@@ -192,6 +237,11 @@ class SignalChannel(WebhookChannel):
 
     channel_id = "signal"
     _DYNAMIC_HOST_CONFIG_KEYS = ("base_url",)
+
+    def is_own_message(self, parsed):
+        number = self.config.get("number")
+        return ((isinstance(number, str) and bool(number) and parsed.get("sender") == number)
+                or super().is_own_message(parsed))
 
     def build_send(self, message, kwargs):
         base = (self.config.get("base_url", "") or "").rstrip("/")
@@ -205,15 +255,26 @@ class SignalChannel(WebhookChannel):
 
     def parse_inbound(self, payload):
         env = payload.get("envelope", payload) or {}
+        if env.get("syncMessage") is not None:
+            # H120: signal-cli reports what this account sent from another device as a
+            # sync message; it is ours, never a turn.
+            return None
         data = env.get("dataMessage") or {}
         text = data.get("message", "")
         sender = env.get("source", "") or env.get("sourceNumber", "")
         if not text or not sender:
             return None
-        parsed = {"text": text, "sender": sender, "to": sender}
+        stamp = data.get("timestamp") or env.get("timestamp")
+        parsed = {"text": text, "sender": sender, "to": sender,
+                  **(_dedup("signal", f"{sender}:{stamp}") if stamp else {})}
         if data.get("groupInfo") or data.get("groupV2"):
             parsed["chat_type"] = "group"   # H058: a group message is judged in group scope
         return parsed
+
+
+#: H120 — the content field marking a Matrix message this hub sent (namespaced, as the
+#: spec asks of custom fields).
+MATRIX_ORIGIN_KEY = "io.nerva.origin"
 
 
 class MatrixChannel(WebhookChannel):
@@ -236,7 +297,10 @@ class MatrixChannel(WebhookChannel):
                 "url": f"{hs}/_matrix/client/v3/rooms/{quote_room(room)}/send/m.room.message",
                 "headers": {"Authorization": f"Bearer {token}",
                             "Content-Type": "application/json"},
-                "json": {"msgtype": "m.text", "body": message}}
+                # H120: an origin field (invisible in clients) marks what this hub
+                # sent, so a copy that comes back (another login of the same account, a
+                # bridge echoing it) is recognised and never answered.
+                "json": {"msgtype": "m.text", "body": message, MATRIX_ORIGIN_KEY: True}}
 
     def parse_inbound(self, payload):
         events = payload.get("events") if isinstance(payload, dict) else None
@@ -251,12 +315,27 @@ class MatrixChannel(WebhookChannel):
             return None
         if ev.get("type") not in (None, "m.room.message"):
             return None
+        content = ev.get("content") if isinstance(ev.get("content"), dict) else {}
+        if content.get(MATRIX_ORIGIN_KEY) is not None:
+            self.echoes_dropped = getattr(self, "echoes_dropped", 0) + 1
+            return None   # H120: our own message, carried back
         text = (ev.get("content") or {}).get("body", "")
         sender = ev.get("sender", "")
         room = ev.get("room_id", "") or self.config.get("default_room", "")
         if not text or not sender:
             return None
-        return {"text": text, "sender": sender, "room_id": room}
+        return {"text": text, "sender": sender, "room_id": room,
+                **_dedup("matrix", ev.get("event_id"))}
+
+    def is_own_message(self, parsed):
+        """Our own user, or a bridge/appservice account the owner listed in
+        ``ignore_users`` (a bridge that relays our replies back would otherwise loop)."""
+        sender = parsed.get("sender")
+        mine = {self.config.get("user_id"), self._own_user_id}
+        ignored = self.config.get("ignore_users") or ()
+        if isinstance(ignored, (list, tuple)):
+            mine |= {u for u in ignored[:64] if isinstance(u, str)}
+        return (isinstance(sender, str) and sender in mine) or super().is_own_message(parsed)
 
     async def enrich_inbound(self, parsed):
         """H058 — the scope a command is judged in. A room event never says whether its room
@@ -355,13 +434,19 @@ class TeamsChannel(WebhookChannel):
                 "json": {"text": message}}
 
     def parse_inbound(self, payload):
+        if payload.get("type") not in (None, "message"):
+            return None   # conversationUpdate, typing, invoke …: not something said
         text = payload.get("text", "")
         sender = (payload.get("from") or {}).get("id", "")
         conversation = payload.get("conversation") or {}
         convo = conversation.get("id", "")
         if not text or not sender:
             return None
-        parsed = {"text": text, "sender": sender, "conversation": convo}
+        recipient = (payload.get("recipient") or {}).get("id")
+        if recipient and sender == recipient:
+            return None   # H120: the bot's own activity read back
+        parsed = {"text": text, "sender": sender, "conversation": convo,
+                  **_dedup("teams", payload.get("id"))}
         kind = conversation.get("conversationType")
         if type(kind) is str and kind:
             # H058: a one-to-one chat is a DM; a group chat or a team channel is a group.
@@ -385,12 +470,16 @@ class GoogleChatChannel(WebhookChannel):
     def parse_inbound(self, payload):
         msg = payload.get("message", {}) or {}
         text = msg.get("text", "") or payload.get("text", "")
+        author = msg.get("sender") or payload.get("user") or {}
         sender = (msg.get("sender") or {}).get("name", "") or (payload.get("user") or {}).get("name", "")
         room = payload.get("space") or {}
         space = room.get("name", "")
         if not text or not sender:
             return None
-        parsed = {"text": text, "sender": sender, "space": space}
+        if isinstance(author, dict) and author.get("type") == "BOT":
+            return None   # H120: a bot (this app included) is never a turn
+        parsed = {"text": text, "sender": sender, "space": space,
+                  **_dedup("google_chat", msg.get("name"))}
         kind = room.get("spaceType") or room.get("type")
         if room.get("singleUserBotDm") is True or kind in {"DIRECT_MESSAGE", "DM"}:
             parsed["chat_type"] = "private"           # H058: a DM with the app

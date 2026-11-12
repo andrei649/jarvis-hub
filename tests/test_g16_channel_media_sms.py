@@ -510,7 +510,8 @@ async def test_an_allowed_number_reaches_the_turn_with_its_identity(sms_env):
     transport = _Twilio()
     ch, seen = _sms_channel(transport=transport)
     assert await ch.accept({k: [v] for k, v in _params().items()}) == "routed"
-    assert seen == [("lights off", {"sender": "15551234567", "sms_to": OWNER, "chat_type": "private"})]
+    assert seen == [("lights off", {"sender": "15551234567", "sms_to": OWNER, "chat_type": "private",
+                                    "provider_id": _params()["MessageSid"]})]   # H120
     assert transport.calls == [], "the turn's answer is never sent by the adapter itself"
 
 

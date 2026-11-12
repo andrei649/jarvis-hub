@@ -56,6 +56,16 @@ COMMAND_REFUSED = ("This command was sent while Nerva was offline, so it was not
                    "Send it again if you still want it.")
 TAP_REFUSED = "Not applied: this was tapped while Nerva was offline. Tap again."
 
+#: H120 — a message that reaches a running channel long after it was sent (a stuck
+#: delivery queue on the platform's side) is held to the backfill rules too: a command in
+#: it is refused, it never answers a pending prompt. ``0`` turns the guard off.
+LATE_ENV = "JARVIS_CHANNEL_LATE_DELIVERY_S"
+DEFAULT_LATE_S = 900
+#: Dates before 2020-01-01 are not a delivery delay, they are a broken or hostile date.
+_PLAUSIBLE_EPOCH = 1_577_836_800
+LATE_COMMAND_REFUSED = ("This command reached Nerva late (several minutes after you sent it), "
+                        "so it was not run. Send it again if you still want it.")
+
 
 def configured_window() -> int:
     return min(env_int(WINDOW_ENV, DEFAULT_WINDOW_S, minimum=0), WINDOW_CEILING_S)
@@ -63,6 +73,27 @@ def configured_window() -> int:
 
 def configured_max() -> int:
     return min(env_int(MAX_ENV, DEFAULT_MAX, minimum=0), MAX_CEILING)
+
+
+def configured_late_threshold() -> int:
+    return min(env_int(LATE_ENV, DEFAULT_LATE_S, minimum=0), WINDOW_CEILING_S)
+
+
+def delivered_late(sent_at, now, threshold: int | None = None) -> bool:
+    """Whether a message dated *sent_at* reached a running channel more than *threshold*
+    seconds after it was sent. A threshold of 0 is off. Only a plausible date on a readable
+    clock counts: an undated message, a date before :data:`_PLAUSIBLE_EPOCH`, an
+    unreadable or non-finite clock, or a number too large for a float is never "late"
+    (and never raises), so a hostile date cannot use this guard to drop a message."""
+    try:
+        limit = configured_late_threshold() if threshold is None else threshold
+        if (limit <= 0 or type(sent_at) not in (int, float) or type(now) not in (int, float)
+                or not math.isfinite(sent_at) or not math.isfinite(now)
+                or sent_at < _PLAUSIBLE_EPOCH):
+            return False
+        return float(now) - float(sent_at) > limit
+    except (OverflowError, ValueError, TypeError):
+        return False
 
 
 def is_backlog(sent_at, cutoff) -> bool:
@@ -113,6 +144,7 @@ class BackfillBudget:
                 "refused_commands": self.refused_commands, "refused_taps": self.refused_taps}
 
 
-__all__ = ["BackfillBudget", "COMMAND_REFUSED", "DEFAULT_MAX", "DEFAULT_WINDOW_S", "MAX_ENV",
-           "TAP_REFUSED", "WINDOW_ENV", "configured_max", "configured_window", "is_backlog",
-           "looks_like_command"]
+__all__ = ["BackfillBudget", "COMMAND_REFUSED", "DEFAULT_LATE_S", "DEFAULT_MAX", "DEFAULT_WINDOW_S",
+           "LATE_COMMAND_REFUSED", "LATE_ENV", "MAX_ENV", "TAP_REFUSED", "WINDOW_ENV",
+           "configured_late_threshold", "configured_max", "configured_window", "delivered_late",
+           "is_backlog", "looks_like_command"]

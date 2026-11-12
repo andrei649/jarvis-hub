@@ -20,8 +20,10 @@ import httpx
 from . import audio_container, delivery_ledger, media_delivery
 from .backfill import (
     COMMAND_REFUSED,
+    LATE_COMMAND_REFUSED,
     TAP_REFUSED,
     BackfillBudget,
+    delivered_late,
     is_backlog,
     looks_like_command,
 )
@@ -1208,6 +1210,8 @@ class TelegramChannel(ChannelAdapter):
                         # H116: saved before the update is handled, so a crash never handles
                         # it twice after the restart (inbound is at most once).
                         self._save_offset()
+                        if await self._take_late(up, page):
+                            continue
                         await self._handle_update(up, page)
                 cut_short = None
                 for key in self._batch.due():
@@ -1299,6 +1303,49 @@ class TelegramChannel(ChannelAdapter):
         pairing = getattr(self, "_pairing", None)
         try:
             return bool(pairing is not None and pairing.is_allowed("telegram", str(uid)))
+        except Exception:
+            return False
+
+    async def _take_late(self, up, page=None) -> bool:
+        """H120 — a new message that reaches the running poll long after it was sent (a
+        stuck queue on Telegram's side). A command in it is refused, never run, and a
+        sender the owner actually paired or allowlisted gets one short notice (nobody else
+        is told anything). Any other message is handled, marked as a backfill so it never
+        answers a pending prompt; the backfill window does not drop it. True when it was
+        dealt with here. Edits, taps and every other update keep the live path."""
+        msg = up.get("message") if isinstance(up, dict) else None
+        if not isinstance(msg, dict):
+            return False
+        date = msg.get("date")
+        try:
+            now = self._wall_clock()
+        except Exception:
+            return False   # no readable clock: nothing can be judged late
+        if not delivered_late(date, now):
+            return False
+        self.late_deliveries = getattr(self, "late_deliveries", 0) + 1
+        text = msg.get("text") if isinstance(msg.get("text"), str) else msg.get("caption")
+        if looks_like_command(text):
+            sender = (msg.get("from") or {}).get("id")
+            chat_id = (msg.get("chat") or {}).get("id")
+            if type(chat_id) is int and self._explicitly_known(sender):
+                await self.send(LATE_COMMAND_REFUSED, chat_id=chat_id, voice=False, plain=True)
+            return True
+        await self._handle_update({**up, "message": {**msg, "_backfilled": True}}, page)
+        return True
+
+    def _explicitly_known(self, uid) -> bool:
+        """A sender the owner allowlisted or paired, not merely one the gate lets through
+        because pairing is switched off: only they are told a late command was refused."""
+        if self.allowed_users and uid in self.allowed_users:
+            return True
+        pairing = getattr(self, "_pairing", None)
+        try:
+            from .pairing import ALLOWED, sender_allowlisted
+
+            return bool(pairing is not None and (
+                sender_allowlisted("telegram", str(uid))
+                or pairing.status("telegram", str(uid)) == ALLOWED))
         except Exception:
             return False
 
