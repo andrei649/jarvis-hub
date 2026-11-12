@@ -52,7 +52,7 @@ MAX_SUBJECT_CHARS = 200
 _MAX_AUTH_HEADER_CHARS = 4_000
 _MAX_NAME_CHARS = 120
 
-VERDICT_PASS = "pass"
+VERDICT_PASS = "pass"  # nosec B105 - DMARC verdict label, not a credential
 VERDICT_FAIL = "fail"
 VERDICT_NONE = "none"
 
