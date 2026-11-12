@@ -29,10 +29,19 @@ paste                  bracketed paste: a multi-line paste is one draft, not N t
 Client commands (never sent to the hub): ``/edit``, ``/image PATH``, ``/paste-image``,
 ``/switch [N|id|new]`` (your sessions, ``GET /sessions``), ``/model [N|id]`` (the hub's
 local models; switching is the owner's admin route and is refused otherwise),
-``/queue [clear|drop N]``, ``/keys``, ``/exit``. Everything else — ``/help``, ``/recap``,
+``/queue [clear|drop N]``, ``/copy`` (the last answer, OSC 52), ``/where`` (directory, git
+branch, battery), ``/keys``, ``/exit``. Everything else — ``/help``, ``/recap``,
 any hub command — goes to the hub as a message, where the command plane judges it.
 
 A message typed while a turn runs is queued and sent, in order, when the turn ends.
+
+H223 — the turn is streamed (``POST /chat/stream``): the answer is drawn line by line as
+its tokens arrive, with a one-line tool trail, while the prompt stays open. The turn's
+questions still come through ``GET /chat/pending`` (header ``X-Nerva-Pending: poll``) and
+Ctrl+C still stops it (``POST /chat/interrupt``, the turn's own id). A hub without the
+stream route gets ``POST /chat``. ``nerva chat -i "first message" [--image PATH]`` sends a
+first message on start; a clean exit, and an exit on an internal error, print how to
+resume the conversation (``nerva chat -i -r ID``).
 
 Security: nothing the hub or the model writes is ever executed here; their text is
 stripped of control sequences, C1 controls and bidi/zero-width characters before it is
@@ -48,6 +57,7 @@ import contextlib
 import json
 import os
 import re
+import shutil
 import signal
 import threading
 import time
@@ -65,7 +75,9 @@ LOCAL_COMMANDS: dict[str, str] = {
     "/paste-image": "attach the clipboard's image to the next message",
     "/switch": "list your sessions; /switch N, /switch <id> or /switch new",
     "/model": "list the hub's local models; /model N or /model <id> switches (owner only)",
-    "/queue": "messages waiting for the running turn; /queue clear, /queue drop N",
+    "/queue": "messages waiting for the running turn; /queue clear, /queue drop N, /queue edit N",
+    "/copy": "copy the last answer to the clipboard (OSC 52; the terminal must allow it)",
+    "/where": "this terminal: working directory, git branch and battery",
     "/keys": "the keyboard reference",
     "/exit": "leave (also /quit, Ctrl+D, or Ctrl+C twice)",
     "/quit": "leave",
@@ -87,6 +99,10 @@ KEY_HELP: tuple[str, ...] = (
 )
 
 HISTORY_LIMIT = 1000
+#: H235: what /copy can carry, and the battery warning's level and polling interval.
+COPY_LIMIT = 64_000
+BATTERY_WARN = 15
+BATTERY_POLL_SECONDS = 60.0
 EXIT_ARM_SECONDS = 3.0
 #: Tab asks the hub for ``@file:`` paths with this budget; an unreachable hub is not
 #: asked again for COMPLETION_BACKOFF seconds, so Tab never freezes the prompt.
@@ -143,14 +159,26 @@ def route_line(line: str) -> tuple[str, str]:
 
 
 def completions(text: str, *, line: str, begin: int, commands: Iterable[str],
-                refs: Callable[[str], list[str]] | None = None) -> list[str]:
+                refs: Callable[[str], list[str]] | None = None,
+                described: Iterable[tuple[str, str]] = ()) -> list[str]:
     """Candidates for the word *text* that starts at *begin* in *line*.
 
     A ``/word`` at the start of the line completes from the hub's commands and this
-    client's own; ``@file:prefix`` anywhere completes from *refs* (the hub's scope)."""
+    client's own; when no name starts with it, the closest names by name and
+    *described* description are offered instead (H231/H235, ``agents.core.fuzzy_match``:
+    ``/sesion`` → ``/sessions``, ``/quota`` → ``/usage``). ``@file:prefix`` anywhere
+    completes from *refs* (the hub's scope)."""
     if text.startswith("/") and not line[:begin].strip():
         names = sorted(set(commands) | set(LOCAL_COMMANDS))
-        return [name for name in names if name.startswith(text)]
+        matches = [name for name in names if name.startswith(text)]
+        if matches or len(text) < 3:
+            return matches
+        from agents.core.fuzzy_match import rank
+
+        catalog = dict.fromkeys(names, "")
+        catalog.update(LOCAL_COMMANDS)
+        catalog.update({name: text for name, text in described if name in catalog})
+        return rank(text, catalog.items(), limit=5)
     if text.startswith("@file:") and refs is not None:
         # The hub's refs are whole references already (``@file:path``, quoted when the
         # path has a space): used as they are, never prefixed again.
@@ -357,12 +385,22 @@ class Repl:
         self.staged_images: list[str] = []
         self.staged_clipboard = False
         self.commands: list[str] = []
+        #: (command, card-safe description) from the hub's catalog, for fuzzy completion
+        self.described: list[tuple[str, str]] = []
         self.continued: list[str] = []
         self._draft_at_interrupt = ""
         self._prefill = ""
         self._reading = False
         self._ctrl_c_read = False
         self._worker: threading.Thread | None = None
+        #: H223: None until a turn tried ``/chat/stream``; False when the hub has no stream
+        #: route (every later turn uses ``POST /chat``).
+        self._stream_ok: bool | None = None
+        self._startup: Outgoing | None = None
+        #: H235: the last answer (for /copy), and the battery's last reading and warning
+        self.last_answer = ""
+        self._battery_checked = 0.0
+        self._battery_warned: int | None = None
 
     # output -----------------------------------------------------------------
     def say(self, text: str = "") -> None:
@@ -403,13 +441,18 @@ class Repl:
             reply = self.ctx.client().get("/api/commands")
         except HubError:
             return
+        from .chat_prompts import card_safe
+
         rows = reply.get("commands") if isinstance(reply, dict) else None
         names = []
+        described = []
         for row in rows if isinstance(rows, list) else []:
             command = row.get("command") if isinstance(row, dict) else None
             if isinstance(command, str) and re.fullmatch(r"/[a-z0-9][a-z0-9_-]{0,63}", command):
                 names.append(command)
+                described.append((command, card_safe(row.get("description"))[:200]))
         self.commands = names
+        self.described = described
 
     def file_refs(self, prefix: str) -> list[str]:
         """The hub's ``@file:`` references for *prefix* (``GET /api/context-refs``), as the
@@ -462,7 +505,8 @@ class Repl:
             if index == 0:
                 line = rl.get_line_buffer()
                 state["c"] = completions(text, line=line, begin=rl.get_begidx(),
-                                         commands=self.commands, refs=self.file_refs)
+                                         commands=self.commands, refs=self.file_refs,
+                                         described=self.described)
             options = state.get("c", [])
             return options[index] if index < len(options) else None
 
@@ -593,6 +637,81 @@ class Repl:
             self.switch(rest)
         elif head == "/model":
             self.model(rest)
+        elif head == "/copy":
+            self.copy_answer()
+        elif head == "/where":
+            for line in self.where_lines():
+                self.say(line)
+
+    # where it runs (H235) ---------------------------------------------------
+    def where_lines(self) -> list[str]:
+        from . import term_info
+
+        def absolute(name: str) -> Path | None:
+            value = (self.ctx.environ.get(name) or "").strip()
+            return Path(value) if value and os.path.isabs(value) else None
+
+        try:
+            cwd = Path.cwd()
+        except OSError:
+            return ["working directory: (gone)"]
+        home = absolute("HOME") or absolute("USERPROFILE")
+        branch = term_info.git_branch(cwd, home)
+        charge = term_info.battery()
+        parts = [term_info.cwd_label(cwd, home),
+                 f"git {branch}" if branch else "not in a git repository"]
+        if charge is not None:
+            parts.append(charge.label())
+        return [" · ".join(parts)]
+
+    def copy_answer(self) -> None:
+        from . import term_info
+        from .nerva import _answer_text
+
+        text = _answer_text(self.last_answer).strip("\n")
+        if not text:
+            self.say("no answer to copy yet")
+            return
+        sequence = term_info.osc52(text, self.ctx.environ)
+        if sequence is None:
+            self.say("the last answer is too long to copy through the terminal")
+            return
+        with self._lock:
+            try:
+                self.ctx.out.write(sequence)
+                self.ctx.out.flush()
+            except (OSError, ValueError):
+                return
+        self.say(f"copied {len(text):,} characters (OSC 52: a terminal that does not allow it ignores this)")
+
+    def _poll_battery(self) -> None:
+        """Battery polling on its own timer thread, every BATTERY_POLL_SECONDS while the
+        chat runs (at the prompt and during a turn alike; review m1)."""
+        while not self.stopped:
+            with contextlib.suppress(Exception):
+                self.check_battery()
+            with self._wake:
+                if self.stopped:
+                    return
+                self._wake.wait(BATTERY_POLL_SECONDS)
+
+    def check_battery(self, *, now: float | None = None) -> None:
+        """Battery polling: at most once a minute, a warning when the battery is
+        discharging at or below BATTERY_WARN %, again for every 5 points it drops."""
+        from . import term_info
+
+        now = time.monotonic() if now is None else now
+        if now - self._battery_checked < BATTERY_POLL_SECONDS:
+            return
+        self._battery_checked = now
+        charge = term_info.battery()
+        if charge is None or charge.charging or charge.percent > BATTERY_WARN:
+            self._battery_warned = None
+            return
+        if self._battery_warned is not None and charge.percent > self._battery_warned - 5:
+            return
+        self._battery_warned = charge.percent
+        self.say(f"battery {charge.percent}% and discharging")
 
     def stage_image(self, path: str) -> None:
         from .nerva import VISION_MAX_IMAGES, _plain, _read_image
@@ -620,6 +739,21 @@ class Repl:
                 dropped = len(self.queue)
                 self.queue.clear()
                 self.say(f"dropped {dropped} queued message(s)")
+                return
+            if rest.startswith("edit"):
+                # H225: take a queued message back into the draft to change it; it is
+                # sent again (at the end of the queue) when Enter is pressed.
+                arg = rest[4:].strip()
+                if arg.isdigit() and 1 <= int(arg) <= len(self.queue):
+                    item = self.queue[int(arg) - 1]
+                    del self.queue[int(arg) - 1]
+                    self._prefill = item.message
+                    self.staged_images = [*item.images, *self.staged_images]
+                    self.staged_clipboard = self.staged_clipboard or item.clipboard_image
+                    self.say(f"queued message {arg} is back in your draft" if self._rl is not None else
+                             f"queued message {arg} was taken out of the queue: {_plain(item.message, 300)}")
+                else:
+                    self.say("usage: /queue edit N")
                 return
             if rest.startswith("drop"):
                 arg = rest[4:].strip()
@@ -795,6 +929,9 @@ class Repl:
         if self.reasoning:
             body["reasoning"] = self.reasoning
         client = self.ctx.client()
+        if (self._stream_ok is not False and callable(getattr(client, "stream", None))
+                and self._stream_turn(client, body, session, generation, turn_id)):
+            return
         box: dict[str, Any] = {}
         # The turn id goes in a header (an older hub ignores it; the body's schema is
         # strict): before the hub names the conversation, Ctrl+C names the turn by it.
@@ -849,22 +986,26 @@ class Repl:
             return
         self.show_reply(box.get("reply"), generation=generation)
 
-    def show_reply(self, reply: Any, *, generation: int | None = None) -> None:
+    def show_reply(self, reply: Any, *, generation: int | None = None, streamed: bool = False) -> None:
         """Draw a turn's reply. The conversation the hub names becomes this chat's only
-        when the user has not switched since the turn was sent (review M3)."""
+        when the user has not switched since the turn was sent (review M3). *streamed*:
+        the answer was already drawn as it arrived; only what follows it is drawn here."""
         from .nerva import _pending_ids, _recall_lines
 
         if not isinstance(reply, dict):
             self.say("the hub's reply is malformed")
             return
+        if isinstance(reply.get("reply"), str):
+            self.last_answer = reply["reply"][:COPY_LIMIT]
         returned = reply.get("session_id")
         if isinstance(returned, str) and _SESSION_ID.match(returned):
             with self._lock:
                 if generation is None or generation == self._generation:
                     self.session_id = returned
-        for line in _recall_lines(reply):
-            self.say(line)
-        self.answer(str(reply.get("reply", "")))
+        if not streamed:
+            for line in _recall_lines(reply):
+                self.say(line)
+            self.answer(str(reply.get("reply", "")))
         for notice in reply.get("notices") or []:
             if isinstance(notice, dict) and isinstance(notice.get("text"), str):
                 from .chat_prompts import card_safe
@@ -875,6 +1016,112 @@ class Repl:
             with self._lock:
                 self.asks.append(("approvals", list(pending), None))
             self.say(f"! this turn queued {len(pending)} approval(s) — press Enter to decide them here")
+
+    # streamed turns (H223) -------------------------------------------------
+    def _stream_turn(self, client: Any, body: dict[str, Any], session: str | None,
+                     generation: int, turn_id: str) -> bool:
+        """Run the turn over ``POST /chat/stream``; False (nothing sent) when the hub has
+        no stream route, so the caller falls back to ``POST /chat``."""
+        from .chat_prompts import TURN_TIMEOUT_SECONDS
+        from .client import HubError, HubUnavailable
+
+        with self._lock:
+            if self.inflight is not None:
+                self.inflight["turn_id"] = turn_id
+        done = threading.Event()
+        watcher = threading.Thread(target=self._watch_questions,
+                                   args=(client, body.get("session_id"), session, done),
+                                   name="nerva-chat-questions", daemon=True)
+        feed = AnswerFeed(self.answer)
+        reply: dict[str, Any] | None = None
+        events = client.stream("/chat/stream", {**body, "tool_events": True}, timeout=TURN_TIMEOUT_SECONDS,
+                               headers={"X-Nerva-Turn-Id": turn_id, "X-Nerva-Pending": "poll"})
+        started = False
+        try:
+            for event in events:
+                if not started:
+                    started = True
+                    self._stream_ok = True
+                    watcher.start()
+                kind = event.get("type")
+                if kind == "token" and isinstance(event.get("text"), str):
+                    feed.feed(event["text"])
+                elif kind == "tool":
+                    line = tool_line(event.get("event"))
+                    if line:
+                        feed.flush()
+                        self.say(line)
+                elif kind == "clarify" and isinstance(event.get("id"), str):
+                    # A hub that ignored the poll header asks in the stream instead.
+                    with self._lock:
+                        self.asks.append(("question", event, session))
+                    self.say("? the turn asks you something — press Enter to answer it")
+                elif kind == "end":
+                    reply = {"reply": event.get("text"), "session_id": event.get("session_id"),
+                             "pending_approvals": event.get("pending_approvals"),
+                             "notices": event.get("notices"), "outcome": event.get("outcome")}
+                    break
+        except HubError as exc:
+            if not started and exc.status in (404, 405):
+                self._stream_ok = False
+                return False
+            feed.flush()
+            if isinstance(exc, HubUnavailable):
+                from .nerva import _plain
+
+                self.say("no hub is reachable; the message was not sent" if not started
+                         else f"the turn's stream stopped: {_plain(exc.reason, 200)}")
+            else:
+                from .nerva import _plain
+
+                self.say(f"the hub refused the turn (HTTP {exc.status}): {_plain(exc.reason, 200)}")
+            return True
+        finally:
+            done.set()
+            close = getattr(events, "close", None)
+            if callable(close):
+                with contextlib.suppress(Exception):
+                    close()
+            if watcher.is_alive():
+                watcher.join(2)
+        drew = feed.close()
+        if reply is None:
+            self.say("the turn's stream ended without its end; the answer may be incomplete")
+            return True
+        if not drew:
+            text = reply.get("reply")
+            if isinstance(text, str) and text:
+                self.answer(text)
+        from .nerva import _recall_lines
+
+        for line in _recall_lines(reply):
+            self.say(line)
+        self.show_reply(reply, generation=generation, streamed=True)
+        return True
+
+    def _watch_questions(self, client: Any, asked_session: str | None, session: str | None,
+                         done: threading.Event) -> None:
+        """Poll ``GET /chat/pending`` while a streamed turn runs; hand each new question
+        to the keyboard thread once (as the ``POST /chat`` path does)."""
+        from . import chat_prompts
+
+        seen: set[str] = set()
+        while not done.wait(chat_prompts.POLL_SECONDS):
+            if (self.inflight or {}).get("stopped"):
+                continue
+            try:
+                questions = chat_prompts._pending(client, asked_session)
+            except chat_prompts._PollRefused:
+                return
+            if questions is None:
+                return
+            for question in questions:
+                prompt_id = str(question.get("id", ""))
+                if prompt_id and prompt_id not in seen:
+                    seen.add(prompt_id)
+                    with self._lock:
+                        self.asks.append(("question", question, session))
+                    self.say("? the turn asks you something — press Enter to answer it")
 
     def vision_turn(self, item: Outgoing) -> None:
         import argparse
@@ -975,22 +1222,39 @@ class Repl:
             self._wake.notify_all()
 
     def run(self) -> int:
-        self.load_catalog()
-        self.install_readline()
         previous = None
         if threading.current_thread() is threading.main_thread():
             previous = signal.signal(signal.SIGINT, self._on_sigint)
-        self._worker = threading.Thread(target=self._work, name="nerva-chat-turns", daemon=True)
-        self._worker.start()
-        self.say("Nerva chat. Enter sends · Alt+Enter newline · Ctrl+C clears / stops / exits · "
-                 "/keys for the rest")
+        code = 0
         try:
+            # Everything after the SIGINT handler is installed runs inside this try, so
+            # Ctrl+C or an error during start-up (the catalog, a slow /where) still
+            # restores the handler and prints the resume hint (H223/H235 review M2).
+            self.load_catalog()
+            self.install_readline()
+            self._worker = threading.Thread(target=self._work, name="nerva-chat-turns", daemon=True)
+            self._worker.start()
+            threading.Thread(target=self._poll_battery, name="nerva-chat-battery", daemon=True).start()
+            self.say("Nerva chat. Enter sends · Alt+Enter newline · Ctrl+C clears / stops / exits · "
+                     "/keys for the rest")
+            with contextlib.suppress(Exception):      # where it runs: never a reason not to start
+                for line in self.where_lines():
+                    self.say(line)
+            self.send_startup()
             while not self.stopped:
                 try:
                     if not self.step():
                         break
                 except KeyboardInterrupt:      # Ctrl+C outside the prompt (an HTTP call, a menu)
                     self.on_ctrl_c("")
+        except KeyboardInterrupt:              # Ctrl+C before the prompt was ever shown
+            code = 130
+        except Exception as exc:  # noqa: BLE001 — H223: a client bug ends the chat, never the terminal
+            from .nerva import _plain
+
+            code = 1
+            self.say(f"the chat stopped on an internal error ({_plain(type(exc).__name__, 60)}: "
+                     f"{_plain(exc, 160)}); the conversation is kept on the hub")
         finally:
             with self._wake:
                 self.stopped = True
@@ -1000,7 +1264,168 @@ class Repl:
                 self.say(f"{dropped} queued message(s) were not sent")
             if previous is not None:
                 signal.signal(signal.SIGINT, previous)
+            self.say_resume_hint()
+        return code
+
+    def start_with(self, message: str | None = None, images: Iterable[str] = (),
+                   clipboard_image: bool = False) -> bool:
+        """H223 — what ``nerva chat -i MESSAGE [--image PATH] [--clipboard-image]`` sends
+        first; False (said why) when an image cannot be attached."""
+        before = len(self.staged_images)
+        wanted = list(images)
+        for path in wanted:
+            self.stage_image(path)
+        if len(self.staged_images) - before != len(wanted):
+            return False
+        self.staged_clipboard = self.staged_clipboard or clipboard_image
+        if message is not None and message.strip():
+            self._startup = Outgoing(message)
+        elif self.staged_images or self.staged_clipboard:
+            self.say("the image(s) go with your first message")
+        return True
+
+    def send_startup(self) -> None:
+        if self._startup is not None:
+            message, self._startup = self._startup.message, None
+            self.say(f"> {card_safe_line(message)}")
+            self.submit(message)
+
+    def say_resume_hint(self) -> None:
+        """H223 — how to come back to this conversation (the hub keeps it)."""
+        with self._lock:
+            session = self.session_id
+        if isinstance(session, str) and _SESSION_ID.match(session):
+            self.say(f"resume this conversation: nerva chat -i -r {session}")
+
+
+class AnswerFeed:
+    """H223 — a streamed answer, drawn a whole line at a time so the open prompt is
+    redrawn under it (never mid-word): a line is drawn at its newline, or at the last
+    space once it is as wide as the terminal (display width: wide CJK characters count
+    two, combining marks none).
+
+    Text is stripped (``_answer_text``: control, escape, bidi and zero-width characters)
+    *before* it is wrapped, so a cut never lands inside an escape sequence (review m2):
+    the raw text from the last ESC on is held back until its line ends, so an escape
+    split across two tokens is still removed whole. Work is linear in the text: lines
+    are split once and a long line is cut by index, never re-sliced per cut (review m3).
+    A held-back escape tail longer than ESCAPE_HOLD is let go (stripped like the rest)."""
+
+    ESCAPE_HOLD = 512
+
+    def __init__(self, draw: Callable[[str], None], width: int | None = None) -> None:
+        self._draw = draw
+        self._width = max(20, width or shutil.get_terminal_size((100, 24)).columns - 1)
+        self._buffer = ""
+        self.drew = False
+
+    def feed(self, text: str) -> None:
+        from .nerva import _answer_text
+
+        *complete, self._buffer = (self._buffer + text).split("\n")
+        for line in complete:
+            self._emit(_answer_text(line))
+        raw = self._buffer
+        hold = len(raw)
+        last = raw.rfind("\x1b")
+        if last != -1 and len(raw) - last <= self.ESCAPE_HOLD:
+            from .nerva import _ANSWER_ESCAPE
+
+            match = _ANSWER_ESCAPE.match(raw, last)
+            if match is None or match.end() == len(raw):     # possibly still open
+                hold = last
+        clean = _answer_text(raw[:hold])
+        if display_width(clean) < self._width:
+            return
+        self._buffer = self._wrap(clean) + raw[hold:]
+
+    def _wrap(self, clean: str) -> str:
+        """Draw every full-width piece of *clean* (already stripped); the rest."""
+        start = 0
+        while True:
+            cut = _wrap_point(clean, start, self._width)
+            if cut is None:
+                return clean[start:]
+            self._emit(clean[start:cut])
+            start = cut
+            while start < len(clean) and clean[start] == " ":
+                start += 1
+
+    def flush(self) -> None:
+        if self._buffer:
+            from .nerva import _answer_text
+
+            rest = self._wrap(_answer_text(self._buffer))
+            if rest:
+                self._emit(rest)
+            self._buffer = ""
+
+    def close(self) -> bool:
+        """Draw what is left; whether anything was drawn at all."""
+        self.flush()
+        return self.drew
+
+    def _emit(self, line: str) -> None:
+        self.drew = True
+        self._draw(line)
+
+
+def _char_width(char: str) -> int:
+    import unicodedata
+
+    if unicodedata.combining(char) or unicodedata.category(char) in ("Mn", "Me", "Cf"):
         return 0
+    return 2 if unicodedata.east_asian_width(char) in ("W", "F") else 1
+
+
+def display_width(text: str) -> int:
+    """Columns *text* takes on a terminal (wcwidth-like, stdlib only)."""
+    return sum(_char_width(char) for char in text)
+
+
+def _wrap_point(text: str, start: int, width: int) -> int | None:
+    """Where to cut text[start:] so the piece fits *width* columns: after the last space
+    that fits, else at the width; None when the rest already fits."""
+    used, index, space = 0, start, None
+    while index < len(text):
+        used += _char_width(text[index])
+        if used > width:
+            if space is not None and space > start:
+                return space
+            return max(index, start + 1)
+        if text[index] == " ":
+            space = index
+        index += 1
+    return None
+
+
+_TOOL_MARKS = {"tool_start": "⋯", "tool_end": "✓", "tool_error": "✗"}
+
+
+def tool_line(event: Any) -> str | None:
+    """One line of the turn's tool trail (H223), from a stream ``tool`` event the hub
+    already cut to event/tool/call id/status; heartbeats and unknown events draw nothing.
+    The names are the hub's, made card-safe and bounded."""
+    from .chat_prompts import card_safe
+
+    if not isinstance(event, dict):
+        return None
+    kind = event.get("event")
+    mark = _TOOL_MARKS.get(kind) if isinstance(kind, str) else None
+    tool = card_safe(event.get("tool"))[:60]
+    if mark is None or not tool:
+        return None
+    status = card_safe(event.get("status"))[:40]
+    if kind == "tool_end" and status and status not in ("ok", "success", "done"):
+        mark = "✗"
+    return f"  {mark} {tool}" + (f" ({status})" if status and kind != "tool_start" else "")
+
+
+def card_safe_line(text: str, width: int = 120) -> str:
+    from .chat_prompts import card_safe
+
+    line = card_safe(text)
+    return line if len(line) <= width else line[: width - 1] + "…"
 
 
 def _accepts(function: Any, name: str) -> bool:

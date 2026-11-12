@@ -2,6 +2,43 @@
 
 ## [Unreleased]
 
+### What changed for you — 2026-11-12
+
+**`nerva chat -i` streams its answers**
+- The answer appears line by line while Nerva writes it, with a short line for each tool it
+  runs, and you can keep typing at the prompt meanwhile. Questions the turn asks (including a
+  missing key, typed without echo) and Ctrl+C to stop the turn work as before.
+- `nerva chat -i "first message"` starts the chat with that message; add `--image PATH` or
+  `--clipboard-image` to send an image with it.
+- When you leave, the chat prints how to come back: `nerva chat -i -r <id>`. If the client
+  itself hits an internal error, it says so in one line, prints the same hint and exits
+  instead of showing a traceback.
+
+**More in the terminal chat**
+- `/copy` puts the last answer on your clipboard (through your terminal, OSC 52; a terminal
+  that does not allow it ignores the request). `/where` shows the working directory, its git
+  branch and the battery; the chat shows the same line when it starts and warns once when
+  the battery runs low while discharging.
+- `/queue edit N` takes a queued message back into your draft so you can change it.
+- Tab on a command that does not exist offers the closest ones, by name or by what they do
+  (`/sesion` finds `/sessions`, `/quota` finds `/usage`).
+
+**Terminal chat fixes after review**
+- A git folder that is a pipe, a device or a link, or that belongs to another user, no longer
+  stalls or feeds the start-up line: it is skipped. The branch lookup stops at your home folder
+  and at another disk.
+- Ctrl+C while the chat is still starting now leaves cleanly, with the resume hint.
+- The battery is checked once a minute while the chat is open, not only when you press Enter.
+- Long answer lines wrap by on-screen width (wide characters count double) and never inside a
+  hidden terminal sequence; a few more invisible characters are removed from answers.
+- A streamed reply that sends one endless event is stopped with a message instead of filling
+  memory.
+
+**A mistyped command gets a suggestion**
+- In any chat, an unknown `/command` now answers with the closest commands you may run, for
+  example "Did you mean /sessions (the five most recent sessions)?". Nothing is run for you,
+  and a guest is only offered commands a guest may use.
+
 ### What changed for you — 2026-11-11
 
 **See what Nerva ran while it answers**
