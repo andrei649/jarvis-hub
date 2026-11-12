@@ -257,10 +257,17 @@ async def test_the_manager_sends_nothing_for_silence():
 
 
 @pytest.mark.asyncio
-async def test_a_job_that_chooses_silence_sends_nothing():
+async def test_job_delivery_leaves_silence_to_the_agent_gate():
+    """An agent job's ``[SILENT]`` is suppressed before delivery (``jobs_gates`` →
+    ``Suppressed: model_silent``, covered in tests/test_job_gates.py). ``_send`` itself
+    keeps the no-agent contract: a script whose output is literally ``[SILENT]`` is
+    delivered as written (tests/test_job_gates.py::test_no_agent_silent_token_is_literal_output)."""
     from types import SimpleNamespace
 
     from agents.core.autonomy.jobs import JobRunner
+    from agents.core.autonomy.jobs_gates import is_silent_response
+
+    assert is_silent_response("[SILENT]")
 
     sent = []
 
@@ -271,8 +278,8 @@ async def test_a_job_that_chooses_silence_sends_nothing():
 
     runner = JobRunner.__new__(JobRunner)
     runner._orch = SimpleNamespace(channels={"ntfy": _Fake()})
-    assert (await runner._send("[SILENT]", "ntfy")).startswith("silent")
-    assert sent == []
+    assert (await runner._send("[SILENT]", "ntfy")) == "delivered to ntfy"
+    assert sent == ["[SILENT]"]
 
 
 @pytest.mark.asyncio
