@@ -66,7 +66,13 @@ continue_restart_keepalive()
 from agents.core.paths import profile_error  # noqa: E402
 
 if profile_error():
-    sys.exit(profile_error())
+    # H089: a refused profile name is a permanent configuration failure (78): the service
+    # units do not restart on it — no restart can rename the profile.
+    from agents.core.boot_refusal import exit_status as _refusal_status  # noqa: E402
+    from agents.core.env_alias import ConfigurationRefused  # noqa: E402
+
+    print(profile_error(), file=sys.stderr)
+    sys.exit(_refusal_status(ConfigurationRefused(profile_error(), permanent=True)))
 
 
 #: H010 (Windows): the env var a hub sets for the successor it spawns — its own pid. The
@@ -159,12 +165,15 @@ def apply_staged_restore():
 
 
 def _leave_refused(refused) -> None:
-    """RB-2: a refused configuration ends the start with the status the refusal carries —
-    78 for one variable under both spellings in the process environment (no restart can
-    cure it, and the service units do not restart on it), the ordinary failure status for
-    a refusal that comes from a .env file (the service manager tries again)."""
+    """RB-2/H089: a refused configuration ends the start with 78 when it is permanent — a
+    boot guard's refusal, one variable under both spellings in the process environment —
+    so the service units do not restart on it. A refusal that comes from a .env file is
+    retried once (the file may have been caught mid-save) and is permanent when the next
+    start is refused the same way (``agents.core.boot_refusal``)."""
+    from agents.core.boot_refusal import exit_status
+
     print(refused, file=sys.stderr)
-    raise SystemExit(refused.exit_status) from None
+    raise SystemExit(exit_status(refused)) from None
 
 
 def update_boot_guard() -> bool:
@@ -454,6 +463,9 @@ def main():
         install_identity.acquire_hub_lock()
     except install_identity.HubAlreadyRunning as exc:
         raise SystemExit(f"Nerva is already running on this data root: {exc}") from None
+    from agents.core import boot_refusal
+
+    boot_refusal.clear()   # H089: the configuration was accepted; an earlier refusal is over
     print(f"Data root: {data_root()}  (install {install_identity.install_id() or 'id unavailable'})")
     # Packaged installs: create + announce the owner's data folder up front so
     # first-run users know exactly where their memory/config/skills live.
@@ -491,6 +503,9 @@ def main():
 #:   successor would run outside the service and race the wrapper's own relaunch): an
 #:   approved restore answers restart="manual" and says to restart the hub/service.
 RESTART_EXIT_CODE = 75
+#: H089: the app did not start for a reason that is not a configuration refusal (uvicorn's
+#: own STARTUP_FAILURE). A ``server.run()`` that returns before startup used to leave 0.
+STARTUP_FAILED_EXIT = 3
 SERVICE_WRAPPER_ENV = "NERVA_SERVICE_WRAPPER"
 _OS_NAME = os.name
 
@@ -593,6 +608,16 @@ def run_server(server) -> None:
     if path is not None:
         hub_restart.install(lambda: setattr(server, "should_exit", True))
     server.run()
+    if getattr(server, "started", True) is False:
+        # H089: the app refused to start. A boot guard in the lifespan refused the
+        # configuration (uvicorn caught it): leave with that refusal's status. Any other
+        # startup failure is uvicorn's own status 3, which a supervisor retries.
+        from agents.core.boot_guards import last_refusal
+
+        refused = last_refusal()
+        if refused is not None:
+            _leave_refused(refused)
+        raise SystemExit(STARTUP_FAILED_EXIT)
     reason = hub_restart.requested()
     hub_restart.reset()
     if reason is None or path is None:

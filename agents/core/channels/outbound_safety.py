@@ -54,7 +54,7 @@ from typing import Any
 logger = logging.getLogger("jarvis.channels.outbound_safety")
 
 #: The reply an agent gives when it chooses to send nothing.
-SILENCE_TOKEN = "[SILENT]"
+SILENCE_TOKEN = "[SILENT]"  # nosec B105 - a reply marker, not a credential
 
 EMPTY_TURN_REPLY = ("I finished that turn without an answer to send. Send the message again, "
                     "or check /status if this keeps happening.")
@@ -68,7 +68,7 @@ _CRASH_CHARS = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ud800-\udfff￾￿\U0
 #: Patterns run on top of the scanner's: formats the scanner does not know.
 _EXTRA_PATTERNS: dict[str, str] = {
     # A Discord bot token: base64 user id, a timestamp part, an HMAC part.
-    "discord_bot_token": r"\b[MNO][A-Za-z\d_-]{23,27}\.[A-Za-z\d_-]{6}\.[A-Za-z\d_-]{27,40}\b",
+    "discord_bot_token": r"\b[MNO][A-Za-z\d_-]{23,27}\.[A-Za-z\d_-]{6}\.[A-Za-z\d_-]{27,40}\b",  # nosec B105 - a detection pattern
 }
 #: Scanner rules not run at the transport (see the module docstring).
 _SKIPPED_SCANNER_RULES = frozenset({"high_entropy_secret"})

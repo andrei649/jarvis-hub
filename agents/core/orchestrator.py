@@ -2260,6 +2260,11 @@ class Orchestrator:
         inbox_message_id = kwargs.pop("_inbox_message_id", "")
         # Hermes absorption 0.4: an observed group message becomes context, never an answer.
         observe_only = bool(kwargs.pop("observe_only", False))
+        # H057: on Slack and Matrix "!name" is "/name" for a command the registry knows.
+        from .commands import rewrite_bang
+
+        registry = getattr(self, "commands", None)
+        text = rewrite_bang(text, registry if isinstance(registry, CommandRegistry) else None, channel)
         origin_token = bind_action_origin(action_origin)
         principal_token = bind_turn_principal(
             self._channel_principal(channel, kwargs.get("sender"), kwargs.get("chat_id"),

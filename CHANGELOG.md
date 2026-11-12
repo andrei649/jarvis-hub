@@ -41,6 +41,28 @@
 - If the mail server drops the connection in the middle of a check, or one message cannot
   be handled, the other messages are not lost; they are picked up on the next check.
 - If your mail server cannot be reached over IPv6, Nerva tries IPv4 once.
+**Run Nerva as your own background service**
+- `nerva service install` sets the hub up to start with your session: a systemd user service
+  on Linux, a launch agent on macOS. `--dry-run` shows the file first, `--now` also starts it,
+  `nerva service show` and `nerva service uninstall` do what they say. It never touches a
+  service file it did not write.
+- A configuration the hub refuses (an open network address without a token, a bot nobody
+  guards, a mistyped setting, a bad profile name) now stops the service for good instead of
+  restarting it every few seconds: fix the setting, then start it again. A `.env` problem is
+  retried once, in case the file was being saved.
+
+**Channels panel and start-up agree**
+- The Channels panel refuses a change after which the hub would refuse to start (for example
+  a Telegram bot with pairing off and no owner ids), and says why. The email ports follow the
+  panel's rule at start too.
+
+**Chat commands**
+- Typed from a phone, `/voice —always` works: the dash the keyboard put in is read as `--`.
+- Short aliases: `/h`, `/me`, `/estop`, `/unpause`, `/reminder`, `/ctx`.
+- In Slack threads and Matrix rooms, `!status` works like `/status` (only for real commands).
+- Telegram shows Nerva's commands in its "/" menu: everyone sees the ones they may use, you
+  see all of them in your own chat.
+
 **Safer replies on Telegram, Slack, Discord, ntfy, SMS and email**
 - Every message Nerva sends on a chat channel is checked last, just before it leaves: an API
   key, a token, a password assignment or any credential the hub holds is masked

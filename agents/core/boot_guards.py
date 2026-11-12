@@ -57,6 +57,29 @@ from typing import NamedTuple
 
 _LOOPBACK_HOSTS = {"", "127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"}
 
+#: H089 — the refusal that stopped this start, kept so the entry point can leave with its
+#: status even when uvicorn's lifespan swallowed the exception (``serve.run_server``).
+_LAST_REFUSAL: list = []
+
+
+def _refuse(message: str):
+    """H089: a boot guard's refusal is a *permanent* configuration failure — exit 78 from
+    ``serve.py`` (sysexits EX_CONFIG), which the shipped service units do not restart on:
+    no restart cures a mistyped flag, an open bind without a token or an unguarded bot.
+    A ``SystemExit`` subclass carrying the same text, so every caller that expected the
+    old ``SystemExit(message)`` still gets it."""
+    from agents.core.env_alias import ConfigurationRefused
+
+    refused = ConfigurationRefused(str(message), permanent=True)
+    _LAST_REFUSAL[:] = [refused]
+    return refused
+
+
+def last_refusal():
+    """The configuration refusal that stopped this start, or None."""
+    return _LAST_REFUSAL[0] if _LAST_REFUSAL else None
+
+
 # Flags whose *unrecognized* spelling resolves to the UNSAFE direction. The AUD-14 rule
 # (``env_config.truthy``) sends junk to the flag's declared default, which is right
 # everywhere the default is the safe position. NERVA_PUBLIC_PROFILE is the inverse: it is a
@@ -157,7 +180,7 @@ def assert_safe_bind(host: str) -> None:
         print(f"[SECURITY] binding to non-loopback host {host!r} — public routes are "
               f"reachable from the network ({'authenticated' if has_token else 'INSECURE, acknowledged'}).")
         return
-    raise SystemExit(
+    raise _refuse(
         f"Refusing to bind to non-loopback host {host!r} without authentication.\n"
         "Set JARVIS_USER_TOKEN (and/or JARVIS_ADMIN_TOKEN) to require a credential for "
         "remote access, or set JARVIS_ALLOW_INSECURE_BIND=1 to accept an open bind. "
@@ -177,7 +200,7 @@ def assert_hardened_posture() -> None:
     from agents.core.security import hardened
     problems = hardened.enforce()
     if problems:
-        raise SystemExit(
+        raise _refuse(
             "Refusing to start with JARVIS_HARDENED=1:\n  - " + "\n  - ".join(problems)
         )
 
@@ -207,7 +230,7 @@ def _unparseable_bool_flags(env: Mapping[str, str], names: tuple[str, ...]) -> N
 
     bad = [spelled(name) for name in names if _bool_flag_malformed(env, name)]
     if bad:
-        raise SystemExit(
+        raise _refuse(
             "Refusing to start: unparseable value for " + ", ".join(bad) + ".\n"
             "Use one of 1/true/yes/on or 0/false/no/off. An unrecognized spelling silently "
             "falls back to the flag's default — for NERVA_PUBLIC_PROFILE that is the private "
@@ -254,7 +277,7 @@ def assert_parseable_posture_flags(environ: Mapping[str, str] | None = None) -> 
     )
 
     if task_mediation_mode_is_malformed():
-        raise SystemExit(MALFORMED_MODE_MESSAGE)
+        raise _refuse(MALFORMED_MODE_MESSAGE)
 
 
 def _count_allowlisted_ids(raw: str | None) -> int:
@@ -284,21 +307,18 @@ def _front_door_flags(env: Mapping[str, str]) -> tuple[bool, bool]:
     return truthy(_get(env, PAIRING_ENV), True), truthy(_get(env, CHANNEL_OPEN_ENV), False)
 
 
-def assert_guarded_channels(environ: Mapping[str, str] | None = None) -> None:
-    """Fail-closed on an inbound channel that would answer any sender (Hermes absorption 5b).
+def front_door_problem(environ: Mapping[str, str] | None = None, *, announce: bool = False) -> str | None:
+    """H088 — THE channel front-door predicate: why the inbound channels configured in
+    *environ* would answer any sender, or None when every one is guarded. The boot
+    (:func:`assert_guarded_channels`) and the HUD Channels panel's pre-write check
+    (``channel_config``) both ask this one function, so the panel cannot save a channel
+    the next start refuses, and the start cannot accept one the panel would refuse.
 
-    A bot token, a webhook map or an inbox turns a public network into a front door:
-    whoever finds it can type at the house. The door is *guarded* when the inbound
-    pairing gate is on (its default — strangers are held until the owner pairs them)
-    or, for channels that have one, when an allowlist names at least one of the
-    owner's own ids. A configured channel that is neither is refused at boot. The one
-    way past is the operator writing ``JARVIS_CHANNEL_OPEN=1``, which is honoured with
-    a ``[SECURITY]`` line on the console so the open posture is never silent.
-
-    Everything — the channel configuration, the allowlist and the two posture flags —
-    is read from ``environ`` (``os.environ`` by default), so the verdict belongs to one
-    environment. The refusal names the channel and the remedies — never a token,
-    never an id.
+    A door is *guarded* when the inbound pairing gate is on (its default — strangers are
+    held until the owner pairs them) or, for channels that have one, when an allowlist
+    names at least one of the owner's own ids. ``JARVIS_CHANNEL_OPEN=1`` is the operator's
+    written acknowledgement of an open door (*announce* prints the ``[SECURITY]`` line the
+    boot shows). The text names the channel and the remedies — never a token, never an id.
     """
     env = os.environ if environ is None else environ
     pairing_on, acknowledged = _front_door_flags(env)
@@ -307,23 +327,39 @@ def assert_guarded_channels(environ: Mapping[str, str] | None = None) -> None:
             continue
         allowlisted = (
             channel.allowlist_env is not None
-            and _count_allowlisted_ids(env.get(channel.allowlist_env)) >= _MIN_ALLOWLIST_IDS
+            and _count_allowlisted_ids(_get(env, channel.allowlist_env)) >= _MIN_ALLOWLIST_IDS
         )
         if pairing_on or allowlisted:
             continue
         if acknowledged:
-            print(f"[SECURITY] {channel.label} answers any sender (JARVIS_CHANNEL_OPEN acknowledged).")
+            if announce:
+                print(f"[SECURITY] {channel.label} answers any sender (JARVIS_CHANNEL_OPEN acknowledged).")
             continue
         remedies = []
         if channel.allowlist_env is not None:
             remedies.append(f"set {channel.allowlist_env} to your own ids")
         remedies.append("leave JARVIS_CHANNEL_PAIRING on and pair from the HUD")
         remedies.append("acknowledge an open bot with JARVIS_CHANNEL_OPEN=1")
-        raise SystemExit(
+        return (
             f"Refusing to start: the {channel.label} would answer any sender.\n"
             "JARVIS_CHANNEL_PAIRING is off and nothing else guards the front door. "
             "Either " + ", or ".join(remedies) + "."
         )
+    return None
+
+
+def assert_guarded_channels(environ: Mapping[str, str] | None = None) -> None:
+    """Fail-closed on an inbound channel that would answer any sender (Hermes absorption 5b).
+
+    A bot token, a webhook map or an inbox turns a public network into a front door:
+    whoever finds it can type at the house. The verdict is :func:`front_door_problem`'s,
+    over ``environ`` (``os.environ`` by default), so it belongs to one environment; an
+    acknowledged open door is honoured with a ``[SECURITY]`` line on the console so the
+    open posture is never silent.
+    """
+    problem = front_door_problem(environ, announce=True)
+    if problem is not None:
+        raise _refuse(problem)
 
 
 #: The two flags the front door decides on; a typo in either must refuse, not guess.
@@ -363,6 +399,31 @@ def assert_front_door(environ: Mapping[str, str] | None = None) -> None:
     assert_guarded_channels(env)
 
 
+def _permanent_refusals(guards):
+    """H089: *guards* with every refusal made a permanent configuration refusal. A guard
+    elsewhere in the tree (the proxy and host lists) still raises a plain
+    ``SystemExit(message)``; it is converted here and recorded, so the start ends with 78
+    even when uvicorn's lifespan catches it (``serve.run_server``)."""
+    import functools
+
+    @functools.wraps(guards)
+    def run() -> None:
+        from agents.core.env_alias import ConfigurationRefused
+
+        try:
+            guards()
+        except ConfigurationRefused as refused:
+            _LAST_REFUSAL[:] = [refused]
+            raise
+        except SystemExit as stopped:
+            if stopped.code is None or isinstance(stopped.code, int):
+                raise
+            raise _refuse(str(stopped.code)) from None
+
+    return run
+
+
+@_permanent_refusals
 def enforce_boot_posture() -> None:
     """Run every boot guard from the app itself (called by the web lifespan).
 

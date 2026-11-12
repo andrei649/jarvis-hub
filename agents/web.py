@@ -511,6 +511,19 @@ async def _turn_lease(orchestrator, session_id=None, *, side_question=False):
         yield acquired
 
 
+def _telegram_command_menus(orch):
+    """H057: (everyone's Telegram menu, (owner chat, owner's menu) | None) from the
+    registry: user-tier commands for everyone, every command in the owner's chat."""
+    from agents.core.channels.outbound import _owner_chat_id
+    from agents.core.commands import ADMIN, telegram_menu
+
+    commands = orch.commands.commands()
+    everyone = telegram_menu([c for c in commands if c.tier != ADMIN])
+    raw = _owner_chat_id(orch)
+    owner = (int(raw), telegram_menu(commands)) if raw.lstrip("-").isdigit() else None
+    return everyone, owner
+
+
 def _telegram_allowed_user_ids() -> list[int]:
     """Owner Telegram user ids from TELEGRAM_ALLOWED_USER_IDS (comma-separated).
 
@@ -680,6 +693,7 @@ async def lifespan(application: FastAPI):
         # G16 (H070): a MEDIA: attachment crosses the Action Kernel when it is on.
         from agents.core.kernel.binding import make_action_kernel
         telegram_ch.media_kernel = make_action_kernel(orch)
+        telegram_ch.command_menu = lambda: _telegram_command_menus(orch)
         await orch.register_channel(telegram_ch)
         logger.info("Telegram channel wired with bot token")
     else:
@@ -710,6 +724,8 @@ async def lifespan(application: FastAPI):
         await orch.register_channel(ntfy_ch)
         logger.info("ntfy channel wired")
 
+    from agents.core.channel_config import env_port as channel_port   # H088: the panel's port rule
+
     smtp_host = os.environ.get("SMTP_HOST", "")
     imap_host = os.environ.get("IMAP_HOST", "")
     if smtp_host and imap_host:
@@ -721,12 +737,12 @@ async def lifespan(application: FastAPI):
             # H096: attachments are opened only for senders this gate admits.
             pairing=gateway.pairing,
             smtp_config={
-                "host": smtp_host, "port": env_int("SMTP_PORT", 587),
+                "host": smtp_host, "port": channel_port("SMTP_PORT", 587),
                 "user": os.environ.get("SMTP_USER", ""),
                 "password": os.environ.get("SMTP_PASS", ""),
             },
             imap_config={
-                "host": imap_host, "port": env_int("IMAP_PORT", 993),
+                "host": imap_host, "port": channel_port("IMAP_PORT", 993),
                 "user": os.environ.get("IMAP_USER", ""),
                 "password": os.environ.get("IMAP_PASS", ""),
             },

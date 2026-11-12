@@ -54,9 +54,10 @@ EnvironmentFile=-/etc/jarvis-hub/jarvis.env
 
 # Restart policy — survive a crash, back off so a crash-loop doesn't thrash.
 Restart=on-failure
-# 78 = one variable is set under both the NERVA_ and the JARVIS_ spelling, with different
-# values, in this unit's environment (Environment= / EnvironmentFile): restarting cannot
-# help, so do not loop on it. (A refusal that comes from a .env file exits 1 and is retried.)
+# 78 = the configuration is refused and restarting cannot help (H089): a boot guard (an
+# open bind without a token, an unguarded channel, a mistyped posture flag), one variable
+# under both the NERVA_ and the JARVIS_ spelling in this unit's environment, or a .env
+# refusal that repeats at the next start (the first one exits 1 and is retried once).
 RestartPreventExitStatus=78
 RestartSec=5
 

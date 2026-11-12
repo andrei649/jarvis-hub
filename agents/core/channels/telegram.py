@@ -316,6 +316,9 @@ def _update_message(up) -> Optional[dict]:
 
 
 class TelegramChannel(ChannelAdapter):
+    #: H057: ``() -> (everyone's menu, (owner chat id, owner's menu) | None)``, set by the
+    #: hub's wiring; None publishes nothing.
+    command_menu: Optional[Callable[[], tuple]] = None
     # H116 defaults, so a channel built without __init__ (tests) behaves as before.
     _cursor_store = None
     _cursor_name: Optional[str] = None
@@ -483,8 +486,35 @@ class TelegramChannel(ChannelAdapter):
                 "Telegram getMe failed — the bot cannot recognise its own mentions, so "
                 "group messages will be dropped until it can"
             )
+        await self.publish_command_menu()
         self._poll_task = __import__("asyncio").create_task(self._poll_loop())
         logger.info("Telegram channel started")
+
+    async def publish_command_menu(self) -> bool:
+        """H057: the command menu Telegram shows under "/" — the commands everyone may
+        run in the default scope, and every command in the owner's own chat. Best effort:
+        a failure is logged and the bot runs without a menu. True when every call landed."""
+        provider = self.command_menu
+        if not callable(provider):
+            return False
+        try:
+            everyone, owner = provider()
+            calls = [{"commands": list(everyone or [])}]
+            if owner:
+                chat_id, owner_menu = owner
+                if type(chat_id) is int and owner_menu:
+                    calls.append({"commands": list(owner_menu),
+                                  "scope": {"type": "chat", "chat_id": chat_id}})
+            ok = True
+            for body in calls:
+                response = await self._post(f"{self.api_base}/setMyCommands", json=body)
+                ok = ok and bool(getattr(response, "is_success", False))
+            if not ok:
+                logger.warning("Telegram did not accept the command menu")
+            return ok
+        except Exception as exc:
+            logger.warning("Telegram command menu not published: %s", type(exc).__name__)
+            return False
 
     def _resume_offset(self) -> None:
         """H116 — read the saved offset (if any) and arm the bounded catch-up."""

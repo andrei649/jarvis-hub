@@ -203,10 +203,11 @@ def test_only_a_process_pair_is_the_no_restart_status(tmp_path, label):
     env = _child_env({"JARVIS_HOME": str(tmp_path / "data"), "JARVIS_USER_HOME": str(home), **extra})
     hub = _run(["serve.py"], env)
     assert hub.returncode == status and hub.stderr.count("Refusing to start") == 1, (hub.returncode, hub.stderr[-600:])
-    # the staged-restore load at the top of serve.py takes the same way out
+    # the staged-restore load at the top of serve.py takes the same way out. It is the
+    # next start: H089 makes a .env refusal that repeats there permanent (78).
     staged = _run(["-c", "import agents.core.backup as backup\nbackup.boot_restore_due = lambda: True\nimport serve"],
                   env)
-    assert staged.returncode == status and "Refusing to start" in staged.stderr, (staged.returncode, staged.stderr[-600:])
+    assert staged.returncode == 78 and "Refusing to start" in staged.stderr, (staged.returncode, staged.stderr[-600:])
     coordinator = _run(["scripts/coordinator.py"], {**env, "JARVIS_RUNTIME_FAKE_LLM": "1"})
     assert coordinator.returncode == status, (coordinator.returncode, coordinator.stderr[-600:])
 
