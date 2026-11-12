@@ -591,7 +591,7 @@ class ChannelReplyBroker:
             if self._email_reply_limiter.blocked(recipient):
                 return {"status": "blocked", "reason": "email_reply_rate_limited", "channel": channel}
             if "attachments" in payload:
-                files = _approved_attachments(payload["attachments"])
+                files = await asyncio.to_thread(_approved_attachments, payload["attachments"])
                 if isinstance(files, str):
                     return {"status": "blocked", "reason": files, "channel": channel}
                 extra_files = files

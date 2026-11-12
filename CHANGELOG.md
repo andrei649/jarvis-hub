@@ -4,6 +4,17 @@
 
 ### What changed for you — 2026-11-12
 
+**Nerva does not answer itself or the same message twice**
+- When WhatsApp, Signal, Matrix, Teams or Google Chat send the same message again (a retry),
+  Nerva handles it once, so you never get two approval cards for one message.
+- Nerva's own messages coming back are ignored on every one of those channels (on Signal
+  and Matrix that used to risk a reply loop). On Matrix you can also list bridge accounts in
+  `ignore_users` so a bridge that relays Nerva's replies cannot start a loop.
+- WhatsApp status updates, broadcast lists and channel posts are not treated as messages.
+- A Telegram command that arrives more than 15 minutes after you sent it (a stuck queue on
+  Telegram's side) is not run; Nerva tells you to send it again. Change the limit with
+  `JARVIS_CHANNEL_LATE_DELIVERY_S`.
+
 **Email is a real conversation channel**
 - Nerva reads what your mail provider concluded about each sender (SPF, DKIM, DMARC). A
   message whose check failed is ignored, so someone faking your address cannot speak as
