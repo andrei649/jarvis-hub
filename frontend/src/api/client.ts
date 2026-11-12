@@ -187,6 +187,37 @@ export async function apiGetBlob(path: string, opts?: { admin?: boolean }): Prom
   return res.blob();
 }
 
+/** H162 review m4 — a large download that never sits whole in the page's memory.
+ *  - No header credential (the owner's cookie session, or loopback): an anchor to the
+ *    same-origin URL; the browser streams it straight to disk with the cookie.
+ *  - A header token: the File System Access API, piping the response body to the file.
+ *  - Neither: refused (`stream_unavailable`) rather than buffered as a Blob. */
+export async function apiDownload(path: string, filename: string, opts?: { admin?: boolean }): Promise<'navigated' | 'streamed'> {
+  const headers = buildHeaders(opts?.admin);
+  const needsHeader = !!(headers['X-User-Token'] || headers['X-Admin-Token']);
+  if (!needsHeader) {
+    const a = document.createElement('a');
+    a.href = appUrl(path); a.download = filename; a.rel = 'noopener';
+    document.body.appendChild(a); a.click(); a.remove();
+    return 'navigated';
+  }
+  const picker = (globalThis as any).showSaveFilePicker;
+  if (typeof picker !== 'function') {
+    throw Object.assign(new Error('stream_unavailable'), { status: 0, body: { error: 'this browser cannot stream a download sent with a token: sign in as the owner (session) or copy the archive from the backups folder' } });
+  }
+  const handle = await picker({ suggestedName: filename });
+  headers.Accept = 'application/octet-stream';
+  const res = await fetch(appUrl(path), { method: 'GET', headers, credentials: 'same-origin', cache: 'no-store' });
+  if (!res.ok || !res.body) {
+    let body: unknown;
+    try { body = await res.json(); } catch { /* non-JSON */ }
+    throw Object.assign(new Error(`GET ${path} -> ${res.status}`), { status: res.status, body });
+  }
+  const writable = await handle.createWritable();
+  await res.body.pipeTo(writable);
+  return 'streamed';
+}
+
 /** A raw-body PUT (G21 file browser upload): the bytes as sent, never JSON-encoded. */
 export async function apiPutBytes<T = unknown>(path: string, data: Blob, opts?: { admin?: boolean }): Promise<T> {
   const headers = buildHeaders(opts?.admin);

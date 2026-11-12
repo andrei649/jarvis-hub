@@ -5,13 +5,17 @@
      archive and queues a `backup.restore` card at the irreversible tier; only the owner's
      accept in the decision inbox stages it, and it is applied at the next hub start. A
      staged restore can be withdrawn here until then.
-   - A download is the archive as it is on disk (an encrypted one stays encrypted).
-   - An upload is restore-drilled before it is listed; one that fails the drill is refused
-     and not kept. Restoring it is the same card as any other.
+   - By default a restore keeps the live credentials (security/) and hooks (hooks/); the
+     owner can ask for them to be replaced too, and the card says so.
+   - A download streams to disk (the browser's own download with the owner session, or
+     the File System Access API with a token); it is never held whole in the page.
+   - An upload must be encrypted with this box's backup key; it is restore-drilled before
+     it is listed, and one that fails is refused and not kept. Its restore card says it
+     came from elsewhere.
    - Checkpoints are listed read-only; diff and restore stay on /checkpoints and
      `nerva checkpoints` (each restore is its own card). */
 import React, { useRef, useState } from 'react';
-import { apiDelete, apiGetBlob, apiPost, apiPutBytes } from '../api/client';
+import { apiDelete, apiDownload, apiPost, apiPutBytes } from '../api/client';
 import { ConfirmAction, RISK_TIER } from '../confirm';
 import { Tag, mono, refusalReason, useApi } from '../panel-kit';
 
@@ -36,28 +40,29 @@ export function restoreQueuedNote(r: any, name: string): string {
 }
 
 /** Restore + download actions for one listed archive. */
-export function BackupRowActions({ name, onNote }: { name: string; onNote: (s: string) => void }) {
+export function BackupRowActions({ name, uploaded = false, onNote }: { name: string; uploaded?: boolean; onNote: (s: string) => void }) {
+  const [replace, setReplace] = useState(false);
   const download = () => {
-    apiGetBlob(`/api/admin/backup/download?${new URLSearchParams({ name })}`, { admin: true })
-      .then((blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = name; a.rel = 'noopener';
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-        onNote(`downloaded ${name}`);
-      })
-      .catch((x: any) => onNote(`not downloaded · ${why(x)}`));
+    apiDownload(`/api/admin/backup/download?${new URLSearchParams({ name })}`, name, { admin: true })
+      .then((how) => onNote(how === 'streamed' ? `downloaded ${name}` : `download of ${name} started in your browser`))
+      .catch((x: any) => { if (x?.name !== 'AbortError') onNote(`not downloaded · ${why(x)}`); });
   };
-  const restore = () => apiPost('/api/admin/backup/restore', { name }, { admin: true })
+  const restore = () => apiPost('/api/admin/backup/restore', { name, replace_credentials: replace }, { admin: true })
     .then((r) => { onNote(restoreQueuedNote(r, name)); return true; })
     .catch((x: any) => { onNote(`restore not asked · ${why(x)}`); return false; });
+  const what = replace ? 'including the credentials (security/) and hooks (hooks/)'
+    : 'keeping the live credentials (security/) and hooks (hooks/)';
   return (
     <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+      {uploaded && <Tag c="var(--amber)">uploaded</Tag>}
       <button className="tool-btn" aria-label={`download ${name}`} onClick={download}>download</button>
+      <label style={{ fontSize: 10, display: 'inline-flex', gap: 3, alignItems: 'center' }}>
+        <input type="checkbox" checked={replace} aria-label={`also replace credentials and hooks from ${name}`}
+          onChange={(e) => setReplace(e.target.checked)} />creds
+      </label>
       <ConfirmAction tier={RISK_TIER.IRREVERSIBLE_OR_MONEY} label="restore…" phrase="RESTORE" armedLabel="ask to restore"
         ariaLabel={`restore ${name}`}
-        prompt={`type RESTORE to ask for ${name} over the live data (a card waits for your accept; a rollback snapshot is taken first):`}
+        prompt={`type RESTORE to ask for ${uploaded ? 'the UPLOADED archive ' : ''}${name} over the live data, ${what} (a card waits for your accept; a rollback snapshot is taken first):`}
         onConfirm={restore} />
     </span>
   );
@@ -94,7 +99,7 @@ export function BackupUpload({ onDone }: { onDone: (s: string) => void }) {
     onDone(`uploading ${file.name}…`);
     try {
       const r: any = await apiPutBytes('/api/admin/backup/upload', file, { admin: true });
-      onDone(`uploaded and drilled · listed as ${r.name}${r.encrypted ? ' (encrypted)' : ''} · restore it from the list`);
+      onDone(`uploaded and drilled · listed as ${r.name} · restore it from the list (its card says it was uploaded)`);
     } catch (x: any) {
       onDone(`${file.name} not added · ${why(x)}`);
     } finally {
@@ -105,7 +110,7 @@ export function BackupUpload({ onDone }: { onDone: (s: string) => void }) {
   return (
     <label className="tool-btn" style={{ cursor: busy ? 'wait' : 'pointer' }}>
       {busy ? 'uploading…' : 'upload a backup…'}
-      <input ref={input} type="file" accept=".gz,.enc,application/gzip,application/octet-stream"
+      <input ref={input} type="file" accept=".enc,application/octet-stream"
         aria-label="upload a backup archive" disabled={busy} style={{ display: 'none' }}
         onChange={(e) => send(e.target.files)} />
     </label>

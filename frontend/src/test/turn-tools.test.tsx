@@ -62,7 +62,11 @@ describe('browser chat shows what the turn ran and what it queued', () => {
     expect(note.textContent).toContain('card #17');
     expect(note.textContent).toContain('card #18');
     expect(note.textContent).not.toContain('#-3');
-    expect(within(note).getByRole('link').getAttribute('href')).toContain('/v2/console/decision-inbox');
+    const links = within(note).getAllByRole('link');
+    expect(links.map((a) => a.getAttribute('href'))).toEqual([
+      expect.stringContaining('/v2/console/decision-inbox?card=17'),
+      expect.stringContaining('/v2/console/decision-inbox?card=18'),
+    ]);
   });
 });
 

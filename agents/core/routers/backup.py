@@ -99,7 +99,11 @@ async def backup_verify(req: Request):
 
 @router.post("/api/admin/backup/restore", dependencies=[Depends(admin_guard)])
 async def backup_restore(req: Request):
-    """Ask to restore a snapshot over the live data root. Body: {name}.
+    """Ask to restore a snapshot over the live data root. Body: {name, replace_credentials?}.
+
+    H162 review: ``replace_credentials`` (strictly ``true``) also replaces the credential
+    store (security/) and the hooks (hooks/) with the archive's copies; by default they stay
+    as they are. The choice is on the card, and an uploaded archive's card says so.
 
     Answers 202 ``{"pending": task id}``: the restore waits for a human in the decision
     inbox at the irreversible tier (``nerva approvals accept <id>``); a card for the same
@@ -117,8 +121,11 @@ async def backup_restore(req: Request):
     name = (body or {}).get("name") if isinstance(body, dict) else None
     if not isinstance(name, str) or not name:
         return JSONResponse({"error": "name is required (see GET /api/admin/backup)"}, status_code=400)
+    replace = body.get("replace_credentials", False)
+    if not isinstance(replace, bool):
+        return JSONResponse({"error": "replace_credentials must be true or false"}, status_code=400)
     try:
-        request = await asyncio.to_thread(_backup.restore_request, name)
+        request = await asyncio.to_thread(_backup.restore_request, name, replace)
     except FileNotFoundError:
         return JSONResponse({"error": "backup not found"}, status_code=404)
     except (OSError, ValueError) as e:
@@ -129,7 +136,9 @@ async def backup_restore(req: Request):
                              "verify": request["preview"]["verify"]}, status_code=422)
     orch = get_orch()
     for task in await asyncio.to_thread(irreversible.pending, orch, _backup.APPROVAL_KIND):
-        if (getattr(task, "payload", None) or {}).get("name") == request["payload"]["name"]:
+        payload = getattr(task, "payload", None) or {}
+        if (payload.get("name") == request["payload"]["name"]
+                and (payload.get("replace_credentials") is True) == replace):
             return nocache_json({"pending": int(task.id), "existing": True,
                                 "restart": _restart_mode()}, status_code=202)
     queued = irreversible.enqueue(orch, _backup.APPROVAL_KIND, **request)
@@ -187,9 +196,13 @@ async def _not_cross_site(request: Request) -> None:
 async def backup_download(name: str = Query(..., min_length=1, max_length=255)):
     """Download one listed backup archive as it is on disk (H162).
 
-    The name is matched against the trusted listing (``resolve_backup``), so no request
-    value reaches a path; an encrypted archive stays encrypted. 404 for an unknown name."""
-    path = await asyncio.to_thread(_backup.resolve_backup, name)
+    The name is matched against the trusted listing and the entry's real location must be
+    the backups directory (``resolve_backup_arg``: a listed entry that is a link to a file
+    elsewhere names no backup), so no request value reaches a path; an encrypted archive
+    stays encrypted. 404 for an unknown name."""
+    if "/" in name or "\\" in name or name.startswith("."):
+        return JSONResponse({"error": "backup not found"}, status_code=404)
+    path = await asyncio.to_thread(_backup.resolve_backup_arg, name)
     if path is None:
         return JSONResponse({"error": "backup not found"}, status_code=404)
     logger.info("backup download: %s", path.name)
@@ -202,40 +215,66 @@ async def backup_download(name: str = Query(..., min_length=1, max_length=255)):
 
 
 _UPLOAD_STATUS = {"too_large": 413, "empty": 400, "exists": 409, "key_missing": 422,
-                  "unreadable": 422, "failed_drill": 422}
+                  "unreadable": 422, "failed_drill": 422, "plaintext_refused": 422,
+                  "wrong_key": 422, "no_space": 507}
+_UPLOAD_BATCH = 1024 * 1024   # write in batches off the event loop, not one thread hop per chunk
 
 
 @router.put("/api/admin/backup/upload",
             dependencies=[Depends(admin_guard), Depends(same_origin_write)])
 async def backup_upload(request: Request):
-    """Add a backup archive from elsewhere to the listing, as the raw request body (H162).
+    """Add an encrypted backup archive from elsewhere to the listing, as the raw body (H162).
 
-    The archive is restore-drilled before it is listed; one that fails the drill (or an
-    encrypted one this box has no key for) is deleted and refused with 422 and the drill's
-    verdict. 201 ``{ok, name, bytes, encrypted, verify}``. Nothing is restored: restoring
-    the uploaded archive is ``POST /api/admin/backup/restore`` with its name, which queues
-    the same irreversible-tier card as any other restore. A PUT always passes the
-    browser's CORS pre-check, and a cross-site write is refused (``same_origin_write``)."""
-    declared = request.headers.get("content-length", "")
-    if declared.isascii() and declared.isdigit() and int(declared) > _backup.UPLOAD_MAX_BYTES:
+    H162 review M1: only an archive encrypted with this box's backup key is accepted
+    (Fernet is authenticated, so it proves the owner made it); a plaintext archive is
+    refused with 422 ``plaintext_refused``, an archive the key does not open with
+    ``wrong_key``, no key on this box with ``key_missing``. The archive is restore-drilled
+    before it is listed (anything under backups/ fails the drill); a refused one is
+    deleted. Free space is checked before the first byte (507 ``no_space``) and while
+    streaming. 201 ``{ok, name, bytes, encrypted, origin, verify}``. Nothing is restored:
+    restoring it is ``POST /api/admin/backup/restore``, whose card says it was uploaded.
+    A PUT always passes the browser's CORS pre-check, and a cross-site write is refused
+    (``same_origin_write``)."""
+    declared_header = request.headers.get("content-length", "")
+    declared = (int(declared_header) if declared_header.isascii() and declared_header.isdigit()
+                else None)
+    if declared is not None and declared > _backup.UPLOAD_MAX_BYTES:
         return JSONResponse({"error": "too_large", "max_bytes": _backup.UPLOAD_MAX_BYTES},
                             status_code=413)
-    try:
-        upload = await asyncio.to_thread(_backup.BackupUpload)
-    except OSError as e:
-        logger.warning("backup upload could not start: %s", e)
-        return JSONResponse({"error": "the backups directory is not writable"}, status_code=500)
-    try:
-        async for chunk in request.stream():
-            if chunk:
-                await asyncio.to_thread(upload.write, chunk)
-        result = await asyncio.to_thread(upload.commit)
-    except _backup.BackupUploadError as e:
+
+    def refusal(e: "_backup.BackupUploadError") -> JSONResponse:
         body = {"error": e.reason, "max_bytes": _backup.UPLOAD_MAX_BYTES}
         if e.report:
             body["verify"] = {k: e.report.get(k) for k in ("ok", "problem", "file_count", "dbs")
                               if k in e.report}
         return JSONResponse(body, status_code=_UPLOAD_STATUS.get(e.reason, 422))
+
+    try:
+        upload = await asyncio.to_thread(_backup.BackupUpload, declared=declared)
+    except _backup.BackupUploadError as e:
+        return refusal(e)
+    except OSError as e:
+        logger.warning("backup upload could not start: %s", e)
+        return JSONResponse({"error": "the backups directory is not writable"}, status_code=500)
+    try:
+        pending: list[bytes] = []
+        size = 0
+        async for chunk in request.stream():
+            if not chunk:
+                continue
+            if upload.size == 0 and not pending:
+                await asyncio.to_thread(upload.write, chunk)   # the first bytes: plaintext check now
+                continue
+            pending.append(chunk)
+            size += len(chunk)
+            if size >= _UPLOAD_BATCH:
+                await asyncio.to_thread(upload.write, b"".join(pending))
+                pending, size = [], 0
+        if pending:
+            await asyncio.to_thread(upload.write, b"".join(pending))
+        result = await asyncio.to_thread(upload.commit)
+    except _backup.BackupUploadError as e:
+        return refusal(e)
     except OSError as e:
         logger.warning("backup upload failed: %s", e)
         return JSONResponse({"error": "upload failed"}, status_code=500)

@@ -41,7 +41,7 @@ describe('BackupPanel — H162 restore, download, upload, checkpoints', () => {
     fireEvent.change(screen.getByPlaceholderText('RESTORE'), { target: { value: 'RESTORE' } });
     fireEvent.click(screen.getByText('ask to restore'));
     await waitFor(() => expect(calls(fn, '/api/admin/backup/restore', 'POST')).toHaveLength(1));
-    expect(String(calls(fn, '/api/admin/backup/restore', 'POST')[0][1].body)).toContain(NAME);
+    expect(JSON.parse(calls(fn, '/api/admin/backup/restore', 'POST')[0][1].body)).toEqual({ name: NAME, replace_credentials: false });
     await waitFor(() => expect(screen.getByText(/card #41 in the decision inbox/)).toBeTruthy());
   });
 
@@ -68,15 +68,62 @@ describe('BackupPanel — H162 restore, download, upload, checkpoints', () => {
     await waitFor(() => expect(screen.getByText(/withdrew the staged restore/)).toBeTruthy());
   });
 
-  it('downloads an archive through the admin download route', async () => {
+  it('downloads with the browser itself (no Blob) when no header token is needed', async () => {
+    const clicked: string[] = [];
+    const orig = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () { clicked.push(this.getAttribute('href') || ''); };
     URL.createObjectURL = vi.fn(() => 'blob:x');
-    URL.revokeObjectURL = vi.fn();
-    const fn = route([['/api/admin/backup/download', { reply: { body: {} } }]]);
+    try {
+      const fn = route([]);
+      render(<BackupPanel />);
+      fireEvent.click(await screen.findByLabelText(`download ${NAME}`));
+      await waitFor(() => expect(screen.getByText(`download of ${NAME} started in your browser`)).toBeTruthy());
+      expect(clicked.some((h) => h.includes('/api/admin/backup/download') && h.includes(encodeURIComponent(NAME)))).toBe(true);
+      expect(calls(fn, '/api/admin/backup/download', 'GET')).toHaveLength(0);   // never fetched into memory
+      expect(URL.createObjectURL).not.toHaveBeenCalled();
+    } finally { HTMLAnchorElement.prototype.click = orig; }
+  });
+
+  it('with a header token and no streaming API, refuses instead of buffering', async () => {
+    localStorage.setItem('hud.admin_token', 'adm');
+    const fn = route([]);
     render(<BackupPanel />);
     fireEvent.click(await screen.findByLabelText(`download ${NAME}`));
-    await waitFor(() => expect(calls(fn, '/api/admin/backup/download', 'GET')).toHaveLength(1));
-    expect(String(calls(fn, '/api/admin/backup/download', 'GET')[0][0])).toContain(encodeURIComponent(NAME));
-    await waitFor(() => expect(screen.getByText(`downloaded ${NAME}`)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/not downloaded · .*cannot stream/)).toBeTruthy());
+    expect(calls(fn, '/api/admin/backup/download', 'GET')).toHaveLength(0);
+  });
+
+  it('with a header token, streams the body into the file the owner picked', async () => {
+    localStorage.setItem('hud.admin_token', 'adm');
+    const piped: any[] = [];
+    (globalThis as any).showSaveFilePicker = vi.fn(async () => ({ createWritable: async () => 'W' }));
+    try {
+      const fn = vi.fn(async (url) => {
+        if (String(url).includes('/api/admin/backup/download')) {
+          return { ok: true, status: 200, body: { pipeTo: async (w) => { piped.push(w); } } };
+        }
+        return { ok: true, status: 200, json: async () => ({ backups: [{ name: NAME, bytes: 2048 }] }) };
+      });
+      global.fetch = fn;
+      render(<BackupPanel />);
+      fireEvent.click(await screen.findByLabelText(`download ${NAME}`));
+      await waitFor(() => expect(screen.getByText(`downloaded ${NAME}`)).toBeTruthy());
+      expect(piped).toEqual(['W']);
+      const call = fn.mock.calls.find((c) => String(c[0]).includes('/api/admin/backup/download'));
+      expect(call[1].headers['X-Admin-Token']).toBe('adm');
+    } finally { delete (globalThis as any).showSaveFilePicker; }
+  });
+
+  it('asks to replace credentials only when the owner ticks it', async () => {
+    const fn = route([['/api/admin/backup/restore', { method: 'POST', reply: { status: 202, body: { pending: 5, restart: 'self' } } }]]);
+    render(<BackupPanel />);
+    fireEvent.click(await screen.findByLabelText(`also replace credentials and hooks from ${NAME}`));
+    fireEvent.click(screen.getByLabelText(`restore ${NAME}`));
+    expect(screen.getByText(/including the credentials/)).toBeTruthy();
+    fireEvent.change(await screen.findByPlaceholderText('RESTORE'), { target: { value: 'RESTORE' } });
+    fireEvent.click(screen.getByText('ask to restore'));
+    await waitFor(() => expect(calls(fn, '/api/admin/backup/restore', 'POST')).toHaveLength(1));
+    expect(JSON.parse(calls(fn, '/api/admin/backup/restore', 'POST')[0][1].body)).toEqual({ name: NAME, replace_credentials: true });
   });
 
   it('uploads a file as a raw PUT and reports the drilled, listed name', async () => {

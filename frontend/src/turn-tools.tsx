@@ -6,8 +6,8 @@
      agents/core/observability/tool_events.py LIVE_FIELDS). One card per call, updated in
      place as the call moves from requested to running to done or failed.
    - Approvals: the end frame's `pending_approvals` are the ids of the cards this turn put
-     in the decision inbox. They are listed under the reply with a link to the inbox; the
-     decision itself is only ever made there. */
+     in the decision inbox. Each is listed under the reply as a link that opens the inbox on
+     that card (`?card=<id>`); the decision itself is only ever made there. */
 import React from 'react';
 import { appUrl } from './base-path';
 
@@ -76,8 +76,9 @@ export function TurnApprovals({ ids }: { ids?: number[] }) {
   return (
     <div className="turn-approvals" role="note" style={{ fontSize: 11, color: 'var(--amber)', margin: '4px 0' }}>
       {ids.length === 1 ? '1 action waits' : `${ids.length} actions wait`} for your decision:{' '}
-      {ids.map((id, i) => <span key={id}>{i ? ', ' : ''}card #{id}</span>)}
-      {' · '}<a href={appUrl('/v2/console/decision-inbox')} style={{ color: 'var(--accent-light)' }}>open the Decision Inbox</a>
+      {ids.map((id, i) => <span key={id}>{i ? ', ' : ''}<a href={appUrl(`/v2/console/decision-inbox?card=${id}`)}
+        style={{ color: 'var(--accent-light)' }}>card #{id}</a></span>)}
+      {' · decided only in the Decision Inbox'}
     </div>
   );
 }

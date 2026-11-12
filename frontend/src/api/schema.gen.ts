@@ -13653,7 +13653,11 @@ export interface paths {
         put?: never;
         /**
          * Backup Restore
-         * @description Ask to restore a snapshot over the live data root. Body: {name}.
+         * @description Ask to restore a snapshot over the live data root. Body: {name, replace_credentials?}.
+         *
+         *     H162 review: ``replace_credentials`` (strictly ``true``) also replaces the credential
+         *     store (security/) and the hooks (hooks/) with the archive's copies; by default they stay
+         *     as they are. The choice is on the card, and an uploaded archive's card says so.
          *
          *     Answers 202 ``{"pending": task id}``: the restore waits for a human in the decision
          *     inbox at the irreversible tier (``nerva approvals accept <id>``); a card for the same
@@ -13686,8 +13690,10 @@ export interface paths {
          * Backup Download
          * @description Download one listed backup archive as it is on disk (H162).
          *
-         *     The name is matched against the trusted listing (``resolve_backup``), so no request
-         *     value reaches a path; an encrypted archive stays encrypted. 404 for an unknown name.
+         *     The name is matched against the trusted listing and the entry's real location must be
+         *     the backups directory (``resolve_backup_arg``: a listed entry that is a link to a file
+         *     elsewhere names no backup), so no request value reaches a path; an encrypted archive
+         *     stays encrypted. 404 for an unknown name.
          */
         get: operations["backup_download_api_admin_backup_download_get"];
         put?: never;
@@ -13708,14 +13714,18 @@ export interface paths {
         get?: never;
         /**
          * Backup Upload
-         * @description Add a backup archive from elsewhere to the listing, as the raw request body (H162).
+         * @description Add an encrypted backup archive from elsewhere to the listing, as the raw body (H162).
          *
-         *     The archive is restore-drilled before it is listed; one that fails the drill (or an
-         *     encrypted one this box has no key for) is deleted and refused with 422 and the drill's
-         *     verdict. 201 ``{ok, name, bytes, encrypted, verify}``. Nothing is restored: restoring
-         *     the uploaded archive is ``POST /api/admin/backup/restore`` with its name, which queues
-         *     the same irreversible-tier card as any other restore. A PUT always passes the
-         *     browser's CORS pre-check, and a cross-site write is refused (``same_origin_write``).
+         *     H162 review M1: only an archive encrypted with this box's backup key is accepted
+         *     (Fernet is authenticated, so it proves the owner made it); a plaintext archive is
+         *     refused with 422 ``plaintext_refused``, an archive the key does not open with
+         *     ``wrong_key``, no key on this box with ``key_missing``. The archive is restore-drilled
+         *     before it is listed (anything under backups/ fails the drill); a refused one is
+         *     deleted. Free space is checked before the first byte (507 ``no_space``) and while
+         *     streaming. 201 ``{ok, name, bytes, encrypted, origin, verify}``. Nothing is restored:
+         *     restoring it is ``POST /api/admin/backup/restore``, whose card says it was uploaded.
+         *     A PUT always passes the browser's CORS pre-check, and a cross-site write is refused
+         *     (``same_origin_write``).
          */
         put: operations["backup_upload_api_admin_backup_upload_put"];
         post?: never;

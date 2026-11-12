@@ -3455,7 +3455,20 @@ export function DecisionInboxPanel() {
     groupLeaders.set(group.leader_id, group);
     members.forEach(id => { if (id !== group.leader_id) groupFollowers.add(id); });
   });
-  const cards = pending.filter(t => !groupFollowers.has(t.id));
+  // H137 — `?card=<id>` (a chat reply's link to the card its turn queued) shows that card
+  // first, outlined and scrolled into view; deciding it is the same as any other card.
+  const focusCard = (() => {
+    try { const v = Number(new URLSearchParams(window.location.search).get('card')); return Number.isSafeInteger(v) && v > 0 ? v : null; }
+    catch { return null; }
+  })();
+  const unfocused = pending.filter(t => !groupFollowers.has(t.id));
+  const cards = focusCard == null ? unfocused
+    : [...unfocused.filter(t => t.id === focusCard), ...unfocused.filter(t => t.id !== focusCard)];
+  useEffect(() => {
+    if (focusCard == null) return;
+    const el = document.getElementById('decision-card-' + focusCard);
+    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'center' });
+  }, [focusCard, pending.length]);
   // H277: an opinion is advisory. Poll only queued/running judgments, with a
   // separate wall-clock budget per card (32 queued items / two judge slots).
   // Loading, failed reads and unrelated refreshes never extend that budget.
@@ -3651,8 +3664,12 @@ export function DecisionInboxPanel() {
       <State e={e} loading={loading} n={pending.length} />
       {groupError && <div role="alert" style={{ color: 'var(--red)' }}>{groupError}</div>}
       {imageReturn && <p><a href={internalLink("/v2/console/images?image_task="+imageReturn)}>Watch decided image task</a></p>}
+      {focusCard != null && !pending.some(t => t.id === focusCard) && d &&
+        <p role="status" style={{ fontSize: 11, color: 'var(--ink-2)' }}>card #{focusCard} is no longer waiting (already decided or withdrawn)</p>}
       {cards.slice(0, 10).map((t, i) => (
-        <div key={t.id ?? i}>
+        <div key={t.id ?? i} id={t.id != null ? 'decision-card-' + t.id : undefined}
+          data-focused={t.id === focusCard ? 'true' : undefined}
+          style={t.id === focusCard ? { outline: '1px solid var(--accent)', borderRadius: 4 } : undefined}>
           <Row>
             <span style={{ ...mono, color: 'var(--ink-2)' }}>{t.title || t.kind || ('task ' + t.id)}</span>
             <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
@@ -3921,7 +3938,7 @@ export function BackupPanel() {
           <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, alignItems: 'center' }}>
             {b.encrypted && <Tag c="var(--green)">enc</Tag>}
             <Tag>{sz(b.bytes)}</Tag>
-            {b.name && <BackupRowActions name={b.name} onNote={(s) => { setMsg(s); reload(); }} />}
+            {b.name && <BackupRowActions name={b.name} uploaded={!!b.uploaded} onNote={(s) => { setMsg(s); reload(); }} />}
           </span>
         </Row>
       ))}

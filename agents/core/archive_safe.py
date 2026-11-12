@@ -191,11 +191,17 @@ class _Planner:
     """
 
     def __init__(self, dest: Path, limits: ArchiveLimits,
-                 last_wins: Collection[str] = ()):
+                 last_wins: Collection[str] = (), exclude_top: Collection[str] = ()):
         self.root = dest
         self.limits = limits
         self.last_wins = frozenset((name,) for name in last_wins)
         self.superseded: list[tuple[str, ...]] = []
+        # H162 review: top-level names a caller never lets an archive write (a backup's
+        # own backups/ dir, the live credential dirs). Their members are validated by
+        # name, counted against both bomb caps, and never written; ``excluded`` lists the
+        # file members dropped so the caller can say so.
+        self.exclude_top = frozenset(exclude_top)
+        self.excluded: list[tuple[str, ...]] = []
         # What the destination's filesystem can name: a component or a whole path past
         # these fails at write time, after earlier members landed, so the pre-scan
         # refuses them while nothing has been written (ENAMETOOLONG deep in a new tree
@@ -219,6 +225,14 @@ class _Planner:
                 f"archive has more than {self.limits.max_members} members")
         self.members += 1
         parts = normalize_member(name, allow_root=(kind == "dir"))
+        if parts and parts[0] in self.exclude_top:
+            if kind == "file":
+                self.declared += max(0, int(size))
+                if self.declared > self.cap:
+                    raise ArchiveRejected(
+                        f"archive expands past {self.cap} bytes (the configured bytes cap)")
+                self.excluded.append(parts)
+            return
         if kind == "file" and parts in self.last_wins and parts in self._files:
             if parts in self.superseded:
                 raise ArchiveRejected(f"duplicate file member: {_show(name)}")
@@ -553,11 +567,13 @@ def extract_tar(tar: tarfile.TarFile, dest: Path, *,
 
 def _extract_tar(tar: tarfile.TarFile, dest: Path, limits: ArchiveLimits,
                  last_wins: Collection[str] = (),
-                 superseded: list[tuple[str, ...]] | None = None) -> list[tuple[str, ...]]:
+                 superseded: list[tuple[str, ...]] | None = None,
+                 exclude_top: Collection[str] = (),
+                 excluded: list[tuple[str, ...]] | None = None) -> list[tuple[str, ...]]:
     if not (isinstance(tar.tarinfo, type) and issubclass(tar.tarinfo, _GuardedTarInfo)):
         tar.tarinfo = _GuardedTarInfo  # guard every header read from here on
     root = _prepare_dest(dest)
-    plan = _Planner(root, limits, last_wins)
+    plan = _Planner(root, limits, last_wins, exclude_top)
     try:
         for member in tar:  # lazy: TarFile iteration reads one header at a time
             plan.add(member.name, _tar_kind(member), member.size, member)
@@ -567,13 +583,20 @@ def _extract_tar(tar: tarfile.TarFile, dest: Path, limits: ArchiveLimits,
     plan.finish()
     if superseded is not None:
         superseded.extend(plan.superseded)
+    if excluded is not None:
+        excluded.extend(plan.excluded)
     return _extract_plan(plan, lambda entry: tar.extractfile(entry.ref))
 
 
 def extract_tar_path(path: Path, dest: Path, *, limits: ArchiveLimits = DEFAULT_LIMITS,
                      compression: str = "*", last_wins: Collection[str] = (),
-                     superseded: list[tuple[str, ...]] | None = None) -> list[tuple[str, ...]]:
+                     superseded: list[tuple[str, ...]] | None = None,
+                     exclude_top: Collection[str] = (),
+                     excluded: list[tuple[str, ...]] | None = None) -> list[tuple[str, ...]]:
     """Open the tar at *path* with every header guarded and extract it into *dest*.
+
+    *exclude_top* names top-level entries never written (their file members are listed
+    in *excluded*); everything else about them is validated and counted as usual.
 
     Returns the parts of each regular file written, in archive order. *compression* is
     the ``tarfile.open`` suffix (``"gz"``, or ``"*"`` to detect). A file that is not a
@@ -584,7 +607,7 @@ def extract_tar_path(path: Path, dest: Path, *, limits: ArchiveLimits = DEFAULT_
     """
     try:
         with tarfile.open(path, f"r:{compression}", tarinfo=_GuardedTarInfo) as tar:
-            return _extract_tar(tar, dest, limits, last_wins, superseded)
+            return _extract_tar(tar, dest, limits, last_wins, superseded, exclude_top, excluded)
     except _CORRUPT as exc:  # raised while opening; _extract_tar maps its own
         raise ArchiveRejected(f"archive is corrupt or truncated: {exc}") from exc
 

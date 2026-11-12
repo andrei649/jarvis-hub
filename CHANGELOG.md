@@ -24,9 +24,15 @@
   asks first (type RESTORE), then waits as a card in your decision inbox; nothing is restored
   until you accept it there, and the hub applies it at its next start. A staged restore is
   shown in the panel and can be withdrawn.
-- **upload a backup…** adds an archive from another machine or an off-site copy. The hub
-  checks it like any restore drill first; one that fails, or an encrypted one this box has
-  no key for, is refused and not kept.
+- **upload a backup…** adds an off-site copy of your backups. It must be encrypted with
+  this box's backup key (a plaintext archive is refused: it could carry someone else's
+  passwords and approvals). The hub checks it like any restore drill first; one that fails
+  is refused and not kept. Its restore card says it was uploaded. Uploads are limited to
+  512 MiB; larger archives are restored with `nerva backup restore`.
+- A restore now keeps your current credentials and hooks unless you tick **creds** before
+  asking for it; the card says which.
+- Downloads go straight to disk through your browser.
+- A reply's queued cards link straight to that card in the Decision Inbox.
 - The panel also lists your file checkpoints (read-only; diff and restore stay on
   `/checkpoints` and `nerva checkpoints`).
 
