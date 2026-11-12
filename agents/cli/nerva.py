@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode
 
-from . import skill_sources
+from . import service_install, skill_sources
 from .client import HubClient, HubError, HubUnavailable, hub_url, is_loopback_url
 from .custom_endpoints import run as cmd_custom_provider
 from .mcp_catalog import run as cmd_mcp
@@ -1058,6 +1058,9 @@ def build_parser() -> argparse.ArgumentParser:
     desktop_grant = desktop_verbs.add_parser(
         "grant", help="open the OS pane where you award a permission (owner; grants nothing itself)")
     desktop_grant.add_argument("step", help="the step key from `nerva desktop status`")
+
+    # H089 — the hub as a per-user service (systemd user unit / launchd agent).
+    service_install.register(verbs)
 
     # H014 — the same module uninstall.sh / UNINSTALL.bat run; nothing is decided here.
     # On Windows the verb runs from the .venv it would delete (locked), so the module refuses
@@ -7069,6 +7072,11 @@ def cmd_prompt_size(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+def cmd_service(ns: argparse.Namespace, ctx: Context) -> int:
+    """H089 — ``nerva service install|uninstall|show`` (``agents/cli/service_install.py``)."""
+    return service_install.run(ns, ctx)
+
+
 def cmd_uninstall(ns: argparse.Namespace, ctx: Context) -> int:
     """Delegate to agents.core.uninstall — its refusals, typed purge prompt and exit codes."""
     from agents.core import uninstall as _uninstall
@@ -7313,6 +7321,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "send": cmd_send,
     "desktop": cmd_desktop,
     "support": cmd_support,
+    "service": cmd_service,
     "uninstall": cmd_uninstall,
     "security": cmd_security,
     "completion": cmd_completion,

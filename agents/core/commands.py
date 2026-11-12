@@ -36,6 +36,73 @@ ADMIN = "admin"
 _COMMAND_RE = re.compile(r"^/([A-Za-z][A-Za-z0-9_]*)(?:@\w+)?(?:\s+(.*))?$", re.DOTALL)
 _MAX_ARGS = 2_000
 
+#: H057 — built-in aliases, resolved to the canonical name at parse, before anything else
+#: sees the command (the access gate, the handler, the audit), so an alias can never reach
+#: what its canonical name may not. An alias never shadows a registered name (the registry
+#: refuses to register one) and a session-changing command has no alias: the session
+#: lifecycle recognises those by their own text. Kept short and unlikely as the name of an
+#: owner's quick command or skill bundle (which an alias would now shadow: registry first).
+ALIASES: dict[str, str] = {
+    "h": "help",
+    "me": "whoami",
+    "estop": "pause",
+    "unpause": "resume",
+    "reminder": "remind",
+    "ctx": "context",
+}
+
+#: H057 — iOS and macOS turn a typed ``--`` into an em dash (and some keyboards into an en
+#: dash): an argument word that starts with one is read as the ``--flag`` it was typed as.
+_SMART_FLAG = re.compile(r"(?:(?<=\s)|^)[\u2014\u2013](?=[A-Za-z])")
+
+#: H057 — channels where a typed ``/`` does not reach the bot as a command (Slack threads,
+#: Matrix clients): ``!name`` is read as ``/name``, for a command or alias the registry
+#: knows only — any other ``!`` text stays a message.
+BANG_CHANNELS = frozenset({"slack", "matrix"})
+_BANG = re.compile(r"^!([A-Za-z][A-Za-z0-9_]*)(?=\s|$)")
+
+
+#: Telegram's command menu: a name of 1-32 lowercase letters, digits or ``_``, a
+#: description of 1-256 characters, at most 100 commands per scope.
+_TELEGRAM_NAME = re.compile(r"^[a-z0-9_]{1,32}$")
+TELEGRAM_MENU_MAX = 100
+
+
+def telegram_menu(commands) -> list[dict]:
+    """H057 — the ``setMyCommands`` projection of *commands* (``SlashCommand`` objects):
+    names Telegram accepts, descriptions cut to its limit, at most
+    :data:`TELEGRAM_MENU_MAX`, in name order. A name Telegram would refuse is left out
+    rather than renamed (a menu entry must send exactly a command the registry knows)."""
+    menu: list[dict] = []
+    for command in sorted(commands, key=lambda c: c.name):
+        name = str(command.name)
+        description = " ".join(str(command.description or name).split())[:256] or name
+        if _TELEGRAM_NAME.match(name):
+            menu.append({"command": name, "description": description})
+        if len(menu) >= TELEGRAM_MENU_MAX:
+            break
+    return menu
+
+
+def normalise_args(args: str) -> str:
+    """Arguments with a smart-dash flag (``\u2014global``) read as ``--global``."""
+    return _SMART_FLAG.sub("--", args) if args else args
+
+
+def rewrite_bang(text: str, registry: CommandRegistry | None, channel: str) -> str:
+    """``!name args`` as ``/name args`` on a :data:`BANG_CHANNELS` channel when *name* is a
+    registered command or an alias of one; *text* unchanged otherwise."""
+    if channel not in BANG_CHANNELS or not isinstance(text, str) or registry is None:
+        return text
+    stripped = text.strip()
+    match = _BANG.match(stripped)
+    if match is None:
+        return text
+    name = match.group(1).lower()
+    if registry.get(ALIASES.get(name, name)) is None:
+        return text
+    return "/" + stripped[1:]
+
 
 def _raw_command_name(text: str) -> str | None:
     if not isinstance(text, str):
@@ -156,6 +223,8 @@ class CommandRegistry:
         name = command.name.lower()
         if name in self._commands:
             raise ValueError(f"command already registered: {name}")
+        if name in ALIASES:
+            raise ValueError(f"command name is a built-in alias of /{ALIASES[name]}: {name}")
         self._commands[name] = command
         return command
 
@@ -210,7 +279,8 @@ class CommandRegistry:
         match = _COMMAND_RE.match((text or "").strip())
         if not match:
             return None
-        return match.group(1).lower(), (match.group(2) or "").strip()[:_MAX_ARGS]
+        name = match.group(1).lower()
+        return ALIASES.get(name, name), normalise_args((match.group(2) or "").strip()[:_MAX_ARGS])
 
     async def dispatch(self, text: str, *, orch: Any, principal: Principal,
                        _quick_seen: frozenset[str] = frozenset()) -> CommandOutcome | None:

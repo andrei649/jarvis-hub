@@ -554,6 +554,9 @@ class SlackChannel(ChannelAdapter):
                 if (type(label) is not str or not label
                         or type(data) is not str or not _PENDING_DATA.fullmatch(data)):
                     return None
+                from .outbound_safety import sanitize_label
+
+                label = sanitize_label(label)      # H069 review M3
                 # Slack caps a button's plain_text at 75 characters. Keep the
                 # numbered/selected prefix visible; the value still identifies
                 # the full canonical choice in the pending-card registry.

@@ -2149,6 +2149,16 @@ class Orchestrator:
         if prior_lifecycle is not None and prior_lifecycle.closed:
             # Reopen the persisted route index; retain transcript/session IDs.
             self._channel_lifecycle = None
+        # H069: the outbound gate masks every value the secret broker stores. Read when a
+        # message is sent, so the broker is built on first use, not at boot.
+        from .channels.outbound_safety import install_known_secret_redactor
+
+        def _broker_redact(text: str) -> str:
+            broker = getattr(self, "secret_broker", None)
+            redact = getattr(broker, "redact", None)
+            return redact(text) if callable(redact) else text
+
+        install_known_secret_redactor(_broker_redact)
         await self.channel_manager.start_all()
         self.heartbeat_scheduler.start(self)
         self._settings_watcher_task = asyncio.create_task(self._settings_watcher_loop())
@@ -2250,6 +2260,12 @@ class Orchestrator:
         inbox_message_id = kwargs.pop("_inbox_message_id", "")
         # Hermes absorption 0.4: an observed group message becomes context, never an answer.
         observe_only = bool(kwargs.pop("observe_only", False))
+        # H057: on Slack and Matrix "!name" is "/name" for a command the registry knows.
+        from .commands import rewrite_bang
+
+        registry = getattr(self, "commands", None)
+        if not observe_only:   # review nit: an observed group message is stored as it was written
+            text = rewrite_bang(text, registry if isinstance(registry, CommandRegistry) else None, channel)
         origin_token = bind_action_origin(action_origin)
         principal_token = bind_turn_principal(
             self._channel_principal(channel, kwargs.get("sender"), kwargs.get("chat_id"),
@@ -2334,6 +2350,7 @@ class Orchestrator:
                 self._interrupt_for_channel_source(source, cross_channel=cross_channel)
             draft = (None if observe_only or denied is not None
                      else self._begin_channel_draft(channel, source, kwargs))
+            from .channels.outbound_safety import EMPTY_TURN_REPLY, FAILED_TURN_REPLY, is_silence
             from .channels.session_lifecycle import UNAVAILABLE, lifecycle
             from .channels.session_reset import SessionResetError
 
@@ -2358,8 +2375,19 @@ class Orchestrator:
             except (SessionResetError, OSError, OverflowError):
                 logger.warning("channel session lifecycle unavailable", exc_info=True)
                 response = UNAVAILABLE
+            except Exception:
+                # H069: a failed turn is never invisible on the channel it came from.
+                logger.exception("channel turn failed on %s", channel)
+                response = None if observe_only else FAILED_TURN_REPLY
             if observe_only:
                 return None
+            if is_silence(response):
+                # H069: the agent's choice to send nothing. A reply written in place never
+                # started (the draft waits while the text may still be the token).
+                logger.info("channel turn on %s ended silent by the agent's choice", channel)
+                if draft is not None and draft.started:
+                    await draft.finish(EMPTY_TURN_REPLY)
+                return ""
             if draft is not None and draft.started:
                 # The words are already on the channel; the final edit settles them.
                 await draft.finish(response)
@@ -2955,6 +2983,20 @@ class Orchestrator:
                     reset_turn_outcome(outcome_token)
                 reset_turn_notices(notices_token)
                 code_interruptions.reset_conversation(conversation_token)
+            from .channels import outbound_safety
+
+            if outbound_safety.is_silence(reply):
+                # H069: the agent chose to send no answer. The turn's notices are the
+                # hub's, not the agent's (a cloud data-handling warning, a background
+                # review summary already taken off its queue, a refused checkpoint, a
+                # blocked overflow): review M4 — they are sent alone, never dropped.
+                lines = [f"ℹ {n['text']}" for n in notices
+                         if isinstance(n, dict) and str(n.get("text") or "").strip()]
+                return "\n".join(lines) if lines else outbound_safety.SILENCE_TOKEN
+            if reply is None or (isinstance(reply, str) and not reply.strip()):
+                # H069: a turn whose model produced no text is answered, not dropped.
+                logger.warning("%s turn produced no reply text; the sender is told", channel)
+                reply = outbound_safety.EMPTY_TURN_REPLY
             return self._with_channel_notices(reply, notices, recall=recall)
 
     @staticmethod

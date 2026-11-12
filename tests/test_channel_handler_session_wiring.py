@@ -132,17 +132,31 @@ async def test_cross_channel_flag_still_shares_the_session():
     assert orch._channel_sessions == {}
 
 
-async def test_empty_response_is_not_delivered():
-    """DeliveryRouter.resolve() returns send=False for an empty reply."""
+async def test_empty_response_is_answered_not_dropped():
+    """H069 superseded the silent drop: a turn whose model produced no text is answered
+    with an actionable notice, so the sender is never left looking at nothing. The
+    router itself still refuses to deliver an empty text (test_h069_outbound_safety)."""
+    from agents.core.channels.outbound_safety import EMPTY_TURN_REPLY
+
     orch, cap = _bare_orchestrator(response="")
 
     await orch.channel_handler("salut", channel="telegram", chat_id="123", sender="42")
 
-    assert cap["sent"] == []
+    assert [m for _c, m, _k in cap["sent"]] == [EMPTY_TURN_REPLY]
 
 
-async def test_none_response_is_not_delivered():
+async def test_none_response_is_answered_not_dropped():
+    from agents.core.channels.outbound_safety import EMPTY_TURN_REPLY
+
     orch, cap = _bare_orchestrator(response=None)
+
+    await orch.channel_handler("salut", channel="telegram", chat_id="123", sender="42")
+
+    assert [m for _c, m, _k in cap["sent"]] == [EMPTY_TURN_REPLY]
+
+
+async def test_the_agents_silence_token_is_not_delivered():
+    orch, cap = _bare_orchestrator(response="[SILENT]")
 
     await orch.channel_handler("salut", channel="telegram", chat_id="123", sender="42")
 

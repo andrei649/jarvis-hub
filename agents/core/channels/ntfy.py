@@ -52,6 +52,7 @@ from .backfill import (
 )
 from .base import ChannelAdapter
 from .descriptor import DIALECT_PLAIN, ChannelDescriptor
+from .outbound_safety import sanitize_text
 from .pairing import channel_open_acknowledged, pairing_enabled
 from .reconnect import FATAL_REPROBE_S, Backoff, classify_exception, classify_status
 from .render import chunk, render_outbound
@@ -126,6 +127,11 @@ def _clean_title(raw: object) -> str:
     text = str(raw or "").strip()[:_MAX_TITLE]
     ascii_only = "".join(ch for ch in text if 32 <= ord(ch) < 127)
     return ascii_only.strip() or DEFAULT_TITLE
+
+
+def title_header(raw: object) -> str:
+    """H069 review m4: the notification title through the outbound gate, then made a header."""
+    return _clean_title(sanitize_text(str(raw or "")))
 
 
 def _clean_priority(raw: object) -> int:
@@ -554,7 +560,8 @@ class NtfyChannel(ChannelAdapter):
         ``plain=True`` sends every chunk as it is, never rendered: a notice whose text
         came from outside (a webhook's sender) keeps its file names and addresses."""
         headers = {
-            "Title": _clean_title(kwargs.get("title") or self.title),
+            # H069 review m4: the notification title is text the phone shows, too.
+            "Title": title_header(kwargs.get("title") or self.title),
             "Priority": str(_clean_priority(kwargs.get("priority", DEFAULT_PRIORITY))),
         }
         headers.update(self._auth_headers())
