@@ -310,7 +310,7 @@ def test_r7_the_unit_keeps_a_custom_data_root(tmp_path, monkeypatch):
     code, out = _dry_install("systemd", {"JARVIS_HOME": home, "NERVA_MEMORY_DIR": "/m",
                                          "JARVIS_MANAGED_DIR": "/etc/nerva"}, tmp_path, monkeypatch, ROOT_OK)
     assert code == 0
-    assert f'Environment="JARVIS_HOME={home.replace("$", "$$").replace("%", "%%")}"' in out
+    assert f'Environment="JARVIS_HOME={home.replace("%", "%%")}"' in out
     assert 'Environment="NERVA_MEMORY_DIR=/m"' in out and 'Environment="JARVIS_MANAGED_DIR=/etc/nerva"' in out
     assert "JARVIS_MEMORY_DIR" not in out        # one spelling: the owner's
 

@@ -56,13 +56,17 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _systemd_quote(value: str) -> str:
-    """One ExecStart / WorkingDirectory word: quoted, with systemd's specifier (``%``) and
-    variable (``$``) characters escaped. A control character is refused."""
+def _systemd_quote(value: str, *, dollar: bool = True) -> str:
+    """One ExecStart word: quoted, with systemd's specifier (``%``) and variable (``$``)
+    characters escaped. A control character is refused. ``Environment=`` values pass
+    ``dollar=False``: systemd performs no variable expansion there, so a doubled ``$``
+    would reach the process as ``$$``."""
     if any(ord(ch) < 32 or ord(ch) == 127 for ch in value):
         raise ServiceError("the interpreter or checkout path holds a control character; "
                            "move the checkout to a plain path")
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%").replace("$", "$$")
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%")
+    if dollar:
+        escaped = escaped.replace("$", "$$")
     return f'"{escaped}"'
 
 
@@ -100,9 +104,9 @@ def marker_line(root: Path) -> str:
 
 
 def _systemd_env(name: str, value: str) -> str:
-    """One ``Environment=`` line: the whole assignment quoted, ``\\`` ``"`` escaped, and
-    systemd's specifier and variable characters doubled."""
-    return f"Environment={_systemd_quote(f'{name}={value}')}"
+    """One ``Environment=`` line: the whole assignment quoted, ``\\`` ``"`` escaped and
+    specifiers (``%``) doubled; ``$`` is left alone (no variable expansion there)."""
+    return f"Environment={_systemd_quote(f'{name}={value}', dollar=False)}"
 
 
 def systemd_user_unit(python: str, root: Path, env: dict[str, str] | None = None) -> str:
