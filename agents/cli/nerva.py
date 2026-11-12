@@ -5754,8 +5754,10 @@ _ANSWER_ESCAPE = re.compile(
 #: or forge output in a piped run. Deliberately NOT `_plain`, which also eats \n and
 #: truncates at 200 characters — that would destroy the payload.
 #: H224 review m1: also the bidi controls and zero-width marks (U+200B-U+200F,
-#: U+202A-U+202E, U+2066-U+2069, U+FEFF), which can reorder or hide what a reader sees.
-_ANSWER_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]")
+#: U+202A-U+202E, U+2066-U+2069, U+FEFF), which can reorder or hide what a reader sees;
+#: H223 review: also U+061C (Arabic letter mark), U+2060-U+2064 (word joiner and invisible
+#: operators) and U+2028/U+2029 (line and paragraph separators).
+_ANSWER_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]")
 
 
 def _answer_text(reply: Any) -> str:
@@ -6760,7 +6762,7 @@ SEND_MAX_CHARS = 4_000
 #: HTTP 422 that a script would read as "the turn failed".
 CHAT_MAX_CHARS = 4_096
 _NO_BODY = "no message provided. Pass text as an argument, use --file PATH, or pipe it on stdin"
-_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]")
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2064\u2066-\u2069\ufeff]")
 
 
 def _plain(text: Any, width: int = 200, *, keep_tail: bool = False) -> str:

@@ -23,6 +23,17 @@
 - Tab on a command that does not exist offers the closest ones, by name or by what they do
   (`/sesion` finds `/sessions`, `/quota` finds `/usage`).
 
+**Terminal chat fixes after review**
+- A git folder that is a pipe, a device or a link, or that belongs to another user, no longer
+  stalls or feeds the start-up line: it is skipped. The branch lookup stops at your home folder
+  and at another disk.
+- Ctrl+C while the chat is still starting now leaves cleanly, with the resume hint.
+- The battery is checked once a minute while the chat is open, not only when you press Enter.
+- Long answer lines wrap by on-screen width (wide characters count double) and never inside a
+  hidden terminal sequence; a few more invisible characters are removed from answers.
+- A streamed reply that sends one endless event is stopped with a message instead of filling
+  memory.
+
 **A mistyped command gets a suggestion**
 - In any chat, an unknown `/command` now answers with the closest commands you may run, for
   example "Did you mean /sessions (the five most recent sessions)?". Nothing is run for you,

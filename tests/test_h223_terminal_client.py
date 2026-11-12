@@ -411,3 +411,107 @@ async def test_a_streamed_turn_with_the_poll_header_asks_through_chat_pending(tm
     finally:
         await stream.aclose()
         orch._pending_input_service().close()
+
+
+# ── review fixes (M1, m2, m3, nits) ───────────────────────────────────────────
+
+class _Lines:
+    """A response whose readline hands out the same line *count* times."""
+
+    def __init__(self, line: bytes, count: int):
+        self.line, self.count, self.read = line, count, 0
+
+    def readline(self, limit=-1):
+        if self.read >= self.count:
+            return b""
+        self.read += 1
+        return self.line
+
+
+def test_an_event_that_never_ends_is_refused_by_size():
+    from agents.cli.client import STREAM_EVENT_LIMIT
+
+    response = _Lines(b"data: " + b"x" * (STREAM_LINE_LIMIT - 16) + b"\n", 48)
+    with pytest.raises(HubUnavailable, match="larger than the client reads"):
+        list(_sse_events(response, "hub"))
+    assert response.read <= STREAM_EVENT_LIMIT // (STREAM_LINE_LIMIT - 16) + 1
+
+
+def test_an_event_that_never_ends_is_refused_by_line_count():
+    from agents.cli.client import STREAM_EVENT_LINES
+
+    response = _Lines(b"data: x\n", 100_000)
+    with pytest.raises(HubUnavailable):
+        list(_sse_events(response, "hub"))
+    assert response.read == STREAM_EVENT_LINES + 1
+
+
+def test_a_refused_stream_is_said_in_the_repl(tmp_path, monkeypatch):
+    def events():
+        yield {"type": "start"}
+        raise HubUnavailable("http://hub", "a streamed event was larger than the client reads")
+
+    hub = StreamHub([], {("GET", "/chat/pending"): {"questions": []}})
+    hub.stream = lambda *a, **k: events()
+    repl, hub, _out, err = _repl(tmp_path, monkeypatch, hub)
+    repl.run_turn(R.Outgoing("hi"))
+    assert "the turn's stream stopped" in err.getvalue() and "larger than the client reads" in err.getvalue()
+
+
+def test_a_long_line_is_never_cut_inside_an_escape():
+    drawn = []
+    feed = R.AnswerFeed(drawn.append, width=20)
+    feed.feed("word " * 3 + "\x1b]0;a very long title with spaces in it\x07" + " tail " * 4)
+    feed.close()
+    text = "\n".join(drawn)
+    assert "title" not in text and "]0;" not in text and "\x1b" not in text
+    assert all(R.display_width(line) <= 20 for line in drawn)
+
+
+def test_an_escape_split_across_tokens_is_held_back_and_removed_whole():
+    drawn = []
+    feed = R.AnswerFeed(drawn.append, width=20)
+    feed.feed("x " * 15 + "\x1b]0;own")      # wide enough to wrap; the escape is still open
+    feed.feed("ed title\x07 done\n")
+    feed.close()
+    assert "own" not in "".join(drawn) and "\x1b" not in "".join(drawn) and "done" in drawn[-1]
+
+
+def test_wide_characters_count_two_columns():
+    drawn = []
+    feed = R.AnswerFeed(drawn.append, width=20)
+    feed.feed("漢字" * 15)
+    feed.close()
+    assert R.display_width("漢字") == 4 and R.display_width("é") == 1
+    assert drawn and all(R.display_width(line) <= 20 for line in drawn)
+
+
+def test_a_huge_token_is_wrapped_in_linear_time():
+    drawn = []
+    feed = R.AnswerFeed(drawn.append, width=80)
+    started = time.monotonic()
+    feed.feed("word " * 200_000)
+    feed.feed("x" * 200_000 + "\n" * 50_000)
+    feed.close()
+    assert time.monotonic() - started < 10
+    assert len(drawn) > 12_000
+
+
+@pytest.mark.parametrize("char", ["؜", "⁠", "⁤", " ", " "])
+def test_more_invisible_characters_are_stripped(char):
+    from agents.cli.nerva import _answer_text, _plain
+
+    assert char not in _answer_text(f"a{char}b") and char not in _plain(f"a{char}b")
+
+
+def test_ctrl_c_during_start_up_restores_the_handler_and_hints(tmp_path, monkeypatch):
+    repl, _hub, _out, err = _repl(tmp_path, monkeypatch, session_id="web_abc")
+    before = signal.getsignal(signal.SIGINT)
+
+    def interrupted():
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(repl, "where_lines", interrupted)
+    assert repl.run() == 130
+    assert signal.getsignal(signal.SIGINT) is before
+    assert "resume this conversation: nerva chat -i -r web_abc" in err.getvalue()

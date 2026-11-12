@@ -242,10 +242,15 @@ class HubClient:
 
 #: The longest server-sent-event line read (one token or the end event's JSON).
 STREAM_LINE_LIMIT = 1 << 20
+#: One event's whole size (all its ``data:`` lines together) and line count: an event
+#: that never ends (no blank line) is refused, not buffered (review M1).
+STREAM_EVENT_LIMIT = 3 << 20
+STREAM_EVENT_LINES = 1024
 
 
 def _sse_events(response: Any, base_url: str) -> Iterator[dict[str, Any]]:
     data: list[str] = []
+    size = 0
     while True:
         try:
             raw = response.readline(STREAM_LINE_LIMIT + 1)
@@ -257,11 +262,16 @@ def _sse_events(response: Any, base_url: str) -> Iterator[dict[str, Any]]:
             raise HubUnavailable(base_url, "a streamed event was longer than the client reads")
         line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
         if line.startswith("data:"):
-            data.append(line[5:].lstrip(" "))
+            piece = line[5:].lstrip(" ")
+            size += len(piece) + 1
+            if size > STREAM_EVENT_LIMIT or len(data) >= STREAM_EVENT_LINES:
+                raise HubUnavailable(base_url, "a streamed event was larger than the client reads; "
+                                               "the stream was stopped")
+            data.append(piece)
             continue
         if line or not data:
             continue
-        payload, data = "\n".join(data), []
+        payload, data, size = "\n".join(data), [], 0
         try:
             event = json.loads(payload)
         except ValueError:

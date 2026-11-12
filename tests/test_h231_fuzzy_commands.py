@@ -113,3 +113,14 @@ def test_the_catalog_keeps_card_safe_descriptions(tmp_path, monkeypatch):
     repl.load_catalog()
     assert repl.commands == ["/usage"]
     assert repl.described == [("/usage", "quota [2J left")]
+
+
+def test_a_guest_is_never_offered_a_name_help_would_not_list(monkeypatch, tmp_path):
+    from agents.core import slash_access
+
+    allow_user_tier(monkeypatch, tmp_path)
+    registry = build_default_registry()
+    monkeypatch.setattr(slash_access, "listed_names", lambda reg, principal, orch=None: ["help", "whoami"])
+    guest = _say(registry, "/sesion", Principal(admin=False))
+    assert "sessions" not in guest.reply and guest.reply == "Unknown command /sesion. Try /help."
+    assert "/sessions" in _say(registry, "/sesion", Principal(admin=True)).reply

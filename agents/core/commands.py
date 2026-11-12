@@ -179,15 +179,21 @@ class CommandRegistry:
             if (command.tier == USER or principal.admin) and (allowed is None or command.name in allowed)
         ]
 
-    def _suggest(self, name: str, principal: Principal) -> str:
+    def _suggest(self, name: str, principal: Principal, orch: Any = None) -> str:
         """H231: the closest commands *principal* may run here, by name and description
         (``agents.core.fuzzy_match``), as " Did you mean /a (…) or /b (…)?" — or "".
-        Only commands :meth:`visible` lists are named, so a guest never learns an owner
-        command, and nothing is run: a guess is a suggestion, never a dispatch."""
+        Only what ``/help`` lists for *principal* is named — :meth:`visible`, and for a
+        non-owner :func:`slash_access.listed_names`, so a guest never learns an owner
+        command or a reset-trigger name the channel would refuse — and nothing is run: a
+        guess is a suggestion, never a dispatch."""
         try:
             from .fuzzy_match import rank
+            from .slash_access import listed_names
 
             visible = self.visible(principal)
+            if not principal.admin:
+                listed = listed_names(self, principal, orch=orch)
+                visible = [command for command in visible if listed is None or command.name in listed]
             names = rank(name, [(command.name, command.description) for command in visible])
         except Exception:      # a suggestion never breaks the unknown-command reply
             logger.debug("command suggestion failed", exc_info=True)
@@ -228,7 +234,7 @@ class CommandRegistry:
             # Deliberately NOT observed. `name` here is whatever the sender typed, so
             # emitting it would push arbitrary message text through a field that
             # promises to carry command names — a body leak wearing a safe label.
-            return CommandOutcome(name, "unknown", f"Unknown command /{name}.{self._suggest(name, principal)} Try /help.")
+            return CommandOutcome(name, "unknown", f"Unknown command /{name}.{self._suggest(name, principal, orch)} Try /help.")
         from .slash_access import refusal
 
         # H058, the cold path: the access gate answers first — before any handler, and

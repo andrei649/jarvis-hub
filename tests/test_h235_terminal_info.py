@@ -199,3 +199,91 @@ def test_windows_battery_from_get_system_power_status(monkeypatch, flag, percent
     monkeypatch.setattr(ctypes, "windll", SimpleNamespace(kernel32=SimpleNamespace(GetSystemPowerStatus=status)),
                         raising=False)
     assert T.battery(platform="win32") == expected
+
+
+# ── review fixes (M2, m1) ─────────────────────────────────────────────────────
+
+def _repo(tmp_path):
+    (tmp_path / ".git").mkdir()
+    return tmp_path / ".git" / "HEAD"
+
+
+def test_a_fifo_head_is_not_waited_on(tmp_path):
+    import os
+    import threading
+
+    os.mkfifo(_repo(tmp_path))
+    box = {}
+    worker = threading.Thread(target=lambda: box.setdefault("v", T.git_branch(tmp_path)), daemon=True)
+    worker.start()
+    worker.join(3)
+    assert not worker.is_alive() and box["v"] is None
+
+
+def test_a_symlinked_head_or_git_folder_is_not_followed(tmp_path):
+    target = tmp_path / "elsewhere"
+    target.write_text("ref: refs/heads/stolen\n")
+    _repo(tmp_path).symlink_to(target)
+    assert T.git_branch(tmp_path) is None
+    other = tmp_path / "other"
+    (other / "sub").mkdir(parents=True)
+    (other / "sub" / ".git").symlink_to(tmp_path / ".git")
+    assert T.git_branch(other / "sub", other) is None
+
+
+def test_a_git_folder_owned_by_someone_else_is_not_read(tmp_path, monkeypatch):
+    _repo(tmp_path).write_text("ref: refs/heads/theirs\n")
+    assert T.git_branch(tmp_path) == "theirs"
+    monkeypatch.setattr(T, "_trusted_owner", lambda info: False)
+    assert T.git_branch(tmp_path) is None
+    # the owner rule itself: this user or root only
+    import os
+    import types
+
+    monkeypatch.undo()
+    monkeypatch.setattr(os, "geteuid", lambda: 4242, raising=False)
+    assert T._trusted_owner(types.SimpleNamespace(st_uid=4242)) and T._trusted_owner(types.SimpleNamespace(st_uid=0))
+    assert not T._trusted_owner(types.SimpleNamespace(st_uid=1000))
+
+
+def test_the_walk_stops_at_home(tmp_path):
+    _repo(tmp_path).write_text("ref: refs/heads/above-home\n")
+    home = tmp_path / "home"
+    (home / "proj").mkdir(parents=True)
+    assert T.git_branch(home / "proj") == "above-home"
+    assert T.git_branch(home / "proj", home) is None
+
+
+def test_the_walk_stops_at_a_filesystem_boundary(tmp_path, monkeypatch):
+    import os
+
+    _repo(tmp_path).write_text("ref: refs/heads/other-fs\n")
+    (tmp_path / "mnt").mkdir()
+    real_stat = os.stat
+
+    def fake_stat(path, *args, **kwargs):
+        info = real_stat(path, *args, **kwargs)
+        if str(path) == str(tmp_path):
+            values = list(info)
+            values[2] = info.st_dev + 1
+            return os.stat_result(values)
+        return info
+
+    monkeypatch.setattr(T.os, "stat", fake_stat)
+    assert T.git_branch(tmp_path / "mnt") is None
+
+
+def test_battery_is_polled_on_a_timer_while_the_chat_runs(tmp_path, monkeypatch):
+    import time as _time
+
+    repl, *_ = _repl(tmp_path, monkeypatch)
+    readings = []
+
+    def reading():
+        readings.append(1)
+
+    monkeypatch.setattr(T, "battery", reading)
+    monkeypatch.setattr(R, "BATTERY_POLL_SECONDS", 0.05)
+    monkeypatch.setattr(repl, "step", lambda: (_time.sleep(0.5), False)[1])
+    assert repl.run() == 0
+    assert len(readings) >= 3                # polled while the prompt waited, not per Enter

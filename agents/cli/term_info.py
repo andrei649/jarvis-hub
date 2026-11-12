@@ -12,7 +12,9 @@ on Linux, ``/usr/bin/pmset -g batt`` (fixed absolute argv, 2 s budget) on macOS,
 from __future__ import annotations
 
 import base64
+import os
 import re
+import stat
 import subprocess  # nosec B404 — one fixed absolute argv (pmset), no shell
 import sys
 from collections.abc import Callable, Mapping
@@ -36,34 +38,81 @@ def _safe(text: Any, width: int, *, keep_tail: bool = False) -> str:
     return "…" + line[-(width - 1):] if keep_tail else line[: width - 1] + "…"
 
 
+_OPEN_FLAGS = (os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)
+               | getattr(os, "O_NOCTTY", 0) | getattr(os, "O_BINARY", 0))
+
+
+def _trusted_owner(info: os.stat_result) -> bool:
+    """Owned by this user or by root (git's safe.directory idea); always true where
+    the platform has no uids."""
+    geteuid = getattr(os, "geteuid", None)
+    return geteuid is None or info.st_uid in (0, geteuid())
+
+
 def _read_small(path: Path) -> str | None:
+    """Up to _GIT_READ bytes of *path* — only a regular file owned by this user or root,
+    opened non-blocking and without following a symlink (a FIFO, a device or a link to
+    /dev/tty is refused, never waited on; review M2)."""
     try:
-        with path.open("rb") as handle:
-            return handle.read(_GIT_READ).decode("utf-8", "replace")
+        fd = os.open(path, _OPEN_FLAGS)
     except OSError:
         return None
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or not _trusted_owner(info):
+            return None
+        return os.read(fd, _GIT_READ).decode("utf-8", "replace")
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
 
 
-def git_branch(start: Path) -> str | None:
+def _kind(path: Path) -> str | None:
+    """``dir`` / ``file`` for a real (not symlinked) directory or regular file owned by
+    this user or root; None otherwise."""
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return None
+    if not _trusted_owner(info):
+        return None
+    if stat.S_ISDIR(info.st_mode):
+        return "dir"
+    return "file" if stat.S_ISREG(info.st_mode) else None
+
+
+def git_branch(start: Path, home: Path | None = None) -> str | None:
     """The branch checked out at *start* (or above it): its name, ``@<sha12>`` when
     detached, None outside a repository. Reads ``.git/HEAD`` (following a worktree's
-    ``gitdir:`` file); runs no git."""
+    ``gitdir:`` file); runs no git. The walk up stops at *home* and at a filesystem
+    boundary, and a ``.git`` owned by someone else is not read."""
     here = start
+    try:
+        device = os.stat(here).st_dev
+    except OSError:
+        return None
     for _ in range(_GIT_DEPTH):
         dot = here / ".git"
-        if dot.is_dir():
+        kind = _kind(dot)
+        if kind == "dir":
             head = _read_small(dot / "HEAD")
             break
-        if dot.is_file():
+        if kind == "file":
             pointer = (_read_small(dot) or "").strip()
             if not pointer.startswith("gitdir:"):
                 return None
             gitdir = Path(pointer[len("gitdir:"):].strip())
             head = _read_small((gitdir if gitdir.is_absolute() else here / gitdir) / "HEAD")
             break
-        if here.parent == here:
+        if here.parent == here or (home is not None and here == home):
             return None
         here = here.parent
+        try:
+            if os.stat(here).st_dev != device:
+                return None
+        except OSError:
+            return None
     else:
         return None
     head = (head or "").strip()

@@ -655,9 +655,10 @@ class Repl:
             cwd = Path.cwd()
         except OSError:
             return ["working directory: (gone)"]
-        branch = term_info.git_branch(cwd)
+        home = absolute("HOME") or absolute("USERPROFILE")
+        branch = term_info.git_branch(cwd, home)
         charge = term_info.battery()
-        parts = [term_info.cwd_label(cwd, absolute("HOME") or absolute("USERPROFILE")),
+        parts = [term_info.cwd_label(cwd, home),
                  f"git {branch}" if branch else "not in a git repository"]
         if charge is not None:
             parts.append(charge.label())
@@ -682,6 +683,17 @@ class Repl:
             except (OSError, ValueError):
                 return
         self.say(f"copied {len(text):,} characters (OSC 52: a terminal that does not allow it ignores this)")
+
+    def _poll_battery(self) -> None:
+        """Battery polling on its own timer thread, every BATTERY_POLL_SECONDS while the
+        chat runs (at the prompt and during a turn alike; review m1)."""
+        while not self.stopped:
+            with contextlib.suppress(Exception):
+                self.check_battery()
+            with self._wake:
+                if self.stopped:
+                    return
+                self._wake.wait(BATTERY_POLL_SECONDS)
 
     def check_battery(self, *, now: float | None = None) -> None:
         """Battery polling: at most once a minute, a warning when the battery is
@@ -1055,8 +1067,10 @@ class Repl:
                 return False
             feed.flush()
             if isinstance(exc, HubUnavailable):
+                from .nerva import _plain
+
                 self.say("no hub is reachable; the message was not sent" if not started
-                         else "the hub went away during the turn")
+                         else f"the turn's stream stopped: {_plain(exc.reason, 200)}")
             else:
                 from .nerva import _plain
 
@@ -1153,7 +1167,6 @@ class Repl:
     def step(self) -> bool:
         """Read and handle one line; False at end of input."""
         self.answer_asks()
-        self.check_battery()
         line = self.read_line(self.prompt())
         if line is None:
             if self.running:
@@ -1209,20 +1222,24 @@ class Repl:
             self._wake.notify_all()
 
     def run(self) -> int:
-        self.load_catalog()
-        self.install_readline()
         previous = None
         if threading.current_thread() is threading.main_thread():
             previous = signal.signal(signal.SIGINT, self._on_sigint)
-        self._worker = threading.Thread(target=self._work, name="nerva-chat-turns", daemon=True)
-        self._worker.start()
-        self.say("Nerva chat. Enter sends · Alt+Enter newline · Ctrl+C clears / stops / exits · "
-                 "/keys for the rest")
-        with contextlib.suppress(Exception):      # where it runs: never a reason not to start
-            for line in self.where_lines():
-                self.say(line)
         code = 0
         try:
+            # Everything after the SIGINT handler is installed runs inside this try, so
+            # Ctrl+C or an error during start-up (the catalog, a slow /where) still
+            # restores the handler and prints the resume hint (H223/H235 review M2).
+            self.load_catalog()
+            self.install_readline()
+            self._worker = threading.Thread(target=self._work, name="nerva-chat-turns", daemon=True)
+            self._worker.start()
+            threading.Thread(target=self._poll_battery, name="nerva-chat-battery", daemon=True).start()
+            self.say("Nerva chat. Enter sends · Alt+Enter newline · Ctrl+C clears / stops / exits · "
+                     "/keys for the rest")
+            with contextlib.suppress(Exception):      # where it runs: never a reason not to start
+                for line in self.where_lines():
+                    self.say(line)
             self.send_startup()
             while not self.stopped:
                 try:
@@ -1230,6 +1247,8 @@ class Repl:
                         break
                 except KeyboardInterrupt:      # Ctrl+C outside the prompt (an HTTP call, a menu)
                     self.on_ctrl_c("")
+        except KeyboardInterrupt:              # Ctrl+C before the prompt was ever shown
+            code = 130
         except Exception as exc:  # noqa: BLE001 — H223: a client bug ends the chat, never the terminal
             from .nerva import _plain
 
@@ -1282,9 +1301,17 @@ class Repl:
 class AnswerFeed:
     """H223 — a streamed answer, drawn a whole line at a time so the open prompt is
     redrawn under it (never mid-word): a line is drawn at its newline, or at the last
-    space once it is as wide as the terminal. Each piece goes through the caller's
-    *draw* (``Repl.answer``), which strips control, escape, bidi and zero-width
-    characters — an escape split across two tokens has lost its ESC before it is drawn."""
+    space once it is as wide as the terminal (display width: wide CJK characters count
+    two, combining marks none).
+
+    Text is stripped (``_answer_text``: control, escape, bidi and zero-width characters)
+    *before* it is wrapped, so a cut never lands inside an escape sequence (review m2):
+    the raw text from the last ESC on is held back until its line ends, so an escape
+    split across two tokens is still removed whole. Work is linear in the text: lines
+    are split once and a long line is cut by index, never re-sliced per cut (review m3).
+    A held-back escape tail longer than ESCAPE_HOLD is let go (stripped like the rest)."""
+
+    ESCAPE_HOLD = 512
 
     def __init__(self, draw: Callable[[str], None], width: int | None = None) -> None:
         self._draw = draw
@@ -1293,23 +1320,44 @@ class AnswerFeed:
         self.drew = False
 
     def feed(self, text: str) -> None:
-        self._buffer += text
+        from .nerva import _answer_text
+
+        *complete, self._buffer = (self._buffer + text).split("\n")
+        for line in complete:
+            self._emit(_answer_text(line))
+        raw = self._buffer
+        hold = len(raw)
+        last = raw.rfind("\x1b")
+        if last != -1 and len(raw) - last <= self.ESCAPE_HOLD:
+            from .nerva import _ANSWER_ESCAPE
+
+            match = _ANSWER_ESCAPE.match(raw, last)
+            if match is None or match.end() == len(raw):     # possibly still open
+                hold = last
+        clean = _answer_text(raw[:hold])
+        if display_width(clean) < self._width:
+            return
+        self._buffer = self._wrap(clean) + raw[hold:]
+
+    def _wrap(self, clean: str) -> str:
+        """Draw every full-width piece of *clean* (already stripped); the rest."""
+        start = 0
         while True:
-            head, newline, rest = self._buffer.partition("\n")
-            if newline:
-                self._emit(head)
-                self._buffer = rest
-                continue
-            if len(self._buffer) < self._width:
-                return
-            cut = self._buffer.rfind(" ", 0, self._width)
-            cut = cut if cut > 0 else self._width
-            self._emit(self._buffer[:cut])
-            self._buffer = self._buffer[cut:].lstrip(" ")
+            cut = _wrap_point(clean, start, self._width)
+            if cut is None:
+                return clean[start:]
+            self._emit(clean[start:cut])
+            start = cut
+            while start < len(clean) and clean[start] == " ":
+                start += 1
 
     def flush(self) -> None:
         if self._buffer:
-            self._emit(self._buffer)
+            from .nerva import _answer_text
+
+            rest = self._wrap(_answer_text(self._buffer))
+            if rest:
+                self._emit(rest)
             self._buffer = ""
 
     def close(self) -> bool:
@@ -1320,6 +1368,35 @@ class AnswerFeed:
     def _emit(self, line: str) -> None:
         self.drew = True
         self._draw(line)
+
+
+def _char_width(char: str) -> int:
+    import unicodedata
+
+    if unicodedata.combining(char) or unicodedata.category(char) in ("Mn", "Me", "Cf"):
+        return 0
+    return 2 if unicodedata.east_asian_width(char) in ("W", "F") else 1
+
+
+def display_width(text: str) -> int:
+    """Columns *text* takes on a terminal (wcwidth-like, stdlib only)."""
+    return sum(_char_width(char) for char in text)
+
+
+def _wrap_point(text: str, start: int, width: int) -> int | None:
+    """Where to cut text[start:] so the piece fits *width* columns: after the last space
+    that fits, else at the width; None when the rest already fits."""
+    used, index, space = 0, start, None
+    while index < len(text):
+        used += _char_width(text[index])
+        if used > width:
+            if space is not None and space > start:
+                return space
+            return max(index, start + 1)
+        if text[index] == " ":
+            space = index
+        index += 1
+    return None
 
 
 _TOOL_MARKS = {"tool_start": "⋯", "tool_end": "✓", "tool_error": "✗"}
