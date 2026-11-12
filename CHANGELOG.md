@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### What changed for you — 2026-11-12
+
+**`nerva chat -i` streams its answers**
+- The answer appears line by line while Nerva writes it, with a short line for each tool it
+  runs, and you can keep typing at the prompt meanwhile. Questions the turn asks (including a
+  missing key, typed without echo) and Ctrl+C to stop the turn work as before.
+- `nerva chat -i "first message"` starts the chat with that message; add `--image PATH` or
+  `--clipboard-image` to send an image with it.
+- When you leave, the chat prints how to come back: `nerva chat -i -r <id>`. If the client
+  itself hits an internal error, it says so in one line, prints the same hint and exits
+  instead of showing a traceback.
+
 ### What changed for you — 2026-11-11
 
 **See what Nerva ran while it answers**

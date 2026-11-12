@@ -707,6 +707,7 @@
         "tests/test_h10_20_chat_rooms.py",
         "tests/test_h10_29_agent_templates.py",
         "tests/test_h12_20_auth_rotation.py",
+        "tests/test_h223_terminal_client.py",
         "tests/test_h224_terminal_interaction.py",
         "tests/test_h226_cli_governance_prompts.py",
         "tests/test_h227_prompt_preview_clients.py",

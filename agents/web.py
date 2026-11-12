@@ -1762,7 +1762,7 @@ async def _chat_with_usage(req: ChatRequest, request: Request, collector, stops)
 
 async def _chat_event_stream(orch, message: str, agent: str, agent_override, principal=None, reasoning=None, session_id=None,
                              attached=None, own_words=None, pending_actor=None, pending_current=None, refused=None,
-                             tool_events=False):
+                             tool_events=False, turn_id=None, pending_poll=False, pending_owner=None):
     """SSE producer for /chat/stream — cancellation-safe (AUD-7 / F8).
 
     The model turn runs in a background ``runner`` task feeding a queue; this
@@ -1771,7 +1771,15 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
     OR — the bug this fixes — the client disconnecting mid-stream, where Starlette
     throws ``GeneratorExit`` into this generator. Previously ``task.cancel()`` sat
     after the loop and was skipped on disconnect, leaving the LLM turn running
-    orphaned (burning the backend, never releasing resources)."""
+    orphaned (burning the backend, never releasing resources).
+
+    H223/H224: the turn is registered with ``turn_interrupts`` under the caller's own
+    credential (*pending_actor*, ``http_actor``) and its ``X-Nerva-Turn-Id`` (*turn_id*),
+    so ``POST /chat/interrupt`` stops a streamed turn the way it stops a ``POST /chat``
+    one: the stream ends with the interrupted reply and a ``turn_interrupted`` notice.
+    With *pending_poll* (header ``X-Nerva-Pending: poll``, `nerva chat -i`) the turn's
+    questions are offered through ``GET /chat/pending`` exactly as for ``POST /chat``
+    (the owner check is *pending_owner*, ``http_owner``) instead of as in-stream events."""
     queue: asyncio.Queue = asyncio.Queue()
     # Parity with /chat: the ids this turn pushed onto the approval queue, so a
     # streamed "…requires approval" names something the HUD can act on. Filled by
@@ -1881,19 +1889,37 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
                         await prepare_session(orch, session_id)
                     pending_service = getattr(orch, "_pending_input_service", None)
                     runtime = (pending_service() if pending_actor is not None and callable(pending_service) else None)
-                    binding = (runtime.bind_http(pending_actor, session_id or getattr(orch, "session_id", None),
-                                                 on_clarify, pending_current)
-                               if runtime is not None else nullcontext())
+                    bound_session = session_id or getattr(orch, "session_id", None)
+                    if runtime is None:
+                        binding = nullcontext()
+                    elif pending_poll:
+                        # H223: questions go through GET /chat/pending, as on POST /chat.
+                        binding = runtime.bind_http(pending_actor, bound_session, None, pending_current,
+                                                    poll=True, owner=pending_owner)
+                    else:
+                        binding = runtime.bind_http(pending_actor, bound_session, on_clarify, pending_current)
                     with binding:
                         await _bind_status_scope(collector, orch, session_id or getattr(orch, "session_id", None))
                         from agents.core import code_interruptions
                         conversation_token = code_interruptions.bind_conversation(
                             str(session_id or getattr(orch, "session_id", None) or ""))
+                        from agents.core import turn_interrupts
+                        from agents.core import turn_notices as turn_notices_mod
                         try:
-                            full = await orch.handle_input_stream(
-                                message, channel="web", on_token=on_token, agent_override=agent_override,
-                                **({"session_id": session_id} if session_id is not None else {}),
-                            )
+                            # H223/H224: POST /chat/interrupt stops this streamed turn too,
+                            # for the credential that started it and the turn it names.
+                            with turn_interrupts.track(pending_actor, bound_session, turn_id) as live:
+                                try:
+                                    full = await orch.handle_input_stream(
+                                        message, channel="web", on_token=on_token, agent_override=agent_override,
+                                        **({"session_id": session_id} if session_id is not None else {}),
+                                    )
+                                except asyncio.CancelledError:
+                                    if not turn_interrupts.absorb(live):
+                                        raise
+                                    full = turn_interrupts.INTERRUPTED_REPLY
+                                    turn_notices_mod.record_turn_notice(turn_interrupts.NOTICE_CODE,
+                                                                        turn_interrupts.NOTICE_TEXT)
                         finally:
                             code_interruptions.reset_conversation(conversation_token)
             await end(full)
@@ -2000,13 +2026,19 @@ async def chat_stream(req: ChatRequest, request: Request):
         prefix = notes.context_for(req.session_id or getattr(orch, "session_id", "web"))
         if prefix:
             message = prefix + message
-    from agents.core.routers.chat_pending import http_actor
+    from agents.core import turn_interrupts
+    from agents.core.routers.chat_pending import http_actor, http_owner
     actor = http_actor(request)
+    # H223: `nerva chat -i` asks for the POST /chat question path (GET /chat/pending, which
+    # also carries the owner's secret prompts) instead of in-stream clarify events.
+    pending_poll = request.headers.get("x-nerva-pending", "").strip().lower() == "poll"
     return StreamingResponse(
         _chat_event_stream(orch, message, req.agent, agent_override, principal=_web_principal(request), reasoning=req.reasoning, session_id=req.session_id,
                            attached=expansion, own_words=req.message, pending_actor=actor,
                            pending_current=lambda: actor is not None and http_actor(request) == actor,
-                           refused=refused, tool_events=req.tool_events),
+                           refused=refused, tool_events=req.tool_events,
+                           turn_id=turn_interrupts.turn_id_from(request.headers.get(turn_interrupts.TURN_ID_HEADER)),
+                           pending_poll=pending_poll, pending_owner=lambda: http_owner(request)),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

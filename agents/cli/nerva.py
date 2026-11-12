@@ -942,6 +942,8 @@ def build_parser() -> argparse.ArgumentParser:
                "  nerva chat -z -f prompt.txt --agent athena\n"
                "  nerva chat -z --image screenshot.png \"what does this error say?\"\n"
                "  nerva chat -i            (the interactive chat on this terminal; /keys inside)\n"
+               "  nerva chat -i \"look at this\" --image shot.png   (start it with a first message)\n"
+               "  nerva chat -i -r latest  (resume; a clean exit prints the id to resume)\n"
                "\n"
                "This verb never auto-approves. If the turn queues an action for approval it\n"
                "stays queued: stdout is empty, the exit code is 1, and stderr names what to\n"
@@ -6047,16 +6049,20 @@ def cmd_acp(ns: argparse.Namespace, ctx: Context) -> int:
 
 def _interactive_chat(ns: argparse.Namespace, ctx: Context) -> int:
     """H224 — `nerva chat -i`: the interactive terminal chat (agents/cli/repl.py)."""
+    # H223: MESSAGE, --image and --clipboard-image are the chat's first message.
     conflicts = [flag for flag, given in (
-        ("MESSAGE", ns.message), ("--file", ns.file), ("-z", getattr(ns, "oneshot", False)),
+        ("--file", ns.file), ("-z", getattr(ns, "oneshot", False)),
         ("--json", ns.json), ("--usage-file", getattr(ns, "usage_file", None)),
-        ("--image", getattr(ns, "image", None)), ("--clipboard-image", getattr(ns, "clipboard_image", False)),
         ("--no-prompts", getattr(ns, "no_prompts", False))) if given]
     if conflicts:
         ctx.err.write(f"-i is the interactive chat; {', '.join(conflicts)} belong to a scripted turn\n")
         return EXIT_USAGE
     if not (_is_tty(ctx.inp) and _is_tty(ctx.out)):
         ctx.err.write("-i needs a terminal on stdin and stdout; a script uses `nerva chat MESSAGE`\n")
+        return EXIT_USAGE
+    first = ns.message if isinstance(ns.message, str) and ns.message.strip() else None
+    if first is not None and len(first) > CHAT_MAX_CHARS:
+        ctx.err.write(f"the first message is {len(first):,} characters; one turn carries up to {CHAT_MAX_CHARS:,}\n")
         return EXIT_USAGE
     session = getattr(ns, "session", None)
     selector = getattr(ns, "resume", None)
@@ -6077,6 +6083,9 @@ def _interactive_chat(ns: argparse.Namespace, ctx: Context) -> int:
     repl = Repl(ctx, session_id=session if isinstance(session, str) and session else None,
                 agent=ns.agent or None, reasoning=getattr(ns, "reasoning", None),
                 history=not getattr(ns, "no_history", False), readline_module=load_readline())
+    if not repl.start_with(first, getattr(ns, "image", None) or (),
+                           bool(getattr(ns, "clipboard_image", False))):
+        return EXIT_USAGE
     return repl.run()
 
 

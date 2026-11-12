@@ -819,8 +819,8 @@ def test_chat_dash_i_is_parsed_and_refuses_a_script_shape():
     err = io.StringIO()
     ctx = Context(environ={}, out=io.StringIO(), err=err, inp=io.StringIO("x"),
                   client_factory=lambda env: FakeHub())
-    assert main(["chat", "-i", "hello"], context=ctx) == EXIT_USAGE
-    assert "MESSAGE" in err.getvalue()
+    assert main(["chat", "-i", "-z", "hello"], context=ctx) == EXIT_USAGE
+    assert "-z belong to a scripted turn" in err.getvalue()   # H223: MESSAGE is a first message
     err.truncate(0)
     assert main(["chat", "-i"], context=ctx) == EXIT_USAGE      # stdin is not a terminal
     assert "needs a terminal" in err.getvalue()

@@ -15,7 +15,7 @@ import socket
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from typing import Any
 
 DEFAULT_HUB_URL = "http://127.0.0.1:8080"
@@ -209,6 +209,27 @@ class HubClient:
         except ValueError:
             return raw.decode("utf-8", errors="replace")
 
+    def stream(self, path: str, body: Any, *, timeout: float | None = None,
+               headers: Mapping[str, str] | None = None) -> Iterator[dict[str, Any]]:
+        """POST *body* and yield the server-sent events of the reply, one JSON object each
+        (H223, ``/chat/stream``). Only ``data:`` lines are read; a line longer than
+        :data:`STREAM_LINE_LIMIT` ends the stream (never buffered whole), and an event
+        that is not a JSON object is skipped. Errors before the first event are the same
+        :class:`HubError` / :class:`HubUnavailable` that :meth:`request` raises."""
+        data = json.dumps(body if body is not None else {}).encode("utf-8")
+        sent = {**{k: v for k, v in (headers or {}).items() if k.lower() not in _OWN_HEADERS},
+                **self._headers(), "Accept": "text/event-stream"}
+        request = urllib.request.Request(f"{self.base_url}{path}", data=data, method="POST", headers=sent)
+        try:
+            response = self._opener(request, timeout=self._timeout if timeout is None else timeout)
+        except urllib.error.HTTPError as exc:
+            reason, usage, stops = _error_details(exc)
+            raise HubError(exc.code, reason, usage=usage, runtime_stops=stops) from None
+        except (urllib.error.URLError, OSError, TimeoutError, http.client.HTTPException, ValueError) as exc:
+            raise HubUnavailable(self.base_url, str(getattr(exc, "reason", exc))) from None
+        with response:
+            yield from _sse_events(response, self.base_url)
+
     def get(self, path: str) -> Any:
         return self.request("GET", path)
 
@@ -217,6 +238,36 @@ class HubClient:
         """*timeout* is this call's own, for a route that waits on a model longer than
         the client's default (the vision turn: review-H586 m1)."""
         return self.request("POST", path, body if body is not None else {}, timeout=timeout, headers=headers)
+
+
+#: The longest server-sent-event line read (one token or the end event's JSON).
+STREAM_LINE_LIMIT = 1 << 20
+
+
+def _sse_events(response: Any, base_url: str) -> Iterator[dict[str, Any]]:
+    data: list[str] = []
+    while True:
+        try:
+            raw = response.readline(STREAM_LINE_LIMIT + 1)
+        except (OSError, TimeoutError, http.client.HTTPException, ValueError) as exc:
+            raise HubUnavailable(base_url, str(getattr(exc, "reason", exc))) from None
+        if not raw:
+            return
+        if len(raw) > STREAM_LINE_LIMIT:
+            raise HubUnavailable(base_url, "a streamed event was longer than the client reads")
+        line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
+        if line.startswith("data:"):
+            data.append(line[5:].lstrip(" "))
+            continue
+        if line or not data:
+            continue
+        payload, data = "\n".join(data), []
+        try:
+            event = json.loads(payload)
+        except ValueError:
+            continue
+        if isinstance(event, dict):
+            yield event
 
 
 def _error_reason(exc: urllib.error.HTTPError) -> str:
