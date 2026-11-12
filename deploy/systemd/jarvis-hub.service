@@ -57,7 +57,7 @@ Restart=on-failure
 # 78 = the configuration is refused and restarting cannot help (H089): a boot guard (an
 # open bind without a token, an unguarded channel, a mistyped posture flag), one variable
 # under both the NERVA_ and the JARVIS_ spelling in this unit's environment, or a .env
-# refusal that repeats at the next start (the first one exits 1 and is retried once).
+# refusal that persists (exit 1 and retried until it has lasted 60 s or three starts).
 RestartPreventExitStatus=78
 RestartSec=5
 

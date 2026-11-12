@@ -91,7 +91,7 @@ Write-Host "Installing service '$ServiceName' → $python $serve"
 & $nssm set $ServiceName AppExit Default Restart
 & $nssm set $ServiceName AppExit 0 Exit
 # RB-2/H089: 78 = the configuration is refused (a boot guard, one variable under both the
-# NERVA_ and the JARVIS_ spelling, a .env refused twice in a row): restarting cannot help.
+# NERVA_ and the JARVIS_ spelling, a .env refusal that persists 60 s or 3 starts): restarting cannot help.
 & $nssm set $ServiceName AppExit 78 Exit
 & $nssm set $ServiceName AppRestartDelay 5000
 

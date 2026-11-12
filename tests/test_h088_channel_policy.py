@@ -117,3 +117,23 @@ def test_one_port_rule_for_the_panel_and_the_start(raw, monkeypatch):
     assert accepted == cc.port_value(raw)
     monkeypatch.setenv("SMTP_PORT", raw)
     assert cc.env_port("SMTP_PORT", 587) == (587 if accepted is None else accepted)
+
+
+# ── security review (2026-11-12) m6 ──────────────────────────────────────────────
+
+def test_a_second_unguarded_door_is_refused_while_one_is_already_refused():
+    env = {"TELEGRAM_BOT_TOKEN": TOKEN, "JARVIS_CHANNEL_PAIRING": "0"}   # already refused
+    assert boot_guards.front_door_problem(env) is not None
+    with pytest.raises(cc.FrontDoorRefused) as refused:
+        cc.front_door_check({"DISCORD_BOT_TOKEN": "d" * 30}, environ=env)
+    assert "discord bot" in str(refused.value)
+    # a write that adds no door is not refused (removing the bad one, setting a host)
+    cc.front_door_check({"TELEGRAM_BOT_TOKEN": None}, environ=env)
+    cc.front_door_check({"SMTP_HOST": "smtp.x"}, environ=env)
+
+
+def test_every_unguarded_door_is_listed_in_a_fixed_order():
+    env = {"TELEGRAM_BOT_TOKEN": TOKEN, "DISCORD_BOT_TOKEN": "d" * 30, "JARVIS_CHANNEL_PAIRING": "0"}
+    problems = boot_guards.front_door_problems(env)
+    assert len(problems) == 2 and "telegram" in problems[0] and "discord" in problems[1]
+    assert boot_guards.front_door_problem(env) == problems[0]

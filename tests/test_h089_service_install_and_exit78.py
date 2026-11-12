@@ -69,11 +69,11 @@ def test_a_numeric_systemexit_passes_through_unchanged(monkeypatch):
     assert not isinstance(stopped.value, ConfigurationRefused) and stopped.value.code == 3
 
 
-def test_a_dotenv_refusal_is_retried_once_then_permanent(tmp_path):
+def test_a_dotenv_refusal_is_retried_then_permanent_once_it_persists(tmp_path):
     marker = tmp_path / "boot-refusal.json"
     refused = ConfigurationRefused("JARVIS_HOME in .env names ${UNSET}", permanent=False)
     assert boot_refusal.exit_status(refused, path=marker, now=1000.0, wrapper="") == 1
-    assert boot_refusal.exit_status(refused, path=marker, now=1060.0, wrapper="") == 78
+    assert boot_refusal.exit_status(refused, path=marker, now=1060.0, wrapper="") == 78   # 60 s on
     other = ConfigurationRefused("another refusal", permanent=False)
     assert boot_refusal.exit_status(other, path=marker, now=1070.0, wrapper="") == 1
     # outside the window it is a fresh, retried refusal again
@@ -140,6 +140,7 @@ def test_a_server_whose_lifespan_refused_leaves_78(monkeypatch, tmp_path):
 # ── nerva service ────────────────────────────────────────────────────────────────
 
 ROOT = Path("/opt/my nerva/50%off")
+ROOT_OK = Path(__file__).resolve().parents[1]
 
 
 def test_the_user_unit_quotes_paths_and_does_not_restart_on_78():
@@ -214,12 +215,12 @@ def test_install_show_uninstall_on_linux(home, monkeypatch):
     assert "enable-linger" in ctx.out.getvalue()
 
     ctx = _ctx()
-    si.run(_ns("show"), ctx, platform="linux", runner=runner)
+    si.run(_ns("show"), ctx, platform="linux", runner=runner, root=checkout)
     assert "installed:" in ctx.out.getvalue()
 
     ran.clear()
     ctx = _ctx()
-    assert si.run(_ns("uninstall"), ctx, platform="linux", runner=runner) == 0
+    assert si.run(_ns("uninstall"), ctx, platform="linux", runner=runner, root=checkout) == 0
     assert not unit.exists()
     assert ran[0] == ["/usr/bin/systemctl", "--user", "disable", "--now", "jarvis-hub.service"]
 
@@ -234,7 +235,7 @@ def test_install_refuses_a_foreign_file_and_a_link(home, monkeypatch):
     assert "was not written by this command" in ctx.err.getvalue()
     assert unit.read_text() == "[Service]\nExecStart=/somebody/else\n"
     ctx = _ctx()
-    assert si.run(_ns("uninstall"), ctx, platform="linux") == 1 and unit.exists()
+    assert si.run(_ns("uninstall"), ctx, platform="linux", root=checkout) == 1 and unit.exists()
     # --force replaces it
     assert si.run(_ns("install", force=True), _ctx(), platform="linux", python="/usr/bin/python3",
                   root=checkout) == 0
@@ -278,3 +279,71 @@ def test_the_verb_is_wired_into_nerva(home):
     ctx = nerva.Context(environ=dict(os.environ), out=out, err=err)
     code = nerva.main(["service", "show"], context=ctx)
     assert code in (0, 2)
+
+
+# ── security review (2026-11-12) ─────────────────────────────────────────────────
+
+def test_m3_a_quick_restart_during_an_edit_is_retried_not_final(tmp_path):
+    marker = tmp_path / "boot-refusal.json"
+    refused = ConfigurationRefused("JARVIS_LOG_FILE in .env names ${LOGDIR}", permanent=False)
+    assert boot_refusal.exit_status(refused, path=marker, now=100.0, wrapper="") == 1
+    assert boot_refusal.exit_status(refused, path=marker, now=105.0, wrapper="") == 1    # 2nd, 5 s later
+    assert boot_refusal.exit_status(refused, path=marker, now=110.0, wrapper="") == 78   # 3rd start in a row
+
+
+def test_launchd_says_why_it_left_zero(tmp_path, capsys):
+    assert boot_refusal.exit_status(ConfigurationRefused("z", permanent=True),
+                                    path=tmp_path / "m.json", wrapper="launchd") == 0
+    assert "refused permanently (status 78)" in capsys.readouterr().err
+
+
+def _dry_install(kind, environ, tmp_path, monkeypatch, root):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    said = []
+    code = si.install(kind=kind, python="/usr/bin/python3", root=root, environ=environ,
+                      dry_run=True, force=False, now=False, say=said.append)
+    return code, "\n".join(said)
+
+
+def test_r7_the_unit_keeps_a_custom_data_root(tmp_path, monkeypatch):
+    home = str(tmp_path / "srv nerva$1%x")
+    code, out = _dry_install("systemd", {"JARVIS_HOME": home, "NERVA_MEMORY_DIR": "/m",
+                                         "JARVIS_MANAGED_DIR": "/etc/nerva"}, tmp_path, monkeypatch, ROOT_OK)
+    assert code == 0
+    assert f'Environment="JARVIS_HOME={home.replace("$", "$$").replace("%", "%%")}"' in out
+    assert 'Environment="NERVA_MEMORY_DIR=/m"' in out and 'Environment="JARVIS_MANAGED_DIR=/etc/nerva"' in out
+    assert "JARVIS_MEMORY_DIR" not in out        # one spelling: the owner's
+
+
+def test_r7_the_agent_keeps_a_custom_data_root_and_logs_there(tmp_path, monkeypatch):
+    home = tmp_path / "srv-nerva"
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("JARVIS_PROFILE", raising=False)
+    data = plistlib.loads(si.launchd_plist("/usr/bin/python3", ROOT_OK, home / "logs", {"JARVIS_HOME": str(home)}))
+    assert data["EnvironmentVariables"]["JARVIS_HOME"] == str(home)
+    assert data["StandardErrorPath"] == str(home / "logs" / "service.err.log")
+    code, out = _dry_install("launchd", {"JARVIS_HOME": str(home)}, tmp_path, monkeypatch, ROOT_OK)
+    assert code == 0 and "JARVIS_HOME" in out and str(home / "logs") in out
+
+
+def test_a_location_with_a_control_character_is_refused():
+    with pytest.raises(si.ServiceError):
+        si.systemd_user_unit("/usr/bin/python3", ROOT_OK, {"JARVIS_HOME": "/srv/x\nExecStartPre=/bin/rm"})
+
+
+def test_ownership_is_the_exact_marker_line_for_this_checkout(home):
+    tmp, checkout = home
+    unit = tmp / ".config/systemd/user/jarvis-hub.service"
+    unit.parent.mkdir(parents=True)
+    # a file that only mentions the marker somewhere is not ours
+    unit.write_text(f"[Service]\nDescription=see {si.MARKER}\n")
+    assert si.run(_ns("uninstall"), _ctx(), platform="linux", root=checkout) == 1 and unit.exists()
+    # a unit this command wrote for ANOTHER checkout is not replaced or removed from here
+    other = tmp / "other"
+    other.mkdir()
+    (other / "serve.py").write_text("# hub\n")
+    unit.write_text(si.systemd_user_unit("/usr/bin/python3", other))
+    assert si.run(_ns("install"), _ctx(), platform="linux", python="/usr/bin/python3", root=checkout) == 1
+    assert si.run(_ns("uninstall"), _ctx(), platform="linux", root=checkout) == 1 and unit.exists()
+    assert si.run(_ns("uninstall"), _ctx(), platform="linux", root=other,
+                  runner=lambda argv: (0, "")) == 0 and not unit.exists()

@@ -307,6 +307,16 @@ class EmailChannel(ChannelAdapter):
         if not self.smtp.get("host"):
             logger.warning("SMTP not configured for email channel")
             return False
+<<<<<<< HEAD
+=======
+
+        to_addr = kwargs.get("to") or self.smtp.get("default_recipient", "")
+        from .outbound_safety import sanitize_text
+
+        # H069 review m4: the subject leaves with the message; one line, through the gate.
+        subject = " ".join(sanitize_text(str(kwargs.get("subject", "Jarvis Message"))).split())
+
+>>>>>>> 7bca359d (Gateway: security review fixes for the outbound gate, service install and channel policy (H069, H089 back to partial; H088, H057))
         try:
             msg = self.build_message(message, **kwargs)
             to_addr = str(msg["To"] or "")

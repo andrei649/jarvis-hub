@@ -41,6 +41,18 @@
 - If the mail server drops the connection in the middle of a check, or one message cannot
   be handled, the other messages are not lost; they are picked up on the next check.
 - If your mail server cannot be reached over IPv6, Nerva tries IPv4 once.
+**Chat replies: fixes after the security review**
+- A reply written in place on Telegram now shows whole words only while it streams, so part
+  of a key is never on screen (or in the notification) before the check can recognise it.
+- Choice buttons on cards, email subjects, ntfy titles and attachment names are checked
+  like the message itself. Invisible characters can no longer hide a key from the check.
+- Paths, web addresses and code that mention a key or a password are no longer masked.
+- When the agent chooses not to answer, the hub's own notices for that turn (for example
+  that your text went to a cloud provider) are still sent.
+- `nerva service install` keeps your data folder settings (`JARVIS_HOME` and friends) in the
+  service, and only replaces or removes a service file it wrote for this copy of Nerva.
+- A quick command can no longer take the name of a built-in alias such as `/h`.
+
 **Run Nerva as your own background service**
 - `nerva service install` sets the hub up to start with your session: a systemd user service
   on Linux, a launch agent on macOS. `--dry-run` shows the file first, `--now` also starts it,
@@ -49,7 +61,7 @@
 - A configuration the hub refuses (an open network address without a token, a bot nobody
   guards, a mistyped setting, a bad profile name) now stops the service for good instead of
   restarting it every few seconds: fix the setting, then start it again. A `.env` problem is
-  retried once, in case the file was being saved.
+  retried for a minute (or three starts), in case the file was being saved or edited.
 
 **Channels panel and start-up agree**
 - The Channels panel refuses a change after which the hub would refuse to start (for example

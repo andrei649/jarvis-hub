@@ -2264,7 +2264,8 @@ class Orchestrator:
         from .commands import rewrite_bang
 
         registry = getattr(self, "commands", None)
-        text = rewrite_bang(text, registry if isinstance(registry, CommandRegistry) else None, channel)
+        if not observe_only:   # review nit: an observed group message is stored as it was written
+            text = rewrite_bang(text, registry if isinstance(registry, CommandRegistry) else None, channel)
         origin_token = bind_action_origin(action_origin)
         principal_token = bind_turn_principal(
             self._channel_principal(channel, kwargs.get("sender"), kwargs.get("chat_id"),
@@ -2985,8 +2986,13 @@ class Orchestrator:
             from .channels import outbound_safety
 
             if outbound_safety.is_silence(reply):
-                # H069: the agent chose to send nothing; no notices are hung on silence.
-                return outbound_safety.SILENCE_TOKEN
+                # H069: the agent chose to send no answer. The turn's notices are the
+                # hub's, not the agent's (a cloud data-handling warning, a background
+                # review summary already taken off its queue, a refused checkpoint, a
+                # blocked overflow): review M4 — they are sent alone, never dropped.
+                lines = [f"ℹ {n['text']}" for n in notices
+                         if isinstance(n, dict) and str(n.get("text") or "").strip()]
+                return "\n".join(lines) if lines else outbound_safety.SILENCE_TOKEN
             if reply is None or (isinstance(reply, str) and not reply.strip()):
                 # H069: a turn whose model produced no text is answered, not dropped.
                 logger.warning("%s turn produced no reply text; the sender is told", channel)

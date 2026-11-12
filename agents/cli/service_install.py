@@ -75,10 +75,41 @@ def _systemd_path(value: str) -> str:
     return value.replace("%", "%%")
 
 
-def systemd_user_unit(python: str, root: Path) -> str:
+#: Review M6: the process-only variables that locate the hub. A service started without
+#: them would open the default data root — another hub, with empty pairing, memory and
+#: keys — so each one set when `install` runs is written into the unit / agent.
+LOCATION_VARS = ("JARVIS_HOME", "JARVIS_USER_HOME", "JARVIS_MEMORY_DIR", "JARVIS_MANAGED_DIR")
+
+
+def location_env(environ) -> dict[str, str]:
+    """``{name as spelled: value}`` of :data:`LOCATION_VARS` set in *environ* (either
+    spelling — the one the owner used is kept, so the unit never sets one twice)."""
+    from agents.core.env_config import resolve_spellings
+
+    found: dict[str, str] = {}
+    for name in LOCATION_VARS:
+        value, spelled = resolve_spellings(environ or {}, name)
+        if isinstance(value, str) and value.strip():
+            found[spelled or name] = value
+    return found
+
+
+def marker_line(root: Path) -> str:
+    """The exact line that says this command wrote the file, for *this* checkout."""
+    return f"Nerva hub — {MARKER} for {root}"
+
+
+def _systemd_env(name: str, value: str) -> str:
+    """One ``Environment=`` line: the whole assignment quoted, ``\\`` ``"`` escaped, and
+    systemd's specifier and variable characters doubled."""
+    return f"Environment={_systemd_quote(f'{name}={value}')}"
+
+
+def systemd_user_unit(python: str, root: Path, env: dict[str, str] | None = None) -> str:
     serve = root / "serve.py"
+    _systemd_quote(str(root))   # a control character in the checkout path is refused first
     return "\n".join([
-        f"# Nerva hub — systemd user unit, {MARKER}.",
+        f"# {marker_line(root)}",
         "# Remove with `nerva service uninstall`. Logs: journalctl --user -u jarvis-hub -f",
         "[Unit]",
         "Description=Nerva hub (per-user service)",
@@ -93,6 +124,7 @@ def systemd_user_unit(python: str, root: Path) -> str:
         "TimeoutStartSec=300",
         f"WorkingDirectory={_systemd_path(str(root))}",
         f"ExecStart={_systemd_quote(python)} {_systemd_quote(str(serve))}",
+        *[_systemd_env(name, value) for name, value in sorted((env or {}).items())],
         "Restart=on-failure",
         "RestartSec=5",
         "# 78: the configuration is refused and no restart can cure it (H089).",
@@ -107,17 +139,17 @@ def systemd_user_unit(python: str, root: Path) -> str:
     ])
 
 
-def launchd_plist(python: str, root: Path, log_dir: Path) -> bytes:
+def launchd_plist(python: str, root: Path, log_dir: Path, env: dict[str, str] | None = None) -> bytes:
     payload = {
         "Label": LAUNCHD_LABEL,
-        "Comment": f"Nerva hub — {MARKER}",
+        "Comment": marker_line(root),
         "ProgramArguments": [python, str(root / "serve.py")],
         "WorkingDirectory": str(root),
         "RunAtLoad": True,
         "KeepAlive": {"SuccessfulExit": False},
         "ThrottleInterval": 10,
         "ProcessType": "Background",
-        "EnvironmentVariables": {"NERVA_SERVICE_WRAPPER": "launchd"},
+        "EnvironmentVariables": {**dict(env or {}), "NERVA_SERVICE_WRAPPER": "launchd"},
         "StandardOutPath": str(log_dir / "service.out.log"),
         "StandardErrorPath": str(log_dir / "service.err.log"),
     }
@@ -157,8 +189,19 @@ def _read_existing(path: Path) -> bytes | None:
     return data
 
 
-def _ours(data: bytes) -> bool:
-    return MARKER.encode("utf-8") in data
+def _ours(data: bytes, root: Path, kind: str) -> bool:
+    """Whether this command wrote *data* for the checkout *root*: the exact marker line
+    (systemd) or ``Comment`` (launchd), not a substring anywhere."""
+    if kind == "launchd":
+        try:
+            return plistlib.loads(data).get("Comment") == marker_line(root)
+        except Exception:
+            return False
+    try:
+        lines = data.decode("utf-8").splitlines()
+    except UnicodeDecodeError:
+        return False
+    return f"# {marker_line(root)}" in lines
 
 
 def _write_atomic(path: Path, data: bytes) -> None:
@@ -220,15 +263,17 @@ def install(*, kind: str, python: str, root: Path, environ, dry_run: bool, force
     if not (root / "serve.py").is_file():
         raise ServiceError(f"{root} has no serve.py; run nerva from the checkout you want to serve")
     target = _target(kind)
+    env = location_env(environ)
     if kind == "systemd":
-        data = systemd_user_unit(python, root).encode("utf-8")
+        data = systemd_user_unit(python, root, env).encode("utf-8")
     else:
         from agents.core.paths import data_root
 
+        # The service's own data root: the location variables above are in its environment.
         log_dir = data_root(environ) / "logs"
-        data = launchd_plist(python, root, log_dir)
+        data = launchd_plist(python, root, log_dir, env)
     existing = _read_existing(target)
-    if existing is not None and not _ours(existing) and not force:
+    if existing is not None and not _ours(existing, root, kind) and not force:
         raise ServiceError(f"{target} exists and was not written by this command; "
                            "pass --force to replace it")
     commands = _commands(kind, "load", target) if now else []
@@ -255,13 +300,13 @@ def install(*, kind: str, python: str, root: Path, environ, dry_run: bool, force
     return EXIT_OK
 
 
-def uninstall(*, kind: str, dry_run: bool, say, run=_run) -> int:
+def uninstall(*, kind: str, dry_run: bool, say, run=_run, root: Path | None = None) -> int:
     target = _target(kind)
     existing = _read_existing(target)
     if existing is None:
         say(f"nothing to remove: {target} does not exist")
         return EXIT_OK
-    if not _ours(existing):
+    if not _ours(existing, root or repo_root(), kind):
         raise ServiceError(f"{target} was not written by `nerva service install`; remove it yourself")
     commands = _commands(kind, "unload", target)
     if dry_run:
@@ -284,13 +329,14 @@ def uninstall(*, kind: str, dry_run: bool, say, run=_run) -> int:
     return EXIT_OK
 
 
-def show(*, kind: str, say) -> int:
+def show(*, kind: str, say, root: Path | None = None) -> int:
     target = _target(kind)
     existing = _read_existing(target)
     if existing is None:
         say(f"not installed ({target})")
     else:
-        say(f"installed: {target}" + ("" if _ours(existing) else " (not written by nerva service install)"))
+        say(f"installed: {target}" + ("" if _ours(existing, root or repo_root(), kind)
+                                       else " (not written by nerva service install for this checkout)"))
     return EXIT_OK
 
 
@@ -323,8 +369,8 @@ def run(ns: argparse.Namespace, ctx, *, platform: str | None = None, python: str
                            environ=ctx.environ, dry_run=ns.dry_run, force=ns.force, now=ns.now,
                            say=ctx.say, run=runner)
         if ns.action == "uninstall":
-            return uninstall(kind=kind, dry_run=ns.dry_run, say=ctx.say, run=runner)
-        return show(kind=kind, say=ctx.say)
+            return uninstall(kind=kind, dry_run=ns.dry_run, say=ctx.say, run=runner, root=root)
+        return show(kind=kind, say=ctx.say, root=root)
     except (ServiceError, OSError) as exc:
         ctx.err.write(f"nerva service: {exc}\n")
         return EXIT_FAILED

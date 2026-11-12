@@ -121,23 +121,25 @@ def env_port(name: str, default: int) -> int:
 
 
 def front_door_check(changes: dict[str, str | None], environ=None) -> None:
-    """Refuse (:class:`FrontDoorRefused`) a write after which the hub's own boot guard
-    would refuse to start: the same predicate, over the environment the next start would
-    read (this process's, with *changes* applied; ``None`` removes a name). A write that
-    leaves an existing verdict as it was is not refused here."""
-    from agents.core.boot_guards import front_door_problem
+    """Refuse (:class:`FrontDoorRefused`) a write that opens an unguarded front door the
+    boot guard would refuse: the boot's own predicate (``boot_guards.front_door_problems``)
+    over the running process's environment, before and after *changes* (``None`` removes a
+    name). A write is refused when it adds a door to that list — a first one, or a second
+    one beside a door already refused; a write that adds none is not refused here. What
+    this cannot see: a ``.env`` edited by hand since the hub started."""
+    from agents.core.boot_guards import front_door_problems
 
     env = dict(os.environ if environ is None else environ)
-    before = front_door_problem(env)
+    before = set(front_door_problems(env))
     after_env = dict(env)
     for name, value in changes.items():
         for spelling in _spellings(name):
             after_env.pop(spelling, None)
         if value is not None:
             after_env[name] = value
-    after = front_door_problem(after_env)
-    if after is not None and after != before:
-        raise FrontDoorRefused(after.replace("Refusing to start: ", "Not saved: the next start would refuse it — ", 1))
+    added = [problem for problem in front_door_problems(after_env) if problem not in before]
+    if added:
+        raise FrontDoorRefused(added[0].replace("Refusing to start: ", "Not saved: the next start would refuse it — ", 1))
 
 
 class InvalidValue(ValueError):

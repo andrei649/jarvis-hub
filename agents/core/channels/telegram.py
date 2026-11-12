@@ -54,7 +54,7 @@ from .media_reader import (
 )
 from .media_reader import note as read_note
 from .media_reader import turn_text as image_turn_text
-from .outbound_safety import may_become_silence, sanitize_outbound, sanitize_text
+from .outbound_safety import may_become_silence, sanitize_outbound, sanitize_text, stream_safe_prefix
 from .render import chunk, to_plain, to_telegram_html
 from .spoken_reply import REASON_SEND, Audio, SpokenReply
 from ..commands import side_question_command_name
@@ -187,6 +187,9 @@ class TelegramDraft:
         if self._message_id is None and may_become_silence(self._text):
             # H069: a reply that may still be the agent's "[SILENT]" is not started.
             return
+        if self._message_id is None and not stream_safe_prefix(media_delivery.strip_partial(self._text)):
+            # Review M2: nothing whole to show yet (an unfinished word may be a secret).
+            return
         try:
             now = self._clock()
             if self._message_id is None:
@@ -219,7 +222,8 @@ class TelegramDraft:
         footer = ("\n\n" + "\n".join(self._footer)) if self._footer else ""
         budget = self._cap - len(_STREAM_CURSOR) - 1 - len(footer)
         # G16: a `MEDIA: /path` line is never streamed; finish() attaches the file.
-        source = sanitize_text(media_delivery.strip_partial(self._text))
+        # Review M2: whole words only, and the tail a held credential could hide in.
+        source = sanitize_text(stream_safe_prefix(media_delivery.strip_partial(self._text)))
         if len(source) > budget:
             source = source[:budget] + "…"
         return source + _STREAM_CURSOR + footer
@@ -922,13 +926,22 @@ class TelegramChannel(ChannelAdapter):
         """Every Bot API call this adapter makes. H069: the text and caption of a body
         pass the outbound gate here, whatever built them (a reply, a card, a notice, an
         in-place edit), so nothing reaches Telegram that the gate has not seen."""
-        from .outbound_safety import sanitize_outbound
+        from .outbound_safety import sanitize_markup, sanitize_outbound, sanitize_text
 
         for key in ("json", "data"):
             body = kwargs.get(key)
-            if isinstance(body, dict) and any(isinstance(body.get(f), str) for f in ("text", "caption")):
-                kwargs[key] = {k: sanitize_outbound(v) if k in ("text", "caption") else v
+            if isinstance(body, dict) and any(f in body for f in ("text", "caption", "reply_markup")):
+                # Review M3: inline button labels are text the chat shows, too.
+                kwargs[key] = {k: (sanitize_outbound(v) if k in ("text", "caption")
+                                   else sanitize_markup(v) if k == "reply_markup" else v)
                                for k, v in body.items()}
+        files = kwargs.get("files")
+        if isinstance(files, dict):
+            # Review m4: an attachment's filename is shown in the chat (its bytes are not
+            # scanned: a file the owner asked for is delivered as it is).
+            kwargs["files"] = {field: (sanitize_text(part[0]) or "file", *part[1:])
+                               if isinstance(part, tuple) and part and isinstance(part[0], str) else part
+                               for field, part in files.items()}
         return await self.client.post(url, **kwargs)
 
     async def _send_chunk(self, cid, piece: str) -> bool:

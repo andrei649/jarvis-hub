@@ -308,11 +308,20 @@ def _front_door_flags(env: Mapping[str, str]) -> tuple[bool, bool]:
 
 
 def front_door_problem(environ: Mapping[str, str] | None = None, *, announce: bool = False) -> str | None:
-    """H088 — THE channel front-door predicate: why the inbound channels configured in
-    *environ* would answer any sender, or None when every one is guarded. The boot
-    (:func:`assert_guarded_channels`) and the HUD Channels panel's pre-write check
-    (``channel_config``) both ask this one function, so the panel cannot save a channel
-    the next start refuses, and the start cannot accept one the panel would refuse.
+    """The first of :func:`front_door_problems`, or None when every door is guarded."""
+    problems = front_door_problems(environ, announce=announce)
+    return problems[0] if problems else None
+
+
+def front_door_problems(environ: Mapping[str, str] | None = None, *,
+                        announce: bool = False) -> list[str]:
+    """H088 — THE channel front-door predicate: why each inbound channel configured in
+    *environ* would answer any sender, one refusal text per channel, in a fixed order;
+    empty when every one is guarded. The boot (:func:`assert_guarded_channels`, over the
+    environment it starts with) and the HUD Channels panel's pre-write check
+    (``channel_config.front_door_check``, over the running process's environment with the
+    change applied) both ask this one function. The panel's check is only as good as the
+    running environment: a ``.env`` edited by hand since the start is not seen by it.
 
     A door is *guarded* when the inbound pairing gate is on (its default — strangers are
     held until the owner pairs them) or, for channels that have one, when an allowlist
@@ -322,6 +331,7 @@ def front_door_problem(environ: Mapping[str, str] | None = None, *, announce: bo
     """
     env = os.environ if environ is None else environ
     pairing_on, acknowledged = _front_door_flags(env)
+    found: list[str] = []
     for channel in _INBOUND_CHANNELS:
         if not channel.configured(env):
             continue
@@ -340,12 +350,12 @@ def front_door_problem(environ: Mapping[str, str] | None = None, *, announce: bo
             remedies.append(f"set {channel.allowlist_env} to your own ids")
         remedies.append("leave JARVIS_CHANNEL_PAIRING on and pair from the HUD")
         remedies.append("acknowledge an open bot with JARVIS_CHANNEL_OPEN=1")
-        return (
+        found.append(
             f"Refusing to start: the {channel.label} would answer any sender.\n"
             "JARVIS_CHANNEL_PAIRING is off and nothing else guards the front door. "
             "Either " + ", or ".join(remedies) + "."
         )
-    return None
+    return found
 
 
 def assert_guarded_channels(environ: Mapping[str, str] | None = None) -> None:

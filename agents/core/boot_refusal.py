@@ -10,10 +10,13 @@ refused start leaves with:
   token, an unguarded bot, a mistyped posture flag, a hardened profile without its key), a
   variable under both spellings in the process environment, a refused profile name —
   leaves with :data:`CONFIG_REFUSED_EXIT` at once;
-* a refusal that comes from a ``.env`` file is retried **once**: the file may have been
-  caught mid-save. The same refusal (by digest; the text is never stored) at the next start
-  within :data:`REPEAT_WINDOW_S` is permanent and leaves with 78. A start that gets past the
-  configuration clears the record (:func:`clear`).
+* a refusal that comes from a ``.env`` file is retried: the file may have been caught
+  mid-save, or the owner may still be editing it. The same refusal (by digest; the text is
+  never stored) is permanent and leaves with 78 only once it has persisted for at least
+  :data:`PERSIST_S` seconds since it was first seen, or on its :data:`PERSIST_ATTEMPTS`-th
+  start in a row, within :data:`REPEAT_WINDOW_S` (review m3: two quick restarts during one
+  edit must not stop the service for good). A start that gets past the configuration
+  clears the record (:func:`clear`).
 
 launchd has no "do not restart on this status". Under the agent ``nerva service install``
 writes (``NERVA_SERVICE_WRAPPER=launchd``, ``KeepAlive`` = ``SuccessfulExit: false``), a
@@ -34,6 +37,8 @@ from pathlib import Path
 CONFIG_REFUSED_EXIT = 78
 MARKER_NAME = "boot-refusal.json"
 REPEAT_WINDOW_S = 900.0
+PERSIST_S = 60.0
+PERSIST_ATTEMPTS = 3
 MAX_MARKER_BYTES = 4096
 WRAPPER_ENV = "NERVA_SERVICE_WRAPPER"
 
@@ -94,18 +99,27 @@ def exit_status(refused: BaseException, *, path: Path | None = None, now: float 
             clock = time.time() if now is None else now
             digest = _digest(refused)
             prior = _read(marker)
-            at = prior.get("at")
-            if (prior.get("digest") == digest and isinstance(at, (int, float))
-                    and 0 <= clock - at <= REPEAT_WINDOW_S):
-                status = CONFIG_REFUSED_EXIT
+            first, count = prior.get("at"), prior.get("count", 1)
+            if (prior.get("digest") == digest and isinstance(first, (int, float))
+                    and type(count) is int and 0 <= clock - first <= REPEAT_WINDOW_S):
+                count += 1
+                if clock - first >= PERSIST_S or count >= PERSIST_ATTEMPTS:
+                    status = CONFIG_REFUSED_EXIT
+                else:
+                    _write(marker, {"digest": digest, "at": first, "count": count})
             else:
-                _write(marker, {"digest": digest, "at": clock})
+                _write(marker, {"digest": digest, "at": clock, "count": 1})
     if status == CONFIG_REFUSED_EXIT:
         if wrapper is None:
             from .env_config import env_str
 
             wrapper = env_str(WRAPPER_ENV)
         if str(wrapper or "").strip().lower() == "launchd":
+            import sys
+
+            print("Nerva: the configuration is refused permanently (status 78); exiting 0 so "
+                  "launchd does not restart the agent. Fix the setting above, then "
+                  "`launchctl kickstart gui/$UID/ai.nerva.hub`.", file=sys.stderr)
             return 0
     return status
 

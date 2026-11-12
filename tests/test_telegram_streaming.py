@@ -86,26 +86,28 @@ async def test_first_token_sends_then_edits_are_throttled_and_deduplicated():
     channel = _channel()
     draft = TelegramDraft(channel, 7, interval=1.0, clock=_clock([0.0, 0.5, 1.5, 3.0, 3.1]))
     assert draft.started is False
-    await draft.push("Hel")
+    await draft.push("Hel")              # H069 review M2: an unfinished word is held back
+    assert draft.started is False and _sends(channel.client) == []
+    await draft.push("lo ")
     assert draft.started and _sends(channel.client) == [
-        {"chat_id": 7, "text": "Hel ▍", "parse_mode": "HTML"},
+        {"chat_id": 7, "text": "Hello ▍", "parse_mode": "HTML"},
     ]
-    await draft.push("lo")               # t=0.5: inside the budget, no edit
+    await draft.push("big")              # t=0.5: inside the budget, no edit
     assert _edits(channel.client) == []
-    await draft.push(" **world**")       # t=1.5: one edit, balanced markup rendered
+    await draft.push(" **world** ")      # t=1.5: one edit, balanced markup rendered
     assert _edits(channel.client) == [
-        {"chat_id": 7, "message_id": 101, "text": "Hello <b>world</b> ▍", "parse_mode": "HTML"},
+        {"chat_id": 7, "message_id": 101, "text": "Hello big <b>world</b> ▍", "parse_mode": "HTML"},
     ]
     await draft.push("")                 # t=3.0: nothing changed, no edit
     assert len(_edits(channel.client)) == 1
-    assert draft.text == "Hello **world**"
+    assert draft.text == "Hello big **world** "
 
 
 @pytest.mark.asyncio
 async def test_finish_settles_the_message_and_sends_the_overflow_as_new_messages():
     channel = _channel()
     draft = TelegramDraft(channel, 7, interval=0.0, clock=_clock([0.0, 1.0, 2.0, 3.0]))
-    await draft.push("first")
+    await draft.push("first ")
     long_tail = "\n\n".join("para " * 400 for _ in range(4))
     assert await draft.finish("**first**\n\n" + long_tail) is True
     edits = _edits(channel.client)
@@ -124,7 +126,7 @@ async def test_finish_settles_the_message_and_sends_the_overflow_as_new_messages
 async def test_markup_telegram_rejects_is_retried_as_plain_text():
     channel = _channel({"editMessageText": [400, 200]})
     draft = TelegramDraft(channel, 7, interval=0.0, clock=_clock([0.0, 1.0, 2.0]))
-    await draft.push("a")
+    await draft.push("a ")
     assert await draft.finish("`code` here") is True
     edits = _edits(channel.client)
     assert edits[0]["text"] == "<code>code</code> here" and edits[0]["parse_mode"] == "HTML"
@@ -135,8 +137,8 @@ async def test_markup_telegram_rejects_is_retried_as_plain_text():
 async def test_failures_never_raise_and_the_final_text_still_arrives():
     channel = _channel({"editMessageText": [500, 500, 500, 500]})
     draft = TelegramDraft(channel, 7, interval=0.0, clock=_clock([0.0, 1.0, 2.0, 3.0]))
-    await draft.push("hello")
-    await draft.push(" there")           # the edit fails: a skipped frame, no exception
+    await draft.push("hello ")
+    await draft.push("there ")           # the edit fails: a skipped frame, no exception
     assert await draft.finish("hello there") is True
     sends = _sends(channel.client)
     assert sends[-1] == {"chat_id": 7, "text": "hello there", "parse_mode": "HTML"}

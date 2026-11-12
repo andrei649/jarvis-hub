@@ -65,13 +65,62 @@ FAILED_TURN_REPLY = ("Something went wrong on my side while answering that messa
 # The noncharacters U+FFFE/U+FFFF. The TAG plane (U+E0000–U+E007F).
 _CRASH_CHARS = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\ud800-\udfff￾￿\U000e0000-\U000e007f]")
 
+# Review m1: Unicode format characters (Cf: U+200B, U+2060, U+00AD, U+FEFF, the bidi
+# marks…) render as nothing and split a secret past the value match. They are removed
+# before matching, except a ZERO WIDTH JOINER between two emoji-range characters (it builds
+# one emoji out of several: 👩‍💻), which no ASCII secret can contain.
+_ZWJ = "\u200d"
+
+
+def _format_chars_re() -> re.Pattern:
+    from ..security.quarantine import _FORMAT_CHARS
+
+    return re.compile(f"[{_FORMAT_CHARS}]")
+
+
+_FORMAT_RE: re.Pattern | None = None
+
+
+def _emoji_side(ch: str) -> bool:
+    return bool(ch) and ord(ch) >= 0x2000 and not ch.isalnum()
+
+
+def _strip_format(text: str) -> str:
+    global _FORMAT_RE
+    if _FORMAT_RE is None:
+        _FORMAT_RE = _format_chars_re()
+
+    def keep_emoji_joiner(match: re.Match) -> str:
+        if match.group() != _ZWJ:
+            return ""
+        at = match.start()
+        before = text[at - 1] if at > 0 else ""
+        after = text[at + 1] if at + 1 < len(text) else ""
+        return _ZWJ if _emoji_side(before) and _emoji_side(after) else ""
+
+    return _FORMAT_RE.sub(keep_emoji_joiner, text)
+
+
 #: Patterns run on top of the scanner's: formats the scanner does not know.
 _EXTRA_PATTERNS: dict[str, str] = {
     # A Discord bot token: base64 user id, a timestamp part, an HMAC part.
     "discord_bot_token": r"\b[MNO][A-Za-z\d_-]{23,27}\.[A-Za-z\d_-]{6}\.[A-Za-z\d_-]{27,40}\b",  # nosec B105 - a detection pattern
 }
-#: Scanner rules not run at the transport (see the module docstring).
-_SKIPPED_SCANNER_RULES = frozenset({"high_entropy_secret"})
+#: Scanner rules not run at the transport (see the module docstring). The scanner's
+#: ``password_assignment`` is replaced by :data:`_PASSWORD_LITERAL` (review m2): its bare
+#: form matched ordinary code a reply quotes (``password = input(``).
+_SKIPPED_SCANNER_RULES = frozenset({"high_entropy_secret", "password_assignment"})
+_PASSWORD_LITERAL = re.compile(
+    r"""(?i:password|passwd|pwd)\s*[=:]\s*(?:(?P<quoted>['"][^\s'"]{4,}['"])|(?P<bare>[^\s'"(){}\[\],;]{6,})(?![\w(.]))""")
+# A dotted name (``self.password``, ``os.environ.get``) or a call is code, not a value.
+_CODE_VALUE = re.compile(r"^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+$")
+
+
+def _mask_password(match: re.Match) -> str:
+    bare = match.group("bare")
+    if bare is not None and _CODE_VALUE.match(bare):
+        return match.group()
+    return "[REDACTED:password_assignment]"
 
 _known_redactor: Callable[[str], str] | None = None
 _patterns: list[tuple[str, re.Pattern]] | None = None
@@ -96,6 +145,14 @@ def _compiled() -> list[tuple[str, re.Pattern]]:
     return _patterns
 
 
+_NOT_SECRET_SUFFIXES = ("_PATH", "_DIR", "_FILE", "_URL", "_URI", "_HOME", "_ROOT", "_FOLDER")
+_SECRET_SUFFIXES = ("KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "PASS", "_PAT", "CREDENTIAL")
+#: Test-only: the credential values of the machine running the test suite (a CI token),
+#: which would otherwise change what a test sees. Set by tests/conftest.py, read from
+#: nothing else; empty in the hub.
+_IGNORE_ENV_VALUES: frozenset[str] = frozenset()
+
+
 def _env_credentials() -> list[tuple[str, str]]:
     from .. import env_alias
     from ..env_config import credential_values
@@ -106,9 +163,20 @@ def _env_credentials() -> list[tuple[str, str]]:
         for prefix in ("JARVIS_", "NERVA_"):
             if name.startswith(prefix):
                 bare = name[len(prefix):]
-        return masked(name) and bare not in env_alias.NOT_CREDENTIALS
+        # Review m2: masked() is a substring test that also matches a key's PATH, a
+        # token endpoint's URL and a folder; their values are not secrets.
+        upper = name.upper()
+        if (upper.endswith(_NOT_SECRET_SUFFIXES)
+                or env_alias.path_typed(name) or bare in env_alias.NOT_CREDENTIALS):
+            return False
+        # A credential's name ENDS in what it is (``GH_TOKEN``, ``OPENAI_API_KEY``,
+        # ``SMTP_PASS``); a name that only contains such a word is a list, an index or a
+        # setting (``GIT_CONFIG_KEY_0``, ``…_DISTRUSTED_KEYS``). The hub's own credentials
+        # are named exactly (``env_alias.credential``).
+        return masked(name) and (upper.endswith(_SECRET_SUFFIXES) or env_alias.credential(name))
 
-    return credential_values(credential)
+    return [(name, value) for name, value in credential_values(credential)
+            if value not in _IGNORE_ENV_VALUES]
 
 
 def redact_secrets(text: str) -> str:
@@ -133,7 +201,7 @@ def redact_secrets(text: str) -> str:
                            exc_info=True)
     for name, pattern in _compiled():
         out = pattern.sub(f"[REDACTED:{name}]", out)
-    return out
+    return _PASSWORD_LITERAL.sub(_mask_password, out)
 
 
 # A whole reply that is a backend failure marker: "[<Provider> [API] [stream] error[: detail]]".
@@ -147,13 +215,23 @@ _PROVIDER_KINDS = (
 )
 
 
+#: The backends' own failure markers name these; anything else in a marker is not repeated
+#: (review M1: "[<secret> error]" would otherwise copy the secret into the sentence).
+KNOWN_PROVIDERS = {name.lower(): name for name in (
+    "Claude", "Claude API", "Anthropic", "OpenAI", "OpenAI Responses", "OpenRouter", "Gemini",
+    "xAI", "xAI Responses", "DeepInfra", "Groq", "Mistral", "Ollama", "Cloud LLM", "VLM",
+)}
+
+
 def map_provider_error(text: str) -> str | None:
     """One user-safe sentence for a reply that is only a provider failure marker, or
-    None when *text* is not one. Only the provider's name and the status code are read."""
+    None when *text* is not one. Only a known provider's name and the status code are
+    read; the sentence still passes the secret masking."""
     match = _PROVIDER_ERROR.match(text or "")
     if match is None:
         return None
-    who = match.group("who").strip()
+    named = KNOWN_PROVIDERS.get(" ".join(match.group("who").split()).lower())
+    who = f"The model provider {named}" if named else "The model provider"
     status_match = _STATUS.search(match.group("detail"))
     status = int(status_match.group("code")) if status_match else None
     what = "could not answer (the request failed or the provider was unreachable)"
@@ -161,7 +239,7 @@ def map_provider_error(text: str) -> str | None:
         what = next((label for codes, label in _PROVIDER_KINDS if status in codes),
                     "had a server error" if status >= 500 else "rejected the request")
         what = f"{what} (HTTP {status})"
-    return f"The model provider {who} {what}, so there is no answer. Try again shortly, or check /status."
+    return redact_secrets(f"{who} {what}, so there is no answer. Try again shortly, or check /status.")
 
 
 def _strip_cancellation(text: str) -> str:
@@ -176,11 +254,12 @@ def sanitize_text(text: str) -> str:
     """The plain-string sanitizer: crash characters, cancellation lines, secrets."""
     if not text:
         return text
-    mapped = map_provider_error(text)
+    mapped = map_provider_error(_strip_format(_CRASH_CHARS.sub("", text)))
     if mapped is not None:
         return mapped
     out = text.replace("\r\n", "\n").replace("\r", "\n")
     out = _CRASH_CHARS.sub("", out)
+    out = _strip_format(out)
     out = _strip_cancellation(out)
     return redact_secrets(out)
 
@@ -212,6 +291,56 @@ def sanitize_outbound(message: Any) -> Any:
     return rebuilt
 
 
+def stream_safe_prefix(text: str) -> str:
+    """Review M2: the part of a reply still being streamed that may be shown now.
+
+    A secret still arriving is not yet a full match, so a frame of the raw text would show
+    its prefix (and the first frame also fires the push notification). Only whole words
+    are shown — the run after the last whitespace is held back — and, when the hub holds
+    credential values, at least the last ``len(longest)`` characters too, cut back to a
+    word boundary. The final text (``finish``) is sanitized whole; nothing is lost."""
+    if not text:
+        return ""
+    cut = len(text) if text[-1].isspace() else _last_space(text, len(text))
+    try:
+        longest = max((len(value) for _name, value in _env_credentials()), default=0)
+    except Exception:
+        longest = 64
+    if longest:
+        cut = min(cut, _last_space(text, max(0, len(text) - longest)))
+    return text[:cut].rstrip()
+
+
+def _last_space(text: str, end: int) -> int:
+    """The index just after the last whitespace character before *end*, or 0."""
+    for at in range(min(end, len(text)) - 1, -1, -1):
+        if text[at].isspace():
+            return at + 1
+    return 0
+
+
+def sanitize_label(label: Any) -> Any:
+    """A button label (review M3: a clarify choice is model-authored text) through the gate;
+    a label the gate empties becomes ``…`` so the button still renders."""
+    if not isinstance(label, str) or not label:
+        return label
+    return sanitize_text(label) or "…"
+
+
+def sanitize_markup(markup: Any) -> Any:
+    """A Telegram ``reply_markup`` with every inline button's ``text`` through the gate; any
+    other shape is returned as it is (the adapter's own checks refuse it)."""
+    if not isinstance(markup, dict) or not isinstance(markup.get("inline_keyboard"), list):
+        return markup
+    rows = []
+    for row in markup["inline_keyboard"]:
+        if not isinstance(row, list):
+            return markup
+        rows.append([{**button, "text": sanitize_label(button.get("text"))}
+                     if isinstance(button, dict) and "text" in button else button for button in row])
+    return {**markup, "inline_keyboard": rows}
+
+
 def is_silence(message: Any) -> bool:
     """Whether *message* is the agent's choice to send nothing: exactly the token."""
     return isinstance(message, str) and message.strip().upper() == SILENCE_TOKEN
@@ -228,5 +357,5 @@ def may_become_silence(partial: Any) -> bool:
 
 __all__ = [
     "EMPTY_TURN_REPLY", "FAILED_TURN_REPLY", "SILENCE_TOKEN", "install_known_secret_redactor",
-    "is_silence", "map_provider_error", "may_become_silence", "redact_secrets", "sanitize_outbound", "sanitize_text",
+    "is_silence", "map_provider_error", "sanitize_label", "sanitize_markup", "stream_safe_prefix", "may_become_silence", "redact_secrets", "sanitize_outbound", "sanitize_text",
 ]

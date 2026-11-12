@@ -154,3 +154,80 @@ async def test_telegram_publishes_both_scopes_and_survives_a_failure():
     assert await channel.publish_command_menu() is False
     channel.command_menu = None
     assert await channel.publish_command_menu() is False
+
+
+# ── security review (2026-11-12) ─────────────────────────────────────────────────
+
+@pytest.mark.parametrize("alias", sorted(ALIASES))
+def test_m5_a_quick_command_cannot_take_a_built_in_alias(alias):
+    from agents.core.quick_commands import configuration_problem
+
+    problem = configuration_problem({alias.upper(): {"type": "alias", "target": "/status"}})
+    assert problem is not None and "built-in alias" in problem
+    assert configuration_problem({"mystatus": {"type": "alias", "target": "/status"}}) is None
+
+
+def _menus(registry, owner_chat, allowed=None):
+    from agents.web import _telegram_command_menus
+
+    class _Orch:
+        commands = registry
+
+        def get_setting(self, key, default=None):
+            if key == "autonomy.owner_chat_id":
+                return owner_chat
+            if allowed is not None and key.startswith("commands.user_allowed"):
+                return allowed
+            return default
+
+    return _telegram_command_menus(_Orch())
+
+
+def test_the_owner_menu_goes_only_to_a_private_chat(registry, monkeypatch):
+    monkeypatch.delenv("AUTONOMY_OWNER_CHAT_ID", raising=False)
+    assert _menus(registry, "-1001234")[1] is None        # a group: everyone in it would see it
+    assert _menus(registry, "4242")[1][0] == 4242
+
+
+def test_the_default_menu_is_what_a_guest_may_run(registry, monkeypatch):
+    from agents.core.commands import Principal
+
+    monkeypatch.delenv("AUTONOMY_OWNER_CHAT_ID", raising=False)
+    everyone, _owner = _menus(registry, "")
+    shown = {m["command"] for m in everyone}
+    for scope in ("dm", "group"):
+        visible = {c.name for c in registry.visible(Principal(channel="telegram", admin=False, scope=scope))}
+        assert shown <= visible
+
+
+@pytest.mark.asyncio
+async def test_an_observed_group_message_is_stored_as_written():
+    from agents.core.orchestrator import Orchestrator
+
+    seen = []
+
+    class _Stop(Exception):
+        pass
+
+    orch = Orchestrator.__new__(Orchestrator)
+    orch.commands = build_default_registry()
+    orch._channel_principal = lambda *a, **k: (_ for _ in ()).throw(_Stop())
+
+    def principal(channel, sender, chat, kind):
+        seen.append("principal")
+        raise _Stop
+
+    orch._channel_principal = principal
+    orch._principal_chat_type = lambda channel, kwargs: "group"
+    import agents.core.commands as commands_module
+
+    calls = []
+    original = commands_module.rewrite_bang
+    commands_module.rewrite_bang = lambda text, reg, channel: calls.append(text) or original(text, reg, channel)
+    try:
+        for observe in (True, False):
+            with pytest.raises(_Stop):
+                await orch.channel_handler("!status", channel="slack", observe_only=observe, sender="U1")
+    finally:
+        commands_module.rewrite_bang = original
+    assert calls == ["!status"]          # rewritten only for the answered message

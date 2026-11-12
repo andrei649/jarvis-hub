@@ -515,12 +515,19 @@ def _telegram_command_menus(orch):
     """H057: (everyone's Telegram menu, (owner chat, owner's menu) | None) from the
     registry: user-tier commands for everyone, every command in the owner's chat."""
     from agents.core.channels.outbound import _owner_chat_id
-    from agents.core.commands import ADMIN, telegram_menu
+    from agents.core.commands import ADMIN, Principal, telegram_menu
 
-    commands = orch.commands.commands()
-    everyone = telegram_menu([c for c in commands if c.tier != ADMIN])
+    registry = orch.commands
+    commands = registry.commands()
+    # Review nit: the default menu is what a guest may run here, in a DM and in a group
+    # (the owner's allow-lists, H058), never every user-tier command.
+    guest = [{c.name for c in registry.visible(Principal(channel="telegram", admin=False, scope=scope))}
+             for scope in ("dm", "group")]
+    everyone = telegram_menu([c for c in commands if c.tier != ADMIN and c.name in guest[0] & guest[1]])
     raw = _owner_chat_id(orch)
-    owner = (int(raw), telegram_menu(commands)) if raw.lstrip("-").isdigit() else None
+    # Only a private chat (a positive id): an owner chat that is a group would show the
+    # owner's commands to everyone in it.
+    owner = (int(raw), telegram_menu(commands)) if raw.isdigit() and int(raw) > 0 else None
     return everyone, owner
 
 

@@ -150,7 +150,10 @@ def test_serve_py_builds_the_server_from_a_port_in_the_env_file(env_home, monkey
 
     built = []
     monkeypatch.setattr(serve, "probe_bind", lambda *_a, **_k: None)
-    monkeypatch.setattr(uvicorn.Server, "run", lambda self, *_a, **_k: built.append(self.config.port))
+    # A real Server.run marks itself started once its startup ran (H089: serve.run_server
+    # leaves with 3 when it did not); the stub does what the real one would.
+    monkeypatch.setattr(uvicorn.Server, "run",
+                        lambda self, *_a, **_k: (setattr(self, "started", True), built.append(self.config.port)))
     serve.main()
     assert built == [9137]
 
@@ -179,7 +182,7 @@ def test_the_bind_guard_takes_a_token_from_the_env_file(env_home, monkeypatch):
     import serve
 
     monkeypatch.setattr(serve, "probe_bind", lambda *_a, **_k: None)
-    monkeypatch.setattr(uvicorn.Server, "run", lambda self, *_a, **_k: None)
+    monkeypatch.setattr(uvicorn.Server, "run", lambda self, *_a, **_k: setattr(self, "started", True))
     serve.main()
 
 

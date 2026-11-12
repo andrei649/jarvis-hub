@@ -344,3 +344,217 @@ def test_prose_that_mentions_an_error_is_not_rewritten():
     for text in ("The [Claude API error] you saw yesterday is fixed.",
                  "[note] the error was mine", "Fixed the parser error]"):
         assert outbound_safety.sanitize_text(text) == text
+
+
+# ── security review (2026-11-12): the reviewer's repros, kept ─────────────────────
+
+GHP = "ghp_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"   # a GitHub token
+HELD = "Zq8vN3kLm2Pw7Xr4Ty6Ub1Hc9Js5Dg0F"            # a held credential, no vendor shape
+
+
+def test_r1_a_fake_provider_marker_cannot_carry_a_secret_out(monkeypatch):
+    out = outbound_safety.sanitize_text(f"[{GHP} error]")
+    assert GHP not in out
+    held = "abcdefghijklmnop-qrstuvwxyz0123456"
+    monkeypatch.setenv("JARVIS_ADMIN_TOKEN", held)
+    assert held not in outbound_safety.sanitize_text(f"x {held} y")
+    assert held not in outbound_safety.sanitize_text(f"[{held} API error: 401]")
+    # only a known provider is named; anything else is "the model provider"
+    assert outbound_safety.sanitize_text("[Totally Real error: HTTP 500]").startswith("The model provider had")
+
+
+class _StreamResp:
+    status_code = 200
+    is_success = True
+
+    def __init__(self, i):
+        self._i = i
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return {"ok": True, "result": {"message_id": self._i}}
+
+
+class _StreamClient:
+    is_closed = False
+
+    def __init__(self):
+        self.posts = []
+
+    async def post(self, url, json=None, data=None, **kwargs):
+        self.posts.append(dict(json or data or {}))
+        return _StreamResp(len(self.posts) + 10)
+
+
+@pytest.mark.asyncio
+async def test_r2_no_streamed_frame_shows_a_long_prefix_of_a_held_credential(monkeypatch):
+    monkeypatch.setenv("ACME_API_KEY", HELD)
+    channel = TelegramChannel("tok")
+    channel.client = _StreamClient()
+    draft = TelegramDraft(channel, 5, interval=0.0)
+    await draft.push("Here it is: ")
+    for i in range(0, len(HELD), 4):          # the model streams the value in pieces
+        await draft.push(HELD[i:i + 4])
+    await draft.push(" done")
+    await draft.finish()
+    frames = [b.get("text", "") for b in channel.client.posts]
+    assert frames and not any(HELD[:24] in f for f in frames), frames
+    assert not any(HELD[:4] in f for f in frames), frames
+
+
+@pytest.mark.asyncio
+async def test_r2_a_vendor_key_still_arriving_is_not_shown_in_part():
+    channel = TelegramChannel("tok")
+    channel.client = _StreamClient()
+    draft = TelegramDraft(channel, 5, interval=0.0)
+    await draft.push("Use this: ")
+    for i in range(0, len(GHP), 5):
+        await draft.push(GHP[i:i + 5])
+        frames = [b.get("text", "") for b in channel.client.posts]
+        assert not any("ghp_" in f for f in frames), frames
+    await draft.push(" then go")
+    assert await draft.finish()
+    assert all(GHP not in b.get("text", "") for b in channel.client.posts)
+
+
+def test_stream_safe_prefix_shows_whole_words_only(monkeypatch):
+    assert outbound_safety.stream_safe_prefix("Hello wor") == "Hello"
+    assert outbound_safety.stream_safe_prefix("Hello world ") == "Hello world"
+    assert outbound_safety.stream_safe_prefix("Hel") == ""
+    monkeypatch.setenv("ACME_API_KEY", "x" * 20)          # hold back the last 20 characters
+    assert outbound_safety.stream_safe_prefix("one two three four five six ") == "one two"
+
+
+@pytest.mark.asyncio
+async def test_r3_telegram_button_labels_are_masked():
+    channel = TelegramChannel("tok")
+    channel.client = _StreamClient()
+    markup = {"inline_keyboard": [[{"text": f"Use {GHP}", "callback_data": "h067:t:1:c0"}]]}
+    await channel._post(channel.api_base + "/sendMessage",
+                        json={"chat_id": 5, "text": "Pick one", "reply_markup": markup})
+    assert GHP not in repr(channel.client.posts)
+    assert channel.client.posts[0]["reply_markup"]["inline_keyboard"][0][0]["callback_data"] == "h067:t:1:c0"
+
+
+def test_r3_slack_button_labels_are_masked():
+    from agents.core.channels.slack import SlackChannel
+
+    markup = {"inline_keyboard": [[{"text": f"Use {GHP}", "callback_data": "h067:AbCdEfGhIjKlMnOp:1:c0"}]]}
+    blocks = SlackChannel._pending_blocks("Pick one", markup)
+    assert blocks is not None and GHP[:40] not in repr(blocks)
+
+
+def test_r3_card_choices_are_masked_where_the_card_is_built():
+    from agents.core.channels.pending_input_cards import NativePromptCards
+
+    card = type("Card", (), {"token": "t", "revision": 1})()
+    button = NativePromptCards._button(card, f"Use {GHP}", "c0")
+    assert GHP not in button["text"] and button["callback_data"] == "h067:t:1:c0"
+    assert outbound_safety.sanitize_label("​") == "…"
+
+
+@pytest.mark.asyncio
+async def test_r4_silence_does_not_swallow_an_owner_notice():
+    from contextlib import asynccontextmanager
+
+    from agents.core.commands import Principal
+    from agents.core.orchestrator import Orchestrator, bind_turn_principal, reset_turn_principal
+    from agents.core.turn_notices import record_turn_notice
+
+    warning = "This turn's text was sent to a cloud provider (data_handling)."
+
+    class _Orch:
+        session_id = "s"
+        notice = True
+
+        @asynccontextmanager
+        async def turn_lease(self):
+            yield True
+
+        async def handle_input(self, text, channel):
+            if self.notice:
+                record_turn_notice("data_handling:cloud", warning)
+            return "[SILENT]"
+
+        _with_channel_notices = staticmethod(Orchestrator._with_channel_notices)
+
+    orch = _Orch()
+    token = bind_turn_principal(Principal(channel="telegram", sender="1", admin=True, chat="1"))
+    try:
+        reply = await Orchestrator._channel_turn(orch, "summarise this page", "telegram", observe_only=False)
+        assert warning in str(reply) and "[SILENT]" not in str(reply)
+        orch.notice = False   # nothing to say: the silence stands
+        assert await Orchestrator._channel_turn(orch, "hi", "telegram", observe_only=False) == "[SILENT]"
+    finally:
+        reset_turn_principal(token)
+
+
+def test_r5_a_format_character_cannot_split_a_held_value(monkeypatch):
+    monkeypatch.setenv("ACME_API_KEY", HELD)
+    for joiner in ("​", "⁠", "­", "﻿", "‍"):
+        split = HELD[:16] + joiner + HELD[16:]
+        out = outbound_safety.sanitize_text(f"key: {split}")
+        assert HELD not in out.replace(joiner, ""), (joiner, out)
+    assert outbound_safety.sanitize_text("👩‍💻 at work") == "👩‍💻 at work"   # an emoji keeps its joiner
+
+
+def test_r6_paths_urls_and_settings_named_like_credentials_are_not_masked(monkeypatch):
+    monkeypatch.setenv("GITHUB_APP_PRIVATE_KEY_PATH", "/home/owner/keys/app.pem")
+    monkeypatch.setenv("ALIBABA_TOKEN_PLAN_BASE_URL", "https://dashscope-intl.aliyuncs.com/v1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "http.proxyAuthMethod")
+    monkeypatch.setenv("JARVIS_KEY_DIR", "/var/lib/nerva/keys")
+    text = ("The app key is at /home/owner/keys/app.pem; base https://dashscope-intl.aliyuncs.com/v1; "
+            "http.proxyAuthMethod in /var/lib/nerva/keys")
+    assert outbound_safety.sanitize_text(text) == text
+
+
+@pytest.mark.parametrize("code", [
+    'password = input("Password: ")', "password=self.password_field", "pwd = getpass.getpass()",
+    "password: str", "password = os.environ.get('X')",
+])
+def test_m2_code_that_mentions_a_password_is_not_mangled(code):
+    assert outbound_safety.sanitize_text(code) == code
+
+
+@pytest.mark.parametrize("secret", ["password: hunter22!", 'pwd="abcd"', "PASSWORD=Tr0ub4dor&3"])
+def test_m2_a_password_literal_is_still_masked(secret):
+    assert "[REDACTED:password_assignment]" in outbound_safety.sanitize_text(secret)
+
+
+def test_m4_ntfy_title_is_gated():
+    from agents.core.channels.ntfy import title_header
+
+    assert GHP not in title_header(f"CI {GHP}") and title_header(f"CI {GHP}").startswith("CI ")
+
+
+@pytest.mark.asyncio
+async def test_m4_email_subject_is_gated_and_one_line():
+    from agents.core.channels.email import EmailChannel
+
+    sent = []
+    channel = EmailChannel(smtp_config={"host": "smtp.example"})
+    channel._smtp_send = lambda msg, to: sent.append(msg)
+    assert await channel.send("body", to="me@example.org", subject=f"key {GHP}\nBcc: x@y")
+    subject = sent[0]["Subject"]
+    assert GHP not in subject and "\n" not in subject
+
+
+@pytest.mark.asyncio
+async def test_m4_telegram_attachment_names_and_captions_are_gated():
+    channel = TelegramChannel("tok")
+    seen = []
+
+    class _Client:
+        is_closed = False
+
+        async def post(self, url, **kwargs):
+            seen.append(kwargs)
+            return _StreamResp(1)
+
+    channel.client = _Client()
+    await channel._post(channel.api_base + "/sendDocument", data={"chat_id": "5", "caption": f"see {GHP}"},
+                        files={"document": (f"{GHP}.txt", b"bytes stay as they are", "text/plain")})
+    assert GHP not in repr(seen[0]["data"]) and GHP not in seen[0]["files"]["document"][0]
+    assert seen[0]["files"]["document"][1] == b"bytes stay as they are"
