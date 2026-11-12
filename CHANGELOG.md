@@ -39,6 +39,12 @@
   example "Did you mean /sessions (the five most recent sessions)?". Nothing is run for you,
   and a guest is only offered commands a guest may use.
 
+**Skill curator status corrected**
+- `nerva curator` (status, usage, run, pause, resume, pin, unpin, list-unmanaged, adopt,
+  restore, list-archived, archive, prune, backup, rollback, ledger, purge) was already in the
+  product; the Hermes status page now counts it as complete. Every change still waits for your
+  approval card.
+
 ### What changed for you — 2026-11-11
 
 **See what Nerva ran while it answers**
