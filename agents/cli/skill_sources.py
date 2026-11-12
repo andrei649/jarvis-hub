@@ -27,6 +27,9 @@ from __future__ import annotations
 import argparse
 import contextlib
 import difflib
+import hashlib
+import hmac
+import itertools
 import json
 import os
 import re
@@ -47,6 +50,7 @@ TAP_INSTALL = "/api/skills/taps/install"
 IMPORTED = "/skills/imported"
 CATALOG_INSTALL = "/api/skills/catalog/install"
 OPTIONAL_INSTALL = "/api/skills/optional/install"
+OPTIONAL_CATALOG = "/api/skills/optional/catalog"
 OPTIONAL_SOURCE = "nerva-optional"
 
 SNAPSHOT_FORMAT = "nerva-skills-snapshot"
@@ -59,6 +63,8 @@ MAX_SNAPSHOT_TAPS = 32
 MAX_DIFF_FILE_BYTES = 256 * 1024
 MAX_DIFF_FILES = 200
 MAX_DIFF_DEPTH = 6
+#: ``diff`` looks at most at this many directory entries in all (files and folders).
+MAX_DIFF_ENTRIES = 2000
 #: ``diff`` prints at most this many diff lines in all.
 MAX_DIFF_LINES = 4000
 
@@ -139,6 +145,9 @@ def register(skills_verbs) -> None:
                        "and refuse the update)")
     update.add_argument("names", nargs="*", metavar="name", help="catalog skills to update (default: all "
                                                                   "that `nerva skills check` lists)")
+    update.add_argument("--force", action="store_true",
+                        help="also replace files you edited and restore files you deleted (a copy of each "
+                             "edited file is kept on the hub)")
     update.add_argument("--json", action="store_true")
     modified = skills_verbs.add_parser(
         "list-modified", help="stock skills you edited (catalog and optional installs; offline, same data root)")
@@ -155,6 +164,7 @@ def register(skills_verbs) -> None:
         "reset", help="put a catalog skill back to stock, replacing your edits (a copy of each is kept on "
                       "the hub; admin) — `nerva skills catalog repair NAME --force`")
     reset.add_argument("skill", help="<category>/<skill> or the slug")
+    reset.add_argument("--yes", action="store_true", help="go ahead without asking")
     reset.add_argument("--json", action="store_true")
 
 
@@ -364,18 +374,23 @@ def build_snapshot(imported_reply: Any, taps_reply: Any, *, now: float | None = 
 
 
 def _write_private(target: Path, text: str) -> None:
-    """Replace ``target`` (a regular file or nothing) atomically, mode 0600."""
+    """Replace ``target`` (a regular file or nothing) atomically, mode 0600, never through a
+    linked folder on the way and with the bytes on disk before the rename."""
+    parent = target.parent if str(target.parent) else Path(".")
+    if os.path.realpath(parent) != os.path.abspath(parent):
+        raise OSError(f"{parent} is reached through a link; give the real folder")
     try:
         info = os.lstat(target)
     except FileNotFoundError:
         info = None
     if info is not None and not stat.S_ISREG(info.st_mode):
         raise OSError(f"{target} exists and is not a regular file")
-    parent = target.parent if str(target.parent) else Path(".")
     fd, tmp = tempfile.mkstemp(prefix=".nerva-snapshot-", dir=parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
         os.chmod(tmp, 0o600)
         os.replace(tmp, target)
     except BaseException:
@@ -413,6 +428,10 @@ class SnapshotError(ValueError):
     pass
 
 
+class FileTooLarge(OSError):
+    """A regular file over the read bound."""
+
+
 def read_regular_file(path: str, limit: int) -> bytes:
     """At most ``limit`` bytes of a regular file, opened without following a final link and
     without blocking on a FIFO; anything else raises :class:`OSError`."""
@@ -435,7 +454,7 @@ def read_regular_file(path: str, limit: int) -> bytes:
         os.close(fd)
     data = b"".join(chunks)
     if len(data) > limit:
-        raise OSError(f"{path} is larger than {limit} bytes")
+        raise FileTooLarge(f"{path} is larger than {limit} bytes")
     return data
 
 
@@ -534,8 +553,21 @@ def _installed_optional(imported_reply: Any) -> set[str]:
     return found
 
 
-def plan_import(snapshot: dict, taps_reply: Any, imported_reply: Any) -> dict:
+def _shipped_optional(reply: Any) -> dict[str, str]:
+    """``{name: SKILL.md sha256}`` of the optional skills this hub ships (when it says)."""
+    rows = reply.get("skills") if isinstance(reply, Mapping) else None
+    out = {}
+    for row in (rows if isinstance(rows, list) else [])[:200]:
+        if isinstance(row, Mapping) and isinstance(row.get("name"), str):
+            sha = row.get("content_sha256")
+            if isinstance(sha, str) and _SHA64.fullmatch(sha):
+                out[row["name"]] = sha
+    return out
+
+
+def plan_import(snapshot: dict, taps_reply: Any, imported_reply: Any, optional_reply: Any = None) -> dict:
     """What an import would do, decided from the hub's current state (pure)."""
+    shipped = _shipped_optional(optional_reply)
     hub_taps = {str(row.get("id")): row for row in _tap_rows(taps_reply)}
     installed = _installed(imported_reply)
     optional_present = _installed_optional(imported_reply)
@@ -559,6 +591,9 @@ def plan_import(snapshot: dict, taps_reply: Any, imported_reply: Any) -> dict:
         elif skill["kind"] == "optional":
             if skill["slug"] in optional_present:
                 step, why = "skip", "installed here already, at this hub's own shipped version"
+            elif skill["slug"] in shipped and shipped[skill["slug"]] != skill["content_sha256"]:
+                # Installing would write other bytes than the snapshot names: refused up front.
+                step, why = "mismatch", "this hub ships another version of it than the snapshot's"
         elif skill["kind"] == "catalog":
             if catalog.get("status") != "active":
                 step, why = "skip", "the vendored catalog is unavailable on this hub"
@@ -579,31 +614,41 @@ def plan_import(snapshot: dict, taps_reply: Any, imported_reply: Any) -> dict:
 
 
 def _say_plan(ctx, plan: dict) -> None:
+    say = ctx.say
+    _say_plan_to(say, plan)
+
+
+def _say_plan_to(say, plan: dict) -> None:
     for tap in plan["taps"]:
         word = {"request": "request a card for", "present": "already trusted:", "conflict": "CONFLICT:",
                 "awaiting_approval": "card already pending for"}[tap["step"]]
         extra = " (this hub trusts it at another commit; left as it is)" if tap["step"] == "conflict" else ""
-        ctx.say(f"  tap   {word} {tap['repo']}@{tap['commit'][:8]} {tap['path']} ({tap['trust']}){extra}")
+        say(f"  tap   {word} {tap['repo']}@{tap['commit'][:8]} {tap['path']} ({tap['trust']}){extra}")
     for skill in plan["skills"]:
         why = f" — {skill['why']}" if skill["why"] else ""
         if skill["kind"] == "optional":
-            ctx.say(f"  skill {skill['step']:<9} {skill['slug']} from Nerva's optional skills{why}")
+            say(f"  skill {skill['step']:<9} {skill['slug']} from Nerva's optional skills{why}")
             continue
         source = "catalog" if skill["kind"] == "catalog" else skill["tap"]
-        ctx.say(f"  skill {skill['step']:<9} {skill['slug']} from {source}@{skill['commit'][:8]}{why}")
+        say(f"  skill {skill['step']:<9} {skill['slug']} from {source}@{skill['commit'][:8]}{why}")
+
+
+def _ask(ctx, prompt: str, refusal: str) -> bool:
+    """A yes/no question on the terminal; the prompt goes to stderr so stdout stays data."""
+    isatty = getattr(ctx.inp, "isatty", None)
+    if not (callable(isatty) and isatty()):
+        ctx.err.write(refusal + "\n")
+        return False
+    ctx.err.write(prompt)
+    ctx.err.flush()
+    answer = ctx.inp.readline(16)
+    return answer.strip().lower() in ("y", "yes")
 
 
 def _confirm(ctx, ns: argparse.Namespace) -> bool:
     if ns.yes:
         return True
-    isatty = getattr(ctx.inp, "isatty", None)
-    if not (callable(isatty) and isatty()):
-        ctx.err.write("not a terminal: re-run with --yes to go ahead (you read the plan)\n")
-        return False
-    ctx.out.write("Go ahead? [y/N] ")
-    ctx.out.flush()
-    answer = ctx.inp.readline(16)
-    return answer.strip().lower() in ("y", "yes")
+    return _ask(ctx, "Go ahead? [y/N] ", "not a terminal: re-run with --yes to go ahead (you read the plan)")
 
 
 def _import(ns: argparse.Namespace, ctx) -> int:
@@ -619,7 +664,13 @@ def _import(ns: argparse.Namespace, ctx) -> int:
         ctx.err.write(f"{_plain(ns.input, 200)}: {_plain(exc, 300)}\n")
         return EXIT_USAGE
     client = ctx.client()
-    plan = plan_import(snapshot, client.get(TAPS), client.get(IMPORTED))
+    optional_reply = None
+    if any(skill["kind"] == "optional" for skill in snapshot["skills"]):
+        try:
+            optional_reply = client.get(OPTIONAL_CATALOG)
+        except HubError:
+            optional_reply = None          # an older hub: the check after the install still runs
+    plan = plan_import(snapshot, client.get(TAPS), client.get(IMPORTED), optional_reply)
     if not ns.json:
         ctx.say(f"snapshot: {len(snapshot['skills'])} skill(s), {len(snapshot['taps'])} tap(s)")
         _say_plan(ctx, plan)
@@ -629,6 +680,10 @@ def _import(ns: argparse.Namespace, ctx) -> int:
         return EXIT_OK
     acting = any(t["step"] == "request" for t in plan["taps"]) or any(
         s["step"] == "install" for s in plan["skills"])
+    if acting and not ns.yes and ns.json:
+        # stdout carries only the JSON result: the plan and the question go to stderr.
+        ctx.err.write(f"snapshot: {len(snapshot['skills'])} skill(s), {len(snapshot['taps'])} tap(s)\n")
+        _say_plan_to(lambda line: ctx.err.write(line + "\n"), plan)
     if acting and not _confirm(ctx, ns):
         return EXIT_FAILED
     results = {"taps": [], "skills": []}
@@ -646,6 +701,9 @@ def _import(ns: argparse.Namespace, ctx) -> int:
         results["taps"].append(outcome)
     for skill in plan["skills"]:
         outcome = {"slug": skill["slug"], "step": skill["step"], "why": skill["why"]}
+        if skill["step"] == "mismatch":
+            failed += 1
+            outcome.update(result="mismatch", reason=skill["why"])
         if skill["step"] == "install":
             if skill["kind"] == "optional":
                 path, body = OPTIONAL_INSTALL, {"name": skill["slug"]}
@@ -668,10 +726,6 @@ def _import(ns: argparse.Namespace, ctx) -> int:
     installed = _installed(client.get(IMPORTED))
     for skill, outcome in zip(plan["skills"], results["skills"], strict=True):
         if outcome.get("result") == "installed" and (skill["content_sha256"], skill["commit"]) not in installed:
-            if skill["kind"] == "optional":
-                # The hub installs the copy it ships; another Nerva version ships other bytes.
-                outcome["reason"] = "this hub shipped another version of it than the snapshot's"
-                continue
             failed += 1
             outcome.update(result="mismatch", reason="the installed SKILL.md is not the snapshot's")
     if ns.json:
@@ -705,20 +759,26 @@ def _linked_component(root: Path, rel: str) -> bool:
 
 
 def _local_files(root: Path) -> tuple[dict[str, str], bool]:
-    """``{rel: "file"|"other"}`` under ``root`` without following links; bounded."""
+    """``{rel: "file"|"other"}`` under ``root`` without following links. Bounded: at most
+    ``MAX_DIFF_ENTRIES`` directory entries are looked at in all (files, folders and anything
+    else count), ``MAX_DIFF_FILES`` are kept and folders deeper than ``MAX_DIFF_DEPTH`` are not
+    entered; anything cut sets ``truncated``."""
     found: dict[str, str] = {}
     truncated = False
+    budget = MAX_DIFF_ENTRIES
     stack = [(root, 0)]
     while stack:
         current, depth = stack.pop()
         try:
-            entries = sorted(os.scandir(current), key=lambda e: e.name)
+            with os.scandir(current) as iterator:
+                entries = list(itertools.islice(iterator, budget + 1))
         except OSError:
             continue
-        for entry in entries:
+        if len(entries) > budget:
+            entries, truncated = entries[:budget], True
+        budget -= len(entries)
+        for entry in sorted(entries, key=lambda e: e.name):
             rel = Path(entry.path).relative_to(root).as_posix()
-            if len(found) >= MAX_DIFF_FILES:
-                return found, True
             try:
                 if entry.is_dir(follow_symlinks=False):
                     if depth + 1 < MAX_DIFF_DEPTH:
@@ -726,9 +786,14 @@ def _local_files(root: Path) -> tuple[dict[str, str], bool]:
                     else:
                         truncated = True
                     continue
-                found[rel] = "file" if entry.is_file(follow_symlinks=False) else "other"
+                kind = "file" if entry.is_file(follow_symlinks=False) else "other"
             except OSError:
-                found[rel] = "other"
+                kind = "other"
+            if len(found) >= MAX_DIFF_FILES:
+                return found, True
+            found[rel] = kind
+        if budget <= 0 and stack:
+            return found, True
     return found, truncated
 
 
@@ -747,41 +812,38 @@ def _sidecar(target: Path) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-def _optional_stock(target: Path, slug: str, optional_root: Path) -> tuple[dict[str, bytes] | None, str]:
-    """The shipped bytes of the Nerva optional skill ``slug`` when ``target`` is its install."""
-    from agents.core.skills.signing import SkillSourceSnapshotError, source_snapshot
-
-    data = _sidecar(target)
-    if not (data and data.get("imported") is True and data.get("source") == OPTIONAL_SOURCE
-            and data.get("source_path") == f"optional-skills/{slug}/SKILL.md"):
-        return None, ""
-    stock_dir = Path(optional_root) / slug
-    if stock_dir.is_symlink() or not stock_dir.is_dir():
-        return None, "this optional skill is no longer shipped with this install"
-    try:
-        snapshot = source_snapshot(stock_dir)
-    except (SkillSourceSnapshotError, OSError):
-        return None, "the shipped copy of this optional skill cannot be read as plain files"
-    files = {item.relative_path: item.content for item in snapshot.files
-             if item.kind == "file" and "__pycache__" not in PurePosixPath(item.relative_path).parts}
-    if len(files) > MAX_DIFF_FILES:
-        return None, "the shipped copy has too many files to compare"
-    return files, ""
+def _sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
-def diff_installed_skill(skills_dir: Path, ident: str, *, catalog_root: Path | None = None,
-                         optional_root: Path | None = None) -> dict:
-    """Compare a stock skill the owner installed with its stock copy: a skill of the vendored
-    Hermes catalog (byte-verified against MANIFEST.json) or one of Nerva's shipped optional
-    skills (``optional-skills/<slug>``, the copy ``POST /api/skills/optional/install`` makes).
-
-    ``{"ok": True, "skill", "source", "commit", "modified", "files": [{path, status, diff}]}``
-    with ``status`` in ``modified|added|removed|binary|not_plain``, or ``{"ok": False, "reason"}``."""
-    from agents.core.paths import app_root
+def _recorded_catalog_files(record: Mapping) -> dict[str, str]:
+    """``{rel: sha256}`` the catalog install recorded (the paths ``file_state`` honours)."""
     from agents.core.skills import hermes_catalog
 
-    stock: dict[str, bytes] | None = None
-    slug, source, commit, reason = "", "", "", ""
+    out: dict[str, str] = {}
+    for item in record.get("source_files") or []:
+        rel = item.get("path") if isinstance(item, Mapping) else None
+        sha = item.get("sha256") if isinstance(item, Mapping) else None
+        if (isinstance(rel, str) and isinstance(sha, str)
+                and (rel == "SKILL.md" or hermes_catalog.safe_extra_path(rel))):
+            out[rel] = sha
+    return out
+
+
+def _baseline(skills_dir: Path, ident: str, catalog_root: Path | None,
+              optional_root: Path | None) -> dict:
+    """What the install of ``ident`` recorded, and the stock copy as it is today.
+
+    ``{"ok": True, "slug", "source", "target", "recorded": {rel: sha256}, "complete": bool,
+    "stock": {rel: bytes} | None, "commit", "installed_commit"}`` — ``recorded`` is what the
+    install wrote (for a catalog install, its ``source_files``; for a Nerva optional skill, its
+    SKILL.md ``content_sha256``, plus every shipped file when the shipped copy is still the one
+    it was installed from); ``complete`` says the record covers every file the install wrote."""
+    from agents.core.paths import app_root
+    from agents.core.skills import hermes_catalog
+    from agents.core.skills.signing import SkillSourceSnapshotError, source_snapshot
+
+    reason = ""
     try:
         catalog = hermes_catalog.load(catalog_root)
     except hermes_catalog.CatalogError:
@@ -789,68 +851,132 @@ def diff_installed_skill(skills_dir: Path, ident: str, *, catalog_root: Path | N
     entry = hermes_catalog.resolve(catalog, ident) if catalog is not None else None
     if entry is not None:
         target = Path(skills_dir) / entry["slug"]
-        if hermes_catalog.catalog_record(target, entry) is not None:
+        record = hermes_catalog.catalog_record(target, entry)
+        if record is not None:
             try:
                 stock = hermes_catalog.verified_files(catalog, entry)
             except hermes_catalog.CatalogError:
-                return {"ok": False, "reason": "the vendored Hermes catalog does not match its manifest"}
-            slug, source, commit = entry["slug"], "hermes-catalog", catalog.commit
-    if stock is None:
-        name = str(ident or "").strip().strip("/")
-        if _OPTIONAL_SLUG.fullmatch(name):
-            target = Path(skills_dir) / name
-            if not target.is_symlink() and target.is_dir():
-                stock, why = _optional_stock(target, name, Path(optional_root or app_root() / "optional-skills"))
-                if stock is None and why:
-                    return {"ok": False, "reason": why}
-                if stock is not None:
-                    slug, source = name, OPTIONAL_SOURCE
-    if stock is None:
-        if entry is not None:
-            target = Path(skills_dir) / entry["slug"]
-            if not target.exists() and not target.is_symlink():
-                return {"ok": False, "reason": "this catalog skill is not installed"}
-            return {"ok": False, "reason": "this folder was not written by a catalog install of that skill"}
-        return {"ok": False, "reason": reason or (
-            "not a stock skill: diff compares a Hermes catalog install or a Nerva optional skill "
-            "with its stock copy")}
-    target = Path(skills_dir) / slug
+                stock = None
+            return {"ok": True, "slug": entry["slug"], "source": "hermes-catalog", "target": target,
+                    "recorded": _recorded_catalog_files(record), "complete": True, "stock": stock,
+                    "commit": catalog.commit, "installed_commit": str(record.get("source_commit") or "")}
+    name = str(ident or "").strip().strip("/")
+    if _OPTIONAL_SLUG.fullmatch(name):
+        target = Path(skills_dir) / name
+        data = _sidecar(target) if not target.is_symlink() and target.is_dir() else None
+        sha = data.get("content_sha256") if data else None
+        if (data and data.get("imported") is True and data.get("source") == OPTIONAL_SOURCE
+                and data.get("source_path") == f"optional-skills/{name}/SKILL.md"):
+            if not (isinstance(sha, str) and _SHA64.fullmatch(sha)):
+                return {"ok": False, "reason": "this optional skill's install recorded no SKILL.md digest"}
+            stock, fingerprint = None, None
+            stock_dir = Path(optional_root or app_root() / "optional-skills") / name
+            if not stock_dir.is_symlink() and stock_dir.is_dir():
+                try:
+                    snapshot = source_snapshot(stock_dir)
+                    fingerprint = snapshot.fingerprint
+                    stock = {item.relative_path: item.content for item in snapshot.files
+                             if item.kind == "file"
+                             and "__pycache__" not in PurePosixPath(item.relative_path).parts}
+                except (SkillSourceSnapshotError, OSError):
+                    stock = None
+            recorded, complete = {"SKILL.md": sha}, False
+            if stock is not None and fingerprint and fingerprint == data.get("source_fingerprint"):
+                # The shipped copy is the very snapshot this skill was installed from.
+                recorded, complete = {rel: _sha(body) for rel, body in stock.items()}, True
+            return {"ok": True, "slug": name, "source": OPTIONAL_SOURCE, "target": target,
+                    "recorded": recorded, "complete": complete, "stock": stock, "commit": "",
+                    "installed_commit": ""}
+    if entry is not None:
+        target = Path(skills_dir) / entry["slug"]
+        if not target.exists() and not target.is_symlink():
+            return {"ok": False, "reason": "this catalog skill is not installed"}
+        return {"ok": False, "reason": "this folder was not written by a catalog install of that skill"}
+    return {"ok": False, "reason": reason or (
+        "not a stock skill: diff compares a Hermes catalog install or a Nerva optional skill "
+        "with what its install wrote")}
+
+
+def diff_installed_skill(skills_dir: Path, ident: str, *, catalog_root: Path | None = None,
+                         optional_root: Path | None = None) -> dict:
+    """The owner's edits to a stock skill they installed, judged as the hub judges them
+    (``hermes_catalog.file_state``): against what the install *recorded* writing, never against
+    a newer stock copy. Changes the stock copy made since the install are reported apart, in
+    ``upstream``, and are never shown as edits.
+
+    ``{"ok": True, "skill", "source", "commit", "installed_commit", "modified", "files":
+    [{path, status, diff}], "behind", "upstream": [{path, status}], "not_compared", "truncated"}``;
+    edit ``status`` is ``modified|added|removed|binary|not_plain|too_large`` (``removed`` is a
+    file the owner deleted). A ``modified`` file carries a unified diff when the bytes it was
+    installed with are still on this machine (the stock copy has not moved), else ``""``."""
+    base = _baseline(skills_dir, ident, catalog_root, optional_root)
+    if not base.get("ok"):
+        return {"ok": False, "reason": base["reason"]}
+    target, recorded, stock = base["target"], base["recorded"], base["stock"]
     local, truncated = _local_files(target)
     for name in _CONTROL_TOP:
         local.pop(name, None)            # the install's own records, not the skill
     for rel in [r for r in local if "__pycache__" in PurePosixPath(r).parts]:
         local.pop(rel)
-    files = []
-    for rel in sorted(set(stock) | set(local)):
+    files, not_compared = [], []
+    for rel in sorted(set(recorded) | set(local)):
+        if rel not in recorded:
+            if base["complete"]:
+                files.append({"path": rel, "status": "added", "diff": ""})
+            else:
+                not_compared.append(rel)
+            continue
         if rel not in local:
             files.append({"path": rel, "status": "removed", "diff": ""})
             continue
         if local[rel] != "file" or _linked_component(target, rel):
             files.append({"path": rel, "status": "not_plain", "diff": ""})
             continue
-        if rel not in stock:
-            files.append({"path": rel, "status": "added", "diff": ""})
-            continue
         try:
             mine = read_regular_file(str(target / rel), MAX_DIFF_FILE_BYTES)
+        except FileTooLarge:
+            files.append({"path": rel, "status": "too_large", "diff": ""})
+            continue
         except OSError:
             files.append({"path": rel, "status": "not_plain", "diff": ""})
             continue
-        if mine == stock[rel]:
+        if hmac.compare_digest(_sha(mine), recorded[rel]):
+            continue
+        original = stock.get(rel) if stock is not None else None
+        if original is None or not hmac.compare_digest(_sha(original), recorded[rel]):
+            files.append({"path": rel, "status": "modified", "diff": ""})   # installed bytes gone
             continue
         try:
-            old, new = stock[rel].decode("utf-8"), mine.decode("utf-8")
+            old, new = original.decode("utf-8"), mine.decode("utf-8")
         except UnicodeDecodeError:
             files.append({"path": rel, "status": "binary", "diff": ""})
             continue
         lines = difflib.unified_diff(old.splitlines(keepends=True), new.splitlines(keepends=True),
-                                     fromfile=f"stock/{rel}", tofile=f"local/{rel}")
+                                     fromfile=f"installed/{rel}", tofile=f"local/{rel}")
         files.append({"path": rel, "status": "modified", "diff": "".join(lines)})
-    return {"ok": True, "skill": slug, "source": source, "commit": commit, "modified": bool(files),
-            "files": files, "truncated": truncated}
+    upstream = []
+    if stock is not None:
+        compare = set(recorded) | (set(stock) if base["complete"] else set())
+        for rel in sorted(compare):
+            if rel not in stock:
+                upstream.append({"path": rel, "status": "removed_upstream"})
+            elif rel not in recorded:
+                upstream.append({"path": rel, "status": "added_upstream"})
+            elif not hmac.compare_digest(_sha(stock[rel]), recorded[rel]):
+                upstream.append({"path": rel, "status": "changed_upstream"})
+    behind = bool(upstream) or bool(base["commit"] and base["installed_commit"]
+                                     and base["commit"] != base["installed_commit"])
+    return {"ok": True, "skill": base["slug"], "source": base["source"], "commit": base["commit"],
+            "installed_commit": base["installed_commit"], "modified": bool(files), "files": files,
+            "behind": behind, "upstream": upstream, "stock_known": stock is not None,
+            "not_compared": not_compared, "truncated": truncated}
 
 
 _COLOURS = {"+": "\x1b[32m", "-": "\x1b[31m", "@": "\x1b[36m"}
+_EDIT_WORDS = {"added": "+ you added {rel}", "removed": "- you deleted {rel}",
+               "binary": "~ {rel}: binary file differs from what was installed",
+               "not_plain": "! {rel}: not a plain file now (a link or a special file)",
+               "too_large": "! {rel}: changed, and now larger than 256 KiB (not shown)"}
 
 
 def _diff(ns: argparse.Namespace, ctx) -> int:
@@ -868,21 +994,20 @@ def _diff(ns: argparse.Namespace, ctx) -> int:
     if not result.get("ok"):
         ctx.err.write(f"{_plain(ns.name, 120)}: {result['reason']}\n")
         return EXIT_FAILED
+    catalog = result["source"] == "hermes-catalog"
     if not result["modified"]:
-        stock = (f"the catalog @{result['commit'][:8]}" if result["source"] == "hermes-catalog"
-                 else "the copy shipped with Nerva")
-        ctx.say(f"{result['skill']}: unmodified — every file matches {stock}")
-        return EXIT_OK
+        ctx.say(f"{result['skill']}: no local edits — every file is as its install wrote it")
     isatty = getattr(ctx.out, "isatty", None)
     colour = not ns.no_color and callable(isatty) and isatty()
     printed = 0
     for item in result["files"]:
         rel = _plain(item["path"], 200)
-        status = item["status"]
-        if status != "modified":
-            ctx.say({"added": f"+ only in your copy: {rel}", "removed": f"- only in stock: {rel}",
-                     "binary": f"~ {rel}: binary file differs",
-                     "not_plain": f"! {rel}: not a plain file (a link or a special file)"}[status])
+        if item["status"] in _EDIT_WORDS:
+            ctx.say(_EDIT_WORDS[item["status"]].format(rel=rel))
+            continue
+        if not item["diff"]:
+            ctx.say(f"~ {rel}: you changed it (the bytes it was installed with are no longer on this "
+                    "machine, so no line diff)")
             continue
         for line in item["diff"].splitlines():
             if printed >= MAX_DIFF_LINES:
@@ -895,13 +1020,20 @@ def _diff(ns: argparse.Namespace, ctx) -> int:
             ctx.say(text)
     if printed >= MAX_DIFF_LINES:
         ctx.say(f"… diff cut at {MAX_DIFF_LINES} lines")
+    for rel in result["not_compared"][:20]:
+        ctx.say(f"? {_plain(rel, 200)}: not compared (the install recorded no digest for it)")
     if result.get("truncated"):
-        ctx.say(f"(only the first {MAX_DIFF_FILES} files of your copy were compared)")
-    if result["source"] == "hermes-catalog":
-        ctx.say(f"revert with: nerva skills catalog repair {result['skill']} --force "
-                "(a copy of each edited file is kept)")
-    else:
-        ctx.say(f"the stock copy is optional-skills/{result['skill']} in this install")
+        ctx.say(f"(only part of your copy was compared: at most {MAX_DIFF_FILES} files, "
+                f"{MAX_DIFF_ENTRIES} entries, {MAX_DIFF_DEPTH} levels)")
+    if result["behind"]:
+        where = (f"the catalog is @{result['commit'][:8]}, this skill was installed @"
+                 f"{result['installed_commit'][:8]}" if catalog else "this install ships another version")
+        ctx.say(f"stock has moved on since the install ({where}); {len(result['upstream'])} file(s) "
+                "differ upstream — these are not your edits")
+        if catalog:
+            ctx.say(f"  take it: nerva skills update {result['skill']}")
+    if result["modified"] and catalog:
+        ctx.say(f"revert with: nerva skills reset {result['skill']} (a copy of each edited file is kept)")
     return EXIT_OK
 
 
@@ -1012,9 +1144,33 @@ def _check(ns: argparse.Namespace, ctx) -> int:
             wanted.update(r["skill"] for r in match)
         catalog_rows = [r for r in catalog_rows if r["skill"] in wanted]
     results, failed = [], 0
+    if not ns.force:
+        # The hub's repair restores files the owner deleted without --force; an update must
+        # not, so every edit (a deletion included) is checked here first, as `diff` sees it.
+        from agents.core.skills.loader import _writable_skills_dir
+
+        skills_dir, kept = _writable_skills_dir(), []
+        for row in catalog_rows:
+            local = diff_installed_skill(skills_dir, row["skill"])
+            if not local.get("ok"):
+                failed += 1
+                results.append({"skill": row["skill"], "result": "refused",
+                                "reason": "its folder cannot be checked for your edits from here "
+                                          "(run this on the hub's machine, or pass --force)"})
+            elif local["modified"]:
+                failed += 1
+                changed = sorted({f["status"] for f in local["files"]})
+                results.append({"skill": row["skill"], "result": "refused",
+                                "reason": f"you changed {len(local['files'])} file(s) ({', '.join(changed)}); "
+                                          "see `nerva skills diff`, or pass --force to replace them "
+                                          "(a copy of each edited file is kept)"})
+            else:
+                kept.append(row)
+        catalog_rows = kept
     for row in catalog_rows:
         try:
-            reply = client.post(CATALOG_INSTALL, {"skill": row["identifier"], "repair": True, "force": False})
+            reply = client.post(CATALOG_INSTALL, {"skill": row["identifier"], "repair": True,
+                                                  "force": bool(ns.force)})
             ok = isinstance(reply, Mapping) and reply.get("ok") is True
             results.append({"skill": row["skill"], "result": "updated" if ok else "failed"})
             failed += 0 if ok else 1
@@ -1030,8 +1186,8 @@ def _check(ns: argparse.Namespace, ctx) -> int:
             reason = f" — {item['reason']}" if item.get("reason") else ""
             ctx.say(f"  {item['skill']}: {item['result']}{reason}")
         if failed:
-            ctx.say("a skill you edited refuses the update; see `nerva skills diff <name>`, then "
-                    "`nerva skills reset <name>` to take stock and keep a copy of your edits")
+            ctx.say("a skill you edited (or deleted files of) is not updated; see `nerva skills diff <name>`, "
+                    "then `nerva skills update <name> --force` or `nerva skills reset <name>`")
     return EXIT_FAILED if failed else EXIT_OK
 
 
@@ -1039,7 +1195,8 @@ def installed_stock_folders(skills_dir: Path) -> list[str]:
     """Folder names under ``skills_dir`` whose sidecar says a catalog or optional install wrote them."""
     names = []
     try:
-        entries = sorted(os.scandir(skills_dir), key=lambda e: e.name)[:MAX_INSTALLED_FOLDERS]
+        with os.scandir(skills_dir) as iterator:
+            entries = sorted(itertools.islice(iterator, MAX_INSTALLED_FOLDERS), key=lambda e: e.name)
     except OSError:
         return names
     for entry in entries:
@@ -1062,24 +1219,32 @@ def _list_modified(ns: argparse.Namespace, ctx) -> int:
     from .nerva import EXIT_OK
 
     skills_dir = _writable_skills_dir()
-    rows, unreadable = [], []
+    rows, unreadable, behind = [], [], []
     for name in installed_stock_folders(skills_dir):
         result = diff_installed_skill(skills_dir, name)
         if not result.get("ok"):
             unreadable.append({"skill": name, "reason": result.get("reason")})
-        elif result["modified"]:
+            continue
+        if result["modified"]:
             counts: dict[str, int] = {}
             for item in result["files"]:
                 counts[item["status"]] = counts.get(item["status"], 0) + 1
-            rows.append({"skill": result["skill"], "source": result["source"], "files": counts})
+            rows.append({"skill": result["skill"], "source": result["source"], "files": counts,
+                         "behind": result["behind"]})
+        elif result["behind"]:
+            behind.append({"skill": result["skill"], "source": result["source"]})
     if ns.json:
-        _dump(ctx, {"modified": rows, "not_compared": unreadable})
+        _dump(ctx, {"modified": rows, "behind_only": behind, "not_compared": unreadable})
         return EXIT_OK
     if not rows:
         ctx.say("no stock skill was edited")
     for row in rows:
         detail = ", ".join(f"{n} {k}" for k, n in sorted(row["files"].items()))
-        ctx.say(f"  {_plain(row['skill'], 64):<28} {row['source']:<15} {detail}")
+        note = "  (stock has also moved on)" if row["behind"] else ""
+        ctx.say(f"  {_plain(row['skill'], 64):<28} {row['source']:<15} {detail}{note}")
+    for row in behind:
+        ctx.say(f"  {_plain(row['skill'], 64):<28} {row['source']:<15} not edited; stock has moved on "
+                "since the install")
     for row in unreadable:
         ctx.say(f"  {_plain(row['skill'], 64):<28} not compared: {_plain(row['reason'], 120)}")
     if rows:
@@ -1088,8 +1253,13 @@ def _list_modified(ns: argparse.Namespace, ctx) -> int:
 
 
 def _reset(ns: argparse.Namespace, ctx) -> int:
-    from .nerva import _skill_catalog
+    from .nerva import EXIT_FAILED, _skill_catalog
 
+    if not ns.yes:
+        ctx.err.write(f"reset replaces every file you edited in {_plain(ns.skill, 80)} and restores the ones "
+                      "you deleted (a copy of each edited file is kept on the hub)\n")
+        if not _ask(ctx, "Reset it? [y/N] ", "not a terminal: re-run with --yes to reset"):
+            return EXIT_FAILED
     return _skill_catalog(argparse.Namespace(catalog_action="repair", skill=ns.skill, force=True,
                                              json=ns.json), ctx)
 

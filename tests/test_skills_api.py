@@ -246,6 +246,11 @@ def test_optional_catalog_and_install_requires_admin(monkeypatch, tmp_path):
     assert response.status_code == 200
     assert any(row["name"] == "calendar" and row["tier"] == "optional"
                for row in response.json()["skills"])
+    # H025 review: the SKILL.md an install would write, so a snapshot import can tell versions apart.
+    import hashlib
+    rows = {row["name"]: row for row in response.json()["skills"]}
+    assert rows["calendar"]["content_sha256"] == hashlib.sha256((source / "SKILL.md").read_bytes()).hexdigest()
+    assert rows["health"]["content_sha256"] is None
 
 
 def test_optional_install_kernel_denial_writes_nothing(monkeypatch, tmp_path):

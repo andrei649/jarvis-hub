@@ -122,16 +122,18 @@ nerva skills search mail                          # every trusted source, ranked
 nerva skills inspect agentmail --from hermes-catalog
 nerva skills install lint --from owner--repo      # lands quarantined
 nerva skills check                                # installed skills behind their source
-nerva skills update                               # catalog skills up to this hub's catalog
+nerva skills update [--force]                     # catalog skills up to this hub's catalog
 nerva skills list-modified                        # stock skills you edited
 nerva skills reset agentmail                      # = catalog repair --force
 ```
 
 Hermes's `skills diff`, `skills snapshot export|import` and `skills tap add|list|remove`
 (H025), plus `search`, `inspect`, `install`, `check`, `update`, `list-modified` and `reset`
-(H024; `update` never forces past your edits). `diff` compares a catalog install with the vendored bytes, or a Nerva optional skill
-with `optional-skills/<slug>`, and names added, removed, binary and linked files; nothing is
-written. A snapshot records each catalog, tap and optional skill with its commit and the
+(H024; `update` never forces past your edits). `diff` and `list-modified` judge your edits against what the install recorded writing (the
+same record `repair` uses), never against a newer stock copy: a skill you did not touch is
+never "edited" after an upgrade, and what stock changed since is shown apart as "behind".
+Nothing is written. `update` leaves a skill you edited (or deleted files of) alone unless
+you pass `--force`; `reset` asks first (or `--yes`). A snapshot records each catalog, tap and optional skill with its commit and the
 sha256 of its SKILL.md; your own skills are listed as not exported. Importing one only
 *requests* a missing tap (your approval card, never trusted by the file), installs each skill
 through its own owner route one at a time, waits on taps whose card is still open, skips a

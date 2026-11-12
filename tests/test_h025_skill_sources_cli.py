@@ -7,6 +7,7 @@ local read is bounded and refuses links and special files; hub text is sanitised
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
@@ -27,8 +28,9 @@ SHA2 = "d" * 64
 
 
 class FakeHub:
-    def __init__(self, taps=None, imported=None, replies=None, after_install=None):
+    def __init__(self, taps=None, imported=None, replies=None, after_install=None, optional=None):
         self.calls = []
+        self.optional = optional if optional is not None else []
         self.taps = taps if taps is not None else []
         self.imported = imported if imported is not None else []
         self.replies = replies or {}
@@ -40,6 +42,8 @@ class FakeHub:
             return {"taps": self.taps}
         if path == ss.IMPORTED:
             return {"imported": self.imported}
+        if path == ss.OPTIONAL_CATALOG:
+            return {"skills": self.optional}
         raise AssertionError(path)
 
     def post(self, path, body=None, **_kw):
@@ -335,9 +339,9 @@ def test_import_asks_on_a_terminal(tmp_path):
         def isatty(self):
             return True
 
-    code, out, _, hub = run_cli(["snapshot", "import", _write(tmp_path, FULL)], FakeHub(taps=BUILTINS),
-                                stdin=Tty("n\n"))
-    assert code == EXIT_FAILED and "Go ahead?" in out and hub.writes() == []
+    code, out, err, hub = run_cli(["snapshot", "import", _write(tmp_path, FULL)], FakeHub(taps=BUILTINS),
+                                  stdin=Tty("n\n"))
+    assert code == EXIT_FAILED and "Go ahead?" in err and hub.writes() == []
 
 
 # ── diff ────────────────────────────────────────────────────────────────────────
@@ -375,7 +379,8 @@ def test_diff_shows_edits_additions_removals_and_links(tmp_path):
     code, out, err, _ = _run_diff(tmp_path, "antigravity-cli")
     assert code == EXIT_OK and err == ""
     assert "+my own line" in out and "\x1b" not in out and "\x07" not in out
-    assert "nerva skills catalog repair antigravity-cli --force" in out
+    assert "nerva skills reset antigravity-cli" in out
+    assert "--- installed/SKILL.md" in out
 
 
 def _run_diff(skills_dir, name):
@@ -408,13 +413,28 @@ def test_diff_compares_a_nerva_optional_skill_with_its_shipped_copy(tmp_path):
     mine.mkdir(parents=True)
     (mine / "SKILL.md").write_text("---\nname: email_triage\n---\nedited\n")
     (mine / "PENDING_REVIEW").write_text("x")
-    (mine / "manifest.json").write_text(json.dumps({
-        "name": "email_triage", "source": "nerva-optional", "imported": True,
-        "source_path": "optional-skills/email_triage/SKILL.md"}))
+    from agents.core.skills.signing import source_snapshot
+
+    shipped = (stock / "SKILL.md").read_bytes()
+    record = {"name": "email_triage", "source": "nerva-optional", "imported": True,
+              "content_sha256": hashlib.sha256(shipped).hexdigest(),
+              "source_fingerprint": source_snapshot(stock).fingerprint,
+              "source_path": "optional-skills/email_triage/SKILL.md"}
+    (mine / "manifest.json").write_text(json.dumps(record))
     result = ss.diff_installed_skill(skills, "email_triage", optional_root=tmp_path / "optional")
-    assert result["ok"] and result["source"] == "nerva-optional"
+    assert result["ok"] and result["source"] == "nerva-optional" and result["behind"] is False
     assert [(f["path"], f["status"]) for f in result["files"]] == [("SKILL.md", "modified")]
     assert "-stock" in result["files"][0]["diff"] and "+edited" in result["files"][0]["diff"]
+    # Another release ships other bytes: the edit is still an edit (judged by the recorded
+    # digest), the line diff is not offered, and the upstream change is reported apart.
+    (stock / "SKILL.md").write_text("---\nname: email_triage\n---\nnewer release\n")
+    result = ss.diff_installed_skill(skills, "email_triage", optional_root=tmp_path / "optional")
+    assert [(f["path"], f["status"], f["diff"]) for f in result["files"]] == [("SKILL.md", "modified", "")]
+    assert result["behind"] is True and result["upstream"] == [{"path": "SKILL.md", "status": "changed_upstream"}]
+    # Untouched: no edit, only "behind".
+    (mine / "SKILL.md").write_bytes(shipped)
+    result = ss.diff_installed_skill(skills, "email_triage", optional_root=tmp_path / "optional")
+    assert result["modified"] is False and result["behind"] is True
 
 
 def test_diff_does_not_read_a_manifest_that_is_a_fifo(tmp_path):
@@ -423,3 +443,96 @@ def test_diff_does_not_read_a_manifest_that_is_a_fifo(tmp_path):
     os.mkfifo(mine / "manifest.json")
     result = ss.diff_installed_skill(tmp_path / "skills", "email_triage", optional_root=tmp_path)
     assert result["ok"] is False and "not a stock skill" in result["reason"]
+
+
+# ── review round 1 regressions ──────────────────────────────────────────────────
+
+OLD_COMMIT = "1" * 40
+
+
+def _stale_unedited_install(skills_dir, slug="antigravity-cli"):
+    catalog = hermes_catalog.load()
+    entry = hermes_catalog.resolve(catalog, slug)
+    files = dict(hermes_catalog.verified_files(catalog, entry))
+    files["SKILL.md"] = files["SKILL.md"] + b"\nA paragraph upstream removed in the newer catalog.\n"
+    target = skills_dir / entry["slug"]
+    for rel, data in files.items():
+        (target / rel).parent.mkdir(parents=True, exist_ok=True)
+        (target / rel).write_bytes(data)
+    record = {"imported": True, "source": hermes_catalog.INSTALL_SOURCE,
+              **hermes_catalog.provenance(catalog, entry, files)}
+    record["source_commit"] = OLD_COMMIT
+    (target / "manifest.json").write_text(json.dumps(record))
+    return target, record, files
+
+
+def test_an_upstream_change_is_never_shown_as_a_local_edit(tmp_path):
+    target, record, files = _stale_unedited_install(tmp_path)
+    assert hermes_catalog.file_state(target, record)["edited"] == []
+    result = ss.diff_installed_skill(tmp_path, "antigravity-cli")
+    assert result["modified"] is False and result["files"] == []
+    assert result["behind"] is True and result["installed_commit"] == OLD_COMMIT
+    assert {"path": "SKILL.md", "status": "changed_upstream"} in result["upstream"]
+    code, out, _, _ = _run_diff(tmp_path, "antigravity-cli")
+    assert code == EXIT_OK and "no local edits" in out and "not your edits" in out
+    # A real edit and a deletion on top: judged against the record, exactly like file_state.
+    (target / "SKILL.md").write_bytes(files["SKILL.md"] + b"mine\n")
+    (target / "references" / "cli-docs.md").unlink()
+    state = hermes_catalog.file_state(target, record)
+    result = ss.diff_installed_skill(tmp_path, "antigravity-cli")
+    status = {f["path"]: f["status"] for f in result["files"]}
+    assert status == {"SKILL.md": "modified", "references/cli-docs.md": "removed"}
+    assert set(state["edited"]) == {"SKILL.md"} and set(state["missing"]) == {"references/cli-docs.md"}
+    # The bytes it was installed with are not on this machine any more: no invented diff.
+    assert next(f for f in result["files"] if f["path"] == "SKILL.md")["diff"] == ""
+
+
+def test_a_large_file_is_reported_as_too_large(tmp_path):
+    target, _ = _catalog_install(tmp_path)
+    (target / "SKILL.md").write_bytes(b"x" * (ss.MAX_DIFF_FILE_BYTES + 1))
+    result = ss.diff_installed_skill(tmp_path, "antigravity-cli")
+    assert [(f["path"], f["status"]) for f in result["files"]] == [("SKILL.md", "too_large")]
+
+
+def test_the_walk_is_bounded_by_entries_including_folders(tmp_path):
+    for i in range(ss.MAX_DIFF_ENTRIES + 50):
+        (tmp_path / f"d{i}").mkdir()
+    found, truncated = ss._local_files(tmp_path)
+    assert found == {} and truncated is True
+
+
+def test_export_refuses_a_linked_parent_folder(tmp_path):
+    real = tmp_path / "real"
+    real.mkdir()
+    (tmp_path / "linked").symlink_to(real)
+    code, _, err, _ = run_cli(["snapshot", "export", str(tmp_path / "linked" / "s.json")], FakeHub(taps=BUILTINS))
+    assert code == EXIT_FAILED and "link" in err and list(real.iterdir()) == []
+
+
+def test_import_json_keeps_stdout_pure_when_asking(tmp_path):
+    class Tty(io.StringIO):
+        def isatty(self):
+            return True
+
+    hub = FakeHub(taps=BUILTINS, optional=[{"name": "email_triage", "content_sha256": SHA}])
+    hub.after_install = lambda path, body: hub.imported.append(
+        {"source": "nerva-optional", "content_sha256": SHA, "source_path": "optional-skills/email_triage/SKILL.md"})
+    data = _snapshot(skills=[{"kind": "optional", "slug": "email_triage", "content_sha256": SHA}])
+    code, out, err, _ = run_cli(["snapshot", "import", _write(tmp_path, data), "--json"], hub, stdin=Tty("y\n"))
+    assert code == EXIT_OK, err
+    assert json.loads(out)["failed"] == 0
+    assert "Go ahead?" in err and "email_triage" in err
+
+
+def test_an_optional_skill_of_another_version_fails_the_run(tmp_path):
+    data = _snapshot(skills=[{"kind": "optional", "slug": "email_triage", "content_sha256": SHA}])
+    # Warned in the plan, nothing installed, the run fails.
+    hub = FakeHub(taps=BUILTINS, optional=[{"name": "email_triage", "content_sha256": SHA2}])
+    code, out, _, hub = run_cli(["snapshot", "import", _write(tmp_path, data), "--yes"], hub)
+    assert code == EXIT_FAILED and "ships another version" in out and hub.writes() == []
+    # A hub that does not say what it ships: installed, then the check fails the run.
+    hub = FakeHub(taps=BUILTINS)
+    hub.after_install = lambda path, body: hub.imported.append(
+        {"source": "nerva-optional", "content_sha256": SHA2, "source_path": "optional-skills/email_triage/SKILL.md"})
+    code, out, _, _ = run_cli(["snapshot", "import", _write(tmp_path, data), "--yes"], hub)
+    assert code == EXIT_FAILED and "email_triage: mismatch" in out

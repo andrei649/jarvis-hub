@@ -98,7 +98,15 @@ def test_check_lists_skills_behind_their_source():
     assert "every installed pinned skill is at its source's current commit" in out
 
 
-def test_update_repairs_only_catalog_skills_without_force():
+@pytest.fixture
+def local_agentmail(tmp_path, monkeypatch):
+    from agents.core.skills import loader
+
+    monkeypatch.setattr(loader, "_writable_skills_dir", lambda: tmp_path)
+    return _catalog_install(tmp_path, "agentmail")
+
+
+def test_update_repairs_only_unedited_catalog_skills_without_force(local_agentmail):
     hub = FakeHub(gets=_state())
     code, out, _ = run_cli(["update"], hub)
     assert code == EXIT_OK
@@ -108,11 +116,33 @@ def test_update_repairs_only_catalog_skills_without_force():
     assert "agentmail: updated" in out
 
 
-def test_update_reports_an_edited_skill_and_never_forces():
+def test_update_reports_a_hub_refusal_sanitised(local_agentmail):
     hub = FakeHub(gets=_state(), posts={ss.CATALOG_INSTALL: HubError(409, "local_edits: SKILL.md\x1b[2J")})
     code, out, _ = run_cli(["update", "agentmail"], hub)
     assert code == EXIT_FAILED and "\x1b" not in out and "nerva skills reset" in out
     assert all(c[2]["force"] is False for c in hub.calls if c[0] == "POST")
+
+
+def test_update_never_restores_a_file_the_owner_deleted(local_agentmail):
+    target, _files = local_agentmail
+    (target / "references" / "core.md").unlink()
+    hub = FakeHub(gets=_state())
+    code, out, _ = run_cli(["update"], hub)
+    assert code == EXIT_FAILED and "removed" in out and "--force" in out
+    assert not [c for c in hub.calls if c[0] == "POST"]
+    code, out, _ = run_cli(["update", "--force"], hub)
+    assert code == EXIT_OK
+    assert [c for c in hub.calls if c[0] == "POST"][-1][2]["force"] is True
+
+
+def test_update_refuses_a_skill_it_cannot_check_from_here(tmp_path, monkeypatch):
+    from agents.core.skills import loader
+
+    monkeypatch.setattr(loader, "_writable_skills_dir", lambda: tmp_path)
+    hub = FakeHub(gets=_state())
+    code, out, _ = run_cli(["update"], hub)
+    assert code == EXIT_FAILED and "cannot be checked" in out
+    assert not [c for c in hub.calls if c[0] == "POST"]
 
 
 def test_update_refuses_a_name_that_is_not_behind():
@@ -126,7 +156,9 @@ def test_reset_is_the_forced_catalog_repair():
     hub = FakeHub(posts={ss.CATALOG_INSTALL: {"ok": True, "skill": "agentmail", "commit": NEW,
                                               "action": "repair", "status": "repaired",
                                               "replaced": ["SKILL.md"], "audited": True}})
-    code, out, _ = run_cli(["reset", "agentmail"], hub)
+    code, _, err = run_cli(["reset", "agentmail"], hub)
+    assert code == EXIT_FAILED and "--yes" in err and hub.calls == []
+    code, out, _ = run_cli(["reset", "agentmail", "--yes"], hub)
     assert code == EXIT_OK
     assert hub.calls == [("POST", ss.CATALOG_INSTALL, {"skill": "agentmail", "repair": True, "force": True})]
     assert "replaced your edit of SKILL.md" in out
@@ -148,7 +180,7 @@ def test_list_modified_finds_edited_stock_skills(tmp_path, monkeypatch):
     assert code == EXIT_OK and err == ""
     data = json.loads(out)
     assert data["modified"] == [{"skill": "antigravity-cli", "source": "hermes-catalog",
-                                 "files": {"added": 1, "modified": 1}}]
+                                 "files": {"added": 1, "modified": 1}, "behind": False}]
     (target / "SKILL.md").write_bytes(files["SKILL.md"])
     (target / "extra.md").unlink()
     code, out, _ = run_cli(["list-modified"], FakeHub())

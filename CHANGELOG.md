@@ -47,6 +47,11 @@
   through the usual owner routes, asks before it starts, and tells you what waits for a card.
 - `nerva skills diff NAME` shows what you changed in a Hermes catalog skill or a Nerva
   optional skill, as a diff against its stock copy.
+- Fixed before release: `nerva skills diff` and `list-modified` no longer call a skill you
+  never touched "edited" after an upgrade (they compare with what was installed and show what
+  stock changed separately); `update` no longer restores files you deleted without `--force`;
+  `reset` asks first; a snapshot import fails, and says so in its plan, when this machine ships
+  another version of an optional skill; `--json` output stays pure JSON when it asks.
 - `nerva skills search | inspect | install` find a skill across the catalog and your trusted
   sources, show what it needs, and install it (quarantined, as in the HUD).
 - `nerva skills check` lists installed skills whose source moved on; `nerva skills update`
