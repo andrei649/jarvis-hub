@@ -20,6 +20,8 @@ import logging
 import re
 import smtplib
 import socket
+import time
+from collections import OrderedDict
 from email.header import decode_header, make_header
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid, parseaddr
@@ -43,8 +45,28 @@ _TRANSIENT_WORDS = ("[unavailable]", "temporary", "temporarily", "try again", "[
 #: Messages taken from the mailbox in one poll, and the largest one read at all.
 MAX_PER_POLL = 20
 MAX_MESSAGE_BYTES = 25 * 1024 * 1024
-#: A document attachment gets this long to turn into text.
+#: A document attachment gets this long to turn into text, and one poll this long in all;
+#: a message whose documents would run past it waits for the next poll.
 DOCUMENT_TIMEOUT_S = 20.0
+POLL_DOCUMENT_BUDGET_S = 60.0
+#: How many times a message whose routing raised is tried again before it is given up.
+ROUTE_ATTEMPTS = 3
+
+
+class _Budget:
+    """Seconds of document extraction one poll may still spend."""
+
+    def __init__(self, seconds: float) -> None:
+        self._left = float(seconds)
+
+    def left(self) -> float:
+        return self._left
+
+    def spent(self) -> bool:
+        return self._left <= 0
+
+    def charge(self, seconds: float) -> None:
+        self._left -= max(0.0, float(seconds))
 _UID_LIST = re.compile(rb"\d+")
 _SIZE = re.compile(rb"RFC822\.SIZE (\d+)")
 
@@ -228,6 +250,9 @@ class EmailChannel(ChannelAdapter):
                                     if require_sender_auth is None else bool(require_sender_auth))
         #: Inbound messages not routed, by reason (a count only; no address is kept).
         self.suppressed: dict[str, int] = {}
+        #: (UIDVALIDITY, UID) already routed, and routing failures per message (bounded).
+        self._routed: OrderedDict[tuple, None] = OrderedDict()
+        self._route_failures: dict[tuple, int] = {}
 
     def _own_addresses(self) -> frozenset[str]:
         return email_inbound.own_addresses(self.smtp.get("from", ""), self.smtp.get("user", ""),
@@ -348,12 +373,52 @@ class EmailChannel(ChannelAdapter):
         logger.info("Email: inbound message not routed (%s)", reason)
 
     async def _check_imap(self):
+        """Fetch, then route each message on its own: one that raises does not cost the
+        rest of the batch. The watermark is moved back to just before the first message
+        that failed (retried up to :data:`ROUTE_ATTEMPTS` times) or that the poll's
+        document budget deferred; messages already routed are remembered and not routed
+        again when they are fetched a second time."""
         loop = asyncio.get_event_loop()
         messages = await loop.run_in_executor(None, self._imap_fetch)
+        budget = _Budget(POLL_DOCUMENT_BUDGET_S)
+        rewind: int | None = None
         for item in messages:
-            await self._route(item)
+            ident = (item.get("_validity"), item.get("uid"))
+            if ident in self._routed:
+                continue
+            if budget.spent() and self._needs_documents(item):
+                # Over this poll's time for documents: deferred, not dropped.
+                self._suppress("deferred_document_budget")
+                rewind = item["uid"] - 1 if rewind is None else min(rewind, item["uid"] - 1)
+                break
+            try:
+                await self._route(item, budget)
+            except Exception:
+                failures = self._route_failures.get(ident, 0) + 1
+                self._route_failures[ident] = failures
+                logger.warning("Email: routing a message failed (attempt %d)", failures,
+                               exc_info=True)
+                if failures < ROUTE_ATTEMPTS:
+                    rewind = item["uid"] - 1 if rewind is None else min(rewind, item["uid"] - 1)
+                    continue
+                self._suppress("route_failed")
+            self._route_failures.pop(ident, None)
+            self._routed[ident] = None
+            while len(self._routed) > 2048:
+                self._routed.popitem(last=False)
+        if rewind is not None and messages:
+            store = self._seen_store()
+            key = EmailSeenStore.key(self.imap.get("host", ""), self.imap.get("user", ""))
+            state = store.get(key)
+            validity = messages[0].get("_validity")
+            if state is not None and state["uidvalidity"] == validity and rewind < state["last_uid"]:
+                store.set(key, validity, rewind)
 
-    async def _route(self, item: dict) -> None:
+    def _needs_documents(self, item: dict) -> bool:
+        return (any(getattr(a, "kind", "") == "file" for a in item.get("attachments") or ())
+                and self._sender_may_be_read(item.get("sender") or ""))
+
+    async def _route(self, item: dict, budget: "_Budget | None" = None) -> None:
         """One parsed inbound message → the gateway, unless it must not be answered."""
         if not self.handler:
             return
@@ -362,10 +427,11 @@ class EmailChannel(ChannelAdapter):
             return
         auth: email_inbound.SenderAuth = item["auth"]
         if auth.verdict == email_inbound.VERDICT_FAIL:
-            # A forged From of a paired address must not speak as that address.
+            # The receiving server reported this message as failing authentication.
             self._suppress("sender_auth_failed")
             return
-        if self.require_sender_auth and auth.verdict != email_inbound.VERDICT_PASS:
+        if self.require_sender_auth and not (auth.verdict == email_inbound.VERDICT_PASS
+                                             and auth.basis == "configured"):
             self._suppress("sender_unverified")
             return
         sender = item["sender"]
@@ -373,12 +439,19 @@ class EmailChannel(ChannelAdapter):
             self._suppress("no_sender")
             return
         text = item["body"] or item["subject"]
-        notes = await self._attachment_notes(sender, item["attachments"], item["skipped"])
+        notes = await self._attachment_notes(sender, item["attachments"], item["skipped"],
+                                             budget=budget)
         if notes:
             text = f"{text}\n\n{notes}" if text else notes
+        extra = {}
+        if item["message_id"]:
+            # H120: the provider's id for this message, bound to its sender, for the
+            # gateway's duplicate window and the reply queue's idempotency.
+            extra["provider_id"] = f"{sender}:{item['message_id']}"
         await self.handler(text, channel="email", sender=sender, from_addr=sender,
                            subject=item["subject"], email_message_id=item["message_id"],
-                           email_references=item["references"], sender_auth=auth.to_dict())
+                           email_references=item["references"], sender_auth=auth.to_dict(),
+                           **extra)
 
     def _sender_may_be_read(self, sender: str) -> bool:
         pairing = self.pairing
@@ -389,7 +462,8 @@ class EmailChannel(ChannelAdapter):
         except Exception:
             return False
 
-    async def _attachment_notes(self, sender: str, atts: list, skipped: int) -> str:
+    async def _attachment_notes(self, sender: str, atts: list, skipped: int, *,
+                                budget: "_Budget | None" = None) -> str:
         """H096 — what came attached, for the turn. Contents are read only for a sender the
         pairing gate already admits (a stranger's files are named, never opened); images go
         to the proven-local vision model only, text files arrive fenced as data."""
@@ -419,7 +493,7 @@ class EmailChannel(ChannelAdapter):
                     why = media_reader.note(description) if description is not None else ""
                     lines.append(f"{label} — not read" + (f": {why}" if why else "") + ".")
                 continue
-            document = await self._document_text(att)
+            document = await self._document_text(att, budget=budget)
             if document:
                 lines.append(f"{label}, its text as data:\n" + document)
             else:
@@ -429,7 +503,7 @@ class EmailChannel(ChannelAdapter):
         return "\n".join(lines)
 
     @staticmethod
-    async def _document_text(att) -> str:
+    async def _document_text(att, *, budget: "_Budget | None" = None) -> str:
         """A PDF, Word, Excel, CSV or Markdown attachment's text, through the bounded
         document extractor the Workspace uploads use (kind from the file name, confirmed
         by the file's own magic bytes), fenced as data. ``""`` when it cannot be read."""
@@ -439,10 +513,17 @@ class EmailChannel(ChannelAdapter):
         kind = extract.kind_for_filename(att.name)
         if kind is None or not extract.content_matches(kind, att.data):
             return ""
+        timeout = DOCUMENT_TIMEOUT_S if budget is None else min(DOCUMENT_TIMEOUT_S, budget.left())
+        if timeout <= 0:
+            return ""
+        started = time.monotonic()
         try:
-            found = await extract.extract_document(att.data, kind, timeout=DOCUMENT_TIMEOUT_S)
+            found = await extract.extract_document(att.data, kind, timeout=timeout)
         except Exception:
             return ""
+        finally:
+            if budget is not None:
+                budget.charge(time.monotonic() - started)
         text = "\n".join(segment.text for segment in found.segments)
         text = text[:email_inbound.MAX_TEXT_ATTACHMENT_CHARS]
         if not text.strip():
@@ -528,25 +609,27 @@ class EmailChannel(ChannelAdapter):
         # "N:*" always answers the newest UID, even when it is below N.
         uids = sorted({u for u in _uids(data) if u > last})[:MAX_PER_POLL]
         messages: list[dict] = []
-        try:
-            for uid in uids:
-                # At most once, like every other channel's inbound: a message that failed
-                # to read is not fetched again on every poll.
+        for uid in uids:
+            # An IMAP error raises out of this loop before the watermark moves, so a
+            # message already read in this poll is read again next time, never lost.
+            status, data = mail.uid("FETCH", str(uid), "(RFC822.SIZE)")
+            size = _fetched_size(data) if status == "OK" else None
+            if size is None or size > MAX_MESSAGE_BYTES:
+                self._suppress("too_large" if size else "unreadable")
                 last = max(last, uid)
-                status, data = mail.uid("FETCH", str(uid), "(RFC822.SIZE)")
-                size = _fetched_size(data) if status == "OK" else None
-                if size is None or size > MAX_MESSAGE_BYTES:
-                    self._suppress("too_large" if size else "unreadable")
-                    continue
-                status, data = mail.uid("FETCH", str(uid), "(BODY.PEEK[])")
-                raw = _fetched_bytes(data) if status == "OK" else None
-                if not raw or len(raw) > MAX_MESSAGE_BYTES:
-                    self._suppress("unreadable")
-                    continue
-                try:
-                    messages.append(self._parse(raw))
-                except Exception:
-                    self._suppress("unparseable")
-        finally:
-            store.set(key, validity, last)
+                continue
+            status, data = mail.uid("FETCH", str(uid), "(BODY.PEEK[])")
+            raw = _fetched_bytes(data) if status == "OK" else None
+            last = max(last, uid)
+            if not raw or len(raw) > MAX_MESSAGE_BYTES:
+                self._suppress("unreadable")
+                continue
+            try:
+                item = self._parse(raw)
+            except Exception:
+                self._suppress("unparseable")
+                continue
+            item["uid"], item["_validity"] = uid, validity
+            messages.append(item)
+        store.set(key, validity, last)
         return messages

@@ -14,14 +14,18 @@
 - A Telegram command that arrives more than 15 minutes after you sent it (a stuck queue on
   Telegram's side) is not run; Nerva tells you to send it again. Change the limit with
   `JARVIS_CHANNEL_LATE_DELIVERY_S`.
+- A message that comes back again much later (after a restart, or a provider's late retry)
+  still never gets a second reply card: the card already made for it stands.
 
 **Email is a real conversation channel**
-- Nerva reads what your mail provider concluded about each sender (SPF, DKIM, DMARC). A
-  message whose check failed is ignored, so someone faking your address cannot speak as
-  you; the reply card says "verified sender", "sender authentication FAILED" or "unverified
-  sender". Name your provider's server in `EMAIL_TRUSTED_AUTHSERV_IDS` (for example
-  `mx.google.com`) to trust only its verdict; `EMAIL_REQUIRE_SENDER_AUTH=true` also ignores
-  unverified mail.
+- Nerva reads what your mail server concluded about each sender (SPF, DKIM, DMARC) and
+  shows it on the reply card: "verified sender", "sender authentication FAILED" or
+  "unverified sender". Name your server in `EMAIL_TRUSTED_AUTHSERV_IDS` (for example
+  `mx.google.com`): only its verdict can mark a sender verified; without it every sender
+  shows as unverified. A message your server reported as failing is ignored. That alone
+  does not stop every forged address (a forgery the server could not judge arrives as
+  "unverified"); `EMAIL_REQUIRE_SENDER_AUTH=true` lets in only mail your named server
+  verified.
 - Auto-replies, bounces, mailing lists and no-reply senders no longer get answered, so a
   vacation responder cannot start a loop.
 - Nerva remembers which messages it already handled instead of relying on "unread", and no
@@ -32,7 +36,10 @@
   PDF, Word and Excel files as text. A stranger's attachments are only named.
 - Replies stay in the same thread in your mail program (`Re:` subject and thread headers).
 - A reply may attach a file with a `MEDIA: /path` line; the approval card names the file,
-  and if the file changes after you approve it, nothing is sent.
+  the folder it comes from, its size and the start of its fingerprint, and if the file
+  changes after you approve it, nothing is sent.
+- If the mail server drops the connection in the middle of a check, or one message cannot
+  be handled, the other messages are not lost; they are picked up on the next check.
 - If your mail server cannot be reached over IPv6, Nerva tries IPv4 once.
 
 **`nerva chat -i` streams its answers**

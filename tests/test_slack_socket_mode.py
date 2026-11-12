@@ -179,7 +179,8 @@ async def test_sdk_thread_ack_is_prompt_and_dispatch_runs_on_hub_loop(sdk):
         await asyncio.wait_for(asyncio.to_thread(client.emit, envelope()), timeout=2)
         await asyncio.wait_for(entered.wait(), timeout=2)
         assert client.acks == ["envelope-Ev1"]
-        assert seen == [("hello", {"channel": "slack", "slack_channel": "D1", "sender": "T1:U1"}, main_thread)]
+        assert seen == [("hello", {"channel": "slack", "slack_channel": "D1", "sender": "T1:U1",
+                                   "provider_id": "T1:D1:100.001"}, main_thread)]   # H120
         # A blocked handler must not hold either ACK or another SDK callback.
         await asyncio.wait_for(asyncio.to_thread(client.emit, envelope("Ev2")), timeout=2)
         assert len(client.acks) == 2 and len(seen) == 1
@@ -212,8 +213,10 @@ async def test_allowed_events_keep_only_safe_room_thread_identity(sdk):
         client.emit(envelope("Ev2", event={"type": "app_mention", "channel": "C1", "channel_type": "channel"}))
         await settle()
         assert seen == [
-            ("hello", {"channel": "slack", "slack_channel": "D1", "sender": "T1:U1", "thread_ts": "99.000001"}),
-            ("hello", {"channel": "slack", "slack_channel": "C1", "sender": "T1:U1", "thread_ts": "100.001"}),
+            ("hello", {"channel": "slack", "slack_channel": "D1", "sender": "T1:U1", "thread_ts": "99.000001",
+                       "provider_id": "T1:D1:100.001"}),
+            ("hello", {"channel": "slack", "slack_channel": "C1", "sender": "T1:U1", "thread_ts": "100.001",
+                       "provider_id": "T1:C1:100.001"}),
         ]
     finally:
         await channel.stop()
@@ -587,7 +590,9 @@ async def test_socket_ingress_reaches_persistent_inbox_only_after_real_pairing(s
         assert inbox.threads() == [] and seen == []
         assert gateway.get_summary()["total_held"] == 1
         pairing.approve("slack", "T1:U1")
-        await asyncio.to_thread(client.emit, envelope("Ev2", event={"thread_ts": "99.001"}))
+        # A new message (its own ts): the held one is not delivered twice (H120).
+        await asyncio.to_thread(client.emit, envelope("Ev2", event={"thread_ts": "99.001",
+                                                                     "ts": "100.002"}))
         await settle()
         persisted = ChannelInboxStore(inbox_path)
         assert persisted.threads()[0]["reply"] == {"slack_channel": "D1", "thread_ts": "99.001"}

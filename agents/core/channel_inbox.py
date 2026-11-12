@@ -97,6 +97,33 @@ class ChannelInboxStore(JsonStore):
                     return dict(message)
         return None
 
+    def reply_task_for(self, message: dict) -> int | None:
+        """H120 — the reply task already queued for this inbound message or for an earlier
+        delivery of the same provider message (same channel and provider id), if any."""
+        channel = message.get("channel")
+        provider_id = message.get("provider_id")
+        with self._lock:
+            for stored in self._messages:
+                if stored.get("direction") != "in" or stored.get("channel") != channel:
+                    continue
+                if stored.get("id") != message.get("id") and (
+                        not provider_id or stored.get("provider_id") != provider_id):
+                    continue
+                if type(stored.get("reply_task")) is int:
+                    return stored["reply_task"]
+        return None
+
+    def mark_reply_task(self, message_id: str, task_id: int) -> None:
+        """Record that *task_id* is the reply card for inbound message *message_id*."""
+        if type(task_id) is not int or task_id <= 0:
+            return
+        with self._lock:
+            for stored in self._messages:
+                if stored.get("id") == message_id and stored.get("direction") == "in":
+                    stored["reply_task"] = task_id
+                    self._save()
+                    return
+
     def messages(self, thread_id: str, *, limit: int = 50) -> list[dict]:
         n = max(1, int(limit or 50))
         with self._lock:
@@ -180,6 +207,10 @@ class ChannelInboxStore(JsonStore):
         taint_fields = _taint_metadata(metadata or {})
         if channel == "email" and direction == "in" and isinstance(metadata, dict):
             taint_fields["sender_auth"] = metadata.get("sender_auth")
+        if direction == "in" and isinstance(metadata, dict):
+            # H120: the provider's id for this message (adapter-supplied), so a
+            # redelivery of it can be recognised by the reply queue.
+            taint_fields["provider_id"] = metadata.get("provider_id")
         rec = self._public({
             "id": message_id,
             "thread_id": thread_id,
@@ -216,6 +247,12 @@ class ChannelInboxStore(JsonStore):
             "taint_source": str(message.get("taint_source", "")),
             "injection_flags": _injection_flags(message.get("injection_flags")),
         }
+        provider_id = _provider_id(message.get("provider_id"))
+        if provider_id and out["direction"] == "in":
+            out["provider_id"] = provider_id
+        task = message.get("reply_task")
+        if type(task) is int and task > 0:
+            out["reply_task"] = task
         # H096: the receiving mail server's SPF/DKIM/DMARC verdict, shown beside the
         # message (email only; anything malformed is dropped, never repaired).
         if out["channel"] == "email" and out["direction"] == "in":
@@ -254,6 +291,12 @@ def _sender_from_metadata(channel: str, metadata: dict | str) -> str:
         if isinstance(value, (str, int)) and str(value):
             return str(value)
     return channel
+
+
+def _provider_id(value: Any) -> str:
+    if not isinstance(value, str) or not value or len(value) > 300 or not value.isprintable():
+        return ""
+    return value
 
 
 def _taint_metadata(metadata: dict) -> dict:

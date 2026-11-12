@@ -176,6 +176,21 @@ def _email_attachments(text: str):
     return words, files
 
 
+def _folder(path: str) -> str:
+    import os.path
+
+    return os.path.dirname(path) or "/"
+
+
+def _human_size(size: int) -> str:
+    value = float(size)
+    for unit in ("bytes", "KB", "MB"):
+        if value < 1024 or unit == "MB":
+            return f"{int(value)} bytes" if unit == "bytes" else f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{size} bytes"
+
+
 def _approved_attachments(listed):
     """H096 — re-resolve each approved attachment just before SMTP and insist on the very
     bytes the owner approved (same SHA-256 and size); anything else blocks the send."""
@@ -387,7 +402,15 @@ class ChannelReplyBroker:
         if (message is None or message.get("direction") != "in"
                 or message.get("channel") != channel):
             return {"ok": False, "reason": "unknown_inbound_message"}
-        return self._request({
+        # H120: one card per provider message. A second request for the same stored turn,
+        # or for a redelivery of the same provider message (after the gateway's window,
+        # after a restart), gets the existing task instead of a second approval card.
+        existing = self._inbox.reply_task_for(message)
+        if existing is not None:
+            self._record("channel_reply.duplicate", channel, thread_id=message["thread_id"])
+            return {"ok": True, "queued": False, "duplicate": True, "task_id": existing,
+                    "kind": CHANNEL_REPLY_TASK_KIND}
+        result = self._request({
             "thread_id": message["thread_id"],
             "last_message_id": message["id"],
             "channel": channel,
@@ -395,6 +418,9 @@ class ChannelReplyBroker:
             "from": message.get("sender", ""),
             "sender_auth": message.get("sender_auth"),
         }, text, agent=agent, source=source)
+        if result.get("queued") and type(result.get("task_id")) is int:
+            self._inbox.mark_reply_task(message["id"], result["task_id"])
+        return result
 
     def _request(self, thread: dict, text: str, *, agent: str | None, source: str,
                  pending: _PromptDelivery | None = None, native_prompt: dict | None = None) -> dict:
@@ -488,7 +514,11 @@ class ChannelReplyBroker:
             auth = clean_sender_auth(thread.get("sender_auth"))
             title += f" ({SenderAuth(**auth).label if auth else 'unverified sender'})"
             if payload.get("attachments"):
-                title += " + " + ", ".join(a["name"] for a in payload["attachments"])
+                # What leaves, readably: the file, the folder it is read from, its size
+                # and the start of its SHA-256 (the full digest is in the payload).
+                title += " + attaching " + "; ".join(
+                    f"{a['name']} from {_folder(a['path'])} ({_human_size(a['bytes'])}, "
+                    f"sha256 {a['sha256'][:12]})" for a in payload["attachments"])
         preview = preview_task({
             "kind": CHANNEL_REPLY_TASK_KIND,
             "title": title,

@@ -298,7 +298,9 @@ class SlackChannel(ChannelAdapter):
             return None
         # Slack member IDs are workspace-local. Socket ingress requires fresh
         # workspace-scoped pairing; a prior bot token's bare ID cannot confer it.
-        normalized = {"text": text, "channel": channel, "user": f"{team}:{user}"}
+        normalized = {"text": text, "channel": channel, "user": f"{team}:{user}",
+                      # H120: a message's ts is unique in its channel: the provider id.
+                      "provider_id": f"{team}:{channel}:{timestamp}"}
         thread = event.get("thread_ts")
         if "thread_ts" in event:
             if not isinstance(thread, str) or not _TIMESTAMP.fullmatch(thread):

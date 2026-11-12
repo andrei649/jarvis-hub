@@ -86,7 +86,11 @@ class Gateway:
         # H120: an adapter that knows the provider's id for this message passes it as
         # `dedup_key`; the same id again within the window (a webhook retry, a
         # redelivery after a reconnect) is dropped before anything else sees it.
-        if self.is_duplicate(channel, kwargs.pop("dedup_key", None)):
+        dedup_key = kwargs.pop("dedup_key", None)
+        provider_id = kwargs.get("provider_id")
+        if dedup_key is None and isinstance(provider_id, str) and provider_id:
+            dedup_key = f"{channel}:{provider_id}"
+        if self.is_duplicate(channel, dedup_key):
             self._channels[channel]["duplicates"] = self._channels[channel].get("duplicates", 0) + 1
             logger.info("Gateway: duplicate inbound on '%s' dropped", log_safe(channel))
             return None

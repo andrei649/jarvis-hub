@@ -224,3 +224,87 @@ async def test_a_late_telegram_command_is_refused_and_a_late_message_is_kept(tmp
     told = [m for m in server.sent if "late" in m["text"]]
     assert [m["chat_id"] for m in told] == [OWNER]               # the stranger hears nothing
     assert channel.late_deliveries == 3
+
+
+# ── security review round 1 ──────────────────────────────────────────────────
+
+def test_a_redelivered_message_never_gets_a_second_reply_card(tmp_path):
+    from agents.core.channel_inbox import ChannelInboxStore
+    from agents.core.channel_reply import ChannelReplyBroker
+
+    store = ChannelInboxStore(tmp_path / "inbox.json")
+    queued = []
+
+    def enqueue(agent, kind, title, **kwargs):
+        queued.append(title)
+        return 41 + len(queued)
+
+    broker = ChannelReplyBroker(inbox=store, enqueue=enqueue)
+    meta = {"sms_to": "+15551234567", "provider_id": "SM" + "a" * 32}
+    first = store.record_inbound("sms", "lights off", sender="15551234567", metadata=meta, now=10.0)
+    out = broker.request_for_message(first["id"], "Done?", channel="sms")
+    assert out["queued"] is True and out["task_id"] == 42
+    # The same stored turn again, and the provider's redelivery an hour later (past the
+    # gateway's window, or after a restart): the existing card, never a second one.
+    again = broker.request_for_message(first["id"], "Done?", channel="sms")
+    later = store.record_inbound("sms", "lights off", sender="15551234567", metadata=meta,
+                                 now=3_610.0)
+    redelivered = broker.request_for_message(later["id"], "Done?", channel="sms")
+    assert again == redelivered == {"ok": True, "queued": False, "duplicate": True,
+                                    "task_id": 42, "kind": "channel.reply"}
+    assert len(queued) == 1
+    # A different message from the same number is a new turn and gets its own card.
+    other = store.record_inbound("sms", "lights on", sender="15551234567",
+                                 metadata={**meta, "provider_id": "SM" + "b" * 32}, now=3_700.0)
+    assert broker.request_for_message(other["id"], "On?", channel="sms")["task_id"] == 43
+    # The marker survives a restart (it is in the stored inbox).
+    reloaded = ChannelReplyBroker(inbox=ChannelInboxStore(tmp_path / "inbox.json"), enqueue=enqueue)
+    assert reloaded.request_for_message(later["id"], "Done?", channel="sms")["duplicate"] is True
+
+
+def test_the_gateway_uses_the_provider_id_and_keeps_it_for_the_inbox():
+    seen, handler = _collector()
+    gw = Gateway(handler=handler)
+
+    async def run():
+        await gw.route("hi", channel="sms", sender="1555", provider_id="SM1")
+        await gw.route("hi", channel="sms", sender="1555", provider_id="SM1")
+
+    asyncio.run(run())
+    assert len(seen) == 1 and seen[0][2]["provider_id"] == "SM1"
+
+
+@pytest.mark.asyncio
+async def test_a_late_plain_message_is_kept_even_with_backfill_off(tmp_path, quick_batches, monkeypatch):
+    monkeypatch.setenv("JARVIS_CHANNEL_BACKFILL_WINDOW_S", "0")
+    server = FakeTelegram()
+    gateway, seen = _gated(tmp_path)
+    channel = _telegram(server, gateway.route)
+    await channel.start()
+    try:
+        await _until(lambda: len(server.offsets) >= 3)
+        server.message("words that arrived late", age=backfill.DEFAULT_LATE_S + 60)
+        await _until(lambda: len(seen) == 1)
+    finally:
+        await channel.stop()
+    assert [t for t, *_ in seen] == ["words that arrived late"]
+
+
+@pytest.mark.asyncio
+async def test_with_pairing_off_an_unknown_sender_is_never_told(tmp_path, quick_batches, monkeypatch):
+    monkeypatch.setenv("JARVIS_CHANNEL_PAIRING", "0")
+    server = FakeTelegram()
+    gateway, seen = _gated(tmp_path)
+    channel = _telegram(server, gateway.route)
+    channel.allowed_users = []
+    channel._pairing = gateway.pairing
+    await channel.start()
+    try:
+        await _until(lambda: len(server.offsets) >= 3)
+        server.message("/resume", uid=STRANGER, age=backfill.DEFAULT_LATE_S + 60)
+        server.message("/status", uid=STRANGER, age=-1)
+        await _until(lambda: len(seen) == 1)
+    finally:
+        await channel.stop()
+    assert [m for m in server.sent if "late" in m["text"]] == []
+    assert channel.late_deliveries == 1

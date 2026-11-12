@@ -163,16 +163,19 @@ class DiscordChannel(ChannelAdapter):
             if consumed is True:
                 return
         # H117: held for the batch window, so a split message is one turn.
+        message_id = getattr(message, "id", None)
+        extra = {"provider_id": str(message_id)} if type(message_id) is int and message_id > 0 else {}
         await self._batch.submit((channel_id, sender), message.content,
-                                 sender=sender, channel_id=channel_id, chat_type=chat_type)
+                                 sender=sender, channel_id=channel_id, chat_type=chat_type, **extra)
 
     async def _deliver_turn(self, key, text: str, meta: dict) -> None:
         if not self.handler:
             return
         # The orchestrator queues a governed channel.reply. Echoing its return
         # value here would bypass approval (and duplicate an approved delivery).
+        extra = {"provider_id": meta["provider_id"]} if meta.get("provider_id") else {}
         await self.handler(text, channel="discord", sender=meta["sender"], channel_id=meta["channel_id"],
-                           chat_type=meta.get("chat_type", "private"))
+                           chat_type=meta.get("chat_type", "private"), **extra)
 
     async def stop(self):
         self._running = False
