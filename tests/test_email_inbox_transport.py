@@ -106,7 +106,8 @@ def test_email_channel_passes_sender_to_gateway_for_pairing():
     ch = EmailChannel(handler=handler,
                       smtp_config={"host": "smtp.local"},
                       imap_config={"host": "imap.local"})
-    ch._imap_fetch = lambda: [("ana@example.com", "Friday plans", "body text")]
+    raw = b"From: Ana <ana@example.com>\nSubject: Friday plans\n\nbody text\n"
+    ch._imap_fetch = lambda: [ch._parse(raw)]
     asyncio.run(ch._check_imap())
     assert seen["channel"] == "email"
     assert seen["sender"] == "ana@example.com"       # pairing gate applies

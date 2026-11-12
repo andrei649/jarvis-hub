@@ -1,18 +1,34 @@
 """
-email.py — Email channel adapter (SMTP send + IMAP idle receive).
+email.py — Email channel adapter (SMTP send + IMAP receive).
 
-Port of OpenJarvis's email channel to pure Python.
+Port of OpenJarvis's email channel to pure Python. H096 (2026-11-12) adds what makes
+inbound email safe to act on and replies that stay in the thread: the receiving server's
+SPF/DKIM/DMARC verdict on every message (a failed one is not routed), automated-sender
+suppression, a seen-UID watermark instead of the server's UNSEEN flag, HTML-only bodies
+reduced to text, attachments (read only for paired senders), In-Reply-To/References on
+replies, outbound attachments and an IPv4 retry when the SMTP host cannot be reached.
+The parsing lives in :mod:`agents.core.channels.email_inbound`.
 """
 
 import asyncio
 import contextlib
 import email
-import logging
+import hashlib
 import imaplib
+import json
+import logging
+import re
 import smtplib
-from email.mime.text import MIMEText
+import socket
+from email.header import decode_header, make_header
+from email.message import EmailMessage
+from email.utils import formatdate, make_msgid, parseaddr
 from typing import Optional
 
+from ..env_config import env_flag, env_list
+from ..paths import data_path
+from ..persistence import JsonStore
+from . import email_inbound
 from .base import ChannelAdapter
 from .reconnect import FATAL_REPROBE_S, Backoff, classify_exception
 
@@ -23,6 +39,14 @@ _AUTH_WORDS = ("authenticationfailed", "authentication failed", "invalid credent
 #: RFC 5530 codes (and plain wording) that say an auth failure is temporary: retry.
 _TRANSIENT_WORDS = ("[unavailable]", "temporary", "temporarily", "try again", "[inuse]",
                     "[serverbug]", "[limit]")
+
+#: Messages taken from the mailbox in one poll, and the largest one read at all.
+MAX_PER_POLL = 20
+MAX_MESSAGE_BYTES = 25 * 1024 * 1024
+#: A document attachment gets this long to turn into text.
+DOCUMENT_TIMEOUT_S = 20.0
+_UID_LIST = re.compile(rb"\d+")
+_SIZE = re.compile(rb"RFC822\.SIZE (\d+)")
 
 
 def _tls_context(host: str):
@@ -59,22 +83,155 @@ def _sender_address(raw_from: object) -> str:
     """The bare, lower-cased address in a ``From`` header — the identity pairing keys on.
 
     A display name or a comment must never become the sender: ``"Owner" <x@y>`` and
-    ``x@y`` are the same person. The residual stays named: the header itself is forgeable
-    unless the IMAP provider enforces DMARC, so a paired address means "held like a
-    stranger until approved", not "authenticated" (Hermes absorption 5b).
+    ``x@y`` are the same person. The header itself is forgeable; H096 reads the receiving
+    server's SPF/DKIM/DMARC verdict beside it (``email_inbound.sender_auth``) and refuses a
+    message whose authentication failed, but an *unverified* sender is still only what the
+    header says (Hermes absorption 5b).
     """
-    from email.utils import parseaddr
-
     address = parseaddr(str(raw_from or ""))[1].strip().lower()
     return address if "@" in address else ""
 
 
+class EmailSeenStore(JsonStore):
+    """H096 — the newest IMAP UID already handled, per mailbox, instead of the server's
+    UNSEEN flag (which any other mail client clears by opening the message).
+
+    Keyed by a digest of host and user, never the address itself; a changed UIDVALIDITY
+    (the server renumbered the mailbox) starts over from the newest message."""
+
+    def __init__(self, path=None) -> None:
+        super().__init__(path if path is not None else data_path("email_seen.json"))
+
+    def _serialize(self):
+        return self._data
+
+    def _deserialize(self, raw) -> None:
+        self._data = {}
+        if isinstance(raw, dict):
+            for key, row in list(raw.items())[:64]:
+                if (isinstance(key, str) and isinstance(row, dict)
+                        and isinstance(row.get("uidvalidity"), str)
+                        and type(row.get("last_uid")) is int and row["last_uid"] >= 0):
+                    self._data[key] = {"uidvalidity": row["uidvalidity"][:32],
+                                       "last_uid": row["last_uid"]}
+
+    @staticmethod
+    def key(host: str, user: str) -> str:
+        return hashlib.sha256(f"{host}\x00{user}".lower().encode()).hexdigest()[:24]
+
+    def get(self, key: str) -> dict | None:
+        with self._lock:
+            row = self._data.get(key)
+            return dict(row) if row else None
+
+    def set(self, key: str, uidvalidity: str, last_uid: int) -> None:
+        with self._lock:
+            self._data[key] = {"uidvalidity": str(uidvalidity)[:32], "last_uid": max(0, int(last_uid))}
+            self._save()
+
+
+def _resp_int(mail, name: str) -> int | None:
+    try:
+        _typ, data = mail.response(name)
+    except Exception:
+        return None
+    for item in data or ():
+        if isinstance(item, bytes | bytearray) and bytes(item).strip().isdigit():
+            return int(bytes(item).strip())
+    return None
+
+
+def _uids(data) -> list[int]:
+    out: list[int] = []
+    for item in data or ():
+        if isinstance(item, bytes | bytearray):
+            out.extend(int(x) for x in _UID_LIST.findall(bytes(item)[:200_000]))
+    return out
+
+
+def _fetched_bytes(data) -> bytes | None:
+    for item in data or ():
+        if isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], bytes | bytearray):
+            return bytes(item[1])
+    return None
+
+
+def _fetched_size(data) -> int | None:
+    for item in data or ():
+        head = item[0] if isinstance(item, tuple) and item else item
+        if isinstance(head, bytes | bytearray):
+            found = _SIZE.search(bytes(head)[:1000])
+            if found:
+                return int(found.group(1))
+    return None
+
+
+def _decoded_subject(value: object) -> str:
+    try:
+        text = str(make_header(decode_header(str(value or ""))))
+    except Exception:
+        text = str(value or "")
+    return email_inbound.clean_subject(text)
+
+
+def _msgid_domain(from_header: object) -> str | None:
+    address = parseaddr(str(from_header or ""))[1]
+    domain = address.rsplit("@", 1)[1] if "@" in address else ""
+    return domain if re.fullmatch(r"[A-Za-z0-9.-]{1,200}", domain or "") else None
+
+
+class _IPv4SMTP(smtplib.SMTP):
+    """H096 — an SMTP client that connects over IPv4 only, for a host whose IPv6 address
+    is unreachable. The host name is kept, so STARTTLS still verifies the certificate
+    against it."""
+
+    def _get_socket(self, host, port, timeout):
+        last: Exception | None = None
+        for family, kind, proto, _canon, addr in socket.getaddrinfo(
+                host, port, socket.AF_INET, socket.SOCK_STREAM)[:4]:
+            sock = socket.socket(family, kind, proto)
+            try:
+                if timeout is not None:
+                    sock.settimeout(timeout)
+                sock.connect(addr)
+                return sock
+            except OSError as exc:
+                last = exc
+                sock.close()
+        raise last or OSError("no IPv4 address for the SMTP host")
+
+
+def _open_smtp(host: str, port: int) -> smtplib.SMTP:
+    return smtplib.SMTP(host, port, timeout=10)
+
+
+def _open_smtp_ipv4(host: str, port: int) -> smtplib.SMTP:
+    return _IPv4SMTP(host, port, timeout=10)
+
+
 class EmailChannel(ChannelAdapter):
-    def __init__(self, handler=None, smtp_config: dict = None, imap_config: dict = None):
+    def __init__(self, handler=None, smtp_config: dict = None, imap_config: dict = None, *,
+                 pairing=None, image_reader=None, seen_store: EmailSeenStore | None = None,
+                 trusted_authserv_ids=None, require_sender_auth: bool | None = None):
         super().__init__("email", handler)
         self.smtp = smtp_config or {}
         self.imap = imap_config or {}
         self._poll_task: Optional[asyncio.Task] = None
+        # H096: whose attachments may be opened (the gateway's pairing store).
+        self.pairing = pairing
+        self._image_reader = image_reader
+        self._seen = seen_store
+        ids = (env_list("EMAIL_TRUSTED_AUTHSERV_IDS") if trusted_authserv_ids is None
+               else list(trusted_authserv_ids))
+        self.trusted_authserv_ids = frozenset(str(i).strip().lower() for i in ids if str(i).strip())
+        self.require_sender_auth = (env_flag("EMAIL_REQUIRE_SENDER_AUTH")
+                                    if require_sender_auth is None else bool(require_sender_auth))
+        #: Inbound messages not routed, by reason (a count only; no address is kept).
+        self.suppressed: dict[str, int] = {}
+
+    def _own_addresses(self) -> frozenset[str]:
+        return email_inbound.own_addresses(self.smtp.get("from", ""), self.smtp.get("user", ""),
+                                           self.imap.get("user", ""))
 
     async def start(self):
         if not self.smtp.get("host"):
@@ -91,39 +248,73 @@ class EmailChannel(ChannelAdapter):
         if self._poll_task:
             self._poll_task.cancel()
 
+    # ── outbound ─────────────────────────────────────────────────────────────
+
+    def build_message(self, message: str, **kwargs) -> EmailMessage:
+        """The MIME message :meth:`send` hands to SMTP (H096): reply threading headers,
+        attachments, and header values that cannot carry a line break."""
+        to_addr = kwargs.get("to") or self.smtp.get("default_recipient", "")
+        in_reply_to = email_inbound.message_id(kwargs.get("in_reply_to"))
+        references = kwargs.get("references")
+        subject = kwargs.get("subject", "Jarvis Message")
+        subject = (email_inbound.reply_subject(subject) if in_reply_to
+                   else email_inbound.clean_subject(subject) or "Jarvis Message")
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = self.smtp.get("from", "cabinet@localhost")
+        msg["To"] = to_addr
+        msg["Date"] = formatdate(localtime=True)
+        msg["Message-ID"] = make_msgid(domain=_msgid_domain(msg["From"]))
+        if in_reply_to:
+            msg["In-Reply-To"] = in_reply_to
+            msg["References"] = (references if email_inbound.valid_references(references)
+                                 and references.split(" ")[-1] == in_reply_to else in_reply_to)
+        msg.set_content(str(message))
+        for item in kwargs.get("attachments") or ():
+            mime = str(getattr(item, "mime", "") or "application/octet-stream")
+            major, _, minor = mime.partition("/")
+            msg.add_attachment(bytes(item.data), maintype=major or "application",
+                               subtype=minor or "octet-stream",
+                               filename=email_inbound.clean_name(getattr(item, "name", "")))
+        return msg
+
     async def send(self, message: str, **kwargs) -> bool:
         if not self.smtp.get("host"):
             logger.warning("SMTP not configured for email channel")
             return False
-
-        to_addr = kwargs.get("to") or self.smtp.get("default_recipient", "")
-        subject = kwargs.get("subject", "Jarvis Message")
-
         try:
-            msg = MIMEText(message)
-            msg["Subject"] = subject
-            msg["From"] = self.smtp.get("from", "cabinet@localhost")
-            msg["To"] = to_addr
-
+            msg = self.build_message(message, **kwargs)
+            to_addr = str(msg["To"] or "")
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, self._smtp_send, msg, to_addr)
-            logger.info(f"Email sent to {to_addr}")
+            logger.info("Email sent (%d attachment(s))", len(kwargs.get("attachments") or ()))
             return True
         except Exception as e:
-            logger.error(f"Email send failed: {e}")
+            logger.error("Email send failed: %s", type(e).__name__)
             return False
 
-    def _smtp_send(self, msg: MIMEText, to_addr: str):
-        with smtplib.SMTP(
-            self.smtp["host"],
-            self.smtp.get("port", 587),
-            timeout=10,
-        ) as server:
+    def _smtp_connect(self) -> smtplib.SMTP:
+        """Connect to the SMTP host; when the connection itself fails (not an SMTP
+        answer), try once more over IPv4 only (H096). Nothing has been sent at this
+        point, so the retry can never send a message twice."""
+        host, port = self.smtp["host"], self.smtp.get("port", 587)
+        try:
+            return _open_smtp(host, port)
+        except smtplib.SMTPException:
+            raise
+        except OSError as first:
+            logger.warning("SMTP connection failed (%s); retrying over IPv4", type(first).__name__)
+            return _open_smtp_ipv4(host, port)
+
+    def _smtp_send(self, msg, to_addr: str):
+        with self._smtp_connect() as server:
             if self.smtp.get("tls", True):
                 server.starttls(context=_tls_context(self.smtp["host"]))
             if self.smtp.get("user"):
                 server.login(self.smtp["user"], self.smtp.get("password", ""))
             server.send_message(msg)
+
+    # ── inbound ──────────────────────────────────────────────────────────────
 
     async def _poll_loop(self):
         backoff = Backoff(IMAP_LADDER)
@@ -151,18 +342,150 @@ class EmailChannel(ChannelAdapter):
             self.health.ok()
             await asyncio.sleep(self.imap.get("poll_interval", 60))
 
+    def _suppress(self, reason: str) -> None:
+        self.suppressed[reason] = self.suppressed.get(reason, 0) + 1
+        # The address is never logged: the reason is enough to diagnose.
+        logger.info("Email: inbound message not routed (%s)", reason)
+
     async def _check_imap(self):
         loop = asyncio.get_event_loop()
         messages = await loop.run_in_executor(None, self._imap_fetch)
+        for item in messages:
+            await self._route(item)
 
-        for sender, subject, body in messages:
-            if self.handler:
-                text = body or subject
-                await self.handler(text, channel="email", sender=sender,
-                                   from_addr=sender, subject=subject)
+    async def _route(self, item: dict) -> None:
+        """One parsed inbound message → the gateway, unless it must not be answered."""
+        if not self.handler:
+            return
+        if item.get("automated"):
+            self._suppress(f"automated:{item['automated']}")
+            return
+        auth: email_inbound.SenderAuth = item["auth"]
+        if auth.verdict == email_inbound.VERDICT_FAIL:
+            # A forged From of a paired address must not speak as that address.
+            self._suppress("sender_auth_failed")
+            return
+        if self.require_sender_auth and auth.verdict != email_inbound.VERDICT_PASS:
+            self._suppress("sender_unverified")
+            return
+        sender = item["sender"]
+        if not sender:
+            self._suppress("no_sender")
+            return
+        text = item["body"] or item["subject"]
+        notes = await self._attachment_notes(sender, item["attachments"], item["skipped"])
+        if notes:
+            text = f"{text}\n\n{notes}" if text else notes
+        await self.handler(text, channel="email", sender=sender, from_addr=sender,
+                           subject=item["subject"], email_message_id=item["message_id"],
+                           email_references=item["references"], sender_auth=auth.to_dict())
 
-    def _imap_fetch(self) -> list[tuple[str, str, str]]:
+    def _sender_may_be_read(self, sender: str) -> bool:
+        pairing = self.pairing
+        if pairing is None:
+            return False
+        try:
+            return pairing.is_allowed("email", sender) is True
+        except Exception:
+            return False
 
+    async def _attachment_notes(self, sender: str, atts: list, skipped: int) -> str:
+        """H096 — what came attached, for the turn. Contents are read only for a sender the
+        pairing gate already admits (a stranger's files are named, never opened); images go
+        to the proven-local vision model only, text files arrive fenced as data."""
+        if not atts and not skipped:
+            return ""
+        readable = self._sender_may_be_read(sender)
+        lines: list[str] = []
+        for index, att in enumerate(atts, start=1):
+            label = f"Attachment {index}: {att.name} ({att.mime}, {max(1, att.size // 1024)} KB)"
+            if not readable:
+                lines.append(f"{label} — not opened (the sender is not paired).")
+                continue
+            if att.data is None:
+                lines.append(f"{label} — not read (too large or empty).")
+                continue
+            if att.kind == "text":
+                lines.append(f"{label}, its contents as data:\n" + email_inbound.text_attachment(att))
+                continue
+            if att.kind == "image":
+                description = await self._describe_image(att.data)
+                if description is not None and description.ok:
+                    lines.append(f"{label}. A local vision model described it (a machine "
+                                 f"description, not something you observed):\n{description.text}")
+                else:
+                    from . import media_reader
+
+                    why = media_reader.note(description) if description is not None else ""
+                    lines.append(f"{label} — not read" + (f": {why}" if why else "") + ".")
+                continue
+            document = await self._document_text(att)
+            if document:
+                lines.append(f"{label}, its text as data:\n" + document)
+            else:
+                lines.append(f"{label} — reading this kind of file is not wired up yet.")
+        if skipped:
+            lines.append(f"{skipped} more attachment(s) were not listed.")
+        return "\n".join(lines)
+
+    @staticmethod
+    async def _document_text(att) -> str:
+        """A PDF, Word, Excel, CSV or Markdown attachment's text, through the bounded
+        document extractor the Workspace uploads use (kind from the file name, confirmed
+        by the file's own magic bytes), fenced as data. ``""`` when it cannot be read."""
+        from agents.core.security.quarantine import fence_tool_result
+        from agents.core.workspace import extract
+
+        kind = extract.kind_for_filename(att.name)
+        if kind is None or not extract.content_matches(kind, att.data):
+            return ""
+        try:
+            found = await extract.extract_document(att.data, kind, timeout=DOCUMENT_TIMEOUT_S)
+        except Exception:
+            return ""
+        text = "\n".join(segment.text for segment in found.segments)
+        text = text[:email_inbound.MAX_TEXT_ATTACHMENT_CHARS]
+        if not text.strip():
+            return ""
+        return fence_tool_result(json.dumps(text, ensure_ascii=False),
+                                 source="email.attachment")[0]
+
+    async def _describe_image(self, data: bytes):
+        reader = self._image_reader
+        if reader is None:
+            from .media_reader import InboundImageReader
+
+            try:
+                reader = self._image_reader = InboundImageReader.from_env()
+            except Exception:
+                return None
+        try:
+            return await reader(data)
+        except Exception:
+            return None
+
+    def _parse(self, raw: bytes) -> dict:
+        msg = email.message_from_bytes(raw)
+        atts, skipped = email_inbound.attachments(msg)
+        threading = email_inbound.threading_headers(msg)
+        return {
+            "sender": _sender_address(msg.get("From", "")),
+            "subject": _decoded_subject(msg.get("Subject", "")),
+            "body": email_inbound.extract_body(msg),
+            "automated": email_inbound.automated_reason(msg, own_addresses=self._own_addresses()),
+            "auth": email_inbound.sender_auth(msg, trusted_ids=self.trusted_authserv_ids),
+            "attachments": atts,
+            "skipped": skipped,
+            "message_id": threading["message_id"],
+            "references": threading["references"],
+        }
+
+    def _seen_store(self) -> EmailSeenStore:
+        if self._seen is None:
+            self._seen = EmailSeenStore()
+        return self._seen
+
+    def _imap_fetch(self) -> list[dict]:
         mail = imaplib.IMAP4_SSL(self.imap["host"], self.imap.get("port", 993),
                                  ssl_context=_tls_context(self.imap["host"]))
         # Always log out (closing the SSL socket) even if login/select/fetch
@@ -170,29 +493,60 @@ class EmailChannel(ChannelAdapter):
         # poll interval.
         try:
             mail.login(self.imap["user"], self.imap.get("password", ""))
-            mail.select("INBOX")
-
-            status, data = mail.search(None, "UNSEEN")
-            messages = []
-            if status == "OK":
-                for num in data[0].split():
-                    status, msg_data = mail.fetch(num, "(RFC822)")
-                    if status == "OK":
-                        raw = email.message_from_bytes(msg_data[0][1])
-                        sender = _sender_address(raw.get("From", ""))
-                        subject = raw.get("Subject", "")
-                        body = ""
-                        if raw.is_multipart():
-                            for part in raw.walk():
-                                if part.get_content_type() == "text/plain":
-                                    payload = part.get_payload(decode=True)
-                                    body = payload.decode(errors="replace") if payload else ""
-                                    break
-                        else:
-                            payload = raw.get_payload(decode=True)
-                            body = payload.decode(errors="replace") if payload else ""
-                        messages.append((sender, subject, body))
-            return messages
+            return self._fetch_new(mail)
         finally:
             with contextlib.suppress(Exception):
                 mail.logout()
+
+    def _fetch_new(self, mail) -> list[dict]:
+        """H096 — the messages after the newest UID already handled. Read-only: the
+        mailbox is opened with EXAMINE and bodies are fetched with BODY.PEEK, so Nerva
+        never marks anything read for the owner's other mail clients."""
+        status, _ = mail.select("INBOX", readonly=True)
+        if status != "OK":
+            return []
+        validity = str(_resp_int(mail, "UIDVALIDITY") or 0)
+        store = self._seen_store()
+        key = EmailSeenStore.key(self.imap.get("host", ""), self.imap.get("user", ""))
+        state = store.get(key)
+        if state is None or state["uidvalidity"] != validity:
+            # First contact with this mailbox (or it was renumbered): start after the
+            # newest message instead of answering the whole inbox history.
+            uidnext = _resp_int(mail, "UIDNEXT")
+            if uidnext is not None:
+                newest = max(0, uidnext - 1)
+            else:
+                status, data = mail.uid("SEARCH", None, "ALL")
+                newest = max(_uids(data), default=0) if status == "OK" else 0
+            store.set(key, validity, newest)
+            logger.info("Email: mailbox watermark set; earlier messages are left as they are")
+            return []
+        last = state["last_uid"]
+        status, data = mail.uid("SEARCH", None, f"UID {last + 1}:*")
+        if status != "OK":
+            return []
+        # "N:*" always answers the newest UID, even when it is below N.
+        uids = sorted({u for u in _uids(data) if u > last})[:MAX_PER_POLL]
+        messages: list[dict] = []
+        try:
+            for uid in uids:
+                # At most once, like every other channel's inbound: a message that failed
+                # to read is not fetched again on every poll.
+                last = max(last, uid)
+                status, data = mail.uid("FETCH", str(uid), "(RFC822.SIZE)")
+                size = _fetched_size(data) if status == "OK" else None
+                if size is None or size > MAX_MESSAGE_BYTES:
+                    self._suppress("too_large" if size else "unreadable")
+                    continue
+                status, data = mail.uid("FETCH", str(uid), "(BODY.PEEK[])")
+                raw = _fetched_bytes(data) if status == "OK" else None
+                if not raw or len(raw) > MAX_MESSAGE_BYTES:
+                    self._suppress("unreadable")
+                    continue
+                try:
+                    messages.append(self._parse(raw))
+                except Exception:
+                    self._suppress("unparseable")
+        finally:
+            store.set(key, validity, last)
+        return messages

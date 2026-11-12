@@ -4,6 +4,26 @@
 
 ### What changed for you — 2026-11-12
 
+**Email is a real conversation channel**
+- Nerva reads what your mail provider concluded about each sender (SPF, DKIM, DMARC). A
+  message whose check failed is ignored, so someone faking your address cannot speak as
+  you; the reply card says "verified sender", "sender authentication FAILED" or "unverified
+  sender". Name your provider's server in `EMAIL_TRUSTED_AUTHSERV_IDS` (for example
+  `mx.google.com`) to trust only its verdict; `EMAIL_REQUIRE_SENDER_AUTH=true` also ignores
+  unverified mail.
+- Auto-replies, bounces, mailing lists and no-reply senders no longer get answered, so a
+  vacation responder cannot start a loop.
+- Nerva remembers which messages it already handled instead of relying on "unread", and no
+  longer marks anything as read in your mailbox. The first time it connects it starts with
+  new mail only.
+- A mail with only an HTML body is read as text.
+- Attachments from a paired sender are read: pictures by your local vision model, text, CSV,
+  PDF, Word and Excel files as text. A stranger's attachments are only named.
+- Replies stay in the same thread in your mail program (`Re:` subject and thread headers).
+- A reply may attach a file with a `MEDIA: /path` line; the approval card names the file,
+  and if the file changes after you approve it, nothing is sent.
+- If your mail server cannot be reached over IPv6, Nerva tries IPv4 once.
+
 **`nerva chat -i` streams its answers**
 - The answer appears line by line while Nerva writes it, with a short line for each tool it
   runs, and you can keep typing at the prompt meanwhile. Questions the turn asks (including a

@@ -12,6 +12,12 @@ from typing import Any
 
 from agents.core.paths import data_path
 
+from .channels.email_inbound import (
+    clean_sender_auth,
+    clean_subject,
+    message_id,
+    valid_references,
+)
 from .persistence import JsonStore
 
 DEFAULT_PATH = data_path("channel_inbox.json")
@@ -22,8 +28,9 @@ _REPLY_KEYS = {
     "telegram": ("chat_id",),
     "web": ("client_id",),
     # EmailChannel.send() kwargs; `to` is aliased from the inbound `from_addr`
-    # in _reply_metadata (the reply target IS the inbound sender).
-    "email": ("to", "subject"),
+    # in _reply_metadata (the reply target IS the inbound sender). H096: the
+    # threading headers come from the inbound Message-ID/References, shape-checked.
+    "email": ("to", "subject", "in_reply_to", "references"),
     "slack": ("slack_channel", "thread_ts"),
     "discord": ("channel_id",),
     "ntfy": ("ntfy_topic", "ntfy_context"),
@@ -125,6 +132,8 @@ class ChannelInboxStore(JsonStore):
                         "reply": dict(message.get("reply") or row.get("reply") or {}),
                         "last_message_id": message.get("id", ""),
                     })
+                    if message.get("sender_auth"):
+                        row["sender_auth"] = dict(message["sender_auth"])
         rows = sorted(grouped.values(), key=lambda r: r["ts"], reverse=True)
         return rows[:n]
 
@@ -169,6 +178,8 @@ class ChannelInboxStore(JsonStore):
         thread_id = thread_id or _thread_id(channel, sender, reply)
         message_id = _message_id(channel, thread_id, direction, clean_text, ts)
         taint_fields = _taint_metadata(metadata or {})
+        if channel == "email" and direction == "in" and isinstance(metadata, dict):
+            taint_fields["sender_auth"] = metadata.get("sender_auth")
         rec = self._public({
             "id": message_id,
             "thread_id": thread_id,
@@ -205,14 +216,29 @@ class ChannelInboxStore(JsonStore):
             "taint_source": str(message.get("taint_source", "")),
             "injection_flags": _injection_flags(message.get("injection_flags")),
         }
+        # H096: the receiving mail server's SPF/DKIM/DMARC verdict, shown beside the
+        # message (email only; anything malformed is dropped, never repaired).
+        if out["channel"] == "email" and out["direction"] == "in":
+            auth = clean_sender_auth(message.get("sender_auth"))
+            if auth is not None:
+                out["sender_auth"] = auth
         return out
 
 
 def _reply_metadata(channel: str, metadata: dict[str, Any]) -> dict:
     out = {}
     meta = dict(metadata)
-    if channel == "email" and not meta.get("to") and meta.get("from_addr"):
-        meta["to"] = meta["from_addr"]
+    if channel == "email":
+        if not meta.get("to") and meta.get("from_addr"):
+            meta["to"] = meta["from_addr"]
+        # H096: reply threading, only in the exact header shape (no line breaks).
+        in_reply_to = message_id(meta.get("in_reply_to") or meta.get("email_message_id"))
+        references = meta.get("references") or meta.get("email_references")
+        meta["in_reply_to"] = in_reply_to
+        meta["references"] = (references if in_reply_to and valid_references(references)
+                              and references.split(" ")[-1] == in_reply_to else "")
+        if meta.get("subject") is not None:
+            meta["subject"] = clean_subject(meta["subject"])
     for key in _REPLY_KEYS.get(channel, ()):
         value = meta.get(key)
         if isinstance(value, (str, int)) and str(value):
