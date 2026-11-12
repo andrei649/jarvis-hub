@@ -4,6 +4,25 @@
 
 ### What changed for you — 2026-11-12
 
+**A scheduled job cannot be turned against you or against Nerva itself**
+- A job whose prompt hides instructions ("ignore previous instructions"), invisible
+  characters, or commands that leak secrets (sending an API key with `curl`, reading
+  `~/.env`, adding an SSH key) is refused when you create or edit it, and again when it
+  runs, even if it was written straight into the job database.
+- Text a job pulls in when it runs (its last output, another job's output, a script's
+  output, a watched page) is cleaned of invisible characters; if it contains an outright
+  "ignore your instructions" line, that run stops before the model sees it and the job's
+  history says why. Quoted commands in that text (a bug report that mentions `rm -rf /`)
+  are fine.
+- A job that would stop, restart, update or uninstall Nerva (`systemctl restart
+  jarvis-hub`, killing the hub process, `nerva update apply`, the uninstall script, the
+  restart route), in its prompt, its script or any script that script runs, is refused.
+  A job's own model turn cannot run such a command either. Restarting other things
+  ("restart the router") is not affected.
+- A job can no longer be pointed at another server with your stored model key: an
+  endpoint or key written into its settings stops the run, and a pinned provider is
+  checked against your signed provider choice every time it fires.
+
 **Nerva does not answer itself or the same message twice**
 - When WhatsApp, Signal, Matrix, Teams or Google Chat send the same message again (a retry),
   Nerva handles it once, so you never get two approval cards for one message.

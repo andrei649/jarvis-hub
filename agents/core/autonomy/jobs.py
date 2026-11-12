@@ -918,6 +918,8 @@ class JobStore:
         errors = validate_action(action, options)
         if errors:
             raise ValueError("; ".join(errors))
+        from .jobs_guard import guard_job
+        guard_job(dict(action), options)  # H457: strict prompt scan + self-lifecycle guard
         cron, _description = resolve_schedule(schedule_text, zone=self._schedule_zone())
         with self._lock:
             count = self._conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
@@ -1049,6 +1051,8 @@ class JobStore:
                         raise ValueError("; ".join(errors))
                     if action is not None:
                         fields["action"] = dict(action)
+                    from .jobs_guard import guard_job
+                    guard_job(fields.get("action", current.action), fields.get("options", current.options))
                 if schedule_text is not None:
                     text = str(schedule_text).strip()
                     if not text:
@@ -1834,10 +1838,15 @@ class JobRunner:
                 summary="emergency stop engaged",
             )
         try:
+            from .jobs_guard import check_credential_pair, guard_job
+            # H457 — use-time backstops for records written outside the validating API:
+            # the credential pair first (fails closed), then the prompt and lifecycle guards.
+            check_credential_pair(job.options)
             validate_options(job.options, check_scripts=False, url_screen=getattr(self.store, "url_screen", None))
             errors = validate_action(job.action, job.options)
             if errors:
                 raise ValueError('; '.join(errors))
+            guard_job(job.action, job.options, read_scripts=False)
         except ValueError as exc:
             return self._failed(job, started, exc)
         script_job = bool(job.options.get('script') or job.options.get('monitor_script')
@@ -1984,12 +1993,19 @@ class JobRunner:
             own_output = self.store.outputs.get(job.id)
         if own_output and not self.store.outputs.still_live(job.id, own_output["source_created_at"]):
             own_output = None
+        from .jobs_guard import sanitize_loaded
+
         prior = own_output["content"] if continuity and own_output else (job.notepad if continuity else "")
         legacy_note = (job.notepad if continuity and own_output and job.notepad
                        and own_output["content"] != job.notepad else "")
         notes = getattr(job, "_frozen_kv", None)
         if notes is None:
             notes = self.store.notepad_kv.list(job.id)
+        # H457 loose tier: content loaded from elsewhere is sanitized, and blocks only on
+        # an unambiguous injection directive.
+        prior = sanitize_loaded(prior, source="previous job output")
+        legacy_note = sanitize_loaded(legacy_note, source="previous job note")
+        notes = [{**row, "value": sanitize_loaded(str(row["value"]), source="job notepad")} for row in notes]
         if prior or notes or legacy_note:
             if prior and own_output:
                 prompt += ("\n\n## Your previous run's output\nUse it for continuity: avoid repeating "
@@ -2010,7 +2026,9 @@ class JobRunner:
         for source in sources:
             if not self.store.outputs.still_live(source["job_id"], source["source_created_at"]):
                 continue
-            prompt += render_context_block(source["job_id"], source["content"], source["bounded"])
+            prompt += render_context_block(source["job_id"],
+                                           sanitize_loaded(source["content"], source="context_from output"),
+                                           source["bounded"])
         process = getattr(self._orch, "process", None)
         detailed = getattr(self._orch, "process_detailed", None)
         if not callable(detailed) and not callable(process):
@@ -2018,10 +2036,11 @@ class JobRunner:
         from ..job_toolsets import toolset_scope
         from ..llm.job_selection import SelectionError, selection_scope
         from ..llm.request_context import job_reasoning_scope
+        from .jobs_guard import job_turn_scope
 
         policy = self._job_tool_policy(job.options)
         with (toolset_scope(policy.allowed_names), selection_scope(job.options) as selection,
-              job_reasoning_scope(job.options.get('reasoning_effort'))):
+              job_reasoning_scope(job.options.get('reasoning_effort')), job_turn_scope(job.id)):
             if selection is not None:
                 router = getattr(self._orch, "llm_router", None)
                 if not callable(getattr(router, "select_backend", None)):

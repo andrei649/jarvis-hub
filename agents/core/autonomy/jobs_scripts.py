@@ -107,6 +107,8 @@ def snapshot_script(script):
     parsed, refusal = parse_argv(command)
     if len(command) > 4000 or refusal or parsed != argv or hardline_match(argv):
         raise ValueError('script cannot cross the existing terminal command contract')
+    from .jobs_guard import check_lifecycle
+    check_lifecycle(script_source=source)  # H457: on the exact bytes that will run
     return {'command': command, 'sha256': hashlib.sha256(raw).hexdigest()}
 
 
@@ -449,8 +451,11 @@ class ScriptRuntime:
                             reset_action_origin,
                         )
                         from agents.core.security.quarantine import fence_tool_result
-                        fenced, _ = fence_tool_result(json.dumps(data['monitor_context']) if monitor else json.dumps({'stdout': output}),
-                                                     source='scheduled-script')
+
+                        from .jobs_guard import sanitize_loaded, sanitize_loaded_deep
+                        loaded = (sanitize_loaded_deep(data['monitor_context'], source='monitor context') if monitor
+                                  else {'stdout': sanitize_loaded(output, source='script output')})
+                        fenced, _ = fence_tool_result(json.dumps(loaded), source='scheduled-script')
                         action = {**frozen.action, 'deliver': False, 'prompt': frozen.action.get('prompt', '') +
                                   '\n\nScheduled script output (untrusted data):\n' +
                                   ('[Host notice: this script context is truncated; complete stdout was longer.]\n'
