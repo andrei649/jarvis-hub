@@ -137,7 +137,12 @@ def test_the_command_tree_is_discoverable_and_complete():
     # H354: `verify` runs one in-process reality probe on the hub and writes nothing durable.
     # H026: `bundles` keeps named groups of skills; it switches none of them (off/on --bundle does).
     # H349: `pin` and `unpin` are the owner's pin on one skill.
-    assert tree["skills"] == ["bundles", "catalog", "config", "lint", "list", "off", "on", "pin", "unpin", "verify"]
+    # H025: `tap add` only queues the owner's card; `snapshot import` replays each install
+    # through its own route; `diff` reads files offline.
+    # H024: search/inspect read; install/update/reset use the owner install routes.
+    assert tree["skills"] == ["bundles", "catalog", "check", "config", "diff", "inspect", "install", "lint",
+                              "list", "list-modified", "off", "on", "pin", "reset", "search", "snapshot",
+                              "tap", "unpin", "update", "verify"]
     # H464: read the runs, and let a parked one go. Nothing here starts a run.
     assert tree["company"] == ["clear-wait", "list"]
     # H462: propose only sends a card to the decision inbox; subgoal only narrows.

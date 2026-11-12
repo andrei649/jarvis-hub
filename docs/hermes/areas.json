@@ -133,6 +133,8 @@
         "tests/test_h015_job_operations.py",
         "tests/test_h015_job_operations_api.py",
         "tests/test_h019_service_status.py",
+        "tests/test_h024_skill_lifecycle_cli.py",
+        "tests/test_h025_skill_sources_cli.py",
         "tests/test_h026_skill_bundles.py",
         "tests/test_h027_curator_authority.py",
         "tests/test_h027_curator_cli.py",

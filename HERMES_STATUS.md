@@ -1,8 +1,8 @@
 # Sprint curent: echivalarea celor 697 de capabilități Hermes
 
-**165 / 697 = 23.7% echivalente complet în evaluarea documentată.**
+**166 / 697 = 23.8% echivalente complet în evaluarea documentată.**
 
-Din acestea, **165** au fost reevaluate pe cod în această livrare; **0** păstrează verdictul auditului din 7 septembrie.
+Din acestea, **166** au fost reevaluate pe cod în această livrare; **0** păstrează verdictul auditului din 7 septembrie.
 
 **Acesta este un status inițial conservator, nu o reauditare completă a celor 697.** Verdictele moștenite și cele actualizate sunt vizibile pentru fiecare rând. Procentul de 88% discutat anterior privea altă listă și nu se aplică aici.
 
@@ -10,13 +10,13 @@ Din acestea, **165** au fost reevaluate pe cod în această livrare; **0** păst
 
 | Stare cod | Rânduri | Din 697 |
 |---|---:|---:|
-| Echivalent | 165 | 23.7% |
-| Parțial | 488 | 70.0% |
+| Echivalent | 166 | 23.8% |
+| Parțial | 487 | 69.9% |
 | Lipsă | 8 | 1.1% |
 | Exclus intenționat | 36 | 5.2% |
 | De reverificat | 0 | 0.0% |
 
-**Ținta acceptată în produs:** 661 rânduri; progres 165/661 = **25.0%**. Excluderi active: 36. Readmise explicit din vechiul audit: 71; readmiterea nu acordă credit de implementare.
+**Ținta acceptată în produs:** 661 rânduri; progres 166/661 = **25.1%**. Excluderi active: 36. Readmise explicit din vechiul audit: 71; readmiterea nu acordă credit de implementare.
 
 **Acoperirea reevaluării curente:** 661/697 rânduri. Restul păstrează auditul inițial sau așteaptă evaluarea după readmitere. Existența unui fișier sau a unui PR nu închide automat un rând.
 
@@ -28,7 +28,7 @@ Fiecare rând aparține unui singur domeniu din [areas.json](docs/hermes/areas.j
 
 | Domeniu | Lane | Rânduri | Echiv. | Parțial | Lipsă | Exclus | Reverificare | Suită | Stare suită |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---|
-| [cli](docs/HERMES_CAPABILITIES.md#area-cli) — Command line: jobs done through the nerva CLI | own | 56 | 16 | 36 | 2 | 2 | 0 | 118 | seed din dovezi |
+| [cli](docs/HERMES_CAPABILITIES.md#area-cli) — Command line: jobs done through the nerva CLI | own | 56 | 17 | 35 | 2 | 2 | 0 | 120 | seed din dovezi |
 | [gateway](docs/HERMES_CAPABILITIES.md#area-gateway) — Always-on gateway and slash commands | own/run | 33 | 3 | 27 | 1 | 2 | 0 | 104 | seed din dovezi |
 | [platforms](docs/HERMES_CAPABILITIES.md#area-platforms) — Messaging platforms and channels | own | 39 | 3 | 30 | 0 | 6 | 0 | 41 | seed din dovezi |
 | [web](docs/HERMES_CAPABILITIES.md#area-web) — Web dashboard and HUD | own/run | 40 | 15 | 23 | 0 | 2 | 0 | 70 | seed din dovezi |
