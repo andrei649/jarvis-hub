@@ -4,6 +4,14 @@
 
 ### What changed for you — 2026-11-12
 
+**Jobs missed while Nerva was off run once when it comes back**
+- If the computer was off or asleep when a scheduled job was due, Nerva now runs the most
+  recent missed time once when it starts again, as long as it is still recent: within
+  half the job's interval, between 5 minutes and 6 hours (6 hours for a one-time job).
+  Older misses are listed in the job's history as "missed while the hub was down" instead
+  of all running at once. Paused jobs, the emergency stop and quiet hours still apply,
+  and jobs that run every 15 minutes or more often just wait for their next time.
+
 **A scheduled job cannot be turned against you or against Nerva itself**
 - A job whose prompt hides instructions ("ignore previous instructions"), invisible
   characters, or commands that leak secrets (sending an API key with `curl`, reading

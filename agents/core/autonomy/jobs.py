@@ -41,7 +41,7 @@ import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -584,6 +584,62 @@ def is_interval_cron(cron: str) -> bool:
     if len(hours) == 24:
         return one_minute or _is_step_set(minutes, 0, 59)
     return one_minute and len(hours) > 1 and _is_step_set(hours, 0, 23)
+
+
+# H459 — catch-up after downtime. A slot the hub was down for is run once at boot when
+# it is still recent: within half the job's cadence, between 5 minutes and 6 hours (a
+# one-shot gets the 6 hours). Older slots are recorded as missed, never burst-replayed.
+# Jobs that fire every 15 minutes or more often just wait for their next slot.
+CATCH_UP_GRACE_MIN_S = 300
+CATCH_UP_GRACE_MAX_S = 6 * 3600
+CATCH_UP_MIN_GAP_S = 15 * 60
+CATCH_UP_LOOKBACK_S = 31 * 86400
+CATCH_UP_MAX_STEPS = 5000
+# APScheduler's misfire grace for the in-process triggers (a one-shot inside it still runs).
+ONE_SHOT_MISFIRE_S = 300
+
+
+def catch_up_grace(slot_gap: float | None) -> float:
+    """How late a missed slot may still be run at boot (seconds)."""
+    if slot_gap is None:
+        return float(CATCH_UP_GRACE_MAX_S)
+    return float(max(CATCH_UP_GRACE_MIN_S, min(CATCH_UP_GRACE_MAX_S, slot_gap / 2)))
+
+
+def _parse_utc(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def last_missed_slot(job, now: datetime, timezone, anchor: datetime) -> tuple[datetime | None, float | None]:
+    """The newest scheduled slot after *anchor* and at or before *now*, and the cadence
+    around it (seconds from that slot to the next; None for a one-shot)."""
+    if is_one_shot(job.cron):
+        due = run_at(job.cron)
+        if due is None:
+            return None, None
+        due = due if due.tzinfo is not None else due.replace(tzinfo=timezone)
+        return (due, None) if anchor < due <= now else (None, None)
+    trigger = schedule_trigger(job.cron, timezone)
+    start = max(anchor, now - timedelta(seconds=CATCH_UP_LOOKBACK_S)).astimezone(timezone)
+    slot = trigger.get_next_fire_time(None, start)
+    if slot is not None and slot <= start:
+        slot = trigger.get_next_fire_time(slot, start + timedelta(seconds=1))
+    last = None
+    for _ in range(CATCH_UP_MAX_STEPS):
+        if slot is None or slot > now:
+            break
+        last = slot
+        slot = trigger.get_next_fire_time(slot, slot + timedelta(seconds=1))
+    if last is None:
+        return None, None
+    following = trigger.get_next_fire_time(last, last + timedelta(seconds=1))
+    return last, (None if following is None else (following - last).total_seconds())
 
 
 def first_run_margin(slot_gap: float | None) -> float:
@@ -1489,7 +1545,7 @@ class JobRunner:
             return False
         if is_one_shot(job.cron):
             sched.add_job(self.fire, "date", args=[job.id], id=f"job-{job.id}", replace_existing=True,
-                          misfire_grace_time=300, run_date=run_at(job.cron))
+                          misfire_grace_time=ONE_SHOT_MISFIRE_S, run_date=run_at(job.cron))
             return True
         sched.add_job(
             self.fire,
@@ -1541,6 +1597,10 @@ class JobRunner:
             if job.runnable and self.register(job):
                 registered += 1
         self.register_flush()
+        try:
+            self.fire_overdue_jobs()
+        except Exception:  # a failed catch-up never stops the jobs from being scheduled
+            logger.warning("missed-slot catch-up failed", exc_info=True)
         if any((j.options.get('script') or (j.options.get('monitor_script') or j.options.get('monitor_url'))) for j in self.store.list()) or self.store.script_attempts.rows():
             self.register_scripts()
         return registered
@@ -1629,6 +1689,69 @@ class JobRunner:
                     if lease is not None:
                         lease.release()
         return runs
+
+    def fire_overdue_jobs(self, now: datetime | None = None) -> list[dict]:
+        """Catch up the slots the hub was down for (H459), once, at boot.
+
+        For each runnable job, the newest slot since it last did anything (created,
+        edited, paused/resumed, or any recorded run) that lies in the past is a missed
+        slot. Within :func:`catch_up_grace` it is queued once as a ``catch_up`` request,
+        drained under the shared job gate like any slot (emergency stop, pause,
+        validation, the unattended guards, repeat limits and quiet hours all apply);
+        older, it is recorded as a skipped run. Each slot is claimed in ``job_ticks``,
+        so a second boot or a second process never runs it twice. Safe mode catches
+        nothing up.
+        """
+        if self._held():
+            return []
+        timezone = self.scheduler_timezone()
+        now = (now or datetime.now(UTC)).astimezone(timezone)
+        outcomes: list[dict] = []
+        for job in self.store.list():
+            if not job.runnable:
+                continue
+            marks = [_parse_utc(job.created_at), _parse_utc(job.updated_at), _parse_utc(job.last_run_at)]
+            latest = self.store.runs(job.id, limit=1)
+            if latest:
+                marks.append(_parse_utc(latest[0].started_at))
+            known = [mark for mark in marks if mark is not None]
+            if not known:
+                continue
+            try:
+                slot, gap = last_missed_slot(job, now, timezone, max(known))
+            except Exception:
+                logger.warning("job %s: missed slots could not be computed", job.id, exc_info=True)
+                continue
+            if slot is None or (gap is not None and gap <= CATCH_UP_MIN_GAP_S):
+                continue
+            late = (now - slot).total_seconds()
+            if gap is None and late <= ONE_SHOT_MISFIRE_S:
+                continue   # the scheduler's own misfire window still runs this one-shot
+            if not self.store.claim_tick(job.id, slot.astimezone(UTC).isoformat()):
+                continue
+            outcome = {"job_id": job.id, "slot": slot.astimezone(UTC).isoformat(), "late_s": int(late)}
+            if late <= catch_up_grace(gap):
+                try:
+                    receipt = self.store.dispatch.enqueue(job.id, origin="catch_up")
+                except (ValueError, sqlite3.Error) as exc:
+                    logger.warning("job %s: catch-up not queued: %s", job.id, exc)
+                    continue
+                outcomes.append({**outcome, "action": "queued", "request": receipt})
+            else:
+                stamp = utc_now()
+                self.store.record_run(
+                    job.id, started_at=stamp, finished_at=stamp, status=STATUS_SKIPPED,
+                    summary=(f"missed while the hub was down: the {outcome['slot']} slot is past its "
+                             f"{int(catch_up_grace(gap))}s catch-up window; the next slot runs as scheduled"),
+                )
+                outcomes.append({**outcome, "action": "missed"})
+        if any(item["action"] == "queued" for item in outcomes):
+            self.register_manual()
+        for item in outcomes:
+            logger.info("job %s: slot %s %s (%ss late)", item["job_id"], item["slot"],
+                        "queued for catch-up" if item["action"] == "queued" else "recorded as missed",
+                        item["late_s"])
+        return outcomes
 
     # lifecycle --------------------------------------------------------------
 

@@ -9,7 +9,7 @@ from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
 
 ACTIVE = ("queued", "running", "waiting")
-ORIGINS = ("manual", "first_run", "first_run_asked")
+ORIGINS = ("manual", "first_run", "first_run_asked", "catch_up")
 
 
 def identity(job):

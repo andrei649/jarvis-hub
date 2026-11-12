@@ -22,7 +22,11 @@ from agents.core.autonomy.jobs_guard import (
 
 @pytest.fixture
 def home(tmp_path, monkeypatch):
+    from agents.core import settings_db
+
     monkeypatch.setenv("JARVIS_HOME", str(tmp_path))
+    monkeypatch.setattr(settings_db, "DB_PATH", tmp_path / "settings.db")
+    settings_db.init_db(force=True)
     (tmp_path / "scripts").mkdir()
     return tmp_path
 

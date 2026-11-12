@@ -1884,6 +1884,7 @@
         "tests/test_h456_job_policy_api.py",
         "tests/test_h456_job_reasoning.py",
         "tests/test_h457_unattended_guards.py",
+        "tests/test_h459_catch_up.py",
         "tests/test_h462_goal_entry_e2e.py",
         "tests/test_h462_goal_intake.py",
         "tests/test_h464_run_barriers.py",
