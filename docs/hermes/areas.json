@@ -254,6 +254,7 @@
         "tests/test_goal_contract.py",
         "tests/test_h058_slash_access.py",
         "tests/test_h067_clarify_startup.py",
+        "tests/test_h069_outbound_safety.py",
         "tests/test_h117_message_batching.py",
         "tests/test_h27_capability_verification.py",
         "tests/test_h283_host_notify_and_hint.py",

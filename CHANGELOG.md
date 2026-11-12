@@ -41,6 +41,17 @@
 - If the mail server drops the connection in the middle of a check, or one message cannot
   be handled, the other messages are not lost; they are picked up on the next check.
 - If your mail server cannot be reached over IPv6, Nerva tries IPv4 once.
+**Safer replies on Telegram, Slack, Discord, ntfy, SMS and email**
+- Every message Nerva sends on a chat channel is checked last, just before it leaves: an API
+  key, a token, a password assignment or any credential the hub holds is masked
+  (`[REDACTED:…]`), whatever produced the text — an answer, a command reply, a job, an
+  approval card or a reply being written in place. Characters that make a channel reject a
+  message are removed.
+- A raw provider failure (status code, request id, provider message) no longer reaches the
+  chat: you get one sentence saying which provider failed and why (credentials, rate limit,
+  server, unknown model).
+- An agent or a scheduled job can answer `[SILENT]` to send nothing at all.
+- A turn that produced no answer, or failed, now tells you so instead of leaving the chat quiet.
 
 **`nerva chat -i` streams its answers**
 - The answer appears line by line while Nerva writes it, with a short line for each tool it

@@ -2152,6 +2152,11 @@ class JobRunner:
         adapter = channels.get(channel)
         if adapter is None:
             raise RuntimeError(f"channel {channel!r} is not connected")
+        from ..channels.outbound_safety import is_silence
+
+        if is_silence(text):
+            # H069: the job's agent chose to send nothing this run ("[SILENT]").
+            return f"silent: nothing sent to {channel}"
         if channel == "telegram":
             get_setting = getattr(self._orch, "get_setting", None)
             owner = os.environ.get("AUTONOMY_OWNER_CHAT_ID", "") or str(

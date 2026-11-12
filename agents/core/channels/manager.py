@@ -211,6 +211,11 @@ class ChannelManager:
         ch = self.channels.get(channel)
         if not ch:
             return False
+        from .outbound_safety import is_silence
+
+        if is_silence(_delivery_text(response)):
+            # H069: the agent's choice to send nothing — no message and no receipt.
+            return True
         delivery_key = kwargs.pop("delivery_key", None)
         if self._contract_denial(channel, response, kwargs) is not None:
             return False

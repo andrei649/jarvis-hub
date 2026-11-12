@@ -107,6 +107,10 @@ class DeliveryRouter:
     ) -> DeliveryDecision:
         if not str(text or "").strip():
             return DeliveryDecision(False, None, "empty-message")
+        from .outbound_safety import is_silence
+
+        if is_silence(text):
+            return DeliveryDecision(False, None, "agent-silence")
         if source.silent:
             return DeliveryDecision(False, None, "silent-source")
         if source.local_only:

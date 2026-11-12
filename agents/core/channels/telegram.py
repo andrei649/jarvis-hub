@@ -54,6 +54,7 @@ from .media_reader import (
 )
 from .media_reader import note as read_note
 from .media_reader import turn_text as image_turn_text
+from .outbound_safety import may_become_silence, sanitize_outbound, sanitize_text
 from .render import chunk, to_plain, to_telegram_html
 from .spoken_reply import REASON_SEND, Audio, SpokenReply
 from ..commands import side_question_command_name
@@ -183,6 +184,9 @@ class TelegramDraft:
         self._text += str(token or "")
         if not self._text.strip():
             return
+        if self._message_id is None and may_become_silence(self._text):
+            # H069: a reply that may still be the agent's "[SILENT]" is not started.
+            return
         try:
             now = self._clock()
             if self._message_id is None:
@@ -215,7 +219,7 @@ class TelegramDraft:
         footer = ("\n\n" + "\n".join(self._footer)) if self._footer else ""
         budget = self._cap - len(_STREAM_CURSOR) - 1 - len(footer)
         # G16: a `MEDIA: /path` line is never streamed; finish() attaches the file.
-        source = media_delivery.strip_partial(self._text)
+        source = sanitize_text(media_delivery.strip_partial(self._text))
         if len(source) > budget:
             source = source[:budget] + "…"
         return source + _STREAM_CURSOR + footer
@@ -631,9 +635,9 @@ class TelegramChannel(ChannelAdapter):
                 body["link_preview_options"] = {"is_disabled": True}
             else:
                 body.update(text=to_telegram_html(piece), parse_mode="HTML")
-            response = await self.client.post(self.api_base + "/sendMessage", json=body)
+            response = await self._post(self.api_base + "/sendMessage", json=body)
             if not plain and response.status_code == 400:
-                response = await self.client.post(self.api_base + "/sendMessage", json={
+                response = await self._post(self.api_base + "/sendMessage", json={
                     "chat_id": cid, "text": to_plain(piece), **topic})
             response.raise_for_status()
             payload = response.json()
@@ -665,7 +669,7 @@ class TelegramChannel(ChannelAdapter):
         """One bounded plain-text request, without fallback, retries or exception logging."""
         if not isinstance(text, str) or not 0 < len(text) <= 2000 or type(chat_id) is not int or not chat_id:
             return False
-        response = await self.client.post(self.api_base + '/sendMessage',
+        response = await self._post(self.api_base + '/sendMessage',
                                           json={'chat_id': chat_id, 'text': text})
         return self._scheduled_ack(response)
 
@@ -698,7 +702,7 @@ class TelegramChannel(ChannelAdapter):
                 return False
         except ValueError:
             return False
-        response = await self.client.post(self.api_base + '/sendDocument',
+        response = await self._post(self.api_base + '/sendDocument',
             data={'chat_id': str(chat_id)}, files={'document': (filename, data, mime)})
         return self._scheduled_ack(response)
 
@@ -848,10 +852,10 @@ class TelegramChannel(ChannelAdapter):
                 item.kind, ("sendDocument", "document"))
             if method == "sendPhoto" and len(item.data) > 10 * 1024 * 1024:
                 method, field = "sendDocument", "document"   # Telegram's photo limit
-            resp = await self.client.post(f"{self.api_base}/{method}", data={"chat_id": str(cid), **topic},
+            resp = await self._post(f"{self.api_base}/{method}", data={"chat_id": str(cid), **topic},
                                           files={field: (item.name, item.data, item.mime)})
             if resp.status_code == 400 and method != "sendDocument":
-                resp = await self.client.post(f"{self.api_base}/sendDocument",
+                resp = await self._post(f"{self.api_base}/sendDocument",
                                               data={"chat_id": str(cid), **topic},
                                               files={"document": (item.name, item.data, item.mime)})
             if not resp.is_success:
@@ -868,11 +872,11 @@ class TelegramChannel(ChannelAdapter):
         topic = {k: str(v) for k, v in self._topic_args(cid).items()}
         if clip.mode == "document":
             # Not audio by its bytes: never handed to a converter, sent as a plain file.
-            resp = await self.client.post(f"{self.api_base}/sendDocument", data={"chat_id": str(cid), **topic},
+            resp = await self._post(f"{self.api_base}/sendDocument", data={"chat_id": str(cid), **topic},
                                           files={"document": (clip.filename, clip.data, clip.mime)})
             return self._scheduled_ack(resp)
         if clip.mode == "voice":
-            resp = await self.client.post(f"{self.api_base}/sendVoice", data={"chat_id": str(cid), **topic},
+            resp = await self._post(f"{self.api_base}/sendVoice", data={"chat_id": str(cid), **topic},
                                           files={"voice": (clip.filename, clip.data, clip.mime)})
             if resp.status_code != 400:
                 return self._scheduled_ack(resp)
@@ -880,9 +884,22 @@ class TelegramChannel(ChannelAdapter):
         data = {"chat_id": str(cid), **topic}
         if clip.note:
             data["caption"] = clip.note
-        resp = await self.client.post(f"{self.api_base}/sendAudio", data=data,
+        resp = await self._post(f"{self.api_base}/sendAudio", data=data,
                                       files={"audio": (clip.filename, clip.data, clip.mime)})
         return self._scheduled_ack(resp)
+
+    async def _post(self, url: str, **kwargs):
+        """Every Bot API call this adapter makes. H069: the text and caption of a body
+        pass the outbound gate here, whatever built them (a reply, a card, a notice, an
+        in-place edit), so nothing reaches Telegram that the gate has not seen."""
+        from .outbound_safety import sanitize_outbound
+
+        for key in ("json", "data"):
+            body = kwargs.get(key)
+            if isinstance(body, dict) and any(isinstance(body.get(f), str) for f in ("text", "caption")):
+                kwargs[key] = {k: sanitize_outbound(v) if k in ("text", "caption") else v
+                               for k, v in body.items()}
+        return await self.client.post(url, **kwargs)
 
     async def _send_chunk(self, cid, piece: str) -> bool:
         try:
@@ -897,7 +914,7 @@ class TelegramChannel(ChannelAdapter):
         """One chunk as plain text: no parse mode, no link preview. False on any failure
         (logged by type only: an HTTP error names the URL, and the URL holds the token)."""
         try:
-            resp = await self.client.post(f"{self.api_base}/sendMessage", json={
+            resp = await self._post(f"{self.api_base}/sendMessage", json={
                 "chat_id": cid, "text": piece, "link_preview_options": {"is_disabled": True},
                 **self._topic_args(cid)})
             resp.raise_for_status()
@@ -916,13 +933,13 @@ class TelegramChannel(ChannelAdapter):
     async def _send_message(self, cid, html_text: str, *, plain: str) -> Optional[int]:
         """POST one message as HTML, as plain text if Telegram rejects the markup (400).
         Returns the new message id (or 0 when Telegram did not say), raises on failure."""
-        resp = await self.client.post(
+        resp = await self._post(
             f"{self.api_base}/sendMessage",
             json={"chat_id": cid, "text": html_text, "parse_mode": "HTML", **self._topic_args(cid)},
         )
         if resp.status_code == 400:
             logger.info("Telegram rejected the markup; resending the chunk as plain text")
-            resp = await self.client.post(
+            resp = await self._post(
                 f"{self.api_base}/sendMessage", json={"chat_id": cid, "text": plain, **self._topic_args(cid)},
             )
         resp.raise_for_status()
@@ -932,9 +949,9 @@ class TelegramChannel(ChannelAdapter):
         """Edit a message in place, HTML first and plain on a 400. False on any failure."""
         try:
             body = {"chat_id": cid, "message_id": message_id, "text": html_text, "parse_mode": "HTML"}
-            resp = await self.client.post(f"{self.api_base}/editMessageText", json=body)
+            resp = await self._post(f"{self.api_base}/editMessageText", json=body)
             if resp.status_code == 400:
-                resp = await self.client.post(
+                resp = await self._post(
                     f"{self.api_base}/editMessageText",
                     json={"chat_id": cid, "message_id": message_id, "text": plain},
                 )
@@ -955,7 +972,7 @@ class TelegramChannel(ChannelAdapter):
         """Send a decision-inbox card (text + inline keyboard) built by inbox.py."""
         try:
             body = {"chat_id": chat_id, **card}
-            resp = await self.client.post(f"{self.api_base}/sendMessage", json=body)
+            resp = await self._post(f"{self.api_base}/sendMessage", json=body)
             resp.raise_for_status()
             return True
         except Exception as e:
@@ -1021,7 +1038,7 @@ class TelegramChannel(ChannelAdapter):
                                 message_thread_id: int | None = None) -> int | None:
         """Plain prompt parts with buttons only on the exact final receipt."""
         generation = self._pending_callback_generation
-        parts = self._owner_once_parts(text)
+        parts = self._owner_once_parts(sanitize_outbound(text))
         if (not self._running or generation is None or self.client.is_closed
                 or type(chat_id) is not int or chat_id == 0 or parts is None
                 or type(reply_markup) is not dict
@@ -1037,7 +1054,7 @@ class TelegramChannel(ChannelAdapter):
             if index == len(parts) - 1:
                 body["reply_markup"] = reply_markup
             try:
-                response = await self.client.post(f"{self.api_base}/sendMessage", json=body)
+                response = await self._post(f"{self.api_base}/sendMessage", json=body)
                 response.raise_for_status()
                 reply = response.json()
                 result = reply.get("result") if type(reply) is dict and reply.get("ok") is True else None
@@ -1066,7 +1083,7 @@ class TelegramChannel(ChannelAdapter):
                 message = callback["message"]
                 markup = getattr(result, "markup", None) or {"inline_keyboard": []}
                 try:
-                    response = await self.client.post(f"{self.api_base}/editMessageReplyMarkup", json={
+                    response = await self._post(f"{self.api_base}/editMessageReplyMarkup", json={
                         "chat_id": message["chat"]["id"], "message_id": message["message_id"],
                         "reply_markup": markup,
                     })
@@ -1092,7 +1109,7 @@ class TelegramChannel(ChannelAdapter):
         if (not self._owner_once_live(generation) or type(chat_id) is not int
                 or chat_id == 0 or not isinstance(card, dict)):
             return None
-        parts = self._owner_once_parts(card.get("text"))
+        parts = self._owner_once_parts(sanitize_outbound(card.get("text")))
         markup = card.get("reply_markup")
         if parts is None or (markup is not None and type(markup) is not dict):
             return None
@@ -1103,7 +1120,7 @@ class TelegramChannel(ChannelAdapter):
             if number == len(parts) - 1 and markup is not None:
                 body["reply_markup"] = markup
             try:
-                response = await self.client.post(f"{self.api_base}/sendMessage", json=body)
+                response = await self._post(f"{self.api_base}/sendMessage", json=body)
                 response.raise_for_status()
                 reply = response.json()
                 result = reply.get("result") if type(reply) is dict and reply.get("ok") is True else None
@@ -1126,7 +1143,7 @@ class TelegramChannel(ChannelAdapter):
         posting = self._reason_prompts_posting
         posting[chat_id] = posting.get(chat_id, 0) + 1
         try:
-            response = await self.client.post(f"{self.api_base}/sendMessage", json={
+            response = await self._post(f"{self.api_base}/sendMessage", json={
                 "chat_id": chat_id,
                 "text": f"Task #{task_id} rejected. Reply to this message within 2 minutes with an optional reason (maximum 280 characters).",
                 "reply_markup": {"force_reply": True, "selective": True},
@@ -1142,7 +1159,7 @@ class TelegramChannel(ChannelAdapter):
 
     async def _answer_callback(self, callback_id: str, text: str = ""):
         try:
-            await self.client.post(
+            await self._post(
                 f"{self.api_base}/answerCallbackQuery",
                 json={"callback_query_id": callback_id, "text": text},
             )
@@ -1151,7 +1168,7 @@ class TelegramChannel(ChannelAdapter):
 
     async def send_action(self, chat_id: int, action: str = "typing"):
         try:
-            await self.client.post(
+            await self._post(
                 f"{self.api_base}/sendChatAction",
                 json={"chat_id": chat_id, "action": action},
             )
