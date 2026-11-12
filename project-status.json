@@ -199,7 +199,7 @@
       "total": 4
     }
   },
-  "latest_ci_commit": "9d9ac9c21c79b8156c6b8bbd31ed8409d043e433",
+  "latest_ci_commit": "88d4970eab7ff15787ce987d3b92140b793868a2",
   "open_release_gates": [
     {
       "id": "A1",
