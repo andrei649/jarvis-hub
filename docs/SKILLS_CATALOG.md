@@ -107,6 +107,39 @@ never repaired (409 `not_from_catalog`); one that is not installed answers 404
 `not_installed`. Installing a skill that is already installed is a repair without `--force`,
 so it never overwrites your edits. Each repair that writes is recorded as `skill.repair`.
 
+## See what you changed, move a skill set, add a source
+
+```bash
+nerva skills diff agentmail                       # unified diff of your copy against stock (offline)
+nerva skills snapshot export skills.json          # the installed skill set, to a private file
+nerva skills snapshot import skills.json --dry-run
+nerva skills snapshot import skills.json          # asks first; --yes when not on a terminal
+nerva skills tap list
+nerva skills tap add owner/repo --commit <40-hex sha> [--path skills] [--trust community|trusted]
+nerva skills tap refresh owner--repo              # after you accept the card
+nerva skills tap remove owner--repo
+nerva skills search mail                          # every trusted source, ranked
+nerva skills inspect agentmail --from hermes-catalog
+nerva skills install lint --from owner--repo      # lands quarantined
+nerva skills check                                # installed skills behind their source
+nerva skills update [--force]                     # catalog skills up to this hub's catalog
+nerva skills list-modified                        # stock skills you edited
+nerva skills reset agentmail                      # = catalog repair --force
+```
+
+Hermes's `skills diff`, `skills snapshot export|import` and `skills tap add|list|remove`
+(H025), plus `search`, `inspect`, `install`, `check`, `update`, `list-modified` and `reset`
+(H024; `update` never forces past your edits). `diff` and `list-modified` judge your edits against what the install recorded writing (the
+same record `repair` uses), never against a newer stock copy: a skill you did not touch is
+never "edited" after an upgrade, and what stock changed since is shown apart as "behind".
+Nothing is written. `update` leaves a skill you edited (or deleted files of) alone unless
+you pass `--force`; `reset` asks first (or `--yes`). A snapshot records each catalog, tap and optional skill with its commit and the
+sha256 of its SKILL.md; your own skills are listed as not exported. Importing one only
+*requests* a missing tap (your approval card, never trusted by the file), installs each skill
+through its own owner route one at a time, waits on taps whose card is still open, skips a
+source that is at another commit on this hub, and checks every installed SKILL.md against the
+snapshot. `tap add` only queues the card; nothing is fetched until you accept it.
+
 ## What it does not do
 
 - **Skills that carry code** (55) are not installable from the catalog. Nerva's imports copy a

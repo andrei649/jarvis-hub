@@ -58,17 +58,36 @@ class OptionalSkillInstallBody(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
 
 
+def _optional_skill_md_sha256(root, name: str) -> str | None:
+    """The sha256 of the SKILL.md an install of ``name`` would write (the same snapshot
+    the install route reads), or None when it cannot be read as plain files."""
+    try:
+        if root.is_symlink():
+            return None
+        raw = source_snapshot(root / name).read_bytes("SKILL.md")
+    except (OSError, SkillSourceSnapshotError):
+        return None
+    return hashlib.sha256(raw).hexdigest() if raw is not None else None
+
+
 @router.get("/api/skills/optional/catalog", dependencies=[Depends(admin_guard)])
 async def optional_skills_catalog():
+    """The shipped optional skills; ``content_sha256`` is the SKILL.md an install would
+    write, so a client can tell this hub's version from another's (H025 snapshot import)."""
+    import asyncio
+
     if not get_orch():
         return JSONResponse({"error": "not initialized"}, status_code=503)
     root = _optional_skills_root()
     installed = _writable_skills_dir()
-    return {"skills": [
-        {"name": name, "tier": "optional", "installed": (installed / name).exists(),
-         "available": (root / name / "SKILL.md").is_file()}
-        for name in sorted(OPTIONAL_SKILL_NAMES)
-    ]}
+
+    def rows():
+        return [{"name": name, "tier": "optional", "installed": (installed / name).exists(),
+                 "available": (root / name / "SKILL.md").is_file(),
+                 "content_sha256": _optional_skill_md_sha256(root, name)}
+                for name in sorted(OPTIONAL_SKILL_NAMES)]
+
+    return {"skills": await asyncio.to_thread(rows)}
 
 
 @router.get("/skills/hermes/catalog", dependencies=[Depends(user_guard)])

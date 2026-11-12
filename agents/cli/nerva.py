@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode
 
+from . import skill_sources
 from .client import HubClient, HubError, HubUnavailable, hub_url, is_loopback_url
 from .custom_endpoints import run as cmd_custom_provider
 from .mcp_catalog import run as cmd_mcp
@@ -539,6 +540,9 @@ def build_parser() -> argparse.ArgumentParser:
         "verify", help="run the reality harness's case for one loaded skill on the hub, now (admin)")
     verify.add_argument("name", help="the skill's name as `nerva skills list` shows it")
     verify.add_argument("--json", action="store_true")
+    # H025 — extra skill sources (taps), a portable skill set (snapshot), and the diff of an
+    # edited stock skill against its stock copy.
+    skill_sources.register(skills_verbs)
 
     estop = verbs.add_parser("estop", help="the global emergency stop")
     estop_verbs = estop.add_subparsers(dest="action", required=True, metavar="action")
@@ -3452,7 +3456,11 @@ def cmd_skills(ns: argparse.Namespace, ctx: Context) -> int:
     H026 — ``nerva skills bundles list|show|create|delete|reload``: named skill bundles.
     H349 — ``nerva skills pin | unpin``: the owner's pin, and where each skill came from
     in ``nerva skills list``.
-    H336 — ``nerva skills catalog [install|repair]``: the vendored Hermes skill catalog."""
+    H336 — ``nerva skills catalog [install|repair]``: the vendored Hermes skill catalog.
+    H025 — ``nerva skills tap | snapshot | diff`` and H024 — ``search | check | update |
+    list-modified | reset`` (``agents/cli/skill_sources.py``)."""
+    if ns.action in skill_sources.VERBS:
+        return skill_sources.run(ns, ctx)
     if ns.action in ("list", "off", "on", "config"):
         return _skill_switches(ns, ctx)
     if ns.action in ("pin", "unpin"):

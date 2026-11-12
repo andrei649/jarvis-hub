@@ -39,6 +39,31 @@
   example "Did you mean /sessions (the five most recent sessions)?". Nothing is run for you,
   and a guest is only offered commands a guest may use.
 
+**Skill sources, snapshots and diffs from the terminal**
+- `nerva skills tap list|add|remove|refresh` manages extra skill sources (GitHub repositories
+  pinned to one exact commit). `add` only asks: your approval card decides.
+- `nerva skills snapshot export FILE` writes the installed skill set to a private file;
+  `nerva skills snapshot import FILE` replays it on another machine, one install at a time
+  through the usual owner routes, asks before it starts, and tells you what waits for a card.
+- `nerva skills diff NAME` shows what you changed in a Hermes catalog skill or a Nerva
+  optional skill, as a diff against its stock copy.
+- Fixed before release: `nerva skills diff` and `list-modified` no longer call a skill you
+  never touched "edited" after an upgrade (they compare with what was installed and show what
+  stock changed separately); `update` no longer restores files you deleted without `--force`;
+  `reset` asks first; a snapshot import fails, and says so in its plan, when this machine ships
+  another version of an optional skill; `--json` output stays pure JSON when it asks.
+- `nerva skills search | inspect | install` find a skill across the catalog and your trusted
+  sources, show what it needs, and install it (quarantined, as in the HUD).
+- `nerva skills check` lists installed skills whose source moved on; `nerva skills update`
+  brings catalog skills up to date (a skill you edited is left alone); `nerva skills
+  list-modified` lists the stock skills you changed; `nerva skills reset` puts one back.
+
+**Skill curator status corrected**
+- `nerva curator` (status, usage, run, pause, resume, pin, unpin, list-unmanaged, adopt,
+  restore, list-archived, archive, prune, backup, rollback, ledger, purge) was already in the
+  product; the Hermes status page now counts it as complete. Every change still waits for your
+  approval card.
+
 ### What changed for you — 2026-11-11
 
 **See what Nerva ran while it answers**
