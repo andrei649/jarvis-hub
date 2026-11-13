@@ -3665,7 +3665,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Optional Skills Catalog */
+        /**
+         * Optional Skills Catalog
+         * @description The shipped optional skills; ``content_sha256`` is the SKILL.md an install would
+         *     write, so a client can tell this hub's version from another's (H025 snapshot import).
+         */
         get: operations["optional_skills_catalog_api_skills_optional_catalog_get"];
         put?: never;
         post?: never;
