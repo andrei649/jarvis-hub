@@ -916,6 +916,12 @@ def build_parser() -> argparse.ArgumentParser:
     imported.add_argument("--from", dest="foreign_source", choices=("claude", "codex"), required=True)
     imported.add_argument("path", help="owner-selected local JSONL path")
     imported.add_argument("--json", action="store_true")
+    transcript = session_verbs.add_parser(
+        "transcript", help="export redacted retained current conversation text as JSON",
+        description="Export the session's redacted retained current history (user and assistant text).")
+    transcript.add_argument("session_id")
+    transcript.add_argument("-o", "--out", default="-", help="create-only JSON output path ('-' = stdout)")
+    transcript.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="JSON output (already the default)")
     # H652 — the session's saved full turns as training data (admin; capture is opt-in).
     exported = session_verbs.add_parser(
         "export", help="the session's saved full turns (tool calls and results kept) as JSONL training data")
@@ -5471,6 +5477,8 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
 
 
 def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
+    if getattr(ns, "session_action", None) == "transcript":
+        return _export_session_transcript(ns, ctx)
     if getattr(ns, "session_action", None) == "continue":
         reply = ctx.client().post("/sessions/continue", {"source_session_id": ns.source_session_id, "request_id": ns.request_id})
         if ns.json:
@@ -5521,6 +5529,32 @@ def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
             note += "  (earlier part, still in use)"
         ctx.say(f"{sid}  {started}  {title}".rstrip() + note)
     return EXIT_OK
+
+
+def _export_session_transcript(ns: argparse.Namespace, ctx: Context) -> int:
+    from .session_transcript import encode_transcript, valid_session_id, write_transcript_file
+
+    if not valid_session_id(ns.session_id):
+        ctx.err.write("Invalid session identifier for retained transcript.\n")
+        return EXIT_USAGE
+    try:
+        reply = ctx.client().get(f"/sessions/{ns.session_id}/transcript")
+        data = encode_transcript(reply, ns.session_id)
+        if ns.out == "-":
+            ctx.out.write(data.decode("utf-8") + "\n")
+        else:
+            write_transcript_file(ns.out, data)
+            ctx.err.write("Saved retained current history transcript.\n")
+        return EXIT_OK
+    except HubUnavailable:
+        ctx.err.write("Retained session transcript hub unavailable.\n")
+        return EXIT_NO_HUB
+    except HubError as exc:
+        ctx.err.write("Retained session transcript request refused.\n")
+        return EXIT_AUTH if exc.status in (401, 403) else EXIT_FAILED
+    except (ValueError, TypeError, RecursionError, OSError):
+        ctx.err.write("Could not export retained session transcript.\n")
+        return EXIT_FAILED
 
 
 def _export_trajectories(ns: argparse.Namespace, ctx: Context) -> int:

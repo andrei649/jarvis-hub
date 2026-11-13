@@ -312,6 +312,30 @@ async def delete_session(session_id: str, confirm: str = "", lineage: bool = Fal
 _NO_STORE = {"Cache-Control": "no-store"}
 
 
+@router.get("/sessions/{session_id}/transcript", dependencies=[Depends(admin_guard)])
+async def get_session_transcript(session_id: str, download: bool = False):
+    """Preview or download retained user/assistant text with secret redaction."""
+    from fastapi.responses import Response
+
+    from agents.core.session_continuation import ContinuationRefused
+    from agents.core.session_transcript import read_transcript
+
+    orch = get_orch()
+    if orch is None:
+        return JSONResponse({"error": "not initialized"}, status_code=503, headers=_NO_STORE)
+    try:
+        raw = await read_transcript(orch, session_id)
+    except ContinuationRefused as exc:
+        return JSONResponse({"error": exc.reason}, status_code=exc.status, headers=_NO_STORE)
+    except Exception:
+        # Neither exception messages nor any partially redacted text may escape.
+        return JSONResponse({"error": "transcript_unavailable"}, status_code=503, headers=_NO_STORE)
+    headers = dict(_NO_STORE)
+    if download:
+        headers["Content-Disposition"] = f'attachment; filename="session-{session_id}-transcript.json"'
+    return Response(raw, media_type="application/json", headers=headers)
+
+
 @router.get("/sessions/{session_id}/trajectories", dependencies=[Depends(admin_guard)])
 async def get_session_trajectories(session_id: str, format: str = "sharegpt", completed_only: bool = False,
                                    jsonl: bool = False, limit: int = 1000):

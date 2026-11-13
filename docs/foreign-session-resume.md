@@ -74,3 +74,28 @@ The existing HUD Sessions recap remains available. This candidate adds CLI/API
 import and selector entry points; it adds no browser or native file picker.
 Claude Code and Codex source discovery is host administration. Native-device,
 Windows file-opening and live-provider acceptance are not claimed.
+
+## Retained current conversation text
+
+The owner can preview redacted retained user/assistant text with
+`GET /sessions/{session_id}/transcript`, or request the same JSON as an attachment
+with `?download=true`. Responses use `Cache-Control: no-store`. The scope is
+`retained_current_history`: it excludes system messages, tool payloads, media,
+compacted archives and deleted or rewound turns. The endpoint uses the exact
+addressed session without changing the active/default session. Missing, busy,
+unverifiable or oversized history refuses the request rather than reconstructing
+a transcript. The projection accepts at most 100 retained turns and 2 MiB of
+compact UTF-8 JSON before and after secret redaction. Redaction uses the existing
+secret scanner; it does not promise removal of arbitrary personal information.
+
+`nerva sessions transcript SESSION_ID` prints one validated JSON document.
+`nerva sessions transcript SESSION_ID --out FILE` creates a private file only if
+the destination does not exist; files, directories and symlinks are never
+replaced. File publication requires secure private-file and hard-link APIs and
+fails closed if unavailable. Use stdout where secure file export is unsupported.
+`nerva sessions export` continues to export opt-in training trajectories.
+In the browser Sessions panel, preview explicitly reads retained text without resuming
+the session. Text is escaped, and closing or changing the session view invalidates
+pending private responses. Download JSON streams with a header token when browser
+file saving is supported; owner-session downloads report the request, not a
+verified save. Native mobile transcript controls remain open; H005 stays partial.
