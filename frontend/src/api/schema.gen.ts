@@ -3665,7 +3665,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Optional Skills Catalog */
+        /**
+         * Optional Skills Catalog
+         * @description The shipped optional skills; ``content_sha256`` is the SKILL.md an install would
+         *     write, so a client can tell this hub's version from another's (H025 snapshot import).
+         */
         get: operations["optional_skills_catalog_api_skills_optional_catalog_get"];
         put?: never;
         post?: never;
@@ -12529,6 +12533,26 @@ export interface paths {
          *     saw), and one still running past the lease's wait answers 409 ``session_busy``.
          */
         delete: operations["delete_session_sessions__session_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/{session_id}/transcript": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Session Transcript
+         * @description Preview or download retained user/assistant text with secret redaction.
+         */
+        get: operations["get_session_transcript_sessions__session_id__transcript_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -38769,6 +38793,39 @@ export interface operations {
             query?: {
                 confirm?: string;
                 lineage?: boolean;
+            };
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_session_transcript_sessions__session_id__transcript_get: {
+        parameters: {
+            query?: {
+                download?: boolean;
             };
             header?: never;
             path: {

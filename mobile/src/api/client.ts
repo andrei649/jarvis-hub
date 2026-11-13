@@ -1,3 +1,5 @@
+import { projectSessionTranscript, validTranscriptSessionId, type SessionTranscript } from './sessionTranscript';
+export type { SessionTranscript } from './sessionTranscript';
 import type { ServerConfig } from '../storage/settings';
 import { SseDecoder } from './sse';
 import { normalizeTurnOutcome, type TurnOutcome } from '../chat/turnOutcome';
@@ -2519,6 +2521,18 @@ export async function fetchSessions(config: ServerConfig): Promise<SessionInfo[]
     admin: true,
   });
   return res.sessions ?? [];
+}
+
+/** Read only the selected session's redacted retained text; never resumes or falls back. */
+export async function fetchSessionTranscript(config: ServerConfig, sessionId: string): Promise<SessionTranscript> {
+  if (!validTranscriptSessionId(sessionId)) throw new ApiError('Invalid session ID');
+  const raw = await request<unknown>(config, 'GET', `/sessions/${encodeURIComponent(sessionId)}/transcript`,
+    undefined, { admin: true });
+  try {
+    return projectSessionTranscript(raw, sessionId);
+  } catch {
+    throw new ApiError('Invalid retained session transcript received from the hub');
+  }
 }
 
 export async function resumeSession(

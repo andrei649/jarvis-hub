@@ -1,5 +1,23 @@
 # Nerva — Backlog Multi-Agent
 
+Retained conversation transcript candidate (2026-11-13): owner-only
+`GET /sessions/{session_id}/transcript` previews or downloads redacted retained
+current user/assistant text; `nerva sessions transcript SESSION_ID [-o FILE]`
+prints the JSON or atomically creates a private file without replacing any path.
+It addresses one existing session under identity/import/rewind fences, with no
+active-session switch or reconstruction of old archives. The web Sessions panel now
+previews escaped retained text on an explicit owner-authenticated request and offers
+JSON download. Changing row, tab, reload, rename or mutation, closing and unmounting
+invalidate private preview responses; refusal bodies are never echoed. Header-token
+downloads require browser file saving support; owner-session downloads report a
+request rather than claiming a saved file. Native Sessions now offers an explicit owner-authorized retained-text preview,
+with known-field projection and clearing on close, refresh, resume, configuration
+changes and reconnect. Native mobile export and device/live-Hub acceptance remain open. H005 remains partial; this lot claims no
+closure credit and does not restamp the Hermes assessment. Secure file export
+fails closed where private-file or hard-link APIs are unavailable; native
+Windows file export has no acceptance claim.
+
+
 > Owner: Andrei · Planificat: 2026-05-30 · Echipă: agenți Claude + opencode
 > HUD: http://127.0.0.1:8080/ · Admin: /admin
 
