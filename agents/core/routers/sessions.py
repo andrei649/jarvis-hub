@@ -25,9 +25,14 @@ is an `earlier_part` still in use), and lets `POST /sessions/resume` take a `tit
 opens that conversation where it was last used.
 """
 
+import base64
+import binascii
+import json
+import logging
+import re
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -36,6 +41,9 @@ from agents.core.routers._deps import admin_guard, user_guard
 from agents.core.validation import is_valid_session_id
 
 router = APIRouter(tags=["sessions"])
+_CURSOR_MAX_CHARS = 512
+_CURSOR_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+_log = logging.getLogger(__name__)
 
 
 class ResolveSessionRequest(BaseModel):
@@ -93,6 +101,77 @@ async def import_session(body: ImportSessionRequest):
     except ForeignHistoryRefused as exc:
         return JSONResponse({"error": exc.reason}, status_code=exc.status)
     return JSONResponse(result, status_code=201, headers=_NO_STORE)
+
+
+def _encode_sessions_cursor(started_at: str | None, session_id: str, archived: bool) -> str:
+    payload = {"v": 1, "archived": archived, "started_at": started_at, "id": session_id}
+    raw = json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode("ascii")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _decode_sessions_cursor(token: str, archived: bool) -> tuple[str | None, str]:
+    from agents.core.validation import is_valid_session_id
+
+    if (not isinstance(token, str) or not 1 <= len(token) <= _CURSOR_MAX_CHARS
+            or _CURSOR_TOKEN_RE.fullmatch(token) is None):
+        raise HTTPException(status_code=400, detail={"error": "invalid_cursor"})
+    try:
+        raw = base64.b64decode(token + "=" * (-len(token) % 4), altchars=b"-_", validate=True)
+        if base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=") != token:
+            raise ValueError("noncanonical cursor")
+        value = json.loads(raw.decode("ascii"))
+    except (binascii.Error, UnicodeError, ValueError, TypeError, json.JSONDecodeError):
+        raise HTTPException(status_code=400, detail={"error": "invalid_cursor"}) from None
+    if (not isinstance(value, dict) or set(value) != {"v", "archived", "started_at", "id"}
+            or type(value["v"]) is not int or value["v"] != 1
+            or type(value["archived"]) is not bool or value["archived"] is not archived
+            or (value["started_at"] is not None
+                and (not isinstance(value["started_at"], str) or len(value["started_at"]) > 128))
+            or not is_valid_session_id(value["id"])):
+        raise HTTPException(status_code=400, detail={"error": "invalid_cursor"})
+    return value["started_at"], value["id"]
+
+
+@router.get("/sessions/page", dependencies=[Depends(admin_guard)])
+async def get_sessions_page(
+    archived: bool = False,
+    limit: int = Query(default=20, ge=1, le=100),
+    cursor: str | None = None,
+):
+    """Owner-only keyset page over the full saved-session list.
+
+    The legacy ``GET /sessions`` remains the bounded guest/mobile view. This route
+    uses an explicit stable keyset so owners can page through older history without
+    exposing a cursor through the user-guarded endpoint.
+    """
+    orch = get_orch()
+    if not orch:
+        return JSONResponse({"error": "not initialized"}, status_code=503, headers=_NO_STORE)
+    try:
+        before = _decode_sessions_cursor(cursor, archived) if cursor is not None else None
+    except HTTPException:
+        return JSONResponse({"error": "invalid_cursor"}, status_code=400, headers=_NO_STORE)
+    try:
+        rows, has_more = orch.checkpoints.get_sessions_page(limit, archived=archived, before=before)
+    except Exception:
+        _log.exception("Failed to read a session page")
+        return JSONResponse({"error": "session_page_unavailable"}, status_code=503, headers=_NO_STORE)
+
+    from ..session_titles import title_fields
+
+    ids = [row.get("session_id") or row.get("id") for row in rows]
+    others_fn = getattr(orch.checkpoints, "lineage_others", None)
+    others = others_fn(ids) if callable(others_fn) else {}
+    continued_fn = getattr(orch.checkpoints, "continued_sessions", None)
+    continued = continued_fn(ids) if callable(continued_fn) else set()
+    enriched = [{**row, **title_fields(row.get("metadata")), **_stamp_fields(row),
+                 **_lineage_fields(sid, others, continued)}
+                for sid, row in zip(ids, rows, strict=True)]
+    next_cursor = None
+    if has_more and rows:
+        last = rows[-1]
+        next_cursor = _encode_sessions_cursor(last.get("started_at"), last["id"], archived)
+    return JSONResponse({"sessions": enriched, "next_cursor": next_cursor}, headers=_NO_STORE)
 
 
 @router.get("/sessions", dependencies=[Depends(user_guard)])

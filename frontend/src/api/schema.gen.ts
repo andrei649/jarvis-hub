@@ -3665,7 +3665,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Optional Skills Catalog */
+        /**
+         * Optional Skills Catalog
+         * @description The shipped optional skills; ``content_sha256`` is the SKILL.md an install would
+         *     write, so a client can tell this hub's version from another's (H025 snapshot import).
+         */
         get: operations["optional_skills_catalog_api_skills_optional_catalog_get"];
         put?: never;
         post?: never;
@@ -12369,6 +12373,30 @@ export interface paths {
          * @description Accept owner-attested, canonical text only; SQLite owns the durable seed.
          */
         post: operations["import_session_sessions_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sessions/page": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Sessions Page
+         * @description Owner-only keyset page over the full saved-session list.
+         *
+         *     The legacy ``GET /sessions`` remains the bounded guest/mobile view. This route
+         *     uses an explicit stable keyset so owners can page through older history without
+         *     exposing a cursor through the user-guarded endpoint.
+         */
+        get: operations["get_sessions_page_sessions_page_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -38553,6 +38581,39 @@ export interface operations {
                 "application/json": components["schemas"]["ImportSessionRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_sessions_page_sessions_page_get: {
+        parameters: {
+            query?: {
+                archived?: boolean;
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

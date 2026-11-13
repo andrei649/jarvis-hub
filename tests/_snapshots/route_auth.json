@@ -428,6 +428,7 @@
   "GET /security": "open",
   "GET /security/status": "open",
   "GET /sessions": "user",
+  "GET /sessions/page": "admin",
   "GET /sessions/todo": "user",
   "GET /sessions/{session_id}/context": "admin",
   "GET /sessions/{session_id}/todo": "user",

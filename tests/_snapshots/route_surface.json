@@ -424,6 +424,7 @@
   "GET /security",
   "GET /security/status",
   "GET /sessions",
+  "GET /sessions/page",
   "GET /sessions/todo",
   "GET /sessions/{session_id}/context",
   "GET /sessions/{session_id}/todo",

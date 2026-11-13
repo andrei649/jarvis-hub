@@ -424,6 +424,7 @@
   "GET /security": "get_security_security_get",
   "GET /security/status": "security_status_security_status_get",
   "GET /sessions": "get_sessions_sessions_get",
+  "GET /sessions/page": "get_sessions_page_sessions_page_get",
   "GET /sessions/todo": "get_recent_plans_sessions_todo_get",
   "GET /sessions/{session_id}/context": "get_session_context_sessions__session_id__context_get",
   "GET /sessions/{session_id}/todo": "get_session_plan_sessions__session_id__todo_get",

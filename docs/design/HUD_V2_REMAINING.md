@@ -935,3 +935,15 @@ The new panel is a local implementation, with synthetic owner/Kernel/Vault/DNS/H
 ## Governed browser sessions — local integration (2026-10-29)
 
 Operator retains one-shot approval and adds fresh-profile start/act/close, bounded owner session/ref display and later browser-task outcome. The three session/task/close routes require the owner admin credential; generic availability remains user-tier. Grounded refs, scroll/back/press, frame/focus/native form semantics, current registration and exact per-step Kernel receipts are implemented. Local Chrome coverage includes unchanged-registration lifetime and changed-control native/journal cleanup. Console/get_images now add bounded completed-task untrusted observations through separate owner-approved reads, with conservative console invalidation and atomic image row/ref semantics. Vision/dialog/JS/CDP, other engines, real profiles, recording/spill, mobile controls and owner-host/live-platform acceptance remain required separately.
+
+
+V73 backend-only session pagination: owner-authenticated `GET /sessions/page` can
+read saved history beyond the legacy newest twenty. Web/HUD and mobile pagination
+controls are not wired in this lot; both keep the legacy bounded list. No complete
+UI or mobile pagination delivery is claimed.
+
+V74 CLI-only history consumes the V73 page route through `nerva sessions history`,
+with bounded client-side metadata filters and explicit continuation receipts.
+Web/HUD and mobile history controls remain unwired; no UI acceptance is claimed.
+H005 stays partial. Retained transcripts and session organization remain outside
+this lot.

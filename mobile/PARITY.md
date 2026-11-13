@@ -612,3 +612,15 @@ The owner-only task projection retains strict session/registration/Kernel checks
 reads do not fetch image bytes or authorize actions. Native mobile has no corresponding
 observation or session controls. Vision/dialog/JS/CDP, saved profiles and the other
 advanced browser requirements remain open.
+
+
+V73 backend-only session pagination: owner-authenticated `GET /sessions/page` can
+read saved history beyond the legacy newest twenty. Web/HUD and mobile pagination
+controls are not wired in this lot; both keep the legacy bounded list. No complete
+UI or mobile pagination delivery is claimed.
+
+V74 CLI-only history consumes the V73 page route through `nerva sessions history`,
+with bounded client-side metadata filters and explicit continuation receipts.
+Web/HUD and mobile history controls remain unwired; no UI acceptance is claimed.
+H005 stays partial. Retained transcripts and session organization remain outside
+this lot.

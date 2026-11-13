@@ -908,6 +908,23 @@ def build_parser() -> argparse.ArgumentParser:
     sessions = verbs.add_parser("sessions", help="recent conversation sessions")
     sessions.add_argument("--json", action="store_true")
     session_verbs = sessions.add_subparsers(dest="session_action")
+    history = session_verbs.add_parser(
+        "history", help="scan paginated owner history with client-side metadata filters",
+        description="Read a bounded scan of owner session metadata, filtered client-side. "
+                    "This is not a fixed snapshot or a completeness claim. Age uses started_at "
+                    "and one UTC time per run; naive timestamps are interpreted as UTC.",
+        epilog="Resume with --cursor TOKEN and repeat the same filters. The raw server cursor "
+               "is not bound to filters; the age anchor advances on the next invocation.")
+    history.add_argument("--archived", dest="history_archived", action="store_true")
+    history.add_argument("--limit", type=int, default=100, help="matching result cap, 1..1000 (default 100)")
+    history.add_argument("--max-pages", type=int, default=10, help="scan page cap, 1..100 (default 10)")
+    history.add_argument("--cursor", help="raw server continuation token")
+    history_agent = history.add_mutually_exclusive_group()
+    history_agent.add_argument("--agent", help="exact agent identifier")
+    history_agent.add_argument("--unassigned", action="store_true", help="missing, null or empty agent")
+    history.add_argument("--older-than", dest="older_than_days", type=int, help="started at least DAYS ago, 0..36500")
+    history.add_argument("--query", help="literal case-insensitive metadata text, 1..256 characters")
+    history.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
     continuation = session_verbs.add_parser("continue", help="create a new session carrying retained context; does not switch default")
     continuation.add_argument("source_session_id")
     continuation.add_argument("--request-id", required=True, help="stable UUID for safe retry")
@@ -5470,7 +5487,49 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+def _session_history(ns: argparse.Namespace, ctx: Context) -> int:
+    from .session_history import collect_history, display_text, encode_history, validate_options
+
+    options = {"archived": ns.history_archived, "limit": ns.limit, "max_pages": ns.max_pages,
+               "cursor": ns.cursor, "agent": ns.agent, "unassigned": ns.unassigned,
+               "older_than_days": ns.older_than_days, "query": ns.query}
+    try:
+        validate_options(**options)
+    except ValueError:
+        ctx.err.write("Invalid session history options; see sessions history --help.\n")
+        return EXIT_USAGE
+    try:
+        document = collect_history(ctx.client(), **options)
+        encoded = encode_history(document)
+    except HubUnavailable:
+        ctx.err.write("Session history hub unavailable.\n")
+        return EXIT_NO_HUB
+    except HubError as exc:
+        ctx.err.write("Session history request refused.\n")
+        return EXIT_AUTH if exc.status in (401, 403) else EXIT_FAILED
+    except (ValueError, TypeError, RecursionError, UnicodeError, OverflowError):
+        ctx.err.write("Could not read session history.\n")
+        return EXIT_FAILED
+    if ns.json:
+        ctx.out.write(encoded)
+    else:
+        lines = []
+        for row in document["sessions"]:
+            sid = row.get("resume_id") or row.get("session_id") or row.get("id")
+            lines.append("  ".join(display_text(value) for value in (
+                sid, row.get("started_at"), row.get("agent_id"), row.get("title") or row.get("summary"))).rstrip())
+        ctx.say("\n".join(lines) if lines else "No matching sessions in this scan.")
+        ctx.err.write(f"Bounded client-side metadata scan: {document['scanned_pages']} pages, "
+                      f"{document['scanned_rows']} rows; stop_reason={document['stop_reason']}.\n")
+        if document["next_cursor"] is not None:
+            ctx.err.write(f"Resume with --cursor {document['next_cursor']} and the same filters; "
+                          "this is not a fixed snapshot.\n")
+    return EXIT_OK
+
+
 def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
+    if getattr(ns, "session_action", None) == "history":
+        return _session_history(ns, ctx)
     if getattr(ns, "session_action", None) == "continue":
         reply = ctx.client().post("/sessions/continue", {"source_session_id": ns.source_session_id, "request_id": ns.request_id})
         if ns.json:
