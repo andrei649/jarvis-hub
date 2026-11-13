@@ -905,9 +905,26 @@ def build_parser() -> argparse.ArgumentParser:
     todo.add_argument("session", nargs="?", help="one session's plan (else the recent ones)")
     todo.add_argument("--json", action="store_true")
 
-    sessions = verbs.add_parser("sessions", help="recent conversation sessions")
+    sessions = verbs.add_parser(
+        "sessions", help="recent conversation sessions",
+        description="List and organize conversations. Pin, unpin, archive and unarchive apply to the "
+                    "whole conversation lineage. Archiving clears loaded skills; nothing is deleted.")
     sessions.add_argument("--json", action="store_true")
+    sessions.add_argument("--archived", action="store_true", help="list archived conversations only")
     session_verbs = sessions.add_subparsers(dest="session_action")
+    renamed = session_verbs.add_parser("rename", help="set a human conversation title")
+    renamed.add_argument("session_id")
+    renamed.add_argument("title", help="one line of 1 to 100 characters")
+    renamed.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
+    for action, explanation in (
+        ("pin", "pin the whole conversation lineage"),
+        ("unpin", "unpin the whole conversation lineage"),
+        ("archive", "archive the whole conversation lineage; clears loaded skills, nothing is deleted"),
+        ("unarchive", "restore the whole conversation lineage to the active list"),
+    ):
+        stamp = session_verbs.add_parser(action, help=explanation, description=explanation)
+        stamp.add_argument("session_id")
+        stamp.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
     continuation = session_verbs.add_parser("continue", help="create a new session carrying retained context; does not switch default")
     continuation.add_argument("source_session_id")
     continuation.add_argument("--request-id", required=True, help="stable UUID for safe retry")
@@ -5471,6 +5488,11 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
 
 
 def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
+    if getattr(ns, "archived", False) and getattr(ns, "session_action", None) is not None:
+        ctx.err.write("--archived is only available when listing sessions.\n")
+        return EXIT_USAGE
+    if getattr(ns, "session_action", None) in {"rename", "pin", "unpin", "archive", "unarchive"}:
+        return _organize_session(ns, ctx)
     if getattr(ns, "session_action", None) == "continue":
         reply = ctx.client().post("/sessions/continue", {"source_session_id": ns.source_session_id, "request_id": ns.request_id})
         if ns.json:
@@ -5499,7 +5521,7 @@ def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
         return EXIT_OK
     if getattr(ns, "session_action", None) == "export":
         return _export_trajectories(ns, ctx)
-    reply = ctx.client().get("/sessions")
+    reply = ctx.client().get("/sessions?archived=true" if getattr(ns, "archived", False) else "/sessions")
     sessions = (reply or {}).get("sessions") or []
     if ns.json:
         ctx.dump(sessions)
@@ -5520,6 +5542,46 @@ def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
         if row.get("earlier_part") is True:
             note += "  (earlier part, still in use)"
         ctx.say(f"{sid}  {started}  {title}".rstrip() + note)
+    return EXIT_OK
+
+
+def _organize_session(ns: argparse.Namespace, ctx: Context) -> int:
+    from agents.core.validation import is_valid_session_id as valid_session_id
+
+    from .session_organization import organization_receipt, organization_title
+
+    if not valid_session_id(ns.session_id):
+        ctx.err.write("Invalid session identifier for session organization.\n")
+        return EXIT_USAGE
+    action = ns.session_action
+    try:
+        title = organization_title(ns.title) if action == "rename" else None
+    except ValueError:
+        ctx.err.write("A title must be one line of 1 to 100 characters.\n")
+        return EXIT_USAGE
+    try:
+        client = ctx.client()
+        if action == "rename":
+            reply = client.request("PATCH", f"/sessions/{ns.session_id}/title", {"title": title})
+        else:
+            reply = client.post(f"/sessions/{ns.session_id}/{action}", {})
+        receipt = organization_receipt(reply, ns.session_id, action, title)
+    except HubUnavailable:
+        ctx.err.write("Session organization hub unavailable; the change may have applied; inspect before retry.\n")
+        return EXIT_NO_HUB
+    except HubError as exc:
+        reason = f" ({exc.reason})" if exc.reason in ("title_taken", "title_reserved") else ""
+        ctx.err.write(f"Session organization request refused{reason}.\n")
+        return EXIT_AUTH if exc.status in (401, 403) else EXIT_FAILED
+    except (ValueError, TypeError, RecursionError):
+        ctx.err.write("Could not confirm session organization; the change may have applied; inspect before retry.\n")
+        return EXIT_FAILED
+    if ns.json:
+        ctx.dump(receipt)
+    elif action == "rename":
+        ctx.say(f"Renamed {ns.session_id}: {title}")
+    else:
+        ctx.say(f"Confirmed {action} for conversation {ns.session_id}.")
     return EXIT_OK
 
 
