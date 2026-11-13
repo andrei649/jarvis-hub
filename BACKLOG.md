@@ -3667,6 +3667,11 @@
   `JARVIS_HOST` pinned to `127.0.0.1` and cloud keys scrubbed) ending in the Command Center at `/v2`;
   `start.sh` / `START.bat` open `/v2` on `/readyz`; `install.ps1 -Launch`. 55 hermetic tests.
   **Delivered-not-proven on real Windows/macOS hardware** (`bash -n` + fakes only here).
+  **V73 local bootstrap follow-up (2026-11-13, pinned main `1338833d`):** default dependency
+  selection refuses missing/nonfile/metadata-error locks; loose requirements require explicit
+  `--unlocked`. Smoke success requires a zero exit and JSON boolean `ok: true`.
+  Lock/smoke focused tests cover 41 Linux cases with fake subprocesses; native install, real pip,
+  Windows/macOS hardware, and full-suite acceptance remain unexecuted.
 - [x] ✅ **install-doctor — `scripts/doctor.py`.** `./start.sh --doctor`, `START.bat doctor`:
   required rows `python` / `venv` / `locks_in_sync` / `bind_is_loopback` / `data_root_writable`,
   advisory rows `runtimes` / `readyz` / `smoke`, one named reason each, `--json`, exit 0/1; the locks
