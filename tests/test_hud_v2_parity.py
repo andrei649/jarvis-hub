@@ -684,17 +684,6 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
-    # H361: installation, credential and selection APIs have no HUD controls.
-    # Guarded physical sends do not establish graphical or native parity.
-    "/api/admin/llm/provider-credentials",
-    "/api/admin/llm/provider-selection",
-    "/api/llm/provider-packages/status",
-    "/api/llm/provider-packages/stage",
-    "/api/llm/provider-packages/{artifact_id}",
-    "/api/llm/provider-packages/{artifact_id}/propose",
-    "/api/llm/provider-packages/proposals/{proposal_id}/decision",
-    "/api/llm/provider-packages/proposals/{proposal_id}/promote",
-    "/api/llm/provider-packages/{provider_id}/revoke",
     # H075/H581: ProjectsMode now consumes the core board, drawer, attachment,
     # metadata and dispatch routes. Remaining advanced HUD/native controls follow.
     # Each exact path is also recorded in docs/design/HUD_V2_REMAINING.md.
@@ -852,6 +841,52 @@ def test_mounted_custom_endpoint_composed_callers_are_accounted_for():
     for path, (request, label) in CUSTOM_ENDPOINT_HTTP_CONSUMERS.items():
         assert path in routes and path in COMPUTED_URL_CALLERS
         assert request in panel and label in panel
+
+
+def test_provider_packages_routes_have_a_live_admin_surface():
+    provider_routes = {
+        "/api/admin/llm/provider-credentials",
+        "/api/admin/llm/provider-selection",
+        "/api/llm/provider-packages/status",
+        "/api/llm/provider-packages/stage",
+        "/api/llm/provider-packages/{artifact_id}",
+        "/api/llm/provider-packages/{artifact_id}/propose",
+        "/api/llm/provider-packages/proposals/{proposal_id}/decision",
+        "/api/llm/provider-packages/proposals/{proposal_id}/promote",
+        "/api/llm/provider-packages/{provider_id}/revoke",
+    }
+    routes = set(_snapshot_routes())
+    blob = _client_blob()
+    assert provider_routes.issubset(routes)
+    assert {_classify(path) for path in provider_routes} == {"admin"}
+    assert provider_routes.isdisjoint(UNCALLED_BACKLOG)
+    assert all(_has_caller(path, blob) for path in provider_routes)
+
+    files = _client_files()
+    gap_source = files["frontend/src/gap.tsx"]
+    _assert_console_registration(gap_source, "Admin", "ProviderPackagesPanel")
+
+    panel = files["frontend/src/panels/provider-packages.tsx"]
+    expected_expressions = (
+        "apiGet<PackageStatus>('/api/llm/provider-packages/status', { admin: true })",
+        "apiPost<PackagePreview>('/api/llm/provider-packages/stage', stageBody, { admin: true })",
+        "apiGet<PackagePreview>(`/api/llm/provider-packages/${encodeURIComponent(targetArtifact)}`, { admin: true })",
+        "apiPost<ProposeResult>(`/api/llm/provider-packages/${encodeURIComponent(targetArtifact)}/propose`, {}, { admin: true })",
+        "apiPost<DecisionResult>(`/api/llm/provider-packages/proposals/${encodeURIComponent(targetProposal)}/decision`, decisionBody, { admin: true })",
+        "apiPost<PromoteResult>(`/api/llm/provider-packages/proposals/${encodeURIComponent(targetProposal)}/promote`, {}, { admin: true })",
+        "apiPost<RevokeResult>(`/api/llm/provider-packages/${encodeURIComponent(targetProvider)}/revoke`, {}, { admin: true })",
+        "apiGet<CredentialStatus>(`/api/admin/llm/provider-credentials?provider=${encodeURIComponent(provider)}&package_hash=${encodeURIComponent(hash)}`, { admin: true })",
+        "apiPut<CredentialStatus>('/api/admin/llm/provider-credentials', {",
+        "apiDeleteBody<CredentialStatus>('/api/admin/llm/provider-credentials', {",
+        "apiGet<SelectionStatus>('/api/admin/llm/provider-selection', { admin: true })",
+        "apiPut<SelectionStatus>('/api/admin/llm/provider-selection', selectionBody, { admin: true })",
+        "apiDeleteBody<{ status: string; revision: number }>('/api/admin/llm/provider-selection', {",
+    )
+    for expr in expected_expressions:
+        assert expr in panel, f"ProviderPackagesPanel missing caller expression: {expr}"
+    assert not re.search(r"\bfetch\s*\(", panel)
+    assert "@ts-nocheck" not in panel
+    assert 'type="password"' in panel and "permanentConsent" in panel
 
 
 # Routes whose client call is BUILT rather than written: the last segment comes from a

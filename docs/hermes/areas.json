@@ -1504,6 +1504,7 @@
         "tests/test_h513_auxiliary_policy.py",
         "tests/test_h517_shared_provider_registry.py",
         "tests/test_host_mandated_protocol.py",
+        "tests/test_hud_v2_parity.py::test_provider_packages_routes_have_a_live_admin_surface",
         "tests/test_hybrid_router.py",
         "tests/test_invocation_reasoning.py",
         "tests/test_invocation_reasoning_http.py",

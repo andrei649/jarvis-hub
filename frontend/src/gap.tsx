@@ -51,6 +51,7 @@ import { AutonomyControlPanel } from './panels/autonomy-legacy';
 import { DesktopAllowlistPanel } from './panels/desktop-allowlist';
 import { LlmRoutingPanel } from './panels/llm-routing';
 import { CustomEndpointsPanel } from './panels/custom-endpoints';
+import { ProviderPackagesPanel } from './panels/provider-packages';
 import { MoaPresetsPanel } from './panels/moa-presets';
 import { IntegrationsPanel } from './panels/integrations';
 import { FilesPanel } from './panels/files';
@@ -5983,6 +5984,7 @@ const PANEL_COMPONENTS = {
   ProviderCheckPanel,
   ProviderQuotaPanel,
   CustomEndpointsPanel,
+  ProviderPackagesPanel,
   MoaPresetsPanel,
   BrowserBrokerPanel,
   DeviceSyncPanel,

@@ -117,6 +117,7 @@ export const CONSOLE_PANELS = [
   {"id": "escalation", "label": "Escalation", "group": "Autonomy & Agents", "component": "EscalationPanel"},
   {"id": "llm-routing", "label": "Llm Routing", "group": "Admin", "component": "LlmRoutingPanel"},
   {"id": "custom-endpoints", "label": "Custom Endpoints", "group": "Admin", "component": "CustomEndpointsPanel"},
+  {"id": "provider-packages", "label": "Provider Packages", "group": "Admin", "component": "ProviderPackagesPanel"},
   {"id": "moa-presets", "label": "MoA Committees", "group": "Admin", "component": "MoaPresetsPanel"},
   {"id": "support-voice", "label": "Support Voice", "group": "Admin", "component": "SupportVoicePanel"},
   {"id": "backup", "label": "Backup", "group": "Admin", "component": "BackupPanel"},
