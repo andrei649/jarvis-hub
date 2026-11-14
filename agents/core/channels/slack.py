@@ -23,6 +23,12 @@ from .credentials import credential_is_configured
 from .descriptor import DIALECT_SLACK_MRKDWN, ChannelDescriptor
 from .ephemeral import EphemeralDeletes, EphemeralReply, ephemeral_ttl
 from .render import render_outbound
+from .slack_ai_surfaces import (
+    SlackAISurfaces,
+    parse_context_changed_event,
+    parse_feedback_action,
+    render_rich_blocks,
+)
 
 logger = logging.getLogger("jarvis.channels.slack")
 
@@ -130,7 +136,9 @@ class SlackChannel(ChannelAdapter):
     def __init__(self, token: str = "", handler=None, *, app_token: str = "",
                  pairing=None, pending_reply_handler=None, pending_callback_handler=None,
                  pre_turn_refused=None, command_registry=None,
-                 connect_timeout_seconds: float = DEFAULT_CONNECT_TIMEOUT):
+                 connect_timeout_seconds: float = DEFAULT_CONNECT_TIMEOUT,
+                 feedback_handler=None, assistant_auto_title: bool = False,
+                 rich_blocks_default: bool = False):
         super().__init__("slack", handler)
         # H058: a probe (Gateway.pre_lane_refused) for a command its sender may not run here.
         self.pre_turn_refused = pre_turn_refused
@@ -144,6 +152,10 @@ class SlackChannel(ChannelAdapter):
         self.pairing = pairing
         self.pending_reply_handler = pending_reply_handler
         self.pending_callback_handler = pending_callback_handler
+        self.feedback_handler = feedback_handler
+        self.assistant_auto_title = bool(assistant_auto_title)
+        self.rich_blocks_default = bool(rich_blocks_default)
+        self._ai = SlackAISurfaces()
         self._pending_callback_generation = None
         self._pending_fast: dict[int, asyncio.Task] = {}
         self._pending_fast_reserved = 0
@@ -387,6 +399,7 @@ class SlackChannel(ChannelAdapter):
     async def _shutdown(self):
         await self._ephemeral_deletes.aclose()
         self._batch.discard()              # H117: like the undelivered event queue below
+        self._ai.clear()
         with self._ingress_lock:
             self._running = False
             self._pending_callback_generation = None
@@ -511,6 +524,38 @@ class SlackChannel(ChannelAdapter):
                       "pending_input_eligible": False}
         return (team, f"slash:{trigger}"), normalized
 
+    def _handle_interactive_socket(self, client, payload) -> None:
+        callback = self._normalize_action(payload)
+        hook = self.pending_callback_handler
+        if callback is not None and callable(hook):
+            original = payload["message"].get("text")
+            self._start_pending_fast(client, self._handle_pending_callback,
+                                     callback, original, hook,
+                                     self._pending_callback_generation)
+            return
+        feedback = parse_feedback_action(
+            payload, expected_team=self._team_id, bot_user_id=self._bot_user_id,
+        )
+        if feedback is not None:
+            self._start_pending_fast(
+                client, self._handle_feedback_callback, feedback, self._pending_callback_generation,
+            )
+
+    async def _handle_feedback_callback(self, feedback: dict, generation) -> None:
+        if not self._pending_live(generation):
+            return
+        if self.pairing is not None and not self._pairing_allowed(self.pairing, feedback["sender"]):
+            return
+        self._ai.record_feedback(feedback)
+        hook = self.feedback_handler
+        if callable(hook):
+            try:
+                res = hook(feedback)
+                if asyncio.iscoroutine(res):
+                    await res
+            except Exception:
+                logger.warning("Slack feedback handler failed")
+
     def _on_socket_request(self, client, request):
         """SDK-thread callback: ACK first, then enqueue bounded validated data."""
         envelope_id = getattr(request, "envelope_id", None)
@@ -524,36 +569,34 @@ class SlackChannel(ChannelAdapter):
         except Exception:
             logger.warning("Slack Socket Mode acknowledgement failed; event not admitted")
             return
-        if getattr(request, "type", None) == "interactive":
-            payload = getattr(request, "payload", None)
-            callback = self._normalize_action(payload)
-            hook = self.pending_callback_handler
-            if callback is not None and callable(hook):
-                original = payload["message"].get("text")
-                self._start_pending_fast(client, self._handle_pending_callback,
-                                         callback, original, hook,
-                                         self._pending_callback_generation)
-            return
         request_type = getattr(request, "type", None)
-        if request_type == "slash_commands":
-            admitted = self._normalize_slash(getattr(request, "payload", None))
-        elif request_type == "events_api":
-            admitted = self._normalize_event(getattr(request, "payload", None))
+        payload = getattr(request, "payload", None)
+        if request_type == "interactive":
+            self._handle_interactive_socket(client, payload)
+            return
+        if request_type == "events_api":
+            ctx_change = parse_context_changed_event(payload, expected_team=self._team_id)
+            if ctx_change is not None:
+                with self._ingress_lock:
+                    self._ai.record_context_change(*ctx_change)
+                return
+            admitted = self._normalize_event(payload)
+        elif request_type == "slash_commands":
+            admitted = self._normalize_slash(payload)
         else:
             return
         if admitted is None:
             return
+        self._admit_inbound_event(client, request_type, admitted)
+
+    def _admit_inbound_event(self, client, request_type: str, admitted: tuple) -> None:
         event_key, event = admitted
-        # A slash command never answers a pending free-text prompt. It is its own
-        # command turn; the ordinary command/access path decides what it may do.
         hook = self.pending_reply_handler if request_type == "events_api" else None
         with self._ingress_lock:
             if not self._running or client is not self._socket_client:
                 return
             if event_key in self._seen_events:
                 return
-            # Reserve the bounded pending lane before posting to the loop. An
-            # SDK reader thread may receive more requests while a turn blocks.
             fast = callable(hook) and self._pending_fast_reserved < SLACK_PENDING_FAST_LIMIT
             if fast:
                 self._pending_fast_reserved += 1
@@ -838,68 +881,147 @@ class SlackChannel(ChannelAdapter):
             return False
         try:
             client, generation = self._client, self._pending_callback_generation
-            ttl = 0
-            if isinstance(message, EphemeralReply):
-                from ..settings_db import get_value
-
-                default = get_value("display", "ephemeral_system_ttl", 0) if message.ttl_seconds is None else 0
-                ttl = min(ephemeral_ttl(message, default=default), 86400)
+            ttl = self._ephemeral_ttl_for(message)
             target = {"channel": channel}
             if kwargs.get("thread_ts"):
                 target["thread_ts"] = kwargs["thread_ts"]
-            # Rendered to mrkdwn and chunked on the source (Hermes absorption 4d).
-            # slack_sdk.WebClient is the blocking (urllib) client; run it in an
-            # executor so a slow/unreachable Slack API can't freeze the event loop.
+            use_rich = bool(kwargs.get("rich_blocks", self.rich_blocks_default))
+            feedback_id = str(kwargs.get("feedback_id") or "").strip()
+            pieces = render_outbound(str(message or ""), self.descriptor)
             loop = asyncio.get_running_loop()
-            for piece in render_outbound(str(message or ""), self.descriptor):
+            for idx, piece in enumerate(pieces):
+                is_last = idx == len(pieces) - 1
+                blocks = (
+                    render_rich_blocks(piece, include_feedback=bool(feedback_id), feedback_id=feedback_id)
+                    if (use_rich or feedback_id) and is_last else None
+                )
+                call_kwargs = {**target, "text": piece, **({"blocks": blocks} if blocks else {})}
                 result = await loop.run_in_executor(
-                    None, lambda text=piece: client.chat_postMessage(**target, text=text)
+                    None, lambda kw=call_kwargs: client.chat_postMessage(**kw)
                 )
                 if result.get("ok") is not True:
                     return False
-                timestamp = result.get("ts")
-                if (ttl and result.get("channel") == channel and type(timestamp) is str
-                        and _TIMESTAMP.fullmatch(timestamp) and generation is not None):
-                    async def delete(ts=timestamp):
-                        if (not self._running or self._client is not client
-                                or self._pending_callback_generation is not generation):
-                            return False
-                        outcome = await asyncio.to_thread(client.chat_delete, channel=channel, ts=ts)
-                        return outcome.get("ok") is True
-
-                    self._ephemeral_deletes.schedule(ttl, delete)
+                self._schedule_ephemeral_if_needed(
+                    client, generation, channel, result, ttl,
+                )
             return True
         except Exception:
             logger.error("Slack send failed")
             return False
 
-    async def receive_event(self, text: str, channel: str, user: str = "", **kwargs):
-        """Route one inbound Slack event through the handler.
+    @staticmethod
+    def _ephemeral_ttl_for(message: object) -> int:
+        if not isinstance(message, EphemeralReply):
+            return 0
+        from ..settings_db import get_value
 
-        ``user`` is the Slack member id from the event payload; it is threaded as
-        ``sender`` so the gateway's pairing gate can hold a stranger. An event that
-        names no user is dropped rather than routed anonymously: with no identity
-        there is nothing for pairing to hold, and a front door that routes the
-        unidentifiable is not a door. (Hermes absorption 5b)
-        """
+        default = get_value("display", "ephemeral_system_ttl", 0) if message.ttl_seconds is None else 0
+        return min(ephemeral_ttl(message, default=default), 86400)
+
+    def _schedule_ephemeral_if_needed(self, client, generation, channel: str, result: dict, ttl: int) -> None:
+        timestamp = result.get("ts")
+        if not (ttl and result.get("channel") == channel and type(timestamp) is str
+                and _TIMESTAMP.fullmatch(timestamp) and generation is not None):
+            return
+
+        async def delete(ts=timestamp):
+            if (not self._running or self._client is not client
+                    or self._pending_callback_generation is not generation):
+                return False
+            outcome = await asyncio.to_thread(client.chat_delete, channel=channel, ts=ts)
+            return outcome.get("ok") is True
+
+        self._ephemeral_deletes.schedule(ttl, delete)
+
+    # ── H126: Slack-native AI-app surfaces ───────────────────────────────────
+
+    async def start_stream(
+        self, channel: str, *, thread_ts: str | None = None, initial_text: str = "…",
+    ) -> str | None:
+        return await self._ai.start_stream(
+            self._client, team=self._team_id or "T0", channel=channel,
+            thread_ts=thread_ts, initial_text=initial_text,
+        )
+
+    async def append_stream(
+        self, channel: str, delta: str, *, thread_ts: str | None = None,
+    ) -> bool:
+        return await self._ai.append_stream(
+            self._client, team=self._team_id or "T0", channel=channel,
+            thread_ts=thread_ts, delta=delta,
+        )
+
+    async def finalize_stream(
+        self,
+        channel: str,
+        *,
+        thread_ts: str | None = None,
+        final_text: str | None = None,
+        rich_blocks: bool = True,
+        feedback_id: str = "",
+    ) -> str | None:
+        return await self._ai.finalize_stream(
+            self._client, team=self._team_id or "T0", channel=channel,
+            thread_ts=thread_ts, final_text=final_text,
+            rich_blocks=rich_blocks, feedback_id=feedback_id,
+        )
+
+    async def upsert_plan_step(
+        self,
+        channel: str,
+        *,
+        thread_ts: str | None = None,
+        step_id: str,
+        tool: str,
+        label: str,
+        state: str = "running",
+        detail: str = "",
+        title: str = "Execution Plan",
+    ) -> str | None:
+        return await self._ai.upsert_plan_step(
+            self._client, team=self._team_id or "T0", channel=channel,
+            thread_ts=thread_ts, step_id=step_id, tool=tool, label=label,
+            state=state, detail=detail, title=title,
+        )
+
+    async def set_suggested_prompts(
+        self,
+        channel: str,
+        thread_ts: str,
+        prompts: list | tuple,
+        *,
+        title: str = "Suggested next steps",
+    ) -> bool:
+        return await self._ai.set_suggested_prompts(
+            self._client, channel=channel, thread_ts=thread_ts, prompts=prompts, title=title,
+        )
+
+    async def ensure_thread_title(
+        self, channel: str, thread_ts: str, first_message: str,
+    ) -> str | None:
+        return await self._ai.ensure_thread_title(
+            self._client, team=self._team_id or "T0", channel=channel,
+            thread_ts=thread_ts, first_message=first_message,
+        )
+
+    def get_context_label(self, channel: str, thread_ts: str | None = None) -> str | None:
+        return self._ai.get_context_label(self._team_id or "T0", channel, thread_ts)
+
+    def recorded_feedback(self) -> list[dict]:
+        return list(self._ai.feedback)
+
+    async def receive_event(self, text: str, channel: str, user: str = "", **kwargs):
         if not self.handler:
             return None
         sender = str(user or "").strip()
         if not sender:
             logger.warning("Slack event without a user id dropped (unpairable)")
             return None
-        # An adapter that forwards the raw event kwargs may carry its own ``sender``;
-        # the member id from the payload is the identity pairing holds, so it wins
-        # rather than colliding with the handler's keyword. Adapters never raise.
         kwargs.pop("sender", None)
-        # H117: held for the batch window, keyed by channel, member and thread.
         key = (str(channel), sender, str(kwargs.get("thread_ts") or ""))
         return await self._batch.submit(key, text, slack_channel=channel, sender=sender, **kwargs)
 
     def _refused_here(self, _key, text: str, meta: dict) -> bool:
-        """H058 — whether *text* is a command this member may not run in this conversation
-        (judged by the hub through ``pre_turn_refused``; a missing probe says no). The hub
-        reads a ``D`` channel as a DM, as it does for the turn itself."""
         probe = self.pre_turn_refused
         return callable(probe) and probe(
             channel="slack", sender=meta.get("sender"), chat_id=meta.get("slack_channel"),
@@ -908,4 +1030,12 @@ class SlackChannel(ChannelAdapter):
     async def _deliver_turn(self, key, text: str, meta: dict):
         if not self.handler:
             return None
+        channel = str(meta.get("slack_channel") or "")
+        thread_ts = meta.get("thread_ts")
+        ctx_label = self.get_context_label(channel, thread_ts) if channel else None
+        if ctx_label:
+            meta = {**meta, "context_label": ctx_label}
+        if self.assistant_auto_title and channel and isinstance(thread_ts, str) and thread_ts:
+            with suppress(Exception):
+                await self.ensure_thread_title(channel, thread_ts, text)
         return await self.handler(text, channel="slack", **meta)

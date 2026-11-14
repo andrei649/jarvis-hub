@@ -45,6 +45,7 @@ import json
 import logging
 import re
 import secrets
+import socket
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -61,6 +62,9 @@ TOKEN_PREFIX = "mcp.oauth."  # nosec B105 - a secret-store name prefix, not a se
 HUB_CALLBACK_PATH = "/api/oauth/mcp/callback"
 COOKIE_PREFIX = "nerva_mcp_oauth_"
 CLIENT_NAME = "Nerva"
+DEFAULT_CIMD_URL = "https://nerva.local/.well-known/oauth-client.json"
+LOOPBACK_PINNED_PORTS: tuple[int, ...] = (27890, 27891, 27892, 27893, 27894)
+_VALID_AUTH_METHODS = frozenset({"none", "client_secret_basic", "client_secret_post"})
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "[::1]", "::1"})
 _PATH_RE = re.compile(r"^/[A-Za-z0-9/_.-]{0,63}$")
 _SERVER_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -95,6 +99,8 @@ class Flow:
     scope: str | None
     hub_origin: str | None = None
     iss_required: bool = False
+    cimd_used: bool = False
+    token_user_agent: str | None = None
     created: float = field(default_factory=time.time)
 
     def expired(self, now: float | None = None) -> bool:
@@ -104,6 +110,7 @@ class Flow:
 _FLOWS: dict[str, Flow] = {}
 _LOCKS: dict[str, asyncio.Lock] = {}
 _REJECTED: set[str] = set()
+_CIMD_REJECTED: set[tuple[str, str]] = set()
 
 
 def _http_factory(server: str):
@@ -129,20 +136,180 @@ def origin_of(url: str) -> str:
     return f"{scheme}://{host}:{port}"
 
 
-_SECOND_LEVEL = frozenset({"co", "com", "net", "org", "gov", "ac", "edu", "ne", "or", "go"})
+_SECOND_LEVEL = frozenset({"co", "com", "net", "org", "gov", "ac", "edu", "ne", "or", "go", "gob", "govt"})
+
+#: H550 — embedded Public Suffix List covering multi-label ICANN ccTLDs and private
+#: multi-tenant cloud/PaaS suffixes so two tenants on a shared suffix (e.g. ``a.workers.dev``
+#: and ``b.workers.dev``) NEVER match ``_on_issuer`` as the same registrable domain.
+_PUBLIC_SUFFIXES: frozenset[str] = frozenset({
+    # Multi-label ICANN / ccTLD suffixes
+    "co.uk", "org.uk", "gov.uk", "ac.uk", "me.uk", "ltd.uk", "plc.uk", "net.uk",
+    "com.au", "net.au", "org.au", "edu.au", "gov.au", "asn.au", "id.au",
+    "co.jp", "ne.jp", "or.jp", "ac.jp", "go.jp", "ed.jp", "lg.jp",
+    "com.br", "net.br", "org.br", "gov.br", "edu.br",
+    "co.nz", "net.nz", "org.nz", "govt.nz", "ac.nz",
+    "co.za", "net.za", "org.za", "gov.za", "ac.za",
+    "com.sg", "net.sg", "org.sg", "edu.sg", "gov.sg",
+    "com.hk", "net.hk", "org.hk", "edu.hk", "gov.hk",
+    "com.mx", "net.mx", "org.mx", "gob.mx", "edu.mx",
+    "co.in", "net.in", "org.in", "gov.in", "ac.in", "res.in",
+    "com.cn", "net.cn", "org.cn", "gov.cn", "edu.cn", "ac.cn",
+    "co.kr", "ne.kr", "or.kr", "go.kr", "ac.kr",
+    "com.tw", "net.tw", "org.tw", "gov.tw", "edu.tw",
+    "com.tr", "net.tr", "org.tr", "gov.tr", "edu.tr",
+    "com.pl", "net.pl", "org.pl", "gov.pl", "edu.pl",
+    "com.ro", "org.ro", "gov.ro", "edu.ro", "tm.ro",
+    "co.il", "org.il", "gov.il", "ac.il",
+    "asso.fr", "gouv.fr", "nom.fr", "priv.at", "eu.org",
+    # Private multi-tenant hosting / PaaS public suffixes
+    "github.io", "githubusercontent.com", "gitlab.io", "bitbucket.io",
+    "workers.dev", "pages.dev", "trycloudflare.com", "r2.dev",
+    "vercel.app", "now.sh", "netlify.app", "onrender.com",
+    "herokuapp.com", "herokussl.com", "fly.dev", "railway.app",
+    "run.app", "web.app", "firebaseapp.com", "appspot.com", "cloudfunctions.net",
+    "azurewebsites.net", "azurestaticapps.net", "cloudapp.azure.com",
+    "amazonaws.com", "cloudfront.net", "elasticbeanstalk.com",
+    "s3.amazonaws.com", "execute-api.amazonaws.com",
+    "ngrok-free.app", "ngrok.app", "ngrok.io", "ngrok.dev",
+    "ts.net", "tailscale.net", "supabase.co", "deno.dev", "replit.app",
+})
+_WILDCARD_PUBLIC_SUFFIXES: tuple[str, ...] = (
+    "s3.amazonaws.com",
+    "compute.amazonaws.com",
+    "elb.amazonaws.com",
+    "execute-api.amazonaws.com",
+)
+
+
+def _public_suffix_len(labels: list[str]) -> int:
+    """Number of trailing labels belonging to the public suffix of *labels*."""
+    n = len(labels)
+    for size in (3, 2):
+        if n >= size and ".".join(labels[-size:]) in _PUBLIC_SUFFIXES:
+            return size
+    if n >= 4:
+        tail3 = ".".join(labels[-3:])
+        if tail3 in _WILDCARD_PUBLIC_SUFFIXES or (
+            len(labels[-4:]) == 4 and f"{labels[-3]}.{labels[-2]}.{labels[-1]}".endswith(".amazonaws.com")
+            and labels[-4] in {"s3", "execute-api"}
+        ):
+            return 4
+    if n >= 2 and len(labels[-1]) == 2 and labels[-2] in _SECOND_LEVEL:
+        return 2
+    return 1
 
 
 def registrable(host: str) -> str:
-    """The registrable part of a DNS name, approximately (no public-suffix list ships with
-    Nerva): the last two labels, or three under a two-letter country code's generic second
-    level (``example.co.uk``). An IP literal is itself."""
+    """The registrable (eTLD+1) domain of *host* under the embedded Public Suffix List.
+
+    Returns ``""`` when *host* itself is a public suffix (e.g. ``workers.dev`` or ``co.uk``)
+    so ``_on_issuer`` never treats bare public suffixes as a shared domain. An IP literal is
+    itself.
+    """
     host = (host or "").lower().rstrip(".")
-    labels = host.split(".")
-    if _is_literal(host) or len(labels) <= 2:
+    if not host:
+        return ""
+    if _is_literal(host):
         return host
-    if len(labels[-1]) == 2 and labels[-2] in _SECOND_LEVEL:
-        return ".".join(labels[-3:])
-    return ".".join(labels[-2:])
+    labels = host.split(".")
+    if len(labels) < 2:
+        return host
+    suffix_len = _public_suffix_len(labels)
+    if len(labels) <= suffix_len:
+        return ""
+    return ".".join(labels[-(suffix_len + 1) :])
+
+
+@dataclass
+class LoopbackReservation:
+    """A bound loopback socket holding the chosen OAuth callback port open until handed off."""
+
+    sock: socket.socket
+    host: str
+    port: int
+    redirect_uri: str
+    ephemeral: bool
+
+    def close(self) -> None:
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+    def __enter__(self) -> LoopbackReservation:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
+
+
+def _try_bind_loopback(bind_host: str, port: int) -> tuple[socket.socket, int] | None:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind((bind_host, port))
+        bound_port = int(sock.getsockname()[1])
+        return sock, bound_port
+    except OSError:
+        sock.close()
+        return None
+
+
+def reserve_loopback_callback(
+    *,
+    host: str = "127.0.0.1",
+    path: str = "/callback",
+    pins: dict | None = None,
+    server: str = "",
+    dcr_available: bool = False,
+    cimd_used: bool = False,
+    prefer_ephemeral: bool = False,
+) -> LoopbackReservation:
+    """Reserve a loopback callback port (``27890–27894`` pinned pool, reverting to random).
+
+    Pinned ports ``27890–27894`` are tried first so pre-registered / CIMD exact-match URIs
+    work; we revert to an ephemeral OS port (``0``) when:
+    1. *prefer_ephemeral* is requested (or DCR is used without CIMD/pinned redirects and all
+       reusable ports are unavailable), OR
+    2. every port in ``27890–27894`` is already bound on loopback.
+    When *pins* explicitly pins ``redirect_port``, ONLY that port is acceptable (failing closed
+    with ``callback_port_busy`` if occupied).
+    """
+    clean_host = "localhost" if str(host).lower() == "localhost" else "127.0.0.1"
+    bind_ip = "127.0.0.1"
+    clean_path = path if _PATH_RE.match(path or "") else "/callback"
+    explicit = _redirect_pin(pins or {})
+    if explicit:
+        parts = urlsplit(explicit)
+        pinned_host = parts.hostname or clean_host
+        pinned_port = int(parts.port or LOOPBACK_PINNED_PORTS[0])
+        bound = _try_bind_loopback(bind_ip, pinned_port)
+        if bound is None:
+            raise OAuthError("callback_port_busy", f"pinned callback port {pinned_port} is busy", status=409)
+        return LoopbackReservation(bound[0], pinned_host, bound[1], explicit, False)
+
+    # Reuse a previously DCR-registered loopback port for this server when free.
+    if server and _SERVER_RE.match(server):
+        for uri in status(server).get("loopback_redirects") or ():
+            p = urlsplit(uri)
+            if p.port and 1024 <= p.port <= 65535:
+                bound = _try_bind_loopback(bind_ip, p.port)
+                if bound is not None:
+                    h = p.hostname or clean_host
+                    return LoopbackReservation(bound[0], h, bound[1], f"http://{h}:{bound[1]}{p.path or clean_path}", False)
+
+    use_ephemeral_first = prefer_ephemeral or (dcr_available and not cimd_used and bool((pins or {}).get("random_port")))
+    if not use_ephemeral_first:
+        for candidate_port in LOOPBACK_PINNED_PORTS:
+            bound = _try_bind_loopback(bind_ip, candidate_port)
+            if bound is not None:
+                uri = f"http://{clean_host}:{bound[1]}{clean_path}"
+                return LoopbackReservation(bound[0], clean_host, bound[1], uri, False)
+
+    bound = _try_bind_loopback(bind_ip, 0)
+    if bound is None:
+        raise OAuthError("callback_port_busy", "could not bind any loopback callback port", status=503)
+    uri = f"http://{clean_host}:{bound[1]}{clean_path}"
+    return LoopbackReservation(bound[0], clean_host, bound[1], uri, True)
 
 
 def _is_literal(host: str) -> bool:
@@ -291,11 +458,30 @@ async def _get_json(client, url: str) -> dict | None:
         await resp.aclose()
 
 
-async def _post_form(client, url: str, data: dict, *, auth: tuple[str, str] | None = None) -> tuple[int, dict]:
+def _clean_user_agent(raw: Any) -> str | None:
+    if not isinstance(raw, str):
+        return None
+    text = raw.strip()
+    if not text or len(text) > 256 or any(ch in text for ch in "\r\n\x00") or not text.isprintable():
+        return None
+    return text
+
+
+async def _post_form(
+    client,
+    url: str,
+    data: dict,
+    *,
+    auth: tuple[str, str] | None = None,
+    user_agent: str | None = None,
+) -> tuple[int, dict]:
     headers = {"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"}
     if auth:
         raw = f"{auth[0]}:{auth[1]}".encode()
         headers["Authorization"] = "Basic " + base64.b64encode(raw).decode()
+    clean_ua = _clean_user_agent(user_agent)
+    if clean_ua:
+        headers["User-Agent"] = clean_ua
     resp = await client.post(url, content=urlencode(data).encode(), headers=headers, follow_redirects=False)
     try:
         body = resp.content
@@ -401,6 +587,7 @@ async def discover(client, server_url: str, *, hub_origin: str | None = None) ->
         "resource": resource,
         "scopes": scopes,
         "iss_in_response": meta.get("authorization_response_iss_parameter_supported") is True,
+        "cimd_supported": meta.get("client_id_metadata_document_supported") is True,
     }
 
 
@@ -453,21 +640,113 @@ def _pinned_value(server: str, value: Any) -> str | None:
     return text
 
 
-async def _client_identity(client, server: str, meta: dict, redirect_uri: str,
-                           pins: dict, *, hub_origin: str | None = None,
-                           server_url: str = "") -> tuple[str, str | None, str]:
+def _valid_cimd_url(url: Any) -> str | None:
+    """Validate an HTTPS Client ID Metadata Document URL (RFC/MCP CIMD)."""
+    if not isinstance(url, str):
+        return None
+    clean = url.strip()
+    parts = urlsplit(clean)
+    if (parts.scheme != "https" or not parts.hostname or parts.username or parts.password
+            or parts.fragment or not parts.path or parts.path == "/"
+            or any(ch in clean for ch in " \t\r\n\x00")):
+        return None
+    return clean
+
+
+def is_cimd_rejected(server: str, issuer: str) -> bool:
+    if (server, issuer) in _CIMD_REJECTED:
+        return True
+    stored = _read_json(server, "cimd_rejected")
+    rejected_issuers = stored.get("issuers") if isinstance(stored.get("issuers"), list) else []
+    return issuer in rejected_issuers
+
+
+def record_cimd_rejected(server: str, issuer: str) -> None:
+    """Record that *issuer* rejected CIMD for *server*, so subsequent starts fall back to DCR."""
+    if not server or not issuer:
+        return
+    _CIMD_REJECTED.add((server, issuer))
+    if _SERVER_RE.match(server):
+        stored = _read_json(server, "cimd_rejected")
+        issuers = [i for i in (stored.get("issuers") or []) if isinstance(i, str)]
+        if issuer not in issuers:
+            issuers.append(issuer)
+        with_limit = issuers[-16:]
+        try:
+            _store().set(_name(server, "cimd_rejected"), json.dumps({"issuers": with_limit}))
+        except Exception:
+            logger.debug("MCP OAuth CIMD rejection store write skipped", exc_info=True)
+
+
+def _owner_client_name(pins: dict) -> str:
+    raw = pins.get("client_name")
+    if isinstance(raw, str):
+        cleaned = raw.strip()
+        if cleaned and len(cleaned) <= 128 and cleaned.isprintable() and not any(ch in cleaned for ch in "\r\n\x00"):
+            return cleaned
+    return CLIENT_NAME
+
+
+def _owner_auth_method_override(pins: dict) -> str | None:
+    raw = str(pins.get("token_endpoint_auth_method") or "").strip().lower()
+    return raw if raw in _VALID_AUTH_METHODS else None
+
+
+def _resolve_cimd_candidate(meta: dict, pins: dict) -> str | None:
+    explicit = _valid_cimd_url(pins.get("cimd_url"))
+    if explicit:
+        return explicit
+    if meta.get("cimd_supported") is True and pins.get("cimd") is not False:
+        return DEFAULT_CIMD_URL
+    return None
+
+
+async def _client_identity(
+    client,
+    server: str,
+    meta: dict,
+    redirect_uri: str,
+    pins: dict,
+    *,
+    hub_origin: str | None = None,
+    server_url: str = "",
+) -> tuple[str, str | None, str, bool]:
+    override_method = _owner_auth_method_override(pins)
     pinned = _pinned_value(server, pins.get("client_id"))
     if pinned:
         secret = _pinned_value(server, pins.get("client_secret"))
-        return pinned, secret, _auth_method(meta, secret)
-    # One registered client per server and issuer. A new return address re-registers it with
-    # the addresses it already had (at most four), so a login does not mint a client each time.
+        return pinned, secret, _auth_method(meta, secret, override=override_method), False
+
+    cimd_url = _resolve_cimd_candidate(meta, pins)
+    if cimd_url and not is_cimd_rejected(server, meta["issuer"]):
+        return cimd_url, None, override_method or "none", True
+
     known = _read_json(server, "client")
     redirects = known.get("redirect_uris") if isinstance(known.get("redirect_uris"), list) else (
         [known["redirect_uri"]] if known.get("redirect_uri") else [])
     if known.get("issuer") == meta["issuer"] and redirect_uri in redirects and known.get("client_id"):
         secret = known.get("client_secret") or None
-        return known["client_id"], secret, _auth_method(meta, secret)
+        return known["client_id"], secret, _auth_method(meta, secret, override=override_method), False
+
+    return await _register_dcr_client(
+        client, server, meta, redirect_uri, redirects, known, pins,
+        override_method=override_method, hub_origin=hub_origin, server_url=server_url,
+    )
+
+
+async def _register_dcr_client(
+    client,
+    server: str,
+    meta: dict,
+    redirect_uri: str,
+    redirects: list,
+    known: dict,
+    pins: dict,
+    *,
+    override_method: str | None,
+    hub_origin: str | None,
+    server_url: str,
+) -> tuple[str, str | None, str, bool]:
     endpoint = meta.get("registration_endpoint")
     if not endpoint:
         raise OAuthError("client_registration_unavailable",
@@ -475,26 +754,32 @@ async def _client_identity(client, server: str, meta: dict, redirect_uri: str,
     if endpoint_problem(endpoint, server_url=server_url, hub_origin=hub_origin):
         raise OAuthError("insecure_endpoint", "the registration endpoint is not allowed")
     keep = [r for r in redirects if isinstance(r, str)] if known.get("issuer") == meta["issuer"] else []
-    redirects = list(dict.fromkeys([*keep, redirect_uri]))[-4:]
-    status, body = await _post_json(client, endpoint, {
-        "client_name": CLIENT_NAME,
-        "redirect_uris": redirects,
+    merged_redirects = list(dict.fromkeys([*keep, redirect_uri]))[-4:]
+    req_method = override_method or "none"
+    status_code, body = await _post_json(client, endpoint, {
+        "client_name": _owner_client_name(pins),
+        "redirect_uris": merged_redirects,
         "grant_types": ["authorization_code", "refresh_token"],
         "response_types": ["code"],
-        "token_endpoint_auth_method": "none",  # nosec B105 - a public PKCE client, no secret
+        "token_endpoint_auth_method": req_method,
     })
     client_id = body.get("client_id") if isinstance(body.get("client_id"), str) else ""
-    if status not in (200, 201) or not client_id:
-        raise OAuthError("registration_failed", f"dynamic client registration was refused ({status})", status=502)
+    if status_code not in (200, 201) or not client_id:
+        raise OAuthError("registration_failed",
+                         f"dynamic client registration was refused ({status_code})", status=502)
     secret = body.get("client_secret") if isinstance(body.get("client_secret"), str) else None
     _store().set(_name(server, "client"), json.dumps({
-        "issuer": meta["issuer"], "redirect_uris": redirects, "client_id": client_id,
+        "issuer": meta["issuer"], "redirect_uris": merged_redirects, "client_id": client_id,
         **({"client_secret": secret} if secret else {}), "registered_at": int(time.time()),
     }))
-    return client_id, secret, _auth_method(meta, secret)
+    return client_id, secret, _auth_method(meta, secret, override=override_method), False
 
 
-def _auth_method(meta: dict, secret: str | None) -> str:
+def _auth_method(meta: dict, secret: str | None, *, override: str | None = None) -> str:
+    if override in _VALID_AUTH_METHODS:
+        if override == "none" or secret:
+            return override
+        return "none"
     if not secret:
         return "none"
     methods = meta.get("auth_methods") or []
@@ -519,8 +804,9 @@ async def start(server: str, server_url: str, *, redirect_uri: str, hub_base: st
 
     if validate_mcp_url(server_url):
         raise OAuthError("not_http_server", "OAuth sign-in is for a server reached over HTTP")
+    effective_pins = dict(pins or {})
     relay = validate_redirect(redirect_uri, hub_base=hub_base)
-    pinned_redirect = _redirect_pin(pins or {})
+    pinned_redirect = _redirect_pin(effective_pins)
     if pinned_redirect and redirect_uri.rstrip("/") != pinned_redirect:
         raise OAuthError("redirect_pinned",
                          f"this server accepts only {pinned_redirect} as the return address: "
@@ -535,13 +821,13 @@ async def start(server: str, server_url: str, *, redirect_uri: str, hub_base: st
         meta = await discover(client, server_url, hub_origin=hub_origin)
         known = _read(server, "issuer_pin")
         if known and known != meta["issuer"]:
-            # MINOR-2: a server that first signed in at one authorization server and now names
-            # another gets no client secret and no code: the owner re-adds it to trust a new one.
             raise OAuthError("issuer_changed",
                              f"this server signed in at {urlsplit(known).hostname} before and now names "
                              f"{urlsplit(meta['issuer']).hostname}; remove and add it again to trust that")
-        client_id, client_secret, method = await _client_identity(client, server, meta, redirect_uri, pins or {},
-                                                                  hub_origin=hub_origin, server_url=server_url)
+        client_id, client_secret, method, cimd_used = await _client_identity(
+            client, server, meta, redirect_uri, effective_pins,
+            hub_origin=hub_origin, server_url=server_url,
+        )
     except OAuthError:
         raise
     except Exception as exc:
@@ -549,20 +835,23 @@ async def start(server: str, server_url: str, *, redirect_uri: str, hub_base: st
         raise OAuthError("discovery_failed", "the server's sign-in details could not be read", status=502) from exc
     finally:
         await client.close()
-    for state in [s for s, f in _FLOWS.items() if f.server == server]:
-        _FLOWS.pop(state, None)
+    for st in [s for s, f in _FLOWS.items() if f.server == server]:
+        _FLOWS.pop(st, None)
     if len(_FLOWS) >= MAX_PENDING:
         raise OAuthError("too_many_pending", f"at most {MAX_PENDING} sign-ins can wait at once", status=429)
     verifier, challenge = _pkce()
     state = secrets.token_urlsafe(32)
     binding = secrets.token_urlsafe(32)
-    wanted_scope = scope or (pins or {}).get("scope") or (" ".join(meta["scopes"]) if meta["scopes"] else None)
-    flow = Flow(state=state, binding=binding, verifier=verifier, server=server, server_url=server_url,
-                redirect_uri=redirect_uri, relay=relay, token_endpoint=meta["token_endpoint"],
-                issuer=meta["issuer"], revocation_endpoint=meta.get("revocation_endpoint"),
-                client_id=client_id, client_secret=client_secret, auth_method=method,
-                resource=meta["resource"], scope=str(wanted_scope) if wanted_scope else None,
-                hub_origin=hub_origin, iss_required=meta["iss_in_response"])
+    wanted_scope = scope or effective_pins.get("scope") or (" ".join(meta["scopes"]) if meta["scopes"] else None)
+    flow = Flow(
+        state=state, binding=binding, verifier=verifier, server=server, server_url=server_url,
+        redirect_uri=redirect_uri, relay=relay, token_endpoint=meta["token_endpoint"],
+        issuer=meta["issuer"], revocation_endpoint=meta.get("revocation_endpoint"),
+        client_id=client_id, client_secret=client_secret, auth_method=method,
+        resource=meta["resource"], scope=str(wanted_scope) if wanted_scope else None,
+        hub_origin=hub_origin, iss_required=meta["iss_in_response"],
+        cimd_used=cimd_used, token_user_agent=_clean_user_agent(effective_pins.get("user_agent")),
+    )
     _FLOWS[state] = flow
     query = {"response_type": "code", "client_id": client_id, "redirect_uri": redirect_uri,
              "state": state, "code_challenge": challenge, "code_challenge_method": "S256",
@@ -574,9 +863,9 @@ async def start(server: str, server_url: str, *, redirect_uri: str, hub_base: st
     url = urlunsplit((auth.scheme, auth.netloc, auth.path, joined, ""))
     return {"authorization_url": url, "state": state, "binding": binding, "expires_in": FLOW_TTL,
             "redirect_uri": redirect_uri, "relay": relay, "issuer": meta["issuer"],
-            # The host the browser is sent to (what the owner should check), and the issuer's.
             "authorize_host": auth.hostname, "as_host": urlsplit(meta["issuer"]).hostname,
-            "server_origin": origin_of(server_url), "scope": flow.scope}
+            "server_origin": origin_of(server_url), "scope": flow.scope,
+            "cimd_used": cimd_used}
 
 
 def _match(state: str) -> Flow | None:
@@ -604,6 +893,21 @@ def flow_server(state: str) -> str | None:
     return flow.server if flow else None
 
 
+def _validate_callback_preconditions(
+    flow: Flow, *, iss: str | None, error: str | None, code: str,
+) -> None:
+    if iss is not None and iss.rstrip("/") != flow.issuer:
+        raise OAuthError("issuer_mismatch", "the sign-in came back from another authorization server")
+    if iss is None and flow.iss_required:
+        raise OAuthError("issuer_missing", "the authorization server did not say who answered")
+    if error:
+        if flow.cimd_used and error in {"invalid_client", "unauthorized_client", "invalid_request"}:
+            record_cimd_rejected(flow.server, flow.issuer)
+        raise OAuthError("authorization_denied", "the sign-in was not approved")
+    if not code or len(code) > 4096 or any(ch in code for ch in "\r\n\x00"):
+        raise OAuthError("invalid_code", "the callback carried no usable code")
+
+
 async def complete(state: str, code: str, binding: str, *, server: str | None = None,
                    error: str | None = None, iss: str | None = None) -> dict:
     """Redeem a callback: the state must match a waiting flow and the binding its owner's.
@@ -614,21 +918,11 @@ async def complete(state: str, code: str, binding: str, *, server: str | None = 
             _FLOWS.pop(flow.state, None)
         raise OAuthError("unknown_state", "this sign-in is unknown or expired; start it again")
     if not binding or not hmac.compare_digest(flow.binding.encode(), str(binding).encode()):
-        # A foreign callback does not burn the owner's flow: it is refused and left waiting.
         raise OAuthError("binding_mismatch", "this sign-in was not started from your session", status=403)
     if server is not None and server != flow.server:
         raise OAuthError("server_mismatch", "this sign-in belongs to another server", status=403)
     _FLOWS.pop(flow.state, None)
-    # RFC 9207: a response naming another issuer is refused always; one naming none is refused
-    # when the authorization server said it names itself.
-    if iss is not None and iss.rstrip("/") != flow.issuer:
-        raise OAuthError("issuer_mismatch", "the sign-in came back from another authorization server")
-    if iss is None and flow.iss_required:
-        raise OAuthError("issuer_missing", "the authorization server did not say who answered")
-    if error:
-        raise OAuthError("authorization_denied", "the sign-in was not approved")
-    if not code or len(code) > 4096 or any(ch in code for ch in "\r\n\x00"):
-        raise OAuthError("invalid_code", "the callback carried no usable code")
+    _validate_callback_preconditions(flow, iss=iss, error=error, code=code)
     _estop()
     if endpoint_problem(flow.token_endpoint, server_url=flow.server_url, hub_origin=flow.hub_origin):
         raise OAuthError("insecure_endpoint", "the token endpoint is no longer allowed")
@@ -641,7 +935,9 @@ async def complete(state: str, code: str, binding: str, *, server: str | None = 
         basic = (flow.client_id, flow.client_secret)
     client = HTTP_FACTORY(flow.server)
     try:
-        status, body = await _post_form(client, flow.token_endpoint, form, auth=basic)
+        status_code, body = await _post_form(
+            client, flow.token_endpoint, form, auth=basic, user_agent=flow.token_user_agent,
+        )
     except Exception as exc:
         # FP: logs the server name and the exception type only, no token material.
         # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
@@ -649,7 +945,11 @@ async def complete(state: str, code: str, binding: str, *, server: str | None = 
         raise OAuthError("token_exchange_failed", "the token exchange did not answer", status=502) from exc
     finally:
         await client.close()
-    _save_tokens(flow, status, body)
+    if status_code != 200 and flow.cimd_used and body.get("error") in {
+        "invalid_client", "unauthorized_client", "invalid_request",
+    }:
+        record_cimd_rejected(flow.server, flow.issuer)
+    _save_tokens(flow, status_code, body)
     return {"server": flow.server, "issuer": flow.issuer, "scope": body.get("scope") or flow.scope,
             "expires_at": _read_json(flow.server, "meta").get("expires_at"),
             "refreshable": bool(body.get("refresh_token")), "relay": flow.relay}
@@ -677,12 +977,10 @@ def _save_tokens(flow: Flow, status: int, body: dict) -> None:
         "auth_method": flow.auth_method, "scope": body.get("scope") or flow.scope,
         "expires_at": expires_at, "obtained_at": int(time.time()), "hub_origin": flow.hub_origin,
         "server_url": flow.server_url,
+        **({"token_user_agent": flow.token_user_agent} if flow.token_user_agent else {}),
     }))
-    # MINOR-2: the first authorization server this server signed in at is kept, past sign-out.
     if not _read(flow.server, "issuer_pin"):
         store.set(_name(flow.server, "issuer_pin"), flow.issuer)
-    # A registered client's secret is already in ``.client``; a pinned one is not copied:
-    # it is re-read from the server's own secrets at refresh.
     _REJECTED.discard(flow.server)
 
 
@@ -693,12 +991,26 @@ def mark_rejected(server: str) -> None:
     _REJECTED.add(server)
 
 
+def _refresh_credentials(
+    server: str, meta: dict, refresh: str, server_url: str, pins: dict,
+) -> tuple[dict, tuple[str, str] | None, str | None]:
+    form = {"grant_type": "refresh_token", "refresh_token": refresh,
+            "client_id": meta.get("client_id") or "", "resource": meta.get("resource") or server_url}
+    secret = _client_secret(server, pins)
+    method = _owner_auth_method_override(pins) or meta.get("auth_method")
+    basic = None
+    if secret and method == "client_secret_basic":
+        basic = (meta.get("client_id") or "", secret)
+    elif secret and method != "none":
+        form["client_secret"] = secret
+    ua = _clean_user_agent(pins.get("user_agent")) or _clean_user_agent(meta.get("token_user_agent"))
+    return form, basic, ua
+
+
 async def access_token(server: str, server_url: str, *, rejected: str | None = None,
                        pins: dict | None = None) -> tuple[str | None, str | None]:
     """``(token, None)`` or ``(None, reason)``. Refreshes when the token is about to expire or
-    the server answered 401 to it (*rejected*: the token it refused). One refresh per server
-    at a time: N callers whose requests were refused with the same token wait on one lock,
-    the first refreshes, the others find a different token stored and use it."""
+    the server answered 401 to it (*rejected*: the token it refused)."""
     meta = _read_json(server, "meta")
     if not meta:
         return None, "oauth_required"
@@ -706,61 +1018,60 @@ async def access_token(server: str, server_url: str, *, rejected: str | None = N
         return None, "token_origin_mismatch"
     lock = _LOCKS.setdefault(server, asyncio.Lock())
     async with lock:
-        meta = _read_json(server, "meta")
-        token = _read(server, "access")
-        expires_at = meta.get("expires_at")
-        refused = rejected is not None and token is not None and hmac.compare_digest(
-            token.encode(), rejected.encode())
-        stale = refused or server in _REJECTED or not token or (
-            isinstance(expires_at, (int, float)) and expires_at - REFRESH_MARGIN <= time.time())
-        if not stale:
-            return token, None
-        refresh = _read(server, "refresh")
-        if not refresh:
+        return await _access_token_locked(server, server_url, rejected=rejected, pins=pins or {})
+
+
+async def _access_token_locked(
+    server: str, server_url: str, *, rejected: str | None, pins: dict,
+) -> tuple[str | None, str | None]:
+    meta = _read_json(server, "meta")
+    token = _read(server, "access")
+    expires_at = meta.get("expires_at")
+    refused = rejected is not None and token is not None and hmac.compare_digest(
+        token.encode(), rejected.encode())
+    stale = refused or server in _REJECTED or not token or (
+        isinstance(expires_at, (int, float)) and expires_at - REFRESH_MARGIN <= time.time())
+    if not stale:
+        return token, None
+    refresh = _read(server, "refresh")
+    if not refresh:
+        return None, "reauth_required"
+    try:
+        _estop()
+    except OAuthError:
+        return None, "estop_engaged"
+    token_endpoint = str(meta.get("token_endpoint") or "")
+    if endpoint_problem(token_endpoint, server_url=server_url, hub_origin=meta.get("hub_origin")) \
+            or not _on_issuer(token_endpoint, str(meta.get("issuer") or "")):
+        return None, "reauth_required"
+    form, basic, ua = _refresh_credentials(server, meta, refresh, server_url, pins)
+    client = HTTP_FACTORY(server)
+    try:
+        status_code, body = await _post_form(client, token_endpoint, form, auth=basic, user_agent=ua)
+    except Exception as exc:
+        logger.warning("MCP OAuth refresh failed (server=%s type=%s)", server, type(exc).__name__)
+        return None, "refresh_failed"
+    finally:
+        await client.close()
+    new = body.get("access_token")
+    if status_code != 200 or not isinstance(new, str) or not new:
+        if body.get("error") == "invalid_grant":
+            store = _store()
+            store.delete(_name(server, "access"))
+            store.delete(_name(server, "refresh"))
             return None, "reauth_required"
-        try:
-            _estop()
-        except OAuthError:
-            return None, "estop_engaged"
-        token_endpoint = str(meta.get("token_endpoint") or "")
-        if endpoint_problem(token_endpoint, server_url=server_url, hub_origin=meta.get("hub_origin")) \
-                or not _on_issuer(token_endpoint, str(meta.get("issuer") or "")):
-            return None, "reauth_required"
-        form = {"grant_type": "refresh_token", "refresh_token": refresh,
-                "client_id": meta.get("client_id") or "", "resource": meta.get("resource") or server_url}
-        secret = _client_secret(server, pins or {})
-        basic = None
-        if secret and meta.get("auth_method") == "client_secret_basic":
-            basic = (meta.get("client_id") or "", secret)
-        elif secret:
-            form["client_secret"] = secret
-        client = HTTP_FACTORY(server)
-        try:
-            status, body = await _post_form(client, meta["token_endpoint"], form, auth=basic)
-        except Exception as exc:
-            logger.warning("MCP OAuth refresh failed (server=%s type=%s)", server, type(exc).__name__)
-            return None, "refresh_failed"
-        finally:
-            await client.close()
-        new = body.get("access_token")
-        if status != 200 or not isinstance(new, str) or not new:
-            if body.get("error") == "invalid_grant":
-                store = _store()
-                store.delete(_name(server, "access"))
-                store.delete(_name(server, "refresh"))
-                return None, "reauth_required"
-            return None, "refresh_failed"
-        store = _store()
-        store.set(_name(server, "access"), new)
-        if isinstance(body.get("refresh_token"), str) and body["refresh_token"]:
-            store.set(_name(server, "refresh"), body["refresh_token"])
-        expires = body.get("expires_in")
-        meta["expires_at"] = (int(time.time() + float(expires))
-                              if isinstance(expires, (int, float)) and expires > 0 else None)
-        meta["refreshed_at"] = int(time.time())
-        store.set(_name(server, "meta"), json.dumps(meta))
-        _REJECTED.discard(server)
-        return new, None
+        return None, "refresh_failed"
+    store = _store()
+    store.set(_name(server, "access"), new)
+    if isinstance(body.get("refresh_token"), str) and body["refresh_token"]:
+        store.set(_name(server, "refresh"), body["refresh_token"])
+    expires = body.get("expires_in")
+    meta["expires_at"] = (int(time.time() + float(expires))
+                          if isinstance(expires, (int, float)) and expires > 0 else None)
+    meta["refreshed_at"] = int(time.time())
+    store.set(_name(server, "meta"), json.dumps(meta))
+    _REJECTED.discard(server)
+    return new, None
 
 
 def _client_secret(server: str, pins: dict) -> str | None:
@@ -857,10 +1168,13 @@ async def sign_out(server: str, *, revoke: bool = True, forget: bool = False) ->
     store = _store()
     removed = 0
     keep = set() if forget else {_name(server, "issuer_pin")}
-    for part in ("access", "refresh", "meta", "client", "issuer_pin"):
+    for part in ("access", "refresh", "meta", "client", "issuer_pin", "cimd_rejected"):
         name = _name(server, part)
         if name not in keep and store.delete(name):
             removed += 1
+    if forget:
+        for pair in [item for item in _CIMD_REJECTED if item[0] == server]:
+            _CIMD_REJECTED.discard(pair)
     _REJECTED.discard(server)
     return {"revoked": revoked, "removed": removed}
 
@@ -889,3 +1203,4 @@ def reset_for_tests() -> None:
     _FLOWS.clear()
     _LOCKS.clear()
     _REJECTED.clear()
+    _CIMD_REJECTED.clear()

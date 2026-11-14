@@ -13,6 +13,14 @@ from ..action_origin import origin_for_channel
 from ..log_safe import log_safe
 from ..security import taint
 from ..security.quarantine import detect_injection_normalized
+from .group_policy import (
+    DROP as POLICY_DROP,
+    OBSERVE as POLICY_OBSERVE,
+    GroupPolicy,
+    canonicalize_whatsapp_identity,
+    gate_message,
+    validate_channel_open_policy,
+)
 
 logger = logging.getLogger("jarvis.gateway")
 
@@ -35,7 +43,8 @@ class Gateway:
                  pending_callback_handler: Optional[Callable] = None,
                  interrupt_handler: Optional[Callable] = None,
                  command_probe: Optional[Callable] = None,
-                 command_source_adapter: Optional[Callable[[], Any]] = None):
+                 command_source_adapter: Optional[Callable[[], Any]] = None,
+                 channel_policies: Optional[dict[str, GroupPolicy]] = None):
         self.handler = handler
         # A trusted, pending-only consumer: it cannot start a new model turn.
         self.pending_handler = pending_handler
@@ -50,6 +59,7 @@ class Gateway:
         # handler. None → unchanged behavior.
         self.pairing = pairing
         self.inbox_store = inbox_store
+        self._policies: dict[str, GroupPolicy] = dict(channel_policies or {})
         self._channels: dict[str, dict] = {}
         self._rate_limits: dict[str, list[float]] = {}
         self._max_rate = 10
@@ -60,22 +70,43 @@ class Gateway:
         # A forged generic route key cannot consume an original command's key.
         self._seen_original_commands: OrderedDict[tuple[str, str], float] = OrderedDict()
 
+    def set_channel_policy(
+        self,
+        channel_id: str,
+        policy: GroupPolicy,
+        *,
+        network_exposed: bool = True,
+    ) -> None:
+        """Attach an inbound/group policy to *channel_id*, enforcing the H059 open guard."""
+        policy.validate_open_guard(network_exposed=network_exposed)
+        self._policies[channel_id] = policy
+
+    def get_channel_policy(self, channel_id: str) -> Optional[GroupPolicy]:
+        return self._policies.get(channel_id)
+
     def register_channel(self, channel_id: str, metadata: dict = None):
+        meta = dict(metadata or {})
+        policy = meta.pop("policy", None)
+        network_exposed = bool(meta.get("network_exposed", channel_id not in {"web", "cli", "voice"}))
+        if isinstance(policy, GroupPolicy):
+            self.set_channel_policy(channel_id, policy, network_exposed=network_exposed)
+        elif "dm_policy" in meta or "group_policy" in meta:
+            validate_channel_open_policy(
+                channel_id,
+                dm_policy=str(meta.get("dm_policy", "pairing")),
+                group_policy=str(meta.get("group_policy", "allowlist")),
+                allow_all_users=bool(meta.get("allow_all_users", False)),
+                network_exposed=network_exposed,
+            )
         self._channels[channel_id] = {
             "id": channel_id,
             "registered_at": time.time(),
             "last_activity": time.time(),
             "message_count": 0,
             "error_count": 0,
-            # Held-by-pairing count (Hermes absorption 5b). A number only: it tells the
-            # owner "someone is knocking" on /status without the gateway ever keeping
-            # who knocked — the pairing store owns identities, this owns a tally. It
-            # counts *holds*, not people: one stranger writing twice is 2, and a
-            # silent drop (blocked sender, observe-only group message, gate error) is
-            # counted too. The pairing store's pending count is the people figure.
             "held_senders": 0,
             "status": "active",
-            **(metadata or {}),
+            **meta,
         }
         logger.info("Gateway: channel '%s' registered", log_safe(channel_id))
 
@@ -84,41 +115,173 @@ class Gateway:
         self._rate_limits.pop(channel_id, None)
         logger.info("Gateway: channel '%s' unregistered", log_safe(channel_id))
 
+    def _canonicalize_sender(self, channel: str, sender: Any) -> Any:
+        if sender is None:
+            return None
+        policy = self._policies.get(channel)
+        if channel == "whatsapp":
+            lid_map = policy.lid_map if policy is not None else None
+            return canonicalize_whatsapp_identity(sender, lid_map)
+        if policy is not None:
+            return policy.canonical_sender(sender, channel=channel)
+        return sender
+
+    def _probe_telegram_command_candidate(self, channel: str, text: str, kwargs: dict) -> bool:
+        if channel != "telegram" or kwargs.get("provider_id") is None:
+            return False
+        from ..command_source import candidate_live, current_candidate
+
+        candidate = current_candidate()
+        try:
+            adapter = (self.command_source_adapter()
+                       if callable(self.command_source_adapter) else None)
+        except Exception:
+            adapter = None
+        try:
+            paired = (self.pairing is not None
+                      and self.pairing.is_allowed("telegram", str(kwargs.get("sender"))) is True)
+        except Exception:
+            paired = False
+        return bool(
+            paired and candidate is not None
+            and kwargs.get("provider_id") == candidate.provider_id
+            and candidate_live(candidate, adapter=adapter, text=text,
+                               sender=kwargs.get("sender"), chat_id=kwargs.get("chat_id"))
+        )
+
+    def _evaluate_policy_gate(
+        self,
+        channel: str,
+        text: str,
+        kwargs: dict,
+    ) -> tuple[bool, str, bool]:
+        """Run attached :class:`GroupPolicy` before rate-limiting, pairing, or inbox side effects."""
+        policy = self._policies.get(channel)
+        observe_only = bool(kwargs.get("observe_only"))
+        if policy is None:
+            return True, text, observe_only
+        chat_id = (kwargs.get("chat_id") or kwargs.get("slack_channel")
+                   or kwargs.get("channel_id") or kwargs.get("room_id") or "")
+        thread_id = (kwargs.get("message_thread_id") or kwargs.get("thread_ts")
+                     or kwargs.get("thread_id"))
+        if policy.is_ignored(chat_id, thread_id):
+            return False, text, observe_only
+        chat_type = kwargs.get("chat_type")
+        if chat_type is None:
+            return True, text, observe_only
+        decision = gate_message(
+            policy,
+            chat_type=chat_type,
+            chat_id=chat_id,
+            text=text,
+            thread_id=thread_id,
+            entities=kwargs.get("entities") or (),
+            reply_to_from_id=kwargs.get("reply_to_from_id"),
+            bot_id=kwargs.get("bot_id"),
+            bot_username=kwargs.get("bot_username"),
+            sender=kwargs.get("sender"),
+            channel=channel,
+            is_bot=bool(kwargs.get("is_bot", False)),
+            member_roles=kwargs.get("member_roles") or (),
+            in_bot_thread=bool(kwargs.get("in_bot_thread", False)),
+            is_reaction=bool(kwargs.get("is_reaction", False)),
+        )
+        if decision.action == POLICY_DROP:
+            return False, text, observe_only
+        if decision.action == POLICY_OBSERVE:
+            kwargs["observe_only"] = True
+            return True, decision.text, True
+        return True, decision.text, observe_only
+
+    def _gate_sender_pairing(
+        self,
+        channel: str,
+        sender: Any,
+        *,
+        observe_only: bool,
+        kwargs: dict,
+    ) -> tuple[bool, Optional[str]]:
+        if channel == "ntfy" and (self.pairing is None or sender is None):
+            return False, None
+        if self.pairing is None or sender is None:
+            return True, None
+        policy = self._policies.get(channel)
+        if policy is not None and (
+            policy.allow_all_users
+            or policy._sender_in_set(str(sender), policy.allow_from, channel=channel)
+        ):
+            return True, None
+        dm_behavior = str(
+            kwargs.get("unauthorized_dm_behavior")
+            or (policy.unauthorized_dm_behavior if policy is not None else "pair")
+        ).strip().lower()
+        if dm_behavior == "ignore":
+            try:
+                allowed = self.pairing.is_allowed(channel, str(sender)) is True
+            except Exception:
+                allowed = False
+            if not allowed:
+                self._channels[channel]["held_senders"] += 1
+                return False, None
+        try:
+            decision = self.pairing.gate_inbound(channel, str(sender),
+                                                 code=kwargs.get("pairing_code"))
+        except Exception:
+            logger.warning("Gateway: pairing gate error — holding sender", exc_info=True)
+            decision = {"allowed": False, "status": "gate_error", "message": None}
+        if not decision.get("allowed", True):
+            logger.info("Gateway: held unpaired sender on '%s' (status=%s)",
+                        log_safe(channel), decision.get("status"))
+            self._channels[channel]["held_senders"] += 1
+            return False, None if observe_only else (decision.get("message") or None)
+        return True, None
+
+    def _seal_telegram_source(self, channel: str, text: str, sender: Any,
+                              recorded: Optional[dict], kwargs: dict):
+        from ..command_source import (
+            InboundCommandSource,
+            bind_source,
+            candidate_live,
+            current_candidate,
+        )
+
+        if channel != "telegram" or recorded is None or self.pairing is None:
+            return bind_source(None)
+        candidate = current_candidate()
+        try:
+            adapter = (self.command_source_adapter()
+                       if callable(self.command_source_adapter) else None)
+            paired = self.pairing.is_allowed("telegram", str(sender)) is True
+        except Exception:
+            adapter, paired = None, False
+        if (paired and candidate is not None
+                and candidate_live(candidate, adapter=adapter, text=text,
+                                   sender=sender, chat_id=kwargs.get("chat_id"))
+                and kwargs.get("provider_id") == candidate.provider_id
+                and recorded.get("provider_id") == candidate.provider_id
+                and recorded.get("channel") == "telegram"
+                and recorded.get("direction") == "in"
+                and recorded.get("text") == text
+                and type(recorded.get("id")) is str and recorded["id"]):
+            return bind_source(InboundCommandSource(candidate, recorded["id"], self))
+        return bind_source(None)
+
     async def route(self, text: str, channel: str = "web", **kwargs) -> Optional[str]:
-        # Event kwargs are data, never provenance. The adapter binds its candidate
-        # in this exact task and the Gateway seals it after pairing and inbox write.
         kwargs.pop("_command_source", None)
         kwargs.pop("command_source", None)
-        original_command = False
-        if channel == "telegram" and kwargs.get("provider_id") is not None:
-            from ..command_source import candidate_live, current_candidate
-
-            candidate = current_candidate()
-            try:
-                adapter = (self.command_source_adapter()
-                           if callable(self.command_source_adapter) else None)
-            except Exception:
-                adapter = None
-            try:
-                paired = (self.pairing is not None
-                          and self.pairing.is_allowed("telegram", str(kwargs.get("sender"))) is True)
-            except Exception:
-                paired = False
-            original_command = bool(
-                paired and candidate is not None
-                and kwargs.get("provider_id") == candidate.provider_id
-                and candidate_live(candidate, adapter=adapter, text=text,
-                                   sender=kwargs.get("sender"), chat_id=kwargs.get("chat_id")))
+        if kwargs.get("sender") is not None:
+            kwargs["sender"] = self._canonicalize_sender(channel, kwargs.get("sender"))
+        original_command = self._probe_telegram_command_candidate(channel, text, kwargs)
         if channel not in self._channels:
             self.register_channel(channel)
 
-        # H120: an adapter that knows the provider's id for this message passes it as
-        # `dedup_key`; the same id again within the window (a webhook retry, a
-        # redelivery after a reconnect) is dropped before anything else sees it.
+        allowed_by_policy, text, observe_only = self._evaluate_policy_gate(channel, text, kwargs)
+        if not allowed_by_policy:
+            return None
+
         dedup_key = kwargs.pop("dedup_key", None)
         provider_id = kwargs.get("provider_id")
         if original_command:
-            # No route kwarg can select this cache or override its exact provider key.
             dedup_key = f"{channel}:{provider_id}"
         elif dedup_key is None and isinstance(provider_id, str) and provider_id:
             dedup_key = f"{channel}:{provider_id}"
@@ -129,56 +292,34 @@ class Gateway:
             logger.info("Gateway: duplicate inbound on '%s' dropped", log_safe(channel))
             return None
 
-        # An observed group message (Hermes absorption 0.4) is recorded, never answered,
-        # so it neither spends the reply rate budget nor earns a reply of any kind.
-        observe_only = bool(kwargs.get("observe_only"))
         if await self.route_pending(text, channel=channel, **kwargs):
             return ""
         if not observe_only and not self._check_rate_limit(channel):
             logger.warning("Gateway: rate limit exceeded for channel '%s'", log_safe(channel))
             return "Rate limit exceeded. Please wait before sending another message."
 
-        # H12.19 — inbound sender pairing. A `sender` identity (set by the channel)
-        # that isn't allowed is held for owner approval; the message never reaches
-        # the handler. No pairing gate or no sender → routes as before.
         sender = kwargs.get("sender")
-        if channel == "ntfy" and (self.pairing is None or sender is None):
-            return None
-        if self.pairing is not None and sender is not None:
-            try:
-                decision = self.pairing.gate_inbound(channel, str(sender),
-                                                      code=kwargs.get("pairing_code"))
-            except Exception:
-                # Fails CLOSED. This used to default to {"allowed": True}: a gate whose
-                # store errored admitted the sender it exists to hold. The adversarial
-                # audit narrowed the blast radius correctly — a BLOCKED sender cannot get
-                # through this way (that path is pure in-memory and cannot raise) and
-                # corrupt JSON normalises to {} which already fails closed — so the only
-                # reachable case is an unknown first-contact sender during a write
-                # failure. That is still the exact sender this gate is for, and holding
-                # them costs one re-send while admitting them costs the guarantee.
-                # Coverage confirmed these lines were executed by no test at all.
-                logger.warning("Gateway: pairing gate error — holding sender", exc_info=True)
-                decision = {
-                    "allowed": False,
-                    "status": "gate_error",
-                    "message": None,
-                }
-            if not decision.get("allowed", True):
-                logger.info("Gateway: held unpaired sender on '%s' (status=%s)",
-                            log_safe(channel), decision.get('status'))
-                # Count the hold, not the message: message_count stays what reached
-                # the handler, and the sender identity is never stored here.
-                self._channels[channel]["held_senders"] += 1
-                return None if observe_only else (decision.get("message") or None)
+        admitted, hold_reply = self._gate_sender_pairing(
+            channel, sender, observe_only=observe_only, kwargs=kwargs,
+        )
+        if not admitted:
+            return hold_reply
 
         self._channels[channel]["message_count"] += 1
         self._channels[channel]["last_activity"] = time.time()
-
         if not self.handler:
             logger.error("Gateway: no handler registered")
             return None
+        return await self._dispatch_to_handler(text, channel=channel, sender=sender, kwargs=kwargs)
 
+    async def _dispatch_to_handler(
+        self,
+        text: str,
+        *,
+        channel: str,
+        sender: Any,
+        kwargs: dict,
+    ) -> Optional[str]:
         try:
             origin = origin_for_channel(channel)
             if channel in {"slack", "discord", "ntfy", "sms"}:
@@ -188,42 +329,12 @@ class Gateway:
             inbound_meta = self._inbound_meta(channel, text, origin=origin)
             if inbound_meta:
                 kwargs.setdefault("_inbound_meta", dict(inbound_meta))
-            # Never accept an event-supplied claim about which stored message is
-            # being answered. Only the successful inbox write may bind this turn.
             kwargs.pop("_inbox_message_id", None)
             metadata = {**kwargs, **inbound_meta}
             recorded = self._record_inbox(channel, text, sender=sender, metadata=metadata)
             if channel in {"slack", "discord", "ntfy", "sms"}:
                 kwargs["_inbox_message_id"] = recorded.get("id", "") if recorded else ""
-            from ..command_source import bind_source
-
-            # Even a nested same-task route must clear a prior route's sealed source.
-            source_scope = bind_source(None)
-            if channel == "telegram" and recorded is not None and self.pairing is not None:
-                from ..command_source import (
-                    InboundCommandSource,
-                    candidate_live,
-                    current_candidate,
-                )
-
-                candidate = current_candidate()
-                try:
-                    adapter = (self.command_source_adapter()
-                               if callable(self.command_source_adapter) else None)
-                    paired = self.pairing.is_allowed("telegram", str(sender)) is True
-                except Exception:
-                    adapter = None
-                    paired = False
-                if (paired and candidate is not None
-                        and candidate_live(candidate, adapter=adapter, text=text,
-                                           sender=sender, chat_id=kwargs.get("chat_id"))
-                        and kwargs.get("provider_id") == candidate.provider_id
-                        and recorded.get("provider_id") == candidate.provider_id
-                        and recorded.get("channel") == "telegram"
-                        and recorded.get("direction") == "in"
-                        and recorded.get("text") == text
-                        and type(recorded.get("id")) is str and recorded["id"]):
-                    source_scope = bind_source(InboundCommandSource(candidate, recorded["id"], self))
+            source_scope = self._seal_telegram_source(channel, text, sender, recorded, kwargs)
             from .. import code_interruptions
             admission_token = code_interruptions.bind_admitted_channel(channel)
             try:

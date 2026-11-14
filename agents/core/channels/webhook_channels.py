@@ -178,56 +178,360 @@ class WebhookChannel(ChannelAdapter):
         raise NotImplementedError
 
 
-#: H120 — WhatsApp message types that are not something a person said to the agent.
-_WHATSAPP_NOT_A_TURN = frozenset({"system", "unsupported", "ephemeral", "revoked"})
+#: H120 / H095 — WhatsApp message types that are not something a person said to the agent.
+_WHATSAPP_NOT_A_TURN = frozenset({"system", "unsupported", "ephemeral", "revoked", "protocol"})
 _WHATSAPP_BROADCAST_SUFFIXES = ("@broadcast", "@newsletter")
+_WHATSAPP_MEDIA_TYPES = frozenset({"image", "audio", "voice", "video", "document", "sticker"})
+_WHATSAPP_POLL_MAX_OPTIONS = 12
+_WHATSAPP_POLL_OPTION_MAX_CHARS = 100
+
+
+def _wa_is_broadcast_or_status(value: dict, msg: dict, sender: str) -> bool:
+    """Explicitly suppress WhatsApp status updates, broadcast lists, and newsletter channels."""
+    low = sender.strip().lower()
+    if low == "status" or low.endswith(_WHATSAPP_BROADCAST_SUFFIXES):
+        return True
+    recipient = str(msg.get("to") or "").strip().lower()
+    if recipient == "status" or recipient.endswith(_WHATSAPP_BROADCAST_SUFFIXES):
+        return True
+    ctx_from = str((msg.get("context") or {}).get("from") or "").strip().lower()
+    if ctx_from == "status" or ctx_from.endswith(_WHATSAPP_BROADCAST_SUFFIXES):
+        return True
+    return str(msg.get("type") or "").strip().lower() == "status"
+
+
+def _wa_extract_interactive(msg: dict) -> tuple[str, dict | None]:
+    inter = msg.get("interactive")
+    if isinstance(inter, dict):
+        itype = str(inter.get("type") or "")
+        for key in ("button_reply", "list_reply", "poll_reply"):
+            reply = inter.get(key)
+            if isinstance(reply, dict):
+                title = str(reply.get("title") or reply.get("option_name") or reply.get("id") or "").strip()
+                if title:
+                    return title, {"kind": itype or key, "id": str(reply.get("id") or ""), "title": title}
+    poll = msg.get("poll_update") or msg.get("poll")
+    if isinstance(poll, dict):
+        votes = poll.get("selected_options") or poll.get("options") or ()
+        names = [
+            str(v.get("option_name") or v) if isinstance(v, dict) else str(v)
+            for v in votes if v
+        ]
+        joined = ", ".join(n.strip() for n in names if n.strip())
+        if joined:
+            return joined, {"kind": "poll_vote", "selected": [n.strip() for n in names if n.strip()]}
+    return "", None
+
+
+def _wa_extract_location(msg: dict) -> tuple[str, dict | None]:
+    loc = msg.get("location")
+    if msg.get("type") != "location" or not isinstance(loc, dict):
+        return "", None
+    try:
+        lat = float(loc["latitude"])
+        lon = float(loc["longitude"])
+    except (KeyError, TypeError, ValueError):
+        return "", None
+    if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+        return "", None
+    name = str(loc.get("name") or "").strip()[:120]
+    addr = str(loc.get("address") or "").strip()[:240]
+    label = f"{name} ({lat}, {lon})" if name else f"({lat}, {lon})"
+    text = f"[Location: {label} — {addr}]" if addr else f"[Location: {label}]"
+    return text, {"latitude": lat, "longitude": lon, "name": name, "address": addr}
+
+
+def _wa_extract_media(msg: dict) -> tuple[str, list[dict]]:
+    mtype = str(msg.get("type") or "").strip().lower()
+    if mtype not in _WHATSAPP_MEDIA_TYPES:
+        return "", []
+    blob = msg.get(mtype)
+    if not isinstance(blob, dict):
+        return "", []
+    media_id = str(blob.get("id") or "").strip()[:128]
+    if not media_id:
+        return "", []
+    filename = str(blob.get("filename") or "").strip()[:160]
+    caption = str(blob.get("caption") or "").strip()
+    meta = {
+        "kind": mtype,
+        "media_id": media_id,
+        "mime_type": str(blob.get("mime_type") or "").strip()[:100],
+        "sha256": str(blob.get("sha256") or "").strip()[:128],
+        "filename": filename,
+        "voice": bool(blob.get("voice", mtype == "voice")),
+    }
+    tag = f"[WhatsApp {mtype}: {filename or media_id}]"
+    return (f"{caption}\n{tag}" if caption else tag), [meta]
+
+
+def _wa_extract_content(msg: dict) -> tuple[str, dict]:
+    text = (msg.get("text") or {}).get("body", "") or (msg.get("button") or {}).get("text", "")
+    if text:
+        return str(text), {}
+    inter_text, inter_meta = _wa_extract_interactive(msg)
+    if inter_text:
+        return inter_text, {"poll_selection": inter_meta} if inter_meta else {}
+    loc_text, loc_meta = _wa_extract_location(msg)
+    if loc_text and loc_meta is not None:
+        return loc_text, {"location": loc_meta}
+    media_text, media_items = _wa_extract_media(msg)
+    if media_text:
+        return media_text, {"media": media_items}
+    return "", {}
 
 
 class WhatsAppChannel(WebhookChannel):
-    """WhatsApp Cloud API (Meta Graph)."""
+    """WhatsApp Cloud API (Meta Graph) — zero ban-risk official webhook & Graph surface (H095)."""
 
     channel_id = "whatsapp"
+
+    def _graph_messages_endpoint(self) -> tuple[str | None, dict[str, str]]:
+        phone_id = self.config.get("phone_id")
+        token = self.config.get("token", "")
+        if not phone_id:
+            return None, {}
+        return (
+            f"https://graph.facebook.com/v20.0/{phone_id}/messages",
+            {"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        )
 
     def is_own_message(self, parsed):
         return parsed.pop("_own", False) is True or super().is_own_message(parsed)
 
     def build_send(self, message, kwargs):
         to = kwargs.get("to") or self.config.get("default_to")
-        phone_id = self.config.get("phone_id")
-        token = self.config.get("token", "")
-        if not to or not phone_id:
+        url, headers = self._graph_messages_endpoint()
+        if not to or not url:
             return None
-        return {"method": "POST",
-                "url": f"https://graph.facebook.com/v20.0/{phone_id}/messages",
-                "headers": {"Authorization": f"Bearer {token}",
-                            "Content-Type": "application/json"},
+        if isinstance(kwargs.get("_wa_payload"), dict):
+            return {"method": "POST", "url": url, "headers": headers,
+                    "json": {"messaging_product": "whatsapp", "to": to, **kwargs["_wa_payload"]}}
+        return {"method": "POST", "url": url, "headers": headers,
                 "json": {"messaging_product": "whatsapp", "to": to,
                          "type": "text", "text": {"body": message}}}
+
+    def build_poll_send(
+        self,
+        question: str,
+        options: list[str] | tuple[str, ...],
+        kwargs: Optional[dict] = None,
+    ) -> Optional[dict]:
+        """Build a native WhatsApp Cloud API poll request (2–12 bounded options)."""
+        kw = kwargs or {}
+        to = kw.get("to") or self.config.get("default_to")
+        url, headers = self._graph_messages_endpoint()
+        prompt = str(question or "").strip()[:255]
+        cleaned = [
+            str(opt).strip()[:_WHATSAPP_POLL_OPTION_MAX_CHARS]
+            for opt in (options or ()) if str(opt).strip()
+        ][:_WHATSAPP_POLL_MAX_OPTIONS]
+        if not to or not url or not prompt or len(cleaned) < 2:
+            return None
+        allow_multi = bool(kw.get("allow_multiple_answers", False))
+        return {
+            "method": "POST",
+            "url": url,
+            "headers": headers,
+            "json": {
+                "messaging_product": "whatsapp",
+                "to": to,
+                "type": "poll",
+                "poll": {
+                    "name": prompt,
+                    "options": [{"option_name": opt} for opt in cleaned],
+                    "selectable_options_count": len(cleaned) if allow_multi else 1,
+                },
+            },
+        }
+
+    async def send_poll(
+        self,
+        question: str,
+        options: list[str] | tuple[str, ...],
+        *,
+        allow_multiple_answers: bool = False,
+        **kwargs,
+    ) -> bool:
+        spec = self.build_poll_send(
+            question, options, {**kwargs, "allow_multiple_answers": allow_multiple_answers},
+        )
+        if not spec:
+            return False
+        return await self.send(
+            question,
+            to=spec["json"]["to"],
+            _wa_payload={"type": "poll", "poll": spec["json"]["poll"]},
+        )
+
+    async def clarify_as_poll(
+        self,
+        question: str,
+        choices: list[str] | tuple[str, ...],
+        **kwargs,
+    ) -> bool:
+        """Render a clarifying question or approval prompt as a single-choice native WhatsApp poll."""
+        return await self.send_poll(question, choices, allow_multiple_answers=False, **kwargs)
+
+    def build_location_send(
+        self,
+        latitude: float,
+        longitude: float,
+        *,
+        name: str = "",
+        address: str = "",
+        kwargs: Optional[dict] = None,
+    ) -> Optional[dict]:
+        kw = kwargs or {}
+        to = kw.get("to") or self.config.get("default_to")
+        url, headers = self._graph_messages_endpoint()
+        try:
+            lat, lon = float(latitude), float(longitude)
+        except (TypeError, ValueError):
+            return None
+        if not to or not url or not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+            return None
+        loc: dict[str, Any] = {"latitude": lat, "longitude": lon}
+        if name:
+            loc["name"] = str(name).strip()[:120]
+        if address:
+            loc["address"] = str(address).strip()[:240]
+        return {
+            "method": "POST",
+            "url": url,
+            "headers": headers,
+            "json": {"messaging_product": "whatsapp", "to": to, "type": "location", "location": loc},
+        }
+
+    async def send_location(
+        self,
+        latitude: float,
+        longitude: float,
+        *,
+        name: str = "",
+        address: str = "",
+        **kwargs,
+    ) -> bool:
+        spec = self.build_location_send(latitude, longitude, name=name, address=address, kwargs=kwargs)
+        if not spec:
+            return False
+        return await self.send(
+            f"[Location ({latitude}, {longitude})]",
+            to=spec["json"]["to"],
+            _wa_payload={"type": "location", "location": spec["json"]["location"]},
+        )
+
+    def build_read_receipt(self, message_id: str) -> Optional[dict]:
+        mid = str(message_id or "").strip()
+        url, headers = self._graph_messages_endpoint()
+        if not mid or len(mid) > 200 or not url:
+            return None
+        return {
+            "method": "POST",
+            "url": url,
+            "headers": headers,
+            "json": {"messaging_product": "whatsapp", "status": "read", "message_id": mid},
+        }
+
+    async def mark_read(self, message_id: str) -> bool:
+        """Send an explicit WhatsApp Cloud API read receipt through the guarded transport."""
+        spec = self.build_read_receipt(message_id)
+        if not spec:
+            return False
+        try:
+            transport = await self._get_transport()
+            resp = await transport.request(
+                spec["method"], spec["url"], headers=spec["headers"], json=spec["json"],
+            )
+            if hasattr(resp, "raise_for_status"):
+                resp.raise_for_status()
+            return True
+        except Exception:
+            logger.warning("whatsapp mark_read failed", exc_info=True)
+            return False
+
+    async def fetch_media_metadata(self, media_id: str) -> Optional[dict]:
+        """Look up inbound Cloud API media metadata (url, mime_type, sha256) via guarded transport."""
+        mid = str(media_id or "").strip()
+        token = self.config.get("token", "")
+        if not mid or not mid.replace("_", "").replace("-", "").isalnum():
+            return None
+        try:
+            transport = await self._get_transport()
+            resp = await transport.request(
+                "GET",
+                f"https://graph.facebook.com/v20.0/{quote(mid, safe='')}",
+                headers={"Authorization": f"Bearer {token}"},
+                json=None,
+            )
+            if getattr(resp, "status_code", 200) != 200:
+                return None
+            body = resp.json()
+            return body if isinstance(body, dict) else None
+        except Exception:
+            logger.warning("whatsapp media lookup failed", exc_info=True)
+            return None
+
+    async def forward_to_owner(self, sender: str, text: str) -> bool:
+        """Forward a non-owner inbound message summary to ``config['owner_to']`` when configured."""
+        owner_to = str(self.config.get("owner_to") or "").strip()
+        if not owner_to:
+            return False
+        from .group_policy import canonicalize_whatsapp_identity
+
+        lid_map = self.config.get("lid_map")
+        canon_sender = canonicalize_whatsapp_identity(sender, lid_map if isinstance(lid_map, dict) else None)
+        canon_owner = canonicalize_whatsapp_identity(owner_to, lid_map if isinstance(lid_map, dict) else None)
+        if not canon_sender or canon_sender == canon_owner:
+            return False
+        summary = f"[WhatsApp forward from {canon_sender}] {str(text or '')[:1500]}"
+        return await self.send(summary, to=owner_to)
+
+    async def enrich_inbound(self, parsed: dict) -> dict:
+        mid = parsed.get("whatsapp_message_id")
+        if mid and self.config.get("send_read_receipts"):
+            await self.mark_read(str(mid))
+        if self.config.get("forward_to_owner") and self.config.get("owner_to"):
+            await self.forward_to_owner(str(parsed.get("sender") or ""), str(parsed.get("text") or ""))
+        return parsed
 
     def parse_inbound(self, payload):
         try:
             value = payload["entry"][0]["changes"][0]["value"]
-            msg = value["messages"][0]
         except (KeyError, IndexError, TypeError):
-            # Delivery/read `statuses` callbacks carry no message: never a turn.
             return None
+        if not isinstance(value, dict):
+            return None
+        messages = value.get("messages")
+        if not isinstance(messages, list) or not messages:
+            if value.get("statuses"):
+                self.statuses_suppressed = getattr(self, "statuses_suppressed", 0) + 1
+            return None
+        msg = messages[0]
         if not isinstance(msg, dict) or msg.get("type") in _WHATSAPP_NOT_A_TURN:
             return None
-        text = (msg.get("text") or {}).get("body", "") or (msg.get("button") or {}).get("text", "")
         sender = msg.get("from", "")
-        if not text or not isinstance(sender, str) or not sender:
+        if not isinstance(sender, str) or not sender:
             return None
-        if sender.endswith(_WHATSAPP_BROADCAST_SUFFIXES) or sender == "status":
-            # H120: status updates, broadcast lists and channels are not conversations.
+        if _wa_is_broadcast_or_status(value, msg, sender):
+            self.broadcasts_suppressed = getattr(self, "broadcasts_suppressed", 0) + 1
             return None
-        own = ((value.get("metadata") or {}).get("display_phone_number")
-               if isinstance(value, dict) else None)
-        parsed = {"text": text, "sender": sender, "to": sender,
-                  **_dedup("whatsapp", msg.get("id"))}
+        text, extra = _wa_extract_content(msg)
+        if not text:
+            return None
+        own = (value.get("metadata") or {}).get("display_phone_number")
+        msg_id = msg.get("id")
+        parsed: dict[str, Any] = {
+            "text": text,
+            "sender": sender,
+            "to": sender,
+            **({"whatsapp_message_id": str(msg_id)} if isinstance(msg_id, str) and msg_id else {}),
+            **extra,
+            **_dedup("whatsapp", msg_id),
+        }
         if isinstance(own, str) and own and own.lstrip("+") == sender.lstrip("+"):
             parsed["_own"] = True
         if msg.get("group_id"):
-            # H058: the Cloud API names the group a participant wrote in; judged in group scope.
             parsed["chat_type"] = "group"
         return parsed
 
