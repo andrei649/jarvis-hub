@@ -139,11 +139,19 @@ def pip_install_locked(venv_py: Path, root: Path, *, unlocked: bool = False,
     root = Path(root)
     lock = root / LOCK_FILE
     loose = root / LOOSE_REQUIREMENTS
-    if unlocked or not lock.exists():
+    if unlocked:
         if not loose.exists():
             raise BootstrapError("requirements_missing", str(loose))
         argv = [str(venv_py), "-m", "pip", "install", "--quiet", "-r", str(loose)]
     else:
+        try:
+            lock_is_file = lock.is_file()
+            lock_exists = os.path.lexists(lock)
+        except OSError as exc:
+            raise BootstrapError("requirements_lock_unreadable", str(lock)) from exc
+        if not lock_is_file:
+            reason = "requirements_lock_unreadable" if lock_exists else "requirements_missing"
+            raise BootstrapError(reason, str(lock))
         argv = [str(venv_py), "-m", "pip", "install", "--quiet", "--require-hashes",
                 "-r", str(lock)]
     proc = run(argv, check=False)
@@ -245,8 +253,8 @@ def run_install_smoke(venv_py: Path, root: Path, *, run=subprocess.run, env=None
         payload = json.loads(stdout[start:])
     except ValueError as exc:
         raise BootstrapError("smoke_output_unparseable", str(exc)) from exc
-    if not payload.get("ok"):
-        raise BootstrapError("smoke_failed", "payload ok=false")
+    if payload.get("ok") is not True:
+        raise BootstrapError("smoke_failed", "payload ok is not true")
     return payload
 
 

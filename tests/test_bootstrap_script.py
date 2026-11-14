@@ -337,3 +337,90 @@ def test_real_interpreter_runs_the_floor_check():
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert proc.stdout.startswith("python_ok:")
+
+
+# V72: lockfile refusal regressions (no interpreter ownership policy).
+def test_pip_install_refuses_missing_lock_without_explicit_unlocked_opt_in(root):
+    py = bootstrap.venv_python(root)
+    (root / bootstrap.LOCK_FILE).unlink()
+    runner = FakeRunner()
+
+    with pytest.raises(bootstrap.BootstrapError) as ei:
+        bootstrap.pip_install_locked(py, root, run=runner)
+
+    assert ei.value.reason == "requirements_missing"
+    assert runner.calls == []
+
+
+def test_explicit_unlocked_opt_in_still_uses_loose_file_when_lock_is_missing(root):
+    py = bootstrap.venv_python(root)
+    (root / bootstrap.LOCK_FILE).unlink()
+    runner = FakeRunner()
+
+    argv = bootstrap.pip_install_locked(py, root, unlocked=True, run=runner)
+
+    assert argv[-1].endswith(bootstrap.LOOSE_REQUIREMENTS)
+    assert "--require-hashes" not in argv
+    assert len(runner.calls) == 1
+
+
+@pytest.mark.parametrize("kind", ["directory", "dangling_symlink"])
+def test_pip_install_refuses_nonfile_lock_without_downgrading(root, kind):
+    py = bootstrap.venv_python(root)
+    lock = root / bootstrap.LOCK_FILE
+    lock.unlink()
+    if kind == "directory":
+        lock.mkdir()
+    else:
+        try:
+            lock.symlink_to(root / "missing-target")
+        except OSError as exc:
+            if sys.platform == "win32" and getattr(exc, "winerror", None) == 1314:
+                pytest.skip("Windows symlink privilege is unavailable")
+            raise
+    runner = FakeRunner()
+
+    with pytest.raises(bootstrap.BootstrapError) as ei:
+        bootstrap.pip_install_locked(py, root, run=runner)
+
+    assert ei.value.reason == "requirements_lock_unreadable"
+    assert runner.calls == []
+
+
+def test_pip_install_names_lock_metadata_error_without_downgrading(root, monkeypatch):
+    py = bootstrap.venv_python(root)
+    lock = root / bootstrap.LOCK_FILE
+    runner = FakeRunner()
+    original = Path.is_file
+
+    def inaccessible(path):
+        if path == lock:
+            raise PermissionError("modeled unreadable lock path")
+        return original(path)
+
+    monkeypatch.setattr(Path, "is_file", inaccessible)
+
+    with pytest.raises(bootstrap.BootstrapError) as ei:
+        bootstrap.pip_install_locked(py, root, run=runner)
+
+    assert ei.value.reason == "requirements_lock_unreadable"
+    assert runner.calls == []
+
+
+def test_cli_json_reports_named_lock_refusal_and_failure_status(root, monkeypatch, capsys):
+    (root / bootstrap.LOCK_FILE).unlink()
+    bootstrap.ensure_venv(root, run=FakeRunner())
+    original = bootstrap.bootstrap
+    def run(root_, **kwargs):
+        return original(root_, **kwargs, run=lambda *a, **k: pytest.fail('pip reached'),
+                        opener=lambda *a, **k: pytest.fail('network reached'))
+    monkeypatch.setattr(bootstrap, 'bootstrap', run)
+    assert bootstrap.main(['--root', str(root), '--json']) == 1
+    captured = capsys.readouterr()
+    report = json.loads(captured.out)
+    assert report['ok'] is False
+    assert report['steps'][-1]['step'] == 'deps'
+    assert report['steps'][-1]['ok'] is False
+    assert report['reason'].startswith('requirements_missing:')
+    assert bootstrap.LOCK_FILE in report['reason']
+    assert report['runtimes'] == [] and report['smoke'] == {}
