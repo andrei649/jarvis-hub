@@ -10,20 +10,18 @@ import sys
 
 PACKAGE = Path(__file__).resolve().parent
 ROOT = PACKAGE.parents[3]
-BASE = '587977b623cf2d1099733d57037e1c056babe1e5'
+BASE = 'e355da06d7c4a5275401ee2925582c195d270235'
 INPUTS = ['BACKLOG.md', 'docs/hermes/assessment.json', 'docs/hermes/areas.json',
           'docs/research/2026-09-07-hermes-absorption-ledger.json']
 # Review flags are planning overlays, never changes to the assessment ledger.
 REVIEW = {
-    'H040': 'State is not reloaded by the default constructor; discovery roots and conflict/replay semantics need repair.',
+    'H040': 'Default-constructor metadata reload is locally repaired; discovery roots and conflict/replay semantics still need repair.',
     'H032': 'Early-quorum/timeout claims need alignment with gather and unbounded model loading.',
     'H657': 'Manual promotion does not fence a partitioned old owner automatically; state the guarantee precisely.',
     'H214': 'Web/procedural companion does not prove native desktop or VLM generation acceptance.',
     'H238': 'Backend labels and reference palette extraction overstate the procedural implementation.',
     'H590': 'Pet generation and runtime journey need composed acceptance, not only fake-fetch tests.',
     'H690': 'Actual macOS TCC permission continuity across upgrades remains an external acceptance gate.',
-    'H429': 'Streaming scrubber change breaks legacy callback semantics in CI.',
-    'H508': 'Safe-mode/scanner contract failures require security review before claiming equivalence.',
 }
 
 

@@ -5,11 +5,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import concurrent.futures
-import importlib.util
-import sys
 from pathlib import Path
 from typing import Any
 
+from agents.core.env_config import resolve_spellings
 from agents.core.paths import data_path
 from agents.core.skills.importer import (
     CODEX_MIGRATION_MAPPING,
@@ -20,30 +19,22 @@ from agents.core.skills.importer import (
     rescan_imported,
 )
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 _SECTIONS = ("skills", "persona", "memory", "tokens")
 
 
 def _load_import_module():
-    mod = sys.modules.get("_nerva_import_script")
-    if mod is not None:
-        return mod
-    script_path = _REPO_ROOT / "scripts" / "nerva_import.py"
-    spec = importlib.util.spec_from_file_location("_nerva_import_script", script_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"unable to load {script_path}")
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules["_nerva_import_script"] = mod
-    spec.loader.exec_module(mod)
-    return mod
+    # This is the bundled migration command, never a discovered extension.
+    from scripts import nerva_import
+
+    return nerva_import
 
 
 def _data_root_for(ctx) -> Path:
     env = getattr(ctx, "environ", None) or {}
-    for key in ("NERVA_HOME", "JARVIS_HOME"):
-        val = str(env.get(key, "") or "").strip()
-        if val:
-            return Path(val).expanduser()
+    value, _ = resolve_spellings(env, "JARVIS_HOME")
+    val = str(value or "").strip()
+    if val:
+        return Path(val).expanduser()
     return data_path()
 
 

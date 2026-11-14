@@ -1,5 +1,14 @@
 # AGENTS.md — Nerva contributor instructions
 
+> **Current PR integration task — 2026-11-14:** the owner explicitly requested
+> “review them and merge them to main.” This supersedes the earlier no-merge and
+> no-ready restrictions below for the reviewed open PR stack. Merge only eligible
+> exact heads after the trusted checks and review holds are satisfied. It does not
+> authorize deployment, release tags, paid activations, paused-service/scheduler
+> resumption, data loss, or bypassing the previously blocked lifecycle review.
+> See [current integration status](docs/reviews/2026-11-14-integration-status.md).
+
+
 > **Current owner handoff — 2026-11-14:** follow
 > [Antigravity START_HERE](docs/handoff/antigravity-2026-11-14/START_HERE.md)
 > and its continuation prompt. The owner authorizes source transfer, continued

@@ -234,7 +234,7 @@ class DelegateTool:
                 raise ToolRPCValidationError("invalid_args")
             if "collect" in keys and args["collect"] is not True:
                 raise ToolRPCValidationError("invalid_args")
-            return {"action": "collect", "collect": True}
+            return {"action": "collect", "collect": True} if action else {"collect": True}
 
         # List this conversation's children and live slot usage (`{"action": "list"}`).
         if action == "list":

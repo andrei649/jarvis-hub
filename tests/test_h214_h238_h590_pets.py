@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import base64
 import io
+import stat
+import tempfile
 import zipfile
 from types import SimpleNamespace
 
@@ -37,8 +39,91 @@ def isolated_pets(tmp_path, monkeypatch):
     return store
 
 
-def test_h238_h590_petdex_agent_states_terminal_protocols_and_zip_roundtrip(isolated_pets):
+@pytest.mark.parametrize(
+    ("damage", "reason", "status"),
+    [
+        ("traversal", "unsafe_zip_path", 400),
+        ("absolute", "unsafe_zip_path", 400),
+        ("drive", "unsafe_zip_path", 400),
+        ("backslash_traversal", "unsafe_zip_path", 400),
+        ("symlink", "invalid_zip", 400),
+        ("normalized_duplicate", "invalid_zip", 400),
+        ("inflated", "zip_too_large", 413),
+        ("upload_size", "zip_too_large", 413),
+        ("member_count", "invalid_zip", 400),
+        ("truncated", "invalid_zip", 400),
+        ("crc", "invalid_zip", 400),
+        ("json", "invalid_zip", 400),
+    ],
+)
+def test_pet_zip_rejection_preserves_store_and_cleans_private_staging(
+    isolated_pets, tmp_path, monkeypatch, damage, reason, status
+):
     store = isolated_pets
+    _, exported = store.export_zip("spark-owl")
+    with zipfile.ZipFile(io.BytesIO(exported)) as zf:
+        entries = [(name, zf.read(name)) for name in zf.namelist()]
+    if damage == "traversal":
+        entries.append(("../outside.txt", b"not a pet"))
+    elif damage == "absolute":
+        entries.append((str(tmp_path / "outside.txt"), b"not a pet"))
+    elif damage == "drive":
+        entries.append(("C:/outside.txt", b"not a pet"))
+    elif damage == "backslash_traversal":
+        entries.append(("..\\outside.txt", b"not a pet"))
+    elif damage == "symlink":
+        link = zipfile.ZipInfo("link")
+        link.create_system = 3
+        link.external_attr = (stat.S_IFLNK | 0o777) << 16
+        entries.append((link, b"../outside.txt"))
+    elif damage == "normalized_duplicate":
+        entries.append(("./pet.json", entries[0][1]))
+    elif damage == "inflated":
+        entries.append(("padding.txt", b"x" * (512 * 1024)))
+    elif damage == "member_count":
+        entries.extend((f"extra-{i}.txt", b"") for i in range(8))
+    elif damage == "json":
+        entries[0] = ("pet.json", b"{")
+
+    archive = io.BytesIO()
+    # Store CRC case uncompressed so corruption targets member data, not ZIP headers.
+    compression = zipfile.ZIP_STORED if damage == "crc" else zipfile.ZIP_DEFLATED
+    with zipfile.ZipFile(archive, "w", compression=compression) as zf:
+        for name, body in entries:
+            zf.writestr(name, body)
+    raw = archive.getvalue()
+    if damage == "truncated":
+        raw = raw[:-22]
+    elif damage == "crc":
+        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+            info = zf.getinfo("pet.json")
+        offset = info.header_offset + 30 + len(info.filename.encode()) + len(info.extra)
+        damaged = bytearray(raw)
+        damaged[offset] ^= 1
+        raw = bytes(damaged)
+    elif damage == "upload_size":
+        raw += b"x" * (512 * 1024)
+
+    before = store.path.read_bytes() if store.path.exists() else None
+    staging = tmp_path / "staging"
+    staging.mkdir(mode=0o700)
+    monkeypatch.setattr(tempfile, "tempdir", str(staging))
+    with pytest.raises(PetError) as exc:
+        store.import_zip(raw)
+    assert (exc.value.reason, exc.value.status) == (reason, status)
+    assert str(tmp_path) not in exc.value.detail
+    assert (store.path.read_bytes() if store.path.exists() else None) == before
+    assert len(store.gallery()["pets"]) == 6
+    assert not (tmp_path / "outside.txt").exists()
+    assert not (staging / "outside.txt").exists()
+    assert list(staging.iterdir()) == []
+
+
+def test_h238_h590_petdex_agent_states_terminal_protocols_and_zip_roundtrip(isolated_pets, tmp_path, monkeypatch):
+    store = isolated_pets
+    staging = tmp_path / "staging"
+    staging.mkdir(mode=0o700)
+    monkeypatch.setattr(tempfile, "tempdir", str(staging))
 
     # 1. Built-in Petdex gallery has 6 species, each with 5 agent-state animations.
     gal = store.gallery()
@@ -108,6 +193,13 @@ def test_h238_h590_petdex_agent_states_terminal_protocols_and_zip_roundtrip(isol
     custom_id = imported["pet"]["id"]
     assert imported["pet"]["builtin"] is False
     assert custom_id.startswith("custom-")
+    assert imported["pet"]["name"] == "Starlight"
+    for state in AGENT_STATES:
+        for frame in (0, 1):
+            assert store.cells(custom_id, state=state, frame=frame)["cells"] == \
+                store.cells("nebula-cat", state=state, frame=frame)["cells"]
+    assert len(store.gallery()["pets"]) == 7
+    assert list(staging.iterdir()) == []
 
     # Malicious path traversal archive is rejected cleanly.
     evil_buf = io.BytesIO()

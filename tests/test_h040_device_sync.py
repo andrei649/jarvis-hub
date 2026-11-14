@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import base64
 import io
 import json
 from types import SimpleNamespace
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from agents.cli.nerva import Context, main
-from agents.core import settings_db
+from agents.core import e2e_sync, settings_db
 from agents.core.e2e_sync import DirectorySyncTransport, E2ESync, E2ESyncError
 from agents.core.routers import mesh as mesh_router
 from agents.core.routers._deps import admin_guard, user_guard
@@ -20,6 +22,71 @@ def _switch_settings_db(monkeypatch, db_path):
     monkeypatch.setattr(settings_db, "DB_PATH", db_path)
     monkeypatch.setattr(settings_db, "_initialized", False)
     monkeypatch.setattr(settings_db, "_wal_set", False)
+
+
+@pytest.fixture
+def private_sync_home(tmp_path, monkeypatch):
+    home = tmp_path / "private_sync_home"
+    home.mkdir(mode=0o700)
+    monkeypatch.setenv("JARVIS_HOME", str(home))
+    for name in ("JARVIS_PROFILE", "NERVA_PROFILE", "JARVIS_DEVICE_LABEL"):
+        monkeypatch.delenv(name, raising=False)
+    return home
+
+
+@pytest.mark.parametrize("crypto_unavailable", [False, True])
+@pytest.mark.parametrize("explicit_path", [False, True])
+def test_h040_metadata_survives_reinstantiation(
+    private_sync_home, monkeypatch, crypto_unavailable, explicit_path
+):
+    if crypto_unavailable:
+        monkeypatch.setattr(e2e_sync, "_crypto", lambda: None)
+    path = private_sync_home / ("explicit.json" if explicit_path else "e2e_sync_state.json")
+    kwargs = {"state_path": path} if explicit_path else {}
+    original = E2ESync(**kwargs)
+    original.set_device_label("Travel laptop")
+    original.set_skill_sync("private-draft", False)
+    original.add_peer("home", "https://home.invalid", "Home desktop")
+    saved = path.read_bytes()
+
+    restored = E2ESync(**kwargs)
+
+    assert restored.device_label == "Travel laptop"
+    assert restored.is_skill_sync_enabled("private-draft") is False
+    assert restored.list_peers() == [
+        {"peer_id": "home", "url": "https://home.invalid", "label": "Home desktop"}
+    ]
+    assert path.read_bytes() == saved  # Construction only reads existing metadata.
+    if crypto_unavailable:
+        assert restored.available is False
+
+    # An unrelated owner change must retain the restored opt-out and peer.
+    restored.set_device_label("Renamed laptop")
+    after_change = E2ESync(**kwargs)
+    assert after_change.device_label == "Renamed laptop"
+    assert after_change.is_skill_sync_enabled("private-draft") is False
+    assert after_change.list_peers() == restored.list_peers()
+
+
+@pytest.mark.parametrize("crypto_unavailable", [False, True])
+@pytest.mark.parametrize("contents", [None, "{corrupt", "[]"])
+def test_h040_default_constructor_leaves_missing_or_corrupt_state_untouched(
+    private_sync_home, monkeypatch, crypto_unavailable, contents
+):
+    if crypto_unavailable:
+        monkeypatch.setattr(e2e_sync, "_crypto", lambda: None)
+    path = private_sync_home / "e2e_sync_state.json"
+    if contents is not None:
+        path.write_text(contents, encoding="utf-8")
+
+    sync = E2ESync()
+
+    assert sync.list_peers() == []
+    if contents is None:
+        assert not path.exists()
+    else:
+        assert path.read_text(encoding="utf-8") == contents
+    assert list(private_sync_home.iterdir()) == ([] if contents is None else [path])
 
 
 def test_h040_cross_device_config_and_skills_sync_with_injection_quarantine(tmp_path, monkeypatch):
@@ -62,7 +129,23 @@ def test_h040_cross_device_config_and_skills_sync_with_injection_quarantine(tmp_
     # Verify the spool file on disk contains ONLY ciphertext (no plaintext skill/setting strings).
     spool_raw = (spool / "manifest_dev-macbook.json").read_text(encoding="utf-8")
     assert "deploy-helper" not in spool_raw
-    assert "720" not in spool_raw
+    assert "Run preflight checks cleanly." not in spool_raw
+    assert '\"artefact_type\": \"config\"' not in spool_raw
+    spool_manifest = json.loads(spool_raw)
+    assert set(spool_manifest) == {"enabled", "device", "kind", "count", "entries", "digest"}
+    assert spool_manifest["device"] == "dev-macbook"
+    assert spool_manifest["kind"] == "device_state"
+    assert spool_manifest["count"] == len(spool_manifest["entries"]) == 3
+    for envelope in spool_manifest["entries"]:
+        assert set(envelope) == {"v", "device", "ct", "ts"}
+        assert envelope["v"] == 1 and envelope["device"] == "dev-macbook"
+        assert isinstance(envelope["ts"], (int, float))
+        assert isinstance(envelope["ct"], str)
+        assert base64.urlsafe_b64decode(envelope["ct"])[0] == 0x80  # opaque Fernet token
+    roundtrip = [dev_a.decrypt_record(envelope) for envelope in spool_manifest["entries"]]
+    config_records = [record for record in roundtrip if record["artefact_type"] == "config"]
+    assert len(config_records) == 1
+    assert config_records[0]["document"]["settings"]["sessions"]["idle_minutes"] == 720
 
     # Switch to Device B (fresh settings.db + empty skills_dir) and pull.
     _switch_settings_db(monkeypatch, db_b)

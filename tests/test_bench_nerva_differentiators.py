@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -57,7 +58,7 @@ def test_benchmark_1_resilient_hybrid_committee_metrics(measured_report: dict[st
     assert tt["overall_wall_speedup_vs_sequential_baseline"] >= 1.8
 
 
-def test_benchmark_2_h513_controllable_cloud_privacy_metrics(measured_report: dict[str, Any]) -> None:
+def test_benchmark_2_h513_controllable_cloud_privacy_metrics(measured_report: dict[str, Any], monkeypatch) -> None:
     b2 = next(b for b in measured_report["benchmarks"] if b["id"] == "B2_h513_controllable_cloud_privacy")
     assert b2["passed"] is True
     dm = b2["deterministic_metrics"]
@@ -70,6 +71,18 @@ def test_benchmark_2_h513_controllable_cloud_privacy_metrics(measured_report: di
     assert dm["strict_local_specialist_blocked_hybrid"] is True
     assert dm["baseline_unconsented_cloud_calls_leaked"] == 4
     assert dm["baseline_unconsented_cloud_tokens_leaked"] > 0
+
+    from agents.core.llm import tokenizer
+
+    class _OtherEncoding:
+        def encode(self, text):
+            return [0]  # Optional production vocabulary deliberately disagrees.
+
+    for encoding in (None, _OtherEncoding()):
+        monkeypatch.setattr(tokenizer, "_ENCODING", encoding)
+        with bench._hermetic_sandbox():
+            fresh = asyncio.run(bench.bench_2_controllable_cloud_privacy())
+        assert fresh["deterministic_metrics"] == dm
 
 
 def test_benchmark_3_h657_room_failover_and_fencing_metrics(measured_report: dict[str, Any]) -> None:

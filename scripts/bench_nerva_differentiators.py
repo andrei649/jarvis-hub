@@ -42,6 +42,7 @@ import logging
 import os
 import platform
 import re
+import secrets
 import sys
 import tempfile
 import time
@@ -70,7 +71,6 @@ from agents.core.llm.base import LLMBackend
 from agents.core.llm.hybrid_router import HybridRouter, LocalBackendUnavailableError
 from agents.core.llm.moa import clear_recent_runs, save_preset, validate_preset
 from agents.core.llm.providers import get_profile
-from agents.core.llm.tokenizer import estimate_tokens
 from agents.core.rooms import RoomAuthorityError, RoomStore
 
 SCHEMA_VERSION = "nerva.differentiator_bench.v1"
@@ -82,6 +82,7 @@ SUITE_SPEC: dict[str, Any] = {
     "schema_version": SCHEMA_VERSION,
     "execution_mode": "hermetic_in_process",
     "live_network_llm_calls": 0,
+    "fixture_accounting_method": "utf8_bytes_floor_div4_plus1",
     "workloads": {
         "moa_resilience": {
             "proposer_count": 4,
@@ -116,6 +117,11 @@ SUITE_SPEC: dict[str, Any] = {
 }
 
 _LINK_RE = re.compile(r"\]\(([^)\s]+)\)")
+
+
+def _synthetic_token_units(text: str) -> int:
+    """Stable fixture accounting units, independent of provider vocabularies/billing."""
+    return len(text.encode("utf-8")) // 4 + 1
 
 
 def suite_spec_digest() -> str:
@@ -169,7 +175,7 @@ class _DeterministicBenchBackend(LLMBackend):
         self.calls.append(
             {
                 "model": model,
-                "prompt_tokens": estimate_tokens(prompt),
+                "prompt_tokens": _synthetic_token_units(prompt),
                 "max_tokens": max_tokens,
                 "temperature": temperature,
             }
@@ -516,7 +522,7 @@ async def bench_2_controllable_cloud_privacy(monkeypatch_scope_key: bool = True)
         for prompt in sensitive_prompts:
             await unguarded_cloud.generate("frontier-cloud-v1", prompt, max_tokens=128)
             baseline_cloud_calls += 1
-            baseline_cloud_tokens += estimate_tokens(prompt)
+            baseline_cloud_tokens += _synthetic_token_units(prompt)
 
         nerva_cloud_calls = len(cloud_backend.calls)
         nerva_cloud_tokens = sum(int(c["prompt_tokens"]) for c in cloud_backend.calls)
@@ -574,7 +580,7 @@ def _verify_room_integrity_guards(primary: RoomStore, replica: RoomStore, room_i
 
 def bench_3_room_failover_and_fencing(sandbox: Path) -> dict[str, Any]:
     """Benchmark 3: H657 surviving-host room failover, epoch+1 promotion, and fencing."""
-    secret = "nerva-bench-cluster-fencing-secret-v1"
+    secret = secrets.token_urlsafe(32)
     host_a = RoomStore(sandbox / "rooms_alpha.json", host_id="host-alpha", signing_secret=secret)
     host_b = RoomStore(sandbox / "rooms_beta.json", host_id="host-beta", signing_secret=secret)
 
@@ -589,7 +595,8 @@ def bench_3_room_failover_and_fencing(sandbox: Path) -> dict[str, Any]:
     gap_rejected, tamper_rejected = _verify_room_integrity_guards(host_a, host_b, room_id)
 
     page = host_a.export_log_page(room_id, after_seq=0, limit=100)
-    assert page is not None
+    if page is None:
+        raise RuntimeError("room benchmark export returned no log page")
     rep = host_b.replicate(room_id, page)
     dup_rep = host_b.replicate(room_id, page)
 
@@ -597,7 +604,8 @@ def bench_3_room_failover_and_fencing(sandbox: Path) -> dict[str, Any]:
     t_promote = time.perf_counter()
     promoted = host_b.promote(room_id, confirm=True, reason="host-alpha heartbeat timeout")
     failover_latency_ms = round((time.perf_counter() - t_promote) * 1000.0, 4)
-    assert promoted is not None
+    if promoted is None:
+        raise RuntimeError("room benchmark promotion returned no room")
 
     for idx in range(1, 4):
         host_b.add_message(room_id, "user", f"post-failover-turn-{idx}")
@@ -621,7 +629,8 @@ def bench_3_room_failover_and_fencing(sandbox: Path) -> dict[str, Any]:
         forged_proof_rejected = exc.status == 403 and exc.reason == "invalid_proof"
 
     demoted = host_a.demote(room_id, proof=promoted["fencing_proof"])
-    assert demoted is not None and demoted["authority_role"] == "fenced"
+    if demoted is None or demoted["authority_role"] != "fenced":
+        raise RuntimeError("room benchmark demotion did not fence the primary")
 
     stale_write_attempts = 8
     stale_writes_rejected = 0
@@ -1005,10 +1014,10 @@ def bench_5_secret_stripped_e2e_sync(sandbox: Path) -> dict[str, Any]:
 
     _switch_db(sandbox / "dev_source.db")
     secret_markers = {
-        "twilio_auth_token": "AC_SYNTHETIC_TWILIO_SECRET_998877",
-        "notion_integration_token": "ntn_SYNTHETIC_NOTION_SECRET_665544",
-        "tuya_secret": "TUYA_SYNTHETIC_SECRET_332211",
-        "gecko_libra_token": "LIBRA_SYNTHETIC_TOKEN_112233",
+        "twilio_auth_token": secrets.token_urlsafe(32),
+        "notion_integration_token": secrets.token_urlsafe(32),
+        "tuya_secret": secrets.token_urlsafe(32),
+        "gecko_libra_token": secrets.token_urlsafe(32),
     }
     # Write real encrypted-at-rest secret keys + credential-shaped URL + safe config.
     conn = settings_db.get_conn()
@@ -1045,7 +1054,8 @@ def bench_5_secret_stripped_e2e_sync(sandbox: Path) -> dict[str, Any]:
     source.set_skill_sync("local-draft", False)
     artefacts = source.collect_sync_artefacts()
     pushed = source.push_state()
-    assert pushed["ok"] is True
+    if pushed["ok"] is not True:
+        raise RuntimeError("sync benchmark push did not succeed")
 
     artefacts_json = json.dumps(artefacts)
     spool_wire_json = (spool / "manifest_dev-source.json").read_text(encoding="utf-8")
@@ -1054,15 +1064,23 @@ def bench_5_secret_stripped_e2e_sync(sandbox: Path) -> dict[str, Any]:
         for k, v in secret_markers.items()
         if k in artefacts_json or v in artefacts_json or k in spool_wire_json or v in spool_wire_json
     )
-    plaintext_in_wire = any(
-        token in spool_wire_json for token in ("deploy-check", "540", "Verify release checksums")
+    wire_manifest = json.loads(spool_wire_json)
+    wire_structure_valid = (
+        set(wire_manifest) == {"enabled", "device", "kind", "count", "entries", "digest"}
+        and all(set(entry) == {"v", "device", "ct", "ts"} for entry in wire_manifest["entries"])
+    )
+    # Short values can occur by chance in ciphertext. Check public structure and
+    # meaningful plaintext markers instead of treating digits as leaked settings.
+    plaintext_in_wire = not wire_structure_valid or any(
+        marker in spool_wire_json
+        for marker in ("deploy-check", '"idle_minutes":', "Verify release checksums cleanly.")
     )
 
     # Mailbox also rejects envelopes attempting to attach plaintext keys.
     plaintext_envelope_rejected = False
     try:
         source.accept_peer_manifest(
-            {"device": "rogue", "entries": [{"v": 1, "device": "rogue", "ct": "abc", "secret": "x"}]}
+            {"device": "rogue", "entries": [{"v": 1, "device": "rogue", "ct": "abc", "secret": secrets.token_urlsafe(24)}]}
         )
     except E2ESyncError:
         plaintext_envelope_rejected = True
@@ -1146,6 +1164,8 @@ async def run_all_benchmarks_async() -> dict[str, Any]:
         "honest_scope_note": (
             "All 5 benchmarks execute Nerva's real Python subsystems in-process against "
             "deterministic synthetic LLM/transport backends (0 live network LLM calls). "
+            "Fixture token telemetry uses len(text.encode('utf-8')) // 4 + 1 synthetic units, "
+            "not a provider vocabulary or billed/live token count. "
             "Baseline columns measure representative single-chain / unguarded local-agent "
             "patterns (Hermes / OpenClaw architectural defaults without parallel MoA quorum, "
             "H513 per-member consent binding, H657 monotonic authority epochs, H086 principal-scoped "
@@ -1234,6 +1254,7 @@ def render_markdown_report(
         "",
         f"- **Schema:** `{report['schema_version']}`",
         f"- **Suite Spec Digest (`sha256`):** `{report['suite_spec_sha256']}`",
+        "- **Synthetic token units:** `len(text.encode('utf-8')) // 4 + 1`; fixed fixture accounting, not provider vocabulary or billed/live tokens.",
         f"- **Machine-Readable Artifact:** [`{Path(json_rel_link).name}`]({json_rel_link})",
         f"- **Verification Suite:** [`tests/test_bench_nerva_differentiators.py`]({lnk_test})",
         f"- **Result:** `{report['summary']['passed_benchmarks']}/{report['summary']['total_benchmarks']}` subsystem benchmarks passed",
@@ -1255,8 +1276,8 @@ def render_markdown_report(
         (
             f"| 2 | **Controllable Cloud Privacy** (mixed local + unconsented cloud committee on 4 sensitive prompts) "
             f"| [`agents/core/llm/moa.py`]({lnk_moa}) + [`data_handling.py`]({lnk_dh}) (`H513`) "
-            f"| `{m2['nerva_unconsented_cloud_calls_leaked']}` cloud calls / `{m2['nerva_unconsented_cloud_tokens_leaked']}` tokens leaked (`{m2['nerva_policy_block_accuracy'] * 100:.0f}%` block accuracy); `{m2['nerva_local_grounded_synthesis_rate'] * 100:.0f}%` grounded local synthesis "
-            f"| `{m2['baseline_unconsented_cloud_calls_leaked']}` cloud calls (`{m2['baseline_unconsented_cloud_tokens_leaked']}` tokens) sent without per-member configuration-bound consent (`0%` block) "
+            f"| `{m2['nerva_unconsented_cloud_calls_leaked']}` cloud calls / `{m2['nerva_unconsented_cloud_tokens_leaked']}` synthetic token units leaked (`{m2['nerva_policy_block_accuracy'] * 100:.0f}%` block accuracy); `{m2['nerva_local_grounded_synthesis_rate'] * 100:.0f}%` grounded local synthesis "
+            f"| `{m2['baseline_unconsented_cloud_calls_leaked']}` cloud calls (`{m2['baseline_unconsented_cloud_tokens_leaked']}` synthetic token units) sent without per-member configuration-bound consent (`0%` block) "
             f"| {'PASS' if b2['passed'] else 'FAIL'} |"
         ),
         (

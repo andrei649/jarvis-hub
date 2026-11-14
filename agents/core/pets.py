@@ -21,9 +21,11 @@ import base64
 import hashlib
 import io
 import json
+import logging
 import os
 import re
 import struct
+import tempfile
 import time
 import uuid
 import zipfile
@@ -32,6 +34,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from agents.core.archive_safe import ArchiveLimits, ArchiveRejected, extract_zip_bytes
 from agents.core.paths import data_path
 from agents.core.persistence import JsonStore
 
@@ -503,8 +506,10 @@ def derive_agent_state(orch: Any = None) -> dict[str, Any]:
                     elif any(isinstance(x, dict) and x.get("status") == "failed" for x in items[:2]):
                         state = "failing"
                         detail = "recent sub-agent failed"
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logging.getLogger(__name__).debug(
+                        "Pet activity probe unavailable (%s)", type(exc).__name__,
+                    )
     return {
         "agent_state": state,
         "detail": detail,
@@ -555,8 +560,10 @@ class PetStore(JsonStore):
             from agents.core import settings_db
 
             settings_db.put_category("pets", updates)
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "Pet preference settings mirror failed (%s)", type(exc).__name__,
+            )
 
     # ── H238 core read/mutate verbs ──────────────────────────────────────────
 
@@ -800,32 +807,31 @@ class PetStore(JsonStore):
         if len(raw_bytes) > _MAX_ZIP_BYTES:
             raise PetError("zip_too_large", status=413, detail="pet archive exceeds 512 KiB")
         try:
-            zf = zipfile.ZipFile(io.BytesIO(bytes(raw_bytes)), "r")
-        except zipfile.BadZipFile as exc:
-            raise PetError("invalid_zip", status=400, detail="corrupt zip archive") from exc
-
-        with zf:
-            infos = zf.infolist()
-            if len(infos) > _MAX_ZIP_ENTRIES:
-                raise PetError("invalid_zip", status=400, detail="too many files in pet archive")
-            total_uncompressed = 0
-            files: dict[str, bytes] = {}
-            for info in infos:
-                fname = info.filename
-                if fname.startswith("/") or ".." in fname.split("/") or "\\" in fname:
-                    raise PetError("unsafe_zip_path", status=400, detail="unsafe path in zip archive")
-                total_uncompressed += info.file_size
-                if total_uncompressed > _MAX_ZIP_BYTES:
-                    raise PetError("zip_too_large", status=413, detail="uncompressed archive exceeds 512 KiB")
-                files[fname] = zf.read(fname)
-
-        if "pet.json" not in files or "cells.json" not in files:
-            raise PetError("invalid_zip", status=400, detail="archive requires pet.json and cells.json")
-        try:
-            meta_doc = json.loads(files["pet.json"].decode("utf-8"))
-            frames_doc = json.loads(files["cells.json"].decode("utf-8"))
-        except (UnicodeDecodeError, ValueError) as exc:
-            raise PetError("invalid_zip", status=400, detail="invalid JSON in pet archive") from exc
+            with tempfile.TemporaryDirectory(prefix="nerva-pet-") as staging:
+                root = Path(staging)
+                files = extract_zip_bytes(
+                    bytes(raw_bytes), root,
+                    limits=ArchiveLimits(max_members=_MAX_ZIP_ENTRIES, max_bytes=_MAX_ZIP_BYTES),
+                )
+                if ("pet.json",) not in files or ("cells.json",) not in files:
+                    raise PetError("invalid_zip", status=400, detail="archive requires pet.json and cells.json")
+                try:
+                    meta_doc = json.loads((root / "pet.json").read_text(encoding="utf-8"))
+                    frames_doc = json.loads((root / "cells.json").read_text(encoding="utf-8"))
+                except (OSError, UnicodeDecodeError, ValueError) as exc:
+                    raise PetError("invalid_zip", status=400, detail="invalid JSON in pet archive") from exc
+        except ArchiveRejected as exc:
+            # Keep public pet error categories; archive diagnostics may contain paths.
+            message = str(exc)
+            if message.startswith("archive expands past "):
+                raise PetError("zip_too_large", status=413, detail="uncompressed archive exceeds 512 KiB") from exc
+            if message.startswith((
+                "empty member name:", "NUL in member name:", "absolute member name:",
+                "drive-lettered member name:", "empty path part in member name:",
+                "'..' in member name:", "member name names the destination itself:",
+            )):
+                raise PetError("unsafe_zip_path", status=400, detail="unsafe path in zip archive") from exc
+            raise PetError("invalid_zip", status=400, detail="unsafe or corrupt pet archive") from exc
 
         if not isinstance(meta_doc, dict) or meta_doc.get("format") != "nerva-pet-v1":
             raise PetError("invalid_zip", status=400, detail="unsupported pet archive format")

@@ -1,5 +1,7 @@
 # Open-PR integration review — 2026-11-14
 
+> Historical review snapshot. See the [later integration checkpoint](../../../reviews/2026-11-14-integration-status.md) for published repairs, current source heads and remaining holds.
+
 The owner explicitly requested review and merge into main. That authorizes this
 integration pass and supersedes earlier draft-only restrictions. It does not
 waive failing checks, data preservation or the previous platform-blocked review,

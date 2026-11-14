@@ -120,8 +120,13 @@ def test_readiness_matrix_no_drift():
 
 
 def test_matrix_covers_components_and_skills():
-    kinds = {r.kind for r in _records()}
+    records = _records()
+    kinds = {r.kind for r in records}
     assert {"plugin", "component", "skill", "action"}.issubset(kinds)
+    # These rows attest construction only; no live browser or pet feature acceptance.
+    assert {r.id: r.state for r in records if r.id in {
+        "component:browser_broker", "component:pets",
+    }} == {"component:browser_broker": "wired", "component:pets": "wired"}
 
 
 def test_no_fabricated_verified():

@@ -599,6 +599,7 @@ _ARCHIVE_IMPORTS_ALLOWED = {
     "agents/core/routers/artifact_store.py",  # writes a download zip
     "agents/core/media_export.py",            # writes a media bundle zip
     "agents/core/worktrees.py",               # writes the untracked-scratch archive before a prune
+    "agents/core/pets.py",                    # writes pet exports; uploaded ZIPs use archive_safe
 }
 _ARCHIVE_MODULES = {"tarfile", "zipfile"}
 _THIRD_PARTY_EXTRACTORS = {"py7zr", "rarfile", "patoolib", "libarchive", "pyunpack"}
@@ -697,6 +698,10 @@ def test_the_extractor_guard_leaves_writers_and_unrelated_extract_alone():
               "    with zipfile.ZipFile(b, 'w', zipfile.ZIP_DEFLATED) as z: z.writestr('a', 'b')\n"
               "    with tarfile.open(fileobj=fo, mode='w:gz') as t: pass\n")
     assert _archive_offenders("agents/core/backup.py", writer) == []
+    assert _archive_offenders("agents/core/pets.py", writer) == []
+    pet_reader = "import zipfile\ndef f(b):\n    return zipfile.ZipFile(b, 'r')\n"
+    assert any("opens an archive for reading" in error
+               for error in _archive_offenders("agents/core/pets.py", pet_reader))
     unrelated = "def f(self):\n    self.knowledge.extract(self.messages)\n"
     assert _archive_offenders("agents/core/ingestion/pipeline.py", unrelated) == []
 

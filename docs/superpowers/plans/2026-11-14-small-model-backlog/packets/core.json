@@ -92,7 +92,7 @@
   {
     "id": "SM-002",
     "title": "Resolve legacy callback semantics against mandatory H429 streaming scrubber",
-    "spec_state": "needs_design",
+    "spec_state": "implemented",
     "priority": "P0",
     "risk": "high",
     "hermes_ids": [
@@ -179,12 +179,13 @@
       "agents/core/security/rag_guard.py",
       "agents/core/agent.py",
       "tests/test_agent_runtime_v2.py"
-    ]
+    ],
+    "implementation_evidence": "Locally implemented and independently reviewed on 2026-11-14; docs/reviews/2026-11-14-streaming-cli-repair.md and docs/reviews/2026-11-14-sync-pets-repair.md. Exact-head remote CI and stack merge holds remain separate."
   },
   {
     "id": "SM-003",
     "title": "Keep CLI help usable without optional YAML dependency",
-    "spec_state": "ready",
+    "spec_state": "implemented",
     "priority": "P0",
     "risk": "medium",
     "hermes_ids": [
@@ -264,12 +265,13 @@
       "evidence/core-review.md",
       "agents/core/skins.py",
       "agents/cli/nerva.py"
-    ]
+    ],
+    "implementation_evidence": "Locally implemented and independently reviewed on 2026-11-14; docs/reviews/2026-11-14-streaming-cli-repair.md and docs/reviews/2026-11-14-sync-pets-repair.md. Exact-head remote CI and stack merge holds remain separate."
   },
   {
     "id": "SM-004",
     "title": "Read pet ZIPs through archive_safe",
-    "spec_state": "ready",
+    "spec_state": "implemented",
     "priority": "P0",
     "risk": "medium",
     "hermes_ids": [
@@ -347,12 +349,13 @@
       "evidence/core-review.md",
       "agents/core/archive_safe.py",
       "agents/core/routers/pets.py"
-    ]
+    ],
+    "implementation_evidence": "Locally implemented and independently reviewed on 2026-11-14; docs/reviews/2026-11-14-streaming-cli-repair.md and docs/reviews/2026-11-14-sync-pets-repair.md. Exact-head remote CI and stack merge holds remain separate."
   },
   {
     "id": "SM-005",
     "title": "Register new hub environment aliases without raising the raw-read ratchet",
-    "spec_state": "ready",
+    "spec_state": "implemented",
     "priority": "P0",
     "risk": "medium",
     "hermes_ids": [
@@ -444,12 +447,13 @@
       "agents/core/tool_profiles.py",
       "agents/core/paths.py",
       "tests/test_env_provenance.py"
-    ]
+    ],
+    "implementation_evidence": "Locally implemented and independently reviewed on 2026-11-14; docs/reviews/2026-11-14-streaming-cli-repair.md and docs/reviews/2026-11-14-sync-pets-repair.md. Exact-head remote CI and stack merge holds remain separate."
   },
   {
     "id": "SM-006",
     "title": "Reconcile binding callsites and capability readiness from observed runtime",
-    "spec_state": "ready",
+    "spec_state": "implemented",
     "priority": "P0",
     "risk": "medium",
     "hermes_ids": [],
@@ -525,7 +529,8 @@
       "tests/test_orchestrator_bindings.py",
       "agents/core/observability/capability_registry.py",
       "agents/core/orchestrator.py"
-    ]
+    ],
+    "implementation_evidence": "Locally implemented and independently reviewed on 2026-11-14; docs/reviews/2026-11-14-streaming-cli-repair.md and docs/reviews/2026-11-14-sync-pets-repair.md. Exact-head remote CI and stack merge holds remain separate."
   },
   {
     "id": "SM-007",
@@ -617,7 +622,7 @@
   {
     "id": "SM-008",
     "title": "Restore H040 metadata on default constructor restart",
-    "spec_state": "ready",
+    "spec_state": "implemented",
     "priority": "P0",
     "risk": "medium",
     "hermes_ids": [
@@ -687,7 +692,8 @@
       "agents/core/orchestrator.py",
       "evidence/sync-reproduction.json",
       "evidence/sync-reproduction.json"
-    ]
+    ],
+    "implementation_evidence": "Locally implemented and independently reviewed on 2026-11-14; docs/reviews/2026-11-14-streaming-cli-repair.md and docs/reviews/2026-11-14-sync-pets-repair.md. Exact-head remote CI and stack merge holds remain separate."
   },
   {
     "id": "SM-009",

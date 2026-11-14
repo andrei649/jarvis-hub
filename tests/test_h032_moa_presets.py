@@ -288,7 +288,9 @@ async def test_strict_local_approved_models_and_h513_consent_enforced_across_eve
 def test_http_routes_and_nerva_moa_cli_online_and_offline(monkeypatch):
     router = _make_router(cloud=False)
     fake_orch = SimpleNamespace(llm_router=router)
-    monkeypatch.setattr(moa_router_mod, "get_orch", lambda: fake_orch)
+    from agents import web
+
+    monkeypatch.setattr(web, "orch", fake_orch)
     test_app = FastAPI()
     test_app.include_router(moa_router)
     test_app.dependency_overrides[admin_guard] = lambda: None
@@ -337,3 +339,153 @@ def test_http_routes_and_nerva_moa_cli_online_and_offline(monkeypatch):
     assert get_active_preset_name() is None
     assert nerva_main(["moa", "delete", "council"], context=ctx_online) == 0
     assert list_presets() == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("adapter", ["claude", "gemini"])
+async def test_streaming_cloud_aggregator_accepts_real_adapter_signature(monkeypatch, adapter):
+    from types import MethodType
+    from unittest.mock import create_autospec
+
+    from agents.core.llm.anthropic import ClaudeBackend
+    from agents.core.llm.gemini import GeminiBackend
+
+    router = _make_router()
+    monkeypatch.setattr(router, "check_data_handling", lambda *a, **kw: None)
+    adapter_class = ClaudeBackend if adapter == "claude" else GeminiBackend
+    # Enforce the actual production signature, while replacing all transport work.
+    async def transport_stub(_self, model, prompt, **kwargs):
+        assert "## Candidate Responses" in prompt
+        kwargs["on_token"]("synthesized")
+        return "synthesized"
+
+    stream = create_autospec(adapter_class.generate_stream, side_effect=transport_stub)
+    aggregator = adapter_class.__new__(adapter_class)
+    aggregator.generate_stream = MethodType(stream, aggregator)
+    if adapter == "claude":
+        router._claude_backend = aggregator
+        router._claude_available = True
+    else:
+        router._gemini_backend = aggregator
+    save_preset(validate_preset("cloud-stream", proposers=["local", "local-deep"], aggregator=adapter))
+    backend, model, _ = router.resolve_moa_preset("jarvis", "cloud-stream")
+    tokens, activity = [], []
+    answer = await backend.generate_stream(model, "request", on_token=tokens.append,
+                                          on_activity=lambda: activity.append(True))
+    assert answer == "synthesized" and tokens == [answer]
+    assert len(activity) == 2  # proposers still report activity
+    assert stream.call_count == 1
+
+
+@pytest.fixture
+def moa_selection_pin(tmp_path, monkeypatch):
+    from agents.core import managed_scope
+
+    directory = tmp_path / "managed"
+    directory.mkdir()
+    monkeypatch.setenv("NERVA_MANAGED_DIR", str(directory))
+    monkeypatch.delenv("JARVIS_MANAGED_DIR", raising=False)
+    monkeypatch.setattr(managed_scope, "_TRUST_ANY_OWNER_FOR_TESTS", True)
+    managed_scope.invalidate()
+    yield directory
+    managed_scope.invalidate()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("writer", ["http", "offline"])
+async def test_active_preset_edit_respects_selection_pin(moa_selection_pin, monkeypatch, writer):
+    from agents.core import managed_scope
+
+    original = validate_preset("pinned", proposers=["local", "local-deep"], aggregator="local")
+    save_preset(original)
+    set_active_preset("pinned")
+    (moa_selection_pin / "config.yaml").write_text('llm:\n  compatible_model: admin-model\n')
+    managed_scope.invalidate()
+    if writer == "http":
+        body = moa_router_mod.MoAPresetBody(proposers=["local", "local-deep"], aggregator="local-deep")
+        with pytest.raises(managed_scope.ManagedRefused):
+            await moa_router_mod.moa_put_preset("pinned", body)
+    else:
+        ctx = Context(environ=dict(os.environ), out=io.StringIO(), err=io.StringIO())
+        rc = nerva_main(["moa", "set", "pinned", "--proposers", "local,local-deep",
+                         "--aggregator", "local-deep", "--offline"], context=ctx)
+        assert rc != 0
+        assert "managed by your administrator" in ctx.err.getvalue()
+    assert get_preset("pinned") == original
+    assert get_active_preset_name() == "pinned"
+    # A selection pin does not prohibit editing a dormant preset.
+    save_preset(validate_preset("dormant", proposers=["local", "local-deep"], aggregator="local"))
+
+
+def test_active_preset_edit_check_serializes_with_activation(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    from agents.core import managed_scope
+
+    original = validate_preset("locked", proposers=["local", "local-deep"], aggregator="local")
+    changed = validate_preset("locked", proposers=["local", "local-deep"], aggregator="local-deep")
+    save_preset(original)
+    set_active_preset("locked")
+    checking, release, activation_started, activation_finished = (Event() for _ in range(4))
+
+    def selection_guard(*, selection):
+        assert selection is True
+        checking.set()
+        assert release.wait(5)
+        raise managed_scope.ManagedRefused("selection pinned")
+
+    def deactivate():
+        activation_started.set()
+        set_active_preset(None)
+        activation_finished.set()
+
+    monkeypatch.setattr(managed_scope, "check_llm_write", selection_guard)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        edit = pool.submit(save_preset, changed)
+        try:
+            assert checking.wait(5)
+            activation = pool.submit(deactivate)
+            assert activation_started.wait(5)
+            # An activation cannot invalidate the active-state decision mid-write.
+            assert not activation_finished.wait(0.05)
+        finally:
+            release.set()
+        with pytest.raises(managed_scope.ManagedRefused, match="selection pinned"):
+            edit.result(timeout=5)
+        activation.result(timeout=5)
+    assert get_preset("locked") == original
+    assert get_active_preset_name() is None
+
+
+@pytest.mark.parametrize("home_variable", ["JARVIS_HOME", "NERVA_HOME", None])
+def test_store_path_testing_isolation_honors_home_alias(tmp_path, monkeypatch, home_variable):
+    from agents.core import env_config
+    from agents.core.llm import moa
+
+    monkeypatch.setattr(env_config, "_PINNED", {})
+    monkeypatch.setattr(moa, "data_root", lambda: tmp_path)
+    monkeypatch.setenv("JARVIS_TESTING", "1")
+    monkeypatch.delenv("JARVIS_HOME", raising=False)
+    monkeypatch.delenv("NERVA_HOME", raising=False)
+    if home_variable:
+        monkeypatch.setenv(home_variable, str(tmp_path))
+    expected = "moa_presets.json" if home_variable else ".test_isolated_moa_presets.json"
+    assert moa._store_path() == tmp_path / expected
+
+
+@pytest.mark.parametrize("orch", [None, SimpleNamespace(), SimpleNamespace(llm_router=object())])
+def test_run_unavailable_contract_and_body_validation(monkeypatch, orch):
+    from agents import web
+
+    monkeypatch.setattr(web, "orch", orch)
+    app = FastAPI()
+    app.include_router(moa_router)
+    app.dependency_overrides[admin_guard] = lambda: None
+    client = TestClient(app)
+    response = client.post("/api/llm/moa/run", json={"preset": "council", "prompt": "hello"})
+    assert response.status_code == 503
+    assert response.json() == {"error": "router_unavailable", "detail": "LLM router is not initialized"}
+    assert response.headers["cache-control"] == "no-cache, no-store, must-revalidate"
+    # FastAPI validates the body before invoking the request-time component guard.
+    assert client.post("/api/llm/moa/run", json={"preset": "council"}).status_code == 422

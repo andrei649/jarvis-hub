@@ -67,13 +67,35 @@ class PlanningChecks(unittest.TestCase):
         self.assertEqual(result, 0)
         selected = json.loads(output)['assignments']
         self.assertTrue(selected)
+        accepted = {ident for ident, task in tasks.items() if task['spec_state'] == 'implemented'}
         locked = set(tasks['SM-009']['owned_files'])
         for item in selected:
             task = tasks[item['id']]
             self.assertEqual(task['spec_state'], 'ready')
-            self.assertTrue(set(task['depends_on']) <= {'SM-008'})
+            self.assertTrue(set(task['depends_on']) <= ({'SM-008'} | accepted))
             self.assertFalse(locked & set(task['owned_files']))
             locked.update(task['owned_files'])
+
+    def test_reviewed_implementations_are_not_reassigned_and_satisfy_dependencies(self):
+        tasks = copy.deepcopy(taskpack.packets())
+        restored = next(task for task in tasks if task['id'] == 'SM-008')
+        restored['spec_state'] = 'implemented'
+        restored['implementation_evidence'] = 'Reviewed local regression evidence; full CI pending.'
+        with patch.object(taskpack, 'packets', return_value=tasks):
+            result, output = self.cli('next', '--done', 'SM-001', 'SM-002', 'SM-003',
+                                      'SM-004', 'SM-005', 'SM-006', 'SM-007', '--limit', '8')
+        self.assertEqual(result, 0, output)
+        selected = {row['id'] for row in json.loads(output)['assignments']}
+        self.assertNotIn('SM-008', selected)
+        self.assertIn('SM-009', selected)
+
+    def test_implemented_state_requires_review_evidence(self):
+        tasks = copy.deepcopy(taskpack.packets())
+        tasks[0]['spec_state'] = 'implemented'
+        tasks[0].pop('implementation_evidence', None)
+        with patch.object(taskpack, 'packets', return_value=tasks):
+            self.assertIn('implemented state requires reviewer evidence',
+                          ' '.join(taskpack.validate()['errors']))
 
     def test_pagination_preserves_complete_packet(self):
         packet = taskpack.packets()[0]

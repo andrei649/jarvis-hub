@@ -3000,7 +3000,7 @@
     "title": "Fencing recalled memory as untrusted data at the prompt boundary, including the streaming egress",
     "area": "memory",
     "recorded_status": "equivalent",
-    "planning_status": "needs_design"
+    "planning_status": "retain_and_verify"
   },
   {
     "id": "H430",
@@ -3553,7 +3553,7 @@
     "title": "Catch content-level attacks in a command that pattern matching cannot see",
     "area": "security",
     "recorded_status": "equivalent",
-    "planning_status": "needs_design"
+    "planning_status": "retain_and_verify"
   },
   {
     "id": "H509",

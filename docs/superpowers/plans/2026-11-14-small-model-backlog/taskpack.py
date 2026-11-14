@@ -39,8 +39,10 @@ def validate(check_source=False):
         ident = task['id']
         if required - task.keys():
             issues.append(f'{ident}: missing fields {sorted(required - task.keys())}')
-        if task['spec_state'] not in {'ready', 'needs_design', 'external'}:
+        if task['spec_state'] not in {'ready', 'needs_design', 'external', 'implemented'}:
             issues.append(f'{ident}: invalid state')
+        if task['spec_state'] == 'implemented' and not task.get('implementation_evidence'):
+            issues.append(f'{ident}: implemented state requires reviewer evidence')
         if not task['acceptance'] or not task['commands']:
             issues.append(f'{ident}: no acceptance/verification')
         for case in task['acceptance']:
@@ -94,7 +96,7 @@ def main():
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('stats')
     listing = sub.add_parser('list')
-    listing.add_argument('--state', choices=['ready', 'needs_design', 'external'])
+    listing.add_argument('--state', choices=['ready', 'needs_design', 'external', 'implemented'])
     showing = sub.add_parser('show')
     showing.add_argument('id')
     showing.add_argument('--part', type=int, default=1)
@@ -147,7 +149,8 @@ def main():
     unknown = (set(args.done) | set(args.active)) - by_id.keys()
     if unknown:
         parser.error('unknown task ids: ' + ', '.join(sorted(unknown)))
-    done, active = set(args.done), set(args.active)
+    accepted = {task['id'] for task in tasks if task['spec_state'] == 'implemented'}
+    done, active = set(args.done) | accepted, set(args.active)
     if done & active:
         parser.error('a task cannot be both done and active')
     locks = {f for ident in active for f in by_id[ident]['owned_files']}

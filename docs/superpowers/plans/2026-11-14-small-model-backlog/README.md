@@ -3,16 +3,23 @@
 **Goal:** let smaller coding models deliver one clear behavior at a time without
 reconstructing the project, making authority decisions, or guessing missing contracts.
 
-**Source:** `587977b623cf2d1099733d57037e1c056babe1e5` (2026-11-14), production
-code equivalent to PR #1368 `ffbfce81` plus the lot5 pause checkpoint. This package
-changes planning documents and helpers only. It does not implement the packets,
-change the Hermes verdicts, or claim a green application suite.
+**Reviewed source:** `e355da06d7c4a5275401ee2925582c195d270235` (2026-11-14),
+PR #1368 with the repaired #1366/#1367 parent stack. The lot5 pause checkpoint is
+preserved. The original review reports describe their dated `587977` baseline;
+use [the current integration handoff](../../../reviews/2026-11-14-integration-status.md)
+for later repairs, exact heads and remaining merge holds.
+
+Six packets are locally implemented and independently reviewed: **SM-002, SM-003,
+SM-004, SM-005, SM-006, SM-008**. This is not a claim of full CI, main integration
+or live acceptance. SM-001 awaits exact-head executed count confirmation; SM-007
+still requires its remaining scanner evidence. Planning files preserve all original
+requirements and do not change the Hermes verdicts.
 
 ## What is covered
 
 - All **697** Hermes IDs: 187 recorded equivalent, 474 partial, 36 excluded, zero
   recorded missing. **510 contracts are still unfinished**, often containing
-  several behaviors; the nine reviewed-equivalent concerns have separate planning
+  several behaviors; the remaining reviewed-equivalent concerns have separate planning
   flags. None of those flags alters the canonical ledger.
 - **39 open checkbox records and 54 open table records** in BACKLOG, retained with
   source locations. These views overlap each other and Hermes; do not add them to
@@ -26,7 +33,9 @@ change the Hermes verdicts, or claim a green application suite.
 **Important distinction:** a generated contract card is a faithful specification
 input, not a fully designed implementation task. Only packets marked `ready` may
 be assigned directly. `needs_design` retains explicit architecture questions;
-`external` names acceptance requiring a real environment. This prevents smaller
+`external` names acceptance requiring a real environment. `implemented` records
+local reviewer acceptance with evidence, excludes that packet from reassignment,
+and satisfies its implementation dependencies; remote CI and merge gates remain separate. This prevents smaller
 models from silently inventing semantics for a broad or stale backlog sentence.
 
 ## Start here

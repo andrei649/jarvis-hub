@@ -1,0 +1,559 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-11-14T21:04:34Z",
+  "period": "2026-11-14 cumulative PR review and repair checkpoint",
+  "project": "andrei649/jarvis-hub",
+  "user_goal": "Review open PRs, fix verified defects and merge eligible work into main.",
+  "main": {
+    "sha": "a5dc55fbebe70c8359e50a63c5fe1ae7fc4af06d",
+    "merged_prs": [
+      1360
+    ]
+  },
+  "source_sha": "e355da06d7c4a5275401ee2925582c195d270235",
+  "publications": [
+    {
+      "pr": 1363,
+      "sha": "cac4704cf9012d4fa86ac55f4cb479862405236a",
+      "url": "https://github.com/andrei649/jarvis-hub/pull/1363"
+    },
+    {
+      "pr": 1365,
+      "sha": "17eaceaa2c89872c58528dfc3e36a33b151aeb38",
+      "url": "https://github.com/andrei649/jarvis-hub/pull/1365"
+    },
+    {
+      "pr": 1366,
+      "sha": "fd5c9c1f5e7c999a59aef3323b8273842e84b603",
+      "url": "https://github.com/andrei649/jarvis-hub/pull/1366"
+    },
+    {
+      "pr": 1367,
+      "sha": "8a27fee5b28cddaacbc2e73f105385f1dc99ebad",
+      "url": "https://github.com/andrei649/jarvis-hub/pull/1367"
+    },
+    {
+      "pr": 1368,
+      "sha": "e355da06d7c4a5275401ee2925582c195d270235",
+      "url": "https://github.com/andrei649/jarvis-hub/pull/1368"
+    }
+  ],
+  "changes": [
+    "MoA cloud streaming signatures and managed active-preset selection pins",
+    "Default-path sync metadata persistence; central environment aliases and credential/path classification",
+    "Bounded pet ZIP imports and reviewed component inventories",
+    "Streaming privacy through activity/runtime wrappers and legacy callback compatibility",
+    "CLI optional-dependency handling, static migration import, alias resolution and exact binding pins",
+    "Deterministic offline benchmark fixture accounting and regenerated evidence"
+  ],
+  "evidence": {
+    "local": [
+      {
+        "scope": "MoA combined focused suites",
+        "passed": 194
+      },
+      {
+        "scope": "Sync/pets/environment/capability combined focused suites",
+        "passed": 375
+      },
+      {
+        "scope": "Final credential/path classifications and aliases",
+        "passed": 36
+      },
+      {
+        "scope": "Combined 1368 integration union before two bounded final follow-ups",
+        "passed": 521
+      },
+      {
+        "scope": "Final CLI/skin follow-up",
+        "passed": 8
+      },
+      {
+        "scope": "Final benchmark suite",
+        "passed": 8
+      },
+      {
+        "scope": "Planning helper safeguards",
+        "passed": 10
+      }
+    ],
+    "checks": "Unchanged full Bandit baseline, relevant Ruff and whitespace checks passed. Gitleaks on published e355 head passed in GitHub; no local detector-negative probe claimed.",
+    "expected_backend_count": 36798,
+    "count_method": "Authentic baseline CI36700 plus reviewed same-environment fullcollection delta36709→36807; candidate CI must confirm actual JUnit."
+  },
+  "live_state": {
+    "application_deployed": false,
+    "services_reactivated": false,
+    "schedules_created_or_resumed": false,
+    "drive_upload": false,
+    "notes": "Published source repairs are distinct from main integration and real-device acceptance."
+  },
+  "blockers": [
+    {
+      "prs": [
+        1365,
+        1366,
+        1367,
+        1368,
+        1369
+      ],
+      "description": "Previously platform-blocked cumulative update/restart review remains unresolved; not retried or bypassed."
+    },
+    {
+      "prs": [
+        1366,
+        1367,
+        1368,
+        1369
+      ],
+      "description": "macOS library staging can lose its rollback journal on partial failure; real TCC continuity also needs platform evidence."
+    },
+    {
+      "prs": [
+        1367,
+        1368,
+        1369
+      ],
+      "description": "Stale sync snapshots can overwrite newer local edits; conflict/replay policy and skill admission remain incomplete."
+    },
+    {
+      "prs": [
+        1363
+      ],
+      "description": "Windows full suite still running at observation time; all other reported checks passed."
+    }
+  ],
+  "next_steps": [
+    "Refresh exact heads and all reported check states before every merge.",
+    "Merge1363 only after its final Windows result passes and trusted policy/review state remains valid.",
+    "Resolve cumulative lifecycle/macOS and sync holds before promoting their draft PRs.",
+    "Use refreshed taskpack on source e355; six locally reviewed implementation packets are excluded from reassignment."
+  ],
+  "resources": {
+    "delegates_model": "gpt-6.1-sol",
+    "delegates_reasoning": "medium",
+    "consumption_measured": false
+  },
+  "ci_snapshot": [
+    {
+      "pr": 1363,
+      "sha": "cac4704cf9012d4fa86ac55f4cb479862405236a",
+      "checks": [
+        {
+          "name": "sandbox-isolation",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132569127442
+        },
+        {
+          "name": "test (windows-latest)",
+          "status": "in_progress",
+          "conclusion": null,
+          "id": 132569127431
+        },
+        {
+          "name": "signal-layer-smoke (windows-latest)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132569127409
+        },
+        {
+          "name": "hud-v2-build",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132569127407
+        },
+        {
+          "name": "test (ubuntu-latest)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132569127397
+        },
+        {
+          "name": "frontend",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132569127358
+        },
+        {
+          "name": "openapi-types",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132569127354
+        },
+        {
+          "name": "signal-layer-smoke (ubuntu-latest)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132569127165
+        },
+        {
+          "name": "Secret scan (gitleaks)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132569061004
+        },
+        {
+          "name": "SAST (bandit — blocking gate)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132569060926
+        },
+        {
+          "name": "Dependency audit (pip-audit)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132569060861
+        },
+        {
+          "name": "SAST (semgrep)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132569060644
+        },
+        {
+          "name": "native-read-primitives",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132569060642
+        },
+        {
+          "name": "in-sync",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132569060630
+        }
+      ]
+    },
+    {
+      "pr": 1365,
+      "sha": "17eaceaa2c89872c58528dfc3e36a33b151aeb38",
+      "checks": [
+        {
+          "name": "openapi-types",
+          "status": "completed",
+          "conclusion": "skipped",
+          "id": 132574810147
+        },
+        {
+          "name": "signal-layer-smoke",
+          "status": "completed",
+          "conclusion": "skipped",
+          "id": 132574810132
+        },
+        {
+          "name": "frontend",
+          "status": "completed",
+          "conclusion": "skipped",
+          "id": 132574809850
+        },
+        {
+          "name": "sandbox-isolation",
+          "status": "completed",
+          "conclusion": "skipped",
+          "id": 132574809817
+        },
+        {
+          "name": "SAST (semgrep)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132574809292
+        },
+        {
+          "name": "Dependency audit (pip-audit)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132574809095
+        },
+        {
+          "name": "hud-v2-build",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132574809084
+        },
+        {
+          "name": "SAST (bandit — blocking gate)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132574809040
+        },
+        {
+          "name": "Secret scan (gitleaks)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132574808898
+        },
+        {
+          "name": "test (ubuntu-latest)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132574808861
+        },
+        {
+          "name": "native-read-primitives",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132574808673
+        },
+        {
+          "name": "policy",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132574808669
+        },
+        {
+          "name": "in-sync",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132574808429
+        }
+      ]
+    },
+    {
+      "pr": 1366,
+      "sha": "fd5c9c1f5e7c999a59aef3323b8273842e84b603",
+      "checks": [
+        {
+          "name": "signal-layer-smoke",
+          "status": "completed",
+          "conclusion": "skipped",
+          "id": 132580208147
+        },
+        {
+          "name": "openapi-types",
+          "status": "completed",
+          "conclusion": "skipped",
+          "id": 132580208111
+        },
+        {
+          "name": "sandbox-isolation",
+          "status": "completed",
+          "conclusion": "skipped",
+          "id": 132580208081
+        },
+        {
+          "name": "frontend",
+          "status": "completed",
+          "conclusion": "skipped",
+          "id": 132580208021
+        },
+        {
+          "name": "hud-v2-build",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132580206688
+        },
+        {
+          "name": "SAST (semgrep)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132580206687
+        },
+        {
+          "name": "Secret scan (gitleaks)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132580206677
+        },
+        {
+          "name": "SAST (bandit — blocking gate)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132580206627
+        },
+        {
+          "name": "native-read-primitives",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132580206602
+        },
+        {
+          "name": "test (ubuntu-latest)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132580206514
+        },
+        {
+          "name": "Dependency audit (pip-audit)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132580206445
+        },
+        {
+          "name": "policy",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132580206350
+        },
+        {
+          "name": "in-sync",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132580206316
+        }
+      ]
+    },
+    {
+      "pr": 1367,
+      "sha": "8a27fee5b28cddaacbc2e73f105385f1dc99ebad",
+      "checks": [
+        {
+          "name": "frontend",
+          "status": "completed",
+          "conclusion": "skipped",
+          "id": 132583921659
+        },
+        {
+          "name": "openapi-types",
+          "status": "completed",
+          "conclusion": "skipped",
+          "id": 132583884905
+        },
+        {
+          "name": "sandbox-isolation",
+          "status": "completed",
+          "conclusion": "skipped",
+          "id": 132583884867
+        },
+        {
+          "name": "signal-layer-smoke",
+          "status": "completed",
+          "conclusion": "skipped",
+          "id": 132583884837
+        },
+        {
+          "name": "hud-v2-build",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132583883674
+        },
+        {
+          "name": "Secret scan (gitleaks)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132583883560
+        },
+        {
+          "name": "SAST (semgrep)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132583883515
+        },
+        {
+          "name": "SAST (bandit — blocking gate)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132583883488
+        },
+        {
+          "name": "test (ubuntu-latest)",
+          "status": "in_progress",
+          "conclusion": null,
+          "id": 132583883332
+        },
+        {
+          "name": "native-read-primitives",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132583883296
+        },
+        {
+          "name": "Dependency audit (pip-audit)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132583883238
+        },
+        {
+          "name": "in-sync",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132583883213
+        }
+      ]
+    },
+    {
+      "pr": 1368,
+      "sha": "e355da06d7c4a5275401ee2925582c195d270235",
+      "checks": [
+        {
+          "name": "signal-layer-smoke",
+          "status": "completed",
+          "conclusion": "skipped",
+          "id": 132587526387
+        },
+        {
+          "name": "openapi-types",
+          "status": "completed",
+          "conclusion": "skipped",
+          "id": 132587520986
+        },
+        {
+          "name": "frontend",
+          "status": "completed",
+          "conclusion": "skipped",
+          "id": 132587487359
+        },
+        {
+          "name": "sandbox-isolation",
+          "status": "completed",
+          "conclusion": "skipped",
+          "id": 132587486976
+        },
+        {
+          "name": "hud-v2-build",
+          "status": "in_progress",
+          "conclusion": null,
+          "id": 132587485828
+        },
+        {
+          "name": "native-read-primitives",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132587485799
+        },
+        {
+          "name": "test (ubuntu-latest)",
+          "status": "in_progress",
+          "conclusion": null,
+          "id": 132587485732
+        },
+        {
+          "name": "Secret scan (gitleaks)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132587485662
+        },
+        {
+          "name": "Dependency audit (pip-audit)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132587485622
+        },
+        {
+          "name": "SAST (bandit — blocking gate)",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132587485596
+        },
+        {
+          "name": "SAST (semgrep)",
+          "status": "in_progress",
+          "conclusion": null,
+          "id": 132587485345
+        },
+        {
+          "name": "policy",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132587485208
+        },
+        {
+          "name": "in-sync",
+          "status": "completed",
+          "conclusion": "success",
+          "id": 132587485191
+        }
+      ]
+    }
+  ]
+}
