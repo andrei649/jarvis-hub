@@ -684,32 +684,6 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
-    # H075/H581: ProjectsMode now consumes the core board, drawer, attachment,
-    # metadata and dispatch routes. Remaining advanced HUD/native controls follow.
-    # Each exact path is also recorded in docs/design/HUD_V2_REMAINING.md.
-    "/api/kanban/assignees",
-    "/api/kanban/boards/import",
-    "/api/kanban/boards/{slug}/export",
-    "/api/kanban/boards/{slug}/switch",
-    "/api/kanban/config",
-    "/api/kanban/diagnostics",
-    "/api/kanban/estimate",
-    "/api/kanban/home-channels",
-    "/api/kanban/links",
-    "/api/kanban/model-options",
-    "/api/kanban/profiles/{profile_name}",
-    "/api/kanban/profiles/{profile_name}/describe-auto",
-    "/api/kanban/runs/{run_id}",
-    "/api/kanban/runs/{run_id}/inspect",
-    "/api/kanban/runs/{run_id}/terminate",
-    "/api/kanban/stats",
-    "/api/kanban/tasks/{task_id}/decompose",
-    "/api/kanban/tasks/{task_id}/estimate",
-    "/api/kanban/tasks/{task_id}/home-subscribe/{platform}",
-    "/api/kanban/tasks/{task_id}/reassign",
-    "/api/kanban/tasks/{task_id}/reclaim",
-    "/api/kanban/tasks/{task_id}/specify",
-    "/api/kanban/workers/active",
     # H075/H581: approved backend dispatch exists; dedicated board/worker
     # controls remain in HUD_V2_REMAINING.md and native task H18.34.
     "/api/autonomy/kanban/dispatch",
@@ -776,20 +750,43 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
 # cannot discover them. Keep transport expressions and mounted consumers here so
 # a removed button/read or changed route cannot silently count as a HUD caller.
 KANBAN_HTTP_CONSUMERS: dict[str, tuple[str, str, str]] = {
+    "/api/kanban/assignees": ("scopedPath('/assignees', slug)", "fetchAssignees", "KanbanView.tsx"),
     "/api/kanban/attachments/{attachment_id}": ("scopedPath(`/attachments/${id}`, slug)", "downloadAttachment", "drawer.tsx"),
     "/api/kanban/board": ("root + '/board'", "fetchBoard", "KanbanView.tsx"),
     "/api/kanban/boards": ("root + '/boards'", "fetchBoards", "KanbanView.tsx"),
+    "/api/kanban/boards/import": ("root + '/boards/import'", "importBoard", "board-switcher.tsx"),
     "/api/kanban/boards/{slug}": ("`${root}/boards/${encodeURIComponent(slug)}`", "updateBoard", "board-switcher.tsx"),
+    "/api/kanban/boards/{slug}/export": ("`${root}/boards/${encodeURIComponent(slug)}/export`", "exportBoard", "board-switcher.tsx"),
+    "/api/kanban/boards/{slug}/switch": ("`${root}/boards/${encodeURIComponent(slug)}/switch`", "switchBoard", "board-switcher.tsx"),
+    "/api/kanban/config": ("root + '/config'", "fetchConfig", "KanbanView.tsx"),
+    "/api/kanban/diagnostics": ("root + '/diagnostics'", "fetchDiagnostics", "KanbanView.tsx"),
     "/api/kanban/dispatch": ("scopedPath('/dispatch', slug)", "dispatch", "KanbanView.tsx"),
+    "/api/kanban/estimate": ("root + '/estimate'", "estimateDraft", "board.tsx"),
+    "/api/kanban/home-channels": ("root + '/home-channels'", "fetchHomeChannels", "drawer.tsx"),
+    "/api/kanban/links": ("scopedPath('/links', slug)", "addLink", "drawer.tsx"),
+    "/api/kanban/model-options": ("root + '/model-options'", "fetchModelOptions", "KanbanView.tsx"),
     "/api/kanban/orchestration": ("root + '/orchestration'", "fetchOrchestration", "KanbanView.tsx"),
     "/api/kanban/profiles": ("root + '/profiles'", "fetchProfiles", "KanbanView.tsx"),
+    "/api/kanban/profiles/{profile_name}": ("`${root}/profiles/${encodeURIComponent(profileName)}`", "updateProfileDescription", "board.tsx"),
+    "/api/kanban/profiles/{profile_name}/describe-auto": ("`${root}/profiles/${encodeURIComponent(profileName)}/describe-auto`", "describeProfileAuto", "board.tsx"),
     "/api/kanban/projects": ("root + '/projects'", "fetchProjects", "KanbanView.tsx"),
+    "/api/kanban/runs/{run_id}": ("scopedPath(`/runs/${encodeURIComponent(String(runId))}`, slug)", "fetchRun", "drawer.tsx"),
+    "/api/kanban/runs/{run_id}/inspect": ("scopedPath(`/runs/${encodeURIComponent(String(runId))}/inspect`, slug)", "inspectRun", "drawer.tsx"),
+    "/api/kanban/runs/{run_id}/terminate": ("scopedPath(`/runs/${encodeURIComponent(String(runId))}/terminate`, slug)", "terminateRun", "drawer.tsx"),
+    "/api/kanban/stats": ("scopedPath('/stats', slug)", "fetchStats", "KanbanView.tsx"),
     "/api/kanban/tasks": ("scopedPath('/tasks', slug)", "createTask", "board.tsx"),
     "/api/kanban/tasks/bulk": ("scopedPath('/tasks/bulk', slug)", "bulkTasks", "KanbanView.tsx"),
     "/api/kanban/tasks/{task_id}": ("scopedPath(`/tasks/${encodeURIComponent(id)}`, slug)", "fetchTask", "drawer.tsx"),
     "/api/kanban/tasks/{task_id}/attachments": ("scopedPath(`/tasks/${encodeURIComponent(id)}/attachments`, slug)", "uploadAttachment", "drawer.tsx"),
     "/api/kanban/tasks/{task_id}/comments": ("scopedPath(`/tasks/${encodeURIComponent(id)}/comments`, slug)", "addComment", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/decompose": ("scopedPath(`/tasks/${encodeURIComponent(id)}/decompose`, slug)", "decomposeTask", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/estimate": ("scopedPath(`/tasks/${encodeURIComponent(id)}/estimate`, slug)", "estimateTask", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/home-subscribe/{platform}": ("scopedPath(`/tasks/${encodeURIComponent(id)}/home-subscribe/${encodeURIComponent(platform)}`, slug)", "subscribeTaskChannel", "drawer.tsx"),
     "/api/kanban/tasks/{task_id}/log": ("scopedPath(`/tasks/${encodeURIComponent(id)}/log`, slug)", "fetchLog", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/reassign": ("scopedPath(`/tasks/${encodeURIComponent(id)}/reassign`, slug)", "reassignTask", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/reclaim": ("scopedPath(`/tasks/${encodeURIComponent(id)}/reclaim`, slug)", "reclaimTask", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/specify": ("scopedPath(`/tasks/${encodeURIComponent(id)}/specify`, slug)", "specifyTask", "drawer.tsx"),
+    "/api/kanban/workers/active": ("scopedPath('/workers/active', slug)", "fetchActiveWorkers", "KanbanView.tsx"),
 }
 
 
@@ -798,9 +795,12 @@ def test_mounted_kanban_composed_callers_are_accounted_for():
     transport = files["frontend/src/panels/kanban/api.ts"]
     host = files["frontend/src/gap.tsx"]
     view = files["frontend/src/panels/kanban/KanbanView.tsx"]
+    drawer = files["frontend/src/panels/kanban/drawer.tsx"]
     assert "<KanbanView />" in host and "createKanbanSocket(" in view
     assert "const root = '/api/kanban'" in transport
     assert "root + '/events'" in transport and "new WebSocket(kanbanEventsUrl" in transport
+    assert "unlinkPath(" in transport and re.search(r"\bremoveLink\(", drawer)
+    assert re.search(r"\bunsubscribeTaskChannel\(", drawer)
     routes = set(_snapshot_routes())
     blob = _client_blob()
     for path, (expression, function, consumer) in KANBAN_HTTP_CONSUMERS.items():

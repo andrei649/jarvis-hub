@@ -224,39 +224,20 @@ Automatic governed resume, crash reconciliation of incomplete intake, scoped rem
 terminal targets and goal judging remain unfinished integration. URL attachments now propose
 separate signed egress approvals behind `llm.kanban_network_attachments`; each
 redirect requires another approval. The chat tool uses the existing Decision
-Inbox. The drawer handles local files; URL attachment review and advanced
-worker/recovery actions are still missing from it. Profile editing,
-orchestration settings, model selection, run inspection/termination and native
-board/worker controls remain open. This is not full Hermes parity.
+Inbox. The drawer handles local files, dependency links, run details/inspection/termination,
+task reassignment/reclaim/estimate/specify/decompose, and home-channel subscriptions;
+board switcher, telemetry and orchestration views consume board switch/export/import,
+assignees, stats, active workers, diagnostics, runtime config, model options, draft
+estimation and profile description controls. URL attachment review, backend Nerva
+adapters for the 503-gated worker/config/archive routes, and native board/worker
+controls remain open. This is not full Hermes parity.
 
-Kanban client route gaps: the following server contracts still need their
-HUD consumers. Native Kanban controls remain open even for the routes consumed
-by the browser. Host CLI/chat and API bindings above are local progress;
-registered but unbound effects retain explicit failures until their adapters land.
-
-- `/api/kanban/assignees`
-- `/api/kanban/boards/import`
-- `/api/kanban/boards/{slug}/export`
-- `/api/kanban/boards/{slug}/switch`
-- `/api/kanban/config`
-- `/api/kanban/diagnostics`
-- `/api/kanban/estimate`
-- `/api/kanban/home-channels`
-- `/api/kanban/links`
-- `/api/kanban/model-options`
-- `/api/kanban/profiles/{profile_name}`
-- `/api/kanban/profiles/{profile_name}/describe-auto`
-- `/api/kanban/runs/{run_id}`
-- `/api/kanban/runs/{run_id}/inspect`
-- `/api/kanban/runs/{run_id}/terminate`
-- `/api/kanban/stats`
-- `/api/kanban/tasks/{task_id}/decompose`
-- `/api/kanban/tasks/{task_id}/estimate`
-- `/api/kanban/tasks/{task_id}/home-subscribe/{platform}`
-- `/api/kanban/tasks/{task_id}/reassign`
-- `/api/kanban/tasks/{task_id}/reclaim`
-- `/api/kanban/tasks/{task_id}/specify`
-- `/api/kanban/workers/active`
+Kanban client route gaps: all mounted `/api/kanban/*` HTTP contracts now have
+HUD consumers in `ProjectsMode` (`frontend/src/panels/kanban/`). Native Kanban
+controls remain open even for the routes consumed by the browser, and
+`/api/autonomy/kanban/dispatch` remains tracked separately. Host CLI/chat and
+API bindings above are local progress; registered but unbound effects retain
+explicit HTTP 503/409 refusals in the HUD until their Nerva adapters land.
 
 
 H011 checkpoints (2026-10-04): authenticated owner status/list and exact
