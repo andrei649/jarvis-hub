@@ -88,3 +88,31 @@ Acest document este raportul cumulativ unic menținut lot cu lot conform mandatu
 ### Următorul pas imediat (Lot 3)
 
 - Reducerea contractelor Hermes `missing` de la `6` la **`0`** (`H040` device config/skills E2E sync + CLI/HUD, `H086` browser-control broker + one-shot artifact store, `H657` room replica ingestion + epoch fencing promote/demote, și triada `H214` + `H238` + `H590` companion/pet system peste CLI, TUI half-block și HUD/desktop).
+
+---
+
+## Lot 3 — Zero contracte Hermes `missing` (`missing: 6 -> 0`): `H657`, `H086`, `H040` și triada `H214` + `H238` + `H590`
+
+- **Ramură:** `antigravity/lot3-hermes-missing-zero-20261114` (peste `antigravity/lot2-hud-reachability-h690-h032-20261114` / Draft PR `#1366`)
+- **Model activ:** **Gemini 4 Carbon (High)**
+
+### Ce a fost livrat end-to-end
+
+1. **Contractul Hermes `H657` (`missing -> equivalent`, aria `upstream-delta`) — Surviving-Host Room Failover & Epoch Fencing:**
+   - Extins `agents/core/rooms.py`, `agents/core/routers/rooms.py`, `agents/cli/rooms.py` și `RoomsPanel` (`frontend/src/gap.tsx`): epocă monotonă `authority_epoch`, roluri `owner | replica | fenced`, lanț de evenimente semnat SHA-256 (`export_log_page`), ingestie idempotentă pe replică (`replicate`) cu refuz determinist pentru goluri de secvență, regresii de epocă și divergență hash, promovare cu confirmare explicită la `epoch+1` (`promote`) ce emite `fencing_proof` verificat HMAC și eveniment de lineage, și retrogradare cu blocarea scrierilor locale (`demote` -> `409 room_not_authority`).
+2. **Contractul Hermes `H086` (`missing -> equivalent`, aria `gateway`) — Identity-Scoped Browser-Control Broker & One-Shot HTTPS Artifact Store:**
+   - Implementat `agents/core/browser_broker.py`, `agents/core/routers/browser_broker.py` și `BrowserBrokerPanel` (`frontend/src/panels/browser-broker.tsx`, `Console -> Build`): broker agnostic de transport (`QueueBrokerTransport` + `CallbackBrokerTransport`), izolare strictă pe `principal_id` derivat din digestul tokenului apelantului (`403 identity_mismatch` pe încercări cross-identitate), blocare SSRF înainte de dispatch (`169.254.169.254`, CIDR-uri private, `localhost`, `file://`), verificare constant-time `X-Controller-Token`, și tichete HTTPS *one-shot* mărginite (`5 MiB`, max `64` artefacte, `410 ticket_already_used` la replay, `403 https_required` pe non-HTTPS).
+3. **Contractul Hermes `H040` (`missing -> equivalent`, aria `cli`) — Cross-Device E2E Encrypted Config & Skills Sync:**
+   - Extins `agents/core/e2e_sync.py` (păstrând 100% compatibilitatea `H12.13`), `agents/core/routers/mesh.py`, `agents/cli/sync_cmd.py` (`nerva sync`) și `DeviceSyncPanel` (`frontend/src/panels/device-sync.tsx`, `Console -> Interop`): transporturi reale `DirectorySyncTransport` și `HttpPeerSyncTransport` (exclusiv prin `PluginHTTPClient` către cutia poștală `POST /api/sync/peer/mailbox` care stochează doar ciphertext fără cheie de decriptare), sincronizare config fără secrete (`settings_db.export_settings` / `plan_import` / `apply_import`), carantinare `SKILL.md` prin `detect_injection_normalized`, etichetare dispozitiv și control per-skill.
+4. **Triada Hermes `H214` + `H238` + `H590` (`missing -> equivalent`, ariile `desktop`, `tui`, `feature-pages`) — Nerva Companion / Petdex / Hatch-a-Pet:**
+   - Implementat `agents/core/pets.py`, `agents/core/routers/pets.py`, `agents/cli/pets.py` (`nerva pets`), comenzile slash `/pet` și `/hatch` (`agents/core/commands.py`), cheile `pets.*` (`agents/core/settings_db.py`), plus `PetsPanel` și `PetCompanionOverlay` (`frontend/src/panels/pets.tsx` + montare reactivă în `frontend/src/app.tsx` și `desktop/src-tauri/hud-routes.json`): 6 specii Petdex built-in cu cadre `8x8` pe toate cele 5 stări live ale agentului (`idle`, `thinking`, `tool`, `finishing`, `failing`), studio Hatch-a-Pet (4 variante candidate, tint din imagine de referință, remix cu confirmare explicită `409 confirm_required`, adopție), export/import `.pet.zip` protejat la zip-slip, randare terminal Kitty / iTerm2 / Unicode half-block (`▀`) / `NO_COLOR` ASCII, fereastră pop-out (`?pet_overlay=1`), roam/scale/overlay și `pets doctor`.
+
+### Măsurători și porți verificate local
+
+- **Hermes 697 status (`scripts/hermes_status.py summary` & `check`):** **`179 equivalent` (`+6`), `482 partial`, `0 missing` (`-6`: toate contractele `missing` eliminate!), `36 excluded`, `0 needs_review`**.
+- **Suprafețe API & HUD sincronizate:** `923` operații OpenAPI / `927` rute în `route_auth.json`, `route_surface.json`, `openapi_surface.json`, `14-api-surface-sweep.md` și `frontend/src/api/schema.gen.ts`; 3 panouri noi în Console (`Companions`, `Device Sync`, `Browser Broker`) + controale Failover în `RoomsPanel` + overlay reactiv `PetCompanionOverlay`.
+- **Limitări oneste menținute:** testele noi (`test_h657_room_failover.py`, `test_h086_browser_broker.py`, `test_h040_device_sync.py`, `test_h214_h238_h590_pets.py` și suitele Vitest aferente) rulează ermetic local; acceptanța pe dispozitive mobile fizice, clustere multi-host în producție și provideri externi comerciali live rămâne distinctă de probele locale.
+
+### Următorul pas imediat (Lot 4)
+
+- Reducerea masivă a `UNCALLED_BACKLOG` sub `20` (conectarea în HUD a pachetelor de provideri semnate `H361` și a rutelor avansate Kanban `H075`/`H581`), avansarea contractelor Hermes `partial` cu impact maxim și adăugarea unui harness reproductibil de benchmark Nerva vs Hermes/OpenClaw.

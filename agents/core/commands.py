@@ -1389,7 +1389,93 @@ def build_default_registry() -> CommandRegistry:
                                    review_command, tier=ADMIN, usage="[--branch <name>] [--wait] [focus]"))
     registry.register(SlashCommand("delegations", "sub-agents that ran, and their results (each delivered once)",
                                    delegations_command, tier=ADMIN, usage="[list|collect]"))
+    registry.register(SlashCommand("pet", "inspect, switch, scale or toggle your Petdex companion",
+                                   _pet_command, tier=ADMIN,
+                                   usage="[info|gallery|select <id>|scale <0.5..3>|roam on|off|overlay on|off|off|on|doctor]"))
+    registry.register(SlashCommand("hatch", "generate Hatch-a-Pet candidate drafts or adopt one",
+                                   _hatch_command, tier=ADMIN,
+                                   usage="<concept prompt> | adopt <job_id> <draft_id> [name]"))
     return registry
+
+
+def _pet_store_for(orch):
+    store = getattr(orch, "pets", None) if orch is not None else None
+    if store is None:
+        from .pets import PetStore
+
+        store = PetStore()
+    return store
+
+
+async def _pet_command(ctx: CommandContext) -> str:
+    from .pets import PetError, render_halfblock
+
+    store = _pet_store_for(ctx.orch)
+    parts = [p for p in (ctx.args or "").strip().split() if p]
+    sub = parts[0].lower() if parts else "info"
+    try:
+        if sub == "info":
+            info = store.info(orch=ctx.orch)
+            art = render_halfblock(info["current_cells"], ansi=False)
+            return (
+                f"Companion: {info['active_pet']['name']} ({info['active_id']}) · "
+                f"state={info['agent_state']} ({info['vibe_reaction']}) · "
+                f"enabled={info['enabled']} · scale={info['scale']}\n{art}"
+            )
+        if sub == "gallery":
+            gal = store.gallery()
+            rows = [f"- {p['id']}: {p['name']} ({p['rarity']}, {p['vibe']})" + (" [active]" if p["active"] else "") for p in gal["pets"]]
+            return "Petdex gallery:\n" + "\n".join(rows)
+        if sub == "select" and len(parts) >= 2:
+            res = store.select(parts[1])
+            return f"Selected companion {res['pet']['name']} ({res['active_id']})."
+        if sub == "scale" and len(parts) >= 2:
+            res = store.set_scale(float(parts[1]))
+            return f"Companion scale set to {res['scale']}x."
+        if sub == "roam" and len(parts) >= 2:
+            on = parts[1].lower() in {"on", "1", "true", "yes"}
+            store.update_preferences(roam=on)
+            return f"Companion roaming {'enabled' if on else 'disabled'}."
+        if sub == "overlay" and len(parts) >= 2:
+            on = parts[1].lower() in {"on", "1", "true", "yes"}
+            store.update_preferences(overlay_enabled=on)
+            return f"Companion overlay {'enabled' if on else 'disabled'}."
+        if sub == "off":
+            store.disable()
+            return "Companion disabled."
+        if sub == "on":
+            store.enable()
+            return "Companion enabled."
+        if sub == "doctor":
+            doc = store.doctor()
+            return f"Pets doctor: ok={doc['ok']} · active={doc['active_id']} · protocol={doc['terminal_protocol']}"
+        return "Usage: /pet [info|gallery|select <id>|scale <0.5..3>|roam on|off|overlay on|off|off|on|doctor]"
+    except (PetError, ValueError) as exc:
+        return f"Pet command refused: {exc}"
+
+
+async def _hatch_command(ctx: CommandContext) -> str:
+    from .pets import PetError
+
+    store = _pet_store_for(ctx.orch)
+    raw = (ctx.args or "").strip()
+    if not raw:
+        return "Usage: /hatch <concept prompt> | /hatch adopt <job_id> <draft_id> [name]"
+    parts = raw.split()
+    try:
+        if parts[0].lower() == "adopt" and len(parts) >= 3:
+            job_id, draft_id = parts[1], parts[2]
+            name = " ".join(parts[3:]).strip()
+            hatched = store.hatch_draft(job_id, draft_id, name=name)
+            return f"Hatched and adopted {hatched['pet']['name']} ({hatched['pet']['id']})!"
+        job = store.generate_drafts(raw)
+        lines = [f"Hatch-a-Pet job {job['job_id']} ({job['image_backend']}) — 4 candidates ready:"]
+        for d in job["drafts"]:
+            lines.append(f"- {d['draft_id']} · {d['rarity']} · {d['vibe']}")
+        lines.append(f"Adopt one with: /hatch adopt {job['job_id']} <draft_id> [name]")
+        return "\n".join(lines)
+    except PetError as exc:
+        return f"Hatch refused: {exc.detail}"
 
 
 async def _session_change(ctx: CommandContext) -> str:

@@ -2359,6 +2359,8 @@ from agents.core.routers.presence import router as _presence_router  # noqa: E40
 from agents.core.routers.tools import router as _tools_router  # noqa: E402
 from agents.core.routers.webhooks import router as _webhooks_router  # noqa: E402
 from agents.core.routers.moa import router as _moa_router  # noqa: E402  (H032 MoA presets)
+from agents.core.routers.browser_broker import router as _browser_broker_router  # noqa: E402  (H086 broker)
+from agents.core.routers.pets import router as _pets_router  # noqa: E402  (H214/H238/H590 Petdex)
 
 app.include_router(_webhooks_router)
 app.include_router(_a2a_router)
@@ -2410,6 +2412,8 @@ app.include_router(_provider_selection_router)
 app.include_router(_integrations_setup_router)   # HUD Integrations panel (keys, test, consented choice)
 app.include_router(_custom_endpoints_router)
 app.include_router(_moa_router)
+app.include_router(_browser_broker_router)
+app.include_router(_pets_router)
 app.include_router(_oauth_router)
 app.include_router(_brain_router)
 app.include_router(_swarm_router)

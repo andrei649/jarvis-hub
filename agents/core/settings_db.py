@@ -674,6 +674,14 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="retention", key="min_interval_hours",   value=24,    label="Run the data lifecycle sweep at most every (hours, 1-720)", kind="number"),
     dict(category="retention", key="vacuum_after_prune",   value=True,  label="Compact a database (VACUUM) after a prune deleted rows from it", kind="toggle"),
     dict(category="retention", key="min_vacuum_interval_days", value=30, label="Compact the databases at most every (days, 0-365; 0 = after every deleting sweep)", kind="number"),
+    # pets — H214 / H238 / H590 companion mascot, Hatch-a-Pet generator, and desktop/HUD overlay.
+    dict(category="pets", key="enabled", value=True, label="Enable Nerva Petdex companion", kind="toggle"),
+    dict(category="pets", key="active_id", value="spark-owl", label="Active companion species ID", kind="text"),
+    dict(category="pets", key="scale", value=1.0, label="Companion sprite scale (0.5–3.0)", kind="number"),
+    dict(category="pets", key="roam", value=False, label="Allow floating companion to roam across the viewport", kind="toggle"),
+    dict(category="pets", key="overlay_enabled", value=False, label="Show always-on-top floating companion overlay", kind="toggle"),
+    dict(category="pets", key="image_backend", value="procedural-pixel", label="Hatch-a-Pet candidate image backend", kind="select",
+         opts=["procedural-pixel", "svg-synth", "local-vlm"]),
 ]
 
 # ── lazy init — called on first use, not at import time ───────────

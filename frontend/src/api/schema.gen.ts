@@ -2143,6 +2143,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rooms/{room_id}/replica-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rooms Replica State
+         * @description H657 — inspect authority epoch, role, log cursor, fencing state, and lineage.
+         */
+        get: operations["rooms_replica_state_api_rooms__room_id__replica_state_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rooms/{room_id}/log-page": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rooms Log Page
+         * @description H657 — export a verbatim hash-chained page of room log events for standby replicas.
+         */
+        get: operations["rooms_log_page_api_rooms__room_id__log_page_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rooms/{room_id}/replicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rooms Replicate
+         * @description H657 — ingest a verbatim room log page onto a standby replica (idempotent, gap/epoch-safe).
+         */
+        post: operations["rooms_replicate_api_rooms__room_id__replicate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rooms/{room_id}/promote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rooms Promote
+         * @description H657 — promote a surviving replica host to owner at ``epoch + 1`` (explicit confirm).
+         */
+        post: operations["rooms_promote_api_rooms__room_id__promote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rooms/{room_id}/demote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rooms Demote
+         * @description H657 — fence and demote an old host upon proof of a newer authority epoch.
+         */
+        post: operations["rooms_demote_api_rooms__room_id__demote_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rooms/{room_id}/message": {
         parameters: {
             query?: never;
@@ -5223,7 +5323,7 @@ export interface paths {
         };
         /**
          * Sync Status
-         * @description H12.13 — E2E device-sync status (opt-in, fail-closed).
+         * @description H12.13 + H040 — E2E device-sync status, label, skill policies, and peers.
          */
         get: operations["sync_status_api_sync_get"];
         put?: never;
@@ -5245,7 +5345,7 @@ export interface paths {
         put?: never;
         /**
          * Sync Push
-         * @description H12.13 — encrypt records into an E2E manifest (transport is host-side).
+         * @description H12.13 + H040 — encrypt records or push declared config & enabled skills.
          */
         post: operations["sync_push_api_sync_push_post"];
         delete?: never;
@@ -5265,9 +5365,133 @@ export interface paths {
         put?: never;
         /**
          * Sync Pull
-         * @description H12.13 — decrypt an inbound E2E manifest from another device.
+         * @description H12.13 + H040 — decrypt an inbound E2E manifest or pull & apply config/skills.
          */
         post: operations["sync_pull_api_sync_pull_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sync/now": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync Now
+         * @description H040 — bidirectional sync pass (pull remote config/skills, then push local).
+         */
+        post: operations["sync_now_api_sync_now_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sync/device": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Sync Set Device Label
+         * @description H040 — set human-readable label for this device in E2E sync manifests.
+         */
+        put: operations["sync_set_device_label_api_sync_device_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sync/skills/{skill_name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Sync Set Skill Policy
+         * @description H040 — enable or disable cross-device sync for a specific skill slug.
+         */
+        put: operations["sync_set_skill_policy_api_sync_skills__skill_name__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sync/peers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync Add Peer
+         * @description H040 — register an owner peer hub URL for ciphertext manifest exchange.
+         */
+        post: operations["sync_add_peer_api_sync_peers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sync/peers/{peer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Sync Remove Peer
+         * @description H040 — remove an owner peer hub from cross-device sync.
+         */
+        delete: operations["sync_remove_peer_api_sync_peers__peer_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sync/peer/mailbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sync Peer Mailbox List
+         * @description H040 — machine-to-machine ciphertext-only manifest pickup.
+         */
+        get: operations["sync_peer_mailbox_list_api_sync_peer_mailbox_get"];
+        put?: never;
+        /**
+         * Sync Peer Mailbox Post
+         * @description H040 — machine-to-machine ciphertext-only manifest deposit.
+         */
+        post: operations["sync_peer_mailbox_post_api_sync_peer_mailbox_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7783,6 +8007,606 @@ export interface paths {
          * @description Execute one governed MoA committee synthesis turn and return answer + quorum telemetry.
          */
         post: operations["moa_run_preset_api_llm_moa_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/browser/broker": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Broker Status
+         * @description H086 — identity-scoped status of remote browser sessions, commands, and artifacts.
+         */
+        get: operations["broker_status_api_browser_broker_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/browser/broker/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Broker Register Session
+         * @description H086 — register an identity-scoped remote browser controller session.
+         */
+        post: operations["broker_register_session_api_browser_broker_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/browser/broker/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Broker Detach Session
+         * @description H086 — detach and revoke a remote browser controller session.
+         */
+        delete: operations["broker_detach_session_api_browser_broker_sessions__session_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/browser/broker/sessions/{session_id}/steps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Broker Dispatch Step
+         * @description H086 — dispatch a normalized, SSRF-checked step to an identity-scoped remote browser.
+         */
+        post: operations["broker_dispatch_step_api_browser_broker_sessions__session_id__steps_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/browser/broker/commands/{command_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Broker Command Status
+         * @description H086 — inspect the status and result of a dispatched remote-browser command.
+         */
+        get: operations["broker_command_status_api_browser_broker_commands__command_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/browser/broker/sessions/{session_id}/artifacts/upload-ticket": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Broker Mint Upload Ticket
+         * @description H086 — mint a bounded, identity-scoped one-shot HTTPS upload ticket.
+         */
+        post: operations["broker_mint_upload_ticket_api_browser_broker_sessions__session_id__artifacts_upload_ticket_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/browser/broker/artifacts/{artifact_id}/download-ticket": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Broker Mint Download Ticket
+         * @description H086 — mint an identity-scoped one-shot HTTPS download ticket.
+         */
+        post: operations["broker_mint_download_ticket_api_browser_broker_artifacts__artifact_id__download_ticket_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/browser/broker/controller/{session_id}/heartbeat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Broker Controller Heartbeat
+         * @description H086 — remote browser controller lease renewal.
+         */
+        post: operations["broker_controller_heartbeat_api_browser_broker_controller__session_id__heartbeat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/browser/broker/controller/{session_id}/poll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Broker Controller Poll
+         * @description H086 — remote browser controller command pickup.
+         */
+        post: operations["broker_controller_poll_api_browser_broker_controller__session_id__poll_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/browser/broker/controller/{session_id}/commands/{command_id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Broker Controller Result
+         * @description H086 — remote browser controller step completion report.
+         */
+        post: operations["broker_controller_result_api_browser_broker_controller__session_id__commands__command_id__result_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/browser/broker/controller/{session_id}/detach": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Broker Controller Detach
+         * @description H086 — remote browser controller clean detach.
+         */
+        post: operations["broker_controller_detach_api_browser_broker_controller__session_id__detach_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/browser/broker/artifacts/{artifact_id}/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Broker Artifact Upload
+         * @description H086 — authenticated one-shot HTTPS upload of bounded browser artifact bytes.
+         */
+        put: operations["broker_artifact_upload_api_browser_broker_artifacts__artifact_id__upload_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/browser/broker/artifacts/{artifact_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Broker Artifact Download
+         * @description H086 — authenticated one-shot HTTPS download of bounded browser artifact bytes.
+         */
+        get: operations["broker_artifact_download_api_browser_broker_artifacts__artifact_id__download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pets Info
+         * @description H238 + H590 — active companion, live agent-state animation frame, and settings.
+         */
+        get: operations["pets_info_api_pets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pets/gallery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pets Gallery
+         * @description H214 + H238 — Petdex gallery of built-in and hatched/imported companions.
+         */
+        get: operations["pets_gallery_api_pets_gallery_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pets/doctor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pets Doctor
+         * @description H590 — companion store, sprite frames, settings, and terminal renderer diagnostics.
+         */
+        get: operations["pets_doctor_api_pets_doctor_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pets/{pet_id}/meta": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pets Meta
+         * @description H238 — metadata for one installed companion.
+         */
+        get: operations["pets_meta_api_pets__pet_id__meta_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pets/{pet_id}/cells": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pets Cells
+         * @description H238 — 8x8 RGB cell matrix for a companion and agent state.
+         */
+        get: operations["pets_cells_api_pets__pet_id__cells_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pets/{pet_id}/thumb": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pets Thumb
+         * @description H238 — SVG thumbnail and data URI for one companion.
+         */
+        get: operations["pets_thumb_api_pets__pet_id__thumb_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pets/select": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pets Select
+         * @description H238 — select the active Petdex companion.
+         */
+        post: operations["pets_select_api_pets_select_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pets/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Pets Preferences
+         * @description H214 + H238 + H590 — update companion enabled, roam, overlay, scale, or backend.
+         */
+        put: operations["pets_preferences_api_pets_preferences_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pets/{pet_id}/rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pets Rename
+         * @description H238 — rename an installed companion.
+         */
+        post: operations["pets_rename_api_pets__pet_id__rename_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pets/{pet_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Pets Delete
+         * @description H214 + H238 — delete a custom hatched/imported companion (requires confirm=true).
+         */
+        delete: operations["pets_delete_api_pets__pet_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pets/{pet_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pets Export
+         * @description H238 — export a companion as a re-importable `.pet.zip` archive.
+         */
+        get: operations["pets_export_api_pets__pet_id__export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pets/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pets Import
+         * @description H238 — import a `.pet.zip` companion archive.
+         */
+        post: operations["pets_import_api_pets_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pets/hatch/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pets Hatch Generate
+         * @description H214 + H238 — generate 4 Hatch-a-Pet candidate looks.
+         */
+        post: operations["pets_hatch_generate_api_pets_hatch_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pets/hatch/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pets Hatch Status
+         * @description H238 — poll candidate generation status and draft grid.
+         */
+        get: operations["pets_hatch_status_api_pets_hatch_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pets/hatch/jobs/{job_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pets Hatch Cancel
+         * @description H238 — cancel an in-flight or unhatched candidate generation job.
+         */
+        post: operations["pets_hatch_cancel_api_pets_hatch_jobs__job_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pets/hatch/jobs/{job_id}/remix": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pets Hatch Remix
+         * @description H214 — remix a candidate draft with explicit owner confirmation.
+         */
+        post: operations["pets_hatch_remix_api_pets_hatch_jobs__job_id__remix_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pets/hatch/jobs/{job_id}/adopt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pets Hatch Adopt
+         * @description H214 + H238 — hatch a chosen candidate draft into an installed Petdex companion.
+         */
+        post: operations["pets_hatch_adopt_api_pets_hatch_jobs__job_id__adopt_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -16870,6 +17694,23 @@ export interface components {
              */
             shortcuts_unavailable: boolean;
         };
+        /** CommandResultBody */
+        CommandResultBody: {
+            /**
+             * Ok
+             * @default true
+             */
+            ok: boolean;
+            /** Output */
+            output?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+        };
         /** CommandSummary */
         CommandSummary: {
             /** Name */
@@ -17391,6 +18232,21 @@ export interface components {
             /** Boot Id */
             boot_id: string;
         };
+        /** DispatchStepBody */
+        DispatchStepBody: {
+            /** Step */
+            step?: {
+                [key: string]: unknown;
+            };
+        };
+        /** DownloadTicketBody */
+        DownloadTicketBody: {
+            /**
+             * Ttl S
+             * @default 300
+             */
+            ttl_s: number;
+        };
         /** ElicitationAnswer */
         ElicitationAnswer: {
             /** Content */
@@ -17560,6 +18416,56 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HatchAdoptBody */
+        HatchAdoptBody: {
+            /** Draft Id */
+            draft_id: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Adopt Active
+             * @default true
+             */
+            adopt_active: boolean;
+        };
+        /** HatchGenerateBody */
+        HatchGenerateBody: {
+            /** Prompt */
+            prompt: string;
+            /**
+             * Image Backend
+             * @default
+             */
+            image_backend: string;
+            /**
+             * Reference Image B64
+             * @default
+             */
+            reference_image_b64: string;
+            /**
+             * Defer Completion
+             * @default false
+             */
+            defer_completion: boolean;
+        };
+        /** HatchRemixBody */
+        HatchRemixBody: {
+            /** Draft Id */
+            draft_id: string;
+            /**
+             * Instruction
+             * @default
+             */
+            instruction: string;
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
         };
         /** HookBody */
         HookBody: {
@@ -18368,6 +19274,34 @@ export interface components {
              */
             cancel: boolean;
         };
+        /** PetImportBody */
+        PetImportBody: {
+            /** Zip Base64 */
+            zip_base64: string;
+        };
+        /** PetPreferencesBody */
+        PetPreferencesBody: {
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Roam */
+            roam?: boolean | null;
+            /** Overlay Enabled */
+            overlay_enabled?: boolean | null;
+            /** Scale */
+            scale?: number | null;
+            /** Image Backend */
+            image_backend?: string | null;
+        };
+        /** PetRenameBody */
+        PetRenameBody: {
+            /** Name */
+            name: string;
+        };
+        /** PetSelectBody */
+        PetSelectBody: {
+            /** Pet Id */
+            pet_id: string;
+        };
         /** PlainBody */
         PlainBody: {
             /** Values */
@@ -18391,6 +19325,14 @@ export interface components {
              * @default 60
              */
             max_calls_per_hour: number;
+        };
+        /** PollCommandsBody */
+        PollCommandsBody: {
+            /**
+             * Limit
+             * @default 16
+             */
+            limit: number;
         };
         /** Position */
         Position: {
@@ -18614,6 +19556,26 @@ export interface components {
             /** Reason */
             reason?: string | null;
         };
+        /** RegisterControllerBody */
+        RegisterControllerBody: {
+            /**
+             * Label
+             * @default remote-browser
+             */
+            label: string;
+            /** Capabilities */
+            capabilities?: string[] | null;
+            /**
+             * Allow Private Urls
+             * @default false
+             */
+            allow_private_urls: boolean;
+            /**
+             * Lease Ttl S
+             * @default 120
+             */
+            lease_ttl_s: number;
+        };
         /** RenameBoardBody */
         RenameBoardBody: {
             /** Name */
@@ -18711,6 +19673,57 @@ export interface components {
         ReviewedSkillBody: {
             /** Expected Fingerprint */
             expected_fingerprint: string;
+        };
+        /** RoomDemoteBody */
+        RoomDemoteBody: {
+            /** Proof */
+            proof?: {
+                [key: string]: unknown;
+            };
+        };
+        /** RoomPromoteBody */
+        RoomPromoteBody: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /**
+             * New Host
+             * @default
+             */
+            new_host: string;
+            /**
+             * Reason
+             * @default
+             */
+            reason: string;
+        };
+        /** RoomReplicateBody */
+        RoomReplicateBody: {
+            /** Page */
+            page?: {
+                [key: string]: unknown;
+            } | null;
+            /** Room Id */
+            room_id?: string | null;
+            /** Room Meta */
+            room_meta?: {
+                [key: string]: unknown;
+            } | null;
+            /** Authority Epoch */
+            authority_epoch?: number | null;
+            /** Authority Host */
+            authority_host?: string | null;
+            /**
+             * After Seq
+             * @default 0
+             */
+            after_seq: number;
+            /** Entries */
+            entries?: {
+                [key: string]: unknown;
+            }[] | null;
         };
         /** RotateTokensBody */
         RotateTokensBody: {
@@ -19135,12 +20148,41 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** SyncDeviceLabelBody */
+        SyncDeviceLabelBody: {
+            /** Label */
+            label: string;
+        };
+        /** SyncMailboxBody */
+        SyncMailboxBody: {
+            /** Manifest */
+            manifest?: {
+                [key: string]: unknown;
+            };
+        };
+        /** SyncPeerBody */
+        SyncPeerBody: {
+            /** Peer Id */
+            peer_id: string;
+            /** Url */
+            url: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+        };
         /** SyncPullBody */
         SyncPullBody: {
             /** Manifest */
             manifest?: {
                 [key: string]: unknown;
             };
+            /**
+             * Apply Device State
+             * @default false
+             */
+            apply_device_state: boolean;
         };
         /** SyncPushBody */
         SyncPushBody: {
@@ -19153,6 +20195,29 @@ export interface components {
              * @default memory
              */
             kind: string;
+            /**
+             * Sync Device State
+             * @default false
+             */
+            sync_device_state: boolean;
+            /**
+             * Include Config
+             * @default true
+             */
+            include_config: boolean;
+            /**
+             * Include Skills
+             * @default true
+             */
+            include_skills: boolean;
+        };
+        /** SyncSkillPolicyBody */
+        SyncSkillPolicyBody: {
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
         };
         /** TTSRequest */
         TTSRequest: {
@@ -19485,6 +20550,29 @@ export interface components {
             fingerprints?: string[] | null;
             /** Commit */
             commit?: string | null;
+        };
+        /** UploadTicketBody */
+        UploadTicketBody: {
+            /**
+             * Filename
+             * @default screenshot.png
+             */
+            filename: string;
+            /**
+             * Mime Type
+             * @default image/png
+             */
+            mime_type: string;
+            /**
+             * Max Bytes
+             * @default 5242880
+             */
+            max_bytes: number;
+            /**
+             * Ttl S
+             * @default 300
+             */
+            ttl_s: number;
         };
         /** UseBody */
         UseBody: {
@@ -23257,6 +24345,176 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rooms_replica_state_api_rooms__room_id__replica_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rooms_log_page_api_rooms__room_id__log_page_get: {
+        parameters: {
+            query?: {
+                after_seq?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rooms_replicate_api_rooms__room_id__replicate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoomReplicateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rooms_promote_api_rooms__room_id__promote_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoomPromoteBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rooms_demote_api_rooms__room_id__demote_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoomDemoteBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -27939,6 +29197,211 @@ export interface operations {
             };
         };
     };
+    sync_now_api_sync_now_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    sync_set_device_label_api_sync_device_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncDeviceLabelBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_set_skill_policy_api_sync_skills__skill_name__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncSkillPolicyBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_add_peer_api_sync_peers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncPeerBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_remove_peer_api_sync_peers__peer_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                peer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_peer_mailbox_list_api_sync_peer_mailbox_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    sync_peer_mailbox_post_api_sync_peer_mailbox_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncMailboxBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     satellites_list_api_satellites_get: {
         parameters: {
             query?: never;
@@ -32506,6 +33969,953 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["MoARunBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    broker_status_api_browser_broker_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    broker_register_session_api_browser_broker_sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterControllerBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    broker_detach_session_api_browser_broker_sessions__session_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    broker_dispatch_step_api_browser_broker_sessions__session_id__steps_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DispatchStepBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    broker_command_status_api_browser_broker_commands__command_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                command_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    broker_mint_upload_ticket_api_browser_broker_sessions__session_id__artifacts_upload_ticket_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadTicketBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    broker_mint_download_ticket_api_browser_broker_artifacts__artifact_id__download_ticket_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artifact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DownloadTicketBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    broker_controller_heartbeat_api_browser_broker_controller__session_id__heartbeat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    broker_controller_poll_api_browser_broker_controller__session_id__poll_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PollCommandsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    broker_controller_result_api_browser_broker_controller__session_id__commands__command_id__result_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                command_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommandResultBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    broker_controller_detach_api_browser_broker_controller__session_id__detach_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    broker_artifact_upload_api_browser_broker_artifacts__artifact_id__upload_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artifact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    broker_artifact_download_api_browser_broker_artifacts__artifact_id__download_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                artifact_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pets_info_api_pets_get: {
+        parameters: {
+            query?: {
+                state?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pets_gallery_api_pets_gallery_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    pets_doctor_api_pets_doctor_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    pets_meta_api_pets__pet_id__meta_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pets_cells_api_pets__pet_id__cells_get: {
+        parameters: {
+            query?: {
+                state?: string;
+                frame?: number;
+            };
+            header?: never;
+            path: {
+                pet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pets_thumb_api_pets__pet_id__thumb_get: {
+        parameters: {
+            query?: {
+                state?: string;
+            };
+            header?: never;
+            path: {
+                pet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pets_select_api_pets_select_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PetSelectBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pets_preferences_api_pets_preferences_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PetPreferencesBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pets_rename_api_pets__pet_id__rename_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PetRenameBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pets_delete_api_pets__pet_id__delete: {
+        parameters: {
+            query?: {
+                confirm?: boolean;
+            };
+            header?: never;
+            path: {
+                pet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pets_export_api_pets__pet_id__export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pet_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pets_import_api_pets_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PetImportBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pets_hatch_generate_api_pets_hatch_generate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HatchGenerateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pets_hatch_status_api_pets_hatch_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pets_hatch_cancel_api_pets_hatch_jobs__job_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pets_hatch_remix_api_pets_hatch_jobs__job_id__remix_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HatchRemixBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pets_hatch_adopt_api_pets_hatch_jobs__job_id__adopt_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HatchAdoptBody"];
             };
         };
         responses: {

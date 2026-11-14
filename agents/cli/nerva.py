@@ -208,6 +208,10 @@ def build_parser() -> argparse.ArgumentParser:
     configure_rooms(verbs)
     from .moa import register_parser as configure_moa
     configure_moa(verbs)
+    from .sync_cmd import register_parser as configure_sync
+    configure_sync(verbs)
+    from .pets import register_parser as configure_pets
+    configure_pets(verbs)
 
     from agents.core.kanban.cli_parser import build_parser as configure_kanban
     configure_kanban(verbs)
@@ -7529,6 +7533,18 @@ def cmd_moa(ns: argparse.Namespace, ctx: Context) -> int:
     return run_moa(ns, ctx)
 
 
+def cmd_sync(ns: argparse.Namespace, ctx: Context) -> int:
+    from .sync_cmd import run as run_sync
+
+    return run_sync(ns, ctx)
+
+
+def cmd_pets(ns: argparse.Namespace, ctx: Context) -> int:
+    from .pets import run as run_pets
+
+    return run_pets(ns, ctx)
+
+
 _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "secrets": cmd_secrets,
     "kanban": cmd_kanban,
@@ -7561,6 +7577,8 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     **dict.fromkeys(("journey", *_JOURNEY_ALIASES), cmd_journey),
     "provider": cmd_custom_provider,
     "moa": cmd_moa,
+    "sync": cmd_sync,
+    "pets": cmd_pets,
     "rooms": cmd_rooms,
     "mcp": cmd_mcp,
     "webhook": cmd_webhook,

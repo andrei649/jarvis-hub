@@ -27,7 +27,7 @@ router = APIRouter(tags=["mesh"])
 
 @router.get("/api/sync", dependencies=[Depends(user_guard)])
 async def sync_status():
-    """H12.13 — E2E device-sync status (opt-in, fail-closed)."""
+    """H12.13 + H040 — E2E device-sync status, label, skill policies, and peers."""
     orch = get_orch()
     s = getattr(orch, "e2e_sync", None) if orch else None
     if s is None:
@@ -38,28 +38,139 @@ async def sync_status():
 class SyncPushBody(BaseModel):
     records: list[dict] = Field(default_factory=list)
     kind: str = Field("memory", max_length=40)
+    sync_device_state: bool = False
+    include_config: bool = True
+    include_skills: bool = True
 
 
 @router.post("/api/sync/push", dependencies=[Depends(user_guard)])
 async def sync_push(body: SyncPushBody):
-    """H12.13 — encrypt records into an E2E manifest (transport is host-side)."""
+    """H12.13 + H040 — encrypt records or push declared config & enabled skills."""
     _, s, err = require_component("e2e_sync", "e2e sync unavailable")
     if err is not None:
         return err
+    if body.sync_device_state:
+        return nocache_json(
+            s.push_state(include_config=body.include_config, include_skills=body.include_skills)
+        )
     return nocache_json(s.build_push(body.records, kind=body.kind))
 
 
 class SyncPullBody(BaseModel):
     manifest: dict = Field(default_factory=dict)
+    apply_device_state: bool = False
 
 
 @router.post("/api/sync/pull", dependencies=[Depends(user_guard)])
 async def sync_pull(body: SyncPullBody):
-    """H12.13 — decrypt an inbound E2E manifest from another device."""
+    """H12.13 + H040 — decrypt an inbound E2E manifest or pull & apply config/skills."""
     _, s, err = require_component("e2e_sync", "e2e sync unavailable")
     if err is not None:
         return err
+    if body.apply_device_state:
+        return nocache_json(s.pull_state(manifest=body.manifest or None))
     return nocache_json({"records": s.apply_pull(body.manifest)})
+
+
+@router.post("/api/sync/now", dependencies=[Depends(admin_guard)])
+async def sync_now():
+    """H040 — bidirectional sync pass (pull remote config/skills, then push local)."""
+    _, s, err = require_component("e2e_sync", "e2e sync unavailable")
+    if err is not None:
+        return err
+    return nocache_json(s.sync_now())
+
+
+class SyncDeviceLabelBody(BaseModel):
+    label: str = Field(..., min_length=1, max_length=80)
+
+
+@router.put("/api/sync/device", dependencies=[Depends(admin_guard)])
+async def sync_set_device_label(body: SyncDeviceLabelBody):
+    """H040 — set human-readable label for this device in E2E sync manifests."""
+    from agents.core.e2e_sync import E2ESyncError
+
+    _, s, err = require_component("e2e_sync", "e2e sync unavailable")
+    if err is not None:
+        return err
+    try:
+        return nocache_json(s.set_device_label(body.label))
+    except E2ESyncError as exc:
+        return nocache_json({"ok": False, "error": str(exc)}, status_code=400)
+
+
+class SyncSkillPolicyBody(BaseModel):
+    enabled: bool = True
+
+
+@router.put("/api/sync/skills/{skill_name}", dependencies=[Depends(admin_guard)])
+async def sync_set_skill_policy(skill_name: str, body: SyncSkillPolicyBody):
+    """H040 — enable or disable cross-device sync for a specific skill slug."""
+    from agents.core.e2e_sync import E2ESyncError
+
+    _, s, err = require_component("e2e_sync", "e2e sync unavailable")
+    if err is not None:
+        return err
+    try:
+        return nocache_json(s.set_skill_sync(skill_name, body.enabled))
+    except E2ESyncError as exc:
+        return nocache_json({"ok": False, "error": str(exc)}, status_code=400)
+
+
+class SyncPeerBody(BaseModel):
+    peer_id: str = Field(..., min_length=1, max_length=64)
+    url: str = Field(..., min_length=8, max_length=300)
+    label: str = Field("", max_length=80)
+
+
+@router.post("/api/sync/peers", dependencies=[Depends(admin_guard)])
+async def sync_add_peer(body: SyncPeerBody):
+    """H040 — register an owner peer hub URL for ciphertext manifest exchange."""
+    from agents.core.e2e_sync import E2ESyncError
+
+    _, s, err = require_component("e2e_sync", "e2e sync unavailable")
+    if err is not None:
+        return err
+    try:
+        return nocache_json(s.add_peer(body.peer_id, body.url, body.label))
+    except E2ESyncError as exc:
+        return nocache_json({"ok": False, "error": str(exc)}, status_code=400)
+
+
+@router.delete("/api/sync/peers/{peer_id}", dependencies=[Depends(admin_guard)])
+async def sync_remove_peer(peer_id: str):
+    """H040 — remove an owner peer hub from cross-device sync."""
+    _, s, err = require_component("e2e_sync", "e2e sync unavailable")
+    if err is not None:
+        return err
+    return nocache_json({"ok": s.remove_peer(peer_id), "peer_id": peer_id})
+
+
+class SyncMailboxBody(BaseModel):
+    manifest: dict = Field(default_factory=dict)
+
+
+@router.get("/api/sync/peer/mailbox", dependencies=[Depends(user_guard)])
+async def sync_peer_mailbox_list():
+    """H040 — machine-to-machine ciphertext-only manifest pickup."""
+    _, s, err = require_component("e2e_sync", "e2e sync unavailable")
+    if err is not None:
+        return err
+    return nocache_json({"ok": True, "manifests": s.list_peer_manifests()})
+
+
+@router.post("/api/sync/peer/mailbox", dependencies=[Depends(user_guard)])
+async def sync_peer_mailbox_post(body: SyncMailboxBody):
+    """H040 — machine-to-machine ciphertext-only manifest deposit."""
+    from agents.core.e2e_sync import E2ESyncError
+
+    _, s, err = require_component("e2e_sync", "e2e sync unavailable")
+    if err is not None:
+        return err
+    try:
+        return nocache_json(s.accept_peer_manifest(body.manifest))
+    except E2ESyncError as exc:
+        return nocache_json({"ok": False, "error": str(exc)}, status_code=400)
 
 
 class SatelliteRegisterBody(BaseModel):

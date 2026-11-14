@@ -98,6 +98,7 @@ RULES = [
     ),  # H23.20 first-run wizard + activation funnel (lands in the cockpit)
     ("/api/system/", "cockpit"),  # 0.62 System Profiles — usage-mode selector (system/home setting)
     ("/api/help/", "cockpit"),  # H165 in-app documentation — the console's Start group (DocsPanel)
+    ("/api/pets", "cockpit"),  # H214+H238+H590 Petdex, Hatch-a-Pet & reactive companion (PetsPanel + overlay)
     ("/api/trust/status", "topbar"),
     ("/api/auth/", "topbar"),  # H509 owner browser sign-in screen + corner sign-out (owner-sign-in.tsx)
     # memory & knowledge
@@ -153,6 +154,10 @@ RULES = [
     ("/skills", "build"),
     ("/sandbox", "build"),
     ("/api/llm/grammar", "build"),
+    ("/api/browser/broker/controller/", "NOT_IN_HUD"),  # H086: remote browser controller lease/poll/result wire
+    ("/api/browser/broker/artifacts/{artifact_id}/download-ticket", "build"),  # H086: BrowserBrokerPanel ticket mint
+    ("/api/browser/broker/artifacts/{artifact_id}/upload", "NOT_IN_HUD"),  # H086: remote browser one-shot HTTPS upload
+    ("/api/browser/broker/artifacts/{artifact_id}/download", "NOT_IN_HUD"),  # H086: caller/tool one-shot HTTPS fetch
     ("/api/browser", "build"),
     ("/api/toolrpc", "build"),  # governed Tool-RPC for sandboxed pipelines (H20.1)
     ("/api/codeintel/", "build"),  # 0.31 Code Intelligence — AST symbol index over the source
@@ -198,7 +203,8 @@ RULES = [
     ("/api/mcp", "interop"),
     ("/api/webhooks", "interop"),
     ("/api/integrations/", "interop"),
-    ("/api/sync", "interop"),  # E2E device sync (H12.13)
+    ("/api/sync/peer/mailbox", "NOT_IN_HUD"),  # H040: hub-to-hub ciphertext-only E2E manifest mailbox
+    ("/api/sync", "interop"),  # E2E device sync (H12.13 + H040 DeviceSyncPanel)
     ("/api/nodes", "interop"),  # governed node mesh (H12.17)
     # comms (rooms / notes / channel sender pairing / mic satellites)
     ("/api/rooms", "comms"),
@@ -642,9 +648,13 @@ MACHINE_FACING: dict[str, str] = {
     "/api/satellites/{satellite_id}/dispatch":
         "mic satellite submits to the shared inference rail \u2014 the exact twin of "
         "/api/nodes/{node_id}/dispatch above; the HUD does pairing only",
-    "/api/sync": "device sync transport",
-    "/api/sync/pull": "device sync transport",
-    "/api/sync/push": "device sync transport",
+    "/api/sync/peer/mailbox": "H040: hub-to-hub ciphertext-only E2E manifest mailbox",
+    "/api/browser/broker/controller/{session_id}/heartbeat": "H086: remote browser controller lease heartbeat (X-Controller-Token)",
+    "/api/browser/broker/controller/{session_id}/poll": "H086: remote browser controller command pickup (X-Controller-Token)",
+    "/api/browser/broker/controller/{session_id}/commands/{command_id}/result": "H086: remote browser controller step completion report (X-Controller-Token)",
+    "/api/browser/broker/controller/{session_id}/detach": "H086: remote browser controller clean detach (X-Controller-Token)",
+    "/api/browser/broker/artifacts/{artifact_id}/upload": "H086: remote browser one-shot HTTPS artifact upload (X-Artifact-Ticket)",
+    "/api/browser/broker/artifacts/{artifact_id}/download": "H086: caller/tool one-shot HTTPS binary artifact fetch (X-Artifact-Ticket)",
     "/api/capture/ingest": "passive-capture agent ingest",
     "/api/capture/surfaces": "passive-capture agent",
     "/api/channels/webhook": "inbound channel webhook",

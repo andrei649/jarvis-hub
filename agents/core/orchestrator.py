@@ -843,6 +843,9 @@ class Orchestrator:
         reg.add("widgets", ".widget", "WidgetStore", label="chat widget")                      # H10.1
         reg.add("consolidation", ".memory.consolidation", "ConsolidationEngine", label="consolidation")  # H14.3
         reg.add("rooms", ".rooms", "RoomStore", label="chat rooms")                            # H10.20
+        reg.add("browser_broker", ".browser_broker", "BrowserControlBroker",
+                label="browser control broker")                                                 # H086
+        reg.add("pets", ".pets", "PetStore", label="petdex companion")                         # H214/H238/H590
         # Spelled through the data root, not cwd-relative: the Telegram adapter's
         # module default (`pairing.DEFAULT_PATH`) and the router both resolve there,
         # and a relocated install (JARVIS_HOME) must not split the one store in two.
