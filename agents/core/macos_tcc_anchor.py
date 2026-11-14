@@ -18,7 +18,9 @@ upgrade/rollback:
    ``/usr/bin/codesign --force --sign -``, and runs a pre-commit boot gate
    (``import encodings`` and ``Path(sys.prefix).resolve() == venv.resolve()``).
 4. Atomically replaces ``.venv/bin/python*`` interpreter symlinks/binaries with real-file
-   copies only after the boot gate passes; rolls back every staged file on any failure.
+   copies only after the boot gate passes; attempts rollback on ordinary exceptions and
+   retains recovery backups when restoration fails. Journals are process-local: process
+   crashes and unexpected external filesystem mutation are outside this guarantee.
 """
 
 from __future__ import annotations
@@ -150,63 +152,125 @@ def _discover_libpython_files(source_bin: Path, venv_dir: Path) -> list[Path]:
     return found  # type: ignore[return-value]
 
 
+class _Replacement:
+    """Caller-owned intent plus the two completed atomic rename steps."""
+
+    def __init__(
+        self, dest: Path, backup: Path | None, *,
+        original_moved: bool = False, installed: bool = False,
+    ) -> None:
+        # A plain record also works with bootstrap's standalone module loader,
+        # which does not register this module in sys.modules before execution.
+        self.dest = dest
+        self.backup = backup
+        self.original_moved = original_moved
+        self.installed = installed
+
+
+def _replace_journaled_file(stage: Path, dest: Path, backups: list[_Replacement]) -> None:
+    """Record intent before changing an existing name; never discard recovery bytes."""
+    backup_name = dest.with_name(f".{dest.name}.nerva-bak.{os.getpid()}")
+    if os.path.lexists(backup_name):
+        raise FileExistsError("previous file-replacement backup needs recovery")
+    entry = _Replacement(dest, backup_name if os.path.lexists(dest) else None)
+    backups.append(entry)
+    if entry.backup is not None:
+        os.replace(dest, entry.backup)
+        entry.original_moved = True
+    os.replace(stage, dest)
+    entry.installed = True
+
+
 def _stage_libpython(
     venv_dir: Path,
     libs: list[tuple[str, Path]],
     runtime_uid: int,
-) -> tuple[list[Path], list[tuple[Path, Path | None]]]:
+    *,
+    backups: list[_Replacement],
+) -> tuple[list[Path], list[_Replacement]]:
     """Anchor ``libpython*.dylib`` into ``.venv/lib/`` via hardlink (same-UID/dev) or real copy.
 
-    Returns ``(created_paths, backups)`` so caller can roll back cleanly if the boot gate fails.
+    The caller owns ``backups`` before this call, including when staging raises.
+    Returns ``(created_paths, backups)`` on success.
     """
     venv_lib = venv_dir / "lib"
     venv_lib.mkdir(parents=True, exist_ok=True)
     lib_dev = os.stat(venv_lib).st_dev
     created: list[Path] = []
-    backups: list[tuple[Path, Path | None]] = []
     pid = os.getpid()
 
     for link_name, src_real in libs:
         dest = venv_lib / link_name
         stage = venv_lib / f".{link_name}.nerva-stage.{pid}"
         _unlink_quiet(stage)
-        src_stat = os.stat(src_real)
-        linked = False
-        if src_stat.st_uid == runtime_uid and src_stat.st_dev == lib_dev:
-            try:
-                os.link(src_real, stage)
-                linked = True
-            except OSError:
-                linked = False
-        if not linked:
-            shutil.copy2(src_real, stage)
-            os.chmod(stage, stat.S_IRWXU)
+        try:
+            src_stat = os.stat(src_real)
+            linked = False
+            if src_stat.st_uid == runtime_uid and src_stat.st_dev == lib_dev:
+                try:
+                    os.link(src_real, stage)
+                    linked = True
+                except OSError:
+                    linked = False
+            if not linked:
+                shutil.copy2(src_real, stage)
+                os.chmod(stage, stat.S_IRWXU)
 
-        backup: Path | None = None
-        if os.path.lexists(dest):
-            backup = venv_lib / f".{link_name}.nerva-bak.{pid}"
-            _unlink_quiet(backup)
-            os.replace(dest, backup)
-        os.replace(stage, dest)
-        created.append(dest)
-        backups.append((dest, backup))
+            _replace_journaled_file(stage, dest, backups)
+            created.append(dest)
+        finally:
+            _unlink_quiet(stage)
     return created, backups
 
 
-def _rollback_libs(backups: list[tuple[Path, Path | None]]) -> None:
-    for dest, backup in reversed(backups):
-        _unlink_quiet(dest)
-        if backup is not None and os.path.lexists(backup):
+def _rollback_replacements(backups: list[_Replacement]) -> bool:
+    """Restore completed steps, retaining every failed recovery for manual retry."""
+    complete = True
+    for entry in reversed(backups):
+        if entry.original_moved:
+            if entry.backup is None or not os.path.lexists(entry.backup):
+                complete = False
+                continue  # The destination might still hold the only remaining bytes.
             try:
-                os.replace(backup, dest)
+                os.replace(entry.backup, entry.dest)
             except OSError:
-                _unlink_quiet(backup)
+                complete = False
+                continue  # Keep both the backup and the current destination.
+            entry.original_moved = False
+            entry.installed = False
+        elif entry.installed:
+            try:
+                entry.dest.unlink(missing_ok=True)
+            except OSError:
+                complete = False
+                continue
+            entry.installed = False
+    return complete
 
 
-def _commit_libs(backups: list[tuple[Path, Path | None]]) -> None:
-    for _, backup in backups:
-        if backup is not None:
-            _unlink_quiet(backup)
+def _commit_replacements(backups: list[_Replacement]) -> None:
+    for entry in backups:
+        if entry.original_moved and entry.backup is not None:
+            _unlink_quiet(entry.backup)
+    backups.clear()  # No later reporting error may undo a committed replacement.
+
+
+def _failure_after_rollback(
+    reason: str,
+    library_backups: list[_Replacement],
+    binary_backups: list[_Replacement] | None = None,
+) -> dict[str, object]:
+    binary_complete = _rollback_replacements(binary_backups or [])
+    library_complete = _rollback_replacements(library_backups)
+    if binary_complete and library_complete:
+        return {"ok": False, "anchored": False, "reason": reason}
+    return {
+        "ok": False, "anchored": False,
+        "reason": "binary_rollback_incomplete" if not binary_complete else "library_rollback_incomplete",
+        "failed_step": reason,
+        "binary_rollback_complete": binary_complete,
+        "library_rollback_complete": library_complete,
+    }
 
 
 def _unlink_quiet(path: Path) -> None:
@@ -256,10 +320,11 @@ def anchor_venv_interpreter(
         _unlink_quiet(staged_py)
 
         libs = _discover_libpython_files(source_bin, venv_path)
-        lib_backups: list[tuple[Path, Path | None]] = []
+        lib_backups: list[_Replacement] = []
+        bin_backups: list[_Replacement] = []
         try:
             if libs:
-                _, lib_backups = _stage_libpython(venv_path, libs, runtime_uid)
+                _, lib_backups = _stage_libpython(venv_path, libs, runtime_uid, backups=lib_backups)
 
             # Real-file copy (never symlink) + owner-executable mode so codesign can rewrite Mach-O signature.
             shutil.copy2(source_bin, staged_py)
@@ -274,10 +339,10 @@ def anchor_venv_interpreter(
             )
             if getattr(sign_proc, "returncode", 1) != 0:
                 _unlink_quiet(staged_py)
-                _rollback_libs(lib_backups)
+                failure = _failure_after_rollback("codesign_failed", lib_backups, bin_backups)
                 if log:
-                    log("macOS TCC anchor skipped: codesign failed; staged interpreter rolled back")
-                return {"ok": False, "anchored": False, "reason": "codesign_failed"}
+                    log("macOS TCC anchor skipped: codesign failed; anchoring aborted")
+                return failure
 
             # Pre-commit boot gate: verify encodings + sys.prefix == venv before touching live bin/python*.
             boot_proc = run(
@@ -289,10 +354,10 @@ def anchor_venv_interpreter(
             )
             if getattr(boot_proc, "returncode", 1) != 0:
                 _unlink_quiet(staged_py)
-                _rollback_libs(lib_backups)
+                failure = _failure_after_rollback("boot_gate_failed", lib_backups, bin_backups)
                 if log:
-                    log("macOS TCC anchor skipped: boot gate failed; staged interpreter rolled back")
-                return {"ok": False, "anchored": False, "reason": "boot_gate_failed"}
+                    log("macOS TCC anchor skipped: boot gate failed; anchoring aborted")
+                return failure
 
             # Collect all python* interpreter entries in .venv/bin (e.g. python, python3, python3.12).
             targets: list[Path] = []
@@ -302,37 +367,25 @@ def anchor_venv_interpreter(
             if not targets:
                 targets = [bin_dir / "python3", bin_dir / "python"]
 
-            bin_backups: list[tuple[Path, Path | None]] = []
             try:
                 for idx, target in enumerate(targets):
-                    bak: Path | None = None
-                    if os.path.lexists(target):
-                        bak = bin_dir / f".{target.name}.nerva-bak.{pid}"
-                        _unlink_quiet(bak)
-                        os.replace(target, bak)
-                    bin_backups.append((target, bak))
                     if idx == len(targets) - 1:
-                        os.replace(staged_py, target)
+                        _replace_journaled_file(staged_py, target, bin_backups)
                     else:
                         next_stage = bin_dir / f".{target.name}.nerva-copy.{pid}"
                         _unlink_quiet(next_stage)
-                        shutil.copy2(staged_py, next_stage)
-                        os.chmod(next_stage, stat.S_IRWXU)
-                        os.replace(next_stage, target)
+                        try:
+                            shutil.copy2(staged_py, next_stage)
+                            os.chmod(next_stage, stat.S_IRWXU)
+                            _replace_journaled_file(next_stage, target, bin_backups)
+                        finally:
+                            _unlink_quiet(next_stage)
             except Exception:
                 _unlink_quiet(staged_py)
-                for target, bak in reversed(bin_backups):
-                    _unlink_quiet(target)
-                    if bak is not None and os.path.lexists(bak):
-                        with contextlib.suppress(OSError):
-                            os.replace(bak, target)
-                _rollback_libs(lib_backups)
-                return {"ok": False, "anchored": False, "reason": "commit_replace_failed"}
+                return _failure_after_rollback("commit_replace_failed", lib_backups, bin_backups)
 
-            for _, bak in bin_backups:
-                if bak is not None:
-                    _unlink_quiet(bak)
-            _commit_libs(lib_backups)
+            _commit_replacements(bin_backups)
+            _commit_replacements(lib_backups)
             if log:
                 log(f"macOS TCC interpreter anchored ({len(targets)} binaries, {len(libs)} libpython dylib(s))")
             return {
@@ -345,7 +398,6 @@ def anchor_venv_interpreter(
             }
         except Exception:
             _unlink_quiet(staged_py)
-            _rollback_libs(lib_backups)
-            return {"ok": False, "anchored": False, "reason": "anchor_exception"}
+            return _failure_after_rollback("anchor_exception", lib_backups, bin_backups)
     except Exception:
         return {"ok": False, "anchored": False, "reason": "anchor_outer_exception"}

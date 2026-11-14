@@ -18,10 +18,10 @@ def register_parser(verbs):
     push.add_argument("--no-config", action="store_true", help="omit declared settings")
     push.add_argument("--no-skills", action="store_true", help="omit user skills")
 
-    pull = ops.add_parser("pull", help="fetch encrypted manifests from peers/spool, decrypt, and apply")
+    pull = ops.add_parser("pull", help="receive encrypted candidates for review; no automatic import")
     pull.add_argument("--manifest-json", default="", help="optional explicit encrypted manifest JSON")
 
-    ops.add_parser("now", help="bidirectional sync pass (pull remote changes, then push local)")
+    ops.add_parser("now", help="stage incoming candidates for review, then push local config and skills")
 
     label = ops.add_parser("label", help="set human-readable label for this device")
     label.add_argument("device_label")
