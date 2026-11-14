@@ -1,11 +1,11 @@
 """Read one bounded planning packet. Never execute commands or change task/verdict state."""
 
 import argparse
-from collections import Counter
 import hashlib
 import json
-from pathlib import Path
 import sys
+from collections import Counter
+from pathlib import Path
 
 PACKAGE = Path(__file__).resolve().parent
 ROOT = PACKAGE.parents[3]

@@ -2,11 +2,11 @@
 
 import hashlib
 import json
+import re
+import sys
 from collections import Counter, defaultdict
 from dataclasses import asdict
 from pathlib import Path
-import re
-import sys
 
 PACKAGE = Path(__file__).resolve().parent
 ROOT = PACKAGE.parents[3]
