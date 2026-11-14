@@ -248,6 +248,8 @@ _NUMBERS_NOT_FORCED = {
     # Retention of delivered ephemeral notices only; zero retains them. Pending
     # prompts explicitly use TTL0, and durable decisions/history are unaffected.
     "display.ephemeral_system_ttl",
+    # Companion sprite pixel size only (0.5–3.0); grants no tool/network authority.
+    "pets.scale",
     # G12: the OpenAI-compatible API's per-key caps. Safe mode keeps the API itself off
     # (agents/core/openai_api/policy.py:enabled), so no cap can widen anything there.
     "openai_api.rate_limit_per_min", "openai_api.max_concurrent", "openai_api.max_request_kb",

@@ -37,6 +37,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Optional, Protocol
 
+from agents.core.env_config import env_str
 from agents.core.paths import data_path
 
 logger = logging.getLogger("jarvis.e2e_sync")
@@ -260,11 +261,11 @@ class E2ESync:
         transport: Optional[SyncTransport] = None,
         peer_requester: Optional[Callable[[str, str, Optional[dict[str, Any]]], dict[str, Any]]] = None,
     ) -> None:
-        self.device_id = device_id or os.environ.get("JARVIS_DEVICE_ID", "") or "device"
+        self.device_id = device_id or env_str("JARVIS_DEVICE_ID") or "device"
         self._lock = threading.Lock()
         self._state_path = Path(state_path) if state_path is not None else None
         self._skills_dir = Path(skills_dir) if skills_dir is not None else None
-        self._device_label = (device_label or os.environ.get("JARVIS_DEVICE_LABEL", "")).strip()[:80]
+        self._device_label = (device_label or env_str("JARVIS_DEVICE_LABEL")).strip()[:80]
         self._skill_policies: dict[str, bool] = {}
         self._peers: dict[str, dict[str, Any]] = {}
         self._mailbox: dict[str, dict[str, Any]] = {}
@@ -274,14 +275,14 @@ class E2ESync:
         self._peer_transport = HttpPeerSyncTransport(
             peers_provider=self.list_peers, requester=peer_requester
         )
-        if self._state_path is not None and self._state_path.is_file():
-            self._load_state()
+        # Loading and saving must use the same default data-root path, too.
+        self._load_state()
 
         self._fernet = None
         Fernet = _crypto()
         if Fernet is None:
             return
-        secret = key or os.environ.get(_ENV_KEY, "")
+        secret = key or env_str(_ENV_KEY)
         try:
             if secret and _looks_like_fernet_key(secret):
                 self._fernet = Fernet(secret.encode())
@@ -349,7 +350,7 @@ class E2ESync:
         transports: list[SyncTransport] = []
         if self._custom_transport is not None:
             transports.append(self._custom_transport)
-        spool_env = os.environ.get(_ENV_SPOOL, "").strip()
+        spool_env = env_str(_ENV_SPOOL).strip()
         if spool_env:
             transports.append(DirectorySyncTransport(spool_env))
         if self._peers:

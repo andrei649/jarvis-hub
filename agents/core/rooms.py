@@ -18,7 +18,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import os
 import re
 import socket
 import time
@@ -26,6 +25,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Optional
 
+from agents.core.env_config import env_str
 from agents.core.paths import data_path
 
 from .config import ROOM_HISTORY_CAP as _HISTORY_CAP  # Q4: centralized limit
@@ -49,7 +49,7 @@ class RoomAuthorityError(Exception):
 
 def _default_host_id() -> str:
     for env_name in ("JARVIS_HOST_ID", "JARVIS_DEVICE_ID"):
-        val = os.environ.get(env_name, "").strip()
+        val = env_str(env_name).strip()
         if val:
             return val[:80]
     try:
@@ -91,7 +91,7 @@ class RoomStore(JsonStore):
         signing_secret: Optional[str] = None,
     ) -> None:
         self.host_id = (host_id or _default_host_id()).strip() or "local-hub"
-        env_secret = os.environ.get("JARVIS_ROOM_FENCING_SECRET", "")
+        env_secret = env_str("JARVIS_ROOM_FENCING_SECRET")
         self._signing_secret = signing_secret if signing_secret is not None else env_secret
         super().__init__(path)
 

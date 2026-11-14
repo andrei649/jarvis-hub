@@ -58,8 +58,11 @@ async def test_boot_registry_reality_cases_hold_for_every_wired_capability():
     # 53 plugins: the A2A outbound plugin (plugin:a2a, Adopt lane slice 4), the three
     # default-off cloud video providers (G19) and the SMS channel (G16) joined the registry.
     assert sum(record.kind == "plugin" for record in records.values()) == 54  # + room-peers (H658)
-    assert sum(record.kind == "component" for record in records.values()) == 24
-    assert len(cases) == len(records) == 90 - len(optional_sources) == 83
+    # H086 browser broker and H214/H238/H590 pets add construction-status probes.
+    assert sum(record.kind == "component" for record in records.values()) == 26
+    assert len(cases) == len(records) == 92 - len(optional_sources) == 85
+    assert results["component:browser_broker"] is True
+    assert results["component:pets"] is True
     assert results["plugin:a2a"] is True
     assert results["plugin:ntfy"] is True
     # The six disabled cloud-image plugins still have real manifest egress rails;

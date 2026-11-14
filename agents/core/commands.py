@@ -1433,11 +1433,15 @@ async def _pet_command(ctx: CommandContext) -> str:
             res = store.set_scale(float(parts[1]))
             return f"Companion scale set to {res['scale']}x."
         if sub == "roam" and len(parts) >= 2:
-            on = parts[1].lower() in {"on", "1", "true", "yes"}
+            from .env_config import truthy
+
+            on = truthy(parts[1])
             store.update_preferences(roam=on)
             return f"Companion roaming {'enabled' if on else 'disabled'}."
         if sub == "overlay" and len(parts) >= 2:
-            on = parts[1].lower() in {"on", "1", "true", "yes"}
+            from .env_config import truthy
+
+            on = truthy(parts[1])
             store.update_preferences(overlay_enabled=on)
             return f"Companion overlay {'enabled' if on else 'disabled'}."
         if sub == "off":
