@@ -5,16 +5,16 @@
 > Every measurement in this report was produced by executing Nerva's real production Python
 > subsystems in-process via [`scripts/bench_nerva_differentiators.py`](../../scripts/bench_nerva_differentiators.py)
 > against deterministic synthetic LLM/transport backends (`JARVIS_TESTING=1`, temporary sandbox).
-> These numbers prove **architectural & security invariants, failover latency, and asyncio fan-out speedup**.
+> These numbers prove **architectural & security invariants, USD cost governance, failover latency, and asyncio fan-out speedup**.
 > They do **not** claim live cloud provider throughput or owner-gated live desktop/browser head-to-head
 > task win-rates, which remain governed separately by [`docs/HARDWARE_BENCHMARKS.md`](../HARDWARE_BENCHMARKS.md)
 > and [`docs/HERMES_HEAD_TO_HEAD.md`](../HERMES_HEAD_TO_HEAD.md).
 
 - **Schema:** `nerva.differentiator_bench.v1`
-- **Suite Spec Digest (`sha256`):** `0c2ebda3580e4370f5b8cdfb50eb940443dc687859b159f399d69e2d739d8dd2`
+- **Suite Spec Digest (`sha256`):** `41749416ec5f0ac25d1db6ed78ff9ddb631e357746d4081cacec81009f1a0167`
 - **Machine-Readable Artifact:** [`nerva-vs-hermes-openclaw-2026-11-14.json`](nerva-vs-hermes-openclaw-2026-11-14.json)
 - **Verification Suite:** [`tests/test_bench_nerva_differentiators.py`](../../tests/test_bench_nerva_differentiators.py)
-- **Result:** `5/5` subsystem benchmarks passed
+- **Result:** `6/6` subsystem benchmarks passed
 
 ---
 
@@ -22,11 +22,12 @@
 
 | # | Differentiator Workload | Nerva Subsystem | Nerva Measured Outcome | Baseline Pattern (Hermes / OpenClaw Default) | Status |
 |---|---|---|---|---|---|
-| 1 | **Resilient Hybrid Committee** (4 proposers, 1 fault/timeout, `min_quorum=3`) | [`agents/core/llm/moa.py`](../../agents/core/llm/moa.py) (`H032`) | `100%` quorum completion; `3.99x` steady parallel speedup (`2.14x` overall wall speedup); `2.0s` timeout cap & `256`-tok budget enforced | `0%` completion on faulted sequential chain (waits full timeout then aborts) | PASS |
+| 1 | **Resilient Hybrid Committee** (4 proposers, 1 fault/timeout, `min_quorum=3`) | [`agents/core/llm/moa.py`](../../agents/core/llm/moa.py) (`H032`) | `100%` quorum completion; `3.98x` steady parallel speedup (`2.14x` overall wall speedup); `2.0s` timeout cap & `256`-tok budget enforced | `0%` completion on faulted sequential chain (waits full timeout then aborts) | PASS |
 | 2 | **Controllable Cloud Privacy** (mixed local + unconsented cloud committee on 4 sensitive prompts) | [`agents/core/llm/moa.py`](../../agents/core/llm/moa.py) + [`data_handling.py`](../../agents/core/llm/data_handling.py) (`H513`) | `0` cloud calls / `0` tokens leaked (`100%` block accuracy); `100%` grounded local synthesis | `4` cloud calls (`78` tokens) sent without per-member configuration-bound consent (`0%` block) | PASS |
-| 3 | **Surviving-Host Room Failover & Split-Brain Fencing** (primary outage + `epoch+1` promote + stale writes) | [`agents/core/rooms.py`](../../agents/core/rooms.py) (`H657`) | `100%` stale-epoch write rejection (`409 room_fenced`); `0`/`12` lost entries; `0.534 ms` promote latency | `0%` stale write rejection in unfenced room stores (split-brain log divergence) | PASS |
+| 3 | **Surviving-Host Room Failover & Split-Brain Fencing** (primary outage + `epoch+1` promote + stale writes) | [`agents/core/rooms.py`](../../agents/core/rooms.py) (`H657`) | `100%` stale-epoch write rejection (`409 room_fenced`); `0`/`12` lost entries; `0.478 ms` promote latency | `0%` stale write rejection in unfenced room stores (split-brain log divergence) | PASS |
 | 4 | **Identity-Scoped Browser Broker** (8 SSRF targets, 6 cross-principal probes, 6 ticket replays) | [`agents/core/browser_broker.py`](../../agents/core/browser_broker.py) (`H086`) | `100%` SSRF block; `100%` cross-principal isolation; `100%` one-shot HTTPS ticket replay rejection (`410`) | `0%` private-CIDR block, `0%` principal isolation, and `0%` replay rejection on unguarded shared CDP/static file bridges | PASS |
-| 5 | **Secret-Stripped E2E Cross-Device Sync** (`4` seeded secrets, `8` ciphertext bit-flips, `3!` LWW arrival orders) | [`agents/core/e2e_sync.py`](../../agents/core/e2e_sync.py) + [`settings_db.py`](../../agents/core/settings_db.py) (`H040`; `(max_ts, device_id)` sort via harness `_lww_order_manifests`) | `0` leaked secrets; `100%` authenticated ciphertext tamper rejection (`fernet-aes128-cbc-hmac-sha256`); `100%` LWW convergence via caller `_lww_order_manifests` over `E2ESync` `(ts, device)` envelope metadata (`DirectorySyncTransport` orders lexically by device ID; unsorted `pull_state()` mailbox follows arrival order) + hostile skill quarantined | Raw config sync leaks `4` secrets; unsorted arrival-order ingestion (matching un-sorted mailbox `apply_pull`) converges on `33.3%` of permutations | PASS |
+| 5 | **Secret-Stripped E2E Cross-Device Sync** (`4` seeded secrets, `8` ciphertext bit-flips, `3!` LWW arrival orders) | [`agents/core/e2e_sync.py`](../../agents/core/e2e_sync.py) + [`settings_db.py`](../../agents/core/settings_db.py) (`H040`) | `0` leaked secrets; `100%` authenticated ciphertext tamper rejection (`fernet-aes128-cbc-hmac-sha256`); `100%` deterministic LWW convergence directly in `E2ESync.pull_state()` + hostile skill quarantined | Raw config sync leaks `4` secrets; unsorted FIFO arrival-order ingestion converges on `33.3%` of permutations | PASS |
+| 6 | **Governed Cost- & SLA-Aware Adaptive Model Cascade** (`20` mixed turns: local, consented cloud, USD-capped, H513/strict-local/pinned, SLA stall) | [`agents/core/llm/cost_cascade.py`](../../agents/core/llm/cost_cascade.py) + [`cost_estimator.py`](../../agents/core/llm/cost_estimator.py) | `84.8%` USD cost reduction (`$0.006975` vs `$0.045925`); `0` budget overruns (`100%` cap enforcement); `0` unconsented cloud escalations; `100%` completion via graceful local fallback | Cloud-always static routing spends `$0.045925`, leaks `4` unconsented/restricted escalations, and aborts on cloud SLA stall (`95%` completion) | PASS |
 
 ---
 
@@ -48,7 +49,11 @@
 
 ### 5. Secret-Stripped E2E Cross-Device Sync (`H040`)
 - **Workload & Cipher Note:** `E2ESync` (`agents/core/e2e_sync.py`) encrypts artefacts using authenticated **Fernet (`AES-128-CBC + HMAC-SHA256`)** with keys derived via `PBKDF2-HMAC-SHA256` (`390,000` iterations) — not AES-GCM — providing identical `100%` authenticated-ciphertext bit-flip tamper rejection across IV, ciphertext blocks, and MAC tag (`8/8` tampered envelopes rejected). `settings_db.export_settings()` strips all `SECRET_KEYS`, `ROUTE_ONLY` consent rows, and credential-shaped strings (`0` secrets in envelope), and `detect_injection_normalized` quarantines hostile synced `SKILL.md` payloads before disk write.
-- **LWW Ordering Attribution Note:** Production `E2ESync.encrypt_record()` stamps `(ts, device)` metadata on ciphertext envelopes, enabling canonical `(max_ts, device_id)` LWW sorting. In this benchmark, that `(max_ts, device_id)` sort is exercised via `_lww_order_manifests` in [`scripts/bench_nerva_differentiators.py`](../../scripts/bench_nerva_differentiators.py) (`6/6` = `100%` convergence across `3!` arrival permutations), whereas production `DirectorySyncTransport.fetch_manifests()` orders spool files lexically by device ID (`manifest_<device>.json`) and `E2ESync.pull_state()` mailbox iteration without caller sorting follows arrival order (`33.3%` on the 3-peer tie-break fixture).
+- **Production LWW Convergence:** `E2ESync.pull_state()` authenticates/decrypts inbound peer manifests first (so forged unauthenticated entries cannot skew timestamps) and sorts verified manifests canonically by `(max_ts, device_id, digest)` before applying artefacts, achieving `6/6` (`100%`) deterministic convergence directly in production across all `3!` multi-device arrival permutations vs `33.3%` on unsorted FIFO ingestion.
+
+### 6. Governed Cost- & SLA-Aware Adaptive Model Cascade
+- **Workload:** 20-turn mixed session (`10` confident local fast/deep turns on `google/gemma-4-12b` / `deepseek-r1-distill-qwen-32b`, `3` consented low-confidence escalations to `claude-opus-4-7` priced via `cost_estimator.estimate_cost`, `2` turns exceeding `max_turn_usd=$0.010` and `max_session_usd=$0.012`, `4` governance-restricted escalations across unacknowledged H513 `data_policy="unknown"`, `LOCAL_ONLY_AGENTS` `ultron`, `JARVIS_STRICT_LOCAL=1`, and `approved_models` pinning, plus `1` cloud SLA stall).
+- **Why Nerva wins:** `AdaptiveCostCascade` (`agents/core/llm/cost_cascade.py`) reserves worst-case `(input_tokens + max_tokens)` USD atomically **before** any cloud call and settles actual token spend afterward, guaranteeing `0` USD cap overruns (`$0.006975 <= $0.012`), `0` unconsented cloud escalations, `84.8%` USD savings vs static cloud routing, and `100%` (`20/20`) turn completion via `$0.00` local fallback synthesis.
 
 ## Reproducing & Verifying
 

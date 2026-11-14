@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
+import itertools
 import json
 from types import SimpleNamespace
 
@@ -62,7 +64,7 @@ def test_h040_cross_device_config_and_skills_sync_with_injection_quarantine(tmp_
     # Verify the spool file on disk contains ONLY ciphertext (no plaintext skill/setting strings).
     spool_raw = (spool / "manifest_dev-macbook.json").read_text(encoding="utf-8")
     assert "deploy-helper" not in spool_raw
-    assert "720" not in spool_raw
+    assert "idle_minutes" not in spool_raw
 
     # Switch to Device B (fresh settings.db + empty skills_dir) and pull.
     _switch_settings_db(monkeypatch, db_b)
@@ -200,3 +202,129 @@ def test_h040_peer_http_mailbox_sync_now_router_and_cli(tmp_path, monkeypatch):
         "/api/sync/peers",
         "/api/sync/peers/bonobo",
     ]
+
+
+def test_h040_pull_state_deterministic_lww_convergence_across_all_arrival_orders(
+    tmp_path, monkeypatch
+):
+    """E2ESync.pull_state() converges identically across all 3! peer arrival orders."""
+    monkeypatch.setenv("JARVIS_E2E_SYNC", "1")
+    peers = [
+        ("dev-alpha", 1700000100.0, 360, "# Shared Ops\nAlpha revision (t=100).\n"),
+        ("dev-gamma", 1700000300.0, 960, "# Shared Ops\nGamma revision (t=300).\n"),
+        ("dev-beta", 1700000300.0, 720, "# Shared Ops\nBeta revision (t=300).\n"),
+    ]
+    manifests = []
+    for dev_id, ts, idle_min, md_body in peers:
+        node = E2ESync(passphrase="shared-lww-secret", device_id=dev_id)
+        records = [
+            {
+                "artefact_type": "config",
+                "device_id": dev_id,
+                "device_label": dev_id,
+                "document": {
+                    "format": settings_db.EXPORT_FORMAT,
+                    "exported_at": int(ts),
+                    "settings": {"sessions": {"idle_minutes": idle_min}},
+                },
+            },
+            {
+                "artefact_type": "skill",
+                "slug": "shared-ops",
+                "skill_md": md_body,
+                "manifest": {"revision_ts": ts},
+                "sha256": hashlib.sha256(md_body.encode("utf-8")).hexdigest(),
+                "device_id": dev_id,
+                "device_label": dev_id,
+            },
+        ]
+        manifests.append(node.build_push(records, kind="device_state", ts=ts))
+
+    outcomes: set[tuple[int, str, tuple[str, ...]]] = set()
+    for idx, perm in enumerate(itertools.permutations(manifests)):
+        _switch_settings_db(monkeypatch, tmp_path / f"dest_{idx}.db")
+        dest_skills = tmp_path / f"dest_skills_{idx}"
+        dest = E2ESync(
+            passphrase="shared-lww-secret",
+            device_id="dev-dest",
+            state_path=tmp_path / f"dest_state_{idx}.json",
+            skills_dir=dest_skills,
+        )
+        for inbound in perm:
+            dest.accept_peer_manifest(inbound)
+
+        pulled = dest.pull_state()
+        assert pulled["ok"] is True
+        assert pulled["lww_device_order"] == ["dev-alpha", "dev-beta", "dev-gamma"]
+        idle_val = int(settings_db.export_settings()["settings"]["sessions"]["idle_minutes"])
+        skill_text = (dest_skills / "shared-ops" / "SKILL.md").read_text(encoding="utf-8")
+        outcomes.add((idle_val, skill_text, tuple(pulled["lww_device_order"])))
+
+    assert len(outcomes) == 1
+    winner_idle, winner_skill, winner_order = next(iter(outcomes))
+    assert winner_idle == 960
+    assert "Gamma revision (t=300)." in winner_skill
+    assert winner_order == ("dev-alpha", "dev-beta", "dev-gamma")
+
+
+def test_h040_pull_state_ignores_unauthenticated_forged_timestamp_in_lww_ranking(
+    tmp_path, monkeypatch
+):
+    """Unverifiable ciphertext entries cannot inflate a manifest's `(max_ts, device_id)` rank."""
+    monkeypatch.setenv("JARVIS_E2E_SYNC", "1")
+    old_peer = E2ESync(passphrase="shared-lww-secret", device_id="dev-z-older")
+    new_peer = E2ESync(passphrase="shared-lww-secret", device_id="dev-a-newer")
+
+    old_manifest = old_peer.build_push(
+        [
+            {
+                "artefact_type": "config",
+                "device_id": "dev-z-older",
+                "device_label": "dev-z-older",
+                "document": {
+                    "format": settings_db.EXPORT_FORMAT,
+                    "exported_at": 100,
+                    "settings": {"sessions": {"idle_minutes": 180}},
+                },
+            }
+        ],
+        kind="device_state",
+        ts=1700000100.0,
+    )
+    # Inject a forged unauthenticated entry with a future timestamp into old_manifest.
+    old_manifest["entries"].append(
+        {"v": 1, "device": "dev-z-older", "ct": "gAAAAAB_tampered_invalid_token", "ts": 9999999999.0}
+    )
+
+    new_manifest = new_peer.build_push(
+        [
+            {
+                "artefact_type": "config",
+                "device_id": "dev-a-newer",
+                "device_label": "dev-a-newer",
+                "document": {
+                    "format": settings_db.EXPORT_FORMAT,
+                    "exported_at": 500,
+                    "settings": {"sessions": {"idle_minutes": 840}},
+                },
+            }
+        ],
+        kind="device_state",
+        ts=1700000500.0,
+    )
+
+    _switch_settings_db(monkeypatch, tmp_path / "forged_check.db")
+    dest = E2ESync(
+        passphrase="shared-lww-secret",
+        device_id="dev-dest",
+        state_path=tmp_path / "forged_state.json",
+        skills_dir=tmp_path / "forged_skills",
+    )
+    dest.accept_peer_manifest(new_manifest)
+    dest.accept_peer_manifest(old_manifest)
+
+    pulled = dest.pull_state()
+    assert pulled["ok"] is True
+    assert pulled["lww_device_order"] == ["dev-z-older", "dev-a-newer"]
+    assert settings_db.export_settings()["settings"]["sessions"]["idle_minutes"] == 840
+

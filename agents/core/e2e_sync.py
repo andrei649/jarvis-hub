@@ -19,6 +19,10 @@ Security invariants (Nerva > Hermes/OpenClaw):
   - **Real cross-device transports**: shared spool directory
     (:class:`DirectorySyncTransport`) and hub-to-hub ciphertext mailbox
     (:class:`HttpPeerSyncTransport` over ``PluginHTTPClient`` / injected client).
+  - **Deterministic LWW convergence**: ``pull_state()`` authenticates/decrypts
+    each peer manifest and sorts verified manifests canonically by
+    ``(max_ts, device_id, digest)`` so concurrent edits converge identically
+    regardless of mailbox or transport arrival order.
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ import base64
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import stat
@@ -40,6 +45,32 @@ from typing import Any, Optional, Protocol
 from agents.core.paths import data_path
 
 logger = logging.getLogger("jarvis.e2e_sync")
+
+
+def _safe_envelope_ts(value: Any) -> float:
+    """Return a finite numeric envelope timestamp, or 0.0 for missing/invalid values."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0.0
+    ts_val = float(value)
+    return ts_val if math.isfinite(ts_val) else 0.0
+
+
+def order_manifests_lww(manifests: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return manifests ordered canonically by ``(max_ts, device_id, digest)`` LWW."""
+
+    def _key(manifest: dict[str, Any]) -> tuple[float, str, str]:
+        entries = manifest.get("entries") or []
+        max_ts = max(
+            (_safe_envelope_ts(e.get("ts", 0.0)) for e in entries if isinstance(e, dict)),
+            default=0.0,
+        )
+        return (
+            max_ts,
+            str(manifest.get("device") or ""),
+            str(manifest.get("digest") or ""),
+        )
+
+    return sorted(manifests, key=_key)
 
 # Fixed app salt: cross-device key derivation must be deterministic so two
 # devices with the same passphrase land on the same key. Security comes from the
@@ -468,12 +499,13 @@ class E2ESync:
 
     # ── envelope ─────────────────────────────────────────────────────────────
 
-    def encrypt_record(self, record: dict) -> dict:
+    def encrypt_record(self, record: dict, *, ts: float | None = None) -> dict:
         if self._fernet is None:
             raise E2ESyncError("E2E sync unavailable (no crypto / no shared secret)")
         plaintext = json.dumps(record, ensure_ascii=False, sort_keys=True).encode("utf-8")
         token = self._fernet.encrypt(plaintext).decode("ascii")
-        return {"v": 1, "device": self.device_id, "ct": token, "ts": time.time()}
+        stamp = time.time() if ts is None else _safe_envelope_ts(ts)
+        return {"v": 1, "device": self.device_id, "ct": token, "ts": stamp}
 
     def decrypt_record(self, envelope: dict) -> dict:
         if self._fernet is None:
@@ -489,10 +521,12 @@ class E2ESync:
 
     # ── manifest ─────────────────────────────────────────────────────────────
 
-    def build_push(self, records: "list[dict]", kind: str = "memory") -> dict:
+    def build_push(
+        self, records: list[dict], kind: str = "memory", *, ts: float | None = None
+    ) -> dict:
         if not self.enabled():
             return {"enabled": False, "kind": kind, "count": 0, "entries": []}
-        entries = [self.encrypt_record(r) for r in (records or [])]
+        entries = [self.encrypt_record(r, ts=ts) for r in (records or [])]
         digest = hashlib.sha256("".join(e["ct"] for e in entries).encode("ascii")).hexdigest()
         return {
             "enabled": True,
@@ -503,22 +537,47 @@ class E2ESync:
             "digest": digest,
         }
 
-    def apply_pull(self, manifest: dict) -> "list[dict]":
+    def apply_pull(self, manifest: dict) -> list[dict]:
         """Decrypt a manifest from another device. Skips own-device and any
         entry that fails authentication (never silently trusts bad ciphertext)."""
-        if not self.enabled() or not manifest or not manifest.get("entries"):
-            return []
-        out: list[dict] = []
-        for env in manifest["entries"]:
+        ranked = self._decrypt_manifest_lww(manifest)
+        return ranked[1] if ranked is not None else []
+
+    def _decrypt_manifest_lww(
+        self, manifest: dict[str, Any]
+    ) -> tuple[tuple[float, str, str], list[dict[str, Any]]] | None:
+        """Authenticate & decrypt peer manifest entries and compute ``(max_ts, device_id, digest)``.
+
+        Only entries that pass Fernet HMAC authentication contribute to ``max_ts`` or
+        decrypted records, preventing unauthenticated envelope metadata from skewing LWW order.
+        """
+        if not self.enabled() or not isinstance(manifest, dict):
+            return None
+        entries = manifest.get("entries")
+        if not isinstance(entries, list) or not entries:
+            return None
+        records: list[dict[str, Any]] = []
+        verified_ts: list[float] = []
+        fallback_dev = ""
+        for env in entries:
             if not isinstance(env, dict):
                 continue
-            if env.get("device") == self.device_id:
+            env_dev = str(env.get("device") or "")
+            if env_dev == self.device_id:
                 continue  # don't re-ingest our own push
             try:
-                out.append(self.decrypt_record(env))
+                records.append(self.decrypt_record(env))
             except E2ESyncError:
                 logger.warning("E2E sync: dropping unverifiable entry", exc_info=True)
-        return out
+                continue
+            verified_ts.append(_safe_envelope_ts(env.get("ts", 0.0)))
+            if env_dev and not fallback_dev:
+                fallback_dev = env_dev
+        if not records:
+            return None
+        dev_id = str(manifest.get("device") or fallback_dev or "")
+        digest = str(manifest.get("digest") or "")
+        return ((max(verified_ts, default=0.0), dev_id, digest), records)
 
     # ── H040 config + skills artefact collection & application ───────────────
 
@@ -699,11 +758,9 @@ class E2ESync:
             "manifest": manifest,
         }
 
-    def pull_state(self, *, manifest: Optional[dict[str, Any]] = None) -> dict[str, Any]:
-        """Fetch inbound manifests from explicit payload, mailbox, and active transports, then apply."""
-        if not self.enabled():
-            return {"ok": False, "enabled": False, "reason": "sync_disabled", "records_decrypted": 0}
-
+    def _collect_inbound_manifests(
+        self, *, manifest: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
         manifests: list[dict[str, Any]] = []
         if isinstance(manifest, dict) and manifest.get("entries"):
             manifests.append(manifest)
@@ -712,16 +769,31 @@ class E2ESync:
                 manifests.append(mb)
         for t in self._active_transports():
             manifests.extend(t.fetch_manifests(exclude_device=self.device_id))
+        return manifests
 
-        decrypted: list[dict[str, Any]] = []
-        seen_digests: set[str] = set()
-        for m in manifests:
-            d = str(m.get("digest") or "")
-            if d and d in seen_digests:
+    def pull_state(self, *, manifest: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Fetch inbound manifests across sources, sort canonically by `(max_ts, device_id)` LWW, and apply."""
+        if not self.enabled():
+            return {"ok": False, "enabled": False, "reason": "sync_disabled", "records_decrypted": 0}
+
+        manifests = self._collect_inbound_manifests(manifest=manifest)
+        ranked: list[tuple[tuple[float, str, str], list[dict[str, Any]]]] = []
+        seen_keys: set[tuple[float, str, str]] = set()
+        for candidate in manifests:
+            item = self._decrypt_manifest_lww(candidate)
+            if item is None:
                 continue
-            if d:
-                seen_digests.add(d)
-            decrypted.extend(self.apply_pull(m))
+            lww_key, records = item
+            if lww_key[2] and lww_key in seen_keys:
+                continue
+            if lww_key[2]:
+                seen_keys.add(lww_key)
+            ranked.append((lww_key, records))
+
+        ranked.sort(key=lambda pair: pair[0])
+        decrypted: list[dict[str, Any]] = []
+        for _key, records in ranked:
+            decrypted.extend(records)
 
         applied = self.apply_synced_artefacts(decrypted)
         with self._lock:
@@ -734,6 +806,7 @@ class E2ESync:
             "device_label": self.device_label,
             "manifests_processed": len(manifests),
             "records_decrypted": len(decrypted),
+            "lww_device_order": [key[1] for key, _ in ranked],
             **applied,
         }
 
