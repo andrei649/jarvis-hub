@@ -22,6 +22,7 @@ from agents.core.llm.moa import (
     validate_preset,
 )
 from agents.core.managed_scope import check_llm_write
+from agents.core.routers._component import require_component
 from agents.core.routers._deps import admin_guard
 from agents.core.web_helpers import nocache_json
 
@@ -78,7 +79,6 @@ async def moa_list_presets():
 @router.put("/api/llm/moa/presets/{name}", dependencies=[Depends(admin_guard)])
 async def moa_put_preset(name: str, body: MoAPresetBody):
     """Create or update a named MoA committee preset."""
-    check_llm_write(selection=False)
     try:
         preset = validate_preset(
             name,
@@ -133,9 +133,8 @@ async def moa_set_active(body: MoAActiveBody):
 @router.post("/api/llm/moa/run", dependencies=[Depends(admin_guard)])
 async def moa_run_preset(body: MoARunBody):
     """Execute one governed MoA committee synthesis turn and return answer + quorum telemetry."""
-    orch = get_orch()
-    llm_router = getattr(orch, "llm_router", None) if orch is not None else None
-    if llm_router is None or not hasattr(llm_router, "resolve_moa_preset"):
+    _, llm_router, unavailable = require_component("llm_router", "router_unavailable")
+    if unavailable is not None or not hasattr(llm_router, "resolve_moa_preset"):
         return nocache_json({"error": "router_unavailable", "detail": "LLM router is not initialized"}, status_code=503)
     try:
         backend, model_id, route = llm_router.resolve_moa_preset(body.agent, body.preset)
