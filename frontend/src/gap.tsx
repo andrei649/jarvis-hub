@@ -51,6 +51,7 @@ import { AutonomyControlPanel } from './panels/autonomy-legacy';
 import { DesktopAllowlistPanel } from './panels/desktop-allowlist';
 import { LlmRoutingPanel } from './panels/llm-routing';
 import { CustomEndpointsPanel } from './panels/custom-endpoints';
+import { MoaPresetsPanel } from './panels/moa-presets';
 import { IntegrationsPanel } from './panels/integrations';
 import { FilesPanel } from './panels/files';
 import { RoomPeersPanel } from './panels/room-peers';
@@ -1585,6 +1586,11 @@ export function SubAgentsPanel() {
   const [note, setNote] = useState(null);
   const [steerFor, setSteerFor] = useState(null);
   const [steerText, setSteerText] = useState('');
+  const [transcriptFor, setTranscriptFor] = useState(null);
+  const [transcript, setTranscript] = useState(null);
+  const [resultFor, setResultFor] = useState(null);
+  const [fullResult, setFullResult] = useState(null);
+  const [claimedOut, setClaimedOut] = useState(null);
   const atCap = stats.cap != null && (stats.active ?? 0) >= stats.cap;
   const statusColor = (s) => (s === 'done' ? 'var(--green)' : s === 'failed' ? 'var(--red)' : 'var(--amber)');
   // H400 — whether a NEW sub-agent would start now: the emergency stop, the kill switch and
@@ -1702,6 +1708,39 @@ export function SubAgentsPanel() {
       },
       (err) => { setNote(`refused · ${refusalReason(err, 'stop failed')}`); reload(); });
   };
+  const openTranscript = (id, after = 0) => {
+    if (after === 0 && transcriptFor === id) { setTranscriptFor(null); setTranscript(null); return; }
+    setNote(null);
+    apiGet<{ events?: any[]; next?: number; status?: string }>(`/api/subagents/${encodeURIComponent(id)}/transcript?after=${after}&limit=200`, { admin: true })
+      .then((r) => {
+        const events = Array.isArray(r && r.events) ? r.events : [];
+        setTranscriptFor(id);
+        setTranscript((prev) => ({
+          events: after > 0 && prev && Array.isArray(prev.events) ? [...prev.events, ...events] : events,
+          next: typeof (r && r.next) === 'number' ? r.next : (after + events.length),
+          status: r && r.status,
+        }));
+      })
+      .catch((err) => setNote(`refused · ${refusalReason(err, 'transcript failed')}`));
+  };
+  const openResult = (id) => {
+    if (resultFor === id) { setResultFor(null); setFullResult(null); return; }
+    setNote(null);
+    apiGet(`/api/subagents/${encodeURIComponent(id)}/result`, { admin: true })
+      .then((r) => { setResultFor(id); setFullResult(r); })
+      .catch((err) => setNote(`refused · ${refusalReason(err, 'result failed')}`));
+  };
+  const claimCompletions = () => {
+    setNote(null);
+    actA('/api/subagents/completions/claim', {},
+      (r) => {
+        const rows = Array.isArray(r && r.results) ? r.results : [];
+        setClaimedOut(rows);
+        setNote(`claimed ${(r && r.claimed) ?? rows.length} completion(s)`);
+        reload();
+      },
+      (err) => setNote(`refused · ${refusalReason(err, 'claim failed')}`));
+  };
   return (
     <Card title="SUB-AGENTS" live={asLive(d)} sub={d ? `${stats.total ?? spawns.length} spawn(s)` : null} onReload={reload}>
       <State e={e} loading={loading} n={d ? 1 : 0} />
@@ -1742,6 +1781,16 @@ export function SubAgentsPanel() {
                     </span>
                   )}
                   <Tag c={statusColor(s.status)}>{s.status || '—'}</Tag>
+                  <button
+                    className="tool-btn" title="inspect live transcript for this sub-agent"
+                    onClick={() => openTranscript(s.id, 0)}
+                  >transcript</button>
+                  {s.status !== 'running' && (
+                    <button
+                      className="tool-btn" title="read durable result without claiming delivery"
+                      onClick={() => openResult(s.id)}
+                    >result</button>
+                  )}
                   {s.status === 'running' && (
                     <>
                       <button
@@ -1756,6 +1805,29 @@ export function SubAgentsPanel() {
                   )}
                 </span>
               </Row>
+              {transcriptFor === s.id && transcript && (
+                <div style={{ margin: '2px 0 6px 8px', padding: 6, border: '1px solid var(--panel-line)', borderRadius: 4 }}>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 10 }}>
+                    <span style={mono}>transcript · {transcript.events.length} event(s)</span>
+                    <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={() => openTranscript(s.id, transcript.next)}>tail next</button>
+                  </div>
+                  {transcript.events.length === 0
+                    ? <div style={{ fontSize: 10, color: 'var(--ink-2)' }}>no transcript events recorded yet</div>
+                    : <ul aria-label={`transcript for ${s.id}`} style={{ listStyle: 'none', margin: '4px 0 0', padding: 0, fontSize: 10, ...mono }}>
+                        {transcript.events.map((ev, idx) => (
+                          <li key={ev.seq ?? idx}>{ev.kind || ev.type || 'event'}{ev.tool ? ` · ${ev.tool}` : ''}{ev.status ? ` · ${ev.status}` : ''}{ev.detail ? ` · ${ev.detail}` : ''}</li>
+                        ))}
+                      </ul>}
+                </div>
+              )}
+              {resultFor === s.id && fullResult && (
+                <div style={{ margin: '2px 0 6px 8px', padding: 6, border: '1px solid var(--panel-line)', borderRadius: 4 }}>
+                  <div style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>durable result · reading here does not consume claim delivery</div>
+                  <pre style={{ fontSize: 10, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', margin: '4px 0 0' }}>
+                    {typeof fullResult.result === 'string' ? fullResult.result : JSON.stringify(fullResult, null, 2)}
+                  </pre>
+                </div>
+              )}
               {s.status === 'failed' && s.failure && (
                 <div style={{ ...mono, fontSize: 10, color: 'var(--red)', margin: '0 0 4px 8px' }}>
                   {s.failure.error}{s.failure.detail ? ` · ${s.failure.detail}` : ''}
@@ -1777,6 +1849,21 @@ export function SubAgentsPanel() {
               )}
             </React.Fragment>
           ))}
+          <Row>
+            <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>unclaimed completions</span>
+            <button
+              className="tool-btn" style={{ marginLeft: 'auto' }}
+              title="claim finished sub-agent results not yet consumed"
+              onClick={claimCompletions}
+            >claim completed</button>
+          </Row>
+          {claimedOut && claimedOut.length > 0 && (
+            <ul aria-label="claimed completions" style={{ listStyle: 'none', margin: '4px 0', padding: 0, fontSize: 10, ...mono }}>
+              {claimedOut.map((row, idx) => (
+                <li key={row.id || row.spawn_id || idx}>{(row.spawn_id || row.id || '?')} · {row.status || 'done'}{row.summary ? ` · ${String(row.summary).slice(0, 80)}` : ''}</li>
+              ))}
+            </ul>
+          )}
           <Row>
             <input
               style={{ ...inpS, flex: 1 }} placeholder="task for the sub-agent" value={task}
@@ -2071,6 +2158,52 @@ export function SatellitesPanel() {
 export function A2AInboxPanel() {
   const { d, e, loading, reload } = useApi('/api/a2a/inbox');
   const items = arr(d, 'inbox', 'tasks');
+  const [peersOpen, setPeersOpen] = useState(false);
+  const [peers, setPeers] = useState([]);
+  const [peerId, setPeerId] = useState('');
+  const [peerUrl, setPeerUrl] = useState('');
+  const [peerToken, setPeerToken] = useState('');
+  const [keepToken, setKeepToken] = useState(false);
+  const [allowLan, setAllowLan] = useState(false);
+  const [timeoutSec, setTimeoutSec] = useState(60);
+  const [caps, setCaps] = useState('');
+  const [tenant, setTenant] = useState('');
+  const [peerNote, setPeerNote] = useState(null);
+  const loadPeers = () => {
+    apiGet('/api/a2a/peers', { admin: true })
+      .then((r) => setPeers(arr(r, 'peers')))
+      .catch((err) => setPeerNote(`refused · ${refusalReason(err, 'could not load peers')}`));
+  };
+  const togglePeers = () => {
+    const next = !peersOpen;
+    setPeersOpen(next);
+    setPeerNote(null);
+    if (next) loadPeers();
+  };
+  const saveOutbound = () => {
+    const id = peerId.trim();
+    const url = peerUrl.trim();
+    if (!id || !url) return;
+    setPeerNote(null);
+    const body = {
+      url,
+      ...(peerToken.trim() ? { token: peerToken.trim() } : {}),
+      keep_token: keepToken,
+      allow_lan: allowLan,
+      timeout: Math.max(5, Math.min(90, Number(timeoutSec) || 60)),
+      capabilities: caps.split(',').map((s) => s.trim()).filter(Boolean),
+      tenant: tenant.trim(),
+    };
+    apiPut(`/api/a2a/peers/${encodeURIComponent(id)}/outbound`, body, { admin: true })
+      .then(() => { setPeerToken(''); setPeerNote(`outbound configured · ${id}`); loadPeers(); })
+      .catch((err) => setPeerNote(`refused · ${refusalReason(err, 'outbound failed')}`));
+  };
+  const clearOutbound = (id) => {
+    setPeerNote(null);
+    apiDelete(`/api/a2a/peers/${encodeURIComponent(id)}/outbound`, { admin: true })
+      .then(() => { setPeerNote(`outbound cleared · ${id}`); loadPeers(); })
+      .catch((err) => setPeerNote(`refused · ${refusalReason(err, 'clear failed')}`));
+  };
   return <Card title="A2A APPROVAL INBOX" live={asLive(d)} sub={items.length} onReload={reload}>
     <State e={e} loading={loading} n={items.length} />
     {items.slice(0, 10).map((it, i) => <Row key={i}><span style={mono}>{it.peer || it.from || '?'}</span><span style={{ fontSize: 11, color: 'var(--ink-2)' }}>{(it.task || it.summary || '').slice(0, 40)}</span>
@@ -2079,7 +2212,46 @@ export function A2AInboxPanel() {
         <button className="tool-btn" onClick={() => actA(`/api/a2a/inbox/${it.id || it.task_id}/decide`, { approve: true }, reload)}>✓</button>
         <button className="tool-btn" onClick={() => actA(`/api/a2a/inbox/${it.id || it.task_id}/decide`, { approve: false }, reload)}>✕</button>
       </span></Row>)}
-    <div style={{ fontSize: 10, color: 'var(--ink-2)', marginTop: 6 }}>verified peer tasks land here; never auto-execute (H16.2)</div>
+    <Row>
+      <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>verified peer tasks land here; never auto-execute (H16.2)</span>
+      <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={togglePeers}>{peersOpen ? 'hide peers' : 'outbound peers'}</button>
+    </Row>
+    {peersOpen && (
+      <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--panel-line)' }}>
+        {peers.map((p, idx) => (
+          <Row key={p.peer_id || idx}>
+            <span style={mono}>{p.peer_id}</span>
+            <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{(p.outbound && p.outbound.url) || 'inbound only'}</span>
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+              <button className="tool-btn" onClick={() => { setPeerId(p.peer_id || ''); setPeerUrl((p.outbound && p.outbound.url) || ''); setAllowLan(!!(p.outbound && p.outbound.allow_lan)); }}>select</button>
+              {p.outbound && p.outbound.url && (
+                <button className="tool-btn" onClick={() => clearOutbound(p.peer_id)}>clear outbound</button>
+              )}
+            </span>
+          </Row>
+        ))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
+          <Row>
+            <input aria-label="peer id" placeholder="peer id" value={peerId} onChange={(ev) => setPeerId(ev.target.value)} style={{ ...inpS, width: 120 }} />
+            <input aria-label="peer outbound url" placeholder="https://peer.example.test" value={peerUrl} onChange={(ev) => setPeerUrl(ev.target.value)} style={{ ...inpS, flex: 1 }} />
+          </Row>
+          <Row>
+            <input aria-label="peer bearer token" type="password" autoComplete="off" placeholder="bearer token (optional, never echoed)" value={peerToken} onChange={(ev) => setPeerToken(ev.target.value)} style={{ ...inpS, flex: 1 }} />
+            <input aria-label="peer timeout" type="number" min={5} max={90} value={timeoutSec} onChange={(ev) => setTimeoutSec(Number(ev.target.value))} style={{ ...inpS, width: 64 }} />
+          </Row>
+          <Row>
+            <input aria-label="peer capabilities" placeholder="capabilities (comma-separated)" value={caps} onChange={(ev) => setCaps(ev.target.value)} style={{ ...inpS, flex: 1 }} />
+            <input aria-label="peer tenant" placeholder="tenant (optional)" value={tenant} onChange={(ev) => setTenant(ev.target.value)} style={{ ...inpS, width: 110 }} />
+          </Row>
+          <Row>
+            <label style={{ fontSize: 10, display: 'flex', gap: 4, alignItems: 'center' }}><input type="checkbox" checked={keepToken} onChange={(ev) => setKeepToken(ev.target.checked)} /> keep stored token</label>
+            <label style={{ fontSize: 10, display: 'flex', gap: 4, alignItems: 'center' }}><input type="checkbox" checked={allowLan} onChange={(ev) => setAllowLan(ev.target.checked)} /> allow LAN literal</label>
+            <button className="tool-btn" style={{ marginLeft: 'auto' }} disabled={!peerId.trim() || !peerUrl.trim()} onClick={saveOutbound}>save outbound</button>
+          </Row>
+        </div>
+        {peerNote && <div role="alert" style={{ ...mono, fontSize: 10, marginTop: 4, color: peerNote.startsWith('refused') ? 'var(--red)' : 'var(--green)' }}>{peerNote}</div>}
+      </div>
+    )}
   </Card>;
 }
 /* DRA-37 — package rollback lives HERE, not in SkillHistoryPanel. Rollback reads the
@@ -2922,6 +3094,47 @@ export function OAuthPanel() {
   /* same dead-fallback bug: /api/oauth/status returns a bare {service: {...}} map */
   const fromArr = arr(d, 'services');
   const svcs = fromArr.length ? fromArr : Object.entries(d || {}).filter(([, v]) => v && typeof v === 'object').map(([k, v]: [string, any]) => ({ service: k, ...(v || {}) }));
+  const [nousProfile, setNousProfile] = useState('default');
+  const [nousState, setNousState] = useState(null);
+  const [nousLogin, setNousLogin] = useState(null);
+  const [nousNote, setNousNote] = useState(null);
+  const prof = () => nousProfile.trim() || 'default';
+  const loadNous = () => {
+    setNousNote(null);
+    apiGet(`/api/oauth/nous/status?profile=${encodeURIComponent(prof())}`, { admin: true })
+      .then((r) => setNousState(r))
+      .catch((err) => setNousNote(`refused · ${(err && err.body && err.body.error) || refusalReason(err, 'Nous status unavailable')}`));
+  };
+  const startNous = () => {
+    setNousNote(null);
+    actA('/api/oauth/nous/login', { profile: prof() },
+      (r) => { setNousLogin(r); setNousNote(`enter code ${(r && r.user_code) || ''} at Nous Portal, then poll`); },
+      (err) => setNousNote(`refused · ${(err && err.body && err.body.error) || refusalReason(err, 'Nous login unavailable')}`));
+  };
+  const pollNous = () => {
+    if (!nousLogin || !nousLogin.login_id) return;
+    setNousNote(null);
+    actA('/api/oauth/nous/poll', { profile: prof(), login_id: nousLogin.login_id },
+      (r) => {
+        if (r && r.state === 'complete') {
+          setNousLogin(null);
+          setNousNote('Nous device sign-in complete');
+          loadNous();
+        } else if (r && r.state === 'expired') {
+          setNousLogin(null);
+          setNousNote('Nous login code expired · start again');
+        } else {
+          setNousNote(`pending · retry after ${(r && r.retry_after) || 5}s`);
+        }
+      },
+      (err) => setNousNote(`refused · ${(err && err.body && err.body.error) || refusalReason(err, 'Nous poll failed')}`));
+  };
+  const logoutNous = () => {
+    setNousNote(null);
+    actA('/api/oauth/nous/logout', { profile: prof() },
+      () => { setNousLogin(null); setNousNote('Nous credentials cleared'); loadNous(); },
+      (err) => setNousNote(`refused · ${(err && err.body && err.body.error) || refusalReason(err, 'Nous logout failed')}`));
+  };
   return <Card title="OAUTH" live={asLive(d)} sub={svcs.length} onReload={reload}>
     <State e={e} loading={loading} n={svcs.length} />
     {svcs.slice(0, 8).map((s, i) => <Row key={i}><span style={mono}>{s.service || s.label || s.key}</span>
@@ -2930,6 +3143,30 @@ export function OAuthPanel() {
         {s.connected ? <button className="tool-btn" onClick={() => act('/api/oauth/refresh?service=' + (s.service || s.key), {}, reload)}>refresh</button>
           : s.auth_url ? <button className="tool-btn" onClick={() => window.open(s.auth_url, '_blank')}>connect</button> : null}
       </span></Row>)}
+    <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px solid var(--panel-line)' }}>
+      <Row>
+        <span style={mono}>Nous Portal</span>
+        <input aria-label="Nous profile" value={nousProfile} onChange={(ev) => setNousProfile(ev.target.value)} placeholder="default" style={{ ...inpS, width: 96 }} />
+        {nousState && (
+          <Tag c={nousState.usable ? 'var(--green)' : nousState.authenticated ? 'var(--amber)' : 'var(--ink-2)'}>
+            {nousState.usable ? 'usable' : nousState.authenticated ? 'reauth needed' : 'signed out'}
+          </Tag>
+        )}
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+          <button className="tool-btn" onClick={loadNous}>check Nous</button>
+          <button className="tool-btn" onClick={startNous}>Nous login</button>
+          {nousState && nousState.authenticated && <button className="tool-btn" onClick={logoutNous}>Nous logout</button>}
+        </span>
+      </Row>
+      {nousLogin && (
+        <div style={{ fontSize: 10.5, marginTop: 4 }}>
+          <span style={mono}>code: {nousLogin.user_code}</span> ·{' '}
+          <a href={nousLogin.verification_uri_complete || nousLogin.verification_uri} target="_blank" rel="noopener noreferrer">open Nous Portal</a>
+          <button className="tool-btn" style={{ marginLeft: 8 }} onClick={pollNous}>poll Nous</button>
+        </div>
+      )}
+      {nousNote && <div role="alert" style={{ ...mono, fontSize: 10, marginTop: 4, color: nousNote.startsWith('refused') ? 'var(--red)' : 'var(--ink-2)' }}>{nousNote}</div>}
+    </div>
   </Card>;
 }
 function settingsField(it, val, on, suggest?: string[]) {
@@ -5676,6 +5913,7 @@ const PANEL_COMPONENTS = {
   ProviderCheckPanel,
   ProviderQuotaPanel,
   CustomEndpointsPanel,
+  MoaPresetsPanel,
   InspectorPanel,
   MemoryHygienePanel,
   MemoryConsolidatePanel,

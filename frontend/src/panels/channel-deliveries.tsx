@@ -1,6 +1,7 @@
 /* Owner receipt history. The server records metadata, never message bodies. */
-import React from 'react';
-import { mono, useApi } from '../panel-kit';
+import React, { useState } from 'react';
+import { apiPost } from '../api/client';
+import { mono, refusalReason, useApi } from '../panel-kit';
 
 export const CHANNEL_DELIVERIES_PATH = '/api/channels/deliveries?limit=50';
 
@@ -8,8 +9,9 @@ const STATES = ['sent', 'failed', 'partial', 'unknown', 'pending', 'attempting',
 type DeliveryState = typeof STATES[number];
 type Receipt = { id: string; channel: string; target: string; state: DeliveryState;
   attempt: number; error: string | null; chars: number; created: number; updated: number; keyed: boolean };
+type DeadTarget = { channel: string; target: string; reason: string; marked: number };
 type View = { stats: { by_state: Record<DeliveryState, number>; dead_targets: number };
-  deliveries: Receipt[]; dead_targets_truncated: boolean;
+  deliveries: Receipt[]; dead_targets?: DeadTarget[]; dead_targets_truncated: boolean;
   retention: { window_seconds: number; protected_limit: number; protected_count: number;
     retention_seconds: number; ordinary_row_limit: number } };
 
@@ -54,6 +56,13 @@ function checkedView(value: unknown): View | null {
         || typeof row.keyed !== 'boolean') return null;
     ids.add(row.id);
   }
+  if (value.dead_targets !== undefined) {
+    if (!Array.isArray(value.dead_targets) || value.dead_targets.length > 200) return null;
+    for (const dt of value.dead_targets) {
+      if (!record(dt) || !text(dt.channel, 32) || !text(dt.target, 128)
+          || !text(dt.reason, 40) || !stamp(dt.marked)) return null;
+    }
+  }
   return value as View;
 }
 
@@ -65,11 +74,22 @@ function duration(seconds: number): string {
 
 export function ChannelDeliveriesPanel() {
   const { d, e, status, loading, reload } = useApi(CHANNEL_DELIVERIES_PATH, true, true);
+  const [clearNote, setClearNote] = useState<string | null>(null);
   // useApi retains the previous payload after a failed refresh. Never show it once
   // the current read failed (especially after an owner credential is revoked).
   const view = !e && !loading ? checkedView(d) : null;
   const failure = e && (status === 401 || status === 403 ? 'owner access required'
     : status === 503 ? 'delivery ledger unavailable' : 'delivery receipts unavailable');
+
+  const liftDead = (channel: string, target: string) => {
+    setClearNote(null);
+    apiPost('/api/channels/dead-targets/clear', { channel, target }, { admin: true })
+      .then((r: any) => {
+        setClearNote(r?.cleared ? `lifted gone flag for ${channel} → ${target}` : `already active: ${channel} → ${target}`);
+        reload();
+      })
+      .catch((err: any) => setClearNote(`refused · ${refusalReason(err)}`));
+  };
 
   return (
     <section aria-label="Delivery receipts" style={{ marginTop: 12, borderTop: '1px solid var(--panel-line)', paddingTop: 10 }}>
@@ -101,6 +121,17 @@ export function ChannelDeliveriesPanel() {
           {view.stats.dead_targets} dead targets{view.dead_targets_truncated ? ' (server list truncated)' : ''}.
           Receipts never trigger automatic redelivery.
         </div>
+        {clearNote && <div role="status" style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 4 }}>{clearNote}</div>}
+        {view.dead_targets && view.dead_targets.length > 0 && (
+          <ul aria-label="dead delivery targets" style={{ listStyle: 'none', padding: 0, margin: '6px 0' }}>
+            {view.dead_targets.map((dt) => (
+              <li key={`${dt.channel}:${dt.target}`} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 10.5, padding: '2px 0' }}>
+                <span style={mono}>{dt.channel} → {dt.target}</span> · {dt.reason} · {new Date(dt.marked * 1000).toLocaleString()}
+                <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={() => liftDead(dt.channel, dt.target)}>lift gone flag</button>
+              </li>
+            ))}
+          </ul>
+        )}
         {view.deliveries.length === 0
           ? <p>No receipt rows returned for this read.</p>
           : <ol aria-label="recent delivery receipts" style={{ paddingLeft: 20, margin: '8px 0' }}>

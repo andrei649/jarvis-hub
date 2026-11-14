@@ -674,21 +674,6 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
-    # G18 (H401): a sub-agent's live transcript, its whole kept result and the exactly-once
-    # claim of finished results. The owner reaches them through /delegations in chat today;
-    # no HUD panel tails a transcript yet (ledger row H401, remaining).
-    "/api/subagents/{spawn_id}/transcript",
-    "/api/subagents/{spawn_id}/result",
-    "/api/subagents/completions/claim",
-    # H081: receipt history is in the Channels panel; clearing dead targets
-    # remains API-only (no mutation control in the read-only receipt view).
-    "/api/channels/dead-targets/clear",
-    # H562 (A2A outbound): peers get an address and token through the admin API; no HUD
-    # panel yet (ADOPT_LANE.md slice 4, remaining).
-    "/api/a2a/peers/{peer_id}/outbound",
-    # H553 (MCP elicitation): the card shows in the approval inbox, but there is no HUD form
-    # to type an answer yet (ledger row H553, remaining).
-    "/api/admin/mcp/elicitations/{card_id}/answer",
     # H361: installation, credential and selection APIs have no HUD controls.
     # Guarded physical sends do not establish graphical or native parity.
     "/api/admin/llm/provider-credentials",
@@ -700,11 +685,6 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/llm/provider-packages/proposals/{proposal_id}/decision",
     "/api/llm/provider-packages/proposals/{proposal_id}/promote",
     "/api/llm/provider-packages/{provider_id}/revoke",
-    # H015: the owner CLI/API is live; dedicated web/mobile controls remain in
-    # HUD_V2_REMAINING.md and mobile/PARITY.md, not a completed UI claim.
-    "/api/jobs/incidents/{incident_id}/ack",
-    "/api/jobs/runs",
-    "/api/jobs/{job_id}/notepad/keys",
     # H075/H581: ProjectsMode now consumes the core board, drawer, attachment,
     # metadata and dispatch routes. Remaining advanced HUD/native controls follow.
     # Each exact path is also recorded in docs/design/HUD_V2_REMAINING.md.
@@ -734,12 +714,6 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     # H075/H581: approved backend dispatch exists; dedicated board/worker
     # controls remain in HUD_V2_REMAINING.md and native task H18.34.
     "/api/autonomy/kanban/dispatch",
-    # Nous account operations have a working owner CLI (agents/cli/nous_auth.py).
-    # HUD account controls remain unfinished, recorded in HUD_V2_REMAINING.md.
-    "/api/oauth/nous/login",
-    "/api/oauth/nous/logout",
-    "/api/oauth/nous/poll",
-    "/api/oauth/nous/status",
     # STAYS UNWIRED ON PURPOSE (verified 2026-09-01). Its docstring calls it a
     # "/model hot-swap", but models_llm.py:69-77 swaps nothing: it parses the command
     # string and returns `base` (a hardcoded module constant) plus `configured` (an

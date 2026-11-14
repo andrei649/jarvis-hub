@@ -749,6 +749,11 @@ class HybridRouter(LLMRouter):
             raise ModelNotApprovedError(msg)
         logger.warning("model pin violation (JARVIS_STRICT_MODELS=0, allowing): %s", msg)
 
+    def resolve_moa_preset(self, agent_id: str, name_or_model: str) -> tuple[LLMBackend, str, str]:
+        """Resolve a Mixture-of-Agents preset (`moa:<name>` or `<name>`) for *agent_id* (H032)."""
+        from .moa import build_moa_backend
+        return build_moa_backend(self, agent_id, name_or_model)
+
     def preview_backend(self, agent_id: str, prompt: str) -> tuple[LLMBackend, str, str]:
         """Read-only route preview; no job pin resolution or provider dispatch."""
         backend, model, route = self._select_backend_inner(agent_id, prompt)
@@ -759,7 +764,8 @@ class HybridRouter(LLMRouter):
         if (getattr(self, "_compatible_provider_id", "") == "deepinfra"
                 and route.startswith("cloud") and compatible is None):
             raise LocalBackendUnavailableError("explicit DeepInfra main route is unavailable")
-        self._enforce_approved_models(agent_id, model, route)
+        if route not in ("local-moa", "hybrid-moa"):
+            self._enforce_approved_models(agent_id, model, route)
         return backend, model, route
 
     def select_backend(self, agent_id: str, prompt: str) -> tuple[LLMBackend, str, str]:
@@ -777,7 +783,8 @@ class HybridRouter(LLMRouter):
                 and getattr(self, "_compatible_backend", None) is None):
             raise LocalBackendUnavailableError(
                 "explicit DeepInfra main route is unavailable")
-        self._enforce_approved_models(agent_id, model, route)
+        if route not in ("local-moa", "hybrid-moa"):
+            self._enforce_approved_models(agent_id, model, route)
         return backend, model, route
 
     def _check_selected_cloud_route(self, backend, model, route):
@@ -823,6 +830,10 @@ class HybridRouter(LLMRouter):
 
     def check_data_handling(self, backend, model, route="", *, actual_use=True):
         """Fresh H513 dispatch check; never wrap or replace the selected backend."""
+        inner = getattr(backend, "_backend", backend) if type(backend).__name__ == "_ScopedBackend" else backend
+        moa_auth = getattr(inner, "authorize_data_handling", None)
+        if callable(moa_auth):
+            return moa_auth(actual_use=actual_use)
         from .data_handling import authorize
         return authorize(self, backend, model, route, actual_use=actual_use)
 
@@ -841,13 +852,28 @@ class HybridRouter(LLMRouter):
             model = HOWARD_OLLAMA_MODEL if self._ollama_available else self._local_model
             return backend, model, route
 
+        policy = self.get_agent_policy(agent_id)
+
+        # H032 — Mixture-of-Agents committee preset routing (`moa:<name>` or active preset).
+        if isinstance(self._local_model, str) and self._local_model.startswith("moa:"):
+            return self.resolve_moa_preset(agent_id, self._local_model)
+
+        from .moa import get_active_preset_name, get_preset
+        active_moa = get_active_preset_name()
+        if active_moa and agent_id not in DEEP_THINK_AGENTS:
+            preset = get_preset(active_moa)
+            if preset is not None:
+                if policy == POLICY_LOCAL and not env_flag("JARVIS_STRICT_LOCAL", False) and not preset.is_pure_local:
+                    pass
+                else:
+                    return self.resolve_moa_preset(agent_id, active_moa)
+
         # Deep-think agents: same LM Studio backend, different model slot (DDR5).
         # Only when local is available AND the deep model is actually there
         # (O26-P0.5/F5); falls through to normal routing otherwise.
         if agent_id in DEEP_THINK_AGENTS and self._local_available and self._deep_model_available():
             return self._backend, self._configured_deep_model(), "local-deep"
 
-        policy = self.get_agent_policy(agent_id)
         token_count = estimate_tokens(prompt)
 
         if policy == POLICY_LOCAL:

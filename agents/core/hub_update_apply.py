@@ -896,7 +896,21 @@ def install_dependencies(log) -> bool:
     for line in out.splitlines()[-20:]:
         if line.strip():
             log(line)
+    if code == 0:
+        _anchor_macos_venv(log)
     return code == 0
+
+
+def _anchor_macos_venv(log) -> None:
+    """Refresh macOS TCC interpreter anchoring on hub update/rollback without ever raising (H690)."""
+    if sys.platform != "darwin" or sys.prefix == sys.base_prefix:
+        return
+    try:
+        from agents.core.macos_tcc_anchor import anchor_venv_interpreter
+
+        anchor_venv_interpreter(Path(sys.prefix), log=log)
+    except Exception:  # noqa: BLE001 — H690 requires update anchoring never to raise
+        return
 
 
 class _Logger:
@@ -1182,6 +1196,8 @@ def _run_pipeline(payload: dict, approved_by: str, task_id: Any, action_record: 
         _phase(receipt, "dependencies_installed")
     if not authority_current():
         return refuse_after_merge(dependencies_attempted=receipt["dependencies_changed"])
+    if not receipt["dependencies_changed"]:
+        _anchor_macos_venv(log)
     log("schema migrations run as each store opens in the restarted hub"
         + (" (this update changes files that may migrate)" if receipt["migrations"] else ""))
     # 6. restart; the restarted hub verifies itself (on_boot)
