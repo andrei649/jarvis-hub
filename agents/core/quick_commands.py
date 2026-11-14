@@ -20,6 +20,13 @@ def configuration_problem(value) -> str | None:
         if type(name) is not str or not _NAME.fullmatch(name) or name.lower() in names:
             return "quick_commands: names must be unique slash-command identifiers (max 64 characters)"
         names.add(name.lower())
+        from .commands import ALIASES
+
+        if name.lower() in ALIASES:
+            # H057 review m5: a built-in alias is resolved before quick commands, so this
+            # one could never run; say so instead of storing a dead command.
+            return (f"quick_commands: /{name} is a built-in alias of /{ALIASES[name.lower()]}; "
+                    "choose another name")
         if type(spec) is not dict:
             return f"quick_commands: /{name} needs an alias or exec object"
         if spec.get("type") == "alias":

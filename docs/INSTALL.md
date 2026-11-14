@@ -84,12 +84,22 @@ Stdlib-only, so it runs before any dependency exists, and tested with fakes
 |---|---|---|
 | `python` | floor check `>= 3.12` | `python_too_old:<have><<want>` |
 | `venv` | `python -m venv .venv` once; re-runs reuse it | `venv_create_failed` |
-| `deps` | `pip install --require-hashes -r requirements-beta.lock` (`--unlocked` → `requirements-beta.txt`) | `pip_install_failed`, `requirements_missing` |
+| `deps` | `pip install --require-hashes -r requirements-beta.lock` (`--unlocked` → `requirements-beta.txt`) | `pip_install_failed`, `requirements_missing`, `requirements_lock_unreadable` |
 | `runtimes` | loopback probes for Ollama / LM Studio + an accelerator hint; report only | never fails (`no_local_runtime` is a note) |
 | `smoke` | `scripts/install_smoke.py --json` in the venv, with `JARVIS_HOST=127.0.0.1` pinned and cloud keys scrubbed from the child environment | `smoke_failed`, `smoke_output_unparseable` |
 
 `python scripts/bootstrap.py --json` prints the whole report; exit status is 1 on the
 first failed step. Flags: `--skip-smoke`, `--unlocked`, `--root <checkout>`.
+
+Default bootstrap dependency installation stops if the lockfile is missing, is not
+a regular file, or its metadata check fails. It does not automatically select the
+loose requirements file; that requires explicit `--unlocked`. A regular lockfile
+that pip cannot read still reports `pip_install_failed`. This behavior belongs to
+`scripts/bootstrap.py` and its `install.sh` / `INSTALL.bat` wrappers; `UPDATE.bat`
+has a separate dependency installation path.
+
+The smoke child must exit successfully and report JSON `"ok": true`. Truthy
+strings, numbers, and objects do not count as a successful smoke result.
 
 ## Check-up: `doctor`
 

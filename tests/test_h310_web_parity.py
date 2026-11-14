@@ -1199,11 +1199,11 @@ async def test_five_slow_pdfs_answer_every_url_before_the_loop_cuts_the_call_off
     assert took < 2.0
     pages = result["pages"] if "pages" in result else result["result"]["pages"]
     assert len(pages) == 5
+    assert [p["url"] for p in pages] == urls
     read = [p for p in pages if p.get("ok", True)]
     busy = [p for p in pages if p.get("reason") == "parser_busy"]
     assert len(read) == 4 and len(busy) == 1, pages
     assert all(p["text"] == "page" for p in read)
-    assert busy[0]["url"] == urls[4]                           # the last in the queue is the one left out
     assert "retry" in busy[0] and busy[0]["retry"]             # and it says what to do
     assert await _slots_free()
 

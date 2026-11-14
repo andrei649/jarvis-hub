@@ -433,6 +433,7 @@
   "GET /sessions/{session_id}/context": "admin",
   "GET /sessions/{session_id}/todo": "user",
   "GET /sessions/{session_id}/trajectories": "admin",
+  "GET /sessions/{session_id}/transcript": "admin",
   "GET /skills": "user",
   "GET /skills/hermes/catalog": "user",
   "GET /skills/imported": "user",

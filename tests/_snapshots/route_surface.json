@@ -429,6 +429,7 @@
   "GET /sessions/{session_id}/context",
   "GET /sessions/{session_id}/todo",
   "GET /sessions/{session_id}/trajectories",
+  "GET /sessions/{session_id}/transcript",
   "GET /skills",
   "GET /skills/hermes/catalog",
   "GET /skills/imported",

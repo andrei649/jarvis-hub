@@ -206,8 +206,14 @@ def chunk(text: str, limit: int | None) -> list[str]:
     fenced code block is never split open: a fence that would span two chunks is closed at
     the end of one and reopened at the start of the next, so each chunk renders as valid
     markup on its own. Chunk order is source order; nothing is dropped.
+
+    Every chunked transport sends what this returns, so the outbound gate (H069:
+    crash characters, cancellation lines, secrets) runs here, on the whole text, before
+    it is split — a secret is never cut in two and missed.
     """
-    source = str(text or "")
+    from .outbound_safety import sanitize_text
+
+    source = sanitize_text(str(text or ""))
     if limit is None or len(source) <= limit:
         return [source]
     fence = "```"

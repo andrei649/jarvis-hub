@@ -1,5 +1,23 @@
 # Mobile ⇄ Browser parity ledger
 
+Retained conversation transcript candidate (2026-11-13): owner-only
+`GET /sessions/{session_id}/transcript` previews or downloads redacted retained
+current user/assistant text; `nerva sessions transcript SESSION_ID [-o FILE]`
+prints the JSON or atomically creates a private file without replacing any path.
+It addresses one existing session under identity/import/rewind fences, with no
+active-session switch or reconstruction of old archives. The web Sessions panel now
+previews escaped retained text on an explicit owner-authenticated request and offers
+JSON download. Changing row, tab, reload, rename or mutation, closing and unmounting
+invalidate private preview responses; refusal bodies are never echoed. Header-token
+downloads require browser file saving support; owner-session downloads report a
+request rather than claiming a saved file. Native Sessions now offers an explicit owner-authorized retained-text preview,
+with known-field projection and clearing on close, refresh, resume, configuration
+changes and reconnect. Native mobile export and device/live-Hub acceptance remain open. H005 remains partial; this lot claims no
+closure credit and does not restamp the Hermes assessment. Secure file export
+fails closed where private-file or hard-link APIs are unavailable; native
+Windows file export has no acceptance claim.
+
+
 The **bridge** that keeps the iOS/Android apps (`mobile/`) in sync with the browser HUD.
 Both clients talk to the **same** HTTP API (`agents/web.py`), so "feature parity" is mostly a
 question of *which hub surfaces the mobile app has caught up to*.
@@ -19,6 +37,16 @@ This file is the single source of truth for that gap. Backlog tasks for closing 
 > become iOS/Android tasks** instead of silently drifting.
 
 Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not applicable on mobile.
+
+Retained-session transcript local source candidate (2026-11-13): the native
+Sessions modal adds explicit owner-authorized preview of the exact selected
+session's current retained user/assistant text. It validates schema and session
+identity, projects known fields, and rejects projections over 2 MiB of UTF-8 JSON.
+Close, refresh, resume, server/credential changes and reconnect clear the preview.
+No pagination, search or filters are included. Mobile local export remains open:
+the installed file API does not supply exclusive creation/atomic publication and
+safe cleanup guarantees. This candidate adds no file-writing control and makes
+no native-device acceptance claim. The retained-transcript backend and CLI are included in this combined candidate.
 
 SEC-B6 local source candidate (2026-11-03): twelve owner-content reads now require
 user credentials: `GET /api/oracle/status`, `GET /agents`, the three
@@ -622,5 +650,5 @@ UI or mobile pagination delivery is claimed.
 V74 CLI-only history consumes the V73 page route through `nerva sessions history`,
 with bounded client-side metadata filters and explicit continuation receipts.
 Web/HUD and mobile history controls remain unwired; no UI acceptance is claimed.
-H005 stays partial. Retained transcripts and session organization remain outside
-this lot.
+H005 stays partial. Retained transcripts and session organization are separate
+capabilities included in this combined candidate.

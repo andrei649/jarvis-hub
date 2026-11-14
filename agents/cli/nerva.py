@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode
 
-from . import skill_sources
+from . import service_install, skill_sources
 from .client import HubClient, HubError, HubUnavailable, hub_url, is_loopback_url
 from .custom_endpoints import run as cmd_custom_provider
 from .mcp_catalog import run as cmd_mcp
@@ -905,9 +905,26 @@ def build_parser() -> argparse.ArgumentParser:
     todo.add_argument("session", nargs="?", help="one session's plan (else the recent ones)")
     todo.add_argument("--json", action="store_true")
 
-    sessions = verbs.add_parser("sessions", help="recent conversation sessions")
+    sessions = verbs.add_parser(
+        "sessions", help="recent conversation sessions",
+        description="List and organize conversations. Pin, unpin, archive and unarchive apply to the "
+                    "whole conversation lineage. Archiving clears loaded skills; nothing is deleted.")
     sessions.add_argument("--json", action="store_true")
+    sessions.add_argument("--archived", action="store_true", help="list archived conversations only")
     session_verbs = sessions.add_subparsers(dest="session_action")
+    renamed = session_verbs.add_parser("rename", help="set a human conversation title")
+    renamed.add_argument("session_id")
+    renamed.add_argument("title", help="one line of 1 to 100 characters")
+    renamed.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
+    for action, explanation in (
+        ("pin", "pin the whole conversation lineage"),
+        ("unpin", "unpin the whole conversation lineage"),
+        ("archive", "archive the whole conversation lineage; clears loaded skills, nothing is deleted"),
+        ("unarchive", "restore the whole conversation lineage to the active list"),
+    ):
+        stamp = session_verbs.add_parser(action, help=explanation, description=explanation)
+        stamp.add_argument("session_id")
+        stamp.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
     history = session_verbs.add_parser(
         "history", help="scan paginated owner history with client-side metadata filters",
         description="Read a bounded scan of owner session metadata, filtered client-side. "
@@ -933,6 +950,12 @@ def build_parser() -> argparse.ArgumentParser:
     imported.add_argument("--from", dest="foreign_source", choices=("claude", "codex"), required=True)
     imported.add_argument("path", help="owner-selected local JSONL path")
     imported.add_argument("--json", action="store_true")
+    transcript = session_verbs.add_parser(
+        "transcript", help="export redacted retained current conversation text as JSON",
+        description="Export the session's redacted retained current history (user and assistant text).")
+    transcript.add_argument("session_id")
+    transcript.add_argument("-o", "--out", default="-", help="create-only JSON output path ('-' = stdout)")
+    transcript.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="JSON output (already the default)")
     # H652 — the session's saved full turns as training data (admin; capture is opt-in).
     exported = session_verbs.add_parser(
         "export", help="the session's saved full turns (tool calls and results kept) as JSONL training data")
@@ -1075,6 +1098,9 @@ def build_parser() -> argparse.ArgumentParser:
     desktop_grant = desktop_verbs.add_parser(
         "grant", help="open the OS pane where you award a permission (owner; grants nothing itself)")
     desktop_grant.add_argument("step", help="the step key from `nerva desktop status`")
+
+    # H089 — the hub as a per-user service (systemd user unit / launchd agent).
+    service_install.register(verbs)
 
     # H014 — the same module uninstall.sh / UNINSTALL.bat run; nothing is decided here.
     # On Windows the verb runs from the .venv it would delete (locked), so the module refuses
@@ -5528,6 +5554,13 @@ def _session_history(ns: argparse.Namespace, ctx: Context) -> int:
 
 
 def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
+    if getattr(ns, "archived", False) and getattr(ns, "session_action", None) is not None:
+        ctx.err.write("--archived is only available when listing sessions.\n")
+        return EXIT_USAGE
+    if getattr(ns, "session_action", None) in {"rename", "pin", "unpin", "archive", "unarchive"}:
+        return _organize_session(ns, ctx)
+    if getattr(ns, "session_action", None) == "transcript":
+        return _export_session_transcript(ns, ctx)
     if getattr(ns, "session_action", None) == "history":
         return _session_history(ns, ctx)
     if getattr(ns, "session_action", None) == "continue":
@@ -5558,7 +5591,7 @@ def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
         return EXIT_OK
     if getattr(ns, "session_action", None) == "export":
         return _export_trajectories(ns, ctx)
-    reply = ctx.client().get("/sessions")
+    reply = ctx.client().get("/sessions?archived=true" if getattr(ns, "archived", False) else "/sessions")
     sessions = (reply or {}).get("sessions") or []
     if ns.json:
         ctx.dump(sessions)
@@ -5580,6 +5613,72 @@ def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
             note += "  (earlier part, still in use)"
         ctx.say(f"{sid}  {started}  {title}".rstrip() + note)
     return EXIT_OK
+
+
+def _organize_session(ns: argparse.Namespace, ctx: Context) -> int:
+    from agents.core.validation import is_valid_session_id as valid_session_id
+
+    from .session_organization import organization_receipt, organization_title
+
+    if not valid_session_id(ns.session_id):
+        ctx.err.write("Invalid session identifier for session organization.\n")
+        return EXIT_USAGE
+    action = ns.session_action
+    try:
+        title = organization_title(ns.title) if action == "rename" else None
+    except ValueError:
+        ctx.err.write("A title must be one line of 1 to 100 characters.\n")
+        return EXIT_USAGE
+    try:
+        client = ctx.client()
+        if action == "rename":
+            reply = client.request("PATCH", f"/sessions/{ns.session_id}/title", {"title": title})
+        else:
+            reply = client.post(f"/sessions/{ns.session_id}/{action}", {})
+        receipt = organization_receipt(reply, ns.session_id, action, title)
+    except HubUnavailable:
+        ctx.err.write("Session organization hub unavailable; the change may have applied; inspect before retry.\n")
+        return EXIT_NO_HUB
+    except HubError as exc:
+        reason = f" ({exc.reason})" if exc.reason in ("title_taken", "title_reserved") else ""
+        ctx.err.write(f"Session organization request refused{reason}.\n")
+        return EXIT_AUTH if exc.status in (401, 403) else EXIT_FAILED
+    except (ValueError, TypeError, RecursionError):
+        ctx.err.write("Could not confirm session organization; the change may have applied; inspect before retry.\n")
+        return EXIT_FAILED
+    if ns.json:
+        ctx.dump(receipt)
+    elif action == "rename":
+        ctx.say(f"Renamed {ns.session_id}: {title}")
+    else:
+        ctx.say(f"Confirmed {action} for conversation {ns.session_id}.")
+    return EXIT_OK
+
+
+def _export_session_transcript(ns: argparse.Namespace, ctx: Context) -> int:
+    from .session_transcript import encode_transcript, valid_session_id, write_transcript_file
+
+    if not valid_session_id(ns.session_id):
+        ctx.err.write("Invalid session identifier for retained transcript.\n")
+        return EXIT_USAGE
+    try:
+        reply = ctx.client().get(f"/sessions/{ns.session_id}/transcript")
+        data = encode_transcript(reply, ns.session_id)
+        if ns.out == "-":
+            ctx.out.write(data.decode("utf-8") + "\n")
+        else:
+            write_transcript_file(ns.out, data)
+            ctx.err.write("Saved retained current history transcript.\n")
+        return EXIT_OK
+    except HubUnavailable:
+        ctx.err.write("Retained session transcript hub unavailable.\n")
+        return EXIT_NO_HUB
+    except HubError as exc:
+        ctx.err.write("Retained session transcript request refused.\n")
+        return EXIT_AUTH if exc.status in (401, 403) else EXIT_FAILED
+    except (ValueError, TypeError, RecursionError, OSError):
+        ctx.err.write("Could not export retained session transcript.\n")
+        return EXIT_FAILED
 
 
 def _export_trajectories(ns: argparse.Namespace, ctx: Context) -> int:
@@ -7128,6 +7227,11 @@ def cmd_prompt_size(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+def cmd_service(ns: argparse.Namespace, ctx: Context) -> int:
+    """H089 — ``nerva service install|uninstall|show`` (``agents/cli/service_install.py``)."""
+    return service_install.run(ns, ctx)
+
+
 def cmd_uninstall(ns: argparse.Namespace, ctx: Context) -> int:
     """Delegate to agents.core.uninstall — its refusals, typed purge prompt and exit codes."""
     from agents.core import uninstall as _uninstall
@@ -7372,6 +7476,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "send": cmd_send,
     "desktop": cmd_desktop,
     "support": cmd_support,
+    "service": cmd_service,
     "uninstall": cmd_uninstall,
     "security": cmd_security,
     "completion": cmd_completion,
