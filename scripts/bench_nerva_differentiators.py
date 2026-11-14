@@ -1,32 +1,11 @@
 #!/usr/bin/env python3
-"""Measurable Nerva > Hermes/OpenClaw subsystem differentiator benchmark suite.
+"""Offline subsystem invariant fixtures with illustrative synthetic baselines.
 
-Executes five deterministic, hermetic in-process workloads against Nerva's real
-production subsystems and compares measured safety, resilience, and latency
-outcomes against baseline single-model / unguarded agent patterns (representative
-of default Hermes / OpenClaw single-chain or unguarded local-bridge setups):
-
-  1. Resilient Hybrid Committee (`H032`, `agents/core/llm/moa.py`)
-  2. Controllable Cloud Privacy (`H513`, `agents/core/llm/moa.py` + `data_handling.py`)
-  3. Surviving-Host Room Failover & Split-Brain Fencing (`H657`, `agents/core/rooms.py`)
-  4. Identity-Scoped Browser Broker (`H086`, `agents/core/browser_broker.py`)
-  5. Secret-Stripped E2E Cross-Device Sync (`H040`, `agents/core/e2e_sync.py`)
-
-Scope note (honest reporting):
-  All measurements here exercise Nerva's actual Python runtime classes, policy
-  gates, SQLite settings store, hash-chained room logs, SSRF/ticket guards, and
-  authenticated Fernet (`AES-128-CBC + HMAC-SHA256`, PBKDF2 390k iterations)
-  cryptography in-process using deterministic synthetic LLM/transport backends
-  (`live_network_llm_calls = 0`). They prove subsystem enforcement, failover
-  mechanics, and concurrency speedup — NOT live third-party cloud LLM token
-  throughput or live desktop/browser task win-rates (tracked separately in
-  `docs/HARDWARE_BENCHMARKS.md` and `docs/HERMES_HEAD_TO_HEAD.md`).
-
-Usage:
-  python scripts/bench_nerva_differentiators.py \\
-      --json-out docs/benchmarks/nerva-vs-hermes-openclaw-2026-11-14.json \\
-      --md-out docs/benchmarks/nerva-vs-hermes-openclaw-2026-11-14.md
-  python scripts/bench_nerva_differentiators.py --check
+Runs real Nerva components against deterministic fake LLM/transport backends in
+private temporary storage. No Hermes/OpenClaw product is executed; baseline
+patterns and declared constants do not establish competitor superiority. H040
+measures encrypted incoming staging and local-data preservation, not LWW,
+automatic reconciliation, owner import/install UX or loader admission.
 """
 
 from __future__ import annotations
@@ -73,7 +52,7 @@ from agents.core.llm.moa import clear_recent_runs, save_preset, validate_preset
 from agents.core.llm.providers import get_profile
 from agents.core.rooms import RoomAuthorityError, RoomStore
 
-SCHEMA_VERSION = "nerva.differentiator_bench.v1"
+SCHEMA_VERSION = "nerva.differentiator_bench.v2"
 DEFAULT_REPORT_STEM = "nerva-vs-hermes-openclaw-2026-11-14"
 DEFAULT_JSON_OUT = REPO / "docs" / "benchmarks" / f"{DEFAULT_REPORT_STEM}.json"
 DEFAULT_MD_OUT = REPO / "docs" / "benchmarks" / f"{DEFAULT_REPORT_STEM}.md"
@@ -110,8 +89,9 @@ SUITE_SPEC: dict[str, Any] = {
         "h040_e2e_sync": {
             "seeded_secrets": 4,
             "cipher_tamper_trials": 8,
-            "lww_peer_devices": 3,
-            "lww_arrival_permutations": 6,
+            "candidate_devices": 3,
+            "arrival_permutations": 6,
+            "inbound_mode": "stage_only",
         },
     },
 }
@@ -902,110 +882,86 @@ def _check_e2e_tamper_rejection(sync_node: E2ESync, peer_key: str) -> tuple[int,
     return rejected_total, len(offsets)
 
 
-def _lww_order_manifests(manifests: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Benchmark-harness caller-side `(max_ts, device_id)` sort over `E2ESync` envelope metadata.
-
-    `E2ESync.encrypt_record()` stamps `(ts, device)` on ciphertext envelopes, enabling callers
-    to sort manifests canonically by `(max_ts, device_id)` before `apply_pull()`. Production
-    `DirectorySyncTransport.fetch_manifests()` orders spool files lexically (`manifest_<device>.json`),
-    and `E2ESync.pull_state()` without caller sorting iterates mailbox/transport manifests in
-    fetch/arrival order.
-    """
-
-    def _sort_key(manifest: dict[str, Any]) -> tuple[float, str]:
-        entries = manifest.get("entries") or []
-        max_ts = max((float(e.get("ts", 0.0)) for e in entries if isinstance(e, dict)), default=0.0)
-        return (max_ts, str(manifest.get("device") or ""))
-
-    return sorted(manifests, key=_sort_key)
-
-
-def _run_lww_convergence_permutations(
-    sandbox: Path,
-    shared_fernet_key: str,
-) -> tuple[int, int, int]:
-    """Verify `(max_ts, device_id)` LWW convergence via `_lww_order_manifests` across all 3! orders."""
-    peer_specs = [
-        ("dev-alpha", 1700000100.0, 360, "# Shared Ops\nRevision alpha (t=100).\n"),
-        ("dev-gamma", 1700000300.0, 960, "# Shared Ops\nRevision gamma (t=300).\n"),
-        ("dev-beta", 1700000300.0, 720, "# Shared Ops\nRevision beta (t=300).\n"),
-    ]
-    # Note: dev-gamma and dev-beta share ts=1700000300.0; tie-breaker `(ts, device_id)`
-    # deterministically selects `dev-gamma` (`"dev-gamma" > "dev-beta"`) regardless of arrival order.
-    manifests: list[dict[str, Any]] = []
-    for dev_id, ts, idle_min, skill_md in peer_specs:
-        peer = E2ESync(key=shared_fernet_key, device_id=dev_id)
-        records = [
-            {
-                "artefact_type": "config",
-                "device_id": dev_id,
-                "device_label": dev_id,
-                "document": {
-                    "format": settings_db.EXPORT_FORMAT,
-                    "exported_at": int(ts),
-                    "settings": {"sessions": {"idle_minutes": idle_min}},
-                },
-            },
-            {
-                "artefact_type": "skill",
-                "slug": "shared-ops",
-                "skill_md": skill_md,
-                "manifest": {"revision_ts": ts},
-                "sha256": hashlib.sha256(skill_md.encode("utf-8")).hexdigest(),
-                "device_id": dev_id,
-                "device_label": dev_id,
-            },
-        ]
-        built = peer.build_push(records, kind="device_state")
-        for entry in built["entries"]:
-            entry["ts"] = ts
-        manifests.append(built)
-
-    perms = list(itertools.permutations(manifests))
-    lww_outcomes: set[tuple[int, str]] = set()
-    naive_winner_matches = 0
-
-    for idx, perm in enumerate(perms):
-        _switch_db(sandbox / f"lww_nerva_{idx}.db")
-        dest = E2ESync(
-            key=shared_fernet_key,
-            device_id="dev-dest",
-            skills_dir=sandbox / f"lww_skills_{idx}",
-        )
-        # Exercise caller-side `(max_ts, device_id)` sorting via `_lww_order_manifests` over
-        # `E2ESync` `(ts, device)` envelope metadata before `apply_pull()`.
-        ordered_records: list[dict[str, Any]] = []
-        for m in _lww_order_manifests(list(perm)):
-            ordered_records.extend(dest.apply_pull(m))
-        dest.apply_synced_artefacts(ordered_records)
-        idle_val = int(settings_db.export_settings()["settings"]["sessions"]["idle_minutes"])
-        md_sha = hashlib.sha256(
-            (sandbox / f"lww_skills_{idx}" / "shared-ops" / "SKILL.md").read_bytes()
-        ).hexdigest()
-        lww_outcomes.add((idle_val, md_sha))
-
-        # Compare against unsorted arrival-order `apply_pull` (matching `E2ESync.pull_state()`
-        # mailbox iteration when the caller does not sort by `(max_ts, device_id)`).
-        _switch_db(sandbox / f"lww_naive_{idx}.db")
-        naive_dest = E2ESync(
-            key=shared_fernet_key,
-            device_id="dev-dest-naive",
-            skills_dir=sandbox / f"lww_naive_skills_{idx}",
-        )
-        naive_records: list[dict[str, Any]] = []
-        for m in perm:
-            naive_records.extend(naive_dest.apply_pull(m))
-        naive_dest.apply_synced_artefacts(naive_records)
-        naive_idle = int(settings_db.export_settings()["settings"]["sessions"]["idle_minutes"])
-        if naive_idle == 960:
-            naive_winner_matches += 1
-
-    converged_perms = len(perms) if len(lww_outcomes) == 1 and next(iter(lww_outcomes))[0] == 960 else 0
-    return converged_perms, len(perms), naive_winner_matches
+def _run_staging_preservation_permutations(sandbox: Path, shared_key: str) -> dict[str, Any]:
+    """Measure immutable candidate sets and local preservation, never timestamp winners."""
+    manifests = []
+    for device, idle, body in [
+        ("dev-alpha", 360, "# Shared Ops\nCandidate alpha requires owner review.\n"),
+        ("dev-beta", 720, "# Shared Ops\nCandidate beta requires owner review.\n"),
+        ("dev-gamma", 960, "# Shared Ops\nCandidate gamma requires owner review.\n"),
+    ]:
+        peer = E2ESync(key=shared_key, device_id=device, state_path=sandbox / f"{device}.json")
+        manifests.append(peer.build_push([
+            {"artefact_type": "config", "device_id": device, "document": {
+                "format": settings_db.EXPORT_FORMAT, "settings": {"sessions": {"idle_minutes": idle}}}},
+            {"artefact_type": "skill", "device_id": device, "slug": "shared-ops", "skill_md": body},
+        ], kind="device_state"))
+    permutations = list(itertools.permutations(manifests))
+    candidate_sets = set()
+    preserved = replayed = metadata_ignored = 0
+    counts = []
+    encrypted = True
+    for index, arrival in enumerate(permutations):
+        _switch_db(sandbox / f"stage_{index}.db")
+        settings_db.put_category("sessions", {"idle_minutes": 1440})
+        skills = sandbox / f"stage_skills_{index}"
+        target = skills / "shared-ops" / "SKILL.md"
+        target.parent.mkdir(parents=True)
+        before = "# Local ops\nOwner keeps this local playbook.\n"
+        target.write_text(before)
+        kwargs = {"key": shared_key, "device_id": "dev-dest", "state_path": sandbox / f"stage_{index}.json",
+                  "skills_dir": skills}
+        dest = E2ESync(**kwargs)
+        received = set()
+        clean = True
+        for position, original in enumerate(arrival):
+            incoming = copy.deepcopy(original)
+            incoming["digest"] = "same-untrusted-digest"
+            for entry in incoming["entries"]:
+                entry["device"] = "dev-dest"
+                entry["ts"] = float(100 - position)
+            result = dest.pull_state(manifest=incoming)
+            pending = result["config_pending_import"] + result["skills_pending_install"]
+            received.update(row["fingerprint"] for row in pending)
+            clean = clean and result["ok"] and result["inbound_mode"] == "stage_only"
+            clean = clean and result["config_applied"] == 0 and result["skills_applied"] == []
+        counts.append(len(received))
+        candidate_sets.add(tuple(sorted(received)))
+        if clean and len(received) == 6:
+            metadata_ignored += 1
+        initial_preserved = settings_db.get_value("sessions", "idle_minutes") == 1440 and target.read_text() == before
+        settings_db.put_category("sessions", {"idle_minutes": 2880})
+        after = "# Local ops\nAnother owner edit after receiving candidates.\n"
+        target.write_text(after)
+        restarted = E2ESync(**kwargs)
+        replay_fingerprints = set()
+        replay_clean = True
+        for original in reversed(arrival):
+            result = restarted.pull_state(manifest=original)
+            pending = result["config_pending_import"] + result["skills_pending_install"]
+            replay_fingerprints.update(row["fingerprint"] for row in pending)
+            replay_clean = replay_clean and result["ok"] and all(row["status"] == "already_staged" for row in pending)
+        local_preserved = settings_db.get_value("sessions", "idle_minutes") == 2880 and target.read_text() == after
+        if initial_preserved and local_preserved:
+            preserved += 1
+        if replay_clean and replay_fingerprints == received and len(received) == 6:
+            replayed += 1
+        raw_inbox = restarted._incoming_path().read_bytes()
+        encrypted = encrypted and b'"skill_md":' not in raw_inbox and b'"document":' not in raw_inbox
+    total = len(permutations)
+    return {
+        "arrival_permutations_tested": total,
+        "staged_candidates_per_permutation": min(counts),
+        "staged_candidate_sets_identical": len(candidate_sets) == 1,
+        "local_edit_preservation_rate": round(preserved / total, 4),
+        "restart_replay_idempotence_rate": round(replayed / total, 4),
+        "outer_metadata_cannot_suppress_candidates": metadata_ignored == total,
+        "staged_payloads_encrypted_at_rest": encrypted,
+    }
 
 
 def bench_5_secret_stripped_e2e_sync(sandbox: Path) -> dict[str, Any]:
-    """Benchmark 5: H040 secret-stripped E2E sync, Fernet tamper rejection, and LWW convergence."""
+    """Benchmark 5: encrypted candidate staging, replay idempotence and local preservation."""
     from cryptography.fernet import Fernet
 
     shared_key = Fernet.generate_key().decode("ascii")
@@ -1094,31 +1050,40 @@ def bench_5_secret_stripped_e2e_sync(sandbox: Path) -> dict[str, Any]:
         skills_dir=sandbox / "dest_skills",
         transport=transport,
     )
+    local_before = settings_db.export_settings()["settings"]
     pulled = dest_clean.pull_state()
+    local_after = settings_db.export_settings()["settings"]
     quarantined_slugs = [q["slug"] for q in pulled["skills_quarantined"]]
 
     tamper_rejected, tamper_total = _check_e2e_tamper_rejection(dest_clean, shared_key)
-    lww_converged, lww_total, naive_matches = _run_lww_convergence_permutations(sandbox, shared_key)
-
+    staging = _run_staging_preservation_permutations(sandbox, shared_key)
     tamper_rate = round(tamper_rejected / tamper_total, 4)
-    lww_rate = round(lww_converged / lww_total, 4)
-    naive_rate = round(naive_matches / lww_total, 4)
+    automatic_apply_disabled = (pulled["inbound_mode"] == "stage_only" and pulled["config_applied"] == 0
+                                and pulled["skills_applied"] == [] and local_after == local_before
+                                and not (sandbox / "dest_skills" / "deploy-check").exists())
 
     passed = (
         leaked_secrets == 0
         and not plaintext_in_wire
         and plaintext_envelope_rejected
-        and pulled["skills_applied"] == ["deploy-check"]
+        and [row["slug"] for row in pulled["skills_pending_install"]] == ["deploy-check"]
+        and len(pulled["config_pending_import"]) == 1 and not pulled["staging_errors"]
+        and automatic_apply_disabled
         and quarantined_slugs == ["hostile-skill"]
         and tamper_rate == 1.0
-        and lww_rate == 1.0
+        and staging["staged_candidates_per_permutation"] == 6
+        and staging["staged_candidate_sets_identical"]
+        and staging["local_edit_preservation_rate"] == 1.0
+        and staging["restart_replay_idempotence_rate"] == 1.0
+        and staging["outer_metadata_cannot_suppress_candidates"]
+        and staging["staged_payloads_encrypted_at_rest"]
     )
     return {
         "id": "B5_h040_secret_stripped_e2e_sync",
-        "title": "Secret-Stripped E2E Cross-Device Sync (H040)",
+        "title": "Encrypted Incoming Candidate Staging & Local Preservation (H040)",
         "subsystem": (
             "agents/core/e2e_sync.py + agents/core/settings_db.py "
-            "(LWW sort via harness _lww_order_manifests over envelope ts/device)"
+            "(stage-only inbox; no automatic application or reconciliation)"
         ),
         "passed": passed,
         "deterministic_metrics": {
@@ -1131,12 +1096,9 @@ def bench_5_secret_stripped_e2e_sync(sandbox: Path) -> dict[str, Any]:
             "hostile_skill_injection_quarantined": quarantined_slugs == ["hostile-skill"],
             "ciphertext_bitflip_trials": tamper_total,
             "nerva_authenticated_tamper_rejection_rate": tamper_rate,
-            "lww_ordering_source": (
-                "benchmark_harness__lww_order_manifests_over_e2e_envelope_ts_device"
-            ),
-            "lww_arrival_permutations_tested": lww_total,
-            "nerva_lww_convergence_rate": lww_rate,
-            "baseline_arrival_order_convergence_rate": naive_rate,
+            "inbound_mode": "stage_only",
+            "automatic_apply_disabled": automatic_apply_disabled,
+            **staging,
             "baseline_raw_config_secret_leak_count": len(secret_markers),
         },
         "timing_telemetry": {},
@@ -1165,18 +1127,13 @@ async def run_all_benchmarks_async() -> dict[str, Any]:
             "All 5 benchmarks execute Nerva's real Python subsystems in-process against "
             "deterministic synthetic LLM/transport backends (0 live network LLM calls). "
             "Fixture token telemetry uses len(text.encode('utf-8')) // 4 + 1 synthetic units, "
-            "not a provider vocabulary or billed/live token count. "
-            "Baseline columns measure representative single-chain / unguarded local-agent "
-            "patterns (Hermes / OpenClaw architectural defaults without parallel MoA quorum, "
-            "H513 per-member consent binding, H657 monotonic authority epochs, H086 principal-scoped "
-            "SSRF/one-shot artifact tickets, or H040 secret-stripped authenticated E2E sync). "
-            "In B5 (H040), `E2ESync.encrypt_record()` stamps `(ts, device)` metadata on ciphertext "
-            "envelopes enabling canonical `(max_ts, device_id)` LWW sorting — exercised here via "
-            "`_lww_order_manifests` in the benchmark harness, whereas production "
-            "`DirectorySyncTransport.fetch_manifests()` orders lexically by device ID and "
-            "`E2ESync.pull_state()` mailbox iteration without caller sorting follows arrival order. "
-            "Live hardware tok/s and owner-gated live head-to-head runs are tracked separately in "
-            "docs/HARDWARE_BENCHMARKS.md and docs/HERMES_HEAD_TO_HEAD.md."
+            "not a provider vocabulary or billed/live token count. Baselines are illustrative "
+            "synthetic patterns, including declared unguarded constants; Hermes and OpenClaw "
+            "are not executed and no competitor superiority is established. B5 exercises "
+            "encrypted candidate staging and local-data preservation across arrival orders, "
+            "not timestamp LWW, automatic import/install or general conflict resolution. "
+            "Owner candidate retrieval/import/install UX and key migration remain unfinished. "
+            "Live hardware and owner-gated product comparisons remain separate."
         ),
         "environment": {
             "python_version": platform.python_version(),
@@ -1239,7 +1196,7 @@ def render_markdown_report(
     lnk_sdb = _repo_link(base_dir, "agents/core/settings_db.py")
 
     lines = [
-        "# Nerva vs Hermes / OpenClaw — Subsystem Differentiator Benchmarks (2026-11-14)",
+        "# Nerva — Offline Subsystem Invariant Measurements (2026-11-14)",
         "",
         f"> **Scope & Honesty Disclosure (`{report['execution_mode']}` · "
         f"`live_network_llm_calls = {report['live_network_llm_calls']}`)**",
@@ -1247,7 +1204,8 @@ def render_markdown_report(
         "> Every measurement in this report was produced by executing Nerva's real production Python",
         f"> subsystems in-process via [`scripts/bench_nerva_differentiators.py`]({lnk_runner})",
         "> against deterministic synthetic LLM/transport backends (`JARVIS_TESTING=1`, temporary sandbox).",
-        "> These numbers prove **architectural & security invariants, failover latency, and asyncio fan-out speedup**.",
+        "> These fixtures check bounded subsystem invariants and record local timing; they are not product comparisons.",
+        "> Baselines are illustrative synthetic patterns, including declared constants. Hermes/OpenClaw are not executed.",
         "> They do **not** claim live cloud provider throughput or owner-gated live desktop/browser head-to-head",
         f"> task win-rates, which remain governed separately by [`docs/HARDWARE_BENCHMARKS.md`]({lnk_hw})",
         f"> and [`docs/HERMES_HEAD_TO_HEAD.md`]({lnk_h2h}).",
@@ -1261,9 +1219,9 @@ def render_markdown_report(
         "",
         "---",
         "",
-        "## Executive Comparison Matrix",
+        "## Fixture Outcomes",
         "",
-        "| # | Differentiator Workload | Nerva Subsystem | Nerva Measured Outcome | Baseline Pattern (Hermes / OpenClaw Default) | Status |",
+        "| # | Fixture Workload | Nerva Subsystem | Recorded Outcome | Illustrative Baseline (not competitor measurement) | Status |",
         "|---|---|---|---|---|---|",
         (
             f"| 1 | **Resilient Hybrid Committee** (4 proposers, 1 fault/timeout, `min_quorum=3`) "
@@ -1295,10 +1253,10 @@ def render_markdown_report(
             f"| {'PASS' if b4['passed'] else 'FAIL'} |"
         ),
         (
-            f"| 5 | **Secret-Stripped E2E Cross-Device Sync** (`{m5['seeded_secret_credentials']}` seeded secrets, `{m5['ciphertext_bitflip_trials']}` ciphertext bit-flips, `3!` LWW arrival orders) "
-            f"| [`agents/core/e2e_sync.py`]({lnk_e2e}) + [`settings_db.py`]({lnk_sdb}) (`H040`; `(max_ts, device_id)` sort via harness `_lww_order_manifests`) "
-            f"| `{m5['nerva_leaked_secret_keys_in_envelope']}` leaked secrets; `{m5['nerva_authenticated_tamper_rejection_rate'] * 100:.0f}%` authenticated ciphertext tamper rejection (`{m5['cipher']}`); `{m5['nerva_lww_convergence_rate'] * 100:.0f}%` LWW convergence via caller `_lww_order_manifests` over `E2ESync` `(ts, device)` envelope metadata (`DirectorySyncTransport` orders lexically by device ID; unsorted `pull_state()` mailbox follows arrival order) + hostile skill quarantined "
-            f"| Raw config sync leaks `{m5['baseline_raw_config_secret_leak_count']}` secrets; unsorted arrival-order ingestion (matching un-sorted mailbox `apply_pull`) converges on `{m5['baseline_arrival_order_convergence_rate'] * 100:.1f}%` of permutations "
+            f"| 5 | **Encrypted Candidate Staging & Local Preservation** (`{m5['seeded_secret_credentials']}` seeded secrets, `{m5['ciphertext_bitflip_trials']}` bit-flips, `{m5['arrival_permutations_tested']}` arrival orders) "
+            f"| [`agents/core/e2e_sync.py`]({lnk_e2e}) + [`settings_db.py`]({lnk_sdb}) (`H040`; `stage_only`) "
+            f"| `{m5['nerva_leaked_secret_keys_in_envelope']}` leaked secrets; `{m5['nerva_authenticated_tamper_rejection_rate'] * 100:.0f}%` tamper rejection; identical sets of `{m5['staged_candidates_per_permutation']}` encrypted candidates; `{m5['local_edit_preservation_rate'] * 100:.0f}%` local preservation and restart/replay idempotence; no automatic apply/install "
+            f"| Raw config copying would expose `{m5['baseline_raw_config_secret_leak_count']}` fixture credentials; illustrative only "
             f"| {'PASS' if b5['passed'] else 'FAIL'} |"
         ),
         "",
@@ -1308,11 +1266,11 @@ def render_markdown_report(
         "",
         "### 1. Resilient Hybrid Committee (`H032`)",
         "- **Workload:** 4-proposer committee (`local`, `local-deep`, `ollama:qwen2.5-coder`, `ollama:faulty-node`) with `min_quorum=3`, `timeout_s=2.0`, and `max_tokens=256` across 4 rounds (`timeout_fault`, `transport_exception`, `degraded_reply`, and `all_healthy`), plus a below-quorum negative control (`2/4 < 3` failing closed with `RuntimeError`).",
-        "- **Why Nerva wins:** `MoACommitteeBackend` dispatches all proposers concurrently via `asyncio.gather` with per-proposer `asyncio.wait_for` bounds and `is_degraded_reply` filtering, synthesizing verified drafts as soon as quorum holds instead of blocking sequentially and failing on the first broken endpoint.",
+        "- **Observed contract:** `MoACommitteeBackend` dispatches all proposers concurrently via `asyncio.gather` with per-proposer `asyncio.wait_for` bounds and `is_degraded_reply` filtering, waiting for all proposer attempts before applying the quorum threshold. Model residency is outside the generation timeout; early-quorum latency is not demonstrated.",
         "",
         "### 2. Controllable Cloud Privacy (`H513`)",
         "- **Workload:** 4 sensitive prompts (medical, IBAN/tax, home security PIN log, M&A clause) executed against a hybrid preset containing an unacknowledged `openai-compatible` cloud member (`data_policy=\"unknown\"`) behind a local aggregator, alongside `LOCAL_ONLY_AGENTS` (`ultron`) and a pure-local `local-moa` preset.",
-        "- **Why Nerva wins:** `MoACommitteeBackend._authorize_all_members()` enforces `data_handling.authorize()` across **every** proposer and the aggregator prior to any network/backend call. Unconsented cloud members cannot hide behind a local synthesizer (`0` calls, `0` tokens leaked).",
+        "- **Observed contract:** `MoACommitteeBackend._authorize_all_members()` enforces `data_handling.authorize()` across **every** proposer and the aggregator prior to any network/backend call. Unconsented cloud members cannot hide behind a local synthesizer (`0` calls, `0` tokens leaked).",
         "",
         "### 3. Surviving-Host Room Failover & Split-Brain Fencing (`H657`)",
         "- **Workload:** Primary `host-alpha` writes 12 room turns, exports hash-chained verbatim log pages (`SHA-256` over `(room_id, seq, epoch, host, kind, role, agent, text, prev_digest)`), and replicates to `host-beta` (verifying duplicate idempotency, `409 sequence_gap`, and `409 log_divergence`). `host-beta` promotes with `confirm=True` to `epoch=2`, signs an HMAC-SHA256 fencing proof, and fences returning `host-alpha` (`403` on forged signature, `409 room_fenced` on all 8 post-fence stale writes).",
@@ -1320,9 +1278,10 @@ def render_markdown_report(
         "### 4. Identity-Scoped Browser Broker (`H086`)",
         "- **Workload:** `BrowserControlBroker(allow_loopback_http=False)` tested against 8 SSRF/scheme vectors (`169.254.169.254`, `127.0.0.1`, `[::1]`, `localhost`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `file://`), 6 cross-principal session/command/ticket probes between `owner-alice` and `peer-bob`, plain-HTTP transport refusal (`403 https_required`), and 6 one-shot upload/download ticket replay attempts (`410 ticket_already_used`).",
         "",
-        "### 5. Secret-Stripped E2E Cross-Device Sync (`H040`)",
-        "- **Workload & Cipher Note:** `E2ESync` (`agents/core/e2e_sync.py`) encrypts artefacts using authenticated **Fernet (`AES-128-CBC + HMAC-SHA256`)** with keys derived via `PBKDF2-HMAC-SHA256` (`390,000` iterations) — not AES-GCM — providing identical `100%` authenticated-ciphertext bit-flip tamper rejection across IV, ciphertext blocks, and MAC tag (`8/8` tampered envelopes rejected). `settings_db.export_settings()` strips all `SECRET_KEYS`, `ROUTE_ONLY` consent rows, and credential-shaped strings (`0` secrets in envelope), and `detect_injection_normalized` quarantines hostile synced `SKILL.md` payloads before disk write.",
-        f"- **LWW Ordering Attribution Note:** Production `E2ESync.encrypt_record()` stamps `(ts, device)` metadata on ciphertext envelopes, enabling canonical `(max_ts, device_id)` LWW sorting. In this benchmark, that `(max_ts, device_id)` sort is exercised via `_lww_order_manifests` in [`scripts/bench_nerva_differentiators.py`]({lnk_runner}) (`6/6` = `100%` convergence across `3!` arrival permutations), whereas production `DirectorySyncTransport.fetch_manifests()` orders spool files lexically by device ID (`manifest_<device>.json`) and `E2ESync.pull_state()` mailbox iteration without caller sorting follows arrival order (`{m5['baseline_arrival_order_convergence_rate'] * 100:.1f}%` on the 3-peer tie-break fixture).",
+        "### 5. Encrypted Candidate Staging & Local Preservation (`H040`)",
+        "- **Crypto workload:** Fernet (`AES-128-CBC + HMAC-SHA256`), secret-free export, hostile skill rejection and eight ciphertext bit-flips. Valid config/skill candidates remain encrypted in a private SQLite inbox; no target skill installation or settings mutation occurs.",
+        "- **Preservation workload:** Three devices contribute six candidates across all six arrival permutations, with deliberately misleading outer timestamps/device labels/digests. Local settings and skill bytes remain unchanged. After further owner edits and node recreation, replay returns the same candidate set without reopening application.",
+        "- **Limits:** No LWW winner, automatic conflict reconciliation, owner candidate retrieval/import/install UI, key migration or skill-loader admission is implemented by this fixture. Room failover above likewise demonstrates explicit promotion/demotion, not automatic partition fencing.",
         "",
         "## Reproducing & Verifying",
         "",
@@ -1435,7 +1394,7 @@ def _print_summary(report: dict[str, Any]) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Run or verify the Nerva > Hermes/OpenClaw subsystem differentiator benchmarks."
+        description="Run or verify offline Nerva subsystem invariant fixtures (not competitor measurements)."
     )
     parser.add_argument(
         "--json-out",

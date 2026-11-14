@@ -9,6 +9,7 @@ type SyncPeer = {
 };
 
 type SyncStatus = {
+  inbound_mode?: 'stage_only';
   enabled: boolean;
   available: boolean;
   backend: string;
@@ -20,6 +21,27 @@ type SyncStatus = {
   last_push_at?: number | null;
   last_pull_at?: number | null;
 };
+
+function pullReceipt(res: any): string {
+  const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
+  if (res?.enabled === false) return `Sync disabled (${res?.reason || 'off'}).`;
+  if (res?.inbound_mode === 'stage_only') {
+    const configs = Array.isArray(res.config_pending_import) ? res.config_pending_import.length : 0;
+    const skills = Array.isArray(res.skills_pending_install) ? res.skills_pending_install.length : 0;
+    const errors = Array.isArray(res.staging_errors) ? res.staging_errors.length : 0;
+    const invalidConfig = Array.isArray(res.config_errors) ? res.config_errors.length : 0;
+    const quarantined = Array.isArray(res.skills_quarantined) ? res.skills_quarantined.length : 0;
+    return `${count(configs, 'configuration candidate')} and ${count(skills, 'skill candidate')} staged for review. `
+      + (configs + skills ? 'Import and installation are pending.' : 'No candidates are pending from this pull.')
+      + (errors ? ` ${count(errors, 'candidate')} could not be staged.` : '')
+      + (invalidConfig ? ` ${count(invalidConfig, 'configuration validation issue')}.` : '')
+      + (quarantined ? ` ${count(quarantined, 'skill')} quarantined.` : '');
+  }
+  if (!res?.ok) return `Pull did not finish (${res?.reason || 'no receipt'}).`;
+  return `Server reported ${count(res.config_applied ?? 0, 'configuration change')} and `
+    + `${count(Array.isArray(res.skills_applied) ? res.skills_applied.length : 0, 'skill transfer')}; `
+    + 'installation status is unverified.';
+}
 
 export function DeviceSyncPanel() {
   const [status, setStatus] = useState<SyncStatus | null>(null);
@@ -61,11 +83,7 @@ export function DeviceSyncPanel() {
   const runPull = async () => {
     try {
       const res: any = await apiPost('/api/sync/pull', { apply_device_state: true });
-      setNote(
-        res?.ok
-          ? `pulled ${res.records_decrypted ?? 0} records (config=${res.config_applied ?? 0}, skills=${(res.skills_applied || []).length})`
-          : `sync disabled (${res?.reason || 'off'})`,
-      );
+      setNote(pullReceipt(res));
       refresh();
     } catch (err: any) {
       setNote(String(err?.message || 'pull failed'));
@@ -75,7 +93,9 @@ export function DeviceSyncPanel() {
   const runSyncNow = async () => {
     try {
       const res: any = await apiPost('/api/sync/now', {}, { admin: true });
-      setNote(res?.ok ? 'bidirectional sync completed' : `sync disabled (${res?.reason || 'off'})`);
+      setNote(res?.enabled === false ? `Sync disabled (${res?.reason || 'off'}).` : res?.pull
+        ? `${res?.ok ? '' : 'Sync incomplete. '}${pullReceipt(res.pull)}`
+        : `Sync request returned no incoming-change receipt (${res?.reason || 'unavailable'}).`);
       refresh();
     } catch (err: any) {
       setNote(String(err?.message || 'sync now failed'));
@@ -142,6 +162,12 @@ export function DeviceSyncPanel() {
         status: <strong>{status?.enabled ? 'enabled' : 'disabled'}</strong> ({status?.backend || 'no-key'}) · device:{' '}
         <code>{status?.device_label || status?.device_id || 'local'}</code>
       </div>
+
+      {status?.inbound_mode === 'stage_only' && (
+        <p style={{ fontSize: 11, color: 'var(--ink-2)' }}>
+          Incoming changes are staged for review; automatic import is paused.
+        </p>
+      )}
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
         <button className="tool-btn" onClick={runSyncNow}>
