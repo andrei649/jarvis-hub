@@ -91,7 +91,15 @@ Stdlib-only, so it runs before any dependency exists, and tested with fakes
 `python scripts/bootstrap.py --json` prints the whole report; exit status is 1 on the
 first failed step. Flags: `--skip-smoke`, `--unlocked`, `--root <checkout>`.
 
-A missing, non-file or inaccessible lockfile never selects loose requirements automatically. Restore the expected checkout/lockfile and retry; only an explicit `--unlocked` selects the `.txt` input. The final smoke accepts only JSON boolean `true` as its `ok` value; strings or numbers are failures. These rules describe `scripts/bootstrap.py` and its delegating wrappers, not separate legacy Windows installation/update scripts.
+Default bootstrap dependency installation stops if the lockfile is missing, is not
+a regular file, or its metadata check fails. It does not automatically select the
+loose requirements file; that requires explicit `--unlocked`. A regular lockfile
+that pip cannot read still reports `pip_install_failed`. This behavior belongs to
+`scripts/bootstrap.py` and its `install.sh` / `INSTALL.bat` wrappers; `UPDATE.bat`
+has a separate dependency installation path.
+
+The smoke child must exit successfully and report JSON `"ok": true`. Truthy
+strings, numbers, and objects do not count as a successful smoke result.
 
 ## Check-up: `doctor`
 
