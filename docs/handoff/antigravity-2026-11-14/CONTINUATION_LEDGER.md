@@ -52,3 +52,39 @@ Acest document este raportul cumulativ unic menținut lot cu lot conform mandatu
 ### Următorul pas imediat (Lot 2)
 
 - Modernizarea regulilor de proces învechite din `AGENTS.md` cu justificare datată `2026-11-14`, urmată de închiderea end-to-end a primului lot de suprafețe `UNCALLED_BACKLOG` + contracte Hermes `missing`/`partial` (Sub-agents live transcript/result/claim `H401`, Nous OAuth HUD `H277`, MCP elicitation answer `H553`, A2A peer outbound `H562`, dead-targets clear `H081` și primele contracte `missing`).
+
+---
+
+## Lot 2 — Modernizare proces, remediere CI Ubuntu, 13 rute HUD `UNCALLED_BACKLOG` (`54 -> 41`), și închiderea contractelor `H690` + `H032` (`missing: 8 -> 6`)
+
+- **Ramură:** `antigravity/lot2-hud-reachability-h690-h032-20261114` (peste `antigravity/reconcile-v70-v81-20261114` cu fixul CI Ubuntu backportat pe PR `#1365`)
+- **Model activ:** **Gemini 4 Carbon (High)**
+
+### Ce a fost livrat end-to-end
+
+1. **Modernizare reguli de proces (`AGENTS.md`) și remediere CI `ubuntu-latest` pe PR `#1365`:**
+   - Actualizat `AGENTS.md` cu notă datată `2026-11-14` care retrage interdicțiile temporare local-only din `2026-09-27` / `2026-11-04` și pin-urile vechi de model Codex, păstrând integral invariantele de securitate, consimțământ H513, Action Kernel, integritate date și interdicțiile de merge/deploy/`gh pr ready`.
+   - Fixat `tests/h441_native_fixture.py` (`_register_undo_callback` compatibil simultan cu `pytest 8.x` pe Ubuntu CI și `pytest 9+`) și `agents/core/channels/slack.py` (`WebClient = None`, `SocketModeClient = None`, `SocketModeResponse` fallback când `slack_sdk` opțional lipsește).
+2. **13 rute `UNCALLED_BACKLOG` conectate complet în 6 suprafețe HUD v2 (`54 -> 41`):**
+   - `SubAgentsPanel` (`frontend/src/gap.tsx`): inspecție incrementală transcript (`/api/subagents/{id}/transcript`), rezultat final (`/api/subagents/{id}/result`) și `claim completed` (`/api/subagents/claim`) — `-3` rute (`H401`).
+   - `A2AInboxPanel` (`frontend/src/gap.tsx`): registru outbound peers cu adăugare și revocare (`DELETE /api/a2a/peers/{name}`) — `-1` rută (`H562`).
+   - `OAuthPanel` (`frontend/src/gap.tsx`): ciclu complet cont Nous Portal (`GET /api/oauth/nous/status`, `POST /api/oauth/nous/{login,poll,logout}`) — `-4` rute (`H277`).
+   - `McpPanel` (`frontend/src/panels/mcp.tsx` + `agents/core/mcp/host_requests.py` + `agents/core/routers/mcp.py`): expunere `elicitation_cards` și formular tipizat `ElicitationForm` pe `POST /api/admin/mcp/elicitations/{card_id}/answer` — `-1` rută (`H553`).
+   - `ChannelDeliveriesDisclosure` (`frontend/src/panels/channel-deliveries.tsx`): afișare `dead_targets` și control `lift gone flag` pe `POST /api/channels/dead-targets/clear` — `-1` rută (`H081`).
+   - `JobsPanel` (`frontend/src/panels/jobs.tsx`): confirmare incidente (`POST /api/jobs/incidents/{incident_id}/ack`), istoric rulări cross-job (`GET /api/jobs/runs`) și editor KV notepad (`GET/PUT/DELETE /api/jobs/{job_id}/notepad/keys`) — `-3` rute (`H015`).
+3. **Contractul Hermes `H690` (`missing -> equivalent`, aria `upstream-delta`):**
+   - Implementat `agents/core/macos_tcc_anchor.py` (stdlib-only, compatibil gramatical Python 3.8+) și conectat în `scripts/bootstrap.py` și `agents/core/hub_update_apply.py`: materializare binare reale Python în `.venv/bin`, hardlink/copie `libpython` + `Resources/Info.plist`, semnare ad-hoc deterministă `codesign --identifier ai.nerva.python` pentru păstrarea permisiunilor macOS TCC peste upgrade-uri Homebrew/uv și verificare la boot fără auto-resemnare pe arbori neproprietari.
+4. **Contractul Hermes `H032` (`missing -> equivalent`, aria `cli`) + diferențiator Nerva *Resilient Hybrid Committee*:**
+   - Implementat `agents/core/llm/moa.py` + `agents/core/routers/moa.py` + `agents/cli/moa.py` + `frontend/src/panels/moa-presets.tsx`: preseturi persistente `0o600` (`moa:<name>`, `2..6` proposeri, `min_quorum`, `timeout_s`, `temperature`), execuție paralelă reală cu quorum rezilient la căderi parțiale de provideri, verificare strictă de consimțământ H513 (`authorize_data_handling`) pe *fiecare* membru al comitetului (blocând proposeri cloud neconsimțiți ascunși în spatele unui agregator local), respectare `JARVIS_STRICT_LOCAL` și `approved_models`, CLI `nerva moa list|set|delete|activate|run` (online + `--offline`), și panou HUD complet cu telemetrie măsurată (`parallel_speedup`, latență, quorum).
+
+### Măsurători și porți verificate local
+
+- **Hermes 697 status (`scripts/hermes_status.py summary` & `check`):** `173 equivalent` (`+2`), `482 partial`, `6 missing` (`-2`: închise `H690` și `H032`), `36 excluded`, `0 needs_review`.
+- **HUD `UNCALLED_BACKLOG`:** redus de la `54` la `41` (`-13` rute), cu `881` rute totale sincronizate în `route_surface.json`, `openapi_surface.json`, `route_auth.json`, `14-api-surface-sweep.md` și `frontend/src/api/schema.gen.ts`.
+- **Performanță diferențiator MoA măsurată în test determinist (`tests/test_h032_moa_presets.py`):** execuția paralelă a 3 proposeri cu latență individuală `120ms` finalizează în `<210ms` față de `360ms` secvențial (`parallel_speedup >= 1.7x`), iar căderea unui proposer sub pragul `min_quorum=2` păstrează sinteza validă fără pierderea turn-ului.
+- **Contoare proiect sincronizate (`scripts/status_sync.py`):** `backend: 36711`, `frontend: 3195`, `mobile: 420`, `routes: 881`, `agents: 18`.
+- **Teste și analiză statică rulate efectiv local:** `ruff check .`, `semgrep`, `bandit`, `development_preflight.py --frontend --smoke --json`, suitele backend `H690`/`H032`/CLI/paritate/OpenAPI/auth și suitele Vitest pe toate cele 7 suprafețe HUD modificate + build complet `frontend` (`agents/web/v2` + `agents/web/workspace`). Limitările oneste rămân neschimbate: rulările externe live pe provideri comerciali și acceptanța pe dispozitive mobile fizice nu sunt pretinse din testele locale.
+
+### Următorul pas imediat (Lot 3)
+
+- Reducerea contractelor Hermes `missing` de la `6` la **`0`** (`H040` device config/skills E2E sync + CLI/HUD, `H086` browser-control broker + one-shot artifact store, `H657` room replica ingestion + epoch fencing promote/demote, și triada `H214` + `H238` + `H590` companion/pet system peste CLI, TUI half-block și HUD/desktop).

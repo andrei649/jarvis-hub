@@ -179,7 +179,7 @@ The backlog itself has confirmed-stale rows; executing a stale plan wastes every
 
 ### Phase 3 — The reachability wave (weeks 3–8) — the DRA headline
 
-54 shipped, user-facing routes have **no graphical client caller** (DRA-15/36 — the CI-enforced
+41 shipped, user-facing routes have **no graphical client caller** (DRA-15/36 — the CI-enforced
 `UNCALLED_BACKLOG` punch list in `tests/test_hud_v2_parity.py`; it held 79 before this wave, and
 `tests/test_doc_reference_integrity.py` keeps this number honest). The owner-jobs routes under
 `/api/jobs` added 2026-09-07 (Hermes absorption, wave 2) were on this list for one commit — the
@@ -190,16 +190,16 @@ all (`agents/web/*.html` was missing from the gate's client globs, so `brain.htm
 `/api/brain/summary` did not count). The 14 remaining at that earlier milestone were annotated with why:
 six are deliberate refusals (an agent-produced input, a route that swaps nothing, two dead by
 construction, two duplicates of already-wired surfaces) and eight are deliberately-open UI work.
-The four Nous account routes have a working owner CLI; HUD/native account controls remain open.
 HA-4i-S1 adds CLI extension inspection; its `/api/plugins/extensions` view still needs a
 dedicated HUD/mobile caller, separate from the existing acquisition panel.
-The local Kanban CLI/chat/backend integration adds 37 explicitly tracked graphical-client gaps:
+The local Kanban CLI/chat/backend integration adds explicitly tracked graphical-client gaps:
 board and task views, attachments, reviews, runs, diagnostics, configuration and other donor
 surfaces still need their HUD/native consumers. Signed-provider installation and credential
-routes also remain on this list. These additions and later wired callers are tracked in the
-current punch list of 54 routes (2026-11-10: + the A2A peer outbound route and the MCP elicitation
-answer route, whose HUD forms are still open; + G18's sub-agent transcript, result and claim routes,
-reached through `/delegations` in chat until a HUD panel tails them); backend routes and CLI access do not establish graphical parity.
+routes also remain on this list. On 2026-11-14, 13 routes left the punch list (`54 -> 41`) with live
+HUD consumers (`OAuthPanel` Nous Portal status/start/poll/logout, `SubAgentsPanel` transcript/result/claim,
+`A2AInboxPanel` outbound peer send, `MCPPanel` elicitation answer, `ChannelDeliveriesPanel` dead-target clear,
+and `JobsPanel` run history, completion ack and KV notepad keys); native mobile controls remain tracked separately,
+and backend routes/CLI access alone never establish graphical parity.
 A shrinking number is only good news when it shrinks for the right reason — an earlier pass of this
 sprint moved six routes into `MACHINE_FACING` to get the gate green, and an adversarial review
 caught that four of those reasons were false; they are back on the list. DRA-15 and DRA-36 both stay

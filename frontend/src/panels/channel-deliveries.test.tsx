@@ -112,4 +112,30 @@ describe('owner delivery receipts in Channels', () => {
     fireEvent.click(screen.getByRole('button', { name: /refresh receipts/i }));
     await screen.findByText(/could not be checked/i);
   });
+
+  it('allows lifting the gone flag on a listed dead target (H081)', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    let deadRows = [{ channel: 'telegram', target: 'chat-77', reason: 'bot_blocked', marked: 1_700_000_100 }];
+    global.fetch = vi.fn(async (url: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const u = String(url);
+      calls.push({ url: u, init: init ?? {} });
+      if (u.includes('/api/channels/dead-targets/clear')) {
+        deadRows = [];
+        return new Response(JSON.stringify({ cleared: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      if (u.includes('/api/channels/deliveries')) {
+        return new Response(JSON.stringify({ ...VIEW, dead_targets: deadRows }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      return new Response(JSON.stringify(CONFIG), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+
+    render(<ChannelsConfigPanel />);
+    await openReceipts();
+    await screen.findByText(/telegram → chat-77/);
+    fireEvent.click(screen.getByRole('button', { name: 'lift gone flag' }));
+    await screen.findByText(/lifted gone flag for telegram → chat-77/);
+    const clearCall = calls.find((c) => c.url.includes('/api/channels/dead-targets/clear'));
+    expect(clearCall).toBeTruthy();
+    expect(JSON.parse(String(clearCall!.init.body))).toEqual({ channel: 'telegram', target: 'chat-77' });
+  });
 });

@@ -206,6 +206,8 @@ def build_parser() -> argparse.ArgumentParser:
     configure_mcp_catalog(verbs)
     from .rooms import register_parser as configure_rooms
     configure_rooms(verbs)
+    from .moa import register_parser as configure_moa
+    configure_moa(verbs)
 
     from agents.core.kanban.cli_parser import build_parser as configure_kanban
     configure_kanban(verbs)
@@ -7521,6 +7523,12 @@ def cmd_hooks(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+def cmd_moa(ns: argparse.Namespace, ctx: Context) -> int:
+    from .moa import run as run_moa
+
+    return run_moa(ns, ctx)
+
+
 _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "secrets": cmd_secrets,
     "kanban": cmd_kanban,
@@ -7552,6 +7560,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     # argparse names the verb as typed, so each alias dispatches too.
     **dict.fromkeys(("journey", *_JOURNEY_ALIASES), cmd_journey),
     "provider": cmd_custom_provider,
+    "moa": cmd_moa,
     "rooms": cmd_rooms,
     "mcp": cmd_mcp,
     "webhook": cmd_webhook,

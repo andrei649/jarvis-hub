@@ -126,6 +126,24 @@ def _preflight_venv(root: Path) -> None:
               file=sys.stderr)
 
 
+def _anchor_macos_venv(venv_dir: Path, python: str = sys.executable) -> dict:
+    """Best-effort macOS TCC interpreter anchoring (H690). Stdlib-only and never raises."""
+    if sys.platform != "darwin":
+        return {"ok": True, "anchored": False, "reason": "not_macos"}
+    helper = Path(__file__).resolve().parent.parent / "agents" / "core" / "macos_tcc_anchor.py"
+    if not helper.is_file():
+        return {"ok": True, "anchored": False, "reason": "helper_missing"}
+    try:
+        spec = importlib.util.spec_from_file_location("_nerva_bootstrap_macos_tcc_anchor", helper)
+        if spec is None or spec.loader is None:
+            return {"ok": True, "anchored": False, "reason": "spec_unavailable"}
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.anchor_venv_interpreter(venv_dir, python=python)
+    except Exception:
+        return {"ok": False, "anchored": False, "reason": "anchor_load_failed"}
+
+
 def ensure_venv(root: Path, python: str = sys.executable, run=subprocess.run) -> tuple:
     """Create ``<root>/.venv`` with *python* unless it already exists.
 
@@ -139,6 +157,7 @@ def ensure_venv(root: Path, python: str = sys.executable, run=subprocess.run) ->
     if os.path.lexists(root / VENV_DIR):
         _preflight_venv(root / VENV_DIR)
     if target.exists():
+        _anchor_macos_venv(root / VENV_DIR, python=python)
         return target, False
     proc = run([python, "-m", "venv", str(root / VENV_DIR)], check=False)
     rc = getattr(proc, "returncode", 1)
@@ -146,6 +165,7 @@ def ensure_venv(root: Path, python: str = sys.executable, run=subprocess.run) ->
         raise BootstrapError("venv_create_failed", f"python -m venv exited {rc}")
     if not target.exists():
         raise BootstrapError("venv_create_failed", f"no interpreter at {target}")
+    _anchor_macos_venv(root / VENV_DIR, python=python)
     return target, True
 
 

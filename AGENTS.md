@@ -20,24 +20,21 @@
 
 ## Safe task start
 
-**Owner directive, 2026-09-27:** `selfdev-policy.json` now authorizes autonomous
-local development on every repository path, including the kernel, security,
-workflows, and this control plane. No additional owner approval is required for
-local implementation, tests, or fixes. The classifier reports this separately as
-`autonomous_local_development`; `decision` and `autonomous_merge` continue to
-describe remote integration eligibility. The protected-path restrictions below
-apply to unattended merge/deploy, not to this owner-authorized local work.
-Keep this sprint local: no push, merge, or deployment until the owner requests
-publication. Tests, truthful evidence, and preservation of existing work still apply.
-
-**Current Hermes campaign, 2026-11-04:** follow the active workflow in
-[`docs/hermes/autonomous-development-objective.md`](docs/hermes/autonomous-development-objective.md)
-and the cumulative `docs/hermes/CAMPAIGN_HANDOFF.md`. Integrate the current batch
-first, then complete the frozen 697-contract objective; interrupt only for a
-concrete blocking security, correctness, or build defect. This campaign is local
-only: **no stage, commit, push, merge, deploy, PR update, paid activation, or
-external schedule change**. Do not silently resume a paused schedule. The
-publication workflow below describes a separate, later owner-authorized lane.
+**Owner directives, 2026-09-27 → 2026-11-14:** `selfdev-policy.json` authorizes autonomous
+development on every repository path, including the kernel, security, workflows, and this
+control plane (`autonomous_local_development` in `scripts/selfdev_policy.py`; `decision` and
+`autonomous_merge` continue to classify remote integration eligibility). Under the
+**2026-11-14 Antigravity handoff** ([`docs/handoff/antigravity-2026-11-14/START_HERE.md`](docs/handoff/antigravity-2026-11-14/START_HERE.md)),
+the older `2026-09-27` / `2026-11-04` local-only restrictions ("no stage, commit, push, PR
+update") are retired: autonomous implementation, commits, pushes, and **draft PRs**
+(`gh pr create --draft`) are authorized to complete the V70/V81 reconciliation, `BACKLOG.md`,
+the 697 Hermes capability contracts (`docs/hermes/autonomous-development-objective.md`), and
+measured Nerva product differentiators without pausing on routine technical decisions.
+**Hard limits remain in force:** **no merge (`gh pr merge`), no marking PRs ready-for-review
+(`gh pr ready`, since non-draft green PRs are eligible for hourly auto-merge), no deploy, no
+overwriting existing open PR branches (`#1359`–`#1364`), no paid service activation, and no
+silent resumption of paused schedules.** Tests, security boundaries, data preservation, and
+truthful evidence reporting remain strictly binding.
 
 1. Inspect `git status`, the current branch, the requested scope, and changes already present.
 2. Preserve user and other-agent changes. Never reset, overwrite, stage, or reformat unrelated work.
@@ -52,9 +49,8 @@ publication workflow below describes a separate, later owner-authorized lane.
 
 ## ⚡ Max mode — protocolul de finisare
 
-Protocolul Max/PR/Spark de mai jos aparține lane-ului separat de publicare; nu
-schimbă fluxul local al campaniei Hermes din 2026-11-04 și nu introduce un Spark
-opțional sau un PR în lotul ei curent.
+Protocolul Max/PR/Spark de mai jos se aplică livrărilor publicate (inclusiv PR-urilor draft
+autorizate prin mandatul din 2026-11-14; fără merge sau deploy).
 
 Codename-ul **„Max"** (orice casing, oriunde în repo) pornește sau continuă **`MAX.md`** —
 protocolul care duce tot ce promit docurile în produsul final. Fără întrebări, fără explicații;
@@ -107,9 +103,10 @@ raportarea onestă a ceea ce s-a rulat rămâne.)*
 
 ## Delivery workflow
 
-The remote branch/PR instructions in this section apply only when a separate
-publication request authorizes them. They do not override the local-only Hermes
-campaign above. Keep their trusted-policy, check and release protections intact.
+**Updated 2026-11-14:** Under the active Antigravity handoff mandate, feature branches, commits,
+pushes, and **draft PRs** (`--draft`) are authorized; **do not merge (`gh pr merge`), mark PRs
+ready-for-review (`gh pr ready`), or deploy.** Keep all trusted-policy, check, and release
+protections below intact.
 
 - Work on a feature branch and use a PR into `main`. The hourly auto-merge sweep may merge any
   **non-draft** PR only when the same head satisfies all three conditions: GitHub reports `CLEAN`,
@@ -156,28 +153,24 @@ campaign above. Keep their trusted-policy, check and release protections intact.
 
 ## Coordination and leases
 
-### Owner-approved resource plan (2026-09-27)
+### Owner-approved resource plan (2026-09-27, updated 2026-11-14)
 
-- The owner authorizes the coordinator to delegate independent Nerva/Hermes work.
-  Use at most two concurrent implementation agents, explicitly `gpt-6-sol` with
-  `high` reasoning, with separate file ownership and no subdelegation in the
-  current Hermes campaign.
-- Keep the total at four active agents including the coordinator. Subagents must
-  not delegate. The coordinator owns scope, shared interfaces, integration and
-  critical review. Its model/effort stays as selected in the app; prefer Astra
-  High for coordination and reserve Ultra for a demonstrated difficult problem.
-- Give each agent a short self-contained brief with exact owned files, acceptance
-  tests and dependencies. Do not copy the entire conversation or inventory.
-  Assign a single writer per file; settle shared contracts before parallel edits.
-- Run meaningful focused regressions during implementation, then the relevant
-  integration suites after the batch. Run expensive full suites serially at a
-  milestone; repeat checks only for changed code, failures or unresolved concerns.
-- Escalate a concrete blocker or risk instead of repeating speculative review
-  loops. Record the model/effort, tests, delivered behavior and unfinished work per
-  batch. Subscription usage is account-wide; do not claim exact per-agent savings
-  without measured attribution.
-- Work remains local. Delegation does not authorize push, merge, deployment,
-  paid providers, or changes to unrelated projects or global Codex configuration.
+- **2026-11-14 update:** Development transferred from Codex (`gpt-6-sol` / `Astra High`) to
+  Antigravity **Carbon High**, retiring the Codex-specific model pins and local-only restriction
+  from 2026-09-27 while preserving disciplined file ownership and verification discipline.
+- The coordinator owns scope, shared interfaces, integration, critical review, commits, pushes,
+  and draft PRs. When delegating to subagents, assign disjoint file ownership (single writer per
+  file), short self-contained briefs, and explicit acceptance tests; settle shared contracts
+  before parallel edits.
+- Run meaningful focused regressions during implementation, then the relevant integration suites
+  after each batch. Run expensive full suites serially (never contend `semgrep`, `vitest`, and
+  `pytest` concurrently on local CPU); repeat checks only for changed code, failures, or
+  unresolved concerns.
+- Escalate concrete blockers or security risks instead of speculative review loops. Record the
+  delivered behavior, tests actually run, and remaining work per batch in
+  `docs/handoff/antigravity-2026-11-14/CONTINUATION_LEDGER.md`.
+- Delegation never authorizes merge, ready-for-review promotion, deployment, paid provider
+  activation, or changes to unrelated projects.
 
 - GitHub-backed path-prefix leases are planned, but no remote lease service or enforcement exists
   yet. Until it does, the only honest lease state is `none`; inspect open work and coordinate

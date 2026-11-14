@@ -7705,6 +7705,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/llm/moa/presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Moa List Presets
+         * @description List saved MoA committee presets, active preset name, and metadata-only run telemetry.
+         */
+        get: operations["moa_list_presets_api_llm_moa_presets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/llm/moa/presets/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Moa Put Preset
+         * @description Create or update a named MoA committee preset.
+         */
+        put: operations["moa_put_preset_api_llm_moa_presets__name__put"];
+        post?: never;
+        /**
+         * Moa Delete Preset
+         * @description Delete a named MoA committee preset (clears active if it was active).
+         */
+        delete: operations["moa_delete_preset_api_llm_moa_presets__name__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/llm/moa/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Moa Set Active
+         * @description Activate a saved MoA committee preset globally, or clear active preset when name is null/blank.
+         */
+        post: operations["moa_set_active_api_llm_moa_active_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/llm/moa/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Moa Run Preset
+         * @description Execute one governed MoA committee synthesis turn and return answer + quorum telemetry.
+         */
+        post: operations["moa_run_preset_api_llm_moa_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/oauth/status": {
         parameters: {
             query?: never;
@@ -17990,6 +18074,57 @@ export interface components {
              * @default false
              */
             take_over: boolean;
+        };
+        /** MoAActiveBody */
+        MoAActiveBody: {
+            /** Name */
+            name?: string | null;
+        };
+        /** MoAPresetBody */
+        MoAPresetBody: {
+            /** Proposers */
+            proposers: string[];
+            /** Aggregator */
+            aggregator: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Min Quorum */
+            min_quorum?: number | null;
+            /**
+             * Timeout S
+             * @default 45
+             */
+            timeout_s: number;
+            /**
+             * Temperature
+             * @default 0.6
+             */
+            temperature: number;
+        };
+        /** MoARunBody */
+        MoARunBody: {
+            /** Preset */
+            preset: string;
+            /** Prompt */
+            prompt: string;
+            /**
+             * Agent
+             * @default jarvis
+             */
+            agent: string;
+            /**
+             * System
+             * @default
+             */
+            system: string;
+            /**
+             * Max Tokens
+             * @default 1024
+             */
+            max_tokens: number;
         };
         /** MoERouteBody */
         MoERouteBody: {
@@ -32221,6 +32356,158 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    moa_list_presets_api_llm_moa_presets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    moa_put_preset_api_llm_moa_presets__name__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoAPresetBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    moa_delete_preset_api_llm_moa_presets__name__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    moa_set_active_api_llm_moa_active_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoAActiveBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    moa_run_preset_api_llm_moa_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoARunBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

@@ -90,8 +90,10 @@ def test_the_command_tree_is_discoverable_and_complete():
         "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "inspect", "logs", "estop", "jobs", "sessions", "chat", "acp", "send", "completion",
         "prompt-size", "desktop", "security", "todo", "skills", "company", "auth", "checkpoints", "kanban", "project", "secrets", "support",
         "uninstall", "backup", "pairing", "hooks", "webhook", "provider", "goal", "memory", "agents",
-        "journey", "learning", "memory-graph", "mcp", "curator", "lsp", "rooms", "update", "service",
+        "journey", "learning", "memory-graph", "mcp", "moa", "curator", "lsp", "rooms", "update", "service",
     }
+    # H032: Mixture-of-Agents committee presets and parallel quorum synthesis.
+    assert tree["moa"] == ["activate", "delete", "list", "run", "set"]
     # H089: the hub as a per-user service (systemd user unit / launchd agent).
     assert tree["service"] == ["install", "show", "uninstall"]
     # H027: owner-governed skill curation. Reads (status, usage, ledger, lists) change nothing;

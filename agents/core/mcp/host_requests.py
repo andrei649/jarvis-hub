@@ -626,6 +626,19 @@ class MCPHost:
     def pending_elicitations(self) -> list[str]:
         return sorted(self._elicitations)
 
+    def pending_elicitation_cards(self) -> list[dict]:
+        """Typed schema metadata for each unanswered elicitation card so HUD can render inputs."""
+        return [
+            {
+                "id": cid,
+                "server": card_text(p.server, 64),
+                "fields": describe_fields(p.schema),
+                "required": [card_text(r, 100) for r in _required(p.schema)],
+            }
+            for cid, p in sorted(self._elicitations.items())
+            if p.content is None
+        ]
+
     def answer_elicitation(self, card_id: str, content: Any) -> dict:
         """The owner's typed answer to an elicitation card: validate, store, approve."""
         pending = self._elicitations.get(card_id)

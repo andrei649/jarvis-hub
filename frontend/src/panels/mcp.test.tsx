@@ -109,4 +109,46 @@ describe('MCP panel', () => {
     expect(deepLinkRequest('?link=v&config=' + 'A'.repeat(32 * 1024 + 1))).toBeNull();
     expect(deepLinkRequest('?link=v&config=abc')).toEqual({ name: 'v', link_config: 'abc' });
   });
+
+  it('renders pending elicitation cards with typed fields and posts answers or surfaces 410 refusals (H553)', async () => {
+    let posted = null;
+    let status = 200;
+    let replyBody = { ok: true, id: 'card-42', server: 'linear' };
+    hub((url, method, body) => {
+      if (url.includes('/api/admin/mcp/elicitations/card-42/answer')) {
+        posted = body;
+        return { status, body: replyBody };
+      }
+      if (url.endsWith('/api/admin/mcp')) {
+        return {
+          status: 200,
+          body: {
+            ...SERVERS,
+            pending_elicitations: ['card-42'],
+            elicitation_cards: [{
+              id: 'card-42',
+              server: 'linear',
+              required: ['team', 'priority'],
+              fields: [
+                { name: 'team', type: 'string', enum: ['ENG', 'OPS'] },
+                { name: 'priority', type: 'integer' },
+              ],
+            }],
+          },
+        };
+      }
+      return base(url, method);
+    });
+    render(<McpPanel />);
+    const region = await screen.findByRole('region', { name: 'Pending MCP elicitations' });
+    fireEvent.change(within(region).getByLabelText(/team/), { target: { value: 'ENG' } });
+    fireEvent.change(within(region).getByLabelText(/priority/), { target: { value: '2' } });
+    fireEvent.click(within(region).getByRole('button', { name: 'send elicitation answer' }));
+    await waitFor(() => expect(posted).toEqual({ content: { team: 'ENG', priority: 2 } }));
+
+    status = 410;
+    replyBody = { ok: false, error: 'too_late', reason: 'cancelled' };
+    fireEvent.click(within(region).getByRole('button', { name: 'send elicitation answer' }));
+    await waitFor(() => expect(within(region).getByText(/not accepted · too_late/)).toBeTruthy());
+  });
 });
