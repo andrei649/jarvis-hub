@@ -29,6 +29,7 @@ def _declarations(manifest):
         "manifest_version": MANIFEST_VERSION, "api_version": API_VERSION,
         "declared_tools": list(manifest.qualified_tools),
         "declared_commands": list(manifest.commands), "declared_events": list(manifest.events),
+        "command_requires_args": list(manifest.command_requires_args),
         "capabilities": list(manifest.capabilities),
         "execution_available": False, "callable_tools": [], "callable_commands": [],
         "reason": "sdk_dispatch_unavailable",
@@ -109,6 +110,34 @@ def doctor_paths(paths) -> dict:
     return result
 
 
+def _activation_shared_current(extensions, live, verified) -> bool:
+    """Check the read-only gates shared by tool and command dispatch."""
+    try:
+        extensions._require_enabled()
+        extensions._require_consent(live.manifest, live.grant_revision)
+        current = extensions._require_package(live.manifest)
+        return (current.package_hash == live.package_hash
+                and current.package_hash == verified.package_hash
+                and current.version == live.version)
+    except Exception:
+        return False
+
+
+def _activation_commands_current(extensions, live) -> bool:
+    """Check command-only namespace and exact registry ownership gates."""
+    try:
+        extensions._check_commands(live.manifest)
+        if not live.manifest.commands:
+            return True
+        owned = extensions._command_registrations.get(live.manifest.id, ())
+        if len(owned) != len(live.manifest.commands):
+            return False
+        return all(extensions.commands.get(name) is command
+                   for name, command in zip(live.manifest.commands, owned, strict=True))
+    except Exception:
+        return False
+
+
 def inspect_acquisition(runtime) -> dict:
     """Project already-composed signed packages; never initialize or promote them.
 
@@ -146,6 +175,7 @@ def inspect_acquisition(runtime) -> dict:
             row.update({"source": "acquired_manifest_projection", "signature_verified": False,
                         "approval_verified": False, "quarantine_state": "not_inspected",
                         "lifecycle_status": record.status, "reason": "acquired_inactive"})
+            verified = None
             if record.active and record.status == "active":
                 row["reason"] = "acquired_integrity_unverified"
                 try:
@@ -161,13 +191,31 @@ def inspect_acquisition(runtime) -> dict:
             # goes last on purpose: the integrity block above also writes `reason`,
             # and a live activation is the more specific truth about this row.
             live = active.get(record.name)
-            if live is not None and row["signature_verified"]:
-                row.update({"execution_available": True,
-                            "callable_tools": list(live.manifest.qualified_tools),
-                            "callable_commands": [], "reason": "activated"})
+            # The activation was proved against one signed package. Never attribute
+            # its declaration to a replaced or retained package with the same name.
+            if (live is not None and verified is not None and row["signature_verified"]
+                    and verified.package_hash == live.package_hash
+                    and verified.version == live.version):
+                row.update({
+                    "declared_tools": list(live.manifest.qualified_tools),
+                    "declared_commands": list(live.manifest.commands),
+                    "declared_events": list(live.manifest.events),
+                    "command_requires_args": list(live.manifest.command_requires_args),
+                    "capabilities": list(live.manifest.capabilities),
+                })
+                if _activation_shared_current(extensions, live, verified):
+                    callable_tools = list(live.manifest.qualified_tools)
+                    callable_commands = (list(live.manifest.commands)
+                                         if _activation_commands_current(extensions, live) else [])
+                    available = bool(callable_tools or callable_commands or live.manifest.events)
+                    row.update({"execution_available": available,
+                                "callable_tools": callable_tools,
+                                "callable_commands": callable_commands,
+                                "reason": "activated" if available else "sdk_dispatch_unavailable"})
             rows.append(row)
         result.update({"extensions": rows,
-                       "reason": "activated" if active else "sdk_dispatch_unavailable"})
+                       "reason": "activated" if any(row["execution_available"] for row in rows)
+                       else "sdk_dispatch_unavailable"})
     except Exception:
         result.update({"extensions": [], "reason": "acquisition_inspection_unavailable"})
     return result

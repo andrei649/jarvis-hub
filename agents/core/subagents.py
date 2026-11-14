@@ -945,7 +945,8 @@ class SubAgentManager:
                  read_only_probe: Optional[Callable[[str], bool]] = None,
                  stall_seconds: Any = DEFAULT_STALL_SECONDS,
                  heartbeat_seconds: float = HEARTBEAT_SECONDS,
-                 state_dir: Optional[Path] = None) -> None:
+                 state_dir: Optional[Path] = None,
+                 admission_runtime: Any = None) -> None:
         self._runner = runner or NullRunner()
         # G18 (H401) — the durable delegation rows (the autonomy queue in prod: a
         # ``TaskQueue`` or a reader returning one), this boot's id, the per-child live
@@ -974,6 +975,13 @@ class SubAgentManager:
         self._halt_probe = halt_probe or _estop_halt
         self._pause_path = Path(pause_path) if pause_path is not None else None
         self._gate_lock = asyncio.Lock()
+        # A restart drain owns this ephemeral gate in production. Standalone managers
+        # retain their existing behavior when no runtime was supplied.
+        self._admission_runtime = admission_runtime
+        self._admission_leases: dict[str, Any] = {}
+        self._admission_slots_done: set[str] = set()
+        self._admission_settled: set[str] = set()
+        self._settlement_tasks: dict[str, asyncio.Task] = {}
         # H400 — the per-child wall clock: a number or a reader (the setting in prod).
         self._child_timeout = child_timeout
         # H400 — the registered tool names (ToolRPC in prod). With it a spawn records
@@ -1291,19 +1299,34 @@ class SubAgentManager:
                 # nothing else — no network, no session or memory search — so nothing it
                 # read can leave the box. Without a folder to confine it to, no tools.
                 allowed = (self._read_only_tools(allowed) & REVIEWER_TOOLS) if confine else frozenset()
-            if self.budget is not None and not self.budget.consume():
-                return {"ok": False, "reason": "spawn_budget_exhausted",
-                        "used": self.budget.used, "max_total": self.budget.max_total}
-            if turn is not None:
-                self._note_turn_spawn(turn)
-            self._counter += 1
-            # The boot id makes a spawn id unique across restarts: a counter alone would
-            # repeat, and a repeated id would reuse an old child's tree, branch and record.
-            spawn_id = f"sub-{parent}-{self._counter}-{self.boot_id[:6]}"
-            session_id = f"session::{spawn_id}"   # isolated session
-            delegation_id = uuid.uuid4().hex[:20]
-            now = time.time()
-            rec = {"id": spawn_id, "parent": parent, "agent": agent or "sub",
+            # The halt read awaited above; close_admission can run while it waits.
+            # Acquire synchronously under this gate immediately before consuming any
+            # budget, slot or durable record. A live parent's ContextVar cannot admit a
+            # new child during drain: child spawns are never reentrant.
+            lease = None
+            if self._admission_runtime is not None:
+                try:
+                    lease = self._admission_runtime.acquire("subagent", allow_reentrant=False)
+                except Exception:
+                    logger.warning("sub-agent restart admission could not be checked", exc_info=True)
+                    return {"ok": False, "reason": "restart_admission_unavailable"}
+                if lease is None:
+                    return {"ok": False, "reason": "restart_draining"}
+            registered = False
+            try:
+                if self.budget is not None and not self.budget.consume():
+                    return {"ok": False, "reason": "spawn_budget_exhausted",
+                            "used": self.budget.used, "max_total": self.budget.max_total}
+                if turn is not None:
+                    self._note_turn_spawn(turn)
+                self._counter += 1
+                # The boot id makes a spawn id unique across restarts: a counter alone would
+                # repeat, and a repeated id would reuse an old child's tree, branch and record.
+                spawn_id = f"sub-{parent}-{self._counter}-{self.boot_id[:6]}"
+                session_id = f"session::{spawn_id}"   # isolated session
+                delegation_id = uuid.uuid4().hex[:20]
+                now = time.time()
+                rec = {"id": spawn_id, "parent": parent, "agent": agent or "sub",
                    "task": task, "session_id": session_id, "status": "running",
                    "created_at": now, "finished_at": None, "result": None,
                    "blocked": sorted(self.blocked), "output_schema": output_schema,
@@ -1316,11 +1339,17 @@ class SubAgentManager:
                    "read_only": bool(read_only), "background": bool(background),
                    "parent_session": _parent_session(), "activity_at": now, "stalled": False,
                    "worktree": None, "transcript": None}
-            self._spawns[spawn_id] = rec
-            chan = SteerChannel(spawn_id)
-            self._channels[spawn_id] = chan
-            self._active += 1
-            self._held.add(spawn_id)
+                self._spawns[spawn_id] = rec
+                chan = SteerChannel(spawn_id)
+                self._channels[spawn_id] = chan
+                self._active += 1
+                self._held.add(spawn_id)
+                if lease is not None:
+                    self._admission_leases[spawn_id] = lease
+                registered = True
+            finally:
+                if lease is not None and not registered:
+                    lease.release()
         # H400 (B1): from here on the slot is taken. Whatever goes wrong below — the
         # answer's check, the accounting, the log — the record ends terminal and the
         # slot is released exactly once (``_close_on_error``); nothing escapes with a
@@ -1345,6 +1374,8 @@ class SubAgentManager:
             await self._durable_start(rec, task)
             if rec["status"] != "running":
                 self._finish(rec, before, None)
+                await self._persist(rec)
+                await self._settle_owned(rec, child)
                 return await self._answer(rec, selection, child)
             transcript.append("start", goal=task, agent=rec["agent"], read_only=bool(read_only),
                               tools=len(allowed) if allowed is not None else None,
@@ -1408,7 +1439,7 @@ class SubAgentManager:
             monitor.cancel()
         if rec["status"] in TERMINAL_STATUSES:      # a child still unwinding is logged when it ends
             await self._persist(rec)
-            await self._settle(rec, child)
+            await self._settle_owned(rec, child)
         return await self._answer(rec, selection, child)
 
     async def _answer(self, rec: dict, selection: Optional[dict], child: Optional[asyncio.Future]) -> dict:
@@ -1564,11 +1595,46 @@ class SubAgentManager:
         if monitor is not None:
             monitor.cancel()
         try:
-            task = asyncio.ensure_future(self._settle(rec, child))
+            task = asyncio.ensure_future(self._settle_owned(rec, child))
         except RuntimeError:
             return
         self._settling.add(task)
         task.add_done_callback(self._settling.discard)
+
+    def _maybe_release_admission(self, spawn_id: str) -> None:
+        if spawn_id not in self._admission_slots_done or spawn_id not in self._admission_settled:
+            return
+        lease = self._admission_leases.pop(spawn_id, None)
+        self._admission_slots_done.discard(spawn_id)
+        self._admission_settled.discard(spawn_id)
+        if lease is not None:
+            lease.release()
+
+    async def _settle_owned(self, rec: dict, child: Optional[asyncio.Future]) -> None:
+        """Keep admission live through the actual durable/worktree settlement task."""
+        if rec["status"] not in TERMINAL_STATUSES:
+            return
+        spawn_id = rec["id"]
+        task = self._settlement_tasks.get(spawn_id)
+        if task is None:
+            task = asyncio.create_task(self._settle(rec, child))
+            self._settlement_tasks[spawn_id] = task
+
+            def completed(done: asyncio.Task) -> None:
+                try:
+                    done.result()
+                except BaseException:
+                    # Keep the failed task and its admission lease: a later caller must
+                    # not mistake _settle's early marker for completed durable cleanup.
+                    logger.warning("sub-agent %s settlement did not finish", spawn_id, exc_info=True)
+                    return
+                self._settlement_tasks.pop(spawn_id, None)
+                if rec.get("settled") and spawn_id in self._admission_leases:
+                    self._admission_settled.add(spawn_id)
+                    self._maybe_release_admission(spawn_id)
+
+            task.add_done_callback(completed)
+        await asyncio.shield(task)
 
     async def _settle(self, rec: dict, child: Optional[asyncio.Future]) -> None:
         """Once per spawn, after it ends: close the transcript, reclaim or keep its
@@ -1794,7 +1860,7 @@ class SubAgentManager:
                 close(fut)
                 try:
                     task = asyncio.ensure_future(self._persist(rec))
-                    settle = asyncio.ensure_future(self._settle(rec, child))
+                    settle = asyncio.ensure_future(self._settle_owned(rec, child))
                 except RuntimeError:
                     return
                 for pending in (task, settle):
@@ -1831,6 +1897,9 @@ class SubAgentManager:
         trace = _TRACE.set(isolation.get("transcript"))
         try:
             with contextlib.ExitStack() as stack:
+                lease = self._admission_leases.get(spawn_id) if spawn_id else None
+                if lease is not None:
+                    stack.enter_context(lease.bind())
                 # G18 (H402): a child with its own worktree has its file tools confined
                 # to it (and the tree is held in use, so no reclaim takes it meanwhile).
                 if isolation.get("tree"):
@@ -2015,6 +2084,9 @@ class SubAgentManager:
         if spawn_id in self._held:
             self._held.discard(spawn_id)
             self._active -= 1
+            if spawn_id in self._admission_leases:
+                self._admission_slots_done.add(spawn_id)
+                self._maybe_release_admission(spawn_id)
 
     def _release_after_threads(self, rec: dict) -> None:
         """Release *rec*'s slot now, or — when a sync tool handler the child started is

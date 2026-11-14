@@ -235,12 +235,9 @@ async def channels_deliveries(limit: int = 50, state: str = ""):
                 channels[str(cid)] = reader()
             except Exception:
                 channels[str(cid)] = {"state": "unknown"}
-    return nocache_json({
-        "stats": store.stats(),
-        "deliveries": store.recent(max(1, min(int(limit or 50), 200)), states=states),
-        "dead_targets": store.dead_targets(),
-        "health": channels,
-    })
+    snapshot = store.receipt_snapshot(max(1, min(int(limit or 50), 200)), states=states,
+                                      dead_limit=200)
+    return nocache_json({**snapshot, "health": channels})
 
 
 class DeadTargetClearBody(BaseModel):

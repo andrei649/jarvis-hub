@@ -393,6 +393,8 @@ def test_no_verified_backup_means_no_update(upd, keys, monkeypatch):
 
 @needs_gpg
 def test_a_failing_post_restart_check_rolls_back_and_restores_the_backup(upd, keys):
+    import sys
+
     _trust_gpg(upd, keys)
     before = _head(upd)
     target = _publish(upd, sign_home=keys.owner_home, sign_key=keys.owner,
@@ -408,10 +410,23 @@ def test_a_failing_post_restart_check_rolls_back_and_restores_the_backup(upd, ke
     assert _head(upd) == before and upd.restarts == [True, True]
     staged = backup.pending_restore()
     assert staged and staged["name"] == out["backup"]
-    # the previous code boots: the rollback is recorded as done
+    # Stage success is not completion: apply the real temp-root restore before on_boot closes it.
+    applied = subprocess.run(
+        [sys.executable, "-c", "import json; from agents.core import backup; "
+         "print(json.dumps(backup.apply_pending_restore(runtime_wait=0, sleep=lambda _s: None)))"],
+        cwd=str(Path(__file__).resolve().parents[1]), capture_output=True, text=True,
+        env={**os.environ, "JARVIS_HOME": str(upd.data)}, timeout=300,
+    )
+    assert applied.returncode == 0, applied.stderr[-2000:]
+    applied_result = json.loads(applied.stdout)
+    assert applied_result["status"] == "restored" and applied_result["ok"] is True
+    assert {k: applied_result[k] for k in ("name", "staged_at", "sha256")} == {
+        k: staged[k] for k in ("name", "staged_at", "sha256")}
+    # The previous code boots only after the exact staged archive is confirmed applied.
     hub_update_apply._BOOT["commit"] = None
     finished = hub_update_apply.on_boot()
-    assert finished["result"] == "rolled_back" and hub_update_apply.current() is None
+    assert finished["result"] == "rolled_back" and finished["data_restored"] is True
+    assert hub_update_apply.current() is None
 
 
 @needs_gpg
@@ -661,6 +676,9 @@ def test_the_pre_update_backup_restored_by_a_rollback_keeps_the_trust_pinned_sin
                           cwd=str(Path(__file__).resolve().parents[1]), capture_output=True, text=True,
                           env={**os.environ, "JARVIS_HOME": str(upd.data)}, timeout=300)
     assert done.stdout.startswith("restored"), (done.stdout, done.stderr[-2000:])
+    hub_update_apply._BOOT["commit"] = None
+    finished = hub_update_apply.on_boot()
+    assert finished["result"] == "rolled_back" and finished["data_restored"] is True
     assert hub_update_apply.trust_status()["commit"] == "c" * 40
     assert any(r.get("kind") == "rollback" for r in hub_update_apply.receipts())
 

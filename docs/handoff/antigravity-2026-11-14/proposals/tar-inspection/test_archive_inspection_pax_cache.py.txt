@@ -1,0 +1,24 @@
+"""Header cache must not multiply inherited PAX metadata across members."""
+import io
+import tarfile
+from agents.core import archive_safe as safe
+
+
+def test_inspection_releases_consumed_headers_before_reading_next_member(tmp_path, monkeypatch):
+    archive = tmp_path / 'many-global-pax.tar'
+    with tarfile.open(archive, 'w', format=tarfile.PAX_FORMAT,
+                      pax_headers={f'vendor.key{i}': 'x' for i in range(2000)}) as tar:
+        for index in range(50):
+            member = tarfile.TarInfo(f'file{index}')
+            member.size = 0
+            tar.addfile(member, io.BytesIO())
+    observed = []
+    original = safe._GuardedTarInfo.fromtarfile.__func__
+
+    def checked(cls, tar):
+        observed.append(len(tar.members))
+        return original(cls, tar)
+
+    monkeypatch.setattr(safe._GuardedTarInfo, 'fromtarfile', classmethod(checked))
+    assert len(safe.inspect_tar_path(archive)) == 50
+    assert max(observed) <= 1, 'inspection retains past per-member global PAX dictionary copies'

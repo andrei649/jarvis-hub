@@ -9,8 +9,14 @@ export type CommandSummary = {
   usage: string;
 };
 
+export type ShortcutSummary = Omit<CommandSummary, 'tier'> & {
+  kind: 'quick' | 'skill' | 'bundle';
+  tier: 'admin';
+};
+
 export type CommandCatalog =
-  | { status: 'available'; commands: CommandSummary[] }
+  | { status: 'available'; commands: CommandSummary[]; shortcuts: ShortcutSummary[];
+      truncated: boolean; shortcutsUnavailable: boolean }
   | { status: 'unavailable'; commands: [] };
 
 function validCommand(value: unknown): value is CommandSummary {
@@ -21,6 +27,21 @@ function validCommand(value: unknown): value is CommandSummary {
     && typeof command.description === 'string' && command.description.length <= 1000
     && typeof command.usage === 'string' && command.usage.length <= 1000
     && (command.tier === 'user' || command.tier === 'admin');
+}
+
+function validShortcut(value: unknown): value is ShortcutSummary {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  if (typeof row.name !== 'string' || row.name.length > 64 || row.tier !== 'admin'
+    || typeof row.description !== 'string' || row.description.length > 1000
+    || typeof row.usage !== 'string' || row.usage.length > 1000) return false;
+  if (row.kind === 'quick') return /^[a-z][a-z0-9_]{0,63}$/.test(row.name)
+    && row.command === `/${row.name}`;
+  if (row.kind === 'skill') return /^[a-z][a-z0-9_-]{0,63}$/.test(row.name)
+    && row.command === `/${row.name}`;
+  if (row.kind === 'bundle') return /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(row.name)
+    && row.command === `/bundle ${row.name}`;
+  return false;
 }
 
 /** Read the current chat principal's catalog without invoking any command. */
@@ -54,11 +75,16 @@ export async function fetchCommands(config: ServerConfig, signal: AbortSignal): 
       return { status: 'unavailable', commands: [] };
     }
     if (!response.ok) throw new ApiError(`Server returned HTTP ${response.status}`, response.status);
-    if (data?.ok !== true || !Array.isArray(data.commands) || data.commands.length > 256
-      || !data.commands.every(validCommand)) {
+    const shortcuts = data?.shortcuts === undefined ? [] : data.shortcuts;
+    if (data?.ok !== true || !Array.isArray(data.commands) || !Array.isArray(shortcuts)
+      || data.commands.length + shortcuts.length > 256
+      || !data.commands.every(validCommand) || !shortcuts.every(validShortcut)
+      || (data.truncated !== undefined && typeof data.truncated !== 'boolean')
+      || (data.shortcuts_unavailable !== undefined && typeof data.shortcuts_unavailable !== 'boolean')) {
       throw new ApiError('Invalid command catalog');
     }
-    return { status: 'available', commands: data.commands };
+    return { status: 'available', commands: data.commands, shortcuts,
+      truncated: data.truncated === true, shortcutsUnavailable: data.shortcuts_unavailable === true };
   } catch (error) {
     if (abort.signal.aborted) throw new ApiError('Command request cancelled or timed out');
     if (error instanceof ApiError) throw error;

@@ -53,7 +53,10 @@ def test_http_returns_only_this_turns_selected_latency(monkeypatch, stream):
     first = TestClient(web.app).post(path, json={"message": "hi"})
     assert first.status_code == 200
     payload = _events(first.text)[-1] if stream else first.json()
-    assert payload["outcome"] == {"latency_ms": 137}
+    expected = {"latency_ms": 137}
+    if stream:
+        expected["output"] = {"tokens": 2, "basis": "visible_estimate"}
+    assert payload["outcome"] == expected
     assert payload["text" if stream else "reply"] == "answer"
 
     # A new uninstrumented turn must not inherit the previous one.

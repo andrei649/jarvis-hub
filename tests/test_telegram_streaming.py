@@ -3,12 +3,14 @@
 On a chat surface a long silence and a crash look the same. On a channel whose descriptor
 says it can edit a message, the orchestrator streams the turn into a draft: the first token
 sends the message, later tokens edit it under Telegram's edit budget, and the final text is
-rendered exactly as `send()` would render it. Every step is best effort and never raises
-into the turn; the words always arrive.
+rendered exactly as `send()` would render it. An uncertain response stops further sends
+to avoid duplicating words the recipient may already have received.
 """
 import os
 import sys
 from types import SimpleNamespace
+
+import httpx
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -23,6 +25,14 @@ from agents.core.channels.telegram import (  # noqa: E402
 from agents.core.orchestrator import Orchestrator  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _isolated_stream_redactor(monkeypatch):
+    """These transport tests exercise previews without an opaque secret broker."""
+    from agents.core.channels import outbound_safety
+
+    monkeypatch.setattr(outbound_safety, "_known_redactor", None)
+
+
 class _Resp:
     def __init__(self, status: int, message_id: int = 0) -> None:
         self.status_code = status
@@ -30,10 +40,13 @@ class _Resp:
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
-            raise RuntimeError(f"HTTP {self.status_code}")
+            request = httpx.Request("POST", "https://api.telegram.org/botfixture/sendMessage")
+            response = httpx.Response(self.status_code, request=request)
+            raise httpx.HTTPStatusError(f"HTTP {self.status_code}", request=request,
+                                        response=response)
 
     def json(self):
-        return {"ok": True, "result": {"message_id": self._message_id}}
+        return {"ok": self.status_code < 400, "result": {"message_id": self._message_id}}
 
 
 class _Client:
@@ -52,6 +65,8 @@ class _Client:
         if method == "sendMessage" and status < 400:
             self.next_id += 1
             return _Resp(status, self.next_id)
+        if method == "editMessageText" and status < 400:
+            return _Resp(status, json["message_id"])
         return _Resp(status)
 
     async def aclose(self) -> None:
@@ -134,14 +149,24 @@ async def test_markup_telegram_rejects_is_retried_as_plain_text():
 
 
 @pytest.mark.asyncio
-async def test_failures_never_raise_and_the_final_text_still_arrives():
+async def test_uncertain_edit_stops_the_draft_without_a_duplicate_send():
     channel = _channel({"editMessageText": [500, 500, 500, 500]})
     draft = TelegramDraft(channel, 7, interval=0.0, clock=_clock([0.0, 1.0, 2.0, 3.0]))
     await draft.push("hello ")
-    await draft.push("there ")           # the edit fails: a skipped frame, no exception
+    await draft.push("there ")
+    assert await draft.finish("hello there") is False
+    assert len(_sends(channel.client)) == 1 and len(_edits(channel.client)) == 1
+
+
+@pytest.mark.asyncio
+async def test_definite_edit_rejection_keeps_the_final_fresh_send_fallback():
+    channel = _channel({"editMessageText": [400, 400, 400, 400]})
+    draft = TelegramDraft(channel, 7, interval=0.0, clock=_clock([0.0, 1.0, 2.0]))
+    await draft.push("hello ")
+    await draft.push("there ")
     assert await draft.finish("hello there") is True
-    sends = _sends(channel.client)
-    assert sends[-1] == {"chat_id": 7, "text": "hello there", "parse_mode": "HTML"}
+    assert _sends(channel.client)[-1] == {
+        "chat_id": 7, "text": "hello there", "parse_mode": "HTML"}
 
 
 @pytest.mark.asyncio

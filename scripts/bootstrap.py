@@ -34,6 +34,7 @@ Invariants (MOONSHOT §5, local-first by default):
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import platform
@@ -105,6 +106,26 @@ def venv_python(root: Path) -> Path:
     return root / VENV_DIR / "bin" / "python"
 
 
+def _preflight_venv(root: Path) -> None:
+    """Read the target tree with this interpreter before executing anything in it."""
+    helper = Path(__file__).resolve().with_name("venv_ownership.py")
+    try:
+        spec = importlib.util.spec_from_file_location("_nerva_bootstrap_venv_ownership", helper)
+        if spec is None or spec.loader is None:
+            raise ImportError("venv ownership helper unavailable")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        report = module.preflight_venv(root)
+    except (ImportError, OSError, ValueError) as exc:
+        raise BootstrapError("venv_ownership_check_failed", type(exc).__name__) from exc
+    if not isinstance(report, dict) or report.get("ok") is not True:
+        reason = report.get("reason") if isinstance(report, dict) else "invalid ownership result"
+        raise BootstrapError("venv_ownership_refused", str(reason))
+    if report.get("state") == "ownership_unchecked_windows":
+        print("[WARN] venv ownership unchecked on Windows: native ACL validation is unavailable.",
+              file=sys.stderr)
+
+
 def ensure_venv(root: Path, python: str = sys.executable, run=subprocess.run) -> tuple:
     """Create ``<root>/.venv`` with *python* unless it already exists.
 
@@ -115,6 +136,8 @@ def ensure_venv(root: Path, python: str = sys.executable, run=subprocess.run) ->
     """
     root = Path(root)
     target = venv_python(root)
+    if os.path.lexists(root / VENV_DIR):
+        _preflight_venv(root / VENV_DIR)
     if target.exists():
         return target, False
     proc = run([python, "-m", "venv", str(root / VENV_DIR)], check=False)
@@ -137,13 +160,25 @@ def pip_install_locked(venv_py: Path, root: Path, *, unlocked: bool = False,
     report marks it so the choice is visible, never silent.
     """
     root = Path(root)
+    if os.path.abspath(venv_py) != os.path.abspath(venv_python(root)):
+        raise BootstrapError("venv_interpreter_mismatch", "interpreter is outside the bootstrap target")
+    venv_py = venv_python(root)  # Execute the checked path, never a caller-supplied alias.
+    _preflight_venv(root / VENV_DIR)
     lock = root / LOCK_FILE
     loose = root / LOOSE_REQUIREMENTS
-    if unlocked or not lock.exists():
+    if unlocked:
         if not loose.exists():
             raise BootstrapError("requirements_missing", str(loose))
         argv = [str(venv_py), "-m", "pip", "install", "--quiet", "-r", str(loose)]
     else:
+        try:
+            lock_is_file = lock.is_file()
+            lock_exists = os.path.lexists(lock)
+        except OSError as exc:
+            raise BootstrapError("requirements_lock_unreadable", str(lock)) from exc
+        if not lock_is_file:
+            reason = "requirements_lock_unreadable" if lock_exists else "requirements_missing"
+            raise BootstrapError(reason, str(lock))
         argv = [str(venv_py), "-m", "pip", "install", "--quiet", "--require-hashes",
                 "-r", str(lock)]
     proc = run(argv, check=False)
@@ -245,8 +280,8 @@ def run_install_smoke(venv_py: Path, root: Path, *, run=subprocess.run, env=None
         payload = json.loads(stdout[start:])
     except ValueError as exc:
         raise BootstrapError("smoke_output_unparseable", str(exc)) from exc
-    if not payload.get("ok"):
-        raise BootstrapError("smoke_failed", "payload ok=false")
+    if payload.get("ok") is not True:
+        raise BootstrapError("smoke_failed", "payload ok is not true")
     return payload
 
 

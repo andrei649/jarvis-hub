@@ -165,6 +165,26 @@ describe('QuickbarPanel — a preview, never an execution', () => {
     expect(readHistory()).toEqual([]);
   });
 
+  it('renders typed owner shortcuts and partial catalog hints without acting on a choice', async () => {
+    const fetchMock = mockFetch({
+      '/api/quickbar/help': ok(HELP),
+      '/api/commands': ok({ ok: true, commands: [], shortcuts: [
+        { kind: 'quick', name: 'backup', command: '/backup', description: 'Run backup', usage: '', tier: 'admin' },
+        { kind: 'skill', name: 'web-research', command: '/web-research', description: 'Research the web', usage: '', tier: 'admin' },
+        { kind: 'bundle', name: 'daily-brief', command: '/bundle daily-brief', description: 'Load daily brief', usage: '', tier: 'admin' },
+      ], truncated: true, shortcuts_unavailable: true }),
+    });
+    render(<QuickbarPanel />);
+    await waitFor(() => expect(screen.getByText('/bundle daily-brief')).toBeTruthy());
+    expect(screen.getByText('quick')).toBeTruthy();
+    expect(screen.getByText('skill')).toBeTruthy();
+    expect(screen.getByText('bundle')).toBeTruthy();
+    expect(screen.getByText(/catalog is truncated/i)).toBeTruthy();
+    expect(screen.getByText(/some shortcuts are unavailable/i)).toBeTruthy();
+    expect(screen.queryByText('No chat commands available for this session.')).toBeNull();
+    expect(fetchMock.mock.calls.every(([, opts]) => !opts?.method || opts.method === 'GET')).toBe(true);
+  });
+
   it('does not invent owner commands absent from the returned catalog', async () => {
     mockFetch({ '/api/quickbar/help': ok(HELP), '/api/commands': ok({ ok: true, commands: [
       { name: 'status', command: '/status', description: 'Hub status', tier: 'user', usage: '' },

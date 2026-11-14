@@ -33,7 +33,7 @@ logger = logging.getLogger("jarvis.commands")
 USER = "user"
 ADMIN = "admin"
 
-_COMMAND_RE = re.compile(r"^/([A-Za-z][A-Za-z0-9_]*)(?:@\w+)?(?:\s+(.*))?$", re.DOTALL)
+_COMMAND_RE = re.compile(r"^/([A-Za-z][A-Za-z0-9_-]*)(?:@\w+)?(?:\s+(.*))?$", re.DOTALL)
 _MAX_ARGS = 2_000
 
 #: H057 — built-in aliases, resolved to the canonical name at parse, before anything else
@@ -65,7 +65,53 @@ _BANG = re.compile(r"^!([A-Za-z][A-Za-z0-9_]*)(?=\s|$)")
 #: Telegram's command menu: a name of 1-32 lowercase letters, digits or ``_``, a
 #: description of 1-256 characters, at most 100 commands per scope.
 _TELEGRAM_NAME = re.compile(r"^[a-z0-9_]{1,32}$")
+_TELEGRAM_USERNAME = re.compile(r"[A-Za-z0-9_]{5,32}\Z")
 TELEGRAM_MENU_MAX = 100
+
+# Slack owns several slash names itself and caps a workspace app at 50 commands.
+# A single /nerva entry reaches every command through the ordinary registry/access
+# path, including canonical names that cannot appear in Slack's native picker.
+SLACK_MENU_MAX = 50
+SLACK_RESERVED = frozenset({
+    "me", "status", "away", "dnd", "shrug", "remind", "msg", "feed", "who",
+    "collapse", "expand", "leave", "join", "open", "search", "topic", "mute",
+    "pro", "shortcuts",
+})
+SLACK_VIA_NERVA_ONLY = frozenset({"pause", "refine", "review", "whoami"})
+_SLACK_NAME = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
+_NERVA_SPECIAL = frozenset({"new", "reset", "undo", "btw", "checkpoints", "rollback", "bundle"})
+
+
+def slack_native_slashes(registry: CommandRegistry) -> list[dict[str, str]]:
+    """The bounded native Slack picker. The fallback is always first; every other
+    entry sends a name the registry can parse unchanged. This is also the ingress
+    allowlist for Slack's ``slash_commands`` Socket Mode envelopes."""
+    from .channels.native_metadata import name_allowed, safe_description
+
+    entries = [{"command": "/nerva", "description": "Run a Nerva command"}]
+    seen = {"nerva"}
+    for command in registry.commands():
+        name = command.name.lower()
+        if (name in seen or name in SLACK_RESERVED or name in SLACK_VIA_NERVA_ONLY
+                or not _SLACK_NAME.fullmatch(name) or not name_allowed(command.name, name)):
+            continue
+        entries.append({"command": f"/{name}",
+                        "description": safe_description(str(command.description or name), 140)})
+        seen.add(name)
+        if len(entries) == SLACK_MENU_MAX:
+            return entries
+    for alias, target in ALIASES.items():
+        command = registry.get(target)
+        if (command is None or alias in seen or alias in SLACK_RESERVED
+                or alias in SLACK_VIA_NERVA_ONLY or not _SLACK_NAME.fullmatch(alias)
+                or not name_allowed(alias, alias)):
+            continue
+        entries.append({"command": f"/{alias}",
+                        "description": safe_description(f"Alias for /{target} — {command.description}", 140)})
+        seen.add(alias)
+        if len(entries) == SLACK_MENU_MAX:
+            break
+    return entries
 
 
 def telegram_menu(commands) -> list[dict]:
@@ -73,12 +119,16 @@ def telegram_menu(commands) -> list[dict]:
     names Telegram accepts, descriptions cut to its limit, at most
     :data:`TELEGRAM_MENU_MAX`, in name order. A name Telegram would refuse is left out
     rather than renamed (a menu entry must send exactly a command the registry knows)."""
+    from .channels.native_metadata import name_allowed, safe_description
+
     menu: list[dict] = []
     for command in sorted(commands, key=lambda c: c.name):
+        if command.requires_args is True:
+            continue
         name = str(command.name)
-        description = " ".join(str(command.description or name).split())[:256] or name
-        if _TELEGRAM_NAME.match(name):
-            menu.append({"command": name, "description": description})
+        if _TELEGRAM_NAME.match(name) and name_allowed(name, name):
+            menu.append({"command": name,
+                         "description": safe_description(str(command.description or name), 256)})
         if len(menu) >= TELEGRAM_MENU_MAX:
             break
     return menu
@@ -153,6 +203,12 @@ class CommandContext:
     principal: Principal
     name: str
     args: str
+    # Gateway-sealed original inbound provenance, present only for a matching
+    # owner Telegram DM command after pairing and a confirmed inbox write.
+    source: Any = None
+    # Original command text, before argument normalization; /diff checks its
+    # raw control characters before the shell-style path tokenizer runs.
+    raw_text: str = ""
 
 
 Handler = Callable[[CommandContext], "str | Awaitable[str]"]
@@ -165,6 +221,9 @@ class SlashCommand:
     handler: Handler
     tier: str = USER
     usage: str = ""
+    aliases: tuple[str, ...] = ()
+    # Native pickers send a bare command. Metadata only; typed dispatch remains unchanged.
+    requires_args: bool = False
 
     @property
     def summary(self) -> str:
@@ -206,6 +265,7 @@ def _oversized(name: str, text: str) -> CommandOutcome | None:
 class CommandRegistry:
     def __init__(self) -> None:
         self._commands: dict[str, SlashCommand] = {}
+        self._aliases: dict[str, SlashCommand] = {}
 
     def register(self, command: SlashCommand) -> SlashCommand:
         """Add a command. A name already taken is refused, never overwritten.
@@ -221,15 +281,34 @@ class CommandRegistry:
         if command.tier not in (USER, ADMIN):
             raise ValueError(f"unknown command tier {command.tier!r}")
         name = command.name.lower()
-        if name in self._commands:
-            raise ValueError(f"command already registered: {name}")
-        if name in ALIASES:
-            raise ValueError(f"command name is a built-in alias of /{ALIASES[name]}: {name}")
+        if any(not isinstance(alias, str) or not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", alias)
+               or alias == "nerva" for alias in command.aliases):
+            raise ValueError("invalid command alias")
+        names = (name, *command.aliases)
+        if len(set(names)) != len(names):
+            raise ValueError("duplicate command alias")
+        for candidate in names:
+            if self.get(candidate) is not None:
+                raise ValueError(f"command already registered: {candidate}")
+            if candidate in ALIASES:
+                raise ValueError(f"command name is a built-in alias of /{ALIASES[candidate]}: {candidate}")
         self._commands[name] = command
+        self._aliases.update((alias, command) for alias in command.aliases)
         return command
 
     def get(self, name: str) -> SlashCommand | None:
-        return self._commands.get(name.lower())
+        return self._commands.get(name.lower()) or self._aliases.get(name.lower())
+
+    def unregister(self, command: SlashCommand) -> bool:
+        """Withdraw only the exact registration owned by the caller."""
+        name = command.name.lower()
+        if self._commands.get(name) is not command:
+            return False
+        del self._commands[name]
+        for alias in command.aliases:
+            if self._aliases.get(alias) is command:
+                del self._aliases[alias]
+        return True
 
     def commands(self) -> list[SlashCommand]:
         """Every registered command, by name — tier unfiltered (H058's policy reads it)."""
@@ -280,7 +359,19 @@ class CommandRegistry:
         if not match:
             return None
         name = match.group(1).lower()
-        return ALIASES.get(name, name), normalise_args((match.group(2) or "").strip()[:_MAX_ARGS])
+        args = normalise_args((match.group(2) or "").strip()[:_MAX_ARGS])
+        if name == "nerva":
+            # Parse the Slack fallback into its canonical target before the busy-path
+            # access probe, the cold-path gate and command.completed see it. Special
+            # commands must keep their original preappend/session lifecycle route.
+            if not args:
+                return "help", ""
+            sub = _COMMAND_RE.match("/" + args)
+            canonical = ALIASES.get(sub.group(1).lower(), sub.group(1).lower()) if sub else None
+            if canonical is None or canonical in _NERVA_SPECIAL | {"nerva"}:
+                return "nerva", args
+            name, args = sub.group(1).lower(), (sub.group(2) or "").strip()
+        return ALIASES.get(name, name), args
 
     async def dispatch(self, text: str, *, orch: Any, principal: Principal,
                        _quick_seen: frozenset[str] = frozenset()) -> CommandOutcome | None:
@@ -290,6 +381,9 @@ class CommandRegistry:
             return None
         name, args = parsed
         command = self.get(name)
+        if name == "nerva":
+            return self._observed(CommandOutcome(
+                "nerva", "refused", "Use /nerva <command> [arguments]; this command needs its direct slash form."))
         if command is None:
             from .quick_commands import dispatch_quick
 
@@ -326,7 +420,12 @@ class CommandRegistry:
         if oversized is not None:
             return self._observed(oversized)
         try:
-            result = command.handler(CommandContext(orch=orch, principal=principal, name=name, args=args))
+            from .command_source import source_for_dispatch
+
+            source = source_for_dispatch(text=text, principal=principal, orch=orch)
+            self._started(command)
+            result = command.handler(CommandContext(orch=orch, principal=principal, name=name,
+                                                    args=args, source=source, raw_text=text))
             if inspect.isawaitable(result):
                 result = await result
             from .plan_commands import TurnRewrite
@@ -339,6 +438,20 @@ class CommandRegistry:
         except Exception:
             logger.warning("slash command /%s failed", name, exc_info=True)
             return self._observed(CommandOutcome(name, "failed", f"/{name} failed — check the hub log."))
+
+    @staticmethod
+    def _started(command: SlashCommand) -> None:
+        """Observe entry into a registered handler without granting an extension control."""
+        canonical = command.name
+        if type(canonical) is not str or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", canonical):
+            return
+        canonical = canonical.lower()
+        try:
+            from .extensions.events import EXTENSION_EVENTS
+
+            EXTENSION_EVENTS.emit("command.started", command=canonical)
+        except Exception as exc:
+            logger.warning("slash command start observer unavailable: %s", type(exc).__name__)
 
     @staticmethod
     def _observed(outcome: CommandOutcome) -> CommandOutcome:
@@ -358,6 +471,25 @@ class CommandRegistry:
 # ── the built-in commands ────────────────────────────────────────────────────
 
 
+def _telegram_help_suffix(ctx: CommandContext) -> str:
+    """Address group help examples only to the live, verified Telegram bot."""
+    if ctx.principal.channel != "telegram" or ctx.principal.scope != "group":
+        return ""
+    try:
+        adapter = ctx.orch.channel_manager.channels.get("telegram")
+        generation = adapter._owner_once_generation
+        username = adapter._bot_username
+        if (adapter._running is not True
+                or type(adapter._bot_id) is not int or adapter._bot_id <= 0
+                or type(generation) is not str or not generation
+                or adapter._verified_bot_generation != generation
+                or type(username) is not str or not _TELEGRAM_USERNAME.fullmatch(username)):
+            return ""
+        return f"@{username}"
+    except (AttributeError, TypeError):
+        return ""
+
+
 def _help(ctx: CommandContext) -> str:
     from .quick_commands import help_lines
     from .slash_access import listed_names
@@ -368,13 +500,23 @@ def _help(ctx: CommandContext) -> str:
         # H058: what this door will run — on a channel, not a command whose text is a reset trigger.
         listed = listed_names(registry, ctx.principal, orch=ctx.orch)
         commands = [command for command in commands if listed is None or command.name in listed]
-    lines = [command.summary for command in commands]
+    suffix = _telegram_help_suffix(ctx)
+    lines = [command.summary.replace(f"/{command.name}", f"/{command.name}{suffix}", 1)
+             for command in commands]
     if ctx.principal.admin and isinstance(registry, CommandRegistry):
-        lines.extend(help_lines(registry))
+        for line in help_lines(registry):
+            name, separator, rest = line.partition(" — quick ")
+            lines.append(f"{name}{suffix}{separator}{rest}" if suffix and separator else line)
     if not ctx.principal.admin:
         lines.append("Owner commands (such as /pause, /resume, /stop, /remind and /refine) answer only "
                      "the owner's channel.")
     return "\n".join(lines) if lines else "No commands are registered."
+
+
+def _commands(ctx: CommandContext) -> str:
+    from .command_discovery import reply
+
+    return reply(ctx)
 
 
 def _whoami(ctx: CommandContext) -> str:
@@ -452,6 +594,19 @@ def _usage(ctx: CommandContext) -> str:
 def _pause(ctx: CommandContext) -> str:
     from agents.core import estop
 
+    # H084: the donor's in-band recovery spelling is scoped to /pause itself.
+    # /stop remains an engaging owner command, even with the text "off".
+    if ctx.name == "pause":
+        argument = ctx.args.strip()
+        if argument.lower() in {"off", "resume", "stop", "disengage"}:
+            return _resume(ctx)
+        if not argument:
+            try:
+                already = estop.get_state() is not None
+            except Exception:
+                return "Emergency stop state unavailable; nothing changed."
+            if already:
+                return "Emergency stop is already engaged. Use /pause off to resume."
     who = f"{ctx.principal.channel}:{ctx.principal.sender or 'owner'}"
     reason = ctx.args or f"/{ctx.name} from {who}"
     estop.engage(reason)
@@ -1126,15 +1281,25 @@ async def _memory(ctx: CommandContext) -> str:
 
 def build_default_registry() -> CommandRegistry:
     from .checkpoint_commands import checkpoint_command
+    from .diagnostic_commands import debug_command
+    from .diff_commands import diff_command
+    from .egress_commands import egress_command
     from .goal_commands import goal_command, subgoal_command
+    from .identity_commands import profile_command, version_command
+    from .maintenance_commands import reload_mcp, reload_skills
     from .plan_commands import plan_command
+    from .platform_commands import platform_command
+    from .restart_command import restart_command
     from .review_command import review_command
     from .session_loops import loop_command
+    from .update_commands import update_command
     from .verify.command import verify_command
     from .worktree_commands import delegations_command, worktree_command
 
     registry = CommandRegistry()
     registry.register(SlashCommand("help", "the commands you can use here", _help))
+    registry.register(SlashCommand("commands", "browse commands, bundles and available skill shortcuts", _commands,
+                                   usage="[page]"))
     registry.register(SlashCommand("whoami", "your platform, scope, sender id, tier and the commands you can run",
                                    _whoami))
     registry.register(SlashCommand("status", "backend, agents, autonomy mode, e-stop", _status))
@@ -1148,9 +1313,12 @@ def build_default_registry() -> CommandRegistry:
     registry.register(SlashCommand("btw", "ask a side question about this conversation; nothing is added to it",
                                    _btw, usage="<question>"))
     registry.register(SlashCommand("usage", "cloud provider quota left, and any 429 hold", _usage, tier=ADMIN))
-    registry.register(SlashCommand("pause", "engage the emergency stop", _pause, tier=ADMIN, usage="[reason]"))
-    registry.register(SlashCommand("stop", "same as /pause — in-flight work still finishes", _pause, tier=ADMIN, usage="[reason]"))
+    registry.register(SlashCommand("pause", "engage the emergency stop", _pause, tier=ADMIN, usage="[reason|off]"))
+    registry.register(SlashCommand("stop", "engage the emergency stop; in-flight work still finishes", _pause,
+                                   tier=ADMIN, usage="[reason]"))
     registry.register(SlashCommand("resume", "lift the emergency stop", _resume, tier=ADMIN))
+    registry.register(SlashCommand("restart", "request a human-approved hub restart", restart_command,
+                                   tier=ADMIN))
     registry.register(SlashCommand("jobs", "your scheduled jobs and whether the scheduler is alive", _jobs))
     registry.register(SlashCommand("remind", "arm a reminder: /remind <when> | <message>", _remind, tier=ADMIN, usage="<when> | <message>"))
     registry.register(SlashCommand("voice", "spoken replies in this chat: off, voice-for-voice, or always", _voice, usage="[off|voice|always]"))
@@ -1163,6 +1331,27 @@ def build_default_registry() -> CommandRegistry:
                                    tier=ADMIN))
     registry.register(SlashCommand("bundle", "load every skill of a bundle into this turn (/<bundle> works too)",
                                    _bundle, tier=ADMIN, usage="<name> [instruction]"))
+    registry.register(SlashCommand("reload_skills", "rescan installed skills and report what changed",
+                                   reload_skills, tier=ADMIN, aliases=("reload-skills",)))
+    registry.register(SlashCommand("reload_mcp", "preview saved MCP config reload and confirm tool changes",
+                                   reload_mcp, tier=ADMIN, aliases=("reload-mcp",),
+                                   usage="[confirm <token>|cancel]"))
+    registry.register(SlashCommand("debug", "save a private local diagnostic report", debug_command,
+                                   tier=ADMIN))
+    registry.register(SlashCommand("egress", "show local egress, proxy and credential status",
+                                   egress_command, tier=ADMIN, usage="[status]"))
+    registry.register(SlashCommand("diff", "show local unstaged, staged or HEAD changes",
+                                   diff_command, tier=ADMIN,
+                                   usage="[staged|all|session] [--stat] [--] path..."))
+    registry.register(SlashCommand("version", "show the running Nerva version",
+                                   version_command, aliases=("v",)))
+    registry.register(SlashCommand("profile", "show the active profile and its data home",
+                                   profile_command, tier=ADMIN))
+    registry.register(SlashCommand("platform", "inspect channels or pause and resume a failing channel",
+                                   platform_command, tier=ADMIN,
+                                   usage="[list|pause <name>|resume <name>]"))
+    registry.register(SlashCommand("update", "request a human-approved update to the trusted target",
+                                   update_command, tier=ADMIN, usage="[status]"))
     registry.register(SlashCommand("checkpoints", "checkpoint previews and approved owner operations",
                                    checkpoint_command, tier=ADMIN,
                                    usage="[status|list|diff|restore|prune|clear|clear-legacy]"))

@@ -742,6 +742,7 @@ class Orchestrator:
     _delivery_router = DeliveryRouter()
 
     def __init__(self, config: JarvisConfig):
+        self._restart_runtime = None  # exact-instance ephemeral work admission
         from .settings_db import ensure_initialized
 
         # Every hub entry point shares this constructor. Validate persisted
@@ -1072,8 +1073,17 @@ class Orchestrator:
 
         _mode, _agent_modes = _stored_approval_mode(
             lambda key, default: _gv(*key.split(".", 1), default))
+        from .restart_runtime import runtime_for
+
+        async def _restart_completed(task_id, intent_digest):
+            from agents.core.hub_restart_apply import after_completion
+
+            return await after_completion(self, task_id, intent_digest)
+
         self.autonomy = AutonomyWorker(
             self.autonomy_queue,
+            restart_runtime=runtime_for(self),
+            restart_completed=_restart_completed,
             policy=AutonomyPolicy(
                 mode=_mode,
                 agent_modes=_agent_modes,
@@ -2252,6 +2262,41 @@ class Orchestrator:
         logger.info("Channels stopped")
 
     async def channel_handler(self, text: str, channel: str = "voice", **kwargs) -> Optional[str]:
+        """Admit ingress before pending-input interception or conversation changes."""
+        from .command_source import plaintext_restart
+        from .commands import _pause, _resume, rewrite_bang
+        from .restart_runtime import runtime_for
+
+        runtime = runtime_for(self)
+        registry = getattr(self, "commands", None)
+        command = None
+        if not kwargs.get("observe_only", False):
+            # Gateway has already retained/sealed the original provider text.
+            # Only private Telegram phrases enter this command route; this does
+            # not mint source authority, which the handler rechecks separately.
+            if (channel == "telegram" and kwargs.get("chat_type") in (None, "private")
+                    and not kwargs.get("message_thread_id") and plaintext_restart(text)):
+                text = "/restart"
+                kwargs["pending_input_eligible"] = False
+            text = rewrite_bang(text, registry if isinstance(registry, CommandRegistry) else None, channel)
+            if isinstance(registry, CommandRegistry):
+                parsed = registry.parse(text)
+                command = registry.get(parsed[0]) if parsed else None
+        # Only the actual built-in handlers get the recovery lane. Their normal
+        # principal/access checks still run inside the admitted implementation.
+        control = command is not None and command.handler in (_pause, _resume)
+        lease = runtime.acquire_control() if control else runtime.acquire("turn")
+        if lease is None:
+            # No model, pending-input mutation or outbound side effect is admitted.
+            # A caller which displays handler results can show this fixed refusal.
+            return "Nerva is preparing to restart; try again shortly."
+        try:
+            with lease.bind():
+                return await self._channel_handler_admitted(text, channel, **kwargs)
+        finally:
+            lease.release()
+
+    async def _channel_handler_admitted(self, text: str, channel: str = "voice", **kwargs) -> Optional[str]:
         from contextlib import ExitStack
 
         pending_scope = ExitStack()
@@ -2260,12 +2305,7 @@ class Orchestrator:
         inbox_message_id = kwargs.pop("_inbox_message_id", "")
         # Hermes absorption 0.4: an observed group message becomes context, never an answer.
         observe_only = bool(kwargs.pop("observe_only", False))
-        # H057: on Slack and Matrix "!name" is "/name" for a command the registry knows.
-        from .commands import rewrite_bang
-
-        registry = getattr(self, "commands", None)
-        if not observe_only:   # review nit: an observed group message is stored as it was written
-            text = rewrite_bang(text, registry if isinstance(registry, CommandRegistry) else None, channel)
+        # H057 normalization happens once at ingress; observed text stays literal.
         origin_token = bind_action_origin(action_origin)
         principal_token = bind_turn_principal(
             self._channel_principal(channel, kwargs.get("sender"), kwargs.get("chat_id"),
@@ -2300,6 +2340,18 @@ class Orchestrator:
             chat_type=chat_type,
         )
         try:
+            if (not observe_only and channel == "telegram" and text == "/restart"
+                    and chat_type in (None, "private") and current_principal().scope == "dm"):
+                # Fixed control commands read no conversation/project context.
+                # The registered handler still requires a live original source
+                # and creates only a signed human-approval card, never a stop.
+                outcome = await self._dispatch_command(text)
+                response = outcome.reply if outcome is not None else "Restart command unavailable; nothing queued."
+                decision = self._delivery_router.resolve(source, text=response)
+                if decision.send and decision.target:
+                    await self.channel_manager.send(
+                        decision.target.channel, response, **{**kwargs, "voice": False, "plain": True})
+                return response
             pending = self._pending_input_service()
             if pending is not None and not observe_only:
                 pending_scope.enter_context(pending.bind(
@@ -2389,7 +2441,8 @@ class Orchestrator:
                     await draft.finish(EMPTY_TURN_REPLY)
                 return ""
             if draft is not None and draft.started:
-                # The words are already on the channel; the final edit settles them.
+                # A confirmed or uncertain transport attempt owns delivery. Never
+                # replay the whole reply when the draft's acknowledgement was lost.
                 await draft.finish(response)
                 return response
 
@@ -2749,13 +2802,18 @@ class Orchestrator:
     async def _dispatch_command(self, text: str):
         """Answer a slash command from the registry, or None when *text* is not one."""
         registry = getattr(self, "commands", None)
+        # A restart request must never become a model prompt if the command
+        # registry disappears or breaks after ingress canonicalization.
+        unavailable = (CommandOutcome("restart", "failed", "Restart command unavailable; nothing queued.")
+                       if text == "/restart" else None)
         if registry is None:
-            return None
+            return unavailable
         try:
-            return await registry.dispatch(text, orch=self, principal=current_principal())
+            outcome = await registry.dispatch(text, orch=self, principal=current_principal())
+            return unavailable if outcome is None else outcome
         except Exception:
             logger.warning("slash command dispatch failed closed", exc_info=True)
-            return None
+            return unavailable
 
     def _continue_command_turn(self, outcome) -> str:
         """H668 — the prompt a ``continue`` outcome hands the model as this turn's message.
@@ -2769,6 +2827,46 @@ class Orchestrator:
 
             begin_plan_turn(str(self.session_id or ""), getattr(rewrite, "path", ""))
         return prompt
+
+    def _command_name_taken(self, word: str) -> bool:
+        """Canonical commands, aliases and owner shortcuts precede skill namespaces."""
+        word = word.lower()
+        parsed = CommandRegistry.parse('/' + word)
+        canonical = parsed[0] if parsed is not None else word
+        registry = getattr(self, "commands", None)
+        get = getattr(registry, "get", None)
+        if word == "nerva" or callable(get) and get(canonical) is not None:
+            return True
+        from .quick_commands import named
+
+        try:
+            return named(word)
+        except Exception:
+            return True  # unreadable quick commands: no shadowing
+
+    async def _begin_skill_load(self, text: str):
+        """H079: an owner's single skill loads through the shared guarded turn context."""
+        if current_principal().admin is not True:
+            return None, False
+        loader = getattr(self, "skills", None)
+        if loader is None:
+            return None, False
+        from .skills import slash_load
+        from .skills.template_vars import SETTING as TEMPLATE_VARS_SETTING
+
+        try:
+            inv = slash_load.resolve(text, loader, taken=self._command_name_taken)
+            if inv is None:
+                return None, False
+            answer = slash_load.begin_load(inv, loader, owner=True,
+                                           session=str(self.session_id or ""),
+                                           template_vars=self.get_setting(TEMPLATE_VARS_SETTING, {}))
+        except Exception:
+            logger.warning("slash skill load refused", exc_info=True)
+            return CommandOutcome("skill", "refused", "The skill could not be loaded; nothing was sent to the model."), False
+        if answer is not None:
+            return CommandOutcome("skill", "refused", answer), False
+        return None, True
 
     async def _begin_bundle_load(self, text: str):
         """H026 — the owner's ``/<bundle> [instruction]`` or ``/bundle <name> [instruction]``.
@@ -2788,21 +2886,9 @@ class Orchestrator:
         loader = getattr(self, "skills", None)
         if loader is None:
             return None, False
-        registry = getattr(self, "commands", None)
-
-        def taken(word: str) -> bool:
-            get = getattr(registry, "get", None)
-            if callable(get) and get(word) is not None:
-                return True
-            from .quick_commands import configured
-
-            try:
-                return word in configured()
-            except Exception:
-                return True                      # unreadable quick commands: no shadowing
 
         try:
-            inv = await asyncio.to_thread(skill_bundles.invocation, text, taken=taken)
+            inv = await asyncio.to_thread(skill_bundles.invocation, text, taken=self._command_name_taken)
         except OSError:
             # Only the bundles folder itself failing to list gets here: a file in it that
             # cannot be read is that file's problem (skipped and named), never this answer.
@@ -2919,6 +3005,10 @@ class Orchestrator:
                     self._session_id_default = sid
                 if command == "/undo":
                     return f"Removed the last exchange. Earlier conversation is preserved. Session: {sid}."
+                if command == "/new":
+                    from .session_transition import record_new_session
+
+                    record_new_session(base, sid)
                 return f"Started a new conversation. Your previous conversation is still saved. Session: {sid}."
         except (OSError, ValueError, KeyError, TypeError):
             logger.warning("direct session change unavailable", exc_info=True)
@@ -3145,11 +3235,23 @@ class Orchestrator:
         turn's context: a workflow step that calls back into the orchestrator inherits the
         lease rather than deadlocking on it. Never raises.
         """
+        from .restart_runtime import runtime_for
+
+        runtime = runtime_for(self)
+        probe = runtime.acquire("turn", allow_reentrant=True)
+        if probe is None:
+            yield False
+            return
         key = self._lease_key(session_key)
         held = _held_turn_leases.get()
         if key in held:
-            yield True
+            try:
+                with probe.bind():
+                    yield True
+            finally:
+                probe.release()
             return
+        probe.release()
         # Tolerate a bare instance (test doubles build the orchestrator without __init__).
         table = self.__dict__.setdefault("_turn_leases", {})
         max_wait = getattr(self, "_turn_lease_max_wait", _TURN_LEASE_MAX_WAIT_SECONDS)
@@ -3171,6 +3273,15 @@ class Orchestrator:
             )
             yield False
             return
+        # Closing admission while this coroutine waited must not start a new
+        # standalone turn. A live admitted parent in this same task may finish.
+        admission = runtime.acquire("turn", allow_reentrant=True)
+        if admission is None:
+            lock.release()
+            yield False
+            return
+        binding = admission.bind()
+        binding.__enter__()
         token = _held_turn_leases.set(held | {key})
         # H019: one slot per turn — a lease taken inside one already held (a channel turn
         # holds its base key, then its session's) is the same turn, not another slot; its
@@ -3193,6 +3304,42 @@ class Orchestrator:
                 _turn_holder.reset(holder_token)
             _held_turn_leases.reset(token)
             lock.release()
+            binding.__exit__(None, None, None)
+            admission.release()
+
+    def restart_work_pending(self) -> bool:
+        """Conservative live-work probe; exceptions make the runtime drain refuse.
+
+        Durable queued/approval work is not running. Loaded channel lanes include
+        queued ingress so their tasks settle through the closed admission gate.
+        This is a prerequisite probe, not authority to restart the process.
+        """
+        if self.turn_slots()["running"]:
+            return True
+        manager = getattr(self, "channel_manager", None)
+        if manager is not None:
+            for adapter in list(manager.channels.values()):
+                probe = getattr(adapter, "lane_usage", None)
+                if probe is None:
+                    continue
+                usage = probe()
+                if usage is None:
+                    continue
+                for key in ("running", "queued"):
+                    value = usage[key]
+                    if type(value) is not int or value < 0:
+                        raise ValueError("invalid channel work census")
+                    if value:
+                        return True
+        subagents = getattr(self, "subagents", None)
+        if subagents is not None:
+            active = subagents.stats()["active"]
+            if type(active) is not int or active < 0:
+                raise ValueError("invalid subagent work census")
+            if active:
+                return True
+        queue = getattr(self, "autonomy_queue", None)
+        return bool(queue is not None and queue.list(status="running", limit=1))
 
     def turn_slots(self) -> dict:
         """H019 — turn slots in use, for ``nerva status``: how many turns (or session
@@ -3599,6 +3746,8 @@ class Orchestrator:
 
         outcome, bundle_loaded = await self._begin_bundle_load(text)
         if outcome is None and not bundle_loaded:
+            outcome, bundle_loaded = await self._begin_skill_load(text)
+        if outcome is None and not bundle_loaded:
             outcome = await self._dispatch_command(text)
         if outcome is not None and getattr(outcome, "status", None) == "continue":
             # H668: a command that hands the model a prompt as an ordinary turn (/plan).
@@ -3895,6 +4044,8 @@ class Orchestrator:
         await _begin_project_context(self)   # H594: the project's convention files
 
         outcome, bundle_loaded = await self._begin_bundle_load(text)
+        if outcome is None and not bundle_loaded:
+            outcome, bundle_loaded = await self._begin_skill_load(text)
         if outcome is None and not bundle_loaded:
             outcome = await self._dispatch_command(text)
         if outcome is not None and getattr(outcome, "status", None) == "continue":
@@ -6884,9 +7035,12 @@ class Orchestrator:
 
             try:
                 with observer_scope(meter):
+                    from .restart_runtime import runtime_for
+
                     resp = await asyncio.wait_for(
-                        self.agents[agent_id].process(enriched_text, agent_context,
-                        **({"prepared": prepared} if prepared is not None else {})),
+                        runtime_for(self).bind_child_operation(
+                            lambda: self.agents[agent_id].process(enriched_text, agent_context,
+                            **({"prepared": prepared} if prepared is not None else {}))),
                         timeout=seconds,
                     )
                 if isinstance(resp, str) and resp.strip():
@@ -6935,7 +7089,10 @@ class Orchestrator:
             if aid not in self.agents:
                 logger.warning(f"Agent {aid} not loaded")
 
-        coros = [_run_agent(aid) for aid in valid_ids]
+        from .restart_runtime import runtime_for
+
+        runtime = runtime_for(self)
+        coros = [runtime.bind_child_operation(lambda aid=aid: _run_agent(aid)) for aid in valid_ids]
         results_list = await asyncio.gather(*coros)
         # Hermes absorption 5a: each agent ran in its own gather task with a copied
         # context, so a recall taint the tool loop raised there (a fenced web page, a

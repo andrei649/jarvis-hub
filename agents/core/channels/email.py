@@ -20,8 +20,10 @@ import logging
 import re
 import smtplib
 import socket
+import threading
 import time
 from collections import OrderedDict
+from dataclasses import dataclass
 from email.header import decode_header, make_header
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid, parseaddr
@@ -32,10 +34,12 @@ from ..paths import data_path
 from ..persistence import JsonStore
 from . import email_inbound
 from .base import ChannelAdapter
-from .reconnect import FATAL_REPROBE_S, Backoff, classify_exception
+from .connect_deadline import DEFAULT_CONNECT_TIMEOUT, channel_connect_timeout
+from .reconnect import FATAL_REPROBE_S, Backoff, PollingCircuit, classify_exception
 
 #: H100 — the IMAP poll's own rungs on the shared ladder (it polls once a minute when well).
 IMAP_LADDER = (30.0, 60.0, 120.0, 300.0, 600.0)
+IMAP_SOCKET_TIMEOUT = 15
 _AUTH_WORDS = ("authenticationfailed", "authentication failed", "invalid credentials",
                "login failed", "logon failure", "auth")
 #: RFC 5530 codes (and plain wording) that say an auth failure is temporary: retry.
@@ -148,8 +152,61 @@ class EmailSeenStore(JsonStore):
 
     def set(self, key: str, uidvalidity: str, last_uid: int) -> None:
         with self._lock:
+            prior = self._data.get(key)
             self._data[key] = {"uidvalidity": str(uidvalidity)[:32], "last_uid": max(0, int(last_uid))}
-            self._save()
+            try:
+                self._save()
+            except BaseException:
+                if prior is None:
+                    self._data.pop(key, None)
+                else:
+                    self._data[key] = prior
+                raise
+
+
+@dataclass(frozen=True)
+class FetchBatch:
+    """One read-only worker result; only the async routing loop checkpoints it."""
+
+    messages: list[dict]
+    key: str | None
+    validity: str | None
+    previous_uid: int | None
+    last_uid: int | None
+    baseline: bool = False
+    previous_validity: str | None = None
+
+
+class _IMAPConnectTimeout(RuntimeError):
+    """Fixed local opening outcome; never includes a host, user or provider body."""
+
+
+class _IMAPOpening:
+    """One loop decision and one worker permit for the blocking IMAP handshake."""
+
+    def __init__(self, loop: asyncio.AbstractEventLoop, deadline: float):
+        self.loop = loop
+        self.deadline = deadline
+        self.ready = loop.create_future()
+        self.permit = threading.Event()
+        self.abandoned = threading.Event()
+        self.reported_timeout = False
+
+    def announce_ready(self) -> None:
+        def settle() -> None:
+            if not self.ready.done():
+                self.ready.set_result(True)
+
+        try:
+            self.loop.call_soon_threadsafe(settle)
+        except RuntimeError:
+            # A closed loop cannot grant a fresh fetch. The worker's bounded
+            # permit wait will expire and close its IMAP connection.
+            self.abandon()
+
+    def abandon(self) -> None:
+        self.abandoned.set()
+        self.permit.set()
 
 
 def _resp_int(mail, name: str) -> int | None:
@@ -234,11 +291,18 @@ def _open_smtp_ipv4(host: str, port: int) -> smtplib.SMTP:
 class EmailChannel(ChannelAdapter):
     def __init__(self, handler=None, smtp_config: dict = None, imap_config: dict = None, *,
                  pairing=None, image_reader=None, seen_store: EmailSeenStore | None = None,
-                 trusted_authserv_ids=None, require_sender_auth: bool | None = None):
+                 trusted_authserv_ids=None, require_sender_auth: bool | None = None,
+                 connect_timeout_seconds: float = DEFAULT_CONNECT_TIMEOUT):
         super().__init__("email", handler)
         self.smtp = smtp_config or {}
         self.imap = imap_config or {}
+        self._connect_timeout_seconds = channel_connect_timeout(connect_timeout_seconds)
         self._poll_task: Optional[asyncio.Task] = None
+        self._fetch_task: asyncio.Task | None = None
+        self._opening_attempt: _IMAPOpening | None = None
+        self._fetch_lease = None
+        self._poll_lifecycle_lock = asyncio.Lock()
+        self._circuit = PollingCircuit()
         # H096: whose attachments may be opened (the gateway's pairing store).
         self.pairing = pairing
         self._image_reader = image_reader
@@ -259,19 +323,47 @@ class EmailChannel(ChannelAdapter):
                                            self.imap.get("user", ""))
 
     async def start(self):
-        if not self.smtp.get("host"):
-            logger.info("Email channel: no SMTP configured, send disabled")
-        if not self.imap.get("host"):
-            logger.info("Email channel: no IMAP configured, receive disabled")
-        else:
+        async with self._poll_lifecycle_lock:
+            if self._running:
+                return
+            if (self._poll_task is not None or self._fetch_task is not None
+                    or self._fetch_lease is not None or not self._circuit.reset()):
+                raise RuntimeError("Email polling cleanup unconfirmed")
+            if not self.smtp.get("host"):
+                logger.info("Email channel: no SMTP configured, send disabled")
+            if not self.imap.get("host"):
+                logger.info("Email channel: no IMAP configured, receive disabled")
+                return
+            self.health.starting()
             self._running = True
             self._poll_task = asyncio.create_task(self._poll_loop())
 
     async def stop(self):
-        self._running = False
-        self.health.stopped()
-        if self._poll_task:
-            self._poll_task.cancel()
+        async with self._poll_lifecycle_lock:
+            self._running = False
+            self.health.stopped()
+            poll = self._poll_task
+            if poll is not None:
+                poll.cancel()
+                await asyncio.gather(poll, return_exceptions=True)
+                self._poll_task = None
+            worker = self._fetch_task
+            if worker is not None:
+                # Cancelling the asyncio waiter cannot stop a running IMAP thread.
+                # Keep its handle and lease until it really settles. Cancellation of
+                # this stop still propagates to ChannelManager's bounded cleanup.
+                with contextlib.suppress(Exception):
+                    await asyncio.shield(worker)
+                self._fetch_task = None
+            self._opening_attempt = None
+            lease, self._fetch_lease = self._fetch_lease, None
+            if lease is not None:
+                self._circuit.release(lease)
+            if not self._circuit.reset():
+                raise RuntimeError("Email polling cleanup unconfirmed")
+
+    def health_snapshot(self) -> dict:
+        return {**super().health_snapshot(), "circuit": self._circuit.snapshot()}
 
     # ── outbound ─────────────────────────────────────────────────────────────
 
@@ -347,10 +439,22 @@ class EmailChannel(ChannelAdapter):
     async def _poll_loop(self):
         backoff = Backoff(IMAP_LADDER)
         while self._running:
+            lease, wait = self._circuit.admit()
+            if lease is None:
+                await asyncio.sleep(wait)
+                continue
+            self._fetch_lease = lease
             try:
                 await self._check_imap()
+            except asyncio.CancelledError:
+                if self._fetch_task is None or self._fetch_task.done():
+                    self._circuit.release(lease)
+                    self._fetch_lease = None
+                raise
             except Exception as e:
                 if _login_refused(e):
+                    self._circuit.release(lease)
+                    self._fetch_lease = None
                     # H100: a refused login does not heal by asking again every minute:
                     # say so on the status surface and try the login again only every
                     # FATAL_REPROBE_S, so fixed credentials heal by themselves.
@@ -360,12 +464,23 @@ class EmailChannel(ChannelAdapter):
                                  FATAL_REPROBE_S / 60)
                     await asyncio.sleep(FATAL_REPROBE_S)
                     continue
-                kind = classify_exception(e).kind
-                delay = backoff.failure()
-                self.health.retrying(kind, delay)
+                timed_out = isinstance(e, _IMAPConnectTimeout)
+                kind = "connect_timeout" if timed_out else classify_exception(e).kind
+                gate_wait = self._circuit.failure(lease)
+                self._fetch_lease = None
+                delay = max(backoff.failure(), gate_wait)
+                if timed_out:
+                    # Already recorded when the deadline expired, while the
+                    # real worker and lease were still held for cleanup.
+                    self.health.next_retry_at = time.time() + delay
+                else:
+                    self.health.retrying(kind, delay)
                 logger.warning("IMAP poll failed (%s); retrying in %.0f s", kind, delay)
                 await asyncio.sleep(delay)
                 continue
+            if self._fetch_lease is lease:
+                self._circuit.success(lease)
+                self._fetch_lease = None
             backoff.success()
             self.health.ok()
             await asyncio.sleep(self.imap.get("poll_interval", 60))
@@ -377,45 +492,133 @@ class EmailChannel(ChannelAdapter):
 
     async def _check_imap(self):
         """Fetch, then route each message on its own: one that raises does not cost the
-        rest of the batch. The watermark is moved back to just before the first message
-        that failed (retried up to :data:`ROUTE_ATTEMPTS` times) or that the poll's
-        document budget deferred; messages already routed are remembered and not routed
-        again when they are fetched a second time."""
-        loop = asyncio.get_event_loop()
-        messages = await loop.run_in_executor(None, self._imap_fetch)
+        rest of the batch. The worker proposes a UID watermark; this loop commits
+        only a prefix whose routing/skip decisions it accepted. An interrupted
+        worker cannot checkpoint a message the loop never saw."""
+        if self._fetch_task is not None:
+            raise RuntimeError("Email polling cleanup unconfirmed")
+        loop = asyncio.get_running_loop()
+        opening = _IMAPOpening(loop, time.monotonic() + self._connect_timeout_seconds)
+        self._opening_attempt = opening
+        worker = asyncio.create_task(asyncio.to_thread(self._imap_fetch))
+        self._fetch_task = worker
+        # A cancelled poll retains the thread; retrieve a late error even if the
+        # poller no longer awaits its result.
+        worker.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+        try:
+            done, _ = await asyncio.wait({opening.ready, worker},
+                                         timeout=max(0.0, opening.deadline - time.monotonic()),
+                                         return_when=asyncio.FIRST_COMPLETED)
+            if worker in done:
+                # A pre-login error is accepted only inside the recognition
+                # window. A late auth-shaped failure cannot become a fatal
+                # credential verdict after the opening deadline.
+                if not opening.permit.is_set() and time.monotonic() >= opening.deadline:
+                    opening.abandon()
+                    self.health.retrying("connect_timeout", 0)
+                    opening.reported_timeout = True
+                    logger.warning("Email IMAP opening timed out")
+                    with contextlib.suppress(Exception):
+                        await asyncio.shield(worker)
+                    raise _IMAPConnectTimeout()
+                fetched = await asyncio.shield(worker)
+            elif opening.ready in done and time.monotonic() < opening.deadline:
+                opening.permit.set()
+                # Fetch duration is separate from the opening deadline.
+                fetched = await asyncio.shield(worker)
+            else:
+                opening.abandon()
+                self.health.retrying("connect_timeout", 0)
+                opening.reported_timeout = True
+                logger.warning("Email IMAP opening timed out")
+                with contextlib.suppress(Exception):
+                    await asyncio.shield(worker)
+                raise _IMAPConnectTimeout()
+        except _IMAPConnectTimeout:
+            if not opening.reported_timeout:
+                self.health.retrying("connect_timeout", 0)
+                opening.reported_timeout = True
+                logger.warning("Email IMAP opening timed out")
+            raise
+        except asyncio.CancelledError:
+            opening.abandon()
+            raise
+        finally:
+            if worker.done() and self._fetch_task is worker:
+                self._fetch_task = None
+                if self._opening_attempt is opening:
+                    self._opening_attempt = None
+        # Some existing offline worker seams return plain lists. They have no
+        # checkpoint proposal; production _imap_fetch always returns FetchBatch.
+        batch = fetched if isinstance(fetched, FetchBatch) else None
+        messages = batch.messages if batch is not None else fetched
+        lease = self._fetch_lease
+        if lease is not None:
+            self._circuit.success(lease)
+            self._fetch_lease = None
         budget = _Budget(POLL_DOCUMENT_BUDGET_S)
         rewind: int | None = None
-        for item in messages:
-            ident = (item.get("_validity"), item.get("uid"))
-            if ident in self._routed:
-                continue
-            if budget.spent() and self._needs_documents(item):
-                # Over this poll's time for documents: deferred, not dropped.
-                self._suppress("deferred_document_budget")
-                rewind = item["uid"] - 1 if rewind is None else min(rewind, item["uid"] - 1)
-                break
-            try:
-                await self._route(item, budget)
-            except Exception:
-                failures = self._route_failures.get(ident, 0) + 1
-                self._route_failures[ident] = failures
-                logger.warning("Email: routing a message failed (attempt %d)", failures,
-                               exc_info=True)
-                if failures < ROUTE_ATTEMPTS:
-                    rewind = item["uid"] - 1 if rewind is None else min(rewind, item["uid"] - 1)
+        current_uid: int | None = None
+        try:
+            for item in messages:
+                current_uid = item.get("uid")
+                ident = (item.get("_validity"), current_uid)
+                if ident in self._routed:
                     continue
-                self._suppress("route_failed")
-            self._route_failures.pop(ident, None)
-            self._routed[ident] = None
-            while len(self._routed) > 2048:
-                self._routed.popitem(last=False)
-        if rewind is not None and messages:
-            store = self._seen_store()
-            key = EmailSeenStore.key(self.imap.get("host", ""), self.imap.get("user", ""))
-            state = store.get(key)
-            validity = messages[0].get("_validity")
-            if state is not None and state["uidvalidity"] == validity and rewind < state["last_uid"]:
-                store.set(key, validity, rewind)
+                if budget.spent() and self._needs_documents(item):
+                    # Over this poll's time for documents: deferred, not dropped.
+                    self._suppress("deferred_document_budget")
+                    rewind = item["uid"] - 1 if rewind is None else min(rewind, item["uid"] - 1)
+                    break
+                try:
+                    await self._route(item, budget)
+                except Exception:
+                    failures = self._route_failures.get(ident, 0) + 1
+                    self._route_failures[ident] = failures
+                    logger.warning("Email: routing a message failed (attempt %d)", failures,
+                                   exc_info=True)
+                    if failures < ROUTE_ATTEMPTS:
+                        rewind = item["uid"] - 1 if rewind is None else min(rewind, item["uid"] - 1)
+                        continue
+                    self._suppress("route_failed")
+                self._route_failures.pop(ident, None)
+                self._routed[ident] = None
+                while len(self._routed) > 2048:
+                    self._routed.popitem(last=False)
+        except asyncio.CancelledError:
+            if batch is not None and current_uid is not None:
+                through = current_uid - 1 if rewind is None else min(rewind, current_uid - 1)
+                try:
+                    self._commit_fetch_batch(batch, through)
+                except Exception:
+                    # Keep the original cancellation. A missed checkpoint may
+                    # replay, but a failed store write cannot prove delivery.
+                    logger.warning("Email watermark commit failed during cancellation")
+            raise
+        if batch is not None and batch.last_uid is not None:
+            self._commit_fetch_batch(batch, batch.last_uid if rewind is None else rewind)
+
+    def _commit_fetch_batch(self, batch: FetchBatch, through_uid: int) -> None:
+        """Commit an accepted prefix, never the worker's unreviewed proposal."""
+        if batch.key is None or batch.validity is None or batch.last_uid is None:
+            return
+        store = self._seen_store()
+        state = store.get(batch.key)
+        if batch.baseline:
+            if (state is None) != (batch.previous_validity is None):
+                raise RuntimeError("Email watermark changed during fetch")
+            if state is not None and (state["uidvalidity"] != batch.previous_validity
+                                      or state["last_uid"] != batch.previous_uid):
+                raise RuntimeError("Email watermark changed during fetch")
+            store.set(batch.key, batch.validity, batch.last_uid)
+            logger.info("Email: mailbox watermark set; earlier messages are left as they are")
+            return
+        if (state is None or state["uidvalidity"] != batch.validity
+                or state["last_uid"] != batch.previous_uid):
+            raise RuntimeError("Email watermark changed during fetch")
+        through = max(batch.previous_uid, min(through_uid, batch.last_uid))
+        if through > batch.previous_uid:
+            store.set(batch.key, batch.validity, through)
 
     def _needs_documents(self, item: dict) -> bool:
         return (any(getattr(a, "kind", "") == "file" for a in item.get("attachments") or ())
@@ -549,8 +752,10 @@ class EmailChannel(ChannelAdapter):
             return None
 
     def _parse(self, raw: bytes) -> dict:
+        from .media_limits import current_max_bytes
+
         msg = email.message_from_bytes(raw)
-        atts, skipped = email_inbound.attachments(msg)
+        atts, skipped = email_inbound.attachments(msg, max_bytes=current_max_bytes())
         threading = email_inbound.threading_headers(msg)
         return {
             "sender": _sender_address(msg.get("From", "")),
@@ -569,26 +774,39 @@ class EmailChannel(ChannelAdapter):
             self._seen = EmailSeenStore()
         return self._seen
 
-    def _imap_fetch(self) -> list[dict]:
+    def _imap_fetch(self) -> FetchBatch:
+        opening = self._opening_attempt
         mail = imaplib.IMAP4_SSL(self.imap["host"], self.imap.get("port", 993),
-                                 ssl_context=_tls_context(self.imap["host"]))
+                                 ssl_context=_tls_context(self.imap["host"]),
+                                 timeout=IMAP_SOCKET_TIMEOUT)
         # Always log out (closing the SSL socket) even if login/select/fetch
         # raises — otherwise a bad login or server error leaks one socket per
         # poll interval.
         try:
+            if opening is not None and (opening.abandoned.is_set()
+                                        or time.monotonic() >= opening.deadline):
+                raise _IMAPConnectTimeout()
             mail.login(self.imap["user"], self.imap.get("password", ""))
+            if opening is not None:
+                if opening.abandoned.is_set() or time.monotonic() >= opening.deadline:
+                    raise _IMAPConnectTimeout()
+                opening.announce_ready()
+                opening.permit.wait(max(0.0, opening.deadline - time.monotonic()))
+                if (opening.abandoned.is_set() or not opening.permit.is_set()
+                        or time.monotonic() >= opening.deadline):
+                    raise _IMAPConnectTimeout()
             return self._fetch_new(mail)
         finally:
             with contextlib.suppress(Exception):
                 mail.logout()
 
-    def _fetch_new(self, mail) -> list[dict]:
+    def _fetch_new(self, mail) -> FetchBatch:
         """H096 — the messages after the newest UID already handled. Read-only: the
         mailbox is opened with EXAMINE and bodies are fetched with BODY.PEEK, so Nerva
         never marks anything read for the owner's other mail clients."""
         status, _ = mail.select("INBOX", readonly=True)
         if status != "OK":
-            return []
+            return FetchBatch([], None, None, None, None)
         validity = str(_resp_int(mail, "UIDVALIDITY") or 0)
         store = self._seen_store()
         key = EmailSeenStore.key(self.imap.get("host", ""), self.imap.get("user", ""))
@@ -601,14 +819,18 @@ class EmailChannel(ChannelAdapter):
                 newest = max(0, uidnext - 1)
             else:
                 status, data = mail.uid("SEARCH", None, "ALL")
-                newest = max(_uids(data), default=0) if status == "OK" else 0
-            store.set(key, validity, newest)
-            logger.info("Email: mailbox watermark set; earlier messages are left as they are")
-            return []
+                if status != "OK":
+                    # No UIDNEXT and no successful search: zero is not evidence
+                    # that this is an empty mailbox. Retry baseline discovery.
+                    return FetchBatch([], None, None, None, None)
+                newest = max(_uids(data), default=0)
+            return FetchBatch([], key, validity, state["last_uid"] if state else None,
+                              newest, baseline=True,
+                              previous_validity=state["uidvalidity"] if state else None)
         last = state["last_uid"]
         status, data = mail.uid("SEARCH", None, f"UID {last + 1}:*")
         if status != "OK":
-            return []
+            return FetchBatch([], key, validity, last, last)
         # "N:*" always answers the newest UID, even when it is below N.
         uids = sorted({u for u in _uids(data) if u > last})[:MAX_PER_POLL]
         messages: list[dict] = []
@@ -634,5 +856,4 @@ class EmailChannel(ChannelAdapter):
                 continue
             item["uid"], item["_validity"] = uid, validity
             messages.append(item)
-        store.set(key, validity, last)
-        return messages
+        return FetchBatch(messages, key, validity, state["last_uid"], last)

@@ -155,7 +155,7 @@ _ATTACHMENT_KEYS = frozenset({"path", "name", "mime", "bytes", "sha256"})
 
 
 def _email_attachments(text: str):
-    """H096 — split an email reply into its words and the files its ``MEDIA:`` lines name,
+    """Split a governed reply into its words and the files its ``MEDIA:`` lines name,
     each resolved under :mod:`channels.media_delivery` (approved folders only, no secrets,
     bounded size). A refused file refuses the whole reply: the drafter is told why rather
     than the owner approving a mail that silently lost an attachment."""
@@ -192,8 +192,7 @@ def _human_size(size: int) -> str:
 
 
 def _approved_attachments(listed):
-    """H096 — re-resolve each approved attachment just before SMTP and insist on the very
-    bytes the owner approved (same SHA-256 and size); anything else blocks the send."""
+    """Re-resolve approved attachments before transport and require exact metadata/bytes."""
     from .channels import media_delivery
 
     if (not isinstance(listed, list) or not listed
@@ -209,7 +208,8 @@ def _approved_attachments(listed):
         item = media_delivery.resolve(entry["path"])
         if isinstance(item, media_delivery.Refusal):
             return f"attachment_refused:{item.reason}"
-        if item.sha256 != entry["sha256"] or len(item.data) != entry.get("bytes"):
+        if (item.sha256 != entry["sha256"] or len(item.data) != entry.get("bytes")
+                or item.name != entry.get("name") or item.mime != entry.get("mime")):
             return "attachment_changed"
         files.append(item)
     return files
@@ -290,7 +290,7 @@ class ChannelReplyBroker:
                  enqueue: Callable | None = None, channel_manager=None,
                  agent: str = "veronica", audit=None, kernel=None, task_reader=None,
                  email_allowlist=None, email_reply_max_per_hour: int | None = None,
-                 email_reply_limiter=None) -> None:
+                 email_reply_limiter=None, discord_media_owner: Callable | None = None) -> None:
         self._inbox = inbox or ChannelInboxStore()
         self._enqueue = enqueue
         self._channel_manager = channel_manager
@@ -298,6 +298,7 @@ class ChannelReplyBroker:
         self._audit = audit
         self._kernel = kernel
         self._task_reader = task_reader
+        self._discord_media_owner = discord_media_owner
         self._pending_prompts: dict[int, _PromptDelivery] = {}
         # STAB-4 (#933) — email-only, enforced in execute() before SMTP.
         # An explicit allowlist is an additional restriction on top of the
@@ -422,6 +423,18 @@ class ChannelReplyBroker:
             self._inbox.mark_reply_task(message["id"], result["task_id"])
         return result
 
+    def _discord_media_target(self, sender, channel_id) -> object | None:
+        """Recheck owner pairing and the live SDK DM, at request and at send."""
+        manager = self._channel_manager
+        adapter = getattr(manager, "channels", {}).get("discord") if manager is not None else None
+        check = getattr(adapter, "media_target_allowed", None)
+        if not callable(check) or not callable(self._discord_media_owner):
+            return None
+        try:
+            return adapter if check(sender, channel_id, self._discord_media_owner) is True else None
+        except Exception:
+            return None
+
     def _request(self, thread: dict, text: str, *, agent: str | None, source: str,
                  pending: _PromptDelivery | None = None, native_prompt: dict | None = None) -> dict:
         from .action_origin import current_action_origin
@@ -448,7 +461,20 @@ class ChannelReplyBroker:
             payload["ephemeral_ttl"] = min(ephemeral_ttl(text, default=default), 86400)
         if native_prompt is not None:
             payload["native_prompt"] = native_prompt
-        if payload["channel"] == "email" and pending is None:
+        if payload["channel"] in {"email", "discord"} and pending is None:
+            if payload["channel"] == "discord":
+                from .channels import media_delivery
+
+                # No disk read for a stranger or a group. The extractor only parses lines.
+                if media_delivery.extract_directives(clean_text)[1]:
+                    inbound = self._inbox.get_message(payload["message_id"])
+                    target = payload["reply"].get("channel_id")
+                    if (not inbound or inbound.get("direction") != "in"
+                            or inbound.get("channel") != "discord"
+                            or inbound.get("thread_id") != thread_id
+                            or inbound.get("reply") != payload["reply"]
+                            or self._discord_media_target(inbound.get("sender"), target) is None):
+                        return {"ok": False, "reason": "discord_media_owner_dm_required"}
             # H096: `MEDIA:` lines in an email reply become attachments. Each file is
             # resolved under the media-delivery policy NOW, and its name, size and SHA-256
             # go on the approval card; execute() sends only those exact bytes.
@@ -519,6 +545,10 @@ class ChannelReplyBroker:
                 title += " + attaching " + "; ".join(
                     f"{a['name']} from {_folder(a['path'])} ({_human_size(a['bytes'])}, "
                     f"sha256 {a['sha256'][:12]})" for a in payload["attachments"])
+        if thread["channel"] == "discord" and payload.get("attachments"):
+            title += " + attaching " + "; ".join(
+                f"{a['name']} ({_human_size(a['bytes'])}, sha256 {a['sha256'][:12]})"
+                for a in payload["attachments"])
         preview = preview_task({
             "kind": CHANNEL_REPLY_TASK_KIND,
             "title": title,
@@ -593,6 +623,24 @@ class ChannelReplyBroker:
                     or message.get("reply") != reply):
                 return {"status": "blocked", "reason": "inbound_binding_changed", "channel": channel}
         extra_files: list = []
+        discord_adapter = None
+        discord_sender = ""
+        if channel == "discord" and "attachments" in payload:
+            inbound = self._inbox.get_message(message_id) if message_id else None
+            if (not inbound or inbound.get("direction") != "in"
+                    or inbound.get("channel") != "discord"
+                    or inbound.get("thread_id") != thread_id
+                    or inbound.get("reply") != reply):
+                return {"status": "blocked", "reason": "inbound_binding_changed", "channel": channel}
+            discord_sender = str(inbound.get("sender") or "")
+            discord_adapter = self._discord_media_target(discord_sender, reply.get("channel_id"))
+            if discord_adapter is None:
+                return {"status": "blocked", "reason": "discord_media_owner_dm_required",
+                        "channel": channel}
+            files = await asyncio.to_thread(_approved_attachments, payload["attachments"])
+            if isinstance(files, str):
+                return {"status": "blocked", "reason": files, "channel": channel}
+            extra_files = files
         if channel == "email":
             # STAB-4 (#933), enforced here — the last step before SMTP.
             # 1. The reply recipient must be exactly the inbound sender who
@@ -650,11 +698,26 @@ class ChannelReplyBroker:
         extra = {}
         if channel == "email" and extra_files:
             extra["attachments"] = extra_files
+        if channel == "discord" and extra_files:
+            extra["attachments"] = tuple(extra_files)
+            extra["delivery_key"] = f"channel.reply:{task.id}"
         if channel == "sms" and type(getattr(task, "id", None)) is int:
             # H081 x G16: a retried task never sends the paid message twice.
             extra["delivery_key"] = f"channel.reply:{task.id}"
         try:
-            sent = await send_reply(channel, text, **reply, **extra)
+            if channel == "discord" and extra_files:
+                from .channels.discord_media import DiscordMediaPermit, bind_permit
+
+                permit = DiscordMediaPermit(
+                    task=asyncio.current_task(), adapter=discord_adapter,
+                    channel_id=int(reply["channel_id"]), sender_id=int(discord_sender),
+                    reply_task_id=task.id, files=extra["attachments"],
+                    owner_allowed=self._discord_media_owner,
+                )
+                with bind_permit(permit):
+                    sent = await send_reply(channel, text, **reply, **extra)
+            else:
+                sent = await send_reply(channel, text, **reply, **extra)
         except Exception:
             logger.warning("channel reply send failed", exc_info=True)
             return {"status": "failed", "reason": "send_failed", "channel": channel}

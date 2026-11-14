@@ -528,6 +528,16 @@ def _telegram_command_menus(orch):
     # Only a private chat (a positive id): an owner chat that is a group would show the
     # owner's commands to everyone in it.
     owner = (int(raw), telegram_menu(commands)) if raw.isdigit() and int(raw) > 0 else None
+    if owner is not None and getattr(orch, "skills", None) is not None:
+        from agents.core.channels.skill_menu import project_skill_menu
+
+        menu = owner[1]
+        projected = project_skill_menu(
+            orch.skills, platform="telegram", slots=100 - len(menu),
+            taken=orch._command_name_taken, reserved=(row["command"] for row in menu),
+        )
+        menu.extend({"command": entry.name, "description": entry.description}
+                    for entry in projected.entries)
     return everyone, owner
 
 
@@ -636,6 +646,7 @@ async def lifespan(application: FastAPI):
         command_probe=orch.command_refused_here,        # H058: a refused command skips the lane
         pairing=getattr(orch, "sender_pairing", None),
         inbox_store=orch.channel_inbox,
+        command_source_adapter=lambda: (getattr(orch, "channels", None) or {}).get("telegram"),
     )
     gateway.set_rate_limit(int(safe_mode.get_value("channels", "rate_limit", 10)))  # /admin → channels.rate_limit (H490)
     web_enabled = bool(get_value("channels", "web_enabled", True))        # /admin → channels.web_enabled
@@ -676,6 +687,14 @@ async def lifespan(application: FastAPI):
     voice_ch = VoiceChannel(handler=gateway.route, wake_words=orch.get_setting("general.wake_words", ["jarvis", "hub"]))
     await orch.register_channel(voice_ch)
 
+    from agents.core.channels.connect_deadline import (
+        CONNECT_TIMEOUT_SETTING,
+        DEFAULT_CONNECT_TIMEOUT,
+        channel_connect_timeout,
+    )
+    channel_open_timeout = channel_connect_timeout(
+        orch.get_setting(CONNECT_TIMEOUT_SETTING, DEFAULT_CONNECT_TIMEOUT))
+
     tg_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     if tg_token:
         # SEC-B3 (adversarial audit 2026-07-25): this was constructed with no
@@ -685,6 +704,7 @@ async def lifespan(application: FastAPI):
         # the code read as guarded and was not.
         telegram_ch = TelegramChannel(
             token=tg_token, handler=gateway.route,
+            connect_timeout_seconds=channel_open_timeout,
             pending_reply_handler=gateway.route_pending,
             pending_callback_handler=gateway.route_pending_callback,
             pre_turn_interrupt=gateway.pre_lane_interrupt,
@@ -710,6 +730,12 @@ async def lifespan(application: FastAPI):
     if discord_token:
         discord_ch = DiscordChannel(
             token=discord_token, handler=gateway.route, pairing=gateway.pairing,
+            connect_timeout_seconds=channel_open_timeout,
+            command_registry=orch.commands,
+            skill_loader=orch.skills,
+            skill_owner=lambda sender, channel_id, chat_type: orch._channel_principal(
+                "discord", sender, channel_id, chat_type).admin is True,
+            skill_taken=orch._command_name_taken,
             pending_reply_handler=gateway.route_pending,
             pending_callback_handler=gateway.route_pending_callback,
             pre_turn_refused=gateway.pre_lane_refused,
@@ -719,7 +745,7 @@ async def lifespan(application: FastAPI):
 
     # ntfy (Hermes absorption 4g): a push to the owner's phone with no bot and no account.
     # Receiving is explicitly opt-in; the topic is the identity and is never logged.
-    ntfy_ch = NtfyChannel.from_env(os.environ)
+    ntfy_ch = NtfyChannel.from_env(os.environ, connect_timeout_seconds=channel_open_timeout)
     if ntfy_ch is not None and safe_mode.enabled():
         # H490: in safe mode no outbound webhook is started (ntfy, the webhook channels).
         safe_mode.note("outbound_webhooks")
@@ -741,6 +767,7 @@ async def lifespan(application: FastAPI):
         # so this branch never ran until the config shape was corrected.
         email_ch = EmailChannel(
             handler=gateway.route,
+            connect_timeout_seconds=channel_open_timeout,
             # H096: attachments are opened only for senders this gate admits.
             pairing=gateway.pairing,
             smtp_config={
@@ -761,7 +788,9 @@ async def lifespan(application: FastAPI):
     if slack_token:
         slack_ch = SlackChannel(
             token=slack_token, handler=gateway.route,
+            connect_timeout_seconds=channel_open_timeout,
             app_token=os.environ.get("SLACK_APP_TOKEN", ""),
+            command_registry=orch.commands,
             pairing=gateway.pairing,
             pending_reply_handler=gateway.route_pending,
             pending_callback_handler=gateway.route_pending_callback,
@@ -806,6 +835,9 @@ async def lifespan(application: FastAPI):
     await gate_warmup(getattr(orch, "_warmup_task", None),
                       warmup_timeout(get_value(*WARMUP_SETTING.split(".", 1), 20)))
     await orch.start_channels()
+    # A fixed owner notice is considered only after live bot identity is known.
+    from agents.core.hub_restart_apply import after_boot as restart_after_boot
+    await restart_after_boot(orch)
     from agents.core.routers.cameras import start_camera_ingestion
     await start_camera_ingestion()
     logger.info(
@@ -1347,6 +1379,13 @@ class TurnNotice(BaseModel):
     code: str
     text: str
 
+    @field_validator("text")
+    @classmethod
+    def safe_text(cls, value: str) -> str:
+        from agents.core.channels.outbound_safety import sanitize_outbound
+
+        return str(sanitize_outbound(value))
+
 
 class TurnCompletion(TypedDict):
     kind: str
@@ -1419,6 +1458,14 @@ class TurnOutcome(TypedDict):
 
 class ChatResponse(BaseModel):
     reply: str
+
+    @field_validator("reply")
+    @classmethod
+    def safe_reply(cls, value: str) -> str:
+        from agents.core.channels.outbound_stream import final_text
+
+        return final_text(value)
+
     session_id: str | None = None
     usage: dict | None = None
     runtime_stops: list[str] = []
@@ -1612,7 +1659,9 @@ def _selected_turn_outcome(orchestrator, measured: dict | None, *, usage: dict |
                 if callable(read_title) and orchestrator.get_setting('memory.session_titles', True) is True:
                     title = read_title(session_id).get('title')
                     if type(title) is str and title.strip():
-                        result['title'] = title[:200]
+                        from agents.core.channels.outbound_safety import sanitize_outbound
+
+                        result['title'] = str(sanitize_outbound(title))[:200]
             if 'battery' in fields:
                 result['battery'] = True  # selected client-owned PowerChip source
     except Exception:
@@ -1813,14 +1862,19 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
     queued_approvals: list[int] = []
     turn_notices: list[dict] = []
     live_usage = None
+    from agents.core.channels.outbound_stream import OutboundStream, safe_notices, safe_prompt
+
+    outbound = OutboundStream()
 
     async def on_token(token: str):
         from agents.core.turn_outcome import current_turn_outcome, record_visible_output
 
-        record_visible_output(token)
-        await queue.put(("token", token))
+        visible = outbound.push(token)
+        if visible:
+            record_visible_output(visible)
+            await queue.put(("token", visible))
         outcome = current_turn_outcome()
-        if outcome is not None:
+        if visible and outcome is not None:
             await queue.put(("outcome_progress", _selected_turn_outcome(orch, outcome.progress(
                 usage=live_usage.snapshot() if live_usage is not None else None,
                 status=live_usage.status_snapshot() if live_usage is not None else None),
@@ -1874,6 +1928,9 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
         # is bound here for the same reason.
         from agents.core import context_refs, session_titles
         from agents.core.llm.request_context import reasoning_scope
+        from agents.core.session_transition import open_session_transition, reset_session_transition
+
+        transition_sink, transition_token = open_session_transition()
         principal_token = bind_turn_principal(principal) if principal is not None else None
         sink, approvals_token = open_turn_approvals()
         from agents.core.turn_notices import open_turn_notices, reset_turn_notices
@@ -1887,6 +1944,15 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
         words_token = session_titles.bind_own_words(message, message if own_words is None else own_words)  # H413
 
         async def end(text: str) -> None:
+            from agents.core.turn_outcome import record_visible_output
+
+            tail, text = outbound.finish(text)
+            if tail:
+                record_visible_output(tail)
+                await queue.put(("token", tail))
+                await queue.put(("outcome_progress", _selected_turn_outcome(orch, outcome_sink.progress(
+                    usage=collector.snapshot(), status=collector.status_snapshot()),
+                    usage=collector.snapshot())))
             queued_approvals[:] = sink
             turn_notices[:] = notices
             session = orch.session_id
@@ -1894,7 +1960,7 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             await queue.put(("end", (text, session if isinstance(session, str) else None,
                                      _selected_turn_outcome(orch, measured, usage=collector.snapshot(),
                                                             session_id=session), collector.snapshot(),
-                                     stops.snapshot())))
+                                     stops.snapshot(), transition_sink.finish(session))))
 
         try:
             if refused is not None:
@@ -1960,6 +2026,7 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
             turn_notices[:] = notices
             await queue.put(("error", (collector.snapshot(), stops.snapshot())))
         finally:
+            reset_session_transition(transition_token)
             outcome_sink.close()
             reset_turn_outcome(outcome_token)
             reset_turn_approvals(approvals_token)
@@ -1984,18 +2051,21 @@ async def _chat_event_stream(orch, message: str, agent: str, agent_override, pri
                 yield f"data: {json.dumps({'type': 'tool', 'event': data})}\n\n"
             elif kind == "clarify":
                 prompt, acknowledged = data
-                yield f"data: {json.dumps(prompt)}\n\n"
+                yield f"data: {json.dumps(safe_prompt(prompt))}\n\n"
                 if not acknowledged.done():
                     acknowledged.set_result(True)
             elif kind == "end":
-                full, actual_session, outcome, usage, stops = data
-                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': full, 'session_id': actual_session, 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices, 'outcome': outcome, 'usage': usage, 'runtime_stops': stops})}\n\n"
+                full, actual_session, outcome, usage, stops, transition = data
+                turn_notices[:] = safe_notices(turn_notices)
+                extra = {"session_transition": transition} if transition is not None else {}
+                yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': full, 'session_id': actual_session, 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices, 'outcome': outcome, 'usage': usage, 'runtime_stops': stops, **extra})}\n\n"
                 break
             elif kind == "error":
                 # Same shape on the error end event — a client that always reads the
                 # field should never have to special-case the failure branch, and a
                 # turn that queued something before failing still has to name it.
                 usage, stops = data
+                turn_notices[:] = safe_notices(turn_notices)
                 yield f"data: {json.dumps({'type': 'end', 'agent': agent, 'text': 'Eroare internă.', 'session_id': None, 'pending_approvals': queued_approvals, 'warming': warming, 'notices': turn_notices, 'outcome': None, 'usage': usage, 'runtime_stops': stops})}\n\n"
                 break
     finally:
@@ -2525,8 +2595,30 @@ def mcp_held_names() -> set[str]:
 
 def _load_mcp_config():
     """Load MCP servers configuration from settings DB."""
+    from copy import deepcopy
+
     from agents.core.settings_db import get_category
-    from agents.core import safe_mode
+    from agents.core import load_set, safe_mode
+
+    manager = orch.mcp
+    lists = load_set.declared("mcp")
+    # Load-set edits are next-start settings. A command rereading saved server
+    # definitions must retain this boot's policy, including for newly saved names.
+    snapshot = {key: tuple(lists[key]) for key in ("disabled", "only")}
+    manager.saved_reload_load_set = snapshot
+
+    def commit_held(rows):
+        if orch.mcp is not manager or manager.saved_reload_load_set is not snapshot:
+            raise RuntimeError("manager_changed")
+        _MCP_HELD[:] = deepcopy(rows)
+        load_set.begin("mcp")
+        for row in _MCP_HELD:
+            load_set.note_skipped("mcp", str(row.get("name") or ""))
+        present = {row["name"] for row in manager.to_config()} | {
+            str(row.get("name") or "") for row in _MCP_HELD}
+        load_set.finish("mcp", present, lists=snapshot)
+
+    manager.saved_reload_commit_held = commit_held
     items = get_category("mcp")
     for item in items:
         if item["key"] == "servers":
@@ -2537,9 +2629,7 @@ def _load_mcp_config():
                     safe_mode.note("mcp_servers")
                     logger.warning("Safe mode: %d saved MCP servers not loaded", len(item["value"]))
                 return
-            from agents.core import load_set
             rows = [row for row in (item["value"] or []) if isinstance(row, dict)]
-            lists = load_set.declared("mcp")
             load_set.begin("mcp")
             kept = [row for row in rows if load_set.permits("mcp", str(row.get("name") or ""), lists=lists)]
             _MCP_HELD[:] = [row for row in rows if row not in kept]

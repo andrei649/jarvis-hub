@@ -358,7 +358,8 @@ async def test_navigation_with_a_transport_still_honours_the_allowlist():
     assert driver.calls == []
 
 
-async def test_an_allowlisted_navigation_reaches_the_driver_once_a_transport_exists():
+async def test_an_allowlisted_navigation_reaches_the_driver_once_a_transport_exists(monkeypatch):
+    monkeypatch.setattr("agents.core.security.ssrf.check_ssrf", lambda _url: None)
     driver = NullBrowserDriver()
     browser = GovernedBrowser(
         driver=driver, policy=BrowserPolicy(["example.com"]), transport=object()

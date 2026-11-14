@@ -70,9 +70,8 @@ def root(tmp_path, monkeypatch):
 
 
 def _approved_task(name: str, task_id: int = 7):
-    st = bk.resolve_backup(name).stat()
     return SimpleNamespace(id=task_id, decided_by="admin",
-                           payload={"name": name, "bytes": st.st_size, "mtime": st.st_mtime})
+                           payload=bk.restore_request(name)["payload"])
 
 
 class _AcceptingServer:
@@ -223,9 +222,30 @@ def test_the_predecessor_wait_is_bounded():
 
 
 def test_serve_waits_for_the_predecessor_before_it_applies_a_stage():
-    text = (REPO / "serve.py").read_text(encoding="utf-8")
-    assert text.index("\nwait_for_predecessor()\n") < text.index("\napply_staged_restore()\n")
-    assert text.index("\napply_staged_restore()\n") < text.index("from agents.web import app")
+    import ast
+
+    tree = ast.parse((REPO / "serve.py").read_text(encoding="utf-8"))
+
+    def startup_statements(body):
+        # Diagnostic try blocks preserve module execution order. Do not descend
+        # into functions or conditional branches that may never run at startup.
+        for node in body:
+            if isinstance(node, ast.Try):
+                yield from startup_statements(node.body)
+            else:
+                yield node
+
+    order = []
+    for node in startup_statements(tree.body):
+        if (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Name)):
+            order.append(node.value.func.id)
+        elif (isinstance(node, ast.ImportFrom) and node.module == "agents.web"
+              and any(alias.name == "app" for alias in node.names)):
+            order.append("import_app")
+    assert order.count("wait_for_predecessor") == order.count("apply_staged_restore") == 1
+    assert order.index("wait_for_predecessor") < order.index("apply_staged_restore")
+    assert order.index("apply_staged_restore") < order.index("import_app")
 
 
 # ── 3. no self-restart: every surface says so ────────────────────────────────────

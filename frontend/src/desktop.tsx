@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { apiGet, apiPost } from './api/client';
 import { fmtTimeShort } from './primitives';
+import type { SessionRecovery } from './session-recovery';
 
 type Action = 'show' | 'hide' | 'reset' | 'handoff' | 'drag' | 'resize';
 type Capabilities = { compositor: string; positioning: boolean; alwaysOnTop: boolean };
@@ -25,7 +26,9 @@ export function notifyDesktopConversation() {
 // same-origin client/server session. Cleanup prevents a slow read replacing a turn.
 const noSelectedSession = () => null;
 export function useDesktopConversation(setMessages: (messages: any[]) => void, busy: boolean, demo: boolean,
-                                       selectedSessionId: () => string | null = noSelectedSession) {
+                                       selectedSessionId: () => string | null = noSelectedSession,
+                                       recovery?: SessionRecovery,
+                                       activityGeneration?: () => string | number) {
   const sync = useRef({ busy, pending: false, generation: 0 });
   const resume = useRef<(() => void) | null>(null);
   useLayoutEffect(() => {
@@ -42,13 +45,24 @@ export function useDesktopConversation(setMessages: (messages: any[]) => void, b
       if (sync.current.busy) return;
       const request = ++sync.current.generation;
       const selected = selectedSessionId();
+      const capturedActivity = activityGeneration?.();
       const history = selected ? apiPost('/sessions/resume', { session_id: selected }) : apiGet('/memory');
       history.then((r: any) => {
         if (!active || sync.current.busy || request !== sync.current.generation ||
-            selected !== selectedSessionId() || !Array.isArray(r?.turns)) return;
+            selected !== selectedSessionId() ||
+            (capturedActivity !== undefined && capturedActivity !== activityGeneration?.()) ||
+            !Array.isArray(r?.turns)) return;
         sync.current.pending = false;
         setMessages(r.turns.map((tn: any) => ({ role: tn.role === 'user' ? 'user' : 'agent', who: tn.agent_id || 'jarvis', role_label: '', text: tn.content, ts: fmtTimeShort(new Date(tn.timestamp || Date.now())) })));
-      }).catch(() => {});
+      }).catch((error: unknown) => {
+        if (!selected || !recovery) return;
+        void recovery.recover(selected, error, () => active && !sync.current.busy &&
+          request === sync.current.generation && selected === selectedSessionId() &&
+          (capturedActivity === undefined || capturedActivity === activityGeneration?.()))
+          .then((healed) => {
+            if (healed && active && request === sync.current.generation) sync.current.pending = false;
+          });
+      });
     };
     resume.current = () => { if (sync.current.pending) refresh(); };
     // Keep subscribers alive across busy changes so queued channel delivery is
@@ -62,7 +76,7 @@ export function useDesktopConversation(setMessages: (messages: any[]) => void, b
       active = false; sync.current.generation += 1; resume.current = null;
       channel?.close(); window.removeEventListener('focus', refresh); window.removeEventListener('nerva-desktop-handoff', refresh);
     };
-  }, [setMessages, demo, selectedSessionId]);
+  }, [setMessages, demo, selectedSessionId, recovery, activityGeneration]);
   useEffect(() => { if (!busy) resume.current?.(); }, [busy]);
 }
 export function DesktopControls({ floating = false }: { floating?: boolean }) {

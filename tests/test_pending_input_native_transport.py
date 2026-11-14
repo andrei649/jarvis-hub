@@ -337,20 +337,20 @@ async def test_card_send_does_not_bypass_contract_or_workspace_governance(tmp_pa
 
 
 @pytest.mark.asyncio
-async def test_unverified_native_receipt_leaves_buttons_unbound_and_text_fallback_usable(tmp_path):
+async def test_unverified_native_receipt_leaves_buttons_unbound_without_duplicate_prompt(tmp_path):
     orch, _cap, gateway, _server, ready, _pairing, answers, channel, requests = await native_host(
         tmp_path, receipt="701")
     task = asyncio.create_task(incoming(gateway, message_thread_id=8))
     try:
         await asyncio.wait_for(ready.wait(), 1)
         data = keyboard(requests)[1][0]["callback_data"]
+        await asyncio.wait_for(task, 1)
         await applied_tap(channel, tap(data))
-        assert not task.done() and not answers
         assert requests[-1][1]["text"] == "Not applied."
         assert not orch._pending_input_service()._card_tokens
-        assert await incoming(gateway, "2", message_thread_id=8) == ""
-        await asyncio.wait_for(task, 1)
-        assert answers[0][0]["result"]["user_response"] == "Remote"
+        assert answers[0][0]["result"] == {"ok": False, "reason": "prompt_delivery_failed"}
+        prompts = [body for method, body in requests if method == "sendMessage" and "Choose" in body["text"]]
+        assert len(prompts) == 1
     finally:
         await finish(orch, channel, task)
 

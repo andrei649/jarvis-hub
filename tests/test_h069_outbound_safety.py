@@ -196,6 +196,8 @@ class _Client:
 
     async def post(self, url, json=None, data=None, **kwargs):
         self.posts.append((url.rsplit("/", 1)[-1], dict(json or data or {})))
+        if url.endswith("/editMessageText"):
+            return _Resp(json["message_id"])
         self.next_id += 1
         return _Resp(self.next_id)
 
@@ -280,6 +282,30 @@ async def test_job_delivery_leaves_silence_to_the_agent_gate():
     runner._orch = SimpleNamespace(channels={"ntfy": _Fake()})
     assert (await runner._send("[SILENT]", "ntfy")) == "delivered to ntfy"
     assert sent == ["[SILENT]"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message,expected", [
+    ("[SILENT]", "[SILENT]"),
+    (f"key={ANTHROPIC}\x00", "key=[REDACTED:anthropic_key]"),
+])
+async def test_job_literal_delivery_reaches_telegram_without_bypassing_safety(
+    monkeypatch, message, expected,
+):
+    from types import SimpleNamespace
+
+    from agents.core.autonomy.jobs import JobRunner
+
+    monkeypatch.setenv("AUTONOMY_OWNER_CHAT_ID", "5")
+    channel = _telegram()
+    runner = JobRunner.__new__(JobRunner)
+    runner._orch = SimpleNamespace(channels={"telegram": channel})
+    assert await runner._send(message, "telegram") == "delivered to telegram"
+    assert len(channel.client.posts) == 1
+    method, body = channel.client.posts[0]
+    assert method == "sendMessage" and body["text"] == expected
+    assert body["chat_id"] == 5
+    assert "_literal_job_output" not in body
 
 
 @pytest.mark.asyncio
@@ -392,6 +418,8 @@ class _StreamClient:
 
     async def post(self, url, json=None, data=None, **kwargs):
         self.posts.append(dict(json or data or {}))
+        if url.endswith("/editMessageText"):
+            return _StreamResp(json["message_id"])
         return _StreamResp(len(self.posts) + 10)
 
 
@@ -424,6 +452,24 @@ async def test_r2_a_vendor_key_still_arriving_is_not_shown_in_part():
     await draft.push(" then go")
     assert await draft.finish()
     assert all(GHP not in b.get("text", "") for b in channel.client.posts)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("text,forbidden", [
+    ('Before a-private multiword-credential-987654321 after.', 'a-private'),
+    ('[OpenAI API error: HTTP 401 private provider detail]', 'private provider'),
+    (f'hello\n{MARKER}\nworld', '[execution'),
+])
+async def test_streamed_telegram_preview_holds_sensitive_prefixes(monkeypatch, text, forbidden):
+    monkeypatch.setenv('ACME_API_KEY', 'a-private multiword-credential-987654321')
+    channel = TelegramChannel('offline')
+    channel.client = _StreamClient()
+    draft = TelegramDraft(channel, 5, interval=0.0)
+    for token in text:
+        await draft.push(token)
+    assert await draft.finish()
+    assert channel.client.posts
+    assert all(forbidden not in row.get('text', '') for row in channel.client.posts)
 
 
 def test_stream_safe_prefix_shows_whole_words_only(monkeypatch):

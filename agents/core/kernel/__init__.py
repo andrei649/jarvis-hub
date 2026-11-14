@@ -254,6 +254,10 @@ def authorize(action: Action,
         # G17: an owner hook run carries the receipt of the human-accepted task that
         # activated that exact hook; the hooks store's check confirms the binding.
         sealed_hook = action.kind == "hook.exec"
+        # An exact, human-accepted hub update card carries a signed RUNNING
+        # task checked by the update executor at the physical-effect fence.
+        sealed_update = action.kind == "hub.update"
+        sealed_restart = action.kind == "hub.restart"
         sealed_provider = False
         sealed_provider_egress = False
         sealed_provider_credential = False
@@ -294,7 +298,8 @@ def authorize(action: Action,
             with contextlib.suppress(Exception):
                 sealed_browser_step = browser_receipt_matches(action)
         task_receipt = (
-            (sealed_terminal or sealed_checkpoint or sealed_hermes or sealed_hook)
+            (sealed_terminal or sealed_checkpoint or sealed_hermes or sealed_hook
+             or sealed_update or sealed_restart)
             and isinstance(approved_task_id, int)
             and not isinstance(approved_task_id, bool)
             and approved_task_id > 0
@@ -310,9 +315,17 @@ def authorize(action: Action,
             # callback receives the actual Action, not an untrusted ID alone.
             with contextlib.suppress(Exception):
                 mode = policy.effective_mode(action.agent)
+                known_update_mode = True
+                if sealed_update or sealed_restart:
+                    from ..autonomy.mode import is_unset, normalize_mode
+
+                    overrides = policy.agent_modes
+                    override = overrides.get(action.agent) if isinstance(overrides, dict) else None
+                    known_update_mode = (normalize_mode(policy.mode)[1]
+                                         and (is_unset(override) or normalize_mode(override)[1]))
                 # A hook's receipt is the owner's standing approval of that exact hook,
                 # so it holds in "ask" too; "off" (everything waits) still refuses it.
-                if mode == "auto" or (sealed_hook and mode == "ask"):
+                if known_update_mode and (mode == "auto" or (sealed_hook and mode == "ask")):
                     trusted_receipt = approval_check(action) is True
         if trusted_receipt:
             seal_reason = ("sealed_terminal_approval" if sealed_terminal else
@@ -324,6 +337,8 @@ def authorize(action: Action,
                            "sealed_custom_endpoint_approval" if sealed_custom_endpoint else
                            "sealed_browser_approval" if sealed_browser_step else
                            "sealed_hook_approval" if sealed_hook else
+                           "sealed_update_approval" if sealed_update else
+                           "sealed_restart_approval" if sealed_restart else
                            "sealed_hermes_approval")
             decision = Decision(Verdict.GRANT, reason=f"{seal_reason}; {pdec.reason}", tier=tier,
                                 task_id=approved_task_id if task_receipt else None)

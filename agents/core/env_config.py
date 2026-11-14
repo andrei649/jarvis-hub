@@ -186,14 +186,14 @@ def pin_environment(mapping) -> None:
 def credential_values(is_credential, *, min_length: int = 12) -> list[tuple[str, str]]:
     """``(name, value)`` for every variable in the process environment (and the pinned
     layer) whose *name* the caller's predicate calls a credential and whose value is at
-    least *min_length* characters with no whitespace (H069: the outbound transport masks
+    least *min_length* non-padding characters (H069: the outbound transport masks
     these values wherever they appear). Never log the result. A short or blank value is
     left out: masking every ``1`` or ``true`` in a reply would mask ordinary words."""
     found: dict[str, str] = {}
     for source in (os.environ, _PINNED):
         for name, value in list(source.items()):
-            if (isinstance(name, str) and isinstance(value, str) and len(value) >= min_length
-                    and not any(ch.isspace() for ch in value) and is_credential(name)):
+            if (isinstance(name, str) and isinstance(value, str) and len(value.strip()) >= min_length
+                    and is_credential(name)):
                 found.setdefault(value, name)
     return [(name, value) for value, name in found.items()]
 

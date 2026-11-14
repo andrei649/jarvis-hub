@@ -46,7 +46,7 @@ beforeEach(() => {
   records.set(SERVER_KEY, JSON.stringify({ version: 2, config, appearance: null, chatScope: 'connection-one' }));
   vi.stubGlobal('XMLHttpRequest', ChatXHR);
   vi.stubGlobal('fetch', vi.fn(async (url: string) => ({ ok: true, status: 200, json: async () =>
-    url.endsWith('/sessions') ? { sessions: [{ id: 'chosen', title: 'Earlier topic' }] } :
+    (url.endsWith('/sessions') || url.includes('/sessions/page?')) ? { sessions: [{ id: 'chosen', title: 'Earlier topic' }], next_cursor: null } :
       url.endsWith('/sessions/resume') ? { ok: true, session: 'chosen', turns: [{ role: 'user', content: 'Resumed question' }] } :
         { agents: [] },
   })));
@@ -121,7 +121,7 @@ it('History selects the server transcript and the next typed message uses that s
 it('a pending History resume cannot install its transcript after changing hubs', async () => {
   let release!: (value: unknown) => void;
   vi.mocked(fetch).mockImplementation(async url => ({ ok: true, status: 200, json: async () =>
-    String(url).endsWith('/sessions') ? { sessions: [{ id: 'chosen', title: 'Earlier topic' }] } :
+    (String(url).endsWith('/sessions') || String(url).includes('/sessions/page?')) ? { sessions: [{ id: 'chosen', title: 'Earlier topic' }], next_cursor: null } :
       String(url).endsWith('/sessions/resume') ? new Promise(resolve => { release = resolve; }) : { agents: [] },
   }) as Response);
   mount();

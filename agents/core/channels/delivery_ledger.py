@@ -15,12 +15,14 @@ the manager writes one row and moves it through honest checkpoints:
     skipped      not sent because the target is registered dead, or a duplicate of a
                  delivery that already went out (``delivery_key``)
 
-**A crash never double-sends.** Nothing here ever resends on its own. At startup,
+**A crash never automatically resends.** At startup,
 :meth:`ReliabilityStore.recover` closes the rows a dead process left open: ``pending``
 becomes ``failed`` (provably never sent) and ``attempting`` becomes ``unknown`` (it may
 have arrived). A caller that passes ``delivery_key`` gets idempotency on top: a second
 send with the same key is suppressed while an earlier one is sent, in flight or unknown;
-it may try again only after a definite failure, at most ``MAX_ATTEMPTS`` times.
+it may try again only after a definite failure, at most ``MAX_ATTEMPTS`` times within
+the 24-hour key window. Keyed callers must use ``attempting_checked()`` and withhold
+transport on a failed claim; the old ``attempting()`` remains a best-effort unkeyed API.
 
 **No message bodies.** A row keeps the channel, the target (the chat id the reply was
 addressed to — the same identity ``channel_inbox`` already keeps), the length, the caller's
@@ -35,8 +37,11 @@ not moved for ``STALE_OPEN_S``; a row of another live process (a second hub on t
 root) is left to that process.
 
 What has a receipt: replies and notices that go through ``ChannelManager.send`` and
-``send_channel_reply``. Approval cards and prompt cards (``send_pending_card``,
-``send_channel_prompt``) and an adapter called directly have none.
+``send_channel_reply``, plus manager approval/prompt-card and text-prompt sends.
+Cards retain their native acknowledgment as the return value, while the ledger
+stores metadata only; supplied idempotency keys are refused for those APIs because
+the ledger cannot recover a native receipt for a duplicate. Adapters called
+directly and streamed drafts still have no durable receipt here.
 
 **Dead targets.** A chat the platform says is gone for good — Telegram's 403 (bot blocked,
 kicked, user deactivated) or a chat-level "chat not found" — is registered, and later sends
@@ -44,8 +49,11 @@ to it are skipped instead of retried on every job tick. A thread-level not-found
 forum topic) is never recorded. The flag heals by itself: a later successful send, or a new
 inbound message from that chat, clears it; the owner can clear it too.
 
-Retention: 7 days and 500 rows. Every ledger call is best effort — a ledger that cannot be
-written never blocks a send (the send goes out and the failure is logged).
+Retention: seven days for ordinary receipts. Up to 500 recent non-skipped keyed
+attempts are protected for the 24-hour idempotency window, in addition to the
+ordinary 500-row pruning allowance and open rows. When protected capacity is full,
+new keyed claims are refused instead of evicting evidence. Unkeyed sends retain
+best-effort ledger behavior; keyed callers must fail closed on ledger failure.
 
 Shape adapted from Hermes ``gateway/delivery_ledger.py`` and ``gateway/dead_targets.py``
 (MIT, reference only); Nerva keeps no bodies and never auto-redelivers.
@@ -72,9 +80,17 @@ MAX_ATTEMPTS = 3
 IDEMPOTENCY_WINDOW_S = 24 * 3600
 RETENTION_S = 7 * 24 * 3600
 MAX_ROWS = 500
+#: Never evict recent keyed evidence to make room for another keyed send.
+MAX_PROTECTED_KEYED_ROWS = MAX_ROWS
 MAX_TARGET = 128
 #: An open row that has not moved for this long belongs to no live send.
 STALE_OPEN_S = 3600
+# WAL promotion can report BUSY immediately during concurrent first opens, even
+# with the connection's normal ten-second busy timeout. Bound this one startup
+# operation to three one-second attempts plus short pauses.
+WAL_STARTUP_ATTEMPTS = 3
+WAL_STARTUP_BUSY_TIMEOUT_MS = 1000
+WAL_STARTUP_PAUSE_S = 0.05
 
 STATE_PENDING = "pending"
 STATE_ATTEMPTING = "attempting"
@@ -90,6 +106,16 @@ _BLOCKING = (STATE_PENDING, STATE_ATTEMPTING, STATE_SENT, STATE_PARTIAL, STATE_U
 
 # One id per process: rows another process left open are recovered at startup.
 _BOOT = uuid.uuid4().hex
+
+
+class KeyedDeliveryCapacity(RuntimeError):
+    """The bounded ledger cannot admit another keyed delivery safely."""
+
+
+def valid_delivery_key(value: object) -> bool:
+    """None is unkeyed; explicit keys must survive storage byte-for-byte."""
+    return value is None or (type(value) is str and 0 < len(value) <= 200
+                             and all(32 <= ord(ch) <= 126 for ch in value))
 
 
 def _clip(value: Any, limit: int = MAX_TARGET) -> str:
@@ -155,8 +181,9 @@ def classify_send_failure(*, status: int | None = None, description: str = "",
         elif httpx is not None and isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout,
                                                     httpx.PoolTimeout)):
             return SendOutcome(kind="not_connected")
-        elif httpx is not None and isinstance(exc, httpx.TransportError):
-            # The request may have reached the platform before the answer was lost.
+        elif httpx is not None and isinstance(exc, httpx.RequestError):
+            # Decoding and redirect errors also follow a request that may have
+            # reached the platform. Only the pre-connect cases above are safe.
             return SendOutcome(kind="no_answer", ambiguous=True)
         elif isinstance(exc, (TimeoutError, ConnectionResetError)):
             return SendOutcome(kind="no_answer", ambiguous=True)
@@ -210,6 +237,18 @@ def note_partial() -> None:
         outcome.partial = True
 
 
+def note_unconfirmed_ack() -> None:
+    """A 2xx transport response lacked proof that the platform accepted the send.
+
+    The adapter must return False after this note. Earlier accepted parts remain
+    partial; an otherwise unconfirmed send becomes unknown, never retryable.
+    """
+    outcome = _OUTCOME.get()
+    if outcome is not None:
+        outcome.kind = "missing_ack"
+        outcome.ambiguous = True
+
+
 def begin_outcome() -> tuple[SendOutcome, contextvars.Token]:
     outcome = SendOutcome()
     return outcome, _OUTCOME.set(outcome)
@@ -236,28 +275,47 @@ class ReliabilityStore:
         self._lock = threading.RLock()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self.path), check_same_thread=False, timeout=10)
-        with contextlib.suppress(OSError):
-            os.chmod(self.path, 0o600)
-        with self._lock, self._conn:
-            self._conn.execute("PRAGMA journal_mode=WAL")
-            self._conn.execute(
-                "CREATE TABLE IF NOT EXISTS deliveries (id TEXT PRIMARY KEY, channel TEXT NOT NULL, "
-                "target TEXT NOT NULL, key TEXT, state TEXT NOT NULL, attempt INTEGER NOT NULL, "
-                "error TEXT, chars INTEGER NOT NULL, pid INTEGER NOT NULL, "
-                "boot TEXT NOT NULL, created REAL NOT NULL, updated REAL NOT NULL)")
-            self._conn.execute("CREATE INDEX IF NOT EXISTS deliveries_key ON deliveries(key)")
-            self._conn.execute(
-                "CREATE TABLE IF NOT EXISTS dead_targets (channel TEXT NOT NULL, target TEXT NOT NULL, "
-                "reason TEXT NOT NULL, marked REAL NOT NULL, PRIMARY KEY (channel, target))")
-            self._conn.execute(
-                "CREATE TABLE IF NOT EXISTS cursors (name TEXT PRIMARY KEY, value TEXT NOT NULL, "
-                "updated REAL NOT NULL)")
-            # G16 (H098): inbound message ids seen, one row each (the SMS replay window).
-            self._conn.execute(
-                "CREATE TABLE IF NOT EXISTS seen_ids (scope TEXT NOT NULL, id TEXT NOT NULL, "
-                "seen REAL NOT NULL, PRIMARY KEY (scope, id))")
-        self._dead: set[tuple[str, str]] = {
-            (c, t) for c, t in self._conn.execute("SELECT channel, target FROM dead_targets")}
+        try:
+            with contextlib.suppress(OSError):
+                os.chmod(self.path, 0o600)
+            with self._lock, self._conn:
+                self._configure_wal()
+                self._conn.execute(
+                    "CREATE TABLE IF NOT EXISTS deliveries (id TEXT PRIMARY KEY, channel TEXT NOT NULL, "
+                    "target TEXT NOT NULL, key TEXT, state TEXT NOT NULL, attempt INTEGER NOT NULL, "
+                    "error TEXT, chars INTEGER NOT NULL, pid INTEGER NOT NULL, "
+                    "boot TEXT NOT NULL, created REAL NOT NULL, updated REAL NOT NULL)")
+                self._conn.execute("CREATE INDEX IF NOT EXISTS deliveries_key ON deliveries(key)")
+                self._conn.execute(
+                    "CREATE TABLE IF NOT EXISTS dead_targets (channel TEXT NOT NULL, target TEXT NOT NULL, "
+                    "reason TEXT NOT NULL, marked REAL NOT NULL, PRIMARY KEY (channel, target))")
+                self._conn.execute(
+                    "CREATE TABLE IF NOT EXISTS cursors (name TEXT PRIMARY KEY, value TEXT NOT NULL, "
+                    "updated REAL NOT NULL)")
+                # G16 (H098): inbound message ids seen, one row each (the SMS replay window).
+                self._conn.execute(
+                    "CREATE TABLE IF NOT EXISTS seen_ids (scope TEXT NOT NULL, id TEXT NOT NULL, "
+                    "seen REAL NOT NULL, PRIMARY KEY (scope, id))")
+        except BaseException:
+            with contextlib.suppress(Exception):
+                self._conn.close()
+            raise
+
+    def _configure_wal(self) -> None:
+        self._conn.execute(f"PRAGMA busy_timeout={WAL_STARTUP_BUSY_TIMEOUT_MS}")
+        for attempt in range(WAL_STARTUP_ATTEMPTS):
+            try:
+                self._conn.execute("PRAGMA journal_mode=WAL")
+                break
+            except sqlite3.OperationalError as exc:
+                code = getattr(exc, "sqlite_errorcode", None)
+                locked = type(code) is int and (code & 0xFF) in {
+                    sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED,
+                }
+                if not locked or attempt == WAL_STARTUP_ATTEMPTS - 1:
+                    raise
+                time.sleep(WAL_STARTUP_PAUSE_S * (attempt + 1))
+        self._conn.execute("PRAGMA busy_timeout=10000")
 
     def close(self) -> None:
         with self._lock:
@@ -267,32 +325,50 @@ class ReliabilityStore:
 
     def open_delivery(self, channel: str, target: Any, body: Any, *,
                       key: str | None = None, now: float | None = None) -> Delivery:
-        """Write the ``pending`` row; the returned handle says whether to send at all."""
+        """Atomically claim a key, or write an unkeyed pending row.
+
+        An invalid key or full protected-key quota raises. The caller must not
+        dispatch a keyed transport unless this claim and its checked attempt land.
+        """
+        if not valid_delivery_key(key):
+            raise ValueError("invalid delivery key")
         now = time.time() if now is None else now
         channel, target = _clip(channel, 32), _clip(target)
         text = str(body if body is not None else "")
-        key = _clip(key, 200) if key else None
         attempt = 1
         with self._lock, self._conn:
-            if key:
+            # sqlite3.Connection.__enter__ does not begin a write transaction. The
+            # key lookup and insertion must be one cross-process writer claim.
+            self._conn.execute("BEGIN IMMEDIATE")
+            self._prune(now)
+            if key is not None:
                 rows = self._conn.execute(
                     "SELECT state FROM deliveries WHERE key=? AND channel=? AND created>=? "
                     "ORDER BY created DESC", (key, channel, now - IDEMPOTENCY_WINDOW_S)).fetchall()
-                states = [r[0] for r in rows]
+                states = [r[0] for r in rows if r[0] != STATE_SKIPPED]
                 if any(s in _BLOCKING for s in states):
                     duplicate_of_sent = STATE_SENT in states
                     row_id = self._insert(channel, target, key, STATE_SKIPPED, len(states) + 1,
                                           "duplicate", text, now)
+                    self._prune(now)
                     return Delivery(self, row_id, send=False, already_sent=duplicate_of_sent)
                 if len(states) >= MAX_ATTEMPTS:
                     row_id = self._insert(channel, target, key, STATE_SKIPPED, len(states) + 1,
                                           "attempts_exhausted", text, now)
+                    self._prune(now)
                     return Delivery(self, row_id, send=False)
                 attempt = len(states) + 1
-            if (channel, target) in self._dead:
+            dead = self._conn.execute(
+                "SELECT 1 FROM dead_targets WHERE channel=? AND target=?",
+                (channel, target),
+            ).fetchone() is not None
+            if dead:
                 row_id = self._insert(channel, target, key, STATE_SKIPPED, attempt, "dead_target",
                                       text, now)
+                self._prune(now)
                 return Delivery(self, row_id, send=False, dead=True)
+            if key is not None and self._protected_keyed_count(now) >= MAX_PROTECTED_KEYED_ROWS:
+                raise KeyedDeliveryCapacity("keyed delivery capacity reached")
             row_id = self._insert(channel, target, key, STATE_PENDING, attempt, None, text, now)
             self._prune(now)
         return Delivery(self, row_id, send=True)
@@ -311,12 +387,31 @@ class ReliabilityStore:
             self._conn.execute("UPDATE deliveries SET state=?, error=?, updated=? WHERE id=?",
                                (state, _clip(error, 40) if error else None, time.time(), row_id))
 
+    def _set_pending_attempting(self, row_id: str) -> bool:
+        """Commit this process's exact pending claim before any transport attempt."""
+        with self._lock, self._conn:
+            changed = self._conn.execute(
+                "UPDATE deliveries SET state=?, updated=? WHERE id=? AND state=? AND pid=? AND boot=?",
+                (STATE_ATTEMPTING, time.time(), row_id, STATE_PENDING, os.getpid(), _BOOT),
+            ).rowcount
+            return changed == 1
+
+    def _protected_keyed_count(self, now: float) -> int:
+        return int(self._conn.execute(
+            "SELECT COUNT(*) FROM deliveries WHERE key IS NOT NULL AND "
+            "(state IN (?, ?) OR (state != ? AND created >= ?))",
+            (STATE_PENDING, STATE_ATTEMPTING, STATE_SKIPPED, now - IDEMPOTENCY_WINDOW_S),
+        ).fetchone()[0])
+
     def _prune(self, now: float) -> None:
         self._conn.execute("DELETE FROM deliveries WHERE updated < ? AND state NOT IN (?, ?)",
                            (now - RETENTION_S, STATE_PENDING, STATE_ATTEMPTING))
         self._conn.execute(
             "DELETE FROM deliveries WHERE id NOT IN (SELECT id FROM deliveries ORDER BY created DESC "
-            "LIMIT ?) AND state NOT IN (?, ?)", (MAX_ROWS, STATE_PENDING, STATE_ATTEMPTING))
+            "LIMIT ?) AND state NOT IN (?, ?) AND NOT "
+            "(key IS NOT NULL AND state != ? AND created >= ?)",
+            (MAX_ROWS, STATE_PENDING, STATE_ATTEMPTING, STATE_SKIPPED,
+             now - IDEMPOTENCY_WINDOW_S))
 
     def recover(self, *, alive=None) -> dict:
         """Close the rows a dead process left open. Never resends anything: a ``pending`` row
@@ -337,13 +432,19 @@ class ReliabilityStore:
                         and now - float(updated or 0) < STALE_OPEN_S):
                     continue
                 if state == STATE_PENDING:
-                    self._conn.execute("UPDATE deliveries SET state=?, error=?, updated=? WHERE id=?",
-                                       (STATE_FAILED, "interrupted_before_send", now, row_id))
-                    counts["failed"] += 1
+                    changed = self._conn.execute(
+                        "UPDATE deliveries SET state=?, error=?, updated=? "
+                        "WHERE id=? AND state=? AND pid=? AND boot=?",
+                        (STATE_FAILED, "interrupted_before_send", now, row_id, state, pid, boot),
+                    ).rowcount
+                    counts["failed"] += int(changed == 1)
                 else:
-                    self._conn.execute("UPDATE deliveries SET state=?, error=?, updated=? WHERE id=?",
-                                       (STATE_UNKNOWN, "interrupted_during_send", now, row_id))
-                    counts["unknown"] += 1
+                    changed = self._conn.execute(
+                        "UPDATE deliveries SET state=?, error=?, updated=? "
+                        "WHERE id=? AND state=? AND pid=? AND boot=?",
+                        (STATE_UNKNOWN, "interrupted_during_send", now, row_id, state, pid, boot),
+                    ).rowcount
+                    counts["unknown"] += int(changed == 1)
         if counts["failed"] or counts["unknown"]:
             logger.warning("Delivery ledger: %d reply(ies) interrupted before sending, %d during "
                            "sending (may have arrived); none is resent", counts["failed"],
@@ -386,26 +487,54 @@ class ReliabilityStore:
     def stats(self) -> dict:
         with self._lock:
             rows = self._conn.execute("SELECT state, COUNT(*) FROM deliveries GROUP BY state").fetchall()
+            dead = int(self._conn.execute("SELECT COUNT(*) FROM dead_targets").fetchone()[0])
         counts = dict.fromkeys(STATES, 0)
         counts.update(dict(rows))
         return {"by_state": counts, "needs_attention": counts[STATE_FAILED] + counts[STATE_PARTIAL]
-                + counts[STATE_UNKNOWN], "dead_targets": len(self._dead)}
+                + counts[STATE_UNKNOWN], "dead_targets": dead}
+
+    def receipt_snapshot(self, limit: int = 50, *, states: tuple[str, ...] | None = None,
+                         dead_limit: int = 200) -> dict:
+        """One bounded read version for the owner receipt view across live processes."""
+        dead_limit = max(1, min(int(dead_limit), 200))
+        with self._lock, self._conn:
+            self._conn.execute("BEGIN")
+            stats = self.stats()
+            deliveries = self.recent(limit, states=states)
+            targets = self.dead_targets(limit=dead_limit + 1)
+            retention = {
+                "window_seconds": IDEMPOTENCY_WINDOW_S,
+                "protected_limit": MAX_PROTECTED_KEYED_ROWS,
+                "protected_count": self._protected_keyed_count(time.time()),
+                "retention_seconds": RETENTION_S,
+                "ordinary_row_limit": MAX_ROWS,
+            }
+            return {"stats": stats, "deliveries": deliveries,
+                    "dead_targets": targets[:dead_limit],
+                    "dead_targets_truncated": len(targets) > dead_limit,
+                    "retention": retention}
 
     # ── dead targets ──
 
     def is_dead(self, channel: str, target: Any) -> bool:
-        return (_clip(channel, 32), _clip(target)) in self._dead
+        key = (_clip(channel, 32), _clip(target))
+        with self._lock:
+            return self._conn.execute(
+                "SELECT 1 FROM dead_targets WHERE channel=? AND target=?", key,
+            ).fetchone() is not None
 
     def mark_dead(self, channel: str, target: Any, reason: str) -> bool:
         key = (_clip(channel, 32), _clip(target))
         if not key[1]:
             return False
         with self._lock, self._conn:
-            new = key not in self._dead
+            self._conn.execute("BEGIN IMMEDIATE")
+            new = self._conn.execute(
+                "SELECT 1 FROM dead_targets WHERE channel=? AND target=?", key,
+            ).fetchone() is None
             self._conn.execute(
                 "INSERT OR REPLACE INTO dead_targets (channel, target, reason, marked) VALUES (?,?,?,?)",
                 (*key, _clip(reason, 40), time.time()))
-            self._dead.add(key)
         if new:
             logger.info("Delivery: a %s chat is unreachable (%s); later sends to it are skipped "
                         "until it writes again or a send succeeds", key[0], reason)
@@ -413,17 +542,19 @@ class ReliabilityStore:
 
     def clear_dead(self, channel: str, target: Any) -> bool:
         key = (_clip(channel, 32), _clip(target))
-        if key not in self._dead:
-            return False
         with self._lock, self._conn:
-            self._conn.execute("DELETE FROM dead_targets WHERE channel=? AND target=?", key)
-            self._dead.discard(key)
-        return True
+            changed = self._conn.execute(
+                "DELETE FROM dead_targets WHERE channel=? AND target=?", key,
+            ).rowcount
+        return changed == 1
 
-    def dead_targets(self) -> list[dict]:
+    def dead_targets(self, limit: int = 200) -> list[dict]:
+        limit = max(1, min(int(limit), 201))
         with self._lock:
             rows = self._conn.execute(
-                "SELECT channel, target, reason, marked FROM dead_targets ORDER BY marked DESC").fetchall()
+                "SELECT channel, target, reason, marked FROM dead_targets "
+                "ORDER BY marked DESC, channel, target LIMIT ?", (limit,),
+            ).fetchall()
         return [{"channel": c, "target": t, "reason": r, "marked": round(m, 3)} for c, t, r, m in rows]
 
     # ── inbound cursors (H116) ──
@@ -458,7 +589,7 @@ class ReliabilityStore:
 
 
 class Delivery:
-    """One send's ledger row. Every method is best effort and never raises."""
+    """One send's ledger row; ``attempting_checked`` may raise on store failure."""
 
     def __init__(self, store: ReliabilityStore | None, row_id: str | None, *,
                  send: bool, already_sent: bool = False, dead: bool = False) -> None:
@@ -478,6 +609,11 @@ class Delivery:
 
     def attempting(self) -> None:
         self._set(STATE_ATTEMPTING)
+
+    def attempting_checked(self) -> bool:
+        """True only after this pending row becomes attempting durably."""
+        return bool(self.send and self.store is not None and self.id is not None
+                    and self.store._set_pending_attempting(self.id))
 
     def finished(self, ok: bool, outcome: SendOutcome | None = None) -> str:
         outcome = outcome or SendOutcome()
@@ -527,7 +663,10 @@ def set_store(value: ReliabilityStore | None) -> None:
 
 
 __all__ = [
-    "Delivery", "IDEMPOTENCY_WINDOW_S", "MAX_ATTEMPTS", "MAX_ROWS", "ReliabilityStore",
+    "Delivery", "IDEMPOTENCY_WINDOW_S", "KeyedDeliveryCapacity", "MAX_ATTEMPTS",
+    "MAX_PROTECTED_KEYED_ROWS", "MAX_ROWS", "ReliabilityStore",
     "RETENTION_S", "STATES", "SendOutcome", "begin_outcome", "classify_send_failure",
-    "end_outcome", "note_partial", "note_send_failure", "set_store", "store",
+    "end_outcome", "note_partial", "note_send_failure", "note_unconfirmed_ack",
+    "set_store", "store",
+    "valid_delivery_key",
 ]

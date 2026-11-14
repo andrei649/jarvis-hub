@@ -86,6 +86,7 @@ from pathlib import Path
 from typing import Any
 
 from agents.core import hub_update
+from scripts.venv_ownership import preflight_venv
 
 logger = logging.getLogger("jarvis.hub_update_apply")
 
@@ -286,6 +287,12 @@ def head() -> str | None:
 def _dirty() -> bool | None:
     code, out, _ = _git("status", "--porcelain", "--untracked-files=no")
     return bool(out) if code == 0 else None
+
+
+def _tree_clean_for_stash_restore() -> bool | None:
+    """Whether the whole worktree, including untracked paths, is safe to replay into."""
+    code, out, _ = _git("status", "--porcelain", "--untracked-files=all")
+    return not bool(out) if code == 0 else None
 
 
 def _version_at(commit: str) -> str | None:
@@ -845,6 +852,31 @@ def _run_command(argv: list[str], timeout: float) -> tuple[int, str]:
     return done.returncode, (done.stdout + "\n" + done.stderr)[-4000:]
 
 
+def _pip_environment_ready(log) -> bool:
+    """Refuse pip mutation outside an active venv or with a failed POSIX owner scan."""
+    if sys.prefix == sys.base_prefix:
+        log("pip mutation refused: the running interpreter is not inside a virtual environment")
+        return False
+    try:
+        report = preflight_venv(sys.prefix)
+    except Exception as exc:  # noqa: BLE001 — unreadable inspection fails closed
+        log(f"pip mutation refused: virtual environment inspection failed ({type(exc).__name__})")
+        return False
+    if not isinstance(report, dict):
+        log("pip mutation refused: virtual environment inspection returned an invalid result")
+        return False
+    if report.get("state") == "ownership_unchecked_windows" and report.get("ok") is True:
+        log("virtual environment ownership check is unavailable on Windows; continuing without ACL parity")
+        return True
+    if report.get("ok") is not True:
+        reason = report.get("reason")
+        safe_reason = reason if isinstance(reason, str) else "ownership check failed"
+        log("pip mutation refused: virtual environment ownership preflight: " + safe_reason[:240]
+            + "; recreate the environment under the Nerva runtime account")
+        return False
+    return True
+
+
 def install_dependencies(log) -> bool:
     """Install the hash-pinned lock now on disk (wheels only, no dependency resolution); a lock
     :func:`lock_problem` refuses is never handed to pip."""
@@ -857,6 +889,8 @@ def install_dependencies(log) -> bool:
         log(f"{DEPENDENCY_LOCK} refused: {problem}")
         return False
     argv = _pip_argv(lock)
+    if not _pip_environment_ready(log):
+        return False
     log("$ " + " ".join(argv))
     code, out = _run_command(argv, PIP_TIMEOUT_S)
     for line in out.splitlines()[-20:]:
@@ -903,6 +937,8 @@ def _uninstall_argv(names: list[str]) -> list[str]:
 def uninstall_packages(names: list[str], log) -> bool:
     """Remove the packages a rolled-back lock added (names come from the lock, validated)."""
     argv = _uninstall_argv(names)
+    if not _pip_environment_ready(log):
+        return False
     log("$ " + " ".join(argv))
     code, out = _run_command(argv, PIP_TIMEOUT_S)
     for line in out.splitlines()[-20:]:
@@ -964,15 +1000,55 @@ def _record_return(receipt: dict, back: dict) -> None:
                                     f"`{_reinstall_command()}`, then start Nerva")
 
 
-def _restore_stash(stash: str | None, log) -> None:
-    if not stash:
-        return
+def _restore_stash(receipt: dict, log) -> bool:
+    """Replay only the stash created for this receipt, on its exact original clean base.
+
+    Keep the stash object in refs/stash on success and refusal so the owner can inspect it.
+    Git's own collision checks still apply; this guard prevents a clean patch from being
+    replayed on a different commit or over changes made after the stash was captured.
+    """
+    stash = receipt.get("stash")
+    if stash is None:
+        return True
+    display_stash = stash[:12] if isinstance(stash, str) and _HEX_SHA.fullmatch(stash) else "invalid stash id"
+    baseline = receipt.get("stash_parent")
+    if not isinstance(stash, str) or not _HEX_SHA.fullmatch(stash):
+        reason = "invalid recorded stash id"
+    elif not isinstance(baseline, str) or not _HEX_SHA.fullmatch(baseline):
+        reason = "missing or invalid original commit"
+    elif baseline != receipt.get("from") or not isinstance(receipt.get("from"), str) or not _HEX_SHA.fullmatch(receipt["from"]):
+        reason = "stash does not match the receipt's original commit"
+    elif head() != baseline:
+        reason = "checkout is no longer on the original commit"
+    elif _tree_clean_for_stash_restore() is not True:
+        reason = "working tree is not clean or Git status could not be read"
+    elif _rev(f"{stash}^1") != baseline:
+        reason = "stash first parent does not match the original commit"
+    else:
+        reason = None
+    if reason:
+        receipt["stash_restored"] = False
+        receipt["action_needed"] = _join_needed(
+            receipt.get("action_needed"),
+            f"stashed owner changes were not automatically restored ({reason}); inspect {display_stash} "
+            "and restore it only after returning to the original commit")
+        log(f"stashed changes NOT re-applied ({reason}); {display_stash} was retained")
+        return False
     code, _, err = _git("stash", "apply", "--index", stash)
-    log(f"stashed changes {'re-applied' if code == 0 else 'NOT re-applied: ' + err[-200:]} "
-        f"(stash {stash[:12]}; `git stash apply {stash}` brings them back)")
+    receipt["stash_restored"] = code == 0
+    if code == 0:
+        log(f"stashed changes re-applied (stash {display_stash}; stash retained)")
+        return True
+    receipt["action_needed"] = _join_needed(
+        receipt.get("action_needed"),
+        f"stashed owner changes could not be automatically restored; inspect {display_stash} "
+        "and restore it only after returning to the original commit")
+    log(f"stashed changes NOT re-applied: {err[-200:]} ({display_stash} was retained)")
+    return False
 
 
-def _run_pipeline(payload: dict, approved_by: str, task_id: Any, action_record: dict | None) -> dict:
+def _run_pipeline(payload: dict, approved_by: str, task_id: Any, action_record: dict | None,
+                  *, effect_check=None) -> dict:
     receipt: dict[str, Any] = {
         "id": uuid.uuid4().hex[:12], "kind": "update", "from": payload["from"], "to": payload["to"],
         "target_ref": payload.get("target_ref"), "tag": payload.get("tag"),
@@ -982,7 +1058,28 @@ def _run_pipeline(payload: dict, approved_by: str, task_id: Any, action_record: 
         "approved_by": approved_by, "task_id": task_id, "started_at": time.time(), "boots": 0,
         "action_id": (action_record or {}).get("id"), "stash": None, "backup": None}
     log = _Logger(action_record, receipt)
+
+    def authority_current() -> bool:
+        if effect_check is None:  # Legacy/off-mode and direct local pipeline callers.
+            return True
+        try:
+            return effect_check() is True
+        except Exception:  # noqa: BLE001 — an unreadable live authority is a refusal
+            return False
+
+    def refuse_after_merge(*, dependencies_attempted: bool) -> dict:
+        log("update authority changed after fast-forward: returning to the previous commit")
+        back = _return_to(payload["from"], log, reinstall=dependencies_attempted, leaving=payload["to"])
+        _record_return(receipt, back)
+        _restore_stash(receipt, log)
+        if not back["git"] or back["deps"] is False:
+            return _close_current(receipt, "rollback_incomplete", reason="authority_changed",
+                                  rollback_problem=back["reason"])
+        return _close_current(receipt, "refused", reason="authority_changed")
+
     _phase(receipt, "started")
+    if not authority_current():
+        return _close_current(receipt, "refused", reason="authority_changed")
     # 1. re-check what the card showed, just before acting
     if head() != payload["from"]:
         return _close_current(receipt, "refused", reason="head_moved")
@@ -1010,17 +1107,48 @@ def _run_pipeline(payload: dict, approved_by: str, task_id: Any, action_record: 
     _phase(receipt, "backed_up")
     # 3. the receipt, before the checkout moves
     _save_current(receipt)
+    if not authority_current():
+        return _close_current(receipt, "refused", reason="authority_changed")
     if dirty:
+        prior_stash = _rev("stash@{0}")
         code, _, err = _git("stash", "push", "--message", f"nerva-update-{receipt['id']}",
                             cfg=("user.name=Nerva", "user.email=nerva@localhost"))
         stash = _rev("stash@{0}") if code == 0 else None
-        if stash is None:
+        if stash is None or stash == prior_stash:
             log(f"could not stash the uncommitted changes: {err[-200:]}")
+            receipt["action_needed"] = _join_needed(
+                receipt.get("action_needed"),
+                "the working tree changed while its stash was being created; inspect it and preserve any owner changes")
             return _close_current(receipt, "failed", reason="stash_failed")
+        stash_parent = _rev(f"{stash}^1")
+        if stash_parent != payload["from"]:
+            receipt["stash"] = stash
+            receipt["action_needed"] = _join_needed(
+                receipt.get("action_needed"),
+                f"the captured stash {stash[:12]} has an unexpected base; inspect it before restoring")
+            return _close_current(receipt, "failed", reason="stash_identity_mismatch")
         receipt["stash"] = stash
+        receipt["stash_parent"] = stash_parent
         log(f"uncommitted changes stashed as {stash[:12]}")
-    # 4. fast-forward only, to the verified sha — HEAD and the tree re-read now: the backup took
-    # time, and nothing may have moved the checkout in the meantime.
+    # 4. The backup and (when allowed) stash took time. Trust can change during
+    # either one, so verify the exact target against the *current* trust again.
+    # Signature verification itself may take time; the final HEAD/tree fence
+    # stays below it, immediately before the fast-forward.
+    try:
+        verdict = verify_target(payload["to"], payload.get("tag"))
+    except Exception:
+        log("target trust could not be rechecked after the backup: nothing applied")
+        _restore_stash(receipt, log)
+        return _close_current(receipt, "refused", reason="trust_check_failed")
+    if not isinstance(verdict, dict) or verdict.get("trusted") is not True:
+        log("target no longer trusted after the backup: nothing applied")
+        _restore_stash(receipt, log)
+        return _close_current(receipt, "refused", reason="untrusted_target")
+    if not authority_current():
+        _restore_stash(receipt, log)
+        return _close_current(receipt, "refused", reason="authority_changed")
+    # Fast-forward only to that verified sha. Re-read HEAD and the tree after
+    # the trust check, so a slow signature verifier cannot stale this fence.
     moved = None
     if head() != payload["from"]:
         moved = "head_moved"
@@ -1028,28 +1156,32 @@ def _run_pipeline(payload: dict, approved_by: str, task_id: Any, action_record: 
         moved = "tree_changed"
     if moved:
         log(f"the checkout changed while the backup ran ({moved}): nothing applied")
-        _restore_stash(receipt["stash"], log)
+        _restore_stash(receipt, log)
         return _close_current(receipt, "refused", reason=moved)
     code, _, err = _git("merge", "--ff-only", "--no-edit", "--no-verify-signatures", payload["to"], timeout=300)
     if code != 0:
         log(f"fast-forward failed: {err[-300:]}")
-        _restore_stash(receipt["stash"], log)
+        _restore_stash(receipt, log)
         return _close_current(receipt, "failed", reason="fast_forward_failed")
     _phase(receipt, "fast_forwarded")
     log(f"checkout fast-forwarded {payload['from'][:12]} → {payload['to'][:12]}")
     _save_current(receipt)
     # 5. pinned dependencies
+    if not authority_current():
+        return refuse_after_merge(dependencies_attempted=False)
     if receipt["dependencies_changed"]:
         if not install_dependencies(log):
             log("dependency install failed: returning to the previous commit")
             back = _return_to(payload["from"], log, reinstall=True, leaving=payload["to"])
             _record_return(receipt, back)
-            _restore_stash(receipt["stash"], log)
+            _restore_stash(receipt, log)
             if not back["git"] or back["deps"] is False:
                 return _close_current(receipt, "rollback_incomplete", reason="dependency_install_failed",
                                       rollback_problem=back["reason"])
             return _close_current(receipt, "failed", reason="dependency_install_failed")
         _phase(receipt, "dependencies_installed")
+    if not authority_current():
+        return refuse_after_merge(dependencies_attempted=receipt["dependencies_changed"])
     log("schema migrations run as each store opens in the restarted hub"
         + (" (this update changes files that may migrate)" if receipt["migrations"] else ""))
     # 6. restart; the restarted hub verifies itself (on_boot)
@@ -1058,11 +1190,13 @@ def _run_pipeline(payload: dict, approved_by: str, task_id: Any, action_record: 
     _append_receipt({**receipt, "result": None})
     from agents.core import hub_restart
 
+    if not authority_current():
+        return refuse_after_merge(dependencies_attempted=receipt["dependencies_changed"])
     if not hub_restart.request(f"update to {payload['to'][:12]}"):
         log("this hub cannot restart itself: returning to the previous commit")
         back = _return_to(payload["from"], log, reinstall=receipt["dependencies_changed"], leaving=payload["to"])
         _record_return(receipt, back)
-        _restore_stash(receipt["stash"], log)
+        _restore_stash(receipt, log)
         if not back["git"] or back["deps"] is False:
             return _close_current(receipt, "rollback_incomplete", reason="restart_unavailable",
                                   rollback_problem=back["reason"])
@@ -1073,9 +1207,12 @@ def _run_pipeline(payload: dict, approved_by: str, task_id: Any, action_record: 
 
 def held_here(task: Any = None) -> str | None:
     """An update (or rollback) is applied only by the hub, the process that can restart itself."""
-    from agents.core import backup
+    from agents.core import hub_restart
 
-    return backup.restore_held_here(task)
+    try:
+        return None if hub_restart.available() else "hub_applies_update"
+    except Exception:  # noqa: BLE001 — an unknown host role cannot apply an update
+        return "hub_applies_update"
 
 
 def _decision_ok(task: Any) -> str | None:
@@ -1083,10 +1220,84 @@ def _decision_ok(task: Any) -> str | None:
     return None if decision in ("accept", "approve") else "edit_not_supported"
 
 
+def _update_effect_check(task: Any, orch: Any, recorded: dict, *, bound_worker: Any,
+                         bound_queue: Any):
+    """Recheck a signed human task and live Kernel floors after slow update work.
+
+    The worker's one-use dispatch permit is consumed before this handler runs.
+    Queue validation here is non-consuming and remains bound to that exact
+    RUNNING snapshot. An initially enforced task cannot downgrade to off mode.
+    """
+    worker, queue = bound_worker, bound_queue
+    signed_task = any(
+        getattr(task, field, None) not in (None, "", {})
+        for field in ("mediation_enqueue_id", "mediation_scope", "mediation_receipt",
+                      "mediation_task_sha256", "mediation_execution_id")
+    )
+    if not signed_task and (queue is None or getattr(queue, "mediation_mode", None) == "off"):
+        # Existing local/off-mode approval path has no signed queue evidence,
+        # but it still needs the same unmediated runtime and a live hub at every
+        # late physical-effect fence. A newly enforced/replaced queue cannot
+        # inherit authority from this earlier unsigned approval.
+        def local_current() -> bool:
+            try:
+                return (getattr(orch, "autonomy", None) is worker
+                        and getattr(worker, "queue", None) is queue
+                        and getattr(orch, "autonomy_queue", queue) is queue
+                        and (queue is None or queue.mediation_mode == "off")
+                        and held_here(task) is None)
+            except Exception:
+                return False
+
+        return local_current
+    if queue is None or getattr(queue, "mediation_mode", None) != "enforce":
+        return lambda: False
+    from agents.core.autonomy import irreversible
+    from agents.core.kernel import Action, Verdict, kernel_enabled
+
+    try:
+        fingerprint = queue.execution_fingerprint(task)
+        action = Action(kind=task.kind, agent=task.agent, title=task.title,
+                        payload={**task.payload, "approved_task_id": task.id},
+                        scope=task.mediation_scope or "global", origin=task.origin)
+        policy = worker.policy
+    except Exception:
+        return lambda: False
+
+    def queued_current() -> bool:
+        try:
+            if (not kernel_enabled() or getattr(orch, "autonomy", None) is not worker
+                    or getattr(worker, "queue", None) is not queue
+                    or (getattr(orch, "autonomy_queue", queue) is not queue)
+                    or worker.policy is not policy or queue.mediation_mode != "enforce"
+                    or task.kind != APPROVAL_KIND or task.agent != "owner"
+                    or task.status != "running" or task.decision not in ("accept", "approve")
+                    or str(task.decided_by or "").strip().lower() in irreversible.MACHINE_DECIDERS
+                    or not fingerprint or held_here(task)
+                    or any(task.payload.get(key) != recorded.get(key) for key in _APPLY_KEYS)
+                    or worker._halted() or worker._halted(task.agent)
+                    or (task.mediation_scope and worker._halted(task.mediation_scope))):
+                return False
+            return queue.validate_mediated_execution(task, fingerprint) is True
+        except Exception:  # noqa: BLE001 — no authority inferred from a broken provider
+            return False
+
+    def effect_current() -> bool:
+        if not queued_current():
+            return False
+        decision = worker.kernel_dispatch_current(
+            action, approval_check=lambda actual: actual == action and queued_current())
+        return decision.verdict is Verdict.GRANT and queued_current()
+
+    return effect_current
+
+
 async def apply_approved(task: Any, orch: Any) -> dict:
     """A person accepted a card of one of :data:`KINDS`: do exactly what it showed, once."""
     import asyncio
 
+    bound_worker = getattr(orch, "autonomy", None)
+    bound_queue = getattr(bound_worker, "queue", None)
     kind = str(getattr(task, "kind", "") or "")
     refused = _decision_ok(task)
     if refused:
@@ -1115,7 +1326,10 @@ async def apply_approved(task: Any, orch: Any) -> dict:
         record = hub_update._new_action("update")
         if record is None:
             return {"status": "refused", "reason": "action_running"}
-        receipt = await asyncio.to_thread(_run_pipeline, payload, approved_by, task_id, record)
+        effect_check = _update_effect_check(task, orch, payload, bound_worker=bound_worker,
+                                            bound_queue=bound_queue)
+        receipt = await asyncio.to_thread(_run_pipeline, payload, approved_by, task_id, record,
+                                          effect_check=effect_check)
         result = receipt.get("result")
         hub_update._finish(record, "ok" if result is None else "failed", {"receipt": receipt["id"], "result": result})
         _audit(orch, approved_by, "hub.update.apply", f"update {payload['from'][:12]} → {payload['to'][:12]}: "
@@ -1221,18 +1435,43 @@ def verify_after_restart(probe=None, *, deadline: float | None = None, poll: flo
     return _auto_rollback(receipt, reason, restart=restart)
 
 
-def _stage_data_restore(receipt: dict, log, restart_planned: str) -> bool:
+def _stage_data_restore(receipt: dict, log, restart_planned: str) -> tuple[bool, dict | None]:
     from agents.core import backup
 
     name = receipt.get("backup")
     if not name:
         log("no pre-update backup recorded: data left as it is")
-        return False
+        return False, None
     staged = backup.stage_restore(name, requested_by=str(receipt.get("approved_by") or "update"),
                                   task_id=receipt.get("task_id") if isinstance(receipt.get("task_id"), int) else None,
                                   restart=restart_planned)
     log(f"pre-update backup {name} {'staged for restore at the next start' if staged.get('ok') else 'NOT staged: ' + str(staged.get('problem'))}")
-    return bool(staged.get("ok"))
+    is_staged = staged.get("ok") is True
+    identity = {key: staged.get(key) for key in ("name", "staged_at", "sha256")}
+    if (not isinstance(identity["name"], str) or not identity["name"]
+            or not isinstance(identity["staged_at"], str) or not identity["staged_at"]
+            or not isinstance(identity["sha256"], str)
+            or re.fullmatch(r"[0-9a-f]{64}", identity["sha256"]) is None):
+        identity = None
+    if is_staged and identity is None:
+        log("the restore was staged but its exact stage identity is unavailable; completion cannot be confirmed")
+    return is_staged, identity
+
+
+def _record_data_restore_stage(receipt: dict, log, restart_planned: str) -> None:
+    """Record staging separately; data is restored only after the next boot proves it."""
+    staged, identity = _stage_data_restore(receipt, log, restart_planned)
+    receipt["data_restore_staged"] = staged
+    receipt["data_restore_stage"] = identity  # private correlation; omitted by _public
+    receipt["data_restored"] = False
+    if not staged:
+        receipt["action_needed"] = _join_needed(
+            receipt.get("action_needed"),
+            f"the pre-update backup {receipt.get('backup')} was not staged: restore it (`nerva backup restore`)")
+    elif identity is None:
+        receipt["action_needed"] = _join_needed(
+            receipt.get("action_needed"),
+            "the pre-update restore was staged but its completion cannot be correlated; verify the backup restore")
 
 
 def _auto_rollback(receipt: dict, reason: str, *, restart: bool) -> dict:
@@ -1251,12 +1490,8 @@ def _auto_rollback(receipt: dict, reason: str, *, restart: bool) -> dict:
     if receipt.get("migrations"):
         # fail safe: when a migration may have run, the pre-update data comes back (the update
         # trust and receipts under update/ are kept as they are: backup.restore_backup)
-        receipt["data_restored"] = _stage_data_restore(receipt, log, planned)
-        if not receipt["data_restored"]:
-            receipt["action_needed"] = _join_needed(
-                receipt.get("action_needed"),
-                f"the pre-update backup {receipt.get('backup')} was not staged: restore it (`nerva backup restore`)")
-    _restore_stash(receipt.get("stash"), log)
+        _record_data_restore_stage(receipt, log, planned)
+    _restore_stash(receipt, log)
     _phase(receipt, "rolled_back_restarting")
     _save_current(receipt)
     _append_receipt({**receipt, "result": None})
@@ -1282,9 +1517,49 @@ def _rollback_result(receipt: dict, booted_from: str | None) -> tuple[str, str |
     if receipt.get("dependencies_restored") is False:
         return "rollback_incomplete", "dependency_reinstall_failed"
     wanted_data = receipt.get("restore_data") if receipt.get("kind") == "rollback" else receipt.get("migrations")
-    if wanted_data and receipt.get("data_restored") is False:
-        return "rollback_incomplete", "data_restore_not_staged"
+    if wanted_data:
+        # A stage is not a restore. Legacy bool-only receipts and missing/malformed/stale
+        # completion records remain incomplete; only the exact applied stage is proof.
+        legacy_claim = receipt.get("data_restored") is True
+        receipt["data_restored"] = False
+        identity = receipt.get("data_restore_stage")
+        if receipt.get("data_restore_staged") is not True:
+            # Old receipts used data_restored to mean "stage_restore returned ok". A true
+            # legacy value might still be waiting for boot application, so do not claim it
+            # was never staged or treat it as completion.
+            reason = ("data_restore_identity_missing" if legacy_claim
+                      else "data_restore_not_staged")
+            return _data_restore_incomplete(receipt, reason)
+        if (not isinstance(identity, dict)
+                or not isinstance(identity.get("name"), str) or not identity["name"]
+                or not isinstance(identity.get("staged_at"), str) or not identity["staged_at"]
+                or not isinstance(identity.get("sha256"), str)
+                or re.fullmatch(r"[0-9a-f]{64}", identity["sha256"]) is None):
+            return _data_restore_incomplete(receipt, "data_restore_identity_missing")
+        try:
+            from agents.core import backup
+            restored = backup.last_restore()
+        except Exception:  # noqa: BLE001 — unreadable proof must fail closed as incomplete
+            restored = None
+        if not isinstance(restored, dict):
+            return _data_restore_incomplete(receipt, "data_restore_unconfirmed")
+        if any(restored.get(key) != identity[key] for key in ("name", "staged_at", "sha256")):
+            return _data_restore_incomplete(receipt, "data_restore_unconfirmed")
+        if restored.get("status") != "restored" or restored.get("ok") is not True:
+            return _data_restore_incomplete(receipt, "data_restore_failed")
+        receipt["data_restored"] = True
+    if receipt.get("stash") is not None and receipt.get("stash_restored") is not True:
+        return "rollback_incomplete", "owner_stash_not_restored"
     return "rolled_back", None
+
+
+def _data_restore_incomplete(receipt: dict, reason: str) -> tuple[str, str]:
+    receipt["data_restored"] = False
+    name = str(receipt.get("backup") or "the pre-update backup")
+    hint = (f"verify data restore {name}: inspect backups/last-restore.json; if the exact "
+            f"stage was not restored successfully, restore it with `nerva backup restore {name}`")
+    receipt["action_needed"] = _join_needed(receipt.get("action_needed"), hint)
+    return "rollback_incomplete", reason
 
 
 def on_boot() -> dict | None:
@@ -1420,7 +1695,7 @@ def _rollback_command(payload: dict, approved_by: str, task_id: Any, action_reco
         return _close_current(receipt, "failed", reason="git_reset_failed")
     planned = "self" if restart and hub_restart.available() else "manual"
     if receipt["restore_data"]:
-        receipt["data_restored"] = _stage_data_restore(receipt, log, planned)
+        _record_data_restore_stage(receipt, log, planned)
     _phase(receipt, "rolled_back_restarting")
     _save_current(receipt)
     _append_receipt({**receipt, "result": None})
@@ -1477,9 +1752,10 @@ def status() -> dict:
 
 def _public(row: dict) -> dict:
     keep = ("id", "kind", "from", "to", "of", "target_ref", "from_version", "to_version", "signer", "backup",
-            "migrations", "dependencies_changed", "restore_data", "data_restored", "approved_by", "task_id",
+            "migrations", "dependencies_changed", "restore_data", "data_restore_staged", "data_restored",
+            "approved_by", "task_id",
             "started_at", "ended_at", "phase", "result", "reason", "rollback_reason", "action_id", "boots",
-            "stash", "action_needed", "dependencies_restored", "packages_left_installed", "rollback_problem",
+            "stash", "stash_restored", "action_needed", "dependencies_restored", "packages_left_installed", "rollback_problem",
             "booted_from", "log")
     return {k: row.get(k) for k in keep if k in row}
 

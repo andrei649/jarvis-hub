@@ -136,20 +136,84 @@ def test_ensure_venv_names_the_failure(root):
 # ── deps ───────────────────────────────────────────────────────────
 def test_pip_install_uses_hash_pinned_lock_by_default(root):
     runner = FakeRunner()
-    argv = bootstrap.pip_install_locked(Path("/v/bin/python"), root, run=runner)
+    py, _ = bootstrap.ensure_venv(root, run=FakeRunner())
+    argv = bootstrap.pip_install_locked(py, root, run=runner)
     assert "--require-hashes" in argv
     assert argv[-1].endswith("requirements-beta.lock")
 
 
 def test_pip_install_unlocked_falls_back_to_txt_and_names_failure(root):
     runner = FakeRunner()
-    argv = bootstrap.pip_install_locked(Path("/v/bin/python"), root, unlocked=True, run=runner)
+    py, _ = bootstrap.ensure_venv(root, run=FakeRunner())
+    argv = bootstrap.pip_install_locked(py, root, unlocked=True, run=runner)
     assert "--require-hashes" not in argv
     assert argv[-1].endswith("requirements-beta.txt")
 
     with pytest.raises(bootstrap.BootstrapError) as ei:
-        bootstrap.pip_install_locked(Path("/v/bin/python"), root, run=FakeRunner(pip_rc=2))
+        bootstrap.pip_install_locked(py, root, run=FakeRunner(pip_rc=2))
     assert ei.value.reason == "pip_install_failed"
+
+
+def test_pip_install_refuses_missing_lock_without_explicit_unlocked_opt_in(root):
+    py, _ = bootstrap.ensure_venv(root, run=FakeRunner())
+    (root / bootstrap.LOCK_FILE).unlink()
+    runner = FakeRunner()
+
+    with pytest.raises(bootstrap.BootstrapError) as ei:
+        bootstrap.pip_install_locked(py, root, run=runner)
+
+    assert ei.value.reason == "requirements_missing"
+    assert runner.calls == []
+
+
+def test_explicit_unlocked_opt_in_still_uses_loose_file_when_lock_is_missing(root):
+    py, _ = bootstrap.ensure_venv(root, run=FakeRunner())
+    (root / bootstrap.LOCK_FILE).unlink()
+    runner = FakeRunner()
+
+    argv = bootstrap.pip_install_locked(py, root, unlocked=True, run=runner)
+
+    assert argv[-1].endswith(bootstrap.LOOSE_REQUIREMENTS)
+    assert "--require-hashes" not in argv
+    assert len(runner.calls) == 1
+
+
+@pytest.mark.parametrize("kind", ["directory", "dangling_symlink"])
+def test_pip_install_refuses_nonfile_lock_without_downgrading(root, kind):
+    py, _ = bootstrap.ensure_venv(root, run=FakeRunner())
+    lock = root / bootstrap.LOCK_FILE
+    lock.unlink()
+    if kind == "directory":
+        lock.mkdir()
+    else:
+        lock.symlink_to(root / "missing-target")
+    runner = FakeRunner()
+
+    with pytest.raises(bootstrap.BootstrapError) as ei:
+        bootstrap.pip_install_locked(py, root, run=runner)
+
+    assert ei.value.reason == "requirements_lock_unreadable"
+    assert runner.calls == []
+
+
+def test_pip_install_names_lock_metadata_error_without_downgrading(root, monkeypatch):
+    py, _ = bootstrap.ensure_venv(root, run=FakeRunner())
+    lock = root / bootstrap.LOCK_FILE
+    runner = FakeRunner()
+    original = Path.is_file
+
+    def inaccessible(path):
+        if path == lock:
+            raise PermissionError("modeled unreadable lock path")
+        return original(path)
+
+    monkeypatch.setattr(Path, "is_file", inaccessible)
+
+    with pytest.raises(bootstrap.BootstrapError) as ei:
+        bootstrap.pip_install_locked(py, root, run=runner)
+
+    assert ei.value.reason == "requirements_lock_unreadable"
+    assert runner.calls == []
 
 
 # ── runtimes ───────────────────────────────────────────────────────

@@ -53,6 +53,31 @@ from .usage_context import report_text_usage
 
 ANTHROPIC_API_BASE = "https://api.anthropic.com/v1"
 ANTHROPIC_VERSION = "2023-06-01"
+
+
+def _safe_http_status(exc: BaseException) -> int | None:
+    """Use only a native HTTP status, never the response body or exception text."""
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return None
+    status = exc.response.status_code
+    return status if type(status) is int and 100 <= status <= 599 else None
+
+
+def _error_marker(exc: BaseException | None, *, stream: bool = False,
+                  exhausted: bool = False) -> str:
+    """A fixed user-visible failure marker independent of untrusted error strings."""
+    prefix = "Claude API stream error" if stream else "Claude API error"
+    if exhausted:
+        reason = "all auth profiles exhausted"
+    elif isinstance(exc, ProviderRateLimited):
+        reason = "HTTP 429; request held by shared 429 guard"
+    elif exc is not None and (status := _safe_http_status(exc)) is not None:
+        reason = f"HTTP {status}"
+    else:
+        reason = "request failed"
+    return f"[{prefix}: {reason}]"
+
+
 #: H297 — the statuses of a request the provider refused as invalid
 #: (``invalid_request_error``, ``request_too_large``): the only failures the tool loop
 #: answers by resending without the images the request carried.
@@ -289,7 +314,6 @@ class ClaudeBackend(AdmittedClientMixin, LLMBackend):
 
         """
         attempts = self.auth_pool.size if self.auth_pool else 1
-        last_err = ""
         last_exc: BaseException | None = None
         model = model or (payload or {}).get("model")
         for _ in range(max(1, attempts)):
@@ -310,28 +334,29 @@ class ClaudeBackend(AdmittedClientMixin, LLMBackend):
                 if not isinstance(data, dict):
                     raise ValueError("response body is not an object")
             except httpx.HTTPStatusError as e:
-                last_err, last_exc = str(e), e
-                status = e.response.status_code
-                if self.auth_pool is not None and is_rotatable_status(status) and self.auth_pool.size > 1:
+                last_exc = e
+                status = _safe_http_status(e)
+                if (status is not None and self.auth_pool is not None
+                        and is_rotatable_status(status) and self.auth_pool.size > 1):
                     self.auth_pool.report_failure(key)
                     continue   # fail over to the next key
                 note_provider_failure("anthropic", model, e)
-                return None, f"[Claude API error: {e}]", status
+                return None, _error_marker(e), status
             except ProviderRateLimited as e:
                 # H373 — held by the shared 429 guard, refused before sending: the next key.
-                last_err, last_exc = str(e), e
+                last_exc = e
                 if self._fail_over_held(key, e):
                     continue
                 note_provider_failure("anthropic", model, e, kind="rate_limited", status=429)
-                return None, f"[Claude API error: {e}]", None
+                return None, _error_marker(e), None
             except Exception as e:
                 note_provider_failure("anthropic", model, e)
-                return None, f"[Claude API error: {e}]", None
+                return None, _error_marker(e), None
             if self.auth_pool is not None:
                 self.auth_pool.report_success(key)
             return data, "", None
         note_provider_failure("anthropic", model, last_exc)
-        return None, f"[Claude API error: all auth profiles exhausted: {last_err}]", None
+        return None, _error_marker(last_exc, exhausted=True), None
 
     async def generate(
         self, model: str, prompt: str, system: str = "",
@@ -480,7 +505,7 @@ class ClaudeBackend(AdmittedClientMixin, LLMBackend):
             except ProviderRateLimited as e:
                 usage_failed = True
                 errored = True
-                full = f"[Claude API stream error: {e}]"
+                full = _error_marker(e, stream=True)
                 if self._fail_over_held(stream_key, e) and attempt + 1 < attempts:
                     continue
                 note_provider_failure("anthropic", model, e, kind="rate_limited", status=429)
@@ -488,14 +513,15 @@ class ClaudeBackend(AdmittedClientMixin, LLMBackend):
                 usage_failed = True
                 errored = True
                 # Rotatable error → cool this key down so the next call fails over (H12.20).
-                if self.auth_pool is not None and is_rotatable_status(e.response.status_code):
+                status = _safe_http_status(e)
+                if self.auth_pool is not None and status is not None and is_rotatable_status(status):
                     self.auth_pool.report_failure(stream_key)
-                full = f"[Claude API stream error: {e}]"
+                full = _error_marker(e, stream=True)
                 note_provider_failure("anthropic", model, e)
             except Exception as e:
                 usage_failed = True
                 errored = True
-                full = f"[Claude API stream error: {e}]"
+                full = _error_marker(e, stream=True)
                 note_provider_failure("anthropic", model, e)
             break
         answer = self._finalize_cloud(full, stop_reason, model)

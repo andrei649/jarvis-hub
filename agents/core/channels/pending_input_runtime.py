@@ -222,6 +222,9 @@ class ChannelPendingRuntime:
             return await self._deliver_ntfy(prompt, binding, text)
         if binding.source.channel != "telegram":
             return False
+        from .manager import CardAttempt
+
+        attempt = CardAttempt()
         send_card = getattr(self.orch.channel_manager, "send_pending_card", None)
         offer = None
         if callable(send_card):
@@ -230,7 +233,12 @@ class ChannelPendingRuntime:
             generation = getattr(adapter, "_pending_callback_generation", None)
             try:
                 offer = self.cards.register(prompt)
-                receipt = await send_card("telegram", text, offer.markup, **binding.delivery)
+                # An alternate/uninstrumented manager cannot prove a missing
+                # receipt was never sent. The real manager replaces this
+                # conservative state with its captured transport outcome.
+                attempt.disposition = "unknown"
+                receipt = await send_card("telegram", text, offer.markup,
+                                          attempt=attempt, **binding.delivery)
                 if (generation is not None and generation
                         is getattr(adapter, "_pending_callback_generation", None)):
                     self._card_generations[prompt.id] = generation
@@ -246,6 +254,8 @@ class ChannelPendingRuntime:
                 if offer is not None and prompt.id not in self._card_tokens:
                     self.cards.discard(offer.token)
                     self._card_generations.pop(prompt.id, None)
+        if attempt.disposition in {"sent", "partial", "unknown"}:
+            return False
         if not binding.active or not self._allowed(binding.source):
             return False
         try:

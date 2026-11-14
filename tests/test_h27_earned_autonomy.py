@@ -625,6 +625,8 @@ def test_refusal_vocabulary_is_per_kind_and_names_refusals_only():
     assert set(REFUSAL_REASONS_BY_KIND) == set(ACTION_CAPABILITY_MANIFESTS)
     # Provider installation is driven by the signed store and Action Kernel, not
     # by this autonomy worker's handler-returned `failed` classification.
+    assert REFUSAL_REASONS_BY_KIND['hub.restart'] == frozenset()
+    assert not is_refusal('hub.restart', {'status': 'failed', 'reason': 'apply_failed'})
     assert REFUSAL_REASONS_BY_KIND['plugin.load'] == frozenset()
     assert not is_refusal('plugin.load', {'status': 'failed', 'reason': 'kernel_denied'})
     for kind in ('provider.credential', 'provider.selection', 'provider.custom_endpoint'):
@@ -639,7 +641,7 @@ def test_refusal_vocabulary_is_per_kind_and_names_refusals_only():
         for reason in reasons:
             kinds_by_reason.setdefault(reason, set()).add(kind)
     house = {"house.control", "house.security_control"}
-    voice_and_grant = {"settings.voice_command", "permission.grant"}
+    voice_grant_update = {"settings.voice_command", "permission.grant", "hub.update"}
     assert {reason: kinds for reason, kinds in kinds_by_reason.items() if len(kinds) > 1} == {
         # round 6, item 6: plugin.egress's execution guards report a missing credential
         # and an approval record that no longer binds the task, before any attempt.
@@ -652,9 +654,12 @@ def test_refusal_vocabulary_is_per_kind_and_names_refusals_only():
         # round 5, item 6: the two switches, decided before any driver call.
         "unified_action_api_disabled": house,
         "action_kernel_disabled": house,
-        "human_decision_required": voice_and_grant,
-        "decision_not_approval": voice_and_grant,
-        "payload_required": voice_and_grant,
+        "human_decision_required": voice_grant_update,
+        "decision_not_approval": voice_grant_update,
+        "payload_required": voice_grant_update,
+        "edit_not_supported": {"settings.voice_command", "hub.update"},
+        "not_requested": {"settings.voice_command", "hub.update"},
+        "payload_changed": {"settings.voice_command", "hub.update"},
     }
     # A withheld reason is never also a refusal, for any kind.
     for kind, reasons in WITHHELD_REASONS_BY_KIND.items():
@@ -673,6 +678,8 @@ def test_refusal_vocabulary_is_per_kind_and_names_refusals_only():
                          ("settings.voice_command", "changed_since_request"),
                          ("settings.voice_command", "not_requested"),
                          ("settings.voice_command", "provider_revision_conflict"),
+                         ("hub.update", "payload_changed"),
+                         ("hub.update", "hub_applies_update"),
                          ("node.dispatch", "unknown_node"),
                          ("plugin.egress", "URL monitor execution claim required")):
         assert reason in REFUSAL_REASONS_BY_KIND[kind], (kind, reason)
@@ -694,6 +701,7 @@ def test_refusal_vocabulary_is_per_kind_and_names_refusals_only():
                          ("unknown.action", "kernel_denied")):
         assert not is_refusal_reason(kind, reason), (kind, reason)
         assert not is_refusal(kind, {"status": "failed", "reason": reason}), (kind, reason)
+    assert not is_refusal("hub.update", {"status": "failed", "reason": "authority_changed"})
     every_kind = list(REFUSAL_REASONS_BY_KIND)
     for reason in ("client_error", "send_failed", "tool_error", "apply_failed", "invalid_call",
                    "verification_failed", "wall_time_budget_exceeded", "invalid_result",

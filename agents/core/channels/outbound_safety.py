@@ -18,9 +18,9 @@ What it does, in order, and only this:
 * **cancellation metadata** — a line that is only the execute-code interruption marker
   (``code_interruptions.MARKER``) is internal bookkeeping for the model, never words for
   the person;
-* **secrets** — every value the hub holds as a credential (a credential-named variable
-  in the process environment, and whatever the installed known-secret redactor masks —
-  the orchestrator installs the secret broker's), then every vendor key format the
+* **secrets** — credential-named environment values meeting the minimum length,
+  and whatever the installed known-secret redactor masks —
+  the orchestrator installs the secret broker's — then every vendor key format the
   :class:`~agents.core.security.scanner.SecretScanner` knows. The scanner's generic
   high-entropy rule is *not* run here: it matches every UUID, session id and commit hash
   a status reply legitimately shows, and the known-value pass covers the hub's own keys.
@@ -30,13 +30,13 @@ What it does, in order, and only this:
   provider and the kind of failure (credentials, rate limit, server, unknown model,
   rejected, unreachable). The provider's body, request id and policy text never leave.
 
-It never raises: a redactor that fails is logged and skipped, and the pattern pass still
-runs. Every step is idempotent, so a text that crosses two wrapped seams is unchanged by
-the second.
+Failed credential lookup or redaction withholds the text and returns a fixed safe
+notice. Every step is idempotent, so text that crosses two wrapped seams is unchanged
+by the second.
 
 **Silence.** An agent that decides a message needs no answer replies with exactly
 :data:`SILENCE_TOKEN` (``[SILENT]``, the token Hermes skills already use). The channel
-turn treats that reply as "send nothing" — no message, no notices under it, and a reply
+turn sends no model reply; independent system notices may still be delivered. A reply
 written in place does not start while the text could still become the token.
 
 **A turn is never invisible.** A channel turn whose model produced no text is answered
@@ -188,25 +188,30 @@ def redact_secrets(text: str) -> str:
             if value in out:
                 out = out.replace(value, f"[REDACTED:{name}]")
     except Exception:
-        logger.warning("outbound credential masking unavailable; key formats are still masked",
+        logger.warning("outbound credential masking unavailable; reply withheld",
                        exc_info=True)
+        return "A reply could not be checked before sending, so it was withheld."
     redactor = _known_redactor
     if redactor is not None:
         try:
             masked_text = redactor(out)
-            if isinstance(masked_text, str):
-                out = masked_text
+            if not isinstance(masked_text, str):
+                return "A reply could not be checked before sending, so it was withheld."
+            out = masked_text
         except Exception:
-            logger.warning("outbound known-secret redactor failed; key formats are still masked",
+            logger.warning("outbound known-secret redactor failed; reply withheld",
                            exc_info=True)
+            return "A reply could not be checked before sending, so it was withheld."
     for name, pattern in _compiled():
         out = pattern.sub(f"[REDACTED:{name}]", out)
     return _PASSWORD_LITERAL.sub(_mask_password, out)
 
 
 # A whole reply that is a backend failure marker: "[<Provider> [API] [stream] error[: detail]]".
-_PROVIDER_ERROR = re.compile(
-    r"\A\s*\[(?P<who>[A-Za-z][\w .()/-]{0,40}?)(?: API)?(?: stream)? error\b(?P<detail>[^\n]{0,4000}?)\]\s*\Z")
+# The detail may be multiline and may contain JSON/Python arrays or quoted brackets.
+# The header is bounded; the envelope walk below is linear in the input length.
+_PROVIDER_ERROR_HEAD = re.compile(
+    r"\A\s*\[(?P<who>[A-Za-z][\w .()/-]{0,40}?)(?: API)?(?: stream)? error\b")
 _STATUS = re.compile(r"(?:Error code|status(?:_code)?|HTTP)\D{0,3}(?P<code>[1-5]\d\d)\b", re.IGNORECASE)
 _PROVIDER_KINDS = (
     ((401, 403), "refused the hub's credentials"),
@@ -223,16 +228,56 @@ KNOWN_PROVIDERS = {name.lower(): name for name in (
 )}
 
 
+def _provider_error_parts(text: str) -> tuple[str, str] | None:
+    """Return a whole marker's provider and at most 4000 detail characters.
+
+    The first *unquoted, balanced* closing bracket ends the marker. Prose after
+    it is not a whole provider failure. The walk never copies the unbounded tail.
+    """
+    head = _PROVIDER_ERROR_HEAD.match(text or "")
+    if head is None:
+        return None
+    opening = text.find("[", 0, head.end())
+    depth = 0
+    quote = None
+    escaped = False
+    for at in range(opening, len(text)):
+        ch = text[at]
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == quote:
+                quote = None
+            continue
+        # Apostrophes inside an ordinary word are not string delimiters.
+        if ch in {"'", '"'} and (at == 0 or not text[at - 1].isalnum()):
+            quote = ch
+        elif ch == "[":
+            depth += 1
+        elif ch == "]":
+            depth -= 1
+            if depth == 0:
+                if any(not text[end].isspace() for end in range(at + 1, len(text))):
+                    return None
+                return head.group("who"), text[head.end():min(at, head.end() + 4000)]
+            if depth < 0:
+                return None
+    return None
+
+
 def map_provider_error(text: str) -> str | None:
     """One user-safe sentence for a reply that is only a provider failure marker, or
     None when *text* is not one. Only a known provider's name and the status code are
     read; the sentence still passes the secret masking."""
-    match = _PROVIDER_ERROR.match(text or "")
-    if match is None:
+    parts = _provider_error_parts(text)
+    if parts is None:
         return None
-    named = KNOWN_PROVIDERS.get(" ".join(match.group("who").split()).lower())
+    who, detail = parts
+    named = KNOWN_PROVIDERS.get(" ".join(who.split()).lower())
     who = f"The model provider {named}" if named else "The model provider"
-    status_match = _STATUS.search(match.group("detail"))
+    status_match = _STATUS.search(detail)
     status = int(status_match.group("code")) if status_match else None
     what = "could not answer (the request failed or the provider was unreachable)"
     if status is not None:
@@ -254,14 +299,14 @@ def sanitize_text(text: str) -> str:
     """The plain-string sanitizer: crash characters, cancellation lines, secrets."""
     if not text:
         return text
-    mapped = map_provider_error(_strip_format(_CRASH_CHARS.sub("", text)))
-    if mapped is not None:
-        return mapped
     out = text.replace("\r\n", "\n").replace("\r", "\n")
     out = _CRASH_CHARS.sub("", out)
     out = _strip_format(out)
     out = _strip_cancellation(out)
-    return redact_secrets(out)
+    # Internal cancellation lines are not prose. Remove them before deciding
+    # whether the complete visible reply is a provider failure envelope.
+    mapped = map_provider_error(out)
+    return mapped if mapped is not None else redact_secrets(out)
 
 
 def sanitize_outbound(message: Any) -> Any:
@@ -311,6 +356,24 @@ def stream_safe_prefix(text: str) -> str:
     return text[:cut].rstrip()
 
 
+def safe_stream_prefix(text: str) -> str:
+    """Sanitize before cutting; never expose a marker or opaque-secret prefix.
+
+    An opaque secret redactor supplies no maximum secret length, so its reply must
+    be checked whole at finish. Bracket-led replies may be provider error markers;
+    hold them until final classification too. Ordinary text still streams at safe
+    word boundaries when the credential lookbehind can be bounded.
+    """
+    if not text or _known_redactor is not None or text.lstrip().startswith("["):
+        return ""
+    from ..code_interruptions import MARKER
+
+    last_line = text.rsplit("\n", 1)[-1].strip()
+    if last_line and MARKER.startswith(last_line):
+        text = text.rsplit("\n", 1)[0] + "\n" if "\n" in text else ""
+    return stream_safe_prefix(str(sanitize_outbound(text)))
+
+
 def _last_space(text: str, end: int) -> int:
     """The index just after the last whitespace character before *end*, or 0."""
     for at in range(min(end, len(text)) - 1, -1, -1):
@@ -357,5 +420,5 @@ def may_become_silence(partial: Any) -> bool:
 
 __all__ = [
     "EMPTY_TURN_REPLY", "FAILED_TURN_REPLY", "SILENCE_TOKEN", "install_known_secret_redactor",
-    "is_silence", "map_provider_error", "sanitize_label", "sanitize_markup", "stream_safe_prefix", "may_become_silence", "redact_secrets", "sanitize_outbound", "sanitize_text",
+    "is_silence", "map_provider_error", "sanitize_label", "sanitize_markup", "stream_safe_prefix", "safe_stream_prefix", "may_become_silence", "redact_secrets", "sanitize_outbound", "sanitize_text",
 ]

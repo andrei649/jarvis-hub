@@ -471,6 +471,116 @@ def _make_action_kernel_probe(manifest):
     return _probe
 
 
+async def _probe_hub_update_signed_late_revocation() -> bool:
+    """A real signed owner card loses authority during backup, before Git moves."""
+    import hashlib
+    import hmac
+    import tempfile
+    import time
+    from pathlib import Path
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from agents.core import hub_restart, hub_update, hub_update_apply
+    from agents.core.autonomy import irreversible
+    from agents.core.autonomy.executor import TaskExecutor
+    from agents.core.autonomy.mediation import DetachedHMACSigner
+    from agents.core.autonomy.mediation_head_store import make_task_mediation_anchor
+    from agents.core.autonomy.policy import AutonomyPolicy
+    from agents.core.autonomy.queue import TaskQueue
+    from agents.core.autonomy.worker import AutonomyWorker
+    from agents.core.kernel import authorize, revalidate
+    from agents.core.kernel.binding import MediationKernelBridge
+    from agents.core.security.capability import KillSwitch
+
+    with tempfile.TemporaryDirectory(prefix="reality-hub-update-") as directory:
+        root = Path(directory)
+        now_ms = int(time.time() * 1000)
+        signer = DetachedHMACSigner(
+            lambda body: hmac.new(b"hermetic-hub-update-reality", body, hashlib.sha256).hexdigest())
+        queue = TaskQueue(
+            str(root / "queue.db"), mediation_mode="enforce", mediation_signer=signer,
+            mediation_head_anchor=make_task_mediation_anchor(root / "head.json"),
+            mediation_scope="global", mediation_policy_revision="update-reality-v1",
+            mediation_clock_ms=lambda: now_ms,
+        ).initialize()
+        kill = KillSwitch(path=str(root / "kill.json"))
+        policy = AutonomyPolicy(mode="auto")
+
+        def kernel(action, capability=None, budget=None):
+            return authorize(action, capability, budget, kill_switch=kill, policy=policy)
+
+        def current_kernel(action, capability=None, *, approval_check=None):
+            return revalidate(action, capability, kill_switch=kill, policy=policy,
+                              approval_check=approval_check)
+
+        kernel.revalidate = current_kernel
+        worker = AutonomyWorker(
+            queue, policy=policy, kernel=MediationKernelBridge(kernel),
+            mediation_signer=signer, mediation_clock_ms=lambda: now_ms)
+        worker._kill_switch = kill
+        orch = SimpleNamespace(autonomy=worker, autonomy_queue=queue, audit=None, intent_log=None)
+        executor = TaskExecutor(execution_guard=worker.execution_allowed)
+
+        async def execute(task):
+            return await irreversible.execute(task, orch=orch)
+
+        executor.register(hub_update_apply.APPROVAL_KIND, execute)
+        worker.executor = executor.execute
+        effects = []
+        plan = {
+            "can_apply": True, "from": "a" * 40, "to": "b" * 40,
+            "target_ref": "b" * 40, "tag": None, "dirty_policy": "refuse",
+            "from_version": "1", "to_version": "2",
+            "dependencies": {"changed": False, "command": None},
+            "migrations": [], "migrations_uncertain": False, "frontend_changed": False,
+            "dirty": False, "verdict": {"how": "pinned", "signer": None},
+            "commit_count": 1, "commits": [], "file_count": 0,
+        }
+
+        def backup(_log, _label):
+            effects.append("backup")
+            kill.engage("global", reason="revoked during verified backup")
+            return {"name": "mocked-backup", "ok": True}
+
+        def git(*_args, **_kwargs):
+            effects.append("git")
+            return 1, "", "refused"
+
+        try:
+            with (patch.dict(os.environ, {"JARVIS_ACTION_KERNEL": "1", "JARVIS_HOME": directory}),
+                  patch.object(hub_update_apply, "state_dir", return_value=root / "update"),
+                  patch.object(hub_update_apply, "plan", return_value=plan),
+                  patch.object(hub_update_apply, "_audit", return_value=None),
+                  patch.object(hub_update_apply, "head", return_value="a" * 40),
+                  patch.object(hub_update_apply, "_rev", side_effect=lambda value: "b" * 40 if value == "b" * 40 else None),
+                  patch.object(hub_update_apply, "verify_target", return_value={
+                      "trusted": True, "how": "pinned", "signer": None}),
+                  patch.object(hub_update_apply, "_dirty", return_value=False),
+                  patch.object(hub_update_apply, "_backup", side_effect=backup),
+                  patch.object(hub_update_apply, "_git", side_effect=git),
+                  patch.object(hub_restart, "available", return_value=True),
+                  patch.object(hub_restart, "request", side_effect=AssertionError("restart reached")),
+                  patch.object(hub_update, "_new_action", return_value={"id": "reality", "lines": []}),
+                  patch.object(hub_update, "_finish", return_value=None)):
+                pending = hub_update_apply.request_apply(orch)
+                task_id = pending["pending"]
+                task = queue.get(task_id)
+                if (task.status != "blocked" or task.risk_tier != 3
+                        or not task.mediation_receipt or task.mediation_receipt["verdict"] != "queue"):
+                    return False
+                await worker.apply_decision(task_id, "accept", decided_by="owner")
+                if effects:
+                    return False
+                await worker.tick()
+                result = queue.get(task_id).result or {}
+                return (effects == ["backup"] and result.get("reason") == "authority_changed"
+                        and queue.verified_mediation_stats()["valid"] > 0
+                        and hub_update_apply.current() is None)
+        finally:
+            queue.close()
+
+
 async def _probe_tool_echo_protocol() -> bool:
     from agents.core.tool_rpc import ToolRPCServer
 
@@ -636,8 +746,11 @@ ACTION_CAPABILITY_CASES: list[RealityCase] = [
     RealityCase(
         manifest.id,
         action_case_name(kind),
-        f"an engaged real kill-switch refuses {kind} through CapabilityActionAPI",
-        _make_action_kernel_probe(manifest),
+        ("a signed human hub update card rechecks a revoked kill-switch after backup"
+         if kind == "hub.update" else
+         f"an engaged real kill-switch refuses {kind} through CapabilityActionAPI"),
+        (_probe_hub_update_signed_late_revocation if kind == "hub.update"
+         else _make_action_kernel_probe(manifest)),
     )
     for kind, manifest in sorted(ACTION_CAPABILITY_MANIFESTS.items())
     if kind not in {"provider.credential", "provider.selection", "provider.custom_endpoint"}

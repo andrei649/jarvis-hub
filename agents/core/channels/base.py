@@ -19,14 +19,19 @@ logger = logging.getLogger("jarvis.channels")
 
 def _outbound_safe(send):
     """H069: *send* with the transport gate in front of it — the agent's silence token is
-    not sent (and counts as delivered), every other text is sanitized first
+    not sent (and counts as delivered), except already-policy-checked job output;
+    every delivered text is sanitized first
     (:mod:`.outbound_safety`)."""
 
     @functools.wraps(send)
     async def safe_send(self, message, *args, **kwargs):
         from . import outbound_safety
 
-        if outbound_safety.is_silence(message):
+        # JobRunner already applied the agent-silence policy. Script-only output
+        # is literal data, even when it happens to equal the agent's token.
+        # Consume this private marker here; transports still receive sanitized text.
+        literal_job_output = kwargs.pop("_literal_job_output", False)
+        if not literal_job_output and outbound_safety.is_silence(message):
             logger.info("Channel %s: the reply was the agent's silence token; nothing sent",
                         getattr(self, "channel_id", "?"))
             return True

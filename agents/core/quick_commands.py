@@ -22,6 +22,8 @@ def configuration_problem(value) -> str | None:
         names.add(name.lower())
         from .commands import ALIASES
 
+        if name.lower() == "nerva":
+            return "quick_commands: /nerva is Slack's built-in command fallback; choose another name"
         if name.lower() in ALIASES:
             # H057 review m5: a built-in alias is resolved before quick commands, so this
             # one could never run; say so instead of storing a dead command.

@@ -331,9 +331,18 @@ def test_bulk_stale_fingerprint_refuses_all_skills(hub, client):
 def test_bulk_preflight_and_approval_use_the_same_orchestrator_when_binding_changes(
     hub, client, monkeypatch
 ):
+    # Both independent generated skills must have the same name across clock ticks.
+    from datetime import UTC, datetime
+
     from agents.core.routers import _component
     from agents.core.routers import skills as skills_router
 
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 11, 12, 12, 0, tzinfo=UTC)
+
+    monkeypatch.setattr(loader_mod, "datetime", FixedDatetime)
     first_folder, name = _gen(hub)
     first_fingerprint = hub.loader.pending_skill_fingerprint(name)
 

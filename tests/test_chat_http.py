@@ -212,9 +212,11 @@ def test_chat_stream_emits_token_events(monkeypatch):
     resp = client.post("/chat/stream", json={"message": "hello"})
     events = _parse_sse(resp.text)
     token_events = [e for e in events if e.get("type") == "token"]
-    assert len(token_events) == 2
-    assert token_events[0]["text"] == "Hello"
-    assert token_events[1]["text"] == " world"
+    # Safe buffering may coalesce fragments when an opaque secret redactor is
+    # installed. The visible text and authoritative final must still agree.
+    assert token_events
+    assert "".join(event["text"] for event in token_events) == "Hello world"
+    assert events[-1]["text"] == "Hello world"
 
 
 def test_chat_stream_last_event_is_end(monkeypatch):
