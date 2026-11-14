@@ -1,0 +1,4881 @@
+[
+  {
+    "id": "H001",
+    "title": "Drive the whole product from one command (`nerva ...`) with a discoverable command tree",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H002",
+    "title": "Run one scripted agent turn from a pipe and get a machine-readable cost report",
+    "area": "cli",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H003",
+    "title": "Talk to the agent in a terminal with editing, history, cancel, and a live tool feed",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H004",
+    "title": "Get shell tab-completion for the command tree",
+    "area": "cli",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H005",
+    "title": "Inspect, export, prune and repair the conversation/session store",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H006",
+    "title": "Read and change configuration without an editor, and validate/migrate it",
+    "area": "cli",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H007",
+    "title": "First-run setup: pick a model, a runtime, channels and tools without a browser",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H008",
+    "title": "Diagnose a broken install and repair the fixable parts",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H009",
+    "title": "Produce a pasteable, non-sensitive diagnostic report for a support thread",
+    "area": "cli",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H010",
+    "title": "Back up and restore the whole install",
+    "area": "cli",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H011",
+    "title": "Roll back file edits an agent made, from a shadow checkpoint store",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H012",
+    "title": "Migrate in from another agent (Claude Code, Codex, OpenClaw, Hermes)",
+    "area": "cli",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H013",
+    "title": "Update the install itself, safely, with a plan and a rollback",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H014",
+    "title": "Uninstall cleanly, with a dry run",
+    "area": "cli",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H015",
+    "title": "Create and manage scheduled jobs, and see why past runs failed",
+    "area": "cli",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H016",
+    "title": "Install the hub as an OS background service (systemd / launchd / Windows Task) and start/stop/restart/status it",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H017",
+    "title": "Connect a messaging platform through a guided wizard",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H018",
+    "title": "Send a message to a configured channel from the shell",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H019",
+    "title": "Emergency-stop everything, and see component status at a glance",
+    "area": "cli",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H020",
+    "title": "Ask the system what it would do with a given command, and mine past approvals into rules",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H021",
+    "title": "Run user-authored shell scripts on agent lifecycle events, with a consent record",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H022",
+    "title": "Audit installed dependencies for known vulnerabilities",
+    "area": "cli",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H023",
+    "title": "Detect how an arbitrary project builds/tests/starts and prove it still runs",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H024",
+    "title": "Find, install, review and remove skills",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H025",
+    "title": "Add extra skill sources and move a skill setup between machines",
+    "area": "cli",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H026",
+    "title": "Group skills into named bundles / packs",
+    "area": "cli",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H027",
+    "title": "Age out, pin, archive and roll back agent-authored skills automatically",
+    "area": "cli",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H028",
+    "title": "Install, enable, disable and inspect plugins, including their granted capabilities",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H029",
+    "title": "Add, test, authenticate and configure MCP servers, and browse a vetted catalog",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H030",
+    "title": "Choose which tools each surface may use",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H031",
+    "title": "Pick a provider and model interactively, with a declared fallback chain",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H032",
+    "title": "Run several models as one committee (Mixture of Agents presets)",
+    "area": "cli",
+    "recorded_status": "equivalent",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H033",
+    "title": "Manage pooled provider credentials and see which are exhausted",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H034",
+    "title": "Source secrets from an external password manager instead of a .env file",
+    "area": "cli",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H035",
+    "title": "Keep real credentials outside the sandbox: swap opaque tokens for real keys at the network boundary",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H036",
+    "title": "Run several isolated instances of the product on one machine",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H037",
+    "title": "Run a durable multi-worker task board: create work, claim it, track dependencies, review and complete it",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H038",
+    "title": "Message another instance of the agent on a different machine",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H039",
+    "title": "Subscribe an external system's events to the agent via a webhook",
+    "area": "cli",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H040",
+    "title": "Sync the owner's own configuration and skills between their devices",
+    "area": "cli",
+    "recorded_status": "equivalent",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H041",
+    "title": "Onboard through a vendor portal and route tools through a hosted gateway",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H042",
+    "title": "Start, check and stop the web UI / headless backend",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H043",
+    "title": "Launch the desktop application",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H044",
+    "title": "Install the desktop-control driver and grant it the OS permissions it needs",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H045",
+    "title": "See and reset what the assistant remembers",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H046",
+    "title": "Look back at what the assistant has learned over time",
+    "area": "cli",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H047",
+    "title": "See usage, cost and activity analytics for this install",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H048",
+    "title": "See where the prompt budget actually goes",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H049",
+    "title": "Read recent logs without knowing where they live",
+    "area": "cli",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H050",
+    "title": "Hand a semi-trusted operator a restricted command shell",
+    "area": "cli",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H051",
+    "title": "Approve or revoke who may talk to the agent over DM",
+    "area": "cli",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H052",
+    "title": "Theme the terminal and keep an animated mascot",
+    "area": "cli",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H053",
+    "title": "Audit and reclaim disposable git worktrees the agent created",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H054",
+    "title": "Drive the owner's real, logged-in browser profile",
+    "area": "cli",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H055",
+    "title": "Install and manage language servers for code intelligence",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H056",
+    "title": "Serve the agent to an editor over the Agent Client Protocol",
+    "area": "cli",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H057",
+    "title": "Chat slash-command plane (grammar, aliases, dispatch precedence, unknown-command notice, per-platform command menus)",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H058",
+    "title": "Per-command access tiers (admin vs user, DM vs group scope) and `/whoami`",
+    "area": "gateway",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H059",
+    "title": "Default-deny inbound authorization and DM pairing",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H060",
+    "title": "Talking to a busy agent: queue / steer / interrupt, `/stop`, and the ack that says what happened",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H061",
+    "title": "Turn serialization and per-session runtime state (lease, run generations, slot claim, concurrency cap, stale/reaped eviction, warm agent cache)",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H062",
+    "title": "Session identity, delivery routing, home channel and channel directory",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H063",
+    "title": "Session reset policy and expiry/stall watchers",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H064",
+    "title": "Session lifecycle commands from chat (`/new` `/topic` `/save` `/retry` `/undo` `/title` `/branch` `/compress` `/rollback` `/resume` `/sessions` `/status` `/context` `/usage` `/insights`)",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H065",
+    "title": "Approving a risky action from chat",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H066",
+    "title": "Session-wide approval bypass (`/yolo`, `/approvals off`)",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H067",
+    "title": "Pending-input interception (clarify answers, three-way confirm, destructive-command confirm, ephemeral notices)",
+    "area": "gateway",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H068",
+    "title": "Outbound rendering: streaming edits, tool-progress bubbles, typing/status lines, verbosity tiers",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H069",
+    "title": "Outbound safety at the transport boundary (final sanitizer, secret redaction, provider-error mapping, silence tokens)",
+    "area": "gateway",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H070",
+    "title": "Media in and out: inbound attachments, image mode, MEDIA: delivery and the delivery-path allowlist",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H071",
+    "title": "Voice on chat channels (inbound voice notes, spoken replies, per-chat voice mode)",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H072",
+    "title": "Background work and its notifications back into the chat (`/bg`, `/btw`, `/agents`, completion coalescing, session wake)",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H073",
+    "title": "Standing goals and recurring loops driven from chat (`/goal`, `/subgoal`, `/loop`, `/heartbeat`, `/refine`, `/review`, `/plan`, `/init`, `/learn`)",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H074",
+    "title": "Automation blueprints and proposed-automation review (`/blueprint`, `/suggestions`, `/curator`)",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H075",
+    "title": "Kanban board and multi-agent board dispatcher (`/kanban`, kanban watchers)",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H076",
+    "title": "Model, persona and per-channel runtime control (`/model` incl. `--once` and persistence, `/personality`, `/reasoning`, per-channel overrides, turn runtime resolution, fallback chain, prefill and ephemeral system prompt, message timestamps in context)",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H077",
+    "title": "Paid-tier and vendor-commerce knobs (`/fast` service_tier, `/codex-runtime`, `/topup`)",
+    "area": "gateway",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H078",
+    "title": "User-defined quick commands (`/x` → shell exec or alias)",
+    "area": "gateway",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H079",
+    "title": "Plugin- and skill-registered commands, bundles, stacked skills, and command discovery (`/help`, `/commands`, `/bundles`)",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H080",
+    "title": "Lifecycle hooks (`pre_command`, `command:<name>`, `pre_gateway_dispatch`, reaction events, the event hook system)",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H081",
+    "title": "Durable delivery ledger and dead-target registry (at-least-once replies)",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H082",
+    "title": "Restart, drain, crash forensics and process supervision",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H083",
+    "title": "Platform adapter resilience (circuit breaker, pause/resume, reconnect backoff, connect timeout, credential/listener claims, token and connectivity guards)",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H084",
+    "title": "Operator maintenance from chat (`/pause` e-stop, `/platform`, `/restart`, `/update`, `/reload-mcp`, `/reload-skills`, `/debug`, `/diff`, `/egress`, `/version`, `/profile`, plain-text restart coercion)",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H085",
+    "title": "Multi-profile gateways, multiplexing, profile routes, relay, peer messaging, hosted rooms and cross-instance handoff",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H086",
+    "title": "Browser-control broker and artifact store",
+    "area": "gateway",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H087",
+    "title": "Scale-to-zero (idle self-suspend of the host)",
+    "area": "gateway",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H088",
+    "title": "Gateway configuration surface (layered load order, per-platform shared keys, env overrides, platform enum, port-binding conflicts, cwd/SSL/venv bootstraps)",
+    "area": "gateway",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H089",
+    "title": "The gateway process model itself (one always-on process owning adapters, sessions and the cron tick; the ordered inbound pipeline)",
+    "area": "gateway",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H090",
+    "title": "Pluggable platform adapter contract (one descriptor per channel, one base class that owns the conversation runtime)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H091",
+    "title": "Add a new messenger without touching core code (platform plugin packages)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H092",
+    "title": "Telegram as a full-fidelity surface (rich text, media, threads, buttons, resilience)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H093",
+    "title": "Discord as a governed channel (server chat, threads, slash commands, roles)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H094",
+    "title": "Slack as a two-way channel (Socket Mode inbound, threads, workspace install)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H095",
+    "title": "WhatsApp reach without account-ban risk",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H096",
+    "title": "Email as a conversational channel (authenticated senders, threading, attachments)",
+    "area": "platforms",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H097",
+    "title": "Governed webhook-class channels (Signal, Matrix, Teams, Google Chat) as real adapters",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H098",
+    "title": "SMS as a channel (Twilio REST out, signed webhook in)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H099",
+    "title": "Push notification to a phone without a bot or an account (ntfy)",
+    "area": "platforms",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H100",
+    "title": "Connection self-healing (stay connected without an operator watching)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H101",
+    "title": "Alternative inbound transports and network placement (webhook mode, proxy, custom API host)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H102",
+    "title": "DNS-over-HTTPS fallback-IP transport (reach the platform through a hostile network)",
+    "area": "platforms",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H103",
+    "title": "Per-platform outbound rendering (each channel gets text it can actually display)",
+    "area": "platforms",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H104",
+    "title": "Live/streaming replies in chat",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H105",
+    "title": "Working-state feedback (typing, status lines, lifecycle reactions, read receipts)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H106",
+    "title": "In-chat approvals and interactive controls (approve, clarify, pick — from the phone)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H107",
+    "title": "Sending media out (photos, albums, documents, video, voice notes, GIFs)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H108",
+    "title": "Receiving media in (photos, voice notes, documents, stickers, locations)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H109",
+    "title": "Voice notes both ways on chat channels (speak to it, hear it back)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H110",
+    "title": "Discord voice-channel presence (join a VC, listen, speak, ambient audio bed)",
+    "area": "platforms",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H111",
+    "title": "Inbound gating: who may talk to the agent, and when it should answer",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H112",
+    "title": "Pairing an unknown sender (first contact without editing a config file)",
+    "area": "platforms",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H113",
+    "title": "Threads, topics and per-conversation sessions",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H114",
+    "title": "Per-channel personality, skills and verbosity",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H115",
+    "title": "Proactive delivery: home channel, scheduled output, and sending when no adapter is running",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H116",
+    "title": "Catching up on what was missed while offline",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H117",
+    "title": "Message batching and debounce (treat a burst as one turn)",
+    "area": "platforms",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H118",
+    "title": "Guided setup for a channel (from 'I have nothing' to 'it replies')",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H119",
+    "title": "Authenticating inbound webhooks (proving the message came from the platform)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H120",
+    "title": "Not answering itself: echo, duplicate and loop guards",
+    "area": "platforms",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H121",
+    "title": "Agent-to-agent as a channel (be callable by another agent; call peers)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H122",
+    "title": "Home Assistant as a channel (the house talks to the agent)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H123",
+    "title": "Regional and enterprise-chat breadth (DingTalk, Feishu/Lark, WeCom, WeCom Callback, Yuanbao)",
+    "area": "platforms",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H124",
+    "title": "Long-tail protocol adapters (IRC, LINE, SimpleX, Mattermost, Raft, Buzz)",
+    "area": "platforms",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H125",
+    "title": "iMessage reach (Photon/BlueBubbles sidecar)",
+    "area": "platforms",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H126",
+    "title": "Slack-native AI-app surfaces (Agent view, task cards, suggested prompts, thread titles, Block Kit)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H127",
+    "title": "Transport-level end-to-end encryption (Matrix E2EE, cross-signing)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H128",
+    "title": "Agent-facing platform administration tools (act on the platform, not just chat in it)",
+    "area": "platforms",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H129",
+    "title": "Deep-link / bookmark a UI surface (URL routing)",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H130",
+    "title": "Serve the UI under a reverse-proxy sub-path",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H131",
+    "title": "Keyboard-first navigation and a command palette",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H132",
+    "title": "Persistent navigation chrome (rail, mobile drawer, page-header slots)",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H133",
+    "title": "Live status chrome (gateway state, sessions, model, data provenance)",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H134",
+    "title": "Operator-authored reskin (themes, fonts, custom CSS, layout variants)",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H135",
+    "title": "Appearance preference follows the owner across devices",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H136",
+    "title": "Localized UI",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H137",
+    "title": "Talk to the agent in the browser",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H138",
+    "title": "A real shell in the browser",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H139",
+    "title": "Attach an image or paste a screenshot into the conversation",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H140",
+    "title": "Survive a dropped connection mid-run",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H141",
+    "title": "Browse, search, rename, export and prune conversation history",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H142",
+    "title": "Browse, upload and download files on the host",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H143",
+    "title": "Token, cost and usage analytics",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H144",
+    "title": "Model control panel (main model, per-task models, ensembles, per-model usage)",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H145",
+    "title": "Read the system logs from the UI",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H146",
+    "title": "Create and manage your own scheduled jobs",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H147",
+    "title": "Enable/disable skills, author them, configure tool backends, browse a hub",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H148",
+    "title": "Install a plugin from an arbitrary Git URL",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H149",
+    "title": "Swap the memory provider / context engine from the UI",
+    "area": "web",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H150",
+    "title": "Manage MCP servers from the UI (add, test, connect, OAuth, catalog install)",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H151",
+    "title": "Configure a messaging channel from the UI (credentials, enable, test, QR onboarding)",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H152",
+    "title": "Breadth of supported messaging platforms",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H153",
+    "title": "Webhook subscriptions (create, enable, HMAC secret, delete)",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H154",
+    "title": "Approve or revoke who may talk to the agent (pairing)",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H155",
+    "title": "Isolated workspaces (profiles): separate config, keys, memory, sessions, skills and cron per persona",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H156",
+    "title": "Edit an agent's persona and description from the UI",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H157",
+    "title": "Edit every configuration key from the UI",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H158",
+    "title": "Set provider API keys and connect OAuth providers from the UI",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H159",
+    "title": "Sign in to the web UI from another device",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H160",
+    "title": "Restart or update the running system from the UI, with a streaming action log",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H161",
+    "title": "Warn when the box is running out of memory or disk",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H162",
+    "title": "Full backup: create, download, restore, and checkpoints",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H163",
+    "title": "Event-triggered shell hooks",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H164",
+    "title": "Share a diagnostic report for support",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H165",
+    "title": "In-app documentation",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H166",
+    "title": "Third-party dashboard extensions (plugin manifests, slots, SDK, route override)",
+    "area": "web",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H167",
+    "title": "Task board for planned work",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H168",
+    "title": "Shared UI primitives the pages lean on (markdown, destructive-action confirmation, schema-driven fields)",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H169",
+    "title": "Ship a signed, double-clickable desktop app per OS",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H170",
+    "title": "Native app chrome that owns the window (menu bar, geometry persistence, zoom, translucency, tray/dock, find in page)",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H171",
+    "title": "The shell owns the backend process (resolve, spawn, ownership record, orphan reap, readiness probe, per-profile pool)",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H172",
+    "title": "Install the agent runtime from inside the app (staged first-run bootstrap with progress, log, repair, reset, cancel)",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H173",
+    "title": "In-app self-update with a tracked branch, honest behind-count and a safe hand-off",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H174",
+    "title": "Uninstall from inside the app, with a pre-flight summary of exactly what goes",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H175",
+    "title": "Register and switch between multiple gateways (local / remote / SSH / cloud) with Test, Make primary and launch mode",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H176",
+    "title": "Drive an agent on another machine over SSH, and update that fleet",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H177",
+    "title": "Real-time bidirectional wire with heartbeat and lossless reconnect replay",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H178",
+    "title": "HUD mode — a chrome-free, always-on-top chat floating over whatever you are doing",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H179",
+    "title": "Quick Entry — a global hotkey that captures a prompt from anywhere on the system",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H180",
+    "title": "Multi-window: peer app instances and per-session pop-outs",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H181",
+    "title": "Native OS notifications with action buttons that route back into the app",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H182",
+    "title": "Keep the machine awake through a turn, and be aware of power/battery state",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H183",
+    "title": "`nerva://` deep links, including one-click MCP-server install",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H184",
+    "title": "Local file access from the shell (native pickers, clipboard, save-as, trash, rename, reveal, data-URL read cap)",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H185",
+    "title": "An interactive terminal inside the app",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H186",
+    "title": "Git worktrees plus a full review and ship pane (stage, unstage, revert, commit, push, create PR)",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H187",
+    "title": "Encrypt stored credentials with the OS keychain",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H188",
+    "title": "Native OAuth (system browser + loopback + PKCE) and per-connection cookie partitions",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H189",
+    "title": "A command palette that searches everything — sessions, settings, projects, skills, pasted ids and paths",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H190",
+    "title": "Command Center — one operator console (Sessions / System / Usage / Maintenance)",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H191",
+    "title": "A status bar of live operational readouts that the owner can configure",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H192",
+    "title": "Approval-mode control in the chrome, and a per-chat auto-approve escape",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H193",
+    "title": "A composer that can do more than send text",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H194",
+    "title": "A transcript that renders tool calls, thinking and approval decisions inline",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H195",
+    "title": "Session lifecycle: search, pin, unread watermark, rename, delete, filter, date dividers, export, branch/fork, move to project",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H196",
+    "title": "Projects and repo lanes in the sidebar",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H197",
+    "title": "Subagent spawn tree with live streams and per-child file lists",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H198",
+    "title": "Artifacts workspace (saved outputs: images, links, files)",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H199",
+    "title": "User-defined scheduled jobs (cron editor, run history, delivery targets, ready-made blueprints)",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H200",
+    "title": "Webhook subscription management surface",
+    "area": "desktop",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H201",
+    "title": "Messaging platform cards with credential setup and pairing approval",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H202",
+    "title": "Per-agent persona (SOUL) editing",
+    "area": "desktop",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H203",
+    "title": "Profile export/import bundles and per-profile config scope",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H204",
+    "title": "Capabilities hub — skills and toolsets management",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H205",
+    "title": "MCP server management surface (catalog, paste-anything import, config, OAuth, logs, reload)",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H206",
+    "title": "Memory graph explorer (canvas, legend, timeline scrubber, node edit/delete, share)",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H207",
+    "title": "Schema-driven settings with typed controls, search, deep-link-to-field and diff-only autosave",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H208",
+    "title": "Provider and API-key management UI (OAuth account picker, keys tab, custom/local endpoint)",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H209",
+    "title": "Keyboard shortcut customisation with a recorder and conflict detection",
+    "area": "desktop",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H210",
+    "title": "Failure recovery UX: boot-failure overlay, toast stack, error summarizer, disk-full detection, crash screen",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H211",
+    "title": "Third-party UI plugin SDK and install-a-plugin-from-Git",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H212",
+    "title": "User-installable themes (VS Code Marketplace import)",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H213",
+    "title": "Pane/zone tiling with layout presets and an agent-callable apply_layout tool",
+    "area": "desktop",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H214",
+    "title": "Desktop pet — generation, adoption and a floating overlay window",
+    "area": "desktop",
+    "recorded_status": "equivalent",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H215",
+    "title": "Native app context menu and spellchecker",
+    "area": "desktop",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H216",
+    "title": "In-app browser / preview pane showing what the agent is looking at",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H217",
+    "title": "Windows and WSL host-integration quirks",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H218",
+    "title": "Archived chats, auto-archive of stale chats, and a default project directory",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H219",
+    "title": "Execution-backend and toolset configuration panel",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H220",
+    "title": "Usage and cost accounting surface",
+    "area": "desktop",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H221",
+    "title": "Language switcher",
+    "area": "desktop",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H222",
+    "title": "Always-visible microphone / wake-word state indicator",
+    "area": "desktop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H223",
+    "title": "Run and drive the agent from a terminal (interactive client: launch, resume, clean exit, crash/OOM safety, shipped bundle)",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H224",
+    "title": "Terminal keyboard and mouse interaction model",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H225",
+    "title": "Composer: type-ahead queueing while the agent is busy, editable queue, $EDITOR handoff",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H226",
+    "title": "Answer the governance queue from the terminal (approval, clarify, confirm, sudo, secret prompts)",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H227",
+    "title": "\"What can it do right now\" inspector: live status line plus a session panel of tools, skills, resolved system prompt and MCP servers",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H228",
+    "title": "Personality and ambient chrome (busy indicators, kaomoji faces, verb tickers, long-run charms, fortunes, ASCII hero art, pet mascot pane, ambient docks and floats)",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H229",
+    "title": "Rich turn rendering: markdown/syntax/math, incremental streaming, virtualised history, and the agent's working area (thinking panel, tool trail, todo panel, subagent tree)",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H230",
+    "title": "Theme/skin engine and terminal color adaptation",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H231",
+    "title": "Slash-command system: a catalog of commands with fuzzy, description-aware resolution and a dispatch fallback chain",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H232",
+    "title": "Modal overlay surfaces (pager, live session switcher, model picker, skills hub, plugins hub, pet picker, billing/subscription overlays, agents overlay, journey overlay) and their stage machinery",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H233",
+    "title": "Terminal widget SDK: user-authored, hot-loaded widget apps with a grid layout engine and ambient zones",
+    "area": "tui",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H234",
+    "title": "Client↔agent transport: streaming, reconnect, and lossless resume by event sequence",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H235",
+    "title": "TUI client internal architecture (UI/overlay/turn stores, event handler, session lifecycle hook, submission pipeline, config sync, small stores, cwd/branch label, battery polling, clipboard/OSC-52, text utils)",
+    "area": "tui",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H236",
+    "title": "Session control plane: create, list, resume, activate, retitle, hide, delete, undo, retry, compress, save/export, branch/fork, close, interrupt, steer, redirect, plus per-session usage and context breakdown",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H237",
+    "title": "Delegation control: subagent status, pause, interrupt, steer, and spawn-tree archive/replay",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H238",
+    "title": "Pet system (adopt, generate, hatch, rename, export, scale, disable a mascot)",
+    "area": "tui",
+    "recorded_status": "equivalent",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H239",
+    "title": "Hosted wallet: balance, top-up, auto-reload, spending limits, subscription plan change/upgrade/resume, charge settlement polling",
+    "area": "tui",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H240",
+    "title": "Prompt submission and attachments: image, PDF (page-rendered), arbitrary file staging, drag-drop detection, background prompts, side questions, and image generation",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H241",
+    "title": "Tools, MCP servers, plugins, skills, cron jobs, checkpoint rollback and background processes — the operator control plane",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H242",
+    "title": "Workspace/project model, repo discovery, strict setup verification and diagnostics bundle",
+    "area": "tui",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H243",
+    "title": "Completions (filesystem paths, slash commands) and provider/model options (list, save key, disconnect)",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H244",
+    "title": "Agent profiles: list, create, describe, configure and attach assets to named agent configurations",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H245",
+    "title": "Hosted multi-gateway rooms: create, send, approve, replicate, promote/demote authority with epoch fencing",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H246",
+    "title": "Cross-process brokers: relaying agent DMs between gateways, and brokering an externally-registered browser controller",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H247",
+    "title": "Wake word arming per surface, push-to-talk capture, TTS, and liveness/config primitives",
+    "area": "tui",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H248",
+    "title": "Layered config resolution with one effective-value view (defaults ⊕ user ⊕ operator overlay)",
+    "area": "config",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H249",
+    "title": "Operator-pinned settings a user cannot change (managed scope)",
+    "area": "config",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H250",
+    "title": "Named profiles — several isolated configurations on one machine",
+    "area": "config",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H251",
+    "title": "Schema-driven settings form rendered from typed field metadata",
+    "area": "config",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H252",
+    "title": "Server-side validation of a settings write",
+    "area": "config",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H253",
+    "title": "Credential-bearing settings encrypted at rest and never echoed back",
+    "area": "config",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H254",
+    "title": "External secret sources — resolve credentials from a vault instead of storing them",
+    "area": "config",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H255",
+    "title": "`${env:VAR}` interpolation inside config values",
+    "area": "config",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H256",
+    "title": "Surviving a corrupt or unreadable config store without silently losing policy",
+    "area": "config",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H257",
+    "title": "Command-line access to configuration on a box with no working server",
+    "area": "config",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H258",
+    "title": "Config schema versioning and a migration ladder",
+    "area": "config",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H259",
+    "title": "Reset to defaults, scoped and previewed, plus export/import of the whole configuration",
+    "area": "config",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H260",
+    "title": "Per-agent / per-surface configuration overrides that persist",
+    "area": "config",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H261",
+    "title": "Per-internal-task model and provider assignment (auxiliary models)",
+    "area": "config",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H262",
+    "title": "Config-driven data lifecycle — prune, archive, vacuum on an interval-gated sweep",
+    "area": "config",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H263",
+    "title": "Fail-closed boot on malformed security-critical configuration",
+    "area": "config",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H264",
+    "title": "An enumerated, inspectable environment-variable surface",
+    "area": "config",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H265",
+    "title": "Settings changes as governed, mediated actions",
+    "area": "config",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H266",
+    "title": "Layered configuration load with a defined precedence order",
+    "area": "env",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H267",
+    "title": "Admin-pinned managed scope an owner-level edit cannot override",
+    "area": "env",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H268",
+    "title": "Configure Nerva from the product — write a key or setting and have it take effect",
+    "area": "env",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H269",
+    "title": "Registry of which keys exist, what each unlocks, and whether it is set",
+    "area": "env",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H270",
+    "title": "Writer allowlist for names that hijack execution or soften posture",
+    "area": "env",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H271",
+    "title": "Secrets resolved from an external vault instead of a plaintext file",
+    "area": "env",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H272",
+    "title": "Secret references inside config instead of secret values",
+    "area": "env",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H273",
+    "title": "Tell the owner where an effective value actually came from",
+    "area": "env",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H274",
+    "title": "Safety-posture flags: one parser, declared defaults, refusal on garbage",
+    "area": "env",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H275",
+    "title": "Boot into a known-good state when customizations break the install",
+    "area": "env",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H276",
+    "title": "Point the assistant at any model endpoint without a code change",
+    "area": "env",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H277",
+    "title": "Separate models for separate jobs (vision, video, approval judging)",
+    "area": "env",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H278",
+    "title": "One consistent access-control grammar across every channel",
+    "area": "env",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H279",
+    "title": "Breadth of chat platforms an owner can reach the assistant on",
+    "area": "env",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H280",
+    "title": "Choose where a command actually runs (sandbox backends and their limits)",
+    "area": "env",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H281",
+    "title": "Operator control of egress: proxy, CA trust, and what may leave the box",
+    "area": "env",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H282",
+    "title": "Exportable traces of what the assistant did and what it cost",
+    "area": "env",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H283",
+    "title": "Know what kind of machine this is, and tell the model",
+    "area": "env",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H284",
+    "title": "Speak the owner's language and keep the owner's clock",
+    "area": "env",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H285",
+    "title": "Choose which skills, plugins and MCP servers load at startup",
+    "area": "env",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H286",
+    "title": "Bound what one turn may spend (iterations, tokens, time, children)",
+    "area": "env",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H287",
+    "title": "Carry who asked, through every tool and subprocess",
+    "area": "env",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H288",
+    "title": "Scheduled and queued work, and its delivery destination",
+    "area": "env",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H289",
+    "title": "Pluggable long-term memory backends",
+    "area": "env",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H290",
+    "title": "Credentials for optional tools: search, media generation, voice, browser farms, SaaS",
+    "area": "env",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H291",
+    "title": "Terminal-UI and Electron desktop shell configuration",
+    "area": "env",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H292",
+    "title": "Response pacing that imitates a human typing",
+    "area": "env",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H293",
+    "title": "Test, benchmark and CI harness environment",
+    "area": "env",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H294",
+    "title": "Declare a tool and authorize who may declare/replace it",
+    "area": "tools",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H295",
+    "title": "Hide a tool for the turns where its backend is not usable",
+    "area": "tools",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H296",
+    "title": "Adapt a tool's advertised schema to the live configuration",
+    "area": "tools",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H297",
+    "title": "Execute a named tool call and return a bounded, well-formed result",
+    "area": "tools",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H298",
+    "title": "Keep a huge tool result out of context without losing it",
+    "area": "tools",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H299",
+    "title": "Stop a model that is looping on the same tool call",
+    "area": "tools",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H300",
+    "title": "Know whether an interrupted tool call left anything behind",
+    "area": "tools",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H301",
+    "title": "Give each surface, channel and agent its own tool profile",
+    "area": "tools",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H302",
+    "title": "Run shell commands and manage long-running processes",
+    "area": "tools",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H303",
+    "title": "Read files and search a codebase",
+    "area": "tools",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H304",
+    "title": "Write and precisely edit files",
+    "area": "tools",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H305",
+    "title": "Let the model write a script that orchestrates many tool calls",
+    "area": "tools",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H306",
+    "title": "Drive a web browser",
+    "area": "tools",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H307",
+    "title": "Control the desktop the user is actually sitting at",
+    "area": "tools",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H308",
+    "title": "Drive the app's own window: preview pane, panes, layouts, projects",
+    "area": "tools",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H309",
+    "title": "Show the user where something is, in their UI",
+    "area": "tools",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H310",
+    "title": "Search the web and read pages",
+    "area": "tools",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H311",
+    "title": "Look at an image or a video and answer a question about it",
+    "area": "tools",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H312",
+    "title": "Generate images and video",
+    "area": "tools",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H313",
+    "title": "Speak",
+    "area": "tools",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H314",
+    "title": "Let the model decide what to remember",
+    "area": "tools",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H315",
+    "title": "Keep a visible checklist of what the agent is doing",
+    "area": "tools",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H316",
+    "title": "Ask the user a question and wait for the answer",
+    "area": "tools",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H317",
+    "title": "Search what was said in past sessions",
+    "area": "tools",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H318",
+    "title": "List, read and author the agent's own skills",
+    "area": "tools",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H319",
+    "title": "Let the agent schedule its own future work",
+    "area": "tools",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H320",
+    "title": "Spawn subagents and steer or stop them mid-run",
+    "area": "tools",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H321",
+    "title": "Discover, consent to, and call external MCP servers' tools",
+    "area": "tools",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H322",
+    "title": "Read and control the house",
+    "area": "tools",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H323",
+    "title": "Run a durable multi-agent work board with review handoffs",
+    "area": "tools",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H324",
+    "title": "Participate natively in third-party chat platforms",
+    "area": "tools",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H325",
+    "title": "Prove the documented tool surface matches the live one",
+    "area": "tools",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H326",
+    "title": "Model-facing skill discovery (prompt index + progressive disclosure)",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H327",
+    "title": "SKILL.md frontmatter contract (agentskills.io-compatible)",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H328",
+    "title": "Conditional skill visibility (OS platform, runtime environment, channel, tool availability)",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H329",
+    "title": "Turning individual skills off without uninstalling them",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H330",
+    "title": "Agent-authored skills: create, patch, edit, delete, add/remove supporting files",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H331",
+    "title": "Human review gate before an agent-written skill takes effect",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H332",
+    "title": "Static security scanning of skill packages before install",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H333",
+    "title": "Cryptographic signing and load-time integrity verification of skills",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H334",
+    "title": "Importing skills from an upstream project at a verified pin",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H335",
+    "title": "Multi-source skills hub: search, browse, install, update, uninstall across registries",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H336",
+    "title": "An on-disk catalog of inert optional skills installable on demand",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H337",
+    "title": "The bundled skill library itself (58 core + 137 optional procedure documents)",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H338",
+    "title": "Invoking a skill explicitly: slash commands, stacked invocations, session preload",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H339",
+    "title": "Skill bundles (one command loads a fixed set of skills)",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H340",
+    "title": "Skill body preprocessing: template variables",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H341",
+    "title": "Inline shell execution inside skill bodies",
+    "area": "skills",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H342",
+    "title": "Skill-declared setup: required env vars, credential files, and non-secret config",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H343",
+    "title": "Repo-local skills with a per-repo trust decision and re-scan on change",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H344",
+    "title": "Reading skills from directories shared with other AI tools",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H345",
+    "title": "Org-shared skill mirror and cross-device skill synchronisation",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H346",
+    "title": "Per-mutation skill audit trail with rollback",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H347",
+    "title": "Background curator: skill lifecycle, archiving and operator control",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H348",
+    "title": "LLM consolidation of overlapping skills into umbrella skills",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H349",
+    "title": "Per-skill usage telemetry driving lifecycle and provenance",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H350",
+    "title": "Skill authoring linter and validator",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H351",
+    "title": "Prompt-injection warnings when a skill is loaded",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H352",
+    "title": "Local skill marketplace: publish, moderate, install, rollback, uninstall",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H353",
+    "title": "Governed capability acquisition: gap → research → synthesise → quarantine → sign → promote → sandbox-only run",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H354",
+    "title": "Skills as first-class entries in a capability registry with rollback contracts and reality evidence",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H355",
+    "title": "Curated MCP server catalog with guided install and tool selection",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H356",
+    "title": "Third-party plugin ecosystem: community index, pinned installs, packs, capability consent",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H357",
+    "title": "Pluggable provider backends shipped as optional plugins (memory, web, image/video generation, browser, dashboard auth, cron)",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H358",
+    "title": "First-party optional feature plugins (kanban dispatcher, achievements, disk-cleanup, google_meet, spotify, Teams pipeline, Langfuse observability, security-guidance)",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H359",
+    "title": "Choose an inference provider from a broad catalog",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H360",
+    "title": "Provider profiles that actually drive routing",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H361",
+    "title": "Install a third-party provider as a plugin (drop-in directory or pip entry point)",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H362",
+    "title": "Use tools and stream on a cloud model, not just a local one",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H363",
+    "title": "Pay the cached-input rate on repeated Claude context",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H364",
+    "title": "Ask for more or less thinking, and never 400 on a wire that rejects the level",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H365",
+    "title": "Authenticate with Bedrock / Vertex / Azure Foundry enterprise credentials",
+    "area": "providers",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H366",
+    "title": "Sign in with a Claude Pro/Max or ChatGPT subscription instead of buying API credits",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H367",
+    "title": "Add and manage named custom OpenAI-compatible endpoints at runtime",
+    "area": "providers",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H368",
+    "title": "Refuse to speak the wrong protocol to a lookalike host",
+    "area": "providers",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H369",
+    "title": "Know a model's context window and price without a human editing a table",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H370",
+    "title": "Cap and account for cloud spend",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H371",
+    "title": "Buy credits, manage a subscription and see a balance from inside the product",
+    "area": "providers",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H372",
+    "title": "Multi-credential pool: rotation, persistence and a management surface",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H373",
+    "title": "See how much provider quota is left before hitting the wall",
+    "area": "providers",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H374",
+    "title": "Define the order of backup providers and switch mid-turn when the primary fails",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H375",
+    "title": "Answer one turn with several models advising an aggregator (Mixture of Agents)",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H376",
+    "title": "Let other local apps use the house's provider credentials",
+    "area": "providers",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H377",
+    "title": "Pick a provider and model from the UI, with prices and capabilities visible",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H378",
+    "title": "Be warned before choosing a model that is very expensive or trains on your data",
+    "area": "providers",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H379",
+    "title": "Run background work on a cheap model instead of the main one",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H380",
+    "title": "Prove a configured cloud provider actually works",
+    "area": "providers",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H381",
+    "title": "Prove where every prompt actually went",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H382",
+    "title": "Install, load, evict and size local models on the owner's box",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H383",
+    "title": "Force valid tool arguments and clean output out of a weak model",
+    "area": "providers",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H384",
+    "title": "Use another agent CLI as the inference backend",
+    "area": "providers",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H385",
+    "title": "First-party portal: onboarding, tool gateway, request attribution, keepalive",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H386",
+    "title": "Session-stable, tiered system prompt with a provider cache boundary",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H387",
+    "title": "Identity and project instruction files with a size cap and an injection scan",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H388",
+    "title": "Model-family and surface operating guidance blocks",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H389",
+    "title": "Skills index in the prompt, cached and prunable under compaction",
+    "area": "agent-core",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H390",
+    "title": "Two-tier context compaction with lineage and image-first eviction",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H391",
+    "title": "Compaction inside the running turn (preflight, pre-API, idle, micro, fail-closed)",
+    "area": "agent-core",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H392",
+    "title": "Recovery from an empty or truncated model response",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H393",
+    "title": "Repetition-loop guard on truncated output",
+    "area": "agent-core",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H394",
+    "title": "Failure taxonomy with per-class recovery and a stable error surface",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H395",
+    "title": "Steering, redirecting and interrupting the live turn",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H396",
+    "title": "Turn exit reasons, a completion explainer and per-turn accounting",
+    "area": "agent-core",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H397",
+    "title": "Tool-loop guardrails: repeated-failure detection, per-tool loop caps, identical-call stall breaker",
+    "area": "agent-core",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H398",
+    "title": "Untrusted tool results wrapped as data, not instructions",
+    "area": "agent-core",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H399",
+    "title": "Concurrent tool dispatch with a serialized approval gate and bounded results",
+    "area": "agent-core",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H400",
+    "title": "Subagent delegation: isolation, capability blocklist, depth and concurrency caps, typed outputs, steer/stop",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H401",
+    "title": "Delegation durability and observability: background fan-out, crash recovery, exactly-once delivery, live transcripts",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H402",
+    "title": "Git-worktree isolation for delegated children",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H403",
+    "title": "Background self-improvement review after a turn",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H404",
+    "title": "On-demand independent reviewer of the current work",
+    "area": "agent-core",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H405",
+    "title": "Project verification: recipe detection, manifest, evidence ledger, verify-on-stop",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H406",
+    "title": "Coding posture: workspace snapshot, project facts, edit-format steering",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H407",
+    "title": "Global emergency stop",
+    "area": "agent-core",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H408",
+    "title": "User lifecycle hooks running the owner's own scripts",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H409",
+    "title": "Outbound signed lifecycle webhooks",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H410",
+    "title": "Universal secret redaction on every log record",
+    "area": "agent-core",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H411",
+    "title": "Message hygiene and wire-level recovery",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H412",
+    "title": "Context meter and @-references for the owner",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H413",
+    "title": "Session auto-titling",
+    "area": "agent-core",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H414",
+    "title": "One auxiliary-model rail for every side task",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H415",
+    "title": "Reasoning-effort control and reasoning-aware timeouts",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H416",
+    "title": "Unified deadline and budget layer",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H417",
+    "title": "Learning made visible: journey graph and usage insights",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H418",
+    "title": "Telemetry export: monitoring emitter, gateway health, OTLP traces, install id",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H419",
+    "title": "Mixture-of-Agents aggregation runtime",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H420",
+    "title": "Terminal display surface: pet, spinner, tool labels, inline diffs, i18n",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H421",
+    "title": "Vendor-owned agent runtimes: Codex app-server, NeMo Relay, tools-as-MCP-server, transport registry",
+    "area": "agent-core",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H422",
+    "title": "Agent-curated core memory injected into the prompt as a frozen, threat-scanned snapshot",
+    "area": "memory",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H423",
+    "title": "Model-callable memory write tool with add / replace / remove, an atomic batch, a hard budget, and a lost-update guard",
+    "area": "memory",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H424",
+    "title": "Approval gate on memory writes — staged, reviewable, rejectable before they land",
+    "area": "memory",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H425",
+    "title": "Destructive forget: retract a fact and everything derived from it",
+    "area": "memory",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H426",
+    "title": "Memory-write orchestration: off-turn persistence, ordered lifecycle hooks, bounded shutdown drain",
+    "area": "memory",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H427",
+    "title": "Fail-closed pre-compression checkpoint — never discard a transcript unless the extraction durably landed",
+    "area": "memory",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H428",
+    "title": "Pre-turn recall with a triviality gate, a hard timeout, and next-turn warm-up",
+    "area": "memory",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H429",
+    "title": "Fencing recalled memory as untrusted data at the prompt boundary, including the streaming egress",
+    "area": "memory",
+    "recorded_status": "equivalent",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H430",
+    "title": "Telling the user what memory was used this turn — and why something was not",
+    "area": "memory",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H431",
+    "title": "Third-party memory-provider plugin ecosystem (nine SaaS/local backends, setup wizard, OAuth, declarative config, provider tools)",
+    "area": "memory",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H432",
+    "title": "Swappable vector and graph backends behind stable interfaces",
+    "area": "memory",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H433",
+    "title": "Retrieval query rewriting by a cheap auxiliary model",
+    "area": "memory",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H434",
+    "title": "Pluggable context engine and the compaction policy around it",
+    "area": "memory",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H435",
+    "title": "A durable, queryable transcript store covering every surface",
+    "area": "memory",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H436",
+    "title": "Full-text search over past conversations",
+    "area": "memory",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H437",
+    "title": "`session_search` — the model searching and scrolling its own past conversations",
+    "area": "memory",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H438",
+    "title": "Session management: list, rename, pin, archive, delete, prune, stats — with safe auto-sweeps",
+    "area": "memory",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H439",
+    "title": "Transcript export and import from other agents",
+    "area": "memory",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H440",
+    "title": "Automatic session titles and continuation lineage",
+    "area": "memory",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H441",
+    "title": "Getting back into a conversation: continue, resume, and a free recap",
+    "area": "memory",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H442",
+    "title": "Undoing what the agent did to the filesystem",
+    "area": "memory",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H443",
+    "title": "The post-turn learning loop that decides what is worth remembering",
+    "area": "memory",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H444",
+    "title": "Reading documents into the conversation",
+    "area": "memory",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H445",
+    "title": "Learning timeline — a browsable, prunable view of everything the assistant has learned",
+    "area": "memory",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H446",
+    "title": "Measuring whether memory actually works",
+    "area": "memory",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H447",
+    "title": "The memory brain: bi-temporal facts, fusion, decay, consolidation, episodes",
+    "area": "memory",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H448",
+    "title": "Process heap trimming for long-lived agent processes",
+    "area": "memory",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H449",
+    "title": "Create, edit, pause, resume, trigger and delete a recurring scheduled job",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H450",
+    "title": "Say when in plain words (schedule syntax)",
+    "area": "automation",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H451",
+    "title": "See every attempt an autonomous run made, and whether the scheduler itself is alive",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H452",
+    "title": "Repeated failures collapse into one acknowledgeable incident, and an unrunnable job pauses itself",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H453",
+    "title": "Let a cheap check decide whether the expensive model runs at all",
+    "area": "automation",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H454",
+    "title": "A run remembers what the last one said (continuity, chaining, per-job notepad)",
+    "area": "automation",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H455",
+    "title": "Choose where an autonomous result lands",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H456",
+    "title": "Bound what an unattended agent may do",
+    "area": "automation",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H457",
+    "title": "Guards specific to the unattended lane (injection, credential exfiltration, self-restart)",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H458",
+    "title": "One-tap automations the owner accepts instead of composing",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H459",
+    "title": "Fire schedules without a live local process (pluggable scheduler provider / hosted cron)",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H460",
+    "title": "A recurring wakeup inside the conversation you are already having",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H461",
+    "title": "A standing instruction that re-enters this session on a cadence",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H462",
+    "title": "A goal that keeps being worked until something independent says it is done",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H463",
+    "title": "Deterministic gates that must pass before anything may be called done",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H464",
+    "title": "Park a run on real async work instead of poking it",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H465",
+    "title": "Run the self-improvement review on demand",
+    "area": "automation",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H466",
+    "title": "A durable board where multi-agent work lives: dependencies, atomic claims, run history, event log",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H467",
+    "title": "Cards get dispatched to workers in isolated workspaces, with a circuit breaker",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H468",
+    "title": "Review as a state, not a block (request-review / request-changes / reopen)",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H469",
+    "title": "Turn a one-line ask into a spec, or into a graph of routed children",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H470",
+    "title": "A fan-out/fan-in swarm written as a graph over the existing board",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H471",
+    "title": "The system tells the operator what is wrong and what to press",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H472",
+    "title": "Subscribe a chat to a work item's terminal events — including waking the agent",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H473",
+    "title": "Named multi-folder projects that give work a stable repo and branch convention",
+    "area": "automation",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H474",
+    "title": "An isolated git worktree per parallel agent, and an attended reclaim of the leftovers",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H475",
+    "title": "Federated rooms across machines: replicas, authority takeover, peer grants, target-side execution policy",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H476",
+    "title": "Drive a long agent run over HTTP: start, poll, stream, steer, stop, resolve its approval",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H477",
+    "title": "Point an external client at Nerva (OpenAI-compatible chat, and capability discovery)",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H478",
+    "title": "Bot-to-bot messaging between machines",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H479",
+    "title": "Named inbound webhook routes that wake the agent — or deliver without one",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H480",
+    "title": "Send a message to any configured channel from a script, with no model call",
+    "area": "automation",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H481",
+    "title": "Refuse a catastrophic shell command no matter who approved it (hardline floor + risky-pattern tier + de-obfuscation)",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H482",
+    "title": "Remember an approval so the same class stops asking, and propose safe candidates from history",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H483",
+    "title": "Ask what the policy WOULD do to a command, without running it",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H484",
+    "title": "One dial that sets how much Nerva may do without asking",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H485",
+    "title": "A second, cheap model opinion on a flagged action before bothering the human",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H486",
+    "title": "Stop a model that is grinding on a blocked or looping action",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H487",
+    "title": "Ask a human on whatever surface they are on, carry their reason back, and fail closed on silence",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H488",
+    "title": "Hold a memory or skill write for review instead of committing it",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H489",
+    "title": "Turn every approval prompt off for a session or a process",
+    "area": "security",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H490",
+    "title": "Start with zero customization to prove a bug is not your own setup",
+    "area": "security",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H491",
+    "title": "Decide what a worker that cannot prompt does when it hits an approval",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H492",
+    "title": "Default-deny where the agent may connect, including internal address space",
+    "area": "security",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H493",
+    "title": "Make sure a sandboxed or compromised process never holds a usable API key",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H494",
+    "title": "Pull credentials from the owner's existing password manager instead of a second copy on disk",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H495",
+    "title": "Never let a credential reach a log, a transcript, an approval card or an export",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H496",
+    "title": "Keep one identity's credentials out of another identity's turn",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H497",
+    "title": "Let a stranger reach the assistant only after the owner says so",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H498",
+    "title": "Let an administrator pin policy a normal user cannot override",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H499",
+    "title": "Stop a writable settings surface from being used to escalate",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H500",
+    "title": "Tell the owner when the software actually installed on their box is known-vulnerable",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H501",
+    "title": "Warn about a dangerous deployment posture before it becomes an incident",
+    "area": "security",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H502",
+    "title": "Refuse an MCP server entry that is a backdoor wearing an MCP costume, and never hand one the owner's keys",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H503",
+    "title": "Unpack an archive from another machine without letting it write outside the destination",
+    "area": "security",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H504",
+    "title": "Fail loudly when TLS trust is misconfigured instead of silently not verifying",
+    "area": "security",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H505",
+    "title": "Keep the agent's file tools out of credential stores and system files",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H506",
+    "title": "Treat files that steer future runs as a distinct always-ask class, on the way in and on the way out",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H507",
+    "title": "Warn the model when the code it just wrote contains a known-dangerous pattern",
+    "area": "security",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H508",
+    "title": "Catch content-level attacks in a command that pattern matching cannot see",
+    "area": "security",
+    "recorded_status": "equivalent",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H509",
+    "title": "Sign in to a networked Nerva from a browser",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H510",
+    "title": "Stop a web page or a rebound DNS name from driving the local API",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H511",
+    "title": "Prove every route's required credential rather than maintaining a list by hand",
+    "area": "security",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H512",
+    "title": "See who authenticated, who failed, and when",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H513",
+    "title": "Restrict a capability to the surface it belongs on, and let the owner acknowledge a data-handling tradeoff without silencing the warning",
+    "area": "security",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H514",
+    "title": "Consent once, in writing, before a user-supplied command becomes a lifecycle hook",
+    "area": "security",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H515",
+    "title": "Generate an image from a prompt (and edit an existing image)",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H516",
+    "title": "Generate or animate a video from a prompt or a still image",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H517",
+    "title": "Register a third-party media backend without touching core",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H518",
+    "title": "Browse, search and export everything the assistant has generated",
+    "area": "media",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H519",
+    "title": "Look at an image and answer questions about it, mid-conversation",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H520",
+    "title": "Accept an image safely before it enters conversation history",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H521",
+    "title": "Understand a video (not just its audio)",
+    "area": "media",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H522",
+    "title": "Attach an image or file to a chat turn",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H523",
+    "title": "Serve a generated or cached media file back to a client",
+    "area": "media",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H524",
+    "title": "Speak a reply out loud with a chosen voice and backend",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H525",
+    "title": "Refuse to speak in a cloned or persona voice without recorded owner consent",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H526",
+    "title": "Make a spoken reply sound like speech rather than read-out markdown",
+    "area": "media",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H527",
+    "title": "Start hearing the answer before it is finished, and interrupt by talking",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H528",
+    "title": "Deliver audio as a native voice message on a chat platform",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H529",
+    "title": "Transcribe a voice message or dictated speech",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H530",
+    "title": "Not turn a silent recording into a message",
+    "area": "media",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H531",
+    "title": "Clean up dictated text into written prose",
+    "area": "media",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H532",
+    "title": "Hold a hands-free voice conversation",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H533",
+    "title": "Wake the assistant hands-free with a spoken phrase",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H534",
+    "title": "Have the room you spoke in become the output device",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H535",
+    "title": "Play or show something on a real device with etiquette, verification and undo",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H536",
+    "title": "Read a document (PDF, DOCX, slides) into the conversation",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H537",
+    "title": "Search the web and pull clean page content",
+    "area": "media",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H538",
+    "title": "Drive a web page (browser automation)",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H539",
+    "title": "Control the computer (desktop control)",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H540",
+    "title": "Run code or commands somewhere other than this host",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H541",
+    "title": "Drive the app's own preview pane, tours, tips and layouts",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H542",
+    "title": "Run Nerva as a coding agent inside an editor (ACP)",
+    "area": "editor-acp",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H543",
+    "title": "Approve a dangerous command or a file edit from inside the editor, with the real diff shown first",
+    "area": "editor-acp",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H544",
+    "title": "Steer, inspect and control a running editor thread (in-thread commands + live rendering)",
+    "area": "editor-acp",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H545",
+    "title": "Let the editor hand the agent MCP servers that exist only for that session",
+    "area": "editor-acp",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H546",
+    "title": "Use a third-party agent CLI (GitHub Copilot) as a model backend over ACP",
+    "area": "editor-acp",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H547",
+    "title": "Connect to external MCP servers and call their tools",
+    "area": "mcp",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H548",
+    "title": "Add, test, configure and remove MCP servers as an operator",
+    "area": "mcp",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H549",
+    "title": "Install a vetted MCP server in one step from a catalogue",
+    "area": "mcp",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H550",
+    "title": "Sign in to a remote MCP server that requires OAuth",
+    "area": "mcp",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H551",
+    "title": "Choose which of a server's tools the model may see",
+    "area": "mcp",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H552",
+    "title": "Read an MCP server's resources and prompts, not just call its tools",
+    "area": "mcp",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H553",
+    "title": "Let an MCP server ask the agent for an LLM completion or for user input mid-call",
+    "area": "mcp",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H554",
+    "title": "Authorize an outbound MCP tool call before it runs",
+    "area": "mcp",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H555",
+    "title": "Refuse a malicious MCP server config or a poisoned tool description",
+    "area": "mcp",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H556",
+    "title": "Keep a flaky or slow MCP server from wedging or slowing the whole product",
+    "area": "mcp",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H557",
+    "title": "Make a third-party tool schema safe and unambiguous for every model provider",
+    "area": "mcp",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H558",
+    "title": "Let another MCP client (Claude Desktop, Cursor, another agent) call Nerva",
+    "area": "mcp",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H559",
+    "title": "Read conversations and answer pending approvals from an MCP client",
+    "area": "mcp",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H560",
+    "title": "Point any OpenAI-compatible app at Nerva as its backend",
+    "area": "agent-interop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H561",
+    "title": "Accept work from another agent over the open A2A protocol",
+    "area": "agent-interop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H562",
+    "title": "Call other agents as tools and fan work out to peers",
+    "area": "agent-interop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H563",
+    "title": "Harden the A2A channel against a hostile or runaway peer",
+    "area": "agent-interop",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H564",
+    "title": "Show the agent the semantic errors its own edit just introduced",
+    "area": "editor-acp",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H565",
+    "title": "Let third-party apps ride the owner's authenticated model subscription",
+    "area": "agent-interop",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H566",
+    "title": "Write, install and validate a third-party extension",
+    "area": "extensions",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H567",
+    "title": "Run custom logic at a lifecycle event, in Python or in any language",
+    "area": "extensions",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H568",
+    "title": "Rewrite a tool call or a model request before it happens",
+    "area": "extensions",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H569",
+    "title": "Swap in a different backend for memory, models, search, browser, speech or secrets",
+    "area": "extensions",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H570",
+    "title": "Declare what an extension is allowed to do, and consent to it once",
+    "area": "extensions",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H571",
+    "title": "Distribute and reproduce a set of extensions",
+    "area": "extensions",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H572",
+    "title": "Extend the desktop app and the web dashboard with custom UI",
+    "area": "extensions",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H573",
+    "title": "Deploy Nerva as a container or a declarative system service",
+    "area": "extensions",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H574",
+    "title": "Shell completion and native search-index extensions",
+    "area": "extensions",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H575",
+    "title": "Read the product's own per-feature manual (published docs site)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H576",
+    "title": "Read a PDF / Office document / notebook as text from inside a tool call",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H577",
+    "title": "Give the current conversation one recurring instruction (session heartbeat)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H578",
+    "title": "Re-run a prompt on a cadence inside the session, self-paced, with stop conditions (/loop)",
+    "area": "feature-pages",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H579",
+    "title": "Pull a file or slice of a file into a message inline (@ context references)",
+    "area": "feature-pages",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H580",
+    "title": "Receive generated files as native chat attachments (deliverable mode)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H581",
+    "title": "Run a durable multi-agent task board with worker lanes (kanban)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H582",
+    "title": "Search X / Twitter from the agent (x_search)",
+    "area": "feature-pages",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H583",
+    "title": "Steer which upstream provider serves an OpenRouter request (provider routing)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H584",
+    "title": "Let other apps use your subscription as an OpenAI endpoint (subscription proxy)",
+    "area": "feature-pages",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H585",
+    "title": "Keep hundreds of tools reachable without paying their schema cost every turn (Tool Search)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H586",
+    "title": "Paste or attach a screenshot into the conversation (vision & image paste)",
+    "area": "feature-pages",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H587",
+    "title": "Get working search / images / TTS / browser without signing up for five vendors (Nous Tool Gateway)",
+    "area": "feature-pages",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H588",
+    "title": "Run commands somewhere other than this machine (toolsets + terminal backends)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H589",
+    "title": "Run the agent over thousands of prompts to produce training / eval data (batch processing)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H590",
+    "title": "Have an animated mascot react to what the agent is doing (pets)",
+    "area": "feature-pages",
+    "recorded_status": "equivalent",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H591",
+    "title": "Restyle the CLI chrome (skins & themes)",
+    "area": "feature-pages",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H592",
+    "title": "Change who the assistant is, per session and globally (personality & SOUL.md)",
+    "area": "feature-pages",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H593",
+    "title": "Give the agent a standing objective it keeps working toward (/goal)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H594",
+    "title": "Have the agent pick up a project's conventions automatically (context files)",
+    "area": "feature-pages",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H595",
+    "title": "Let the model write a script that calls tools without a round trip per call (execute_code)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H596",
+    "title": "Keep working when one API key is rate-limited (credential pools)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H597",
+    "title": "See the type errors an edit just introduced (LSP semantic diagnostics)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H598",
+    "title": "Generate an image from a prompt (image generation)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H599",
+    "title": "Answer a hard question with several models at once (Mixture of Agents)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H600",
+    "title": "Plug in an external memory backend (Honcho and 8 memory providers)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H601",
+    "title": "Control music playback by voice or chat (Spotify)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H602",
+    "title": "Start the assistant hands-free by speaking to it (wake word)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H603",
+    "title": "Use the agent from inside an IDE (ACP host integration)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H604",
+    "title": "Keep the skill library from rotting (curator)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H605",
+    "title": "Have the assistant remember you across sessions (persistent memory)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H606",
+    "title": "Keep answering when a provider or model goes down (fallback providers + auxiliary routing)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H607",
+    "title": "Search and read the web (web_search / web_extract)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H608",
+    "title": "Hand a piece of work to an isolated child agent (subagent delegation)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H609",
+    "title": "Hand turns to an external coding-agent runtime (Codex app-server)",
+    "area": "feature-pages",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H610",
+    "title": "Get useful integrations without writing code (bundled plugins)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H611",
+    "title": "Talk to the assistant and hear it answer (voice mode)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H612",
+    "title": "Have the agent drive the desktop it shares with you (computer use)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H613",
+    "title": "Choose how it sounds and how it hears (TTS / STT provider matrix)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H614",
+    "title": "Point any OpenAI-compatible frontend at the agent (API server)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H615",
+    "title": "Extend the agent with third-party code at lifecycle points (plugin system)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H616",
+    "title": "Drive a real browser to do something on the web (browser automation)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H617",
+    "title": "Reskin and extend the dashboard without forking it",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H618",
+    "title": "Connect the agent to external MCP tool servers, and expose it as one",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H619",
+    "title": "Teach the agent a new procedure and share it (skills system)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H620",
+    "title": "Schedule work to run without you (cron / scheduled tasks)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H621",
+    "title": "Operate and inspect the whole system from a web UI (dashboard)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H622",
+    "title": "Run your own code at the agent's lifecycle points (four hook systems)",
+    "area": "feature-pages",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H623",
+    "title": "Install Nerva in one command on any supported OS, and prove the install is healthy",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H624",
+    "title": "Update a running install safely, and undo it when the update goes wrong",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H625",
+    "title": "Run the product as a container",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H626",
+    "title": "Run on Windows as a first-class OS, natively or under WSL2",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H627",
+    "title": "Run the agent host on an Android phone",
+    "area": "user-journeys",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H628",
+    "title": "Deploy declaratively and reproducibly to a fleet (Nix / NixOS / Home Manager)",
+    "area": "user-journeys",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H629",
+    "title": "Pin configuration an operator can set and a user cannot override",
+    "area": "user-journeys",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H630",
+    "title": "Go from install to a working agent through a guided first run, choosing how much capability to turn on",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H631",
+    "title": "Diagnose a broken install from a symptom, without a screen-share",
+    "area": "user-journeys",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H632",
+    "title": "Know where every setting and secret lives, and which file the agent reads when",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H633",
+    "title": "Point the agent at whatever model provider the user already pays for",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H634",
+    "title": "Run a real local model well: pick one that fits the box, serve it, and get the context window right",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H635",
+    "title": "Keep working when the chosen model fails, and use a cheaper model for side tasks",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H636",
+    "title": "Swap the backend behind a capability without touching the core (search, browser, image, video, memory, context, secrets, sandbox, voice)",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H637",
+    "title": "Extend the agent with third-party code without forking it",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H638",
+    "title": "Extend the desktop shell itself (panes, pages, commands, themes) and point it at several backends",
+    "area": "user-journeys",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H639",
+    "title": "Drive the agent from another program or an editor",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H640",
+    "title": "Keep, resume, name and search conversations across surfaces",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H641",
+    "title": "Run several independent agents on one machine, and share one as a package",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H642",
+    "title": "Move in from another agent you already use",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H643",
+    "title": "Undo what the agent did to your files",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H644",
+    "title": "Stop a destructive shell command before it runs",
+    "area": "user-journeys",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H645",
+    "title": "Stop the agent from exfiltrating data or leaking a credential",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H646",
+    "title": "Fit a long conversation into the context window without the agent getting dumber",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H647",
+    "title": "Teach the agent a repeatable procedure, share it, and trust one you install",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H648",
+    "title": "Have the agent act on a schedule or when something external happens",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H649",
+    "title": "Reach the agent from the messaging apps and mailboxes people already use",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H650",
+    "title": "Split work across child agents and supervise them",
+    "area": "user-journeys",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H651",
+    "title": "Connect the agent to MCP servers, and let other tools drive it over MCP",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H652",
+    "title": "Add a tool to the agent, understand how a turn executes, and export turns as training data",
+    "area": "user-journeys",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H653",
+    "title": "Read the product's documentation as a site, and let an LLM ingest it",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H654",
+    "title": "Talk to the agent in a terminal",
+    "area": "user-journeys",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H655",
+    "title": "Contribute to the codebase without breaking its invariants",
+    "area": "user-journeys",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H656",
+    "title": "A group chat between several agents that keeps running when the client that opened it is closed",
+    "area": "upstream-delta",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H657",
+    "title": "A surviving host continues a room whose owner-host died, and fences the old host if it comes back",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H658",
+    "title": "A member of a shared session that lives on a different machine, running under a capability the target machine issued and can revoke",
+    "area": "upstream-delta",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H659",
+    "title": "A retried external request returns the original run instead of starting a second one",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H660",
+    "title": "Code the agent runs keeps its variables, imports and loaded data between calls",
+    "area": "upstream-delta",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H661",
+    "title": "Oversized tool output is paged from a file instead of being thrown away",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H662",
+    "title": "A second local browser engine, and browsing with a snapshot of the owner's real signed-in profile",
+    "area": "upstream-delta",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H663",
+    "title": "The product points at its own features — an anchored bubble while idle, and the agent raising the same bubble mid-conversation",
+    "area": "upstream-delta",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H664",
+    "title": "The advertised tool surface is a token budget, and verb-per-tool families collapse behind one action enum",
+    "area": "upstream-delta",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H665",
+    "title": "Editing several skills in one atomic, rollback-on-failure batch",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H666",
+    "title": "The agent's own task list nests subtasks under a parent",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H667",
+    "title": "Never assume /tmp is real storage; prune only the cache you own",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H668",
+    "title": "/plan — turn the current request into a saved implementation plan without implementing anything",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H669",
+    "title": "/btw — answer a side question about the running conversation without disturbing it",
+    "area": "upstream-delta",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H670",
+    "title": "The default identity prompt is a behavior contract, and it lives in one file",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H671",
+    "title": "A long-lived conversation knows what day it is now",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H672",
+    "title": "A never-ending session picks up config, skill and tool changes at the compaction boundary",
+    "area": "upstream-delta",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H673",
+    "title": "Context pressure is measured from the provider's own number, not re-estimated",
+    "area": "upstream-delta",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H674",
+    "title": "Compression cannot stall the user: bounded holds, inactivity deadlines and derived thresholds",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H675",
+    "title": "A restricted background runtime whose whitelist can admit but never advertise",
+    "area": "upstream-delta",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H676",
+    "title": "A surface with nobody to answer resolves approvals by policy instead of queueing a prompt into the void",
+    "area": "upstream-delta",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H677",
+    "title": "Boot warm-up before accepting work, and every shutdown wait has a short explicit budget",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H678",
+    "title": "A transcript never ends with a blank or clobbered assistant turn",
+    "area": "upstream-delta",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H679",
+    "title": "Per-model reasoning-effort vocabularies, clamped by one canonical helper",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H680",
+    "title": "Hosted-provider breadth: Ramp Router, Nebius Token Factory, region-split Alibaba, Tencent TokenPlan, refreshed model pickers",
+    "area": "upstream-delta",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H681",
+    "title": "Per-child API settings for delegated subagents, and a batch report that names the real reason they all failed",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H682",
+    "title": "Every command and skill is discoverable on a chat platform whose menu is capped",
+    "area": "upstream-delta",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H683",
+    "title": "Chat replies stream, can be edited or deleted, and acknowledge receipt at ingest",
+    "area": "upstream-delta",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H684",
+    "title": "A read-only scheduler health check that exits non-zero when jobs are silently not firing",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H685",
+    "title": "Move a whole work container to another machine, through one hardened archive primitive",
+    "area": "upstream-delta",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H686",
+    "title": "The operator can see how the model is actually performing right now, and choose which fields to see",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H687",
+    "title": "A recurring instruction runs once immediately, then on its cadence",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H688",
+    "title": "Config keys whose NAME contains a dot can be addressed",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H689",
+    "title": "One stable identity for this install, and per-profile isolation of its runtime artifacts",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H690",
+    "title": "OS permission grants survive an interpreter upgrade (macOS TCC anchoring)",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H691",
+    "title": "Reverse-proxy trust is a validated, bounded allowlist rather than an on/off switch",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H692",
+    "title": "OAuth completes when the browser and the backend are on different machines",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H693",
+    "title": "Canonical data survives a corrupt derived index, and there is a documented offline repair",
+    "area": "upstream-delta",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H694",
+    "title": "One canonical kill switch that every scope honors",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H695",
+    "title": "An updater that repairs the tools it depends on, and names a half-applied install",
+    "area": "upstream-delta",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  },
+  {
+    "id": "H696",
+    "title": "A small default skill bundle with a large on-demand catalog, re-pinned to the current release",
+    "area": "upstream-delta",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify"
+  },
+  {
+    "id": "H697",
+    "title": "A client whose backend session died recovers instead of staying bound to a phantom",
+    "area": "upstream-delta",
+    "recorded_status": "partial",
+    "planning_status": "needs_design"
+  }
+]

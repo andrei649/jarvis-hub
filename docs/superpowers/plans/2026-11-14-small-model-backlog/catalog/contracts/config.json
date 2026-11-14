@@ -1,0 +1,662 @@
+[
+  {
+    "id": "H248",
+    "title": "Layered config resolution with one effective-value view (defaults ⊕ user ⊕ operator overlay)",
+    "area": "config",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "f41a0cb6984521b1e1ecd54b693ef22a0e2089789f38560968e7426e396adb8f",
+    "contract": "`load_config()` builds the effective dict once: deepcopy(DEFAULT_CONFIG) → deep-merge the user's config.yaml (a user `None` cannot wipe a dict section) → normalise model/max_turns aliases → `${VAR}` expand → deep-merge the managed overlay on top, cached on a `(user_mtime, size, managed_mtime, size)` signature plus a snapshot of every referenced env var so a late `.env` load re-expands (22-config-b.md `config-b.core.load_config`, hermes_cli/config.py:3936-4092). Every reader in the product imports the same function, so `hermes config get` and the dashboard show the same value the agent sees.",
+    "governance": "read-only",
+    "remaining_verbatim": "- One effective-value resolver over defaults, settings.db, posture overlay, env and agents.yaml, with the supplying plane per key\n- A `nerva config get --explain` / HUD view showing that provenance\n- Cache invalidation on file/env change so every reader sees the same value",
+    "requirement_sections": [
+      "- One effective-value resolver over defaults, settings.db, posture overlay, env and agents.yaml, with the supplying plane per key\n- A `nerva config get --explain` / HUD view showing that provenance\n- Cache invalidation on file/env change so every reader sees the same value"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/env_provenance.py",
+      "agents/core/routers/admin.py",
+      "scripts/doctor.py",
+      "agents/core/settings_db.py"
+    ],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H248",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H248"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H249",
+    "title": "Operator-pinned settings a user cannot change (managed scope)",
+    "area": "config",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "6fe61abeea7d8c06945da772174fa7e72f7452237601c8caf08874cda0773593",
+    "contract": "`/etc/hermes/config.yaml` + `/etc/hermes/.env` (or `$HERMES_MANAGED_DIR`) are deep-merged ON TOP of the user's config leaf by leaf, so IT pins individual keys without freezing the rest. Every writer is gated: `config set`/`unset` exit 1 with 'managed by your administrator', `save_config` strips managed leaves from bulk writes and reports which, `save_env_value` refuses. Managed `${VAR}` refs expand only against the process env so a user ref cannot shadow a pinned literal (22-config-b.md `config-b.core.managed_scope`, managed_scope.py:56-176).",
+    "governance": "privileged — the pin file is the policy source, so pin reads stay read-only, but any writer that discovers a pinned key must refuse before the kernel is consulted; the refusal belongs in the same path as the `config.write` kind proposed below",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "the layered resolution + provenance row above",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/managed_scope.py",
+      "agents/core/settings_db.py",
+      "agents/core/routers/admin.py",
+      "agents/cli/nerva.py",
+      "agents/core/autonomy/mode.py",
+      "agents/core/product_posture.py",
+      "docs/INSTALL.md"
+    ],
+    "existing_test_files": [
+      "tests/test_g1_managed_scope.py",
+      "tests/test_g1_managed_integrations.py",
+      "tests/test_g1_managed_review.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H249",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H249"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H250",
+    "title": "Named profiles — several isolated configurations on one machine",
+    "area": "config",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "1dc1116c161f6a320e1f4a02156e5edf5f19b04a6cb6990c6cce31af21165971",
+    "contract": "`HERMES_HOME` resolves override → env → platform default, profiles live at `<root>/profiles/<name>` with an `active_profile` marker, deletion tombstones and a one-shot fallback warning; every config REST endpoint takes `?profile=` and runs under `_profile_scope()`, the desktop settings UI shows an 'Applies to' scope, and secrets are read through `agent.secret_scope.get_secret` so a multiplexed turn cannot read an unscoped secret (22-config-b.md `config-b.core.hermes_home`, `config-b.api.config_endpoints`, hermes_constants.py:114-224).",
+    "governance": "privileged — switching the active profile relocates the secret store and the audit log, so the switch itself is an action kind, not a settings toggle",
+    "remaining_verbatim": "- A persisted active-profile marker with list/create/switch/delete (a governed action kind for the switch, per the row's governance)\n- ?profile= on the config REST endpoints (or an explicit cross-profile admin surface) and an 'Applies to' scope in the HUD settings\n- A one-shot warning when a requested profile falls back\n- Per-call secret scoping for multiplexed turns (today isolation is per process only)",
+    "requirement_sections": [
+      "- A persisted active-profile marker with list/create/switch/delete (a governed action kind for the switch, per the row's governance)\n- ?profile= on the config REST endpoints (or an explicit cross-profile admin surface) and an 'Applies to' scope in the HUD settings\n- A one-shot warning when a requested profile falls back\n- Per-call secret scoping for multiplexed turns (today isolation is per process only)"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "agents/core/paths.py data_root; settings.db and SecretStore path resolution",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/paths.py",
+      "agents/core/secrets.py",
+      "agents/core/env_provenance.py",
+      "agents/cli/nerva.py",
+      "agents/core/estop.py",
+      "agents/core/routers/admin.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h689b_profile_env.py",
+      "tests/test_estop.py",
+      "tests/test_h689_shared_identity.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H250",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H250"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H251",
+    "title": "Schema-driven settings form rendered from typed field metadata",
+    "area": "config",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "cd7e519a5d699bade9315c0228fe648b584d7913264d6779276613f569c54b70",
+    "contract": "`_build_schema_from_config` reflects over DEFAULT_CONFIG, infers the type from the Python default (bool→boolean, int→number, list→list), derives the label by Title-Casing the dotted path, and assigns the category from the first path segment; ~30 keys get hand-written overrides and small categories are folded into big tabs by `_CATEGORY_MERGE`. `GET /api/config/schema` returns 785 fields the web and desktop settings UIs both render (22-config-b.md `config-b.core.schema_generation`, web_server.py:1525-1577).",
+    "governance": "read-only",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/settings_db.py",
+      "agents/core/routers/admin.py",
+      "frontend/src/gap.tsx",
+      "frontend/src/panels/settings-tools.tsx",
+      "agents/cli/nerva.py"
+    ],
+    "existing_test_files": [
+      "tests/test_settings_db.py",
+      "tests/test_settings_integrity.py",
+      "tests/test_h157b_settings_review.py",
+      "frontend/src/test/settings-tools.test.tsx"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H251",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H251"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H252",
+    "title": "Server-side validation of a settings write",
+    "area": "config",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "2c75c0af5dc9287b449d3d9c8d6c7822803b6d8f4b3bdeec8b8c00180bcd3425",
+    "contract": "Type coercion happens only on the CLI path (`_coerce_int`/`_coerce_float`/`_looks_structured_value`, driven by the type of the DEFAULT_CONFIG leaf) and unknown keys are written anyway with a 'did you mean' notice. `validate_config_structure` produces startup warnings for a handful of shapes (custom_providers as a dict, fallback_model missing provider) and 'any exception inside validation is swallowed (never blocks startup)'. `PUT /api/config` deep-merges whatever the form sent (22-config-b.md `config-b.core.set_value_coercion`, `config-b.core.structure_validation`).",
+    "governance": "read-only",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/cli/nerva.py",
+      "agents/core/settings_path.py",
+      "agents/core/routers/admin.py",
+      "agents/core/settings_db.py"
+    ],
+    "existing_test_files": [
+      "tests/test_settings_integrity.py",
+      "tests/test_nerva_cli.py",
+      "tests/test_h688_config_paths.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H252",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H252"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H253",
+    "title": "Credential-bearing settings encrypted at rest and never echoed back",
+    "area": "config",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "d705fb88eef95b7d1e024b6d8905acee3544ace3c79ed3f40a16c0de5d8b012c",
+    "contract": "Secrets live in `~/.hermes/.env` as plaintext at 0600, written by an atomic dotenv editor with a name denylist (`LD_PRELOAD`, `PATH`, `HERMES_HOME`, `HERMES_YOLO_MODE`, …) so a dashboard writer cannot plant an execution- or policy-changing variable. `hermes config` masks them in the summary, but `hermes config get OPENROUTER_API_KEY` prints the value verbatim (22-config-b.md `config-b.core.dotenv_file`, `config-b.core.env_write_denylist`, `config-b.cli.config_get`).",
+    "governance": "read-only",
+    "remaining_verbatim": "- An owner-reachable write path (HUD + CLI) for provider and channel credentials (OPENROUTER/ANTHROPIC/OPENAI keys, TELEGRAM/DISCORD/SLACK tokens), stored encrypted, never returned\n- Providers and channels resolving those stored credentials (env still wins or is clearly ordered)\n- A name denylist so that writer cannot set execution/policy variables (PATH, LD_PRELOAD, JARVIS_* posture flags)\n- Tests for the write, the masked read and the denylist",
+    "requirement_sections": [
+      "- An owner-reachable write path (HUD + CLI) for provider and channel credentials (OPENROUTER/ANTHROPIC/OPENAI keys, TELEGRAM/DISCORD/SLACK tokens), stored encrypted, never returned\n- Providers and channels resolving those stored credentials (env still wins or is clearly ordered)\n- A name denylist so that writer cannot set execution/policy variables (PATH, LD_PRELOAD, JARVIS_* posture flags)\n- Tests for the write, the masked read and the denylist"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/settings_db.py",
+      "agents/core/routers/secrets.py",
+      "frontend/src/gap.tsx",
+      "agents/core/routers/admin.py",
+      "agents/core/llm/providers/__init__.py",
+      "agents/core/routers/models_llm.py",
+      "agents/core/llm/providers/credentials.py",
+      "agents/core/routers/provider_credentials.py",
+      "agents/core/llm/providers/selected_runtime.py",
+      "agents/core/llm/providers/native_transport.py",
+      "frontend/src/panels/custom-endpoints.tsx",
+      "agents/cli/custom_endpoints.py",
+      "agents/core/llm/custom_endpoint_credentials.py"
+    ],
+    "existing_test_files": [
+      "tests/test_settings_secret_encryption.py",
+      "tests/test_h15_4_secret_broker.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H253",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H253"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H254",
+    "title": "External secret sources — resolve credentials from a vault instead of storing them",
+    "area": "config",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "5b0151a75082f47d41a7df6020d4f80eed1f325d3e4292a77647d4b23f1689fc",
+    "contract": "Two source families with 15 schema keys plus a hidden reference map: Bitwarden Secrets Manager (bulk project dump, TTL cache, optional AES-GCM encrypted stale cache reusable for `max_stale_seconds` on NETWORK/TIMEOUT only — 'auth failures do not fall back', auto-installed `bws` binary, `server_url` for EU/self-hosted) and 1Password (`op://vault/item/field` refs resolved one `op read` each, pinned binary path so PATH is not consulted, service-account token env). `hermes secrets … setup|status|sync` renders a status table; mapped sources beat bulk sources and the first source to claim a var wins (22-config-b.md `config-b.secrets.bitwarden`, `config-b.secrets.onepassword`).",
+    "governance": "read-only for resolution; the fetch leaves the box, so the network call rides the existing kernel-classed `plugin.egress` path rather than opening a new one",
+    "remaining_verbatim": "- Resolve provider and integration credentials (LLM API keys, bot tokens) from the external sources, so the box can run with no credential on disk\n- Encrypted stale cache reusable for max_stale_seconds on NETWORK/TIMEOUT only (auth failures never fall back)\n- A status view in the HUD/doctor naming which source claimed which variable",
+    "requirement_sections": [
+      "- Resolve provider and integration credentials (LLM API keys, bot tokens) from the external sources, so the box can run with no credential on disk\n- Encrypted stale cache reusable for max_stale_seconds on NETWORK/TIMEOUT only (auth failures never fall back)\n- A status view in the HUD/doctor naming which source claimed which variable"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the layered resolution row (a vault-backed value must be visible as such in the provenance view)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/security/secret_sources/registry.py",
+      "agents/cli/secrets.py",
+      "agents/core/security/secret_sources/install.py",
+      "agents/core/security/secret_broker.py",
+      "agents/core/orchestrator.py"
+    ],
+    "existing_test_files": [
+      "tests/test_external_secret_sources_h034.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H254",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H254"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H255",
+    "title": "`${env:VAR}` interpolation inside config values",
+    "area": "config",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "0079967063708c5706e84095e12e4b1cd7b207008a283fac92af00d63fbd56cf",
+    "contract": "Any string value may contain `${NAME}` or `${env:NAME}`, expanded against the process environment at load time; unresolved `env:` refs stay literal and log a WARNING naming `.env`, other `source:` prefixes warn once, `_env_ref_snapshot` invalidates the load cache when a referenced var changes, and `_preserve_env_ref_templates` writes the template (not the expanded secret) back on save (22-config-b.md `config-b.core.env_interpolation`, config.py:2871-3010).",
+    "governance": "read-only",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/settings_interpolation.py",
+      "agents/core/settings_db.py",
+      "agents/core/orchestrator.py",
+      "agents/core/env_provenance.py",
+      "agents/core/routers/admin.py",
+      "agents/core/routers/autonomy.py",
+      "agents/core/autonomy_coordinator.py",
+      "agents/core/security/website_policy.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h255_settings_env_interpolation.py",
+      "tests/test_h492_website_policy.py",
+      "tests/test_h492_entrypoints.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H255",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H255"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H256",
+    "title": "Surviving a corrupt or unreadable config store without silently losing policy",
+    "area": "config",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "1d84672649ccd0aee5c7b3781152fab586b9b4587962790bda2cef3c4b33165d",
+    "contract": "A YAML parse failure warns once per `(path, mtime, size)`, snapshots the file to `config.yaml.corrupt.<ts>.bak`, and then either keeps the last successfully loaded config for a running process or falls back to defaults for a fresh one — a port of openai/codex#31188 whose stated motivation is not dropping security-critical overrides such as `approvals.deny`. `require_readable_config_before_write()` makes every writer refuse rather than overwrite an unparseable file (22-config-b.md `config-b.core.corrupt_config_recovery`, config.py:48-165, 3612-3696).",
+    "governance": "read-only, but this is the row that protects every privileged setting — a load failure that silently restores permissive defaults is a policy downgrade with no audit record",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/appearance.py",
+      "agents/core/config.py",
+      "agents/core/config_read_errors.py",
+      "agents/core/llm/data_handling.py",
+      "agents/core/orchestrator.py",
+      "agents/core/routers/composer_vision.py",
+      "agents/core/routers/security.py",
+      "agents/core/settings_db.py"
+    ],
+    "existing_test_files": [
+      "tests/test_config_recovery_h256.py",
+      "tests/test_config_recovery_startup_h256.py",
+      "tests/test_h256_consent_writes.py",
+      "tests/test_h513_data_handling.py",
+      "tests/test_h513_judge_consent.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H256",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H256"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H257",
+    "title": "Command-line access to configuration on a box with no working server",
+    "area": "config",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "2cc5378053ec3c6937d21e92e9f9c9e87896a4fbafb5c15d24dad4467981b8a3",
+    "contract": "`hermes config show|edit|get|set|unset|path|env-path|check|migrate`. `get`/`set`/`unset` take dotted key paths with `\\.` escaping, greedy literal matching for keys that contain dots (model ids, Matrix room ids), and a phantom-sibling refusal that stops a set from shadowing an existing dotted key; `set` coerces to the type of the default, refuses to overwrite a mapping section with a scalar unless `--force`, masks credential-shaped leaves in its echo, and prints a difflib 'did you mean' on an unknown key. `path`/`env-path` print the resolved files; `check` prints the schema version and which optional env vars are set (22-config-b.md §A2, config.py:5559-6255).",
+    "governance": "privileged — a CLI write must go through the same `config.write` mediation as the HTTP route, or it becomes the documented way to bypass the kernel",
+    "remaining_verbatim": "The full requirements for offline access, provenance, language and clock still have to be met, not only the repair of dead keys. `nerva config` now has list/get/set/unset/check/edit/path/env-path/migrate. It works offline on the same data root, masks secrets, and applies the retention and model-selection guards. get/set/unset take dotted paths with escaping and reach into JSON values. Still missing: a refusal to overwrite a whole section without `--force`; and a 'did you mean' suggestion for an unknown key. Also, `set`/`unset`/`edit` write directly through `settings.put_category` rather than through the same `config.write` mediation as the HTTP route.",
+    "requirement_sections": [
+      "The full requirements for offline access, provenance, language and clock still have to be met, not only the repair of dead keys. `nerva config` now has list/get/set/unset/check/edit/path/env-path/migrate. It works offline on the same data root, masks secrets, and applies the retention and model-selection guards. get/set/unset take dotted paths with escaping and reach into JSON values. Still missing: a refusal to overwrite a whole section without `--force`; and a 'did you mean' suggestion for an unknown key. Also, `set`/`unset`/`edit` write directly through `settings.put_category` rather than through the same `config.write` mediation as the HTTP route."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the settings-write mediation row below (build them together or the CLI ships as a governance hole)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/cli/nerva.py",
+      "agents/core/settings_path.py",
+      "agents/core/settings_db.py"
+    ],
+    "existing_test_files": [
+      "tests/test_nerva_cli.py",
+      "tests/test_h688_config_paths.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H257",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H257"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H258",
+    "title": "Config schema versioning and a migration ladder",
+    "area": "config",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "9427f3c5bc80361657baab0cdfdf20fa7ece7c4036b87cbad4a62483ed727c16",
+    "contract": "`_config_version: 39` in the file, a support floor at 12 ('this config predates version 12 and can no longer be auto-migrated'), and a registry of `(target_version, fn)` steps gated on the on-disk version — renames (`write_mode`→`write_approval`), re-shapes (flat `stt.model`→provider section, `custom_providers` list→`providers` dict), retirements (drop the `bfl` toolset from saved lists, remove retired plugin keys), and value corrections that only fire if the old default is untouched. Post-migration it disables MCP servers that fail validation and prompts for env vars and skill settings introduced since the old version; `_persist_migration` never materialises pure defaults (22-config-b.md `config-b.core.migrations`, config_migrations.py:53-910).",
+    "governance": "read-only",
+    "remaining_verbatim": "- Rename / re-shape / retire step kinds that carry the owner's value across instead of orphaning it\n- A schema version stamp and a support floor that refuses to auto-migrate too-old stores\n- A post-migration report or prompt naming new settings and env vars since the previous version",
+    "requirement_sections": [
+      "- Rename / re-shape / retire step kinds that carry the owner's value across instead of orphaning it\n- A schema version stamp and a support floor that refuses to auto-migrate too-old stores\n- A post-migration report or prompt naming new settings and env vars since the previous version"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/settings_db.py"
+    ],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H258",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H258"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H259",
+    "title": "Reset to defaults, scoped and previewed, plus export/import of the whole configuration",
+    "area": "config",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "fe7e13a56d1a94f8bc70f5a4b1eb9d4fb9fc6a631154ae6bdf90d7b93aad0598",
+    "contract": "The Config page has per-tab 'Reset {scope} to defaults' that only edits the form ('changes aren't written to config.yaml until you press Save'), 'Export config as JSON', 'Import config from JSON' ('Config imported — review and save'), and a raw YAML mode; `GET /api/config/defaults` serves DEFAULT_CONFIG so a UI can show changed-vs-default (22-config-b.md `config-b.web.config_page`, `config-b.api.config_endpoints`).",
+    "governance": "privileged and irreversible — a full reset destroys owner policy, so it belongs behind the approval queue's irreversible tier, not behind a token",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "the settings-write mediation row below",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/settings_db.py",
+      "agents/core/routers/admin.py",
+      "agents/web/static/admin.js",
+      "frontend/src/panels/settings-tools.tsx",
+      "frontend/src/gap.tsx"
+    ],
+    "existing_test_files": [
+      "tests/test_settings_defaults_undo.py",
+      "frontend/src/test/settings-reset-undo.test.tsx"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H259",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H259"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H260",
+    "title": "Per-agent / per-surface configuration overrides that persist",
+    "area": "config",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "7bf6de0ae63797cf92cec4851bdf0cf1ed77c0e02d43b3250bdba2a936750865",
+    "contract": "`platforms.<name>.*` and `gateway.platforms.*` blocks keyed by a user-chosen platform name, accepted wholesale by the validator because `PlatformConfig` carries an open `extra` map; `display.platforms.<x>.streaming` per channel; `channel_prompts` per Discord/Slack/Telegram/Mattermost channel with forum-parent and topic inheritance; `platform_toolsets` per surface; all persisted in config.yaml and bridged at gateway/config.py:1702-1760 (22-config-b.md `config-b.hidden.absent_top_level`, `config-b.hidden.shard_open_dicts`).",
+    "governance": "privileged — an override can change which model an agent runs on and which plugins it may call, so it crosses the same `config.write` mediation and must not be able to widen `approved_models`",
+    "remaining_verbatim": "- Persist per-agent overrides (model, enabled) in the settings store and validate them against the agent's approved_models (a name now persists through H202's roster rename)\n- Per-channel/per-platform prompt overrides (with topic/forum inheritance) and per-platform streaming settings\n- An open per-platform config block persisted and surfaced in the HUD",
+    "requirement_sections": [
+      "- Persist per-agent overrides (model, enabled) in the settings store and validate them against the agent's approved_models (a name now persists through H202's roster rename)\n- Per-channel/per-platform prompt overrides (with topic/forum inheritance) and per-platform streaming settings\n- An open per-platform config block persisted and surfaced in the HUD"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the layered resolution row; the settings-write mediation row",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/admin.py",
+      "agents/web.py",
+      "agents/core/settings_db.py",
+      "agents/core/job_toolsets.py"
+    ],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H260",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H260"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H261",
+    "title": "Per-internal-task model and provider assignment (auxiliary models)",
+    "area": "config",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "a1248b16dadfb4055ad7c16508cc51cedd47f9a6cc49ff0039b1053c787f4267",
+    "contract": "115 `auxiliary.*` schema keys over 17 helper tasks — vision, compression, skills_hub, approval, mcp, title_generation, memory_query_rewrite, tts_audio_tags, triage_specifier, kanban_decomposer, profile_describer, goal_judge, curator, monitor, background_review, moa_reference, moa_aggregator — each taking model/provider/base_url/api_key/key_env/api_mode plus hidden `fallback_chain` (ordered `{provider, model}` candidates with model-scoped vs provider-wide skip semantics and a per-task minimum context length), `max_concurrency` (per-task semaphore), and `extra_body` forwarded verbatim on every call. The desktop Settings → Model tab surfaces it as 'Helper tasks run on the main model by default. Assign a dedicated model to any task to override.' (22-config-b.md §C, auxiliary_client.py:5247-9167).",
+    "governance": "read-only (model selection), but a task pinned to a cloud provider must still obey `llm.cloud_fallback` and the strict-local floor at agents/core/llm/hybrid_router.py LOCAL_ONLY_AGENTS",
+    "remaining_verbatim": "- Per-task provider/base_url (local or cloud) selection, not only a model name on the local backend\n- Ordered per-task fallback chain with minimum context length\n- Per-task max_concurrency\n- Settings keys and a HUD 'helper tasks' view to assign models per task",
+    "requirement_sections": [
+      "- Per-task provider/base_url (local or cloud) selection, not only a model name on the local backend\n- Ordered per-task fallback chain with minimum context length\n- Per-task max_concurrency\n- Settings keys and a HUD 'helper tasks' view to assign models per task"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the layered resolution row; agents/core/llm/hybrid_router.py",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/llm/auxiliary_text.py",
+      "agents/core/llm/vlm.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h277_local_auxiliary.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H261",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H261"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H262",
+    "title": "Config-driven data lifecycle — prune, archive, vacuum on an interval-gated sweep",
+    "area": "config",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "afc55c8d78962d266c325019e467c51a3254f9a9807796c051565ff9072ac8ce",
+    "contract": "13 `sessions.*` keys plus a parallel `checkpoints.*` block: `auto_prune`/`retention_days` (90) deletes ended sessions by last activity, `auto_archive`/`auto_archive_days` (3) soft-hides them and exempts pinned ones, `vacuum_after_prune`/`min_vacuum_interval_days` (30) runs SQLite VACUUM only when a prune actually deleted rows, and `min_interval_hours` (24) gates the whole sweep through a `state_meta` row shared across processes. Motivated by 384MB databases with 68K messages (22-config-b.md §T, gateway/run.py:7745-7790).",
+    "governance": "privileged and irreversible — a retention TTL change schedules deletion of owner data, so the setting write is exactly the case for the irreversible tier; the sweep itself is internal maintenance",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/lifecycle_sweep.py",
+      "agents/core/retention.py",
+      "agents/core/checkpoint.py",
+      "agents/core/session_archive.py",
+      "agents/core/routers/admin.py",
+      "agents/core/routers/sessions.py",
+      "agents/core/autonomy/irreversible.py",
+      "agents/core/scheduler_service.py",
+      "agents/core/install_identity.py",
+      "agents/core/artifact_store.py",
+      "frontend/src/panels/retention.tsx",
+      "frontend/src/panels/sessions.tsx",
+      "docs/hermes/evidence/h487-telegram-collateral-review-2026-10-04.md"
+    ],
+    "existing_test_files": [
+      "tests/test_h262_lifecycle_sweep.py",
+      "tests/test_h262_retention_approval.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H262",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H262"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H263",
+    "title": "Fail-closed boot on malformed security-critical configuration",
+    "area": "config",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "be5271f66e68b4bb439f43fd210cce5eed20d9a0b1d51fa43d2b1eba342834d7",
+    "contract": "`validate_config_structure` emits ✗/⚠ lines for a handful of YAML shape mistakes and prints 'Run hermes doctor for fix suggestions' — but 'any exception inside validation is swallowed (never blocks startup)', and `hermes config set` writes an unrecognised key anyway with only a 'did you mean' notice. Nothing in the config plane refuses to start (22-config-b.md `config-b.core.structure_validation`, `config-b.core.key_validation`).",
+    "governance": "read-only",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/boot_guards.py",
+      "agents/web.py",
+      "agents/core/env_config.py",
+      "agents/core/settings_db.py",
+      "agents/cli/nerva.py"
+    ],
+    "existing_test_files": [
+      "tests/test_o26_f6_boot_guards.py",
+      "tests/test_o26_p2_env_config.py",
+      "tests/test_public_profile_boot_guard.py",
+      "tests/test_task_mediation_head_store.py",
+      "tests/test_nerva_cli.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H263",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H263"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H264",
+    "title": "An enumerated, inspectable environment-variable surface",
+    "area": "config",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "8a3d7794d680aeb22f8ff20ea637f0d14e297ebe38993b60f23036940077b8f9",
+    "contract": "`OPTIONAL_ENV_VARS` and `ENV_VARS_BY_VERSION` are real registries: `hermes config check` prints 'Required:' and 'Optional:' with '✓ NAME' or dimmed '○ NAME → tool1, tool2' so an operator sees which vars are set and what each unlocks; migrations offer to configure vars introduced since the old version; `hermes config` masks keys in its summary and warns about stale `.env` lines ('run hermes doctor --fix'); `reload_env` re-reads and removes vanished vars, but only for known names (22-config-b.md `config-b.cli.config_check`, `config-b.core.dotenv_file`, `config-b.core.migrations`).",
+    "governance": "read-only — report set/unset and purpose, never the value",
+    "remaining_verbatim": "- The declared registry of JARVIS_/NERVA_ variables holds names only (plus which are paths and which are credentials): no type, default, what each unlocks or whether it is required, and variables outside that namespace are not listed\n- A `config check`-style view: set vs unset per variable with what it enables\n- Warnings for .env names nothing reads (typos/stale lines)\n- Migration prompts for variables introduced since the previous version",
+    "requirement_sections": [
+      "- The declared registry of JARVIS_/NERVA_ variables holds names only (plus which are paths and which are credentials): no type, default, what each unlocks or whether it is required, and variables outside that namespace are not listed\n- A `config check`-style view: set vs unset per variable with what it enables\n- Warnings for .env names nothing reads (typos/stale lines)\n- Migration prompts for variables introduced since the previous version"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "agents/core/env_config.py; scripts/doctor.py",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "scripts/doctor.py",
+      "agents/core/routers/admin.py",
+      "agents/core/env_config.py",
+      "agents/core/env_alias.py"
+    ],
+    "existing_test_files": [
+      "tests/test_rb2_env_alias_inventory.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H264",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H264"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H265",
+    "title": "Settings changes as governed, mediated actions",
+    "area": "config",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "ad1a2f91bba354a73bbd664bbee8fc42559d119cda6eea844ce2a7b726cb315f",
+    "contract": "None. `PUT /api/config` deep-merges and writes; `hermes config set` writes; nothing is recorded anywhere. The only control is the managed-scope refusal and the package-manager install lock, and the config plane has no audit trail at all (22-config-b.md `config-b.api.config_endpoints`, `config-b.core.save_config`).",
+    "governance": "privileged — a new `config.write` kind in ACTION_REGISTRY, KERNEL-classed, with policy-changing and data-deleting keys pinned to the irreversible tier so a kernel GRANT cannot lift them out of the approval queue",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "agents/core/kernel/registry.py (the kernel already exists; this is a classification plus a call site)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/admin.py",
+      "agents/cli/nerva.py"
+    ],
+    "existing_test_files": [
+      "tests/test_settings_integrity.py",
+      "tests/test_h262_retention_approval.py",
+      "tests/test_h378_selection_guards.py",
+      "tests/test_nerva_cli.py",
+      "tests/test_h688_config_paths.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H265",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H265"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  }
+]

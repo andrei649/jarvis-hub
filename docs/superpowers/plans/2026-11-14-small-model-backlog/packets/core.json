@@ -1,0 +1,1063 @@
+[
+  {
+    "id": "SM-001",
+    "title": "Refresh measured backend count after all selected tests settle",
+    "spec_state": "ready",
+    "priority": "P0",
+    "risk": "medium",
+    "hermes_ids": [],
+    "backlog_ids": [],
+    "goal": "Regenerate tracked backend count from the final selected Linux collection, preserving the independent JUnit mismatch gate. The historical 36700/36699 mismatch is a reproduction clue, never the new expected number.",
+    "non_goals": [
+      "No merge, ready promotion, deploy, provider activation or schedule resumption",
+      "No unrelated production changes",
+      "Do not weaken count gate, delete tests, or reuse historical reported backend totals"
+    ],
+    "depends_on": [
+      "SM-002",
+      "SM-003",
+      "SM-004",
+      "SM-005",
+      "SM-006",
+      "SM-008",
+      "SM-009",
+      "SM-010",
+      "SM-012"
+    ],
+    "owned_files": [
+      "project-status.json",
+      "STATUS.md",
+      "README.md",
+      "NERVA.md",
+      "GO_LIVE_PLAN.md",
+      "tests/test_status_sync.py"
+    ],
+    "read_files": [
+      "scripts/status_sync.py",
+      ".github/workflows/ci.yml"
+    ],
+    "interfaces": [
+      "scripts/status_sync.py: reported_test_count_result(), _verify_test_count(), _sync_project_status(), _write_generated_status()",
+      ".github/workflows/ci.yml: test / Tracked backend test count matches this run"
+    ],
+    "acceptance": [
+      {
+        "case": "test_final_collection_drives_status",
+        "given": "final selected packet branch and clean isolated data home",
+        "when": "collect and regenerate status using the same Python and pytest configuration as CI",
+        "then": "tracked backend count equals measured collection; generated status artifacts agree"
+      },
+      {
+        "case": "test_count_gate_rejects_one_off",
+        "given": "synthetic JUnit count differs by one from tracked status",
+        "when": "run --verify-test-count backend",
+        "then": "nonzero exit and actual/expected mismatch; do not change assertion to tolerance"
+      }
+    ],
+    "steps": [
+      "RED: retain/add one-off mismatch fixture in test_status_sync.py; show mismatch using temporary fixtures only.",
+      "GREEN: after dependent packet tests have landed, run python scripts/status_sync.py --help; use its live backend collection mode with --reuse-js-counts so JS totals are not invented. Commit only artifacts actually emitted; if output paths differ, report scope adjustment.",
+      "VERIFY: execute final backend suite once with --junitxml=pytest-junit.xml, then verify count from that same file. Do not count skipped jobs as passing tests."
+    ],
+    "commands": [
+      {
+        "cmd": "python -m pytest tests/test_status_sync.py -q",
+        "expected": "status parser and negative mismatch regressions pass"
+      },
+      {
+        "cmd": "python scripts/status_sync.py --reuse-js-counts",
+        "expected": "regenerates status using live backend collection, preserving tracked JS counts"
+      },
+      {
+        "cmd": "python scripts/status_sync.py --verify-test-count backend --test-result pytest-junit.xml",
+        "expected": "success only for JUnit from completed suite at the final head"
+      }
+    ],
+    "review_focus": [
+      "Review the regression before the fix and preserve existing negative tests"
+    ],
+    "stop_conditions": [
+      "Stop if the supplied base or owned-file contract differs; report the difference before changing scope",
+      "Do not assert full-suite success when JUnit was only collected or produced by a focused run. Regeneration may reveal more generated paths: get coordinator ownership before editing them."
+    ],
+    "rollback": "Revert this packet commit only; retain private runtime data and do not reset other workers’ changes.",
+    "source_refs": [
+      "checkout:587977b623cf2d1099733d57037e1c056babe1e5",
+      "evidence/REPORT.md",
+      "evidence/core-review.md",
+      "scripts/status_sync.py",
+      ".github/workflows/ci.yml"
+    ]
+  },
+  {
+    "id": "SM-002",
+    "title": "Resolve legacy callback semantics against mandatory H429 streaming scrubber",
+    "spec_state": "needs_design",
+    "priority": "P0",
+    "risk": "high",
+    "hermes_ids": [
+      "H429"
+    ],
+    "backlog_ids": [],
+    "goal": "Resolve the confirmed callback CI regressions in Agent, where is-not-None wrapping turns a falsey callable truthy and changes backend callback identity. Mandatory H429 egress scrubbing must remain intact. This packet requires a deliberate compatibility architecture decision before implementation; MoA adapter behavior is not the confirmed CI defect.",
+    "non_goals": [
+      "No merge/deploy",
+      "Do not remove or disable H429 scrubber",
+      "Do not claim MoA adapter signatures explain these CI failures",
+      "Do not silently rewrite identity assertions to green"
+    ],
+    "depends_on": [],
+    "owned_files": [
+      "agents/core/agent.py",
+      "tests/test_agent_runtime_v2.py",
+      "tests/test_lot4_hermes_equivalents.py"
+    ],
+    "read_files": [
+      "agents/core/security/rag_guard.py",
+      "agents/core/agent.py",
+      "tests/test_agent_runtime_v2.py"
+    ],
+    "interfaces": [
+      "Agent.generate_response(...,on_token=None,...) raw_on_token wrapping at lines 973–990 and flush at 1049",
+      "Agent legacy streaming selection uses callback truthiness",
+      "StreamingContextScrubber.feed()/flush()"
+    ],
+    "acceptance": [
+      {
+        "case": "test_agent_generate_response_disabled_preserves_stream_callback_identity",
+        "given": "disabled tool runtime and legacy streaming backend from existing test",
+        "when": "Agent.generate_response receives emitted.append",
+        "then": "current callback identity assertion exposes wrapping; design explicitly decides whether identity remains supported and locates mandatory scrubbing before approving implementation"
+      },
+      {
+        "case": "test_agent_disabled_mode_preserves_falsey_callback_legacy_behavior",
+        "given": "_FalseyAsyncSink and disabled runtime",
+        "when": "generate_response runs",
+        "then": "generate called once, generate_stream never called, falsey sink receives nothing; do not promote falsey callback through wrapping"
+      },
+      {
+        "case": "test_streamed_orchestrator_preserves_falsey_callback_for_blank_legacy_answer",
+        "given": "falsey callback and blank legacy answer",
+        "when": "orchestrator fallback runs",
+        "then": "callback remains undelivered per established semantics; response/fallback contract unchanged"
+      },
+      {
+        "case": "test_h429_scrubbing_survives_legacy_compatibility",
+        "given": "split memory fences and unterminated untrusted span in streamed output",
+        "when": "legacy and runtime paths emit",
+        "then": "no fence contents or unterminated span leak, for synchronous and async callbacks"
+      }
+    ],
+    "steps": [
+      "RED: reproduce the three named existing test_agent_runtime_v2 cases without changing their assertions; inspect exact call path and H429 regression coverage.",
+      "DESIGN: preserve falsey semantics by evaluating original callback truthiness before wrapping or stream selection. Separately decide how mandatory H429 scrubbing can coexist with unchanged callback identity: either move scrubber to a mandatory lower egress boundary covering every backend, or explicitly retire identity compatibility with documented migration and owner/coordinator review. No design choice is implied approved.",
+      "DESIGN: document every streaming path and flush/cancellation responsibility; demonstrate no output bypass if any legacy wrapper moves. Do not dispatch implementation while this boundary remains unresolved.",
+      "VERIFY AFTER DESIGN: red→green tests retain falsey and H429 guarantees; identity expectation changes only following the explicit architecture decision."
+    ],
+    "commands": [
+      {
+        "cmd": "python -m pytest tests/test_agent_runtime_v2.py -q",
+        "expected": "planned: reproduce named regressions, then pass after approved boundary design; not run by this planning task"
+      },
+      {
+        "cmd": "python -m pytest tests/test_lot4_hermes_equivalents.py -q",
+        "expected": "H429 split-fence and unterminated-span protections retained"
+      }
+    ],
+    "review_focus": [
+      "Review the regression before the fix and preserve existing negative tests"
+    ],
+    "stop_conditions": [
+      "No implementation until callback identity versus mandatory scrubber boundary is explicitly resolved",
+      "Never bypass H429 to satisfy legacy identity test"
+    ],
+    "rollback": "Revert this packet commit only; retain private runtime data and do not reset other workers’ changes.",
+    "source_refs": [
+      "checkout:587977b623cf2d1099733d57037e1c056babe1e5",
+      "evidence/REPORT.md",
+      "evidence/core-review.md",
+      "agents/core/security/rag_guard.py",
+      "agents/core/agent.py",
+      "tests/test_agent_runtime_v2.py"
+    ]
+  },
+  {
+    "id": "SM-003",
+    "title": "Keep CLI help usable without optional YAML dependency",
+    "spec_state": "ready",
+    "priority": "P0",
+    "risk": "medium",
+    "hermes_ids": [
+      "H052",
+      "H591"
+    ],
+    "backlog_ids": [],
+    "goal": "Move the eager agents.core.skins import in CLI skins into execution scope so argparse help never imports PyYAML. Keep real skin validation strict.",
+    "non_goals": [
+      "No merge, ready promotion, deploy, provider activation or schedule resumption",
+      "No unrelated production changes",
+      "Do not add PyYAML to the help bootstrap or silently parse invalid YAML"
+    ],
+    "depends_on": [],
+    "owned_files": [
+      "agents/cli/skins.py",
+      "tests/test_nerva_cli.py"
+    ],
+    "read_files": [
+      "agents/core/skins.py",
+      "agents/cli/nerva.py"
+    ],
+    "interfaces": [
+      "agents.cli.skins.register_parser(verbs)",
+      "agents.cli.skins.run(ns,ctx)",
+      "agents.core.skins.validate_skin_file(path)"
+    ],
+    "acceptance": [
+      {
+        "case": "test_help_without_site_packages",
+        "given": "Python -S and temporary isolated home",
+        "when": "run scripts/nerva.py --help and skin --help",
+        "then": "exit zero with help, no yaml import error and no created settings"
+      },
+      {
+        "case": "test_skin_execution_missing_yaml",
+        "given": "yaml import unavailable",
+        "when": "execute a skin action requiring runtime backend",
+        "then": "existing CLI sanitized dependency error contract applies; no unsafe fallback YAML parser"
+      },
+      {
+        "case": "test_skin_help_preserves_verbs",
+        "given": "normal environment",
+        "when": "render help",
+        "then": "list/use/set/show/render and existing options remain"
+      }
+    ],
+    "steps": [
+      "RED: subprocess sys.executable -S scripts/nerva.py --help and skin --help.",
+      "GREEN: lazy import runtime skins symbols inside run (and any execution-only helpers); keep parser declarations stdlib-only. Verify actual run signature before moving symbols.",
+      "VERIFY: run CLI and skins suites with available dependencies; separately run -S subprocess tests."
+    ],
+    "commands": [
+      {
+        "cmd": "python -S scripts/nerva.py --help",
+        "expected": "exit 0 without site-packages"
+      },
+      {
+        "cmd": "python -S scripts/nerva.py skin --help",
+        "expected": "exit 0 without YAML"
+      },
+      {
+        "cmd": "python -m pytest tests/test_nerva_cli.py -q",
+        "expected": "CLI regressions pass"
+      }
+    ],
+    "review_focus": [
+      "Review the regression before the fix and preserve existing negative tests"
+    ],
+    "stop_conditions": [
+      "Stop if the supplied base or owned-file contract differs; report the difference before changing scope"
+    ],
+    "rollback": "Revert this packet commit only; retain private runtime data and do not reset other workers’ changes.",
+    "source_refs": [
+      "checkout:587977b623cf2d1099733d57037e1c056babe1e5",
+      "evidence/REPORT.md",
+      "evidence/core-review.md",
+      "agents/core/skins.py",
+      "agents/cli/nerva.py"
+    ]
+  },
+  {
+    "id": "SM-004",
+    "title": "Read pet ZIPs through archive_safe",
+    "spec_state": "ready",
+    "priority": "P0",
+    "risk": "medium",
+    "hermes_ids": [
+      "H214",
+      "H238",
+      "H590"
+    ],
+    "backlog_ids": [],
+    "goal": "Replace the direct ZIP read path with bounded archive_safe extraction into a private temporary directory. Preserve pet format validation and current HTTP error meanings; do not add pets to archive-reader exemptions.",
+    "non_goals": [
+      "No merge, ready promotion, deploy, provider activation or schedule resumption",
+      "No unrelated production changes"
+    ],
+    "depends_on": [],
+    "owned_files": [
+      "agents/core/pets.py",
+      "tests/test_h214_h238_h590_pets.py",
+      "tests/test_archive_safe.py"
+    ],
+    "read_files": [
+      "agents/core/archive_safe.py",
+      "agents/core/routers/pets.py"
+    ],
+    "interfaces": [
+      "PetStore.import_zip(raw_bytes)",
+      "archive_safe.extract_zip_bytes(data,dest,*,limits=...)",
+      "ArchiveLimits and ArchiveRejected"
+    ],
+    "acceptance": [
+      {
+        "case": "test_pet_zip_roundtrip",
+        "given": "valid exported pet zip",
+        "when": "import through temporary extraction",
+        "then": "equivalent validated frames/name and one saved pet"
+      },
+      {
+        "case": "test_pet_zip_unsafe_members",
+        "given": "zip with traversal, absolute member, symlink, duplicate normalized name, or oversized inflated content",
+        "when": "import",
+        "then": "reject before persistent pet mutation; no outside files; temp directory cleaned"
+      },
+      {
+        "case": "test_pet_import_corrupt_zip",
+        "given": "truncated bytes or malformed JSON",
+        "when": "import",
+        "then": "PetError with 400, no partial pet"
+      }
+    ],
+    "steps": [
+      "RED: use real import_zip entry with malicious member fixtures and assert no persistent save.",
+      "GREEN: use tempfile.TemporaryDirectory plus extract_zip_bytes with _MAX_ZIP_BYTES and _MAX_ZIP_ENTRIES, read only required regular JSON files after validation; map ArchiveRejected to existing PetError categories without leaking filesystem paths. Preserve ZIP writer for export only.",
+      "VERIFY: archive adoption gate and pet suite; use existing tests/test_h214_h238_h590_pets.py fixtures and assert no filesystem escape."
+    ],
+    "commands": [
+      {
+        "cmd": "python -m pytest tests/test_archive_safe.py -q",
+        "expected": "reader inventory rejects direct ZipFile reads and safety regressions pass"
+      },
+      {
+        "cmd": "python -m pytest tests/test_h214_h238_h590_pets.py -q",
+        "expected": "pet archive roundtrip and rejection regressions pass; confirm suite filename first"
+      }
+    ],
+    "review_focus": [
+      "Review the regression before the fix and preserve existing negative tests"
+    ],
+    "stop_conditions": [
+      "Stop if the supplied base or owned-file contract differs; report the difference before changing scope",
+      "ArchiveRejected mappings must preserve bounds and prevent saved pet records on failure."
+    ],
+    "rollback": "Revert this packet commit only; retain private runtime data and do not reset other workers’ changes.",
+    "source_refs": [
+      "checkout:587977b623cf2d1099733d57037e1c056babe1e5",
+      "evidence/REPORT.md",
+      "evidence/core-review.md",
+      "agents/core/archive_safe.py",
+      "agents/core/routers/pets.py"
+    ]
+  },
+  {
+    "id": "SM-005",
+    "title": "Register new hub environment aliases without raising the raw-read ratchet",
+    "spec_state": "ready",
+    "priority": "P0",
+    "risk": "medium",
+    "hermes_ids": [
+      "H040",
+      "H032"
+    ],
+    "backlog_ids": [
+      "RB-2",
+      "AUD-14"
+    ],
+    "goal": "Register the five observed missing suffixes DEVICE_LABEL, E2E_SYNC_DIR, HOST_ID, ROOM_FENCING_SECRET and BROWSER_BROKER_ALLOW_LOOPBACK_HTTP; migrate new raw reads in owned sync/room modules through central helpers without raising MAX_RAW_ENV_READS. Resolve deliberate NERVA_HOME alias reads in existing CLI/tool-profile paths through a narrowly reviewed inventory classification, preserving canonical HOME behavior. Four production files are an intentional shared registry-contract exception to the preferred three-file limit.",
+    "non_goals": [
+      "No merge/deploy",
+      "No global NERVA_HOME collision exemption",
+      "No HOME/PATHS precedence redesign",
+      "No raw-read-cap inflation"
+    ],
+    "depends_on": [],
+    "owned_files": [
+      "agents/core/env_config.py",
+      "agents/core/e2e_sync.py",
+      "agents/core/rooms.py",
+      "agents/core/browser_broker.py",
+      "tests/test_rb2_env_alias_inventory.py",
+      "tests/test_o26_p2_env_config.py"
+    ],
+    "read_files": [
+      "agents/core/env_alias.py",
+      "agents/cli/import_cmd.py",
+      "agents/cli/skins.py",
+      "agents/core/tool_profiles.py",
+      "agents/core/paths.py",
+      "tests/test_env_provenance.py"
+    ],
+    "interfaces": [
+      "env_config.HUB_ENV_SUFFIXES and env_str/env_flag",
+      "E2ESync constructor and transport env readers",
+      "RoomStore.__init__ and host identity env readers",
+      "browser_broker loopback HTTP env_flag",
+      "RB-2 native-name collision inventory"
+    ],
+    "acceptance": [
+      {
+        "case": "test_five_missing_hub_aliases_registered",
+        "given": "each of the five suffixes configured through NERVA spelling then JARVIS spelling in isolated environment",
+        "when": "E2ESync, RoomStore and browser loopback helper execute after alias normalization",
+        "then": "same configured values and managed precedence; ROOM_FENCING_SECRET never printed or exported"
+      },
+      {
+        "case": "test_home_alias_callsite_classification_is_exact",
+        "given": "deliberate NERVA_HOME reads in agents/cli/import_cmd.py, agents/cli/skins.py and agents/core/tool_profiles.py",
+        "when": "native-name collision inventory runs",
+        "then": "reviewed alias reads classified by exact file/name callsites with matching canonical JARVIS_HOME fallback; a new independent NERVA_HOME reader outside those sites still fails"
+      },
+      {
+        "case": "test_inventory_and_ratchet_preserved",
+        "given": "full tracked-file scan and existing cap 110",
+        "when": "RB-2 and O26 tests run",
+        "then": "no unknown suffix, stale entry, unreviewed collision or cap increase; boolean raw-read guard unchanged"
+      }
+    ],
+    "steps": [
+      "RED: capture exact missing five suffixes and actual NERVA_HOME collision locations using existing inventory; add paired-spelling behavior tests for owned readers.",
+      "GREEN: add those exact suffixes to HUB_ENV_SUFFIXES. Migrate E2ESync and RoomStore new raw reads to env_str, retaining precedence and defaults; browser flag already uses env_flag and only needs registration. Do not touch MoA in this packet.",
+      "GREEN: classify the three intentional HOME alias reads with file-and-name-specific evidence in the native-name inventory, asserting both-spelling fallback semantics. Do not place NERVA_HOME in a global all-files exception. No changing paths.py data-home precedence.",
+      "VERIFY: full RB-2/O26 suites must pass from these owned changes; if other unrelated raw reads exceed cap, stop and assign separate repair instead of raising cap."
+    ],
+    "commands": [
+      {
+        "cmd": "python -m pytest tests/test_rb2_env_alias_inventory.py tests/test_rb2_env_alias.py tests/test_o26_p2_env_config.py -q",
+        "expected": "inventory and ratchet pass without inflated caps"
+      }
+    ],
+    "review_focus": [
+      "Review the regression before the fix and preserve existing negative tests"
+    ],
+    "stop_conditions": [
+      "If another module requires mutation, acquire coordinator ownership rather than exempting it",
+      "Do not print ROOM_FENCING_SECRET in diagnostics"
+    ],
+    "rollback": "Revert this packet commit only; retain private runtime data and do not reset other workers’ changes.",
+    "source_refs": [
+      "checkout:587977b623cf2d1099733d57037e1c056babe1e5",
+      "evidence/REPORT.md",
+      "evidence/core-review.md",
+      "agents/core/env_alias.py",
+      "agents/cli/import_cmd.py",
+      "agents/cli/skins.py",
+      "agents/core/tool_profiles.py",
+      "agents/core/paths.py",
+      "tests/test_env_provenance.py"
+    ]
+  },
+  {
+    "id": "SM-006",
+    "title": "Reconcile binding callsites and capability readiness from observed runtime",
+    "spec_state": "ready",
+    "priority": "P0",
+    "risk": "medium",
+    "hermes_ids": [],
+    "backlog_ids": [],
+    "goal": "Refresh exact binding locations only after inspecting actual AST writers, and regenerate readiness snapshot from real boot discovery without fabricating VERIFIED status or extending escape sets to hide broken boot.",
+    "non_goals": [
+      "No merge, ready promotion, deploy, provider activation or schedule resumption",
+      "No unrelated production changes",
+      "No blanket wildcard writers, no fabricated capability promotion"
+    ],
+    "depends_on": [],
+    "owned_files": [
+      "agents/core/orchestrator_bindings.py",
+      "tests/_snapshots/capability_readiness.json",
+      "tests/test_capability_readiness_matrix.py"
+    ],
+    "read_files": [
+      "tests/test_orchestrator_bindings.py",
+      "agents/core/observability/capability_registry.py",
+      "agents/core/orchestrator.py"
+    ],
+    "interfaces": [
+      "EXTERNAL_BINDING_WRITERS: Mapping[str,tuple[(path,line,column),...]]",
+      "test_orchestrator_bindings._observed_binding_writer_map()",
+      "capability_registry.build_records(orch=...)"
+    ],
+    "acceptance": [
+      {
+        "case": "test_binding_inventory_exact_after_source_shift",
+        "given": "actual production bind calls moved by prior packets",
+        "when": "run exact inventory gate",
+        "then": "same authorized writer names with actual locations; duplicates/unlisted writers still rejected"
+      },
+      {
+        "case": "test_capability_snapshot_matches_boot",
+        "given": "isolated data home and real Orchestrator construction",
+        "when": "generate and compare readiness snapshot",
+        "then": "added/removed/state deltas explained individually; VERIFIED still requires harness_id"
+      },
+      {
+        "case": "test_forged_writer_still_refused",
+        "given": "unlisted or aliased hostile binding writer fixture",
+        "when": "run AST test",
+        "then": "fails closed as before"
+      }
+    ],
+    "steps": [
+      "RED: run inventory and matrix to record specific drift.",
+      "GREEN: update only reviewed coordinates and actual deterministic state rows. Use documented matrix --update command; never edit state strings from desired claims. If a component fails boot, repair in separate packet instead of reclassifying it away.",
+      "VERIFY: rerun writer hostile fixtures and full readiness matrix. Schedule after source changes which shift inventoried writer lines."
+    ],
+    "commands": [
+      {
+        "cmd": "python -m pytest tests/test_orchestrator_bindings.py tests/test_capability_readiness_matrix.py -q",
+        "expected": "exact inventory and honest state invariants pass"
+      },
+      {
+        "cmd": "python tests/test_capability_readiness_matrix.py --update",
+        "expected": "writes real boot snapshot; review diff before accepting"
+      }
+    ],
+    "review_focus": [
+      "Review the regression before the fix and preserve existing negative tests"
+    ],
+    "stop_conditions": [
+      "Stop if the supplied base or owned-file contract differs; report the difference before changing scope"
+    ],
+    "rollback": "Revert this packet commit only; retain private runtime data and do not reset other workers’ changes.",
+    "source_refs": [
+      "checkout:587977b623cf2d1099733d57037e1c056babe1e5",
+      "evidence/REPORT.md",
+      "evidence/core-review.md",
+      "tests/test_orchestrator_bindings.py",
+      "agents/core/observability/capability_registry.py",
+      "agents/core/orchestrator.py"
+    ]
+  },
+  {
+    "id": "SM-007",
+    "title": "Triage real security scan results and replace synthetic credential strings narrowly",
+    "spec_state": "ready",
+    "priority": "P0",
+    "risk": "high",
+    "hermes_ids": [],
+    "backlog_ids": [],
+    "goal": "Capture exact rule/file/function findings under actual workflow scopes; replace only benchmark pseudo credentials that trigger detectors with non-secret benchcred markers while preserving secret-stripping tests. Classify every new Bandit finding including low severity; do not baseline unknown findings.",
+    "non_goals": [
+      "No merge, ready promotion, deploy, provider activation or schedule resumption",
+      "No unrelated production changes",
+      "No automatic low-severity dismissal",
+      "No widening allowlists/baseline or hiding scanner failures"
+    ],
+    "depends_on": [],
+    "owned_files": [
+      "scripts/bench_nerva_differentiators.py",
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/security-triage.md"
+    ],
+    "read_files": [
+      ".github/workflows/security.yml",
+      ".gitleaks.toml",
+      ".bandit-baseline.json"
+    ],
+    "interfaces": [
+      "security.yml: gitleaks dir . --config .gitleaks.toml --redact",
+      "security.yml: bandit -r agents scripts -q -b .bandit-baseline.json",
+      "security.yml: semgrep scans agents only; pip-audit scans requirements-beta.lock"
+    ],
+    "acceptance": [
+      {
+        "case": "test_synthetic_markers_still_exercise_stripping",
+        "given": "four seeded secret settings and credential-shaped URL fixture",
+        "when": "run benchmark sync scenario with benchcred marker values",
+        "then": "all seeded secret-key values removed from exported envelope and URL redaction still exercised"
+      },
+      {
+        "case": "test_scans_use_workflow_scope",
+        "given": "pinned tool versions from security.yml",
+        "when": "run Bandit agents+scripts and gitleaks entire tree",
+        "then": "record every new finding with rule, location, severity, disposition; no agents-only Bandit shortcut"
+      },
+      {
+        "case": "test_no_blanket_suppression",
+        "given": "a genuinely secret-shaped value outside fixtures",
+        "when": "run detector negative fixture via temp dir",
+        "then": "still detected; no scripts-wide allowlist or baseline regeneration"
+      }
+    ],
+    "steps": [
+      "RED: collect redacted scanner reports to ignored/temp artifacts; never print credential material.",
+      "GREEN: replace only explicitly synthetic triggering benchmark values with descriptive benchcred values; leave secret settings keys and credential-shaped URL test meaningful. Write triage table with exact findings and source-level remediation proposals.",
+      "VERIFY: run benchmark focused tests, exact security commands, and report nonzero tools honestly. For real findings requiring production edits, create a separate bounded remediation packet after triage, not blanket nosec."
+    ],
+    "commands": [
+      {
+        "cmd": "python -m bandit -r agents scripts -q -b .bandit-baseline.json",
+        "expected": "every new issue captured; exit zero only after actual fixes"
+      },
+      {
+        "cmd": "gitleaks dir . --config .gitleaks.toml --redact --no-banner --verbose",
+        "expected": "synthetic markers no longer trigger; real scan scope unchanged"
+      },
+      {
+        "cmd": "python -m pytest tests/test_bench_nerva_differentiators.py -q",
+        "expected": "secret-stripping assertions retained; confirm test filename first"
+      }
+    ],
+    "review_focus": [
+      "Review the regression before the fix and preserve existing negative tests"
+    ],
+    "stop_conditions": [
+      "Stop if the supplied base or owned-file contract differs; report the difference before changing scope",
+      "A genuine credential or unsafe production behavior is found: preserve redacted evidence and ask coordinator for a distinct remediation scope.",
+      "Unavailable pinned scanner is unverified, not passing."
+    ],
+    "rollback": "Revert this packet commit only; retain private runtime data and do not reset other workers’ changes.",
+    "source_refs": [
+      "checkout:587977b623cf2d1099733d57037e1c056babe1e5",
+      "evidence/REPORT.md",
+      "evidence/core-review.md",
+      ".github/workflows/security.yml",
+      ".gitleaks.toml",
+      ".bandit-baseline.json"
+    ]
+  },
+  {
+    "id": "SM-008",
+    "title": "Restore H040 metadata on default constructor restart",
+    "spec_state": "ready",
+    "priority": "P0",
+    "risk": "medium",
+    "hermes_ids": [
+      "H040"
+    ],
+    "backlog_ids": [],
+    "goal": "Load metadata from the resolved default state path as well as explicit paths, before crypto setup. Preserve peers, disabled sync policies, labels and timestamps in ordinary production restart.",
+    "non_goals": [
+      "No merge, ready promotion, deploy, provider activation or schedule resumption",
+      "No unrelated production changes"
+    ],
+    "depends_on": [],
+    "owned_files": [
+      "agents/core/e2e_sync.py",
+      "tests/test_h040_device_sync.py"
+    ],
+    "read_files": [
+      "agents/core/orchestrator.py",
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/sync-reproduction.json"
+    ],
+    "interfaces": [
+      "E2ESync.__init__(...,state_path=None)",
+      "_resolved_state_path(), _load_state(), _save_state()"
+    ],
+    "acceptance": [
+      {
+        "case": "test_default_restart_preserves_peer_and_optout",
+        "given": "patched data_path temporary home; default constructor saved peer plus disabled skill",
+        "when": "construct second E2ESync() without state_path",
+        "then": "peer and disabled policy restored; no plaintext secret added to state"
+      },
+      {
+        "case": "test_explicit_state_path_still_isolated",
+        "given": "separate explicit state file",
+        "when": "construct with path",
+        "then": "uses explicit file only"
+      },
+      {
+        "case": "test_missing_or_malformed_state_is_safe",
+        "given": "missing or invalid JSON and crypto unavailable",
+        "when": "construct default instance",
+        "then": "no constructor crash or secret exposure; reading does not overwrite malformed file"
+      }
+    ],
+    "steps": [
+      "RED: reproduce sync-reproduction.json scenario through default constructor in tmp_path; patch crypto only if isolating metadata.",
+      "GREEN: call _load_state() against _resolved_state_path() regardless of explicit argument; retain current missing/malformed file guards and explicit label precedence.",
+      "VERIFY: peer/policy roundtrip with real crypto when installed and metadata-only no-crypto test."
+    ],
+    "commands": [
+      {
+        "cmd": "python -m pytest tests/test_h040_device_sync.py -q",
+        "expected": "default and explicit-path persistence regressions pass"
+      }
+    ],
+    "review_focus": [
+      "Review the regression before the fix and preserve existing negative tests"
+    ],
+    "stop_conditions": [
+      "Stop if the supplied base or owned-file contract differs; report the difference before changing scope"
+    ],
+    "rollback": "Revert this packet commit only; retain private runtime data and do not reset other workers’ changes.",
+    "source_refs": [
+      "checkout:587977b623cf2d1099733d57037e1c056babe1e5",
+      "evidence/REPORT.md",
+      "evidence/core-review.md",
+      "agents/core/orchestrator.py",
+      "evidence/sync-reproduction.json",
+      "evidence/sync-reproduction.json"
+    ]
+  },
+  {
+    "id": "SM-009",
+    "title": "Collect real user skills and truthfully report pending staged downloads",
+    "spec_state": "ready",
+    "priority": "P1",
+    "risk": "high",
+    "hermes_ids": [
+      "H040"
+    ],
+    "backlog_ids": [],
+    "goal": "Collect outbound skills from the real owner user-skills root and keep inbound sync candidates staged with truthful pending-install status. No executable discovery root or installation API changes are part of this ready packet.",
+    "non_goals": [
+      "No merge, ready promotion, deploy, provider activation or schedule resumption",
+      "No unrelated production changes",
+      "No Python code transport or execution",
+      "No auto-enable downloaded SKILL.md",
+      "No remote grant/approval propagation",
+      "No explicit-consented-install acceptance in this packet; importer integration remains follow-on"
+    ],
+    "depends_on": [
+      "SM-008"
+    ],
+    "owned_files": [
+      "agents/core/e2e_sync.py",
+      "tests/test_h040_device_sync.py",
+      "frontend/src/panels/device-sync.tsx",
+      "frontend/src/panels/device-sync.test.tsx"
+    ],
+    "read_files": [
+      "agents/core/skills/loader.py",
+      "agents/core/skills/importer.py",
+      "agents/core/paths.py",
+      "agents/cli/sync_cmd.py"
+    ],
+    "interfaces": [
+      "E2ESync.collect_sync_artefacts(), apply_synced_artefacts()",
+      "paths.user_skills_dir()",
+      "SkillLoader.discover() as read-only integration check",
+      "apply_synced_artefacts returns existing fields unchanged and adds skills_pending_install: list[{slug: str, sha256: str, source_device_hint: str, state: literal pending_install}]. sha256 is computed from staged UTF-8 SKILL.md bytes. source_device_hint copies the record device_id only if it is a string; otherwise empty; it is untrusted display metadata, never authenticated identity or an approval.",
+      "Retain skills_applied as a deprecated list[str] compatibility alias for successful staging writes, equal in order to pending entries slugs. Do not remove/rename it or treat it as installed. Skipped/quarantined entries appear in neither list. No local filesystem path or secret enters the response.",
+      "A slug already present under owner user_skills_dir stays untouched. Its candidate may be written only under the distinct inbound staging root and is still pending_install. No collision-resolution or install API is introduced; owner-name/slug conflict resolution belongs to a separately reviewed installation design.",
+      "DeviceSyncPanel pull receipt renders N skill candidates staged; installation pending, using skills_pending_install length with skills_applied length fallback for older servers. It never labels these candidates installed or enabled.",
+      "The existing explicit skills_dir test override keeps its collection/staging behavior for isolated fixtures; production defaults collect only user_skills_dir when present and stage under data_path(synced_skills). No bundled-skill fallback."
+    ],
+    "acceptance": [
+      {
+        "case": "test_sync_collects_real_user_skill",
+        "given": "temporary user skills root has opted-in skill; bundled tree has another",
+        "when": "collect with default E2ESync",
+        "then": "collect owner skill only, honor sync opt-out; bundled skills not exported"
+      },
+      {
+        "case": "test_download_is_staged_not_enabled",
+        "given": "authenticated encrypted peer artefact with benign SKILL.md",
+        "when": "pull and run actual SkillLoader.discover",
+        "then": "candidate exists in staging, no command registered/executed and no approval/load-set grants created"
+      },
+      {
+        "case": "test_collision_never_overwrites_owner_skill",
+        "given": "same slug exists in owner user_skills_dir with different bytes",
+        "when": "sync candidate",
+        "then": "owner bytes unchanged; candidate written only in distinct staging root and returned as pending_install, with no grant or registration"
+      },
+      {
+        "case": "test_staged_response_compatibility",
+        "given": "one valid skill, one disabled and one quarantined candidate",
+        "when": "apply_synced_artefacts returns",
+        "then": "only valid entry appears in both ordered pending metadata and legacy slug alias; hash matches bytes; untrusted source hint is not used for authority"
+      },
+      {
+        "case": "device-sync staged receipt",
+        "given": "new response with pending metadata and older response with only skills_applied",
+        "when": "user pulls in DeviceSyncPanel",
+        "then": "both show staged candidate count and installation pending, never installation success"
+      }
+    ],
+    "steps": [
+      "RED: use real default directory resolution and SkillLoader.discover; test owner skill collection, staged download and opt-out.",
+      "GREEN: separate default outbound user_skills_dir from inbound staging; no bundled fallback. Add the exact pending-install response schema and preserve the specified legacy alias. Update DeviceSyncPanel receipt and focused frontend tests in the same packet.",
+      "VERIFY: staged candidates never enter executable discovery roots, load-set declarations or approval store. A same-slug owner skill retains bytes. Defer name-collision resolution, explicit installation consent and staging replay/conflict semantics to their separate design packets; do not claim these solved."
+    ],
+    "commands": [
+      {
+        "cmd": "python -m pytest tests/test_h040_device_sync.py -q",
+        "expected": "default-root collection and staging/consent regressions pass"
+      },
+      {
+        "cmd": "npm --prefix frontend run test -- --run src/panels/device-sync.test.tsx",
+        "expected": "new and legacy server receipts state staging only"
+      }
+    ],
+    "review_focus": [
+      "Review the regression before the fix and preserve existing negative tests"
+    ],
+    "stop_conditions": [
+      "Any request to install, enable or expose a new importer API requires a separate design packet"
+    ],
+    "rollback": "Revert this packet commit only; retain private runtime data and do not reset other workers’ changes.",
+    "source_refs": [
+      "checkout:587977b623cf2d1099733d57037e1c056babe1e5",
+      "evidence/REPORT.md",
+      "evidence/core-review.md",
+      "agents/core/skills/loader.py",
+      "agents/core/skills/importer.py"
+    ]
+  },
+  {
+    "id": "SM-010",
+    "title": "Persist replay detection for identical authenticated sync snapshots",
+    "spec_state": "needs_design",
+    "priority": "P0",
+    "risk": "high",
+    "hermes_ids": [
+      "H040"
+    ],
+    "backlog_ids": [],
+    "goal": "Design durable replay idempotency with atomic partial-application semantics before production edits. Current settings imports and skill writes do not share a transaction; choosing per-artefact receipts or rejecting mixed batches is an unresolved protocol decision.",
+    "non_goals": [
+      "No merge, ready promotion, deploy, provider activation or schedule resumption",
+      "No unrelated production changes",
+      "No timestamp LWW merge",
+      "No claiming general conflict resolution",
+      "No eviction-based reopening of replay windows",
+      "No small-worker choice between per-artefact receipts and mixed-batch rejection"
+    ],
+    "depends_on": [
+      "SM-008"
+    ],
+    "owned_files": [
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/h040-replay-design.md"
+    ],
+    "read_files": [
+      "agents/core/settings_db.py"
+    ],
+    "interfaces": [
+      "E2ESync.pull_state(manifest=None), apply_pull(manifest)",
+      "_load_state(), _save_state(), _write_private_json()"
+    ],
+    "acceptance": [
+      {
+        "case": "test_repeated_snapshot_preserves_local_edit",
+        "given": "B applied A snapshot successfully, B then edits local setting",
+        "when": "B pulls identical encrypted snapshot again",
+        "then": "zero reapplication and B edit remains"
+      },
+      {
+        "case": "test_replay_survives_restart",
+        "given": "same applied snapshot fingerprint persisted",
+        "when": "recreate B and pull again",
+        "then": "snapshot skipped using durable state"
+      },
+      {
+        "case": "test_forged_outer_digest_cannot_hide_new_snapshot",
+        "given": "two distinct encrypted entry sequences share caller-supplied digest",
+        "when": "pull",
+        "then": "fingerprint is derived locally from authenticated content/envelope identity; untrusted digest alone never determines replay"
+      },
+      {
+        "case": "test_failed_apply_not_marked_complete",
+        "given": "snapshot contains import failure",
+        "when": "pull twice",
+        "then": "second attempt not falsely skipped as fully applied; no partial success falsely acknowledged"
+      }
+    ],
+    "steps": [
+      "RED DESIGN: specify identical snapshot/restart, forged outer digest, two identical settings records, mixed settings+skills partial failure, crash between local write and receipt, receipt persistence failure, and capacity exhaustion cases.",
+      "DESIGN QUESTION: can settings_db atomically compare/apply a setting and persist its replay receipt within the same SQLite transaction, and how are filesystem skill writes coordinated with it? Select one complete crash-recovery protocol, not a choice left to the small worker.",
+      "DESIGN: specify authenticated fingerprint canonicalization byte-for-byte, receipt schema/version, locking across processes, partial-success response semantics and bounded storage policy. Outer peer digest is never sufficient authentication or identity.",
+      "VERIFY DESIGN: only after a concrete atomicity/recovery protocol is reviewed should a new ready implementation packet be issued. No production replay implementation in this packet."
+    ],
+    "commands": [
+      {
+        "cmd": "python -m pytest tests/test_h040_device_sync.py -q",
+        "expected": "future implementation acceptance only; no production mutation authorized by this design packet"
+      }
+    ],
+    "review_focus": [
+      "Review the regression before the fix and preserve existing negative tests"
+    ],
+    "stop_conditions": [
+      "Do not implement before atomic write/receipt and mixed-batch crash recovery contracts are settled"
+    ],
+    "rollback": "Revert this packet commit only; retain private runtime data and do not reset other workers’ changes.",
+    "source_refs": [
+      "checkout:587977b623cf2d1099733d57037e1c056babe1e5",
+      "evidence/REPORT.md",
+      "evidence/core-review.md",
+      "agents/core/settings_db.py"
+    ]
+  },
+  {
+    "id": "SM-011",
+    "title": "Design conservative H040 conflict protocol before integrating lot5 LWW",
+    "spec_state": "needs_design",
+    "priority": "P0",
+    "risk": "high",
+    "hermes_ids": [
+      "H040"
+    ],
+    "backlog_ids": [],
+    "goal": "Produce the missing conflict contract and adversarial tests before accepting unintegrated LWW. The referenced object is unavailable in this checkout; no lot5 conflict fix is considered reviewed. A design must refuse divergent local/remote writes explicitly and preserve both versions.",
+    "non_goals": [
+      "No merge, ready promotion, deploy, provider activation or schedule resumption",
+      "No unrelated production changes",
+      "No silent timestamp last-writer-wins",
+      "No integration claim for unavailable lot5 source",
+      "No production change until atomic settings conflict semantics specified"
+    ],
+    "depends_on": [
+      "SM-008",
+      "SM-010"
+    ],
+    "owned_files": [
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/h040-conflict-design.md"
+    ],
+    "read_files": [
+      "agents/core/e2e_sync.py",
+      "agents/core/settings_db.py",
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/core-review.md"
+    ],
+    "interfaces": [
+      "E2ESync.apply_synced_artefacts(records), collect_sync_artefacts()",
+      "settings_db.plan_import(document), apply_import(changes)",
+      "proposed lot5-bench bd93bff5caf993bd150828a87d3cd1b4bfd88fa5"
+    ],
+    "acceptance": [
+      {
+        "case": "test_unseen_remote_conflict_is_explicit",
+        "given": "local setting/skill differs and no trusted common baseline exists",
+        "when": "receive different peer value",
+        "then": "no overwrite, conflict record contains non-secret identifiers and hashes; encrypted/private candidate retained"
+      },
+      {
+        "case": "test_multi_peer_order_does_not_choose_winner",
+        "given": "A and C diverge from last common baseline",
+        "when": "B receives both in all arrival orders",
+        "then": "same explicit unresolved conflict; local value preserved"
+      },
+      {
+        "case": "test_resolution_is_revision_bound",
+        "given": "owner chooses candidate from preview",
+        "when": "local bytes/settings change before resolution commit",
+        "then": "resolution rejected stale, no write"
+      },
+      {
+        "case": "test_lot5_candidate_review_required",
+        "given": "exact public SHA absent locally",
+        "when": "prepare integration recommendation",
+        "then": "state unreviewed; request source through normal coordinator path, no fetch or cherry-pick in this task"
+      }
+    ],
+    "steps": [
+      "RED: specify tests for stale replay, concurrent edits, skewed clocks, equal timestamps, restart and settings/skill partial failure.",
+      "DESIGN: require persisted per-artefact last-common fingerprint, current-local compare and remote candidate fingerprint. Apply only when local == common or remote == local; otherwise return conflict. With no baseline, nonempty differing local state conflicts. Never wall-clock LWW.",
+      "DESIGN: decide settings atomic compare-and-apply transaction, conflict storage limits and redaction, explicit revision-bound resolution API and crash recovery. Do not choose undocumented settings transaction semantics.",
+      "VERIFY: review exact lot5 candidate if coordinator supplies it. Reject LWW that overwrites differing local state; split implementation into <=3-production-file packets after design approval by coordinator."
+    ],
+    "commands": [
+      {
+        "cmd": "git cat-file -t bd93bff5caf993bd150828a87d3cd1b4bfd88fa5",
+        "expected": "already observed unavailable here; no network mutation authorized for packet"
+      },
+      {
+        "cmd": "python -m pytest tests/test_h040_device_sync.py -q",
+        "expected": "future implementation must pass conflict cases; not executed for this design"
+      }
+    ],
+    "review_focus": [
+      "Review the regression before the fix and preserve existing negative tests"
+    ],
+    "stop_conditions": [
+      "Stop if the supplied base or owned-file contract differs; report the difference before changing scope"
+    ],
+    "rollback": "Revert this packet commit only; retain private runtime data and do not reset other workers’ changes.",
+    "source_refs": [
+      "checkout:587977b623cf2d1099733d57037e1c056babe1e5",
+      "evidence/REPORT.md",
+      "evidence/core-review.md",
+      "agents/core/e2e_sync.py",
+      "agents/core/settings_db.py",
+      "evidence/core-review.md"
+    ]
+  },
+  {
+    "id": "SM-012",
+    "title": "Bound MoA load plus generation with honest all-proposer timeout semantics",
+    "spec_state": "ready",
+    "priority": "P1",
+    "risk": "medium",
+    "hermes_ids": [
+      "H032"
+    ],
+    "backlog_ids": [],
+    "goal": "Make timeout_s cover residency plus generation for each proposer and aggregator. Keep current all-proposer gather semantics explicit; this packet does not promise early-quorum aggregation.",
+    "non_goals": [
+      "No merge, ready promotion, deploy, provider activation or schedule resumption",
+      "No unrelated production changes",
+      "No early-quorum task scheduler",
+      "No global run deadline claim; concurrent proposer phase and sequential aggregator each have their own timeout budget",
+      "Callback CI regressions are handled by SM-002; do not claim this timeout packet fixes them"
+    ],
+    "depends_on": [],
+    "owned_files": [
+      "agents/core/llm/moa.py",
+      "tests/test_h032_moa_presets.py"
+    ],
+    "read_files": [
+      "agents/core/llm/hybrid_router.py"
+    ],
+    "interfaces": [
+      "MoACommitteeBackend._run_proposers(), generate(), generate_stream()",
+      "router.ensure_resident(model,route)",
+      "MoAPreset.timeout_s"
+    ],
+    "acceptance": [
+      {
+        "case": "test_proposer_residency_timeout",
+        "given": "one proposer ensure_resident blocks beyond timeout and enough others succeed",
+        "when": "run MoA",
+        "then": "blocked proposer cancelled/awaited, marked timeout, successful quorum synthesizes within member budgets"
+      },
+      {
+        "case": "test_aggregator_residency_timeout",
+        "given": "aggregator load never completes",
+        "when": "generate and generate_stream",
+        "then": "TimeoutError within member budget; telemetry marks unsuccessful and no member task remains"
+      },
+      {
+        "case": "test_all_members_governed_before_execution",
+        "given": "strict-local or unconsented member exists",
+        "when": "invoke run",
+        "then": "refuse before any load/generate; timeout refactor does not bypass authorization"
+      },
+      {
+        "case": "test_all_proposer_semantics_honest",
+        "given": "quorum reached while another proposer still pending within its budget",
+        "when": "run",
+        "then": "current gather may await remaining bounded proposer; docs and telemetry do not claim early-quorum latency"
+      },
+      {
+        "case": "test_cancel_cleans_member_tasks",
+        "given": "outer task cancelled during residency",
+        "when": "cancel run",
+        "then": "CancelledError propagates and children are awaited; no background inference survives"
+      }
+    ],
+    "steps": [
+      "RED: event-controlled residency fakes; use small timeouts and asyncio events, not long sleeps.",
+      "GREEN: put ensure_resident and generate inside one wait_for coroutine per proposer; same single-budget wrapper for aggregator generation and streaming. Start aggregate timing before residency, initialize final safely for timeout telemetry, preserve cancellation propagation.",
+      "VERIFY: both stream/non-stream with legacy callback compatibility. Update module timeout wording to say load+generation, all proposers awaited up to their deadlines; do not label as early quorum."
+    ],
+    "commands": [
+      {
+        "cmd": "python -m pytest tests/test_h032_moa_presets.py -q",
+        "expected": "residency timeout, cancellation, quorum and governance regressions pass"
+      }
+    ],
+    "review_focus": [
+      "Review the regression before the fix and preserve existing negative tests"
+    ],
+    "stop_conditions": [
+      "Stop if the supplied base or owned-file contract differs; report the difference before changing scope"
+    ],
+    "rollback": "Revert this packet commit only; retain private runtime data and do not reset other workers’ changes.",
+    "source_refs": [
+      "checkout:587977b623cf2d1099733d57037e1c056babe1e5",
+      "evidence/REPORT.md",
+      "evidence/core-review.md",
+      "agents/core/llm/hybrid_router.py"
+    ]
+  }
+]

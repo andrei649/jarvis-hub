@@ -1,0 +1,1162 @@
+[
+  {
+    "id": "H359",
+    "title": "Choose an inference provider from a broad catalog",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "7713f8f9d222271170b73b58c6850636123a2dcacc202b1612307a91778fbd22",
+    "contract": "48 registered ProviderProfiles shipped from 40 bundled plugin directories, plus ~109 more provider identities resolvable through models.dev + the 38-entry HERMES_OVERLAYS table and an 88-entry alias map (Anthropic, OpenAI Codex, Gemini, xAI, DeepSeek, Fireworks, Kimi, MiniMax, Qwen, Z.AI, NVIDIA NIM, HuggingFace, Novita, DeepInfra, OpenRouter, Vercel AI Gateway, Ollama Cloud, CommandCode, Ramp Router, Upstage, Nebius, Arcee, GMI, Xiaomi, Meta Muse Spark, StepFun, Kilo, OpenCode Free/Go/Zen, Alibaba x6…). Inventory: 27-providers.md §2 (49 entries), providers.identity-resolution, providers.canonical-provider-list, providers.provider-groups, providers.runtime-provider.",
+    "governance": "Reading the catalog is read-only. Activating a cloud provider widens where prompts and credentials go, so activation must cross the kernel like permission.grant does (agents/core/kernel/registry.py) rather than staying admin_guard-only as /api/models/local/switch is today; per-agent approved_models and LOCAL_ONLY_AGENTS stay a hard floor above it.",
+    "remaining_verbatim": "Still open: the accepted broader provider profiles and models.dev identity/alias/group resolution; multiple extra cloud providers selectable concurrently through the default owner settings/HybridRouter route (the signed selection currently binds one provider/model); and real live-provider/platform acceptance. Owner mutation refreshes the selected route in process, so restart is not required for this route.",
+    "requirement_sections": [
+      "Still open: the accepted broader provider profiles and models.dev identity/alias/group resolution; multiple extra cloud providers selectable concurrently through the default owner settings/HybridRouter route (the signed selection currently binds one provider/model); and real live-provider/platform acceptance. Owner mutation refreshes the selected route in process, so restart is not required for this route."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "Row 'Provider profiles that actually drive routing' — until the profile drives backend construction, each new provider is another hand-wired branch in _select_backend_inner.",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/provider_selection.py",
+      "agents/core/llm/hybrid_router.py",
+      "agents/core/llm/providers/admitted_profiles.py",
+      "agents/core/llm/providers/selected_runtime.py",
+      "agents/core/llm/custom_endpoints.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h361_provider_selection_binding.py",
+      "tests/test_h361_signed_native_integration.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H359",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H359"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H360",
+    "title": "Provider profiles that actually drive routing",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "6098e137b4d2559832daa2fc430dcb56cdec91d3a0db14ac71503f87a92b1528",
+    "contract": "One frozen ProviderProfile dataclass (providers/base.py:38-296) carries identity, api_mode, auth, base_url, headers, vision flags, cache flags, fallback_models and nine overridable hooks; every surface (transport, picker, doctor, setup) reads the profile instead of a hard-coded table, so adding a provider is a declaration. Inventory: providers.registry, providers.profile-dataclass, providers.aggregator-classification.",
+    "governance": "Read-only — this is a refactor of how a backend object is constructed. The policy floor (get_agent_policy, LOCAL_ONLY_AGENTS, _enforce_approved_models at hybrid_router.py:382-423) must stay ahead of profile resolution so a declarative profile can never pull a strict-local agent to cloud.",
+    "remaining_verbatim": "- Profile-driven backend construction for every provider (adding a provider is a declaration, not a routing-code edit).\n- Overridable per-profile hooks (headers, vision/cache flags, fallback models) consumed by transport, picker, doctor and setup.\n- Surfaces (picker, doctor, setup) that read the profile instead of hard-coded tables.",
+    "requirement_sections": [
+      "- Profile-driven backend construction for every provider (adding a provider is a declaration, not a routing-code edit).\n- Overridable per-profile hooks (headers, vision/cache flags, fallback models) consumed by transport, picker, doctor and setup.\n- Surfaces (picker, doctor, setup) that read the profile instead of hard-coded tables."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/llm/providers/__init__.py",
+      "agents/core/llm/hybrid_router.py",
+      "agents/core/llm/providers/admitted_registry.py",
+      "agents/core/llm/backend_factory.py",
+      "agents/core/llm/providers/native_transport.py",
+      "agents/core/llm/providers/selected_runtime.py",
+      "agents/core/routers/provider_selection.py",
+      "agents/core/llm/providers/custom_runtime.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h517_shared_provider_registry.py",
+      "tests/test_h361_admitted_registry.py",
+      "tests/test_h361_signed_native_integration.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H360",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H360"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H361",
+    "title": "Install a third-party provider as a plugin (drop-in directory or pip entry point)",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "73b5f1744ab93f34fa364c407c565fe1b87009db56603c8eca076a0611c7d8d1",
+    "contract": "providers/__init__.py:149-341 discovers providers from pip entry-point group hermes_agent.plugins, a bundled plugins/model-providers/<name>/ directory and a user $HERMES_HOME one, each with a plugin.yaml manifest; registration is last-writer-wins so a user directory silently overrides a bundled provider. Inventory: providers.plugin-layout, providers.entrypoint-plugins.",
+    "governance": "Would be code execution at import time — no kernel kind can mediate it after the fact, which is precisely why it is refused rather than gated.",
+    "remaining_verbatim": "- Complete dedicated owner CLI and mobile provider review, installation, credential and selection journeys (Console Admin ProviderPackagesPanel now covers the web/desktop HUD journey across all nine signed-package, credential and selection routes / thirteen guarded HTTP methods).\n- Complete the accepted provider SDK/nine-hook/product and distribution contract beyond the guarded six-dialect request matrix.\n- Complete real container containment, distribution/platform and actual provider acceptance; synthetic signed-owner, TLS and worker tests remain separate evidence.\n- Task23 now supplies separate named custom-endpoint CRUD/selection source; H367 canonical integration and its own acceptance remain separate from this signed-provider SDK/product row.",
+    "requirement_sections": [
+      "- Complete dedicated owner CLI and mobile provider review, installation, credential and selection journeys (Console Admin ProviderPackagesPanel now covers the web/desktop HUD journey across all nine signed-package, credential and selection routes / thirteen guarded HTTP methods).\n- Complete the accepted provider SDK/nine-hook/product and distribution contract beyond the guarded six-dialect request matrix.\n- Complete real container containment, distribution/platform and actual provider acceptance; synthetic signed-owner, TLS and worker tests remain separate evidence.\n- Task23 now supplies separate named custom-endpoint CRUD/selection source; H367 canonical integration and its own acceptance remain separate from this signed-provider SDK/product row."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/llm/providers/__init__.py",
+      "agents/core/extensions/manifest.py",
+      "agents/core/llm/providers/admitted_registry.py",
+      "agents/core/llm/backend_factory.py",
+      "agents/core/llm/providers/packages.py",
+      "agents/core/llm/providers/admission_contract.py",
+      "agents/core/llm/providers/hook_runtime.py",
+      "agents/core/llm/providers/admitted_profiles.py",
+      "agents/core/llm/providers/candidates.py",
+      "agents/core/capability_manifests.py",
+      "agents/core/kernel/registry.py",
+      "agents/core/llm/providers/install_service.py",
+      "agents/core/routers/models_llm.py",
+      "agents/core/kernel/__init__.py",
+      "agents/core/llm/providers/native_transport.py",
+      "agents/core/llm/providers/credentials.py",
+      "agents/core/routers/provider_credentials.py",
+      "agents/core/observability/reality_harness.py",
+      "agents/core/llm/provider_selection.py",
+      "agents/core/llm/providers/selection_gates.py",
+      "agents/core/settings_db.py",
+      "agents/core/llm/providers/selected_runtime.py",
+      "agents/core/llm/providers/lifecycle_gates.py",
+      "agents/core/routers/provider_selection.py",
+      "agents/core/llm/providers/selection_consent.py",
+      "agents/core/llm/custom_endpoints.py",
+      "frontend/src/panels/provider-packages.tsx",
+      "frontend/src/panels/provider-packages.test.tsx"
+    ],
+    "existing_test_files": [
+      "tests/test_llm_provider_profiles.py",
+      "tests/test_h361_admitted_registry.py",
+      "tests/test_h361_signed_native_integration.py",
+      "tests/test_h361_provider_packages.py",
+      "tests/test_h361_provider_kernel.py",
+      "tests/test_h361_provider_hook_runtime.py",
+      "tests/test_h361_admitted_profile.py",
+      "tests/test_h361_provider_install_service.py",
+      "tests/test_h361_provider_install_kernel.py",
+      "tests/test_h361_provider_install_routes.py",
+      "tests/test_h361_admitted_native_bridge.py",
+      "tests/test_h361_admitted_native_transport.py",
+      "tests/test_h361_provider_credentials.py",
+      "tests/test_h361_provider_credential_routes.py",
+      "tests/_snapshots/capability_readiness.json",
+      "tests/test_capability_readiness_matrix.py",
+      "tests/test_h27_capability_verification.py",
+      "tests/test_h361_provider_selection_fence.py",
+      "tests/test_h361_provider_selection_binding.py",
+      "tests/test_reality_harness.py",
+      "tests/test_hud_v2_parity.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H361",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H361"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H362",
+    "title": "Use tools and stream on a cloud model, not just a local one",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "ff5c8494a612fa422b26f9bc489ff87d0da768813f27fa2b29420e2255ccdd27",
+    "contract": "Every wire adapter carries the full agent contract: agent/anthropic_adapter.py (1217 lines) converts OpenAI-shaped messages and tool definitions to Anthropic Messages with thinking blocks; agent/codex_* speaks OpenAI Responses with SSE streaming, reasoning summaries and encrypted reasoning replay; the Gemini native adapter and Bedrock Converse adapter do the same for their wires. Inventory: providers.anthropic-adapter, providers.anthropic-message-convert, providers.codex-responses, providers.gemini-native-adapter, providers.bedrock-adapter.",
+    "governance": "Read-only with respect to the kernel: the wire change itself performs no privileged effect. But it is the change that makes the kernel matter on the cloud path — today a cloud-routed turn emits zero tool calls, so zero kernel authorizations happen. Every tool the model then calls keeps its existing gate (tool.rpc, terminal.exec, file.write, browser.step…); nothing new bypasses it.",
+    "remaining_verbatim": "O tură cu unelte nu e streamuită: `generate_tool_turn` nu primește callback de token pe niciun wire, iar bucla din agent_runtime o așteaptă întreagă; streamingul există doar pe calea de text. Pe Claude, blocurile `thinking` ale unei ture cu unelte nu sunt păstrate pe ToolTurn și nici redate înapoi: `anthropic_messages` convertește doar text + `tool_use`. Codex nu e implementat (OAuth/abonament, rezumate de raționament, replay criptat pe OpenAI): adaptorul Responses e API-key și servește doar gpt-4.1, fără raționament. Nu există adaptor Bedrock Converse: `host_protocol.py` doar refuză cererile de alt protocol trimise către hosturile bedrock-runtime. Nu există probe cu provideri live.",
+    "requirement_sections": [
+      "O tură cu unelte nu e streamuită: `generate_tool_turn` nu primește callback de token pe niciun wire, iar bucla din agent_runtime o așteaptă întreagă; streamingul există doar pe calea de text. Pe Claude, blocurile `thinking` ale unei ture cu unelte nu sunt păstrate pe ToolTurn și nici redate înapoi: `anthropic_messages` convertește doar text + `tool_use`. Codex nu e implementat (OAuth/abonament, rezumate de raționament, replay criptat pe OpenAI): adaptorul Responses e API-key și servește doar gpt-4.1, fără raționament. Nu există adaptor Bedrock Converse: `host_protocol.py` doar refuză cererile de alt protocol trimise către hosturile bedrock-runtime. Nu există probe cu provideri live."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/llm/tool_dialects.py",
+      "agents/core/llm/base.py",
+      "agents/core/agent_runtime.py",
+      "agents/core/llm/anthropic.py",
+      "agents/core/llm/gemini.py",
+      "agents/core/llm/openrouter.py",
+      "agents/core/llm/responses.py",
+      "agents/core/llm/xai.py",
+      "agents/core/llm/host_protocol.py",
+      "agents/core/native_human_wait.py",
+      "docs/hermes/evidence/h487-native-wait-progress-2026-10-04.json",
+      "docs/hermes/evidence/h277-auxiliary-output-cap-collateral-review-2026-10-04.md"
+    ],
+    "existing_test_files": [
+      "tests/test_cloud_tool_turns.py",
+      "tests/test_tool_loop_compaction.py",
+      "tests/test_openai_responses.py",
+      "tests/test_xai_responses.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H362",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H362"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H363",
+    "title": "Pay the cached-input rate on repeated Claude context",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "cd0c402c53fbf7ad02280d90cab250311c91a6767de28d8def4b2e2e7ddd0786",
+    "contract": "Anthropic message conversion inserts cache breakpoints, and ProviderProfile.supports_prompt_cache_key gates a prompt_cache_key on OpenAI-compatible wires; the Codex adapter carries prompt_cache_retention (measured 0% cache hits on chat/completions vs 93-99% on /responses). Inventory: providers.anthropic-message-convert, providers.profile-dataclass, providers.codex-responses.",
+    "governance": "read-only",
+    "remaining_verbatim": "Named Codex OAuth/subscription authentication is not implemented by the public API-key Responses adapter. Live cache-hit percentages and billing are not claimed. Compatible chat-completions cache support still requires explicit declaration; unknown endpoints do not gain parameters. store:false is not a claim of zero provider retention. Existing cache-write pricing approximation is unchanged. For providers that still emit unflagged usage (excluding Ollama, LM Studio, declared compatible pairs, Anthropic's conservatively checked four categories, Gemini's bounded accounting mapping and the shared OpenAI/xAI Responses mapping), explicit all-zero usage is still indistinguishable from absent metadata and partial-positive metadata may still be treated as provider totals. The counter marker covers only received observations, not every physical attempt; complete per-turn accounting remains open. Anthropic optional-cache schema types do not prove omitted/null categories are zero; the all-four availability requirement is conservative application accounting, not an additional API validity rule. Gemini tool-use prompt is a separate documented category: positive values remain unmapped, so this unit does not account for every known input category. Omitted optional fields are not inferred as measured zero; retries and complete-turn spend remain outside the marker. Responses input/output totals can be known while cache-write accounting is unsupported: unknown or positive writes remain estimated, without adding write counts to inclusive input. Complete counts do not establish write pricing or complete-turn spend; xAI omission of cache-write metadata is not inferred as zero. The frozen requirement also says the Codex adapter carries prompt_cache_retention; Nerva has only the public API-key OpenAI Responses adapter (agents/core/llm/responses.py:60-64, agents/core/llm/responses.py:105) and no Codex OAuth or subscription authentication. All proofs are mocked HTTP.",
+    "requirement_sections": [
+      "Named Codex OAuth/subscription authentication is not implemented by the public API-key Responses adapter. Live cache-hit percentages and billing are not claimed. Compatible chat-completions cache support still requires explicit declaration; unknown endpoints do not gain parameters. store:false is not a claim of zero provider retention. Existing cache-write pricing approximation is unchanged. For providers that still emit unflagged usage (excluding Ollama, LM Studio, declared compatible pairs, Anthropic's conservatively checked four categories, Gemini's bounded accounting mapping and the shared OpenAI/xAI Responses mapping), explicit all-zero usage is still indistinguishable from absent metadata and partial-positive metadata may still be treated as provider totals. The counter marker covers only received observations, not every physical attempt; complete per-turn accounting remains open. Anthropic optional-cache schema types do not prove omitted/null categories are zero; the all-four availability requirement is conservative application accounting, not an additional API validity rule. Gemini tool-use prompt is a separate documented category: positive values remain unmapped, so this unit does not account for every known input category. Omitted optional fields are not inferred as measured zero; retries and complete-turn spend remain outside the marker. Responses input/output totals can be known while cache-write accounting is unsupported: unknown or positive writes remain estimated, without adding write counts to inclusive input. Complete counts do not establish write pricing or complete-turn spend; xAI omission of cache-write metadata is not inferred as zero. The frozen requirement also says the Codex adapter carries prompt_cache_retention; Nerva has only the public API-key OpenAI Responses adapter (agents/core/llm/responses.py:60-64, agents/core/llm/responses.py:105) and no Codex OAuth or subscription authentication. All proofs are mocked HTTP."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "Row 'Use tools and stream on a cloud model' — both edit the same Anthropic request builder; do them in one pass.",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/agent.py",
+      "agents/core/agent_runtime.py",
+      "agents/core/checkpoint.py",
+      "agents/core/context_compressor.py",
+      "agents/core/conversation_clock.py",
+      "agents/core/llm/anthropic.py",
+      "agents/core/llm/base.py",
+      "agents/core/llm/gemini.py",
+      "agents/core/llm/hybrid_router.py",
+      "agents/core/llm/openrouter.py",
+      "agents/core/llm/provider_request.py",
+      "agents/core/llm/providers/__init__.py",
+      "agents/core/llm/request_context.py",
+      "agents/core/llm/tool_dialects.py",
+      "agents/core/llm/tool_protocol.py",
+      "agents/core/orchestrator.py",
+      "agents/core/settings_db.py",
+      "agents/core/llm/reasoning_effort.py",
+      "docs/superpowers/plans/2026-09-15-claude-text-cache.md",
+      "agents/core/llm/responses.py",
+      "agents/core/llm/responses_dialect.py",
+      "docs/superpowers/plans/2026-09-15-openai-responses.md",
+      "agents/core/llm/xai.py",
+      "agents/core/llm/provider_replay.py",
+      "docs/superpowers/plans/2026-09-15-xai-responses.md"
+    ],
+    "existing_test_files": [
+      "tests/test_agent_runtime_v2.py",
+      "tests/test_cloud_tool_turns.py",
+      "tests/test_conversation_clock.py",
+      "tests/test_provider_context_limits.py",
+      "tests/test_provider_request_profiles.py",
+      "tests/test_session_birth_persistence.py",
+      "tests/test_models_review_regressions.py",
+      "tests/test_claude_text_cache.py",
+      "tests/test_openai_responses.py",
+      "tests/test_xai_responses.py",
+      "tests/test_anthropic_usage_validation.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H363",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H363"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H364",
+    "title": "Ask for more or less thinking, and never 400 on a wire that rejects the level",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "aa28f4bd66a0b0cad787c89c53e8795fef8f045c34ba18918ae65681e3d5e832",
+    "contract": "agent/reasoning_effort.py defines one 8-level ladder (none…ultra) and clamps to the nearest weaker level supported by each wire, with ~18 declared per-vendor vocabularies and override maps; the Anthropic adapter maps effort to thinking budgets (THINKING_BUDGET) or output_config.effort by model family; a Grok capability table decides whether to send the reasoning key at all. Inventory: providers.reasoning-effort-ladder, providers.grok-effort-capability, providers.flags-model-overrides.",
+    "governance": "read-only",
+    "remaining_verbatim": "The referenced providers.flags-model-overrides contract still lacks invocation-only chat --model and --provider authoring (HTTP/CLI); --reasoning is implemented. Named vendor declaration/translation coverage from the referenced ladder inventory, such as Kimi, DeepSeek and GLM, is not produced by the generic owner-supplied compatible declaration mechanism. Future mappings require verified current supported schemas and must preserve H679 no-escalation rather than copy historical stronger-level overrides. The xAI adapter supports only exact Grok4.5/4.6, not unverified legacy aliases or general OpenAI reasoning-model replay. Unknown models remain undeclared/refused as appropriate; explicit none may locally refuse when disabling cannot be honored. No live-provider acceptance or billing proof.",
+    "requirement_sections": [
+      "The referenced providers.flags-model-overrides contract still lacks invocation-only chat --model and --provider authoring (HTTP/CLI); --reasoning is implemented. Named vendor declaration/translation coverage from the referenced ladder inventory, such as Kimi, DeepSeek and GLM, is not produced by the generic owner-supplied compatible declaration mechanism. Future mappings require verified current supported schemas and must preserve H679 no-escalation rather than copy historical stronger-level overrides. The xAI adapter supports only exact Grok4.5/4.6, not unverified legacy aliases or general OpenAI reasoning-model replay. Unknown models remain undeclared/refused as appropriate; explicit none may locally refuse when disabling cannot be honored. No live-provider acceptance or billing proof."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "Row 'Provider profiles that actually drive routing' — the supported-effort set belongs on the profile.",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/agent.py",
+      "agents/core/checkpoint.py",
+      "agents/core/context_compressor.py",
+      "agents/core/conversation_clock.py",
+      "agents/core/llm/anthropic.py",
+      "agents/core/llm/base.py",
+      "agents/core/llm/gemini.py",
+      "agents/core/llm/hybrid_router.py",
+      "agents/core/llm/openrouter.py",
+      "agents/core/llm/provider_request.py",
+      "agents/core/llm/providers/__init__.py",
+      "agents/core/llm/reasoning_effort.py",
+      "agents/core/llm/request_context.py",
+      "agents/core/orchestrator.py",
+      "agents/core/settings_db.py",
+      "docs/superpowers/plans/2026-09-15-reasoning-no-escalation.md",
+      "docs/hermes/h679-reasoning-contract.md",
+      "agents/cli/nerva.py",
+      "agents/web.py",
+      "docs/superpowers/plans/2026-09-15-invocation-reasoning.md",
+      "agents/core/llm/responses.py",
+      "agents/core/llm/responses_dialect.py",
+      "docs/superpowers/plans/2026-09-15-openai-responses.md",
+      "agents/core/llm/xai.py",
+      "agents/core/llm/provider_replay.py",
+      "agents/core/llm/tool_protocol.py",
+      "docs/superpowers/plans/2026-09-15-xai-responses.md"
+    ],
+    "existing_test_files": [
+      "tests/test_conversation_clock.py",
+      "tests/test_provider_context_limits.py",
+      "tests/test_provider_request_profiles.py",
+      "tests/test_reasoning_effort_ladder.py",
+      "tests/test_session_birth_persistence.py",
+      "tests/test_models_review_regressions.py",
+      "tests/test_reasoning_no_escalation.py",
+      "tests/test_reasoning_empty_contract.py",
+      "tests/test_invocation_reasoning.py",
+      "tests/test_invocation_reasoning_http.py",
+      "tests/test_openai_responses.py",
+      "tests/test_xai_responses.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H364",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H364"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H365",
+    "title": "Authenticate with Bedrock / Vertex / Azure Foundry enterprise credentials",
+    "area": "providers",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "192a2aad717d9f7e30be9d48e9cc7ab00b56ecbd5f3d8e6c5e45dfaa33453cfa",
+    "contract": "Three keyless auth adapters: boto3 AWS SDK credentials over Bedrock Converse with guardrails and cross-region inference profiles; short-lived OAuth2 tokens minted from a service-account JSON or ADC for Vertex; azure-identity DefaultAzureCredential handing the OpenAI SDK a zero-arg token callable for Microsoft Foundry. Inventory: providers.bedrock, providers.vertex, providers.azure-foundry, providers.bedrock-adapter, providers.vertex-adapter, providers.azure-identity-adapter.",
+    "governance": "read-only (credential minting only), but each adds an ambient-credential discovery chain that would read files outside the data root — another reason to keep it out until there is a reason.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "Row 'Provider profiles that actually drive routing'",
+    "historical_exclusion_reason": "These exist so a company can bill inference to an existing cloud tenant under IAM. Nerva is a single-owner house brain whose privacy story is 'the box is yours'; routing the owner's household context through an AWS/GCP/Azure account buys no model that OpenRouter or the vendor's own API does not already serve, while importing three SDKs, three credential-chain surfaces and three sets of regional endpoint semantics. Re-open path: if Nerva is ever deployed inside an employer's account where API keys are forbidden by policy, Vertex first (it is the thinnest — a token minter in front of an OpenAI-compatible base URL).",
+    "source_files": [],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H365",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H365"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H366",
+    "title": "Sign in with a Claude Pro/Max or ChatGPT subscription instead of buying API credits",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "5de8eb228d7f9f27a634ed88dae950cdcc392f97183971bc0a2a51444b7666d3",
+    "contract": "A provider auth registry declares each provider's auth type, OAuth client id and scope; hermes auth / hermes login drive PKCE and device-code flows for Anthropic (Claude Code OAuth token), OpenAI Codex/ChatGPT, xAI, Qwen, MiniMax, Copilot, Vercel and Nous, with token refresh and rotation committed back to the credential store; the dashboard exposes the same via GET /api/providers/oauth and an OAuth provider panel. Inventory: providers.auth-registry, providers.anthropic-credentials, providers.openai-codex, providers.qwen-oauth, providers.minimax-oauth, providers.cli-auth, providers.cli-login-logout, providers.api-providers-oauth, providers.web-oauth-panel.",
+    "governance": "Adding or refreshing a provider credential writes a long-lived secret and widens what the machine can spend. It must land in the existing encrypted token store used by core.plugins.oauth, be recorded in the hash-chained audit log, and cross the kernel on the same footing as permission.grant — a new inference credential is capability growth, not a settings edit.",
+    "remaining_verbatim": "- Anthropic (Claude Pro/Max) PKCE login and OpenAI Codex/ChatGPT login for chat inference, with refresh and rotation committed to the encrypted store and recorded in the audit log, crossing the kernel like permission.grant\n- A provider auth registry (auth type, client id, scope per provider) plus GET /api/providers/oauth and a HUD OAuth provider panel\n- A Codex login flow with refresh instead of a pasted env-var token\n- Correct the onboarding text once a subscription path exists\n- Owner decision first: whether the providers' terms of service allow consumer-subscription OAuth tokens (Claude Code / Codex client credentials) to be used by a third-party app such as Nerva (docs/hermes/missing-rows-plan-2026-11-10.md:80)",
+    "requirement_sections": [
+      "- Anthropic (Claude Pro/Max) PKCE login and OpenAI Codex/ChatGPT login for chat inference, with refresh and rotation committed to the encrypted store and recorded in the audit log, crossing the kernel like permission.grant\n- A provider auth registry (auth type, client id, scope per provider) plus GET /api/providers/oauth and a HUD OAuth provider panel\n- A Codex login flow with refresh instead of a pasted env-var token\n- Correct the onboarding text once a subscription path exists\n- Owner decision first: whether the providers' terms of service allow consumer-subscription OAuth tokens (Claude Code / Codex client credentials) to be used by a third-party app such as Nerva (docs/hermes/missing-rows-plan-2026-11-10.md:80)"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "Row 'Multi-credential pool: rotation, persistence and a management surface' — an OAuth token with a refresh cycle needs somewhere durable to live that is not an env var.",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/llm/nous_auth.py",
+      "agents/core/routers/oauth.py",
+      "agents/cli/nous_auth.py",
+      "agents/core/llm/providers/__init__.py",
+      "agents/core/media_backends/codex_image.py",
+      "agents/core/routers/onboarding.py",
+      "docs/hermes/missing-rows-plan-2026-11-10.md"
+    ],
+    "existing_test_files": [
+      "tests/test_h277_nous_auth.py",
+      "tests/test_openai_codex_image.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H366",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H366"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H367",
+    "title": "Add and manage named custom OpenAI-compatible endpoints at runtime",
+    "area": "providers",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "5fc560c295ee2b41bbc79cb98153ab809741f1390cc83c5215126ac32a38188b",
+    "contract": "The `custom` profile plus /api/providers/custom-endpoints (list, create, activate, delete, validate) and custom_provider_slug()/custom_provider_aliases() give every user endpoint a stable `custom:<key>` identity that survives a rename; a corrupt bare `custom` self-heals to the first valid entry. Covers local vLLM, llama.cpp, LM Studio and hosted proxies alike. Inventory: providers.custom, providers.api-custom-endpoints.",
+    "governance": "A new base URL is a new egress destination, so creating one must cross the kernel (the permission.grant footing — widening what Nerva may touch) and every request through it must be constructed with llm_async_client (agents/core/llm/egress.py) so the local-first ledger sees the host actually dialled. A loopback endpoint can stay on the reversible tier; a public one should not.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "Row 'Provider profiles that actually drive routing'",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/llm/custom_endpoints.py",
+      "agents/core/llm/custom_endpoint_service.py",
+      "agents/core/llm/custom_endpoint_consent.py",
+      "agents/core/llm/custom_endpoint_credentials.py",
+      "agents/core/llm/providers/custom_runtime.py",
+      "agents/core/llm/hybrid_router.py",
+      "agents/core/llm/provider_selection.py",
+      "agents/core/settings_db.py",
+      "agents/core/routers/custom_endpoints.py",
+      "agents/cli/custom_endpoints.py",
+      "frontend/src/panels/custom-endpoints.tsx",
+      "frontend/src/gap.tsx",
+      "agents/core/capability_manifests.py",
+      "agents/core/observability/reality_harness.py",
+      "agents/core/routers/agents_api.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h367_custom_endpoint_store.py",
+      "tests/test_h367_custom_endpoint_service.py",
+      "tests/test_h367_custom_endpoint_runtime.py",
+      "tests/test_h367_custom_endpoint_routes.py",
+      "tests/test_h367_custom_endpoint_cli.py",
+      "tests/test_h27_capability_verification.py",
+      "tests/test_capability_readiness_matrix.py",
+      "tests/_snapshots/capability_readiness.json",
+      "tests/test_client_protocol.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H367",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H367"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H368",
+    "title": "Refuse to speak the wrong protocol to a lookalike host",
+    "area": "providers",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "a719492fe8bc1e9f06b701a7cf1adb2f6cd29ec878ea3d3463dd17880786afbd",
+    "contract": "host_mandated_api_mode() pins the wire protocol by parsed hostname (api.anthropic.com → anthropic_messages, official OpenAI host family → codex_responses, bedrock-runtime.*.amazonaws.com → bedrock_converse), overriding any stale api_mode carried by a session; matching is hostname-parsed, never substring, after a spoofing fix (#32243) — api.openai.com.attacker.test and proxy.test/api.openai.com/v1 are both rejected. Inventory: providers.host-mandated-api-mode, providers.anthropic-endpoints.",
+    "governance": "read-only, but it is the guard that keeps a credential from being sent to a host that merely looks like the vendor — it belongs next to the egress ledger, not inside each backend.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "Row 'Add and manage named custom OpenAI-compatible endpoints at runtime'",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/llm/host_protocol.py",
+      "agents/core/llm/egress.py",
+      "agents/core/llm/hybrid_router.py",
+      "agents/core/llm/base.py",
+      "agents/core/llm/auxiliary_recovery.py",
+      "docs/hermes/h277-auxiliary-parameter-2026-10-02.md",
+      "docs/hermes/evidence/h277-auxiliary-output-cap-collateral-review-2026-10-04.md",
+      "agents/core/llm/deepinfra.py",
+      "docs/hermes/evidence/h277-h487-provider-terminal-denial-regression-2026-10-04.json",
+      "agents/core/llm/providers/native_transport.py",
+      "agents/core/llm/providers/custom_runtime.py"
+    ],
+    "existing_test_files": [
+      "tests/test_host_mandated_protocol.py",
+      "tests/test_h277_auxiliary_parameter_recovery.py",
+      "tests/test_h277_deepinfra_main.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H368",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H368"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H369",
+    "title": "Know a model's context window and price without a human editing a table",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "4e1bed33580409ed28f560c9417c6148a7a576d9712b9b4d7738fb4ac4bbffec",
+    "contract": "models.dev/api.json supplies metadata for 4000+ models across 109+ providers (base URLs, env vars, display names, context lengths, pricing); a remote catalog manifest lets maintainers update curated picker lists and the silent default without a release; context-length resolution walks every source with a thin static fallback; usage normalisation turns each provider's usage payload into one canonical shape and a dollar figure, including subscription-included routes with no invoice. Inventory: providers.models-dev, providers.model-catalog-manifest, providers.model-context-resolution, providers.usage-pricing.",
+    "governance": "Fetching a remote catalog is outbound network from a local-first product: it must go through llm_async_client so it lands in the egress ledger, must be cached to disk, and must never be on the hot path of answering a turn. The static table stays the source of truth when the fetch fails — the current conservative-small default is the right failure mode and must survive.",
+    "remaining_verbatim": "- Use models.dev (fetch with static fallback) for model metadata: base URLs, env vars, display names, context lengths, pricing.\n- A remote curated catalog manifest updatable without a release.\n- Context-length resolution walking all sources (provider API, catalog, static).\n- Usage normalisation across providers into one canonical shape and dollar figure, including subscription-included routes.",
+    "requirement_sections": [
+      "- Use models.dev (fetch with static fallback) for model metadata: base URLs, env vars, display names, context lengths, pricing.\n- A remote curated catalog manifest updatable without a release.\n- Context-length resolution walking all sources (provider API, catalog, static).\n- Usage normalisation across providers into one canonical shape and dollar figure, including subscription-included routes."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/context_compressor.py",
+      "agents/core/llm/cost_estimator.py",
+      "agents/core/llm/vision_catalog.py"
+    ],
+    "existing_test_files": [
+      "tests/test_context_compaction_policy.py",
+      "tests/test_cost_estimator.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H369",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H369"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H370",
+    "title": "Cap and account for cloud spend",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "34ce96cc44472c173b0a98b58c25cf65552ed3a3cc6238934b2a438a93cd5bb2",
+    "contract": "Per-model dollar estimation, monthly allowance and top-up usage bars, /usage and /subscription, hermes insights historical cost and tool analytics, GET /api/analytics/usage and /models, and --usage-file writing a JSON spend report even when a run fails. But the gap matrix records Hermes has no spend cap at all (issue #26382 open). Inventory: providers.usage-pricing, providers.billing-usage, providers.slash-usage, providers.cli-insights, providers.api-analytics, providers.flag-usage-file, providers.web-model-analytics.",
+    "governance": "The cap is itself a governance control on a privileged effect (spending the owner's money) and already sits ahead of backend selection. Its one weakness: it reads cost_tracker, which is only credible if every provider records usage — so each provider added must feed cost_tracker.record or the cap silently loosens.",
+    "remaining_verbatim": "- Today-versus-cap and per-day historical spend views, beyond the all-time APM Usage totals/model/locality snapshot.\n- Chat/CLI /usage or insights with historical cost by model and tool.\n- Monthly allowance/cap and usage bar; unpriced calls remain cost-unknown.",
+    "requirement_sections": [
+      "- Today-versus-cap and per-day historical spend views, beyond the all-time APM Usage totals/model/locality snapshot.\n- Chat/CLI /usage or insights with historical cost by model and tool.\n- Monthly allowance/cap and usage bar; unpriced calls remain cost-unknown."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/llm/hybrid_router.py",
+      "agents/core/cost_tracker.py",
+      "agents/core/settings_db.py",
+      "agents/core/routers/analytics.py",
+      "agents/web/static/admin.js",
+      "agents/cli/nerva.py",
+      "agents/core/commands.py",
+      "frontend/src/panels/usage.tsx",
+      "frontend/src/turn-outcome.tsx",
+      "frontend/src/panels/usage.test.tsx"
+    ],
+    "existing_test_files": [
+      "tests/test_cost_measurement_and_cap.py",
+      "tests/test_nerva_oneshot.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H370",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H370"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H371",
+    "title": "Buy credits, manage a subscription and see a balance from inside the product",
+    "area": "providers",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "006cfe042708f64b76de0cb0d464216edaedf6521f1f3be2ce0e377e6966df13",
+    "contract": "A full billing surface against the Nous portal: billing API client, frozen billing/subscription state models keeping money as Decimal, dollar usage bars, /topup with auto-reload and monthly-limit views, /subscription upgrade/downgrade/cancel/resume, a credits tracker with escalating status-bar notices, structured BillingBlock recovery links and a desktop out-of-credits banner. Inventory: 27-providers.md §6 (10 entries) plus providers.credits-tracker, providers.billing-links, providers.desktop-billing-block.",
+    "governance": "Would introduce a real-money charge path; Nerva has exactly one such path already (kernel kind `payment`, irreversible tier) and adding a second for a third-party vendor is not worth the blast radius.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": "This entire surface exists because Nous sells inference and Hermes is its storefront. Nerva has no first-party inference vendor and no billing relationship to broker; rebuilding it would mean either brokering someone else's store (a card-on-file payment surface inside a local-first house brain, for a vendor Nerva does not control) or building one for a product that does not sell inference. What the owner actually needs from this section — 'how much have I spent and stop at N dollars' — Nerva already does better. Re-open path: only if Nerva ships a hosted tier of its own.",
+    "source_files": [],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H371",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H371"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H372",
+    "title": "Multi-credential pool: rotation, persistence and a management surface",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "ea10df94364f0938a8bcff416bc2543c0ac2c3d874c03064829b2542908c6657",
+    "contract": "Several credentials per provider with rotation and benching on 401/429/billing walls; a removal contract guaranteeing a deleted credential stays gone across all nine seeding sources; disk-boundary sanitisation stripping raw secrets from rows that merely reference a borrowed runtime secret before auth.json is written; hermes auth add/list/remove/inspect and clear-exhaustion; GET/DELETE /api/credentials/pool/{provider}/{index}. Inventory: providers.credential-pool, providers.credential-sources, providers.credential-persistence, providers.cli-auth, providers.api-credentials-pool.",
+    "governance": "Adding or removing an inference credential is a privileged effect — it changes what the machine can spend and where it can talk. It must cross the kernel on the permission.grant footing, be written to the encrypted store rather than a dotfile, and land in the hash-chained audit log. The masked-status discipline in /api/llm/auth-profiles is right and must extend to the write endpoints: never echo a key back.",
+    "remaining_verbatim": "- Credential pools for every provider profile, not only Gemini and Anthropic.\n- A durable multi-key credential pool for every provider with add/list/remove/inspect and clear-exhaustion via CLI/API/HUD; the selected signed-package Vault is one exact binding, not this pool.\n- A removal contract ensuring a deleted credential stays gone across all seeding sources.\n- Disk-boundary sanitisation for rows that reference borrowed runtime secrets.",
+    "requirement_sections": [
+      "- Credential pools for every provider profile, not only Gemini and Anthropic.\n- A durable multi-key credential pool for every provider with add/list/remove/inspect and clear-exhaustion via CLI/API/HUD; the selected signed-package Vault is one exact binding, not this pool.\n- A removal contract ensuring a deleted credential stays gone across all seeding sources.\n- Disk-boundary sanitisation for rows that reference borrowed runtime secrets."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "Row 'Provider profiles that actually drive routing'",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/llm/auth_rotation.py",
+      "agents/core/llm/hybrid_router.py",
+      "agents/core/routers/models_llm.py",
+      "agents/core/llm/providers/credentials.py",
+      "agents/core/routers/provider_credentials.py",
+      "agents/core/llm/providers/native_transport.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h12_20_auth_rotation.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H372",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H372"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H373",
+    "title": "See how much provider quota is left before hitting the wall",
+    "area": "providers",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "e6e8b68c2665c0fb028d8185f8ace497d1dcfb158fd8505f870a947725414276",
+    "contract": "A rate-limit tracker captures x-ratelimit-* headers off every provider response and renders them as usage bars in /usage and the gateway; a cross-session guard writes a Nous 429 to a shared file so every process (CLI, gateway, cron, auxiliary) checks it before requesting, eliminating retry amplification. Inventory: providers.rate-limit-tracker, providers.nous-rate-guard, providers.gateway-slash-usage.",
+    "governance": "read-only",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/llm/quota.py",
+      "agents/core/llm/egress.py",
+      "agents/core/routers/models_llm.py",
+      "agents/core/commands.py",
+      "frontend/src/panels/provider-quota.tsx",
+      "agents/core/llm/anthropic.py",
+      "agents/core/llm/gemini.py",
+      "agents/core/llm/auth_rotation.py",
+      "agents/core/llm/provider_probe.py",
+      "agents/core/llm/providers/native_transport.py"
+    ],
+    "existing_test_files": [
+      "tests/conftest.py",
+      "tests/test_h373_provider_quota.py",
+      "tests/test_h380_provider_probe.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H373",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H373"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H374",
+    "title": "Define the order of backup providers and switch mid-turn when the primary fails",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "7df08d352b1bb3bbbce07d066b7e95d50349950d55dc353db26d3507a8cb7e57",
+    "contract": "hermes fallback manages an ordered list of provider:model pairs tried when the primary fails on rate-limit, overload, auth or connection errors; the runtime switches provider:model mid-turn while preserving conversation history, tool calls and context. Inventory: providers.cli-fallback, providers.fallback-semantics.",
+    "governance": "Each hop in the chain is a fresh egress + spend decision, so a fallback switch must re-consult _cloud_permitted (the daily cap) rather than inheriting the primary's permission, must respect LOCAL_ONLY_AGENTS and per-agent approved_models on the fallback model too, and should write an audit entry naming which provider actually answered — a turn silently answered by a different vendor than the one the policy chose is exactly what the audit log exists for.",
+    "remaining_verbatim": "- An owner-editable ordered list of provider:model fallback pairs.\n- Mid-turn switch to the next pair on rate-limit, overload, auth or connection failure, preserving history, tool calls and context.\n- A CLI/API/HUD surface to manage the chain.",
+    "requirement_sections": [
+      "- An owner-editable ordered list of provider:model fallback pairs.\n- Mid-turn switch to the next pair on rate-limit, overload, auth or connection failure, preserving history, tool calls and context.\n- A CLI/API/HUD surface to manage the chain."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "Row 'Choose an inference provider from a broad catalog'",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/llm/hybrid_router.py",
+      "agents/core/settings_db.py",
+      "agents/core/llm/auth_rotation.py",
+      "agents/core/llm/anthropic.py",
+      "agents/core/orchestrator.py"
+    ],
+    "existing_test_files": [
+      "tests/test_hybrid_router.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H374",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H374"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H375",
+    "title": "Answer one turn with several models advising an aggregator (Mixture of Agents)",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "920ecd9697a9cdc5aae3bbad1974ee7bc9998ee34b3d87df5fd0761dee428ee6",
+    "contract": "/moa runs a user turn through several reference models in parallel and hands their advice to an aggregator model that answers and drives the tool loop; a privacy filter redacts PII from advisor output before it reaches the user and, at the strongest setting, before it reaches the aggregator; every MoA turn appends a JSON trace of what each model saw, said and cost; hermes moa manages named presets and MoA is selectable as a model. Inventory: providers.slash-moa, providers.moa-privacy-filter, providers.moa-trace, providers.cli-moa, providers.api-model-moa.",
+    "governance": "Would be a fan-out of the owner's prompt to N providers — the privacy filter and per-turn trace would be mandatory, not optional, and the fan-out would have to consume a budget dimension rather than N× the cap.",
+    "remaining_verbatim": "- /moa slash command and MoA selectable as a model/provider in the API\n- Named MoA presets (reference models + aggregator) managed from CLI/HUD\n- Advisors as non-acting reference models whose advice an aggregator model uses while driving the tool loop\n- PII privacy filter on advisor output (to user and, at strongest setting, to the aggregator)\n- Per-turn JSON trace of what each model saw, said and cost\n- Tests for all of the above",
+    "requirement_sections": [
+      "- /moa slash command and MoA selectable as a model/provider in the API\n- Named MoA presets (reference models + aggregator) managed from CLI/HUD\n- Advisors as non-acting reference models whose advice an aggregator model uses while driving the tool loop\n- PII privacy filter on advisor output (to user and, at strongest setting, to the aggregator)\n- Per-turn JSON trace of what each model saw, said and cost\n- Tests for all of the above"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/orchestrator.py",
+      "agents/core/agent.py",
+      "agents/core/routers/arena.py",
+      "agents/core/routers/agents_api.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h002_synthesis_stops.py",
+      "tests/test_ch02_g1_stream_fanout.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H375",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H375"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H376",
+    "title": "Let other local apps use the house's provider credentials",
+    "area": "providers",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "05e71f3f1c2919e16722194c897cffd6fc0b82278188d12a8bb1c3fd89e8c236",
+    "contract": "hermes proxy runs a local HTTP server forwarding OpenAI-compatible requests to an OAuth-authenticated provider (Nous Portal, xAI); external apps point at it with any bearer token and the proxy attaches the real credentials. Pluggable upstream adapters keep the server provider-agnostic. Inventory: providers.cli-proxy, providers.proxy-adapters.",
+    "governance": "Would create an unmediated privileged path: spend and egress with no caller identity. Refused rather than gated, because the gate would have to be the whole design.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": "This is a credential-lending server that accepts any bearer token: it hands every process on the machine the owner's paid inference, outside the approval queue, outside the audit log, and outside the daily spend cap that is Nerva's strongest advantage in this cluster. That is not a feature Nerva can adopt as-is without contradicting its own governance claim. Re-open path: if the owner wants to point another tool at the house brain, expose it as a first-class Nerva client with a per-client capability token (agents/core/kernel/capabilities.py), its own budget line, and its calls in the egress ledger — that is a different product than an anonymous proxy.",
+    "source_files": [],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H376",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H376"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H377",
+    "title": "Pick a provider and model from the UI, with prices and capabilities visible",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "2eac53b0b685577a21af84d859ab773bdd1809b310455dec7d72b0d540436b62",
+    "contract": "A two-step interactive picker (provider, then model) that also prompts for the credential the chosen provider needs; grouped provider rows; the model step of the setup wizard; GET /api/model/options (every selectable provider with model list, capability flags and auth state), /api/model/info, /api/model/recommended-default, POST /api/model/set running the same guards as the CLI; a desktop picker overlay with price and tier badges; a /model gateway slash command; picker-only search aliases and per-provider model-name normalisation so claude-sonnet-4.6 resolves whichever vendor serves it. Inventory: providers.cli-model, providers.setup-model, providers.canonical-provider-list, providers.provider-groups, providers.api-model-options, providers.api-model-info, providers.api-model-recommended-default, providers.api-model-set, providers.desktop-model-picker, providers.gateway-slash-model, providers.model-normalize, providers.model-search-aliases, providers.flags-model-overrides.",
+    "governance": "GET stays admin_guard read-only. POST /api/model/set is where the guards run — it must enforce per-agent approved_models and the LOCAL_ONLY floor (hybrid_router.py:412-423) server-side, never trusting the client, and a switch to a cloud provider should cross the kernel like any egress widening. Persisting the choice must be audited: 'who moved this agent to a paid vendor and when' is an audit-log question.",
+    "remaining_verbatim": "- A provider-then-model picker (HUD and CLI/setup wizard) that prompts for the chosen provider's credential.\n- /api/model/options (providers with model lists, capability flags, auth state), /api/model/info, recommended-default, and a guarded /api/model/set.\n- Price and tier badges in the picker; a /model slash command.\n- Model-name normalisation and search aliases across vendors.",
+    "requirement_sections": [
+      "- A provider-then-model picker (HUD and CLI/setup wizard) that prompts for the chosen provider's credential.\n- /api/model/options (providers with model lists, capability flags, auth state), /api/model/info, recommended-default, and a guarded /api/model/set.\n- Price and tier badges in the picker; a /model slash command.\n- Model-name normalisation and search aliases across vendors."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "Row 'Choose an inference provider from a broad catalog' and Row 'Know a model's context window and price without a human editing a table'",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "frontend/src/gap.tsx",
+      "agents/core/routers/models_llm.py",
+      "agents/core/settings_db.py",
+      "agents/core/llm/hybrid_router.py",
+      "agents/core/routers/provider_selection.py",
+      "agents/core/llm/providers/install_service.py",
+      "frontend/src/panels/custom-endpoints.tsx",
+      "agents/cli/custom_endpoints.py",
+      "agents/core/routers/agents_api.py"
+    ],
+    "existing_test_files": [
+      "tests/test_local_models_api.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H377",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H377"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H378",
+    "title": "Be warned before choosing a model that is very expensive or trains on your data",
+    "area": "providers",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "0183ab1398cc015f6ef2c922238c4cdbb19f2c0d5809e2680042923d12959d2c",
+    "contract": "A unified selection-guard registry runs every registered guard once so a new guard appears on every model-selection surface simultaneously; shipped guards block accidental selection of a very expensive model behind an explicit confirm, and warn when a cheap tier is cheap because the vendor trains on your prompts and completions. Inventory: providers.model-selection-guards, providers.model-cost-guard, providers.model-data-policy-guard.",
+    "governance": "These are guards on a privileged choice, so they belong in the same call as the approved-models enforcement, server-side, before persistence. A data-training-tier acknowledgement is a consent event and should be written to the audit log — not just a dismissed dialog.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "Row 'Know a model's context window and price without a human editing a table'",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/llm/selection_guards.py",
+      "agents/core/llm/providers/__init__.py",
+      "agents/core/llm/cost_estimator.py",
+      "agents/core/settings_db.py",
+      "agents/core/routers/admin.py",
+      "agents/core/routers/jobs.py",
+      "agents/cli/nerva.py",
+      "frontend/src/selection-guard.tsx",
+      "frontend/src/panels/jobs.tsx",
+      "agents/web/static/admin.js",
+      "docs/hermes/h277-vision-selection-consent-plan-2026-10-02.md",
+      "agents/core/llm/vision_policy.py",
+      "agents/core/routers/composer_vision.py",
+      "frontend/src/composer-images.tsx",
+      "frontend/e2e/composer-images.spec.ts",
+      "docs/hermes/h277-deepinfra-vision-plan-2026-10-02.md",
+      "docs/hermes/h277-nous-auth-plan-2026-10-02.md",
+      "docs/hermes/h277-nous-vision-plan-2026-10-02.md",
+      "agents/core/llm/vision_responses_wire.py",
+      "agents/core/llm/vision_xai_wire.py",
+      "docs/hermes/evidence/h487-telegram-collateral-review-2026-10-04.md",
+      "agents/core/llm/deepinfra.py",
+      "agents/core/llm/providers/selection_gates.py",
+      "agents/core/settings_migrate.py",
+      "agents/core/routers/provider_selection.py",
+      "agents/core/llm/providers/install_service.py",
+      "agents/core/llm/providers/selection_consent.py",
+      "agents/core/llm/providers/selected_runtime.py",
+      "agents/core/llm/custom_endpoint_service.py",
+      "agents/core/routers/agents_api.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h378_selection_guards.py",
+      "frontend/src/test/selection-guard.test.tsx",
+      "tests/test_h277_vision_selection_cli.py",
+      "tests/test_h277_vision_selection_consent.py",
+      "tests/test_h277_deepinfra_vision_consumer.py",
+      "tests/test_h277_nous_auth_surface.py",
+      "tests/test_h277_nous_vision_consumer.py",
+      "tests/test_h277_nous_vision_wire.py",
+      "tests/test_h277_vision_auto_consumer.py",
+      "tests/test_h277_gemini_image.py",
+      "tests/test_h277_responses_image.py",
+      "frontend/src/test/composer-images.test.tsx",
+      "tests/test_h277_xai_image.py",
+      "tests/test_h277_deepinfra_main.py",
+      "tests/test_h361_provider_selection_fence.py",
+      "tests/test_h361_provider_selection_binding.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H378",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H378"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H379",
+    "title": "Run background work on a cheap model instead of the main one",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "e4746c31e7aee01a4d799cba45d609df85615492a90846f09175b6d40f68c2d0",
+    "contract": "ProviderProfile.default_aux_model and resolve_aux_model(vision=…) name a cheap model per provider for compression, titles and vision; GET /api/model/auxiliary lists every auxiliary task and the provider/model/base_url it is pinned to (or auto); the auxiliary client routes task-by-task. Inventory: providers.profile-dataclass, providers.api-model-auxiliary, providers.portal-tags (auxiliary attribution).",
+    "governance": "Read-only routing, but with one hard rule: the aux route must be evaluated after get_agent_policy, never before — a cheap-model shortcut must not become a way for a LOCAL_ONLY agent's content to reach a cloud summariser. That is exactly the kind of leak the code-enforced floor at hybrid_router.py:382-386 exists to prevent.",
+    "remaining_verbatim": "- Per-provider default auxiliary model (and vision variant) on the provider profile, usable when the owner allows a cloud aux route.\n- GET /api/model/auxiliary listing every auxiliary task and its provider/model/base_url pin (or auto), with an owner-settable pin outside env vars.\n- Auxiliary usage attribution shown per task.",
+    "requirement_sections": [
+      "- Per-provider default auxiliary model (and vision variant) on the provider profile, usable when the owner allows a cloud aux route.\n- GET /api/model/auxiliary listing every auxiliary task and its provider/model/base_url pin (or auto), with an owner-settable pin outside env vars.\n- Auxiliary usage attribution shown per task."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "Row 'Provider profiles that actually drive routing'",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/llm/auxiliary_text.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h513_auxiliary_policy.py",
+      "tests/test_h277_local_auxiliary.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H379",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H379"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H380",
+    "title": "Prove a configured cloud provider actually works",
+    "area": "providers",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "c23ceeeb68faa3c77c164c91c9a49388734bf3273ab8d8da9fc8b836062d8aec",
+    "contract": "ProviderProfile.supports_health_check gates a per-provider /models probe in hermes doctor; the default fetch_models does one authenticated GET with a real User-Agent (some WAFs 403 Python-urllib) through an SSRF/redirect-guarded opener, falling back to the profile's curated fallback_models when it returns None; Codex model discovery reads the live backend, the local Codex cache, or a curated fallback. Inventory: providers.profile-dataclass (fetch_models), providers.codex-models, plus the doctor handoff at the end of 27-providers.md.",
+    "governance": "A credentialed probe is outbound traffic carrying a key, so it must be built with llm_async_client (agents/core/llm/egress.py) to land in the local-first ledger, must be rate-limited and cached rather than run per page load, and must never echo the key or the response body into a status payload.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "Row 'Provider profiles that actually drive routing'",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/llm/provider_probe.py",
+      "agents/core/routers/admin.py",
+      "agents/core/routers/onboarding.py",
+      "frontend/src/panels/provider-check.tsx",
+      "agents/core/routers/oauth.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h380_provider_probe.py",
+      "tests/test_first_run_command_center.py",
+      "tests/test_h380b_provider_probe_review.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H380",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H380"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H381",
+    "title": "Prove where every prompt actually went",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "289099b12b3c2815bdf33aa1467122a3dae6babc68360d13e3ab33279ef123af",
+    "contract": "No equivalent in this shard. Hermes records usage and cost per provider and has a separate Iron egress proxy in the security shard, but nothing that ties each model call to a local-first claim; the provider layer's own network calls (fetch_models, catalog fetch, billing) are not ledgered.",
+    "governance": "read-only observability, but it is the evidence layer the audit story rests on — a ported provider that dials its own client is a governance regression even though it performs no privileged effect itself.",
+    "remaining_verbatim": "- Make the structural scan follow a client built from the class of a ledgered or bare client: type(llm_async_client(...))(...) (the openrouter.py probe), self.client.__class__(...) (vlm.py), a module-level _Bare = type(llm_async_client('probe')), type(ollama.Client(..., event_hooks=[ledger hook]))(host=...), and __mro__/__bases__ reads. Today this is only stated as a static-scan limit in docs/ARCHITECTURE.md and the test docstring.\n- Catch a host attribute planted on an instance of an injected or sender class that was built without its host argument. The cases are QdrantVectorStore(dimension=1) then q.url = ... then q.add(...); Neo4jGraph() then g._tx_url/g._connected then g.query(prompt); setattr(q, 'url', url); and vars()/__dict__ writes of url/_tx_url/base_url. The alternative is to make those classes refuse a non-configured host in code, as HA, WLED, Telegram and ComfyUI now do.\n- Until both are closed, the old item 2 (\"a structural test that fails on a bare httpx client in prompt-carrying modules\") is only partly met. The rationale's hard rule (\"any new provider client built with a bare httpx.AsyncClient is a regression\") does not yet treat type(client)() or client.__class__() as a regression; hook replacement already counts as one.",
+    "requirement_sections": [
+      "- Make the structural scan follow a client built from the class of a ledgered or bare client: type(llm_async_client(...))(...) (the openrouter.py probe), self.client.__class__(...) (vlm.py), a module-level _Bare = type(llm_async_client('probe')), type(ollama.Client(..., event_hooks=[ledger hook]))(host=...), and __mro__/__bases__ reads. Today this is only stated as a static-scan limit in docs/ARCHITECTURE.md and the test docstring.\n- Catch a host attribute planted on an instance of an injected or sender class that was built without its host argument. The cases are QdrantVectorStore(dimension=1) then q.url = ... then q.add(...); Neo4jGraph() then g._tx_url/g._connected then g.query(prompt); setattr(q, 'url', url); and vars()/__dict__ writes of url/_tx_url/base_url. The alternative is to make those classes refuse a non-configured host in code, as HA, WLED, Telegram and ComfyUI now do.\n- Until both are closed, the old item 2 (\"a structural test that fails on a bare httpx client in prompt-carrying modules\") is only partly met. The rationale's hard rule (\"any new provider client built with a bare httpx.AsyncClient is a regression\") does not yet treat type(client)() or client.__class__() as a regression; hook replacement already counts as one."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/observability/egress_monitor.py",
+      "agents/core/llm/egress.py",
+      "agents/core/llm/providers/native_transport.py",
+      "agents/core/routers/admin.py",
+      "agents/core/routers/analytics.py",
+      "frontend/src/gap.tsx",
+      "frontend/src/console-routes.ts",
+      "agents/core/llm/model_setup.py",
+      "agents/core/house/home_assistant.py",
+      "agents/core/channels/telegram.py",
+      "agents/core/turn_usage.py",
+      "docs/ARCHITECTURE.md",
+      "agents/core/routers/agents_api.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h381_no_bare_model_client.py",
+      "tests/test_h381_egress_ledger_persistence.py",
+      "tests/test_llm_egress_ledger.py",
+      "frontend/src/test/network-monitor.test.tsx"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H381",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H381"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H382",
+    "title": "Install, load, evict and size local models on the owner's box",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "5f28b904c0011a603f17798b200bc9701d486c5cab66f256024b885bb5bda110",
+    "contract": "The `custom` profile covers Ollama/vLLM/llama.cpp/LM Studio as OpenAI-compatible endpoints and auto-selects the model when exactly one is loaded; there is no VRAM residency manager, no hardware-tiered recommendation and no governed pull. Inventory: providers.custom, providers.identity-resolution (lmstudio/local/ollama aliases).",
+    "governance": "Already correct: starting a server or loading/unloading a model crosses `host.control`, pulling a model crosses `model.pull`, both fail closed when the kernel is off. Any local-endpoint capability copied from Hermes must enter through these kinds, not beside them.",
+    "remaining_verbatim": "- Let the local slot carry an optional API key (setting or env, kept out of logs) so a keyed vLLM, llama.cpp or LM Studio server can be probed, auto-selected and served as the local tier, with a test\n- Or auto-select the served model for the openai-compatible profile when exactly one model is listed, and treat a loopback base URL as local rather than cloud\n- Resolve provider aliases (lmstudio, local, vllm, llamacpp) to the matching profile in the registry lookup, with a test\n- Add a test that drives the local slot against a non-LM-Studio OpenAI-compatible response shape (vLLM or llama.cpp /v1/models)",
+    "requirement_sections": [
+      "- Let the local slot carry an optional API key (setting or env, kept out of logs) so a keyed vLLM, llama.cpp or LM Studio server can be probed, auto-selected and served as the local tier, with a test\n- Or auto-select the served model for the openai-compatible profile when exactly one model is listed, and treat a loopback base URL as local rather than cloud\n- Resolve provider aliases (lmstudio, local, vllm, llamacpp) to the matching profile in the registry lookup, with a test\n- Add a test that drives the local slot against a non-LM-Studio OpenAI-compatible response shape (vLLM or llama.cpp /v1/models)"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/llm/base.py",
+      "agents/core/settings_db.py",
+      "agents/core/llm/hybrid_router.py",
+      "agents/core/llm/router.py",
+      "agents/core/llm/providers/__init__.py",
+      "agents/core/routers/onboarding.py",
+      "agents/core/llm/custom_endpoint_service.py",
+      "agents/core/llm/providers/custom_runtime.py",
+      "agents/core/routers/agents_api.py"
+    ],
+    "existing_test_files": [
+      "tests/test_hybrid_router.py",
+      "tests/test_model_config.py",
+      "tests/test_model_setup.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H382",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H382"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H383",
+    "title": "Force valid tool arguments and clean output out of a weak model",
+    "area": "providers",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "2ab8b21f188aae915c211ec303d963500243cbab2019ebd6d1b5b62809ef1e3e",
+    "contract": "Nothing in this shard. Reasoning-effort clamping and per-provider message sanitisation exist (NVIDIA tool-message fixes, Xiaomi list-content rejection, Kimi thinking-XOR-effort), but there is no constrained decoding and no output-hygiene layer at the provider boundary. Inventory: providers.reasoning-effort-ladder, providers.nvidia, providers.xiaomi, providers.kimi-coding.",
+    "governance": "read-only",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/llm/reasoning_effort.py",
+      "agents/core/llm/provider_request.py",
+      "agents/core/llm/gemini.py",
+      "agents/core/llm/tool_dialects.py",
+      "agents/core/llm/base.py",
+      "agents/core/llm/repetition_guard.py",
+      "agents/core/llm/tool_protocol.py",
+      "agents/core/agent_runtime.py",
+      "agents/core/llm/grammar.py",
+      "agents/core/routers/models_llm.py",
+      "agents/core/llm/hermes_profiles.py"
+    ],
+    "existing_test_files": [
+      "tests/test_reasoning_effort_ladder.py",
+      "tests/test_provider_request_profiles.py",
+      "tests/test_cloud_tool_turns.py",
+      "tests/test_llm_thinking_leak.py",
+      "tests/test_repetition_guard.py",
+      "tests/test_llm_tool_protocol.py",
+      "tests/test_agent_runtime_v2.py",
+      "tests/test_h13_2_grammar.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H383",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H383"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H384",
+    "title": "Use another agent CLI as the inference backend",
+    "area": "providers",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "1df7fd6deff68feab2889796243aa4ff02ebaee575761bf74c5ee3a4b6e08ac6",
+    "contract": "The copilot-acp provider drives GitHub Copilot CLI as an external Agent Client Protocol subprocess and presents it to Hermes as an OpenAI-compatible client; provider projection folds an agent-shaped provider's own completed tool work back into Hermes's transcript so Hermes never re-runs finished work. Inventory: providers.copilot-acp, providers.copilot-acp-client, providers.provider-projection.",
+    "governance": "Structurally unmediatable as a provider: the privileged effects occur inside the subprocess before any Nerva code sees them.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": "Provider projection is the giveaway: this imports another agent's completed tool work into the transcript, which means another agent ran tools on this machine and Nerva records the result rather than authorising the act. Every effect that subprocess performs — files, shell, network — bypasses the Action Kernel, the approval queue and the audit log by construction, and no wrapper can retrofit mediation onto work that already happened. Adopting it would hollow out the exact property that distinguishes Nerva. Re-open path: none as a provider; if the owner wants another agent's help, it belongs on the MCP/subagent path where its tool calls are individually mediated.",
+    "source_files": [],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H384",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H384"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H385",
+    "title": "First-party portal: onboarding, tool gateway, request attribution, keepalive",
+    "area": "providers",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "d4422f8f3af5b057fa818ce745f5b5e90759bc6669785646663a3729e641b72c",
+    "contract": "hermes portal does OAuth login, model pick, provider switch and Tool Gateway offer in one shot; a Tool Gateway catalog lists partner capabilities a subscription can route (web search, image gen, TTS, browser) and which are routed via Nous versus configured directly; every request carries product-attribution tags with ambient conversation context; a background keepalive warms long-lived credentials; hermes dashboard register enrols a self-hosted dashboard as an OAuth client. Inventory: providers.nous, providers.cli-portal, providers.tool-gateway-catalog, providers.portal-tags, providers.nous-auth-keepalive, providers.dashboard-register, providers.api-portal, providers.nous-rate-guard, providers.credits-tracker.",
+    "governance": "Would route the owner's prompts and tool traffic through a third-party gateway that Nerva cannot audit — the audit log would record an intent, not an effect.",
+    "remaining_verbatim": "The row covers Hermes's full portal funnel. Nerva has the Nous login and the vision model recommendation, but none of the rest: no Tool Gateway catalog or routing, no per-request product-attribution tags, no background credential keepalive (tokens refresh only when used), no dashboard OAuth-client registration, and no Nous text/inference provider. The decision stays skip because routing through a vendor gateway goes against local-first.",
+    "requirement_sections": [
+      "The row covers Hermes's full portal funnel. Nerva has the Nous login and the vision model recommendation, but none of the rest: no Tool Gateway catalog or routing, no per-request product-attribution tags, no background credential keepalive (tokens refresh only when used), no dashboard OAuth-client registration, and no Nous text/inference provider. The decision stays skip because routing through a vendor gateway goes against local-first."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/cli/nous_auth.py",
+      "agents/core/routers/oauth.py",
+      "agents/core/llm/nous_auth.py",
+      "agents/core/llm/nous_credentials.py",
+      "agents/core/llm/nous_models.py",
+      "agents/core/llm/vision_nous.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h277_nous_auth.py",
+      "tests/test_h277_nous_auth_surface.py",
+      "tests/test_h277_nous_models.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H385",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H385"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  }
+]

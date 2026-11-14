@@ -1,0 +1,1342 @@
+[
+  {
+    "id": "H326",
+    "title": "Model-facing skill discovery (prompt index + progressive disclosure)",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "6b508c1f7164950a244e5aaf925b08ea8c644a6923d27ad38ffba9e6aafcb4fa",
+    "contract": "Every system prompt carries an `<available_skills>` block: category-grouped name + 57-char description, built by `agent/prompt_builder.py:1763-2145`, cached in an LRU + a manifest-validated disk snapshot (`~/.hermes/.skills_prompt_snapshot.json`). Three model tools implement the disclosure ladder: `skills_list` (L0 metadata only, ~3k tokens), `skill_view(name)` (L1 full SKILL.md + a `linked_files` map), `skill_view(name, file_path)` (L2 one reference/template/script file), plus a per-session repeat-load dedup that suppressed ~286k tokens of verbatim repeat content in one 400k-message window, and `DESCRIPTION.md` per-category headers. Entries skills-core.prompt-index, .prompt-snapshot, .category-description, .tool-skills-list, .tool-skill-view, .skill-view-dedup.",
+    "governance": "read-only — the index is metadata, `skill_view` returns file bytes. Two constraints: it must not resolve paths outside the skill roots (Nerva already has the traversal-safe seams in `loader.py`), and it must NOT carry Hermes' inline-shell preprocessing (separate row). Loaded skill bodies are untrusted text and must be spotlighted through `agents/core/security/quarantine.py` before reaching the model.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/skills/loader.py",
+      "agents/core/skills/tools.py",
+      "agents/core/orchestrator.py",
+      "agents/core/agent.py",
+      "agents/core/llm/vision_turn.py",
+      "agents/core/session_archive.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h326_skill_discovery.py",
+      "tests/test_h318_skill_tools.py",
+      "tests/test_skills_in_prompt.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H326",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H326"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H327",
+    "title": "SKILL.md frontmatter contract (agentskills.io-compatible)",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "fa44d35701de3cbbcea68f8dc2dd94aaf0696b025e0043e623059628a0717d1c",
+    "contract": "A defensively-parsed YAML front-matter + Markdown contract (`agent/skill_utils.py:175-221`): BOM stripping, CSafeLoader with a naive key:value fallback, `utf-8-sig` reads, 64-char name cap, 1024-char description cap. Recognised keys span `name`, `description`, `version`, `author`, `license`, `homepage`, `tags`, `related_skills`, `compatibility`, `platforms`, `environments`, `triggers`, `dependencies`, `prerequisites`, `required_environment_variables`, `required_credential_files`, `setup`, and a whole `metadata.hermes.*` namespace (tags, category, upstream_skill, supersedes, session_platforms, requires_toolsets, requires_tools, fallback_for_*, config). Entry skills-core.skill-md-format.",
+    "governance": "read-only — parsing metadata. The parsed values become inputs to gates that DO matter (env-var capture must route through `agents/core/security/secret_broker.py`, never write plaintext).",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/skills/frontmatter.py",
+      "agents/core/skills/loader.py",
+      "agents/core/skills/importer.py"
+    ],
+    "existing_test_files": [
+      "tests/test_skill_frontmatter_contract.py",
+      "tests/test_hermes_import.py",
+      "tests/test_skills_in_prompt.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H327",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H327"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H328",
+    "title": "Conditional skill visibility (OS platform, runtime environment, channel, tool availability)",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "6f0f8e6113d6fa9017881e878f05f7895fea957a8ba8f50502ca8b6e69fe8d8f",
+    "contract": "Four independent gates, deliberately split into hard-refuse and soft-hide: `platforms: [macos|linux|windows]` is a HARD gate that makes even an explicit `skill_view` refuse with `readiness_status: unsupported` (`agent/skill_utils.py:227-274`, with a Termux escape hatch); `environments: [kanban|docker|s6]` only hides from offer surfaces because 'an explicit load is explicit consent' (`:283-395`); `metadata.hermes.session_platforms` hides a skill on gateway channels it does not target (`agent/prompt_builder.py:1701-1720`); `requires_toolsets`/`requires_tools`/`fallback_for_toolsets`/`fallback_for_tools` show a fallback skill only when the premium tool is absent (`:1721-1742`). Entries skills-core.platform-gating, .environment-gating, .session-platform-gating, .conditional-activation.",
+    "governance": "read-only — visibility filtering only. Keep Hermes' rule that a hidden skill is still loadable on explicit request, so a gate can never become an invisible capability removal the audit log cannot explain.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "the widened frontmatter parser (row 2)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/autonomy_coordinator.py",
+      "agents/core/kanban/tool_compat.py",
+      "agents/core/orchestrator.py",
+      "agents/core/skills/loader.py",
+      "agents/core/skills/tools.py",
+      "agents/core/skills/visibility.py",
+      "agents/core/host_identity.py",
+      "agents/core/browser_runtime.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h328_skill_visibility.py",
+      "tests/test_h283_host_identity.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H328",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H328"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H329",
+    "title": "Turning individual skills off without uninstalling them",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "21b762d5bf9cb26ccb4beac0360b3681f0c4f4b8621064025c03815b7da0f94c",
+    "contract": "`skills.disabled` (global) and `skills.platform_disabled.<platform>` (per gateway channel) hide a skill everywhere and make explicit loads refuse; `hermes skills config` is an interactive terminal picker with per-skill and per-category toggle modes, and an `ESSENTIAL_SKILLS` floor that cannot be disabled. Entries skills-core.disabled-skills, .skills-config-ui.",
+    "governance": "Disabling narrows capability and needs no kernel hop. RE-enabling is capability growth and should cross `permission.grant` (`agents/core/kernel/registry.py:110`) rather than being a bare settings write, so re-arming a skill leaves an audit entry with an approver.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/skills/switches.py",
+      "agents/core/skills/switch_approval.py",
+      "agents/core/skills/loader.py",
+      "agents/core/skills/tools.py",
+      "agents/core/skills/signing.py",
+      "agents/core/permission_ledger.py",
+      "agents/core/autonomy_coordinator.py",
+      "agents/core/settings_db.py",
+      "agents/core/routers/skills.py",
+      "agents/core/capability_manifests.py",
+      "agents/cli/nerva.py",
+      "frontend/src/panels/skill-switches.tsx"
+    ],
+    "existing_test_files": [
+      "tests/test_h329_skill_switches.py",
+      "tests/test_h329_skill_approval.py",
+      "tests/test_h329_skill_config_cli.py",
+      "tests/test_h329_skill_worker.py",
+      "tests/test_hermes_batch03_wiring.py",
+      "tests/test_permission_ledger.py",
+      "frontend/src/test/skill-switches-panel.test.tsx",
+      "tests/test_h331_pending_skill_review.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H329",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H329"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H330",
+    "title": "Agent-authored skills: create, patch, edit, delete, add/remove supporting files",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "ccbb11da6d4b02d95d85d9789648eafc900ca642bc846f2e83364cdd20d05c10",
+    "contract": "`skill_manage` is the agent's procedural memory: actions `create|patch|delete|write_file|remove_file` (plus an undocumented full-rewrite `edit`), an `operations[]` array applied atomically up to 20 ops with per-skill rollback on any failure, `absorbed_into` on delete to migrate cron references, a hard `_validate_frontmatter` blocker and a soft linter, cross-profile 'this skill exists in profile X' error recovery, and cache invalidation + usage telemetry + a debounced sync push after every write. Entries skills-core.tool-skill-manage, .skill-manage-batch, .cross-profile-lookup.",
+    "governance": "Privileged. A skill write changes what can execute in-process, so create/patch/write_file must keep the existing `skill.generation` contract + CDX-8 quarantine, and delete/activate must cross `skill.install` (`agents/core/kernel/registry.py:106`). Note the honest gap this row inherits: `skill.generation` is a ContractTemplate only and is NOT in `ACTION_REGISTRY`, so today the most privileged skill action — promoting LLM-authored code to executable at `/home/user/jarvis-hub/agents/core/skills/loader.py:979 approve_generated_skill` — is admin_guard'd but never reaches the kernel front door. Register it before widening the write surface.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "model-facing skill discovery (row 1); the kernel registration of skill.generation",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/skills/tools.py",
+      "agents/core/skills/batch.py",
+      "agents/core/skills/references.py",
+      "agents/core/skills/loader.py",
+      "agents/core/kernel/registry.py",
+      "agents/core/routers/skills.py",
+      "frontend/src/panels/skill-batches.tsx"
+    ],
+    "existing_test_files": [
+      "tests/test_h330_skill_delete_references.py",
+      "tests/test_h330_h046_integration.py",
+      "tests/test_skill_batch.py",
+      "frontend/src/test/skill-batches.test.tsx",
+      "tests/test_h331_pending_skill_review.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H330",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H330"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H331",
+    "title": "Human review gate before an agent-written skill takes effect",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "c247d5eb7c61a5e222f1e577132d24f3f4cab53136dd9af0f3d30b7ccbd0d0f0",
+    "contract": "`skills.write_approval` (default FALSE) stages every `skill_manage` write as JSON under `~/.hermes/pending/skills/<id>.json` instead of committing it, reviewed via `/skills pending|diff|approve|reject`, replayed through a ContextVar bypass on approval. Separately `skills.guard_agent_created` (also default false) content-scans agent writes. Entries skills-core.write-approval, .guard-agent-created.",
+    "governance": "This IS the gate. Keep the fail-closed default; register `skill.generation` in the kernel so approvals appear in the hash-chained audit alongside every other privileged decision.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/actions.py",
+      "agents/core/routers/skills.py",
+      "agents/core/skills/batch.py",
+      "agents/core/skills/loader.py",
+      "agents/core/skills/tools.py",
+      "frontend/src/gap.tsx",
+      "frontend/src/panels/skill-batches.tsx",
+      "agents/core/skills/importer.py",
+      "agents/core/skills/hermes_pin_v2.json"
+    ],
+    "existing_test_files": [
+      "frontend/src/test/pending-skills-panel.test.tsx",
+      "frontend/src/test/skill-batches.test.tsx",
+      "tests/test_cdx8_skill_quarantine.py",
+      "tests/test_h318c_skill_review.py",
+      "tests/test_h331_pending_skill_review.py",
+      "tests/test_skill_batch.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H331",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H331"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H332",
+    "title": "Static security scanning of skill packages before install",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "3d4f33a13e988cf72a37acb9abb55e0dacb84ac321e08ec682c5f60e6efe3ad6",
+    "contract": "Skills Guard (`tools/skills_guard.py`, `SCANNER_VERSION = skills-guard-v2`): 129 severity-scored threat patterns across 12 categories (exfiltration 25, injection 19, persistence 19, obfuscation 14, supply_chain 10, network 9, destructive 8, credential_exposure 7, execution 6, traversal 5, privesc 5, mining 2), a verdict rule (any critical ⇒ dangerous, any high ⇒ caution), structural checks (symlink escape, oversized/binary/executable files, >50 files, invisible unicode), agent-config-persistence tiers, content-hash-cached attestations, and an INSTALL_POLICY matrix over trust levels builtin/trusted/community/agent-created. Plus an advisory NVIDIA SkillEvaluator Tier 1 pass (PII, unicode smuggling, script lint, license, SkillSpector) and an opt-in AST `audit --deep`. Entries skills-core.skills-guard, .tier1-advisory, .ast-audit, .project-quarantine.",
+    "governance": "The scan is read-only; its verdict is an input to `skill.install` (kernel). Hard rule: a dangerous verdict must be a kernel DENY, not a `--force`-able prompt, and the verdict must be persisted with the signature so a later audit can show what was known at install time.",
+    "remaining_verbatim": "- Severity-scored threat corpus across categories (exfiltration, persistence, obfuscation, supply chain, mining, credential exposure) with a verdict rule\n- Install-time verdict that blocks or queues before placement, and a trust-level x verdict install policy\n- Structural checks beyond the zip caps (oversized/binary/executable files, invisible unicode in all files)\n- Content-hash-cached scan attestations",
+    "requirement_sections": [
+      "- Severity-scored threat corpus across categories (exfiltration, persistence, obfuscation, supply chain, mining, credential exposure) with a verdict rule\n- Install-time verdict that blocks or queues before placement, and a trust-level x verdict install policy\n- Structural checks beyond the zip caps (oversized/binary/executable files, invisible unicode in all files)\n- Content-hash-cached scan attestations"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/skills/marketplace.py",
+      "agents/core/code_guidance.py",
+      "agents/core/security/quarantine.py",
+      "agents/core/skills/importer.py",
+      "agents/core/routers/skills.py"
+    ],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H332",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H332"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H333",
+    "title": "Cryptographic signing and load-time integrity verification of skills",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "5c8127a0e355ef2c72cf6c08629545b4eb88b3db2efe7669c89ccb0ae9095e9f",
+    "contract": "Not present as a per-skill signature. Hermes' integrity story is provenance-based: the hub lockfile records source + content hashes, `.bundled_manifest` records origin hashes for seeded skills so updates never stomp user edits, and `skills-guard` attestations are content-hash keyed. Nothing verifies a local skill's bytes at load time. Entries skills-core.bundled-seeding, .hub-install (lockfile).",
+    "governance": "read-only verification, but it is the precondition for in-process execution. Keep `require_signed()` failing loudly rather than degrading.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/skills/signing.py",
+      "agents/core/skills/loader.py",
+      "agents/core/skills/approval.py"
+    ],
+    "existing_test_files": [
+      "tests/test_skill_signing.py",
+      "tests/test_skill_approval_store.py",
+      "tests/test_skill_approval_revoke.py",
+      "tests/test_cdx8_skill_quarantine.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H333",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H333"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H334",
+    "title": "Importing skills from an upstream project at a verified pin",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "d9036ea602dd662f519f3618e083509f8688454e6ce659340fbbcb8ad7d39905",
+    "contract": "Not applicable in this direction — Hermes is the upstream. Its nearest analogue is the hub install pipeline's provenance lockfile and `hermes skills repair-official --restore`, which replaces a mutated active copy from the shipped `optional-skills/` source after backing up the existing one. Entries skills-core.hub-install, .repair-official, optional.skills-catalog.",
+    "governance": "Privileged — must cross `skill.install` (`agents/core/kernel/registry.py:106`) at request time, with the network fetch itself on the SSRF-guarded egress seam. The permanent owner-approval floor (GAP-3) already applies to installs and must not be bypassable by the import route.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/skills/importer.py",
+      "agents/core/skills/hermes_pin_v1.json",
+      "agents/core/routers/skills.py",
+      "agents/core/skills/marketplace.py",
+      "agents/core/kernel/registry.py",
+      "agents/core/http_client.py",
+      "scripts/nerva_import.py",
+      "agents/core/skills/loader.py",
+      "agents/core/skills/hermes_pin_v2.json",
+      "docs/HERMES_ABSORPTION.md",
+      "frontend/src/panels/skills-import.tsx",
+      "agents/core/skills/remote_pin.py",
+      "frontend/src/panels/skills-import.test.tsx",
+      "agents/core/security/website_policy.py"
+    ],
+    "existing_test_files": [
+      "tests/test_hermes_import.py",
+      "tests/test_skills_api.py",
+      "tests/test_nerva_import.py",
+      "tests/test_h331_pending_skill_review.py",
+      "tests/test_h334_importer.py",
+      "tests/test_h334_import_route.py",
+      "tests/test_required_egress_http.py",
+      "tests/test_h492_entrypoints.py",
+      "tests/test_h492_egress.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H334",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H334"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H335",
+    "title": "Multi-source skills hub: search, browse, install, update, uninstall across registries",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "6b1beaa21b4c26ec07338ce88d8e4c0cd4a910429eae9faee2535ee88faf222c",
+    "contract": "One search/browse/install surface over eight sources — the official optional catalog, a centralized Hermes index, skills.sh, `/.well-known/skills/index.json` endpoints, direct URLs, GitHub repos and user-added taps, ClawHub, LobeHub, browse.sh — with a trust-ranked source router (official = rank 200, sorted first), a quarantine→scan→confirm→install→lockfile pipeline, drift detection via `check`/`update`, re-scan via `audit`, `uninstall`, custom taps, `publish` (opens a PR against the target repo), and `snapshot export|import` to reproduce an installed set on another machine. Entries skills-core.hub-sources, .hub-install, .hub-lifecycle, .taps, .publish, .snapshot.",
+    "governance": "Privileged end to end. Every install crosses `skill.install` (kernel), fetches ride the SSRF-guarded egress seam, the scan verdict (row 7) feeds the tier decision: signed/official → GRANT to stage, community → QUEUE, dangerous → hard refuse. The lockfile belongs in the hash-chained audit, not beside it.",
+    "remaining_verbatim": "- Registry kinds beyond GitHub: /.well-known/skills endpoints, skills.sh, LobeHub/browse.sh and other community registries (none is pinnable to a commit; each needs a pin model first)\n- A lockfile of installed remote skills kept in the hash-chained audit, and check/update against the remote source plus an `audit` re-scan of installed skills\n- Install tiers by source trust (GRANT/QUEUE/refuse): today every remote install crosses skill.install at tier 3 and lands quarantined whatever the tap's trust, which is stricter than the contract but not tiered\n- Skills that carry code (55 in the catalog; tap folders with scripts) are not copied: a scanned, owner-approved package path\n- Outward publish (opens a PR against a target repository) and snapshot export/import of the installed set",
+    "requirement_sections": [
+      "- Registry kinds beyond GitHub: /.well-known/skills endpoints, skills.sh, LobeHub/browse.sh and other community registries (none is pinnable to a commit; each needs a pin model first)\n- A lockfile of installed remote skills kept in the hash-chained audit, and check/update against the remote source plus an `audit` re-scan of installed skills\n- Install tiers by source trust (GRANT/QUEUE/refuse): today every remote install crosses skill.install at tier 3 and lands quarantined whatever the tap's trust, which is stricter than the contract but not tiered\n- Skills that carry code (55 in the catalog; tap folders with scripts) are not copied: a scanned, owner-approved package path\n- Outward publish (opens a PR against a target repository) and snapshot export/import of the installed set"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the security scanner (row 7); the kernel-mediated install path (row 9)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/skills/taps.py",
+      "agents/core/routers/skill_taps.py",
+      "agents/core/routers/skills.py",
+      "agents/core/skills/hermes_catalog.py",
+      "agents/core/skills/importer.py",
+      "frontend/src/panels/skills-import.tsx"
+    ],
+    "existing_test_files": [
+      "tests/test_g20_skills_distribution.py",
+      "tests/test_h336_catalog_owner_install.py",
+      "tests/test_hermes_skill_catalog.py",
+      "tests/test_h334_import_route.py",
+      "tests/test_marketplace_uninstall.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H335",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H335"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H336",
+    "title": "An on-disk catalog of inert optional skills installable on demand",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "6b7563b217dfa1a197e37667fda91444ddb3988adb26f833ede491a300c304af",
+    "contract": "137 `optional-skills/<category>/<skill>/SKILL.md` bundles ship inside the distribution but are never loaded until `hermes skills install official/<category>/<skill>` copies one into the active skills dir; browsable with `hermes skills browse --source official`, capped at 100 results per source, with a repair/restore path and a documented catalog page. Categories: mlops 36, creative 22, research 12, finance 9, productivity 8, devops 7, autonomous-ai-agents 6, then payments/mcp/blockchain 3 each and a long tail. Entries optional.skills-catalog, optional.skills-install, plus 137 per-skill entries.",
+    "governance": "The catalog on disk is inert and read-only; install crosses `skill.install`.",
+    "remaining_verbatim": "- The 55 Hermes skills that carry code (scripts, JS/TS, shell) are listed but refused: no Nerva import path copies skill code, so they need a scanned, owner-approved package path\n- 5 skills are excluded (3 with HTML templates, 2 with a reference file over 256 KB)\n- Provenance and license review for wider officially shipped content (from main's 2026-11-04 review); the seven first-party optional skills have an owner, kernel and quarantine install path outside DEV_MODE.",
+    "requirement_sections": [
+      "- The 55 Hermes skills that carry code (scripts, JS/TS, shell) are listed but refused: no Nerva import path copies skill code, so they need a scanned, owner-approved package path\n- 5 skills are excluded (3 with HTML templates, 2 with a reference file over 256 KB)\n- Provenance and license review for wider officially shipped content (from main's 2026-11-04 review); the seven first-party optional skills have an owner, kernel and quarantine install path outside DEV_MODE."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "model-facing discovery (row 1) — an inert catalog nothing can list is furniture",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/skills/hermes_catalog.py",
+      "agents/core/routers/skills.py",
+      "agents/cli/nerva.py",
+      "agents/core/skills/importer.py",
+      "agents/vendor/hermes/SKILLS_CATALOG.json",
+      "docs/SKILLS_CATALOG.md",
+      "frontend/src/panels/skills-import.tsx",
+      "agents/core/skills/loader.py",
+      "agents/core/skills/hermes_pin_v2.json"
+    ],
+    "existing_test_files": [
+      "tests/test_hermes_skill_catalog.py",
+      "tests/test_h336_catalog_owner_install.py",
+      "tests/test_h27_capability_verification.py",
+      "tests/test_reality_harness.py",
+      "tests/test_webresearch.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H336",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H336"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H337",
+    "title": "The bundled skill library itself (58 core + 137 optional procedure documents)",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "3b566cf8e5bd8e195039c4768822dd9405ad7215ed52b7a1a3f67358d4b61a39",
+    "contract": "58 seeded skills under `skills/**` (productivity 14, software-development 12, creative 10, autonomous-ai-agents 5, research 4, apple 4, media 3, email 2, plus web/social-media/note-taking/devops) and 137 optional bundles. Content ranges from broadly useful (systematic-debugging, test-driven-development, requesting-code-review, document-to-action-items, meeting-action-items, weekly-review-planning, grounded-citations, email-inbox-triage) to deeply niche (36 mlops training/serving skills, minecraft-modpack-server, pokemon-player, neuroskill-bci, drug-discovery, hyperliquid/solana/evm).",
+    "governance": "read-only content; each install crosses `skill.install`. Note the licence check is per-subtree, not per-repo: the Hermes runtime is MIT but four subtrees carry separate Anthropic terms.",
+    "remaining_verbatim": "- Ship or explicitly select the full 58 core + 137 optional Hermes content library, including product-fit seeds, with per-subtree license review.\n- The historical 58+137 count is not a current pin count: the active v2 pin has 190 entries, but imported upstream content is not installed by default.\n- Validate actual content/load behavior and native distribution; the seven shipped optional first-party skills require owner install and review.",
+    "requirement_sections": [
+      "- Ship or explicitly select the full 58 core + 137 optional Hermes content library, including product-fit seeds, with per-subtree license review.\n- The historical 58+137 count is not a current pin count: the active v2 pin has 190 entries, but imported upstream content is not installed by default.\n- Validate actual content/load behavior and native distribution; the seven shipped optional first-party skills require owner install and review."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the catalog mechanism (row 11)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/skills/loader.py",
+      "agents/core/skills/hermes_pin_v1.json",
+      "agents/core/skills/importer.py",
+      "agents/core/routers/skills.py",
+      "agents/core/skills/hermes_pin_v2.json",
+      "docs/HERMES_ABSORPTION.md"
+    ],
+    "existing_test_files": [
+      "tests/test_hermes_import.py",
+      "tests/test_skills_api.py",
+      "tests/test_h27_capability_verification.py",
+      "tests/test_reality_harness.py",
+      "tests/test_webresearch.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H337",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H337"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H338",
+    "title": "Invoking a skill explicitly: slash commands, stacked invocations, session preload",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "59a26d4d57365ec7c548ba9347a9ffee27689abc86eba908e175daf031dac720",
+    "contract": "Every skill auto-registers `/<skill-name>` which loads its full body into one user message with the rest of the line attached as the instruction; up to five leading `/skill` tokens stack in one message; `-s/--skills` preloads skills for a whole session; scaffolding markers keep the memory store and session titles showing what the user typed rather than the expanded skill body, with `hermes sessions retitle-skills` to repair history. Entries skills-core.skill-slash-commands, .stacked-skills, .preloaded-skills, .skill-scaffolding, .retitle-skills.",
+    "governance": "read-only — loading a skill body is a read. The loaded body is untrusted content and must be spotlighted (`agents/core/security/quarantine.py`) before it reaches the model, exactly as recall content is.",
+    "remaining_verbatim": "- Auto-register `/<skill-name>` for every skill, loading its body (spotlighted) plus the rest of the line as the instruction.\n- Stack up to five leading `/skill` tokens in one message.\n- Session-level preload of skills (`-s/--skills` equivalent).\n- Scaffolding markers so memory and session titles store what the user typed, not the expanded body, and a retitle repair for history.",
+    "requirement_sections": [
+      "- Auto-register `/<skill-name>` for every skill, loading its body (spotlighted) plus the rest of the line as the instruction.\n- Stack up to five leading `/skill` tokens in one message.\n- Session-level preload of skills (`-s/--skills` equivalent).\n- Scaffolding markers so memory and session titles store what the user typed, not the expanded body, and a retitle repair for history."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "model-facing discovery (row 1)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/skills/loader.py",
+      "agents/core/orchestrator.py",
+      "agents/core/commands.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h328_skill_visibility.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H338",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H338"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H339",
+    "title": "Skill bundles (one command loads a fixed set of skills)",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "35762bcf665e86c76bf0528927bd2628e2e53fea9edc9445358cddfc594f706c",
+    "contract": "`hermes bundles` groups several skills under one slash command so a recurring task always loads the same set at once. Entry skills-core.bundles.",
+    "governance": "read-only",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "slash-command namespace (row 13)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/skills/bundles.py",
+      "agents/core/orchestrator.py",
+      "agents/core/commands.py",
+      "agents/core/routers/skills.py",
+      "agents/cli/nerva.py",
+      "agents/core/skills/tools.py",
+      "agents/core/skills/loader.py",
+      "agents/core/skills/importer.py",
+      "agents/core/skills/hermes_pin_v2.json"
+    ],
+    "existing_test_files": [
+      "tests/test_h026_skill_bundles.py",
+      "tests/test_h331_pending_skill_review.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H339",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H339"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H340",
+    "title": "Skill body preprocessing: template variables",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "b7f0c754dcb6a9b7aec33663bf1cf01efa059a6ff39ec9818b7415f1518883b3",
+    "contract": "`${HERMES_SKILL_DIR}` and `${HERMES_SESSION_ID}` are substituted into a skill body at load time, plus user-configured `skills.template_vars`. Entry skills-core.skill-preprocessing (first half).",
+    "governance": "read-only string substitution over a fixed, non-secret variable set. Hard rule: never expose an environment variable through `template_vars` — secrets go through `agents/core/security/secret_broker.py`.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/settings_db.py",
+      "agents/core/skills/template_vars.py",
+      "agents/core/skills/tools.py"
+    ],
+    "existing_test_files": [
+      "frontend/src/test/settings-json-field.test.tsx",
+      "tests/test_h318_skill_tools.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H340",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H340"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H341",
+    "title": "Inline shell execution inside skill bodies",
+    "area": "skills",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "f55c0e12fbdada736405632dada471822f47b5bc9c5238ea8c043fe24be0de41",
+    "contract": "Opt-in `` !`cmd` `` snippets in a SKILL.md are executed at load time and their stdout inlined, so a skill can inject live context (dates, git state, tool versions), governed by `skills.inline_shell` and `skills.inline_shell_timeout`. Entry skills-core.skill-preprocessing (second half).",
+    "governance": "Would require `terminal.exec` (kernel, irreversible, QUEUE floor) per snippet — which defeats the feature's purpose of being invisible at load time. That mismatch is the reason to skip.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": "This is the one Hermes skills feature that is actively incompatible with Nerva's architecture, not merely absent. It turns *reading* a skill into arbitrary command execution — a downloaded SKILL.md would run a shell as a side effect of being viewed, before any approval, and the whole point of Nerva's `terminal.exec` kernel kind (`agents/core/kernel/registry.py:114`, irreversible tier, durable accepted task required before a process exists) is that no path reaches a shell without crossing it. Copying it would be the exact regression the porting rule forbids. Re-open path: if live context in skills proves necessary, express it as declarative context slots the host fills (date, cwd, git branch) rather than as a shell escape.",
+    "source_files": [],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H341",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H341"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H342",
+    "title": "Skill-declared setup: required env vars, credential files, and non-secret config",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "e9d25f82e93dcd70b6329d538e801b1b02d9d69ed90f831b651776110b1ddb89",
+    "contract": "A skill declares `required_environment_variables` (bare names or `{name, prompt, help, provider_url, required_for, optional}` dicts), `required_credential_files`, a `setup: {help, collect_secrets}` block and `metadata.hermes.config` settings. On load the values are requested securely, resolved from `$HERMES_HOME/.env`, registered for passthrough into sandboxed execution and for mounting into remote sandboxes; the skill reports `readiness_status: available|setup_needed|unsupported` instead of just failing. Entries skills-core.skill-setup, .skill-config-vars.",
+    "governance": "Privileged. Collected secrets must land in `agents/core/security/secret_broker.py`, never in a plaintext `.env` (that is Hermes' design, and it is the part not to copy); passthrough into the sandbox is a capability grant and should be scoped per-run, not per-process.",
+    "remaining_verbatim": "- A skill's values in code it ships that runs out of process (sandboxed/remote execution of the skill's own scripts): today only in-process commands receive them, and execute_code deliberately never does\n- required_credential_files checked (setup_needed) and mounted per run into sandboxed/remote execution\n- metadata.hermes.config values collected and stored as non-secret skill settings\n- No CLI verb for setup values (HUD and HTTP only)",
+    "requirement_sections": [
+      "- A skill's values in code it ships that runs out of process (sandboxed/remote execution of the skill's own scripts): today only in-process commands receive them, and execute_code deliberately never does\n- required_credential_files checked (setup_needed) and mounted per run into sandboxed/remote execution\n- metadata.hermes.config values collected and stored as non-secret skill settings\n- No CLI verb for setup values (HUD and HTTP only)"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the widened frontmatter parser (row 2)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/skills/skill_secrets.py",
+      "agents/core/routers/skill_setup.py",
+      "agents/core/skills/loader.py",
+      "agents/core/skills/batch.py",
+      "agents/core/skills/tools.py",
+      "agents/core/code_env.py",
+      "agents/core/skills/frontmatter.py",
+      "agents/core/security/secret_broker.py",
+      "frontend/src/panels/skills-import.tsx"
+    ],
+    "existing_test_files": [
+      "tests/test_g20_skills_distribution.py",
+      "tests/test_skill_frontmatter_contract.py",
+      "tests/test_h595_code_env.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H342",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H342"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H343",
+    "title": "Repo-local skills with a per-repo trust decision and re-scan on change",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "646cd60add3ceec1f91d33bba4494c41b89d48b0e8fae38f816d4189d758cd5f",
+    "contract": "A checkout can carry `.hermes/skills` / `.agents/skills`; they are active only for sessions started inside it and only after the user trusts that repo once (`skills.trusted_project_dirs`, `skills.project_discovery`), project skills shadow same-named profile skills with a `[project]` label, and — because a trusted repo's skills change on every `git pull` — every project skill is re-scanned by Skills Guard at scan time before it can enter the index. Entries skills-core.project-skills, .project-quarantine.",
+    "governance": "The approval row is the capability grant; adding a repo tier means a new grant surface and should cross `permission.grant`.",
+    "remaining_verbatim": "- Discover per-repo/project skill folders, active only for sessions started inside that project.\n- A one-time per-repo trust decision (trusted project dirs) before project skills load.\n- Project skills shadowing same-named profile skills with a visible `[project]` label.\n- Re-scan (security scanner, not only signature/approval check) of project skills whenever their content changes, before they enter the index.",
+    "requirement_sections": [
+      "- Discover per-repo/project skill folders, active only for sessions started inside that project.\n- A one-time per-repo trust decision (trusted project dirs) before project skills load.\n- Project skills shadowing same-named profile skills with a visible `[project]` label.\n- Re-scan (security scanner, not only signature/approval check) of project skills whenever their content changes, before they enter the index."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the security scanner (row 7)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/skills/loader.py",
+      "agents/core/skills/approval.py",
+      "agents/core/routers/skills.py",
+      "agents/core/skills/importer.py",
+      "agents/core/skills/hermes_pin_v2.json"
+    ],
+    "existing_test_files": [
+      "tests/test_skill_signing.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H343",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H343"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H344",
+    "title": "Reading skills from directories shared with other AI tools",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "5a7f34e592b589ccf4555d041be1da2c18dbd281d68822e0a55981115280fd5f",
+    "contract": "`skills.external_dirs` adds arbitrary folders to the precedence-ordered scan (trusted project dirs → `~/.hermes/skills` → external dirs) with first-wins dedup on the frontmatter name, so skills shared with other agents appear in the index, `skills_list`, `skill_view` and as slash commands — live, not copied. Entry skills-core.external-dirs.",
+    "governance": "Import writes into the skills tree → `skill.install`. A live external tier would need per-directory owner approval plus per-load re-scan; that cost is why import-once wins.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/skills/importer.py",
+      "scripts/nerva_import.py"
+    ],
+    "existing_test_files": [
+      "tests/test_nerva_import.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H344",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H344"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H345",
+    "title": "Org-shared skill mirror and cross-device skill synchronisation",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "b9c130a899f986f012433257e3390a71d02fe075e24957f307b0b420846842ff",
+    "contract": "An `_org/` mirror pulls an organisation's approved skill set into the local profile, token-gated, labelled `[org-shared: by <author>]` at load with name-collision warnings; `hermes sync` is content-addressed git-like sync of opted-in skills across a user's devices plus an org tier with propose/approve; `hermes skills snapshot export|import` moves an installed set between machines. Entries skills-core.org-skills, .sync, .snapshot.",
+    "governance": "Would be privileged on the receiving side — an inbound skill is an install (`skill.install`), never a file copy.",
+    "remaining_verbatim": "- skills snapshot export/import of the installed set between machines\n- Content-addressed sync of opted-in skills across the owner's devices/hubs (e.g. over node mesh, with approval on the receiving hub)\n- Org-shared skill mirror with author labels and name-collision warnings, plus propose/approve\n- Personal skills directory is not covered by backup",
+    "requirement_sections": [
+      "- skills snapshot export/import of the installed set between machines\n- Content-addressed sync of opted-in skills across the owner's devices/hubs (e.g. over node mesh, with approval on the receiving hub)\n- Org-shared skill mirror with author labels and name-collision warnings, plus propose/approve\n- Personal skills directory is not covered by backup"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "a second hub / node-mesh peering",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/skills.py",
+      "agents/core/skills/marketplace.py",
+      "agents/core/backup.py",
+      "agents/core/skills/loader.py",
+      "agents/core/skills/importer.py",
+      "agents/core/skills/hermes_pin_v2.json"
+    ],
+    "existing_test_files": [
+      "tests/test_marketplace.py",
+      "tests/test_skills_api.py",
+      "tests/test_h27_capability_verification.py",
+      "tests/test_webresearch.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H345",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H345"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H346",
+    "title": "Per-mutation skill audit trail with rollback",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "e672eee01af0aa03b5b641d82019d9d9f8e8f7655b18bff0d3fce3516630f57e",
+    "contract": "One JSONL entry for EVERY skill mutation regardless of actor, carrying before/after file manifests whose contents are stored content-addressed, enabling single-mutation rollback; separately the curator snapshots the whole tree before each mutating pass and can restore it — moving the current tree aside first, so the rollback is itself undoable. Entries skills-core.skill-ledger, .curator-backup.",
+    "governance": "Privileged. Belongs in the Merkle audit chain alongside kernel actions, with `skill.install` / `skill.generation` as the recorded kinds. Default-on: an audit trail behind a flag is not an audit trail.",
+    "remaining_verbatim": "- One ledger entry for every skill mutation regardless of actor (generate_skill, curator archive, proposal apply, import, marketplace), on by default.\n- Before/after file manifests stored content-addressed, enabling single-mutation rollback.\n- Whole-tree snapshot before each curator mutating pass, with restore that moves the current tree aside first (undoable rollback).",
+    "requirement_sections": [
+      "- One ledger entry for every skill mutation regardless of actor (generate_skill, curator archive, proposal apply, import, marketplace), on by default.\n- Before/after file manifests stored content-addressed, enabling single-mutation rollback.\n- Whole-tree snapshot before each curator mutating pass, with restore that moves the current tree aside first (undoable rollback)."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "kernel registration of skill.generation (row 5)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/skills/skill_history.py",
+      "agents/core/orchestrator.py",
+      "agents/core/skills/marketplace.py",
+      "agents/core/skills/proposals.py",
+      "agents/core/skills/curator.py"
+    ],
+    "existing_test_files": [
+      "tests/test_skill_history.py",
+      "tests/test_marketplace_rollback.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H346",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H346"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H347",
+    "title": "Background curator: skill lifecycle, archiving and operator control",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "ea429f99e35431386900977ad65cc03cea0bf495e3fc6de5a3e73ab1c88851ea",
+    "contract": "An inactivity-triggered background pass (no cron daemon) that moves skills between active/stale/archived purely from usage timestamps, honours pin/protect rules, writes machine- and human-readable run reports, and exposes full operator control via `hermes curator` — status, telemetry, manual run, pause/resume, pin/unpin, adopt unmanaged skills, archive/restore/prune/purge, snapshots and rollback, and the audit ledger. Entries skills-core.curator, .curator-transitions, .curator-reports, .curator-cli, .curator-backup.",
+    "governance": "Archiving is a capability removal (reversible, no kernel hop needed) but must be audited; restore/adopt/unpin are capability growth and should cross `permission.grant`; applying a proposal already runs through the approval queue and should also land in the audit chain.",
+    "remaining_verbatim": "- Operator surface (route/CLI/HUD) for curator: manual run, pause/resume, pin/unpin, adopt unmanaged skills, archive/restore/prune/purge.\n- Machine- and human-readable run reports per pass.\n- Whole-tree snapshots and rollback, plus the curator audit ledger.\n- Telemetry beyond last-run status.",
+    "requirement_sections": [
+      "- Operator surface (route/CLI/HUD) for curator: manual run, pause/resume, pin/unpin, adopt unmanaged skills, archive/restore/prune/purge.\n- Machine- and human-readable run reports per pass.\n- Whole-tree snapshots and rollback, plus the curator audit ledger.\n- Telemetry beyond last-run status."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/skills/curator.py",
+      "agents/core/cognition/api.py",
+      "frontend/src/gap.tsx",
+      "agents/core/routers/actions.py",
+      "agents/core/routers/skills.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h318c_skill_review.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H347",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H347"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H348",
+    "title": "LLM consolidation of overlapping skills into umbrella skills",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "6f2f0d8ea8586596987e014c9461d88315a1a1f345475709c0977de32575bc1d",
+    "contract": "The curator can spawn an auxiliary-model `AIAgent` fork with only the `skills` toolset and a long opinionated 'umbrella-building' prompt that merges narrow sibling skills into class-level umbrellas and archives the absorbed ones, with `absorbed_into` migrating cron references to the survivor. Entry skills-core.curator-review.",
+    "governance": "Would be privileged and irreversible-tier: it deletes/archives working skills. Must produce proposals through `agents/core/skills/proposals.py` → approval queue → `skill.generation`, never a direct write.",
+    "remaining_verbatim": "- references the batch cannot migrate (jobs, cron prompts, the load set, switches) are reported under references_left, not migrated to the umbrella as Hermes' absorbed_into migration does for cron\n- restoring a consolidation is a manual move of the archived folders out of <data>/skills/batch-archive; no one-click undo\n- similarity is lexical (TF-IDF); the embedding pipeline is not used\n- the umbrella draft is bounded by the one-shot rail (1024 output tokens, 44,000 prompt characters), so very large skills are truncated in the prompt\n- no live local-model run in tests (an injected generator stands in)",
+    "requirement_sections": [
+      "- references the batch cannot migrate (jobs, cron prompts, the load set, switches) are reported under references_left, not migrated to the umbrella as Hermes' absorbed_into migration does for cron\n- restoring a consolidation is a manual move of the archived folders out of <data>/skills/batch-archive; no one-click undo\n- similarity is lexical (TF-IDF); the embedding pipeline is not used\n- the umbrella draft is bounded by the one-shot rail (1024 output tokens, 44,000 prompt characters), so very large skills are truncated in the prompt\n- no live local-model run in tests (an injected generator stands in)"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "curator operator surface (row 22); a library large enough to have overlap",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/skills/consolidation.py",
+      "agents/core/routers/skills.py",
+      "agents/core/skills/batch.py",
+      "frontend/src/panels/skill-batches.tsx"
+    ],
+    "existing_test_files": [
+      "tests/test_h348_skill_consolidation.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H348",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H348"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H349",
+    "title": "Per-skill usage telemetry driving lifecycle and provenance",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "49674886472dc0c8f7baf9558d865ab90498419c1abbaf051b756e12889dfa3e",
+    "contract": "`.usage.json` sidecars per skill with view/use/patch counters, lifecycle state and provenance, feeding the curator's stale timer, the provenance columns and sync opt-in; a `skill_view` counts as a *use* (not just a view) because the stale timer keys off `last_used_at`. Entries skills-core.skill-usage, .write-origin.",
+    "governance": "read-only telemetry, local only. Keep it out of any outbound payload.",
+    "remaining_verbatim": "- A served non-deduplicated skill_view records both view and use, as the frozen requirement specifies; current views affect the stale clock but do not increment use_count.\n- A persisted per-skill sync opt-in consumed by an actual eligible sync workflow/front door (dependency H345); an unused local flag does not complete this clause.",
+    "requirement_sections": [
+      "- A served non-deduplicated skill_view records both view and use, as the frozen requirement specifies; current views affect the stale clock but do not increment use_count.\n- A persisted per-skill sync opt-in consumed by an actual eligible sync workflow/front door (dependency H345); an unused local flag does not complete this clause."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/skills/usage.py",
+      "agents/core/skills/loader.py",
+      "agents/core/skills/curator.py",
+      "agents/core/orchestrator.py",
+      "agents/core/skills/tools.py",
+      "agents/core/skills/batch.py",
+      "agents/core/routers/skills.py",
+      "agents/cli/nerva.py",
+      "agents/core/skills/importer.py",
+      "agents/core/skills/marketplace.py",
+      "frontend/src/panels/skill-switches.tsx"
+    ],
+    "existing_test_files": [
+      "tests/test_skill_lifecycle_curator.py",
+      "tests/test_h318_skill_tools.py",
+      "tests/test_h349_skill_provenance_pin.py",
+      "tests/test_h349_review_fixes.py",
+      "tests/test_h349_review2_fixes.py",
+      "tests/test_h349_review3_fixes.py",
+      "tests/test_h349_review4_fixes.py",
+      "tests/test_h349_review5_fixes.py",
+      "tests/test_h27_capability_verification.py",
+      "tests/test_webresearch.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H349",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H349"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H350",
+    "title": "Skill authoring linter and validator",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "2c4aef8a4d423fb693c7e298f173810edc72815c1b06d969ea74783305d6b7e8",
+    "contract": "A hard `_validate_frontmatter` blocker on agent writes (fence present, YAML mapping, name + description present, description length, non-empty body, size cap) plus an advisory `tools/skill_linter.py` encoding the repo's 'Skill authoring standards (HARDLINE)' that the hard validator does not cover. Entries skills-core.skill-linter, .skill-md-format (validator half).",
+    "governance": "read-only validation; its verdict gates a privileged write (`skill.generation` / `skill.install`).",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "the widened frontmatter parser (row 2)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/cli/nerva.py",
+      "agents/core/skills/importer.py",
+      "agents/core/skills/loader.py",
+      "agents/core/skills/marketplace.py",
+      "agents/core/skills/proposals.py",
+      "agents/core/skills/validate.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h277_nous_auth_surface.py",
+      "tests/test_h277_vision_selection_cli.py",
+      "tests/test_h350_skill_validator.py",
+      "tests/test_h350b_skill_validator_review.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H350",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H350"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H351",
+    "title": "Prompt-injection warnings when a skill is loaded",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "4475e9419bee8010e08c8b8de80ecc618b982eca73a815d6e98f194b79e9b295",
+    "contract": "A loaded skill whose file sits outside the trusted skill roots, or whose content matches `_INJECTION_PATTERNS`, is flagged in the `skill_view` result so the model sees the warning alongside the content. Entry skills-core.injection-warnings.",
+    "governance": "read-only, but it is the guard that keeps a downloaded document from acting as a prompt. Treat a skill body from a non-bundled source exactly like tainted recall content.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "model-facing discovery (row 1)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/agent_runtime.py",
+      "agents/core/skills/loader.py",
+      "agents/core/skills/tools.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h318_skill_tools.py",
+      "tests/test_skills_in_prompt.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H351",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H351"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H352",
+    "title": "Local skill marketplace: publish, moderate, install, rollback, uninstall",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "10a9f33d2202d6ca15e54ef2731d82f75524ce2ed497fbc83da3dcc18816c5e6",
+    "contract": "`hermes skills publish` pushes a local skill to a registry — for GitHub, by opening a pull request against the target repo. There is no local registry, no moderation state and no version archive; the hub lockfile is the closest analogue. Entry skills-core.publish.",
+    "governance": "Already correct: publish/install/uninstall cross `skill.install` (kernel) with a permanent owner-approval floor that a kernel GRANT cannot bypass (GAP-3).",
+    "remaining_verbatim": "- Publish a skill to a remote registry (e.g. open a GitHub PR against a target skills repo) from CLI/route\n- Remote source configuration and credentials for that publish path",
+    "requirement_sections": [
+      "- Publish a skill to a remote registry (e.g. open a GitHub PR against a target skills repo) from CLI/route\n- Remote source configuration and credentials for that publish path"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/skills/marketplace.py",
+      "agents/core/routers/skills.py",
+      "frontend/src/gap.tsx",
+      "agents/core/skills/loader.py",
+      "agents/core/skills/importer.py",
+      "agents/core/skills/hermes_pin_v2.json"
+    ],
+    "existing_test_files": [
+      "tests/test_skills_api.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H352",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H352"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H353",
+    "title": "Governed capability acquisition: gap → research → synthesise → quarantine → sign → promote → sandbox-only run",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "86ab956b1dd7fbcbfaf8d98ed5f189042bbc3969708af44c6373233be4cca114",
+    "contract": "No equivalent. The closest Hermes analogue is the reverse: install a third-party skill from the hub and execute it in-process. Its self-evolution story lives in a separate optional repo (GEPA/DSPy, phase 1, human review before merge).",
+    "governance": "Already kernel-mediated: `skill.install` via `make_skill_install_kernel_gate` before a PromotionProposal exists, with the permanent owner-approval floor (GAP-3, BACKLOG line 1252) and a separate tamper-evident acquisition audit ledger.",
+    "remaining_verbatim": "- An owner-reachable approval surface (admin route + HUD/inbox card) that lists pending acquisition proposals and calls PromotionBroker.decide with permanent owner approval.\n- An approved decision enqueues the skill.install autonomy task carrying proposal_id (or calls promote directly), so the package is signed, stored, registered through ToolRPC and becomes runnable in the sandbox.\n- An end-to-end route test: drive, then approve, then installed, then invoke the acquired tool through the sandbox runner, then revoke.",
+    "requirement_sections": [
+      "- An owner-reachable approval surface (admin route + HUD/inbox card) that lists pending acquisition proposals and calls PromotionBroker.decide with permanent owner approval.\n- An approved decision enqueues the skill.install autonomy task carrying proposal_id (or calls promote directly), so the package is signed, stored, registered through ToolRPC and becomes runnable in the sandbox.\n- An end-to-end route test: drive, then approve, then installed, then invoke the acquired tool through the sandbox runner, then revoke."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/autonomy_coordinator.py",
+      "agents/core/routers/acquisition.py",
+      "frontend/src/gap.tsx",
+      "agents/core/acquisition/generator.py",
+      "agents/core/skills/loader.py",
+      "agents/core/acquisition/promotion.py",
+      "agents/core/observability/acquisition_reality.py",
+      "agents/core/acquisition/runtime.py",
+      "agents/core/acquisition/acquired_runner.py",
+      "agents/core/routers/skills.py",
+      "agents/core/skills/importer.py",
+      "agents/core/skills/hermes_pin_v2.json"
+    ],
+    "existing_test_files": [
+      "tests/test_h32_acquisition_drive_route.py",
+      "tests/test_h32_promotion.py",
+      "tests/test_h32_synthesis_pipeline.py",
+      "tests/test_h32_generation_sandbox.py",
+      "tests/test_h331_pending_skill_review.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H353",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H353"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H354",
+    "title": "Skills as first-class entries in a capability registry with rollback contracts and reality evidence",
+    "area": "skills",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "660d1bfabe858b525f2aa8aee2bba46b35ed538e483370ac34d787da947a1573",
+    "contract": "No equivalent — Hermes has skill listings and usage counters, but no machine-readable capability record, no declared rollback contract per skill, and no verification reference.",
+    "governance": "read-only observability. Its value depends on staying honest: WIRED must keep meaning 'module actually exec'd', not 'file present'.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/observability/capability_registry.py",
+      "agents/core/capability_verification.py",
+      "agents/core/observability/reality_harness.py",
+      "agents/core/observability/reality_evidence.py",
+      "agents/core/routers/analytics.py",
+      "agents/core/routers/skills.py",
+      "agents/core/skills/usage.py",
+      "agents/core/skills/loader.py",
+      "agents/core/skills/tools.py",
+      "agents/core/skills/batch.py",
+      "agents/cli/nerva.py",
+      "frontend/src/panels/skill-switches.tsx",
+      "agents/core/skills/importer.py",
+      "agents/core/skills/hermes_pin_v2.json"
+    ],
+    "existing_test_files": [
+      "tests/test_skills_api.py",
+      "tests/test_capability_registry.py",
+      "tests/test_h318_skill_tools.py",
+      "tests/test_skill_batch.py",
+      "tests/test_h329_skill_switches.py",
+      "tests/test_reality_evidence.py",
+      "tests/test_h27_capability_verification.py",
+      "tests/test_reality_harness.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H354",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H354"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H355",
+    "title": "Curated MCP server catalog with guided install and tool selection",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "e77c37b14a4f78c0b8b08ff7bf80d4f4158768b2764bc660a98bf04c11a7d779",
+    "contract": "65 Nous-approved `optional-mcps/<name>/manifest.yaml` entries (presence = approval, merged by PR review), a strictly validated manifest schema (transport stdio/http, auth api_key/oauth/none, pinned git refs with full SHAs, mutually exclusive `default_enabled`/`default_excluded`), a six-step installer (clone → prompt credentials → write server config → probe → curses tool checklist → post-install notes), include/exclude filter modes with glob support so a 3,000-tool server cannot flood context, graceful probe-failure precedence, and manifest-declared composer 'brand pills' that suggest an install from a keyword or a pasted hostname. GitHub is deliberately excluded from the catalog. Entries optional.mcp-catalog, .mcp-install-flow, .mcp-tool-selection, .mcp-suggest, plus 65 per-server entries.",
+    "governance": "Privileged: installing an MCP server adds callable tools. Must cross `mcp.mutating` (`agents/core/kernel/registry.py:48`) for calls and be treated as capability growth (`permission.grant`) at install; credentials to `secret_broker`, never a plaintext `.env`.",
+    "remaining_verbatim": "- A reviewed catalog of approved MCP server manifests (presence = approval) with a strict schema (transport, auth, pinned git SHA, default enable/exclude).\n- Guided install flow: clone/fetch, prompt for credentials, write config, probe, interactive tool checklist, post-install notes.\n- Composer suggestions that propose an install from a keyword or pasted hostname.",
+    "requirement_sections": [
+      "- A reviewed catalog of approved MCP server manifests (presence = approval) with a strict schema (transport, auth, pinned git SHA, default enable/exclude).\n- Guided install flow: clone/fetch, prompt for credentials, write config, probe, interactive tool checklist, post-install notes.\n- Composer suggestions that propose an install from a keyword or pasted hostname."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/mcp/client.py",
+      "agents/core/routers/mcp.py"
+    ],
+    "existing_test_files": [
+      "tests/test_mcp_tool_filters.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H355",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H355"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H356",
+    "title": "Third-party plugin ecosystem: community index, pinned installs, packs, capability consent",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "6a78853680651d598494ea1e1416641849238f8193cc4ba5e06a256bb3b958bc",
+    "contract": "A static community plugin index fetched from GitHub with a 24h TTL cache, offline seed and fuzzy scorer, carrying the standing footer 'Indexed ≠ audited'; `hermes plugins install` with pinned refs; `hermes plugins pack {install,export,show}` — one YAML pinning a plugin set to exact 40-char commit SHAs plus non-secret config seeds, which explicitly refuses tags/branches, refuses secret-shaped keys, refuses to pre-grant capabilities, requires an interactive review and never bulk-grants; and `hermes plugins capabilities`, a consent-and-audit layer over host API surfaces that the docs are careful to say is NOT a sandbox. Entries optional.plugin-index, .plugin-index-seed, .plugin-packs, .plugin-capabilities, .plugins-lifecycle, .plugin-manifest, .dashboard-plugin-manifest, .plugin-storage, .plugin-utils.",
+    "governance": "Would be the largest ungoverned execution surface in the product: in-process third-party code with no kernel hop. That mismatch is the reason to skip, not the work.",
+    "remaining_verbatim": "- No community plugin index (fetched with TTL cache, offline seed, fuzzy search, 'indexed is not audited' notice)\n- No install-from-source command with pinned refs; packages must already be in the acquired package store\n- No plugin packs: a YAML pinning a set to exact commit SHAs with non-secret config seeds, plus export/show/install with interactive review\n- No dashboard plugin manifest or per-plugin storage/utils equivalents",
+    "requirement_sections": [
+      "- No community plugin index (fetched with TTL cache, offline seed, fuzzy search, 'indexed is not audited' notice)\n- No install-from-source command with pinned refs; packages must already be in the acquired package store\n- No plugin packs: a YAML pinning a set to exact commit SHAs with non-secret config seeds, plus export/show/install with interactive review\n- No dashboard plugin manifest or per-plugin storage/utils equivalents"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/extensions/manifest.py",
+      "agents/core/extensions/consent.py",
+      "agents/core/extensions/runtime.py",
+      "agents/core/routers/plugins.py",
+      "agents/cli/nerva.py",
+      "agents/core/extensions/manifest_catalog.py"
+    ],
+    "existing_test_files": [
+      "tests/test_extension_consent.py",
+      "tests/test_extension_runtime.py",
+      "tests/test_extension_activation_routes.py",
+      "tests/test_extension_manifest_catalog.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H356",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H356"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H357",
+    "title": "Pluggable provider backends shipped as optional plugins (memory, web, image/video generation, browser, dashboard auth, cron)",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "70b8eb86d8e596dcbd8a9a89ce2c6081e7e41744fd8742537dd96aef3d7219e8",
+    "contract": "Eight memory providers (ByteRover, Hindsight, Holographic, Honcho, Mem0, OpenViking, RetainDB, Supermemory) with a declarative config schema and query rewriting; eight web providers (Brave free tier, DuckDuckGo, Exa, Firecrawl, Keenable, Parallel.ai, SearXNG, xAI); seven image-generation and three video-generation backends; three browser backends (Browser Use, Browserbase, Firecrawl); four dashboard auth providers; a NAS-mediated managed cron provider; and a context-engine plugin slot. Entries optional.plugin-memory-*, .plugin-web-*, .plugin-image-gen-*, .plugin-video-gen-*, .plugin-browser-*, .plugin-dashboard-auth-*, .plugin-cron-chronos, .plugin-context-engine (~35 entries).",
+    "governance": "read-only from this cluster's perspective; each provider's own effects are governed in its cluster (`plugin.egress` at `agents/core/kernel/registry.py:45` already mediates plugin network calls).",
+    "remaining_verbatim": "Skipped as a cluster boundary: the per-kind provider implementations (more memory, web, image/video, browser, dashboard-auth and cron providers) belong to the providers/tools/memory clusters. The web slot now exists as a registry, but only three built-in web backends ship.",
+    "requirement_sections": [
+      "Skipped as a cluster boundary: the per-kind provider implementations (more memory, web, image/video, browser, dashboard-auth and cron providers) belong to the providers/tools/memory clusters. The web slot now exists as a registry, but only three built-in web backends ship."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/media_providers.py",
+      "agents/core/cloud_image_runtime.py",
+      "agents/core/media_backends/registry.py",
+      "agents/core/voice/provider_registry.py",
+      "agents/core/plugins/websearch.py",
+      "agents/core/plugins/web_providers.py",
+      "agents/core/memory/manager.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h517_shared_provider_registry.py",
+      "tests/test_fal_image.py",
+      "tests/test_websearch.py",
+      "tests/test_h310_web_parity.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H357",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H357"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H358",
+    "title": "First-party optional feature plugins (kanban dispatcher, achievements, disk-cleanup, google_meet, spotify, Teams pipeline, Langfuse observability, security-guidance)",
+    "area": "skills",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "587977b623cf2d1099733d57037e1c056babe1e5",
+    "source_row_sha256": "7fd63b274bb46365034efb98d2da20fa7eb56a9726aa0914215dd42f62978b61",
+    "contract": "Eight first-party plugins shipped in `plugins/` that are neither platform adapters nor model providers, each with a `plugin.yaml` manifest, per-plugin persistent storage convention and concurrency helpers; kanban additionally ships a dashboard plugin plus a task dispatcher whose worker context feeds the `environments: [kanban]` skill gate. Entries optional.plugin-kanban, .plugin-achievements, .plugin-disk-cleanup, .plugin-google-meet, .plugin-spotify, .plugin-teams-pipeline, .plugin-observability-langfuse, .plugin-security-guidance.",
+    "governance": "read-only decision; any of these that later ships would govern its own effects (spotify already rides the plugin egress kind).",
+    "remaining_verbatim": "Full multi-board gateway/watch subscriptions, tenant isolation and tenant controls, FileScope scratch/dir/worktree plus project/Git lifecycle, goal judging, worker process controls, pinned-skill/swarm/auxiliary provider effects, channel notifications/artifacts, config/profile/project/provider bindings, transfer and hard deletion, full CLI effect semantics and complete dashboard/task drawer/Triage/native consumers remain required. Default background intake still targets only default; explicit approved owner dispatch may choose a named board. Physical crash, real provider/worker and live-service acceptance remain unverified; unavailable queue storage still relies on recovery. All requirements of the original capability inventory remain in scope. Achievements, disk-cleanup, google_meet, spotify, Teams, Langfuse and security-guidance still require independent full integration/reassessment. In short (from #1251): the frozen decision is skip on product fit, and only the Kanban plugin component of this eight-plugin row is ported, as local state, tool, dispatcher, CLI and dashboard integration. Open: (1) the other seven first-party plugins (achievements, disk-cleanup, google_meet, spotify, Teams pipeline, Langfuse observability, security-guidance) are not ported as Hermes plugins; spotify and security only have in-tree Nerva equivalents; (2) full Hermes board and worker acceptance, and the unsupported effect endpoints that deliberately fail with _unavailable; (3) HUD and native board controls remain on the explicit punch list.",
+    "requirement_sections": [
+      "Full multi-board gateway/watch subscriptions, tenant isolation and tenant controls, FileScope scratch/dir/worktree plus project/Git lifecycle, goal judging, worker process controls, pinned-skill/swarm/auxiliary provider effects, channel notifications/artifacts, config/profile/project/provider bindings, transfer and hard deletion, full CLI effect semantics and complete dashboard/task drawer/Triage/native consumers remain required. Default background intake still targets only default; explicit approved owner dispatch may choose a named board. Physical crash, real provider/worker and live-service acceptance remain unverified; unavailable queue storage still relies on recovery. All requirements of the original capability inventory remain in scope. Achievements, disk-cleanup, google_meet, spotify, Teams, Langfuse and security-guidance still require independent full integration/reassessment. In short (from #1251): the frozen decision is skip on product fit, and only the Kanban plugin component of this eight-plugin row is ported, as local state, tool, dispatcher, CLI and dashboard integration. Open: (1) the other seven first-party plugins (achievements, disk-cleanup, google_meet, spotify, Teams pipeline, Langfuse observability, security-guidance) are not ported as Hermes plugins; spotify and security only have in-tree Nerva equivalents; (2) full Hermes board and worker acceptance, and the unsupported effect endpoints that deliberately fail with _unavailable; (3) HUD and native board controls remain on the explicit punch list."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/kanban/README.md",
+      "agents/core/kanban/context.py",
+      "agents/core/kanban/runtime.py",
+      "agents/core/kanban/tools.py",
+      "agents/core/kanban/schemas.py",
+      "agents/core/kanban/upstream/kanban_db.py",
+      "agents/core/kanban/upstream/kanban_db_connect.py",
+      "agents/core/kanban/upstream/kanban_db_graph.py",
+      "agents/core/kanban/upstream/kanban_db_dispatch.py",
+      "agents/core/kanban/upstream/kanban_db_workspace.py",
+      "agents/core/autonomy_coordinator.py",
+      "agents/core/tool_profiles.py",
+      "agents/core/settings_db.py",
+      "agents/core/kanban/dispatcher.py",
+      "agents/core/kanban/dispatch_store.py",
+      "agents/core/kanban/worker_runner.py",
+      "agents/core/autonomy/queue.py",
+      "agents/core/kernel/registry.py",
+      "agents/core/routers/autonomy.py",
+      "docs/hermes/kanban-dispatch-plan-2026-10-04.md",
+      "agents/core/capability_manifests.py",
+      "agents/core/safe_mode.py",
+      "agents/core/autonomy/worker.py",
+      "agents/core/kanban/network.py",
+      "agents/core/plugin_gate.py",
+      "docs/hermes/kanban-network-cancel-plan-2026-10-04.md",
+      "agents/core/kanban/cli.py",
+      "agents/core/kanban/cli_parser.py",
+      "agents/core/kanban/cli_upstream/handlers.py",
+      "agents/core/kanban/cli_upstream/board_selection.py",
+      "agents/core/kanban/upstream/kanban_diagnostics.py",
+      "agents/core/kanban/dashboard_api.py",
+      "agents/core/routers/kanban.py",
+      "agents/core/commands.py",
+      "agents/cli/nerva.py",
+      "agents/web.py",
+      "docs/hermes/kanban-cli-dashboard-plan-2026-10-04.md",
+      "agents/core/routers/analytics.py"
+    ],
+    "existing_test_files": [
+      "tests/test_hermes_kanban_state_port.py",
+      "tests/test_hermes_kanban_tools_port.py",
+      "tests/test_hermes_kanban_dispatcher.py",
+      "tests/test_hermes_kanban_worker_runner.py",
+      "tests/test_hermes_kanban_dispatch_wiring.py",
+      "tests/test_action_auth_matrix.py",
+      "tests/_snapshots/action_auth.json",
+      "tests/_snapshots/route_auth.json",
+      "tests/_snapshots/route_surface.json",
+      "tests/test_hud_v2_parity.py",
+      "tests/_snapshots/openapi_surface.json",
+      "tests/test_h27_capability_verification.py",
+      "tests/_snapshots/capability_readiness.json",
+      "tests/test_hermes_kanban_parallel.py",
+      "tests/test_hermes_kanban_network.py",
+      "tests/test_hermes_kanban_network_wiring.py",
+      "tests/test_hermes_kanban_cli.py",
+      "tests/test_hermes_kanban_dashboard.py",
+      "tests/test_hermes_kanban_surfaces_wiring.py",
+      "tests/test_cli_shell_completion.py",
+      "tests/test_api_sweep_current.py",
+      "tests/test_route_auth_matrix.py",
+      "tests/test_route_parity_guard.py",
+      "tests/test_openapi_parity_guard.py",
+      "tests/test_route_tools_auth_parity.py",
+      "tests/test_nerva_cli.py",
+      "tests/test_reality_harness.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H358",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H358"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  }
+]
