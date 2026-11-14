@@ -3,11 +3,11 @@
   "suite_spec_sha256": "0c2ebda3580e4370f5b8cdfb50eb940443dc687859b159f399d69e2d739d8dd2",
   "execution_mode": "hermetic_in_process",
   "live_network_llm_calls": 0,
-  "honest_scope_note": "All 5 benchmarks execute Nerva's real Python subsystems in-process against deterministic synthetic LLM/transport backends (0 live network LLM calls). Baseline columns measure representative single-chain / unguarded local-agent patterns (Hermes / OpenClaw architectural defaults without parallel MoA quorum, H513 per-member consent binding, H657 monotonic authority epochs, H086 principal-scoped SSRF/one-shot artifact tickets, or H040 secret-stripped authenticated E2E sync). Live hardware tok/s and owner-gated live head-to-head runs are tracked separately in docs/HARDWARE_BENCHMARKS.md and docs/HERMES_HEAD_TO_HEAD.md.",
+  "honest_scope_note": "All 5 benchmarks execute Nerva's real Python subsystems in-process against deterministic synthetic LLM/transport backends (0 live network LLM calls). Baseline columns measure representative single-chain / unguarded local-agent patterns (Hermes / OpenClaw architectural defaults without parallel MoA quorum, H513 per-member consent binding, H657 monotonic authority epochs, H086 principal-scoped SSRF/one-shot artifact tickets, or H040 secret-stripped authenticated E2E sync). In B5 (H040), `E2ESync.encrypt_record()` stamps `(ts, device)` metadata on ciphertext envelopes enabling canonical `(max_ts, device_id)` LWW sorting \u2014 exercised here via `_lww_order_manifests` in the benchmark harness, whereas production `DirectorySyncTransport.fetch_manifests()` orders lexically by device ID and `E2ESync.pull_state()` mailbox iteration without caller sorting follows arrival order. Live hardware tok/s and owner-gated live head-to-head runs are tracked separately in docs/HARDWARE_BENCHMARKS.md and docs/HERMES_HEAD_TO_HEAD.md.",
   "environment": {
     "python_version": "3.12.13",
     "platform": "Darwin",
-    "suite_wall_time_s": 8.82
+    "suite_wall_time_s": 8.827
   },
   "summary": {
     "total_benchmarks": 5,
@@ -31,45 +31,45 @@
         "below_quorum_fail_closed": true
       },
       "timing_telemetry": {
-        "steady_state_parallel_speedup": 3.98,
-        "overall_wall_speedup_vs_sequential_baseline": 2.13,
+        "steady_state_parallel_speedup": 3.99,
+        "overall_wall_speedup_vs_sequential_baseline": 2.14,
         "timeout_cap_s": 2.0,
         "rounds": [
           {
             "round": "timeout_fault",
             "nerva_ok": true,
-            "nerva_proposer_wall_ms": 2012.83,
-            "nerva_sum_proposer_ms": 3965.93,
+            "nerva_proposer_wall_ms": 2010.67,
+            "nerva_sum_proposer_ms": 3964.66,
             "nerva_parallel_speedup": 1.97,
             "baseline_ok": false,
-            "baseline_wall_ms": 3954.98
+            "baseline_wall_ms": 3954.76
           },
           {
             "round": "transport_exception",
             "nerva_ok": true,
-            "nerva_proposer_wall_ms": 61.62,
-            "nerva_sum_proposer_ms": 244.99,
-            "nerva_parallel_speedup": 3.98,
+            "nerva_proposer_wall_ms": 61.31,
+            "nerva_sum_proposer_ms": 244.46,
+            "nerva_parallel_speedup": 3.99,
             "baseline_ok": false,
-            "baseline_wall_ms": 245.08
+            "baseline_wall_ms": 244.49
           },
           {
             "round": "degraded_reply",
             "nerva_ok": true,
-            "nerva_proposer_wall_ms": 61.56,
-            "nerva_sum_proposer_ms": 244.97,
-            "nerva_parallel_speedup": 3.98,
+            "nerva_proposer_wall_ms": 60.39,
+            "nerva_sum_proposer_ms": 240.72,
+            "nerva_parallel_speedup": 3.99,
             "baseline_ok": false,
-            "baseline_wall_ms": 244.48
+            "baseline_wall_ms": 244.67
           },
           {
             "round": "all_healthy",
             "nerva_ok": true,
-            "nerva_proposer_wall_ms": 61.7,
-            "nerva_sum_proposer_ms": 245.05,
-            "nerva_parallel_speedup": 3.97,
+            "nerva_proposer_wall_ms": 61.35,
+            "nerva_sum_proposer_ms": 244.52,
+            "nerva_parallel_speedup": 3.99,
             "baseline_ok": true,
-            "baseline_wall_ms": 244.88
+            "baseline_wall_ms": 244.26
           }
         ]
       }
@@ -112,7 +112,7 @@
         "baseline_unfenced_stale_write_rejection_rate": 0.0
       },
       "timing_telemetry": {
-        "failover_promote_latency_ms": 1.4946
+        "failover_promote_latency_ms": 0.5345
       }
     },
     {
@@ -137,7 +137,7 @@
     {
       "id": "B5_h040_secret_stripped_e2e_sync",
       "title": "Secret-Stripped E2E Cross-Device Sync (H040)",
-      "subsystem": "agents/core/e2e_sync.py + agents/core/settings_db.py",
+      "subsystem": "agents/core/e2e_sync.py + agents/core/settings_db.py (LWW sort via harness _lww_order_manifests over envelope ts/device)",
       "passed": true,
       "deterministic_metrics": {
         "cipher": "fernet-aes128-cbc-hmac-sha256",
@@ -149,6 +149,7 @@
         "hostile_skill_injection_quarantined": true,
         "ciphertext_bitflip_trials": 8,
         "nerva_authenticated_tamper_rejection_rate": 1.0,
+        "lww_ordering_source": "benchmark_harness__lww_order_manifests_over_e2e_envelope_ts_device",
         "lww_arrival_permutations_tested": 6,
         "nerva_lww_convergence_rate": 1.0,
         "baseline_arrival_order_convergence_rate": 0.3333,

@@ -894,7 +894,14 @@ def _check_e2e_tamper_rejection(sync_node: E2ESync, peer_key: str) -> tuple[int,
 
 
 def _lww_order_manifests(manifests: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Canonical deterministic LWW ordering over encrypted peer manifests `(max_ts, device_id)`."""
+    """Benchmark-harness caller-side `(max_ts, device_id)` sort over `E2ESync` envelope metadata.
+
+    `E2ESync.encrypt_record()` stamps `(ts, device)` on ciphertext envelopes, enabling callers
+    to sort manifests canonically by `(max_ts, device_id)` before `apply_pull()`. Production
+    `DirectorySyncTransport.fetch_manifests()` orders spool files lexically (`manifest_<device>.json`),
+    and `E2ESync.pull_state()` without caller sorting iterates mailbox/transport manifests in
+    fetch/arrival order.
+    """
 
     def _sort_key(manifest: dict[str, Any]) -> tuple[float, str]:
         entries = manifest.get("entries") or []
@@ -908,7 +915,7 @@ def _run_lww_convergence_permutations(
     sandbox: Path,
     shared_fernet_key: str,
 ) -> tuple[int, int, int]:
-    """Verify deterministic LWW convergence across all 3! arrival orders of concurrent peer edits."""
+    """Verify `(max_ts, device_id)` LWW convergence via `_lww_order_manifests` across all 3! orders."""
     peer_specs = [
         ("dev-alpha", 1700000100.0, 360, "# Shared Ops\nRevision alpha (t=100).\n"),
         ("dev-gamma", 1700000300.0, 960, "# Shared Ops\nRevision gamma (t=300).\n"),
@@ -956,6 +963,8 @@ def _run_lww_convergence_permutations(
             device_id="dev-dest",
             skills_dir=sandbox / f"lww_skills_{idx}",
         )
+        # Exercise caller-side `(max_ts, device_id)` sorting via `_lww_order_manifests` over
+        # `E2ESync` `(ts, device)` envelope metadata before `apply_pull()`.
         ordered_records: list[dict[str, Any]] = []
         for m in _lww_order_manifests(list(perm)):
             ordered_records.extend(dest.apply_pull(m))
@@ -966,7 +975,8 @@ def _run_lww_convergence_permutations(
         ).hexdigest()
         lww_outcomes.add((idle_val, md_sha))
 
-        # Compare against naive arrival-order apply without LWW sorting.
+        # Compare against unsorted arrival-order `apply_pull` (matching `E2ESync.pull_state()`
+        # mailbox iteration when the caller does not sort by `(max_ts, device_id)`).
         _switch_db(sandbox / f"lww_naive_{idx}.db")
         naive_dest = E2ESync(
             key=shared_fernet_key,
@@ -1088,7 +1098,10 @@ def bench_5_secret_stripped_e2e_sync(sandbox: Path) -> dict[str, Any]:
     return {
         "id": "B5_h040_secret_stripped_e2e_sync",
         "title": "Secret-Stripped E2E Cross-Device Sync (H040)",
-        "subsystem": "agents/core/e2e_sync.py + agents/core/settings_db.py",
+        "subsystem": (
+            "agents/core/e2e_sync.py + agents/core/settings_db.py "
+            "(LWW sort via harness _lww_order_manifests over envelope ts/device)"
+        ),
         "passed": passed,
         "deterministic_metrics": {
             "cipher": "fernet-aes128-cbc-hmac-sha256",
@@ -1100,6 +1113,9 @@ def bench_5_secret_stripped_e2e_sync(sandbox: Path) -> dict[str, Any]:
             "hostile_skill_injection_quarantined": quarantined_slugs == ["hostile-skill"],
             "ciphertext_bitflip_trials": tamper_total,
             "nerva_authenticated_tamper_rejection_rate": tamper_rate,
+            "lww_ordering_source": (
+                "benchmark_harness__lww_order_manifests_over_e2e_envelope_ts_device"
+            ),
             "lww_arrival_permutations_tested": lww_total,
             "nerva_lww_convergence_rate": lww_rate,
             "baseline_arrival_order_convergence_rate": naive_rate,
@@ -1134,6 +1150,11 @@ async def run_all_benchmarks_async() -> dict[str, Any]:
             "patterns (Hermes / OpenClaw architectural defaults without parallel MoA quorum, "
             "H513 per-member consent binding, H657 monotonic authority epochs, H086 principal-scoped "
             "SSRF/one-shot artifact tickets, or H040 secret-stripped authenticated E2E sync). "
+            "In B5 (H040), `E2ESync.encrypt_record()` stamps `(ts, device)` metadata on ciphertext "
+            "envelopes enabling canonical `(max_ts, device_id)` LWW sorting — exercised here via "
+            "`_lww_order_manifests` in the benchmark harness, whereas production "
+            "`DirectorySyncTransport.fetch_manifests()` orders lexically by device ID and "
+            "`E2ESync.pull_state()` mailbox iteration without caller sorting follows arrival order. "
             "Live hardware tok/s and owner-gated live head-to-head runs are tracked separately in "
             "docs/HARDWARE_BENCHMARKS.md and docs/HERMES_HEAD_TO_HEAD.md."
         ),
@@ -1254,9 +1275,9 @@ def render_markdown_report(
         ),
         (
             f"| 5 | **Secret-Stripped E2E Cross-Device Sync** (`{m5['seeded_secret_credentials']}` seeded secrets, `{m5['ciphertext_bitflip_trials']}` ciphertext bit-flips, `3!` LWW arrival orders) "
-            f"| [`agents/core/e2e_sync.py`]({lnk_e2e}) + [`settings_db.py`]({lnk_sdb}) (`H040`) "
-            f"| `{m5['nerva_leaked_secret_keys_in_envelope']}` leaked secrets; `{m5['nerva_authenticated_tamper_rejection_rate'] * 100:.0f}%` authenticated ciphertext tamper rejection (`{m5['cipher']}`); `{m5['nerva_lww_convergence_rate'] * 100:.0f}%` deterministic LWW convergence + hostile skill quarantined "
-            f"| Raw config sync leaks `{m5['baseline_raw_config_secret_leak_count']}` secrets; arrival-order ingestion converges on `{m5['baseline_arrival_order_convergence_rate'] * 100:.1f}%` of permutations "
+            f"| [`agents/core/e2e_sync.py`]({lnk_e2e}) + [`settings_db.py`]({lnk_sdb}) (`H040`; `(max_ts, device_id)` sort via harness `_lww_order_manifests`) "
+            f"| `{m5['nerva_leaked_secret_keys_in_envelope']}` leaked secrets; `{m5['nerva_authenticated_tamper_rejection_rate'] * 100:.0f}%` authenticated ciphertext tamper rejection (`{m5['cipher']}`); `{m5['nerva_lww_convergence_rate'] * 100:.0f}%` LWW convergence via caller `_lww_order_manifests` over `E2ESync` `(ts, device)` envelope metadata (`DirectorySyncTransport` orders lexically by device ID; unsorted `pull_state()` mailbox follows arrival order) + hostile skill quarantined "
+            f"| Raw config sync leaks `{m5['baseline_raw_config_secret_leak_count']}` secrets; unsorted arrival-order ingestion (matching un-sorted mailbox `apply_pull`) converges on `{m5['baseline_arrival_order_convergence_rate'] * 100:.1f}%` of permutations "
             f"| {'PASS' if b5['passed'] else 'FAIL'} |"
         ),
         "",
@@ -1279,7 +1300,8 @@ def render_markdown_report(
         "- **Workload:** `BrowserControlBroker(allow_loopback_http=False)` tested against 8 SSRF/scheme vectors (`169.254.169.254`, `127.0.0.1`, `[::1]`, `localhost`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `file://`), 6 cross-principal session/command/ticket probes between `owner-alice` and `peer-bob`, plain-HTTP transport refusal (`403 https_required`), and 6 one-shot upload/download ticket replay attempts (`410 ticket_already_used`).",
         "",
         "### 5. Secret-Stripped E2E Cross-Device Sync (`H040`)",
-        "- **Workload & Cipher Note:** `E2ESync` (`agents/core/e2e_sync.py`) encrypts artefacts using authenticated **Fernet (`AES-128-CBC + HMAC-SHA256`)** with keys derived via `PBKDF2-HMAC-SHA256` (`390,000` iterations) — not AES-GCM — providing identical `100%` authenticated-ciphertext bit-flip tamper rejection across IV, ciphertext blocks, and MAC tag (`8/8` tampered envelopes rejected). `settings_db.export_settings()` strips all `SECRET_KEYS`, `ROUTE_ONLY` consent rows, and credential-shaped strings (`0` secrets in envelope), `detect_injection_normalized` quarantines hostile synced `SKILL.md` payloads before disk write, and canonical `(ts, device_id)` LWW ordering converges identically across all `6/6` (`3!`) multi-device arrival permutations.",
+        "- **Workload & Cipher Note:** `E2ESync` (`agents/core/e2e_sync.py`) encrypts artefacts using authenticated **Fernet (`AES-128-CBC + HMAC-SHA256`)** with keys derived via `PBKDF2-HMAC-SHA256` (`390,000` iterations) — not AES-GCM — providing identical `100%` authenticated-ciphertext bit-flip tamper rejection across IV, ciphertext blocks, and MAC tag (`8/8` tampered envelopes rejected). `settings_db.export_settings()` strips all `SECRET_KEYS`, `ROUTE_ONLY` consent rows, and credential-shaped strings (`0` secrets in envelope), and `detect_injection_normalized` quarantines hostile synced `SKILL.md` payloads before disk write.",
+        f"- **LWW Ordering Attribution Note:** Production `E2ESync.encrypt_record()` stamps `(ts, device)` metadata on ciphertext envelopes, enabling canonical `(max_ts, device_id)` LWW sorting. In this benchmark, that `(max_ts, device_id)` sort is exercised via `_lww_order_manifests` in [`scripts/bench_nerva_differentiators.py`]({lnk_runner}) (`6/6` = `100%` convergence across `3!` arrival permutations), whereas production `DirectorySyncTransport.fetch_manifests()` orders spool files lexically by device ID (`manifest_<device>.json`) and `E2ESync.pull_state()` mailbox iteration without caller sorting follows arrival order (`{m5['baseline_arrival_order_convergence_rate'] * 100:.1f}%` on the 3-peer tie-break fixture).",
         "",
         "## Reproducing & Verifying",
         "",
