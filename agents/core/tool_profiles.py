@@ -67,6 +67,9 @@ Fails closed: an unreadable setting, an unknown surface or a resolver error offe
 from __future__ import annotations
 
 import fnmatch
+import os
+import threading
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -115,6 +118,118 @@ SESSION_SCOPED_TOOLS: frozenset[str] = frozenset({"todo"})
 OWNER_OPERATOR_TOOLS: frozenset[str] = frozenset({"memory", "delegate_task"})
 MAX_AGENT_PATTERNS = 64
 MAX_PATTERN_CHARS = 64
+
+#: H295 — per-tool backend availability probe TTL and transient-failure grace window.
+CHECK_FN_TTL_SECONDS = 30.0
+LAST_KNOWN_GOOD_GRACE_SECONDS = 60.0
+
+
+def no_cache_check_fn(fn: Callable[[], bool]) -> Callable[[], bool]:
+    """Mark a per-tool ``check_fn`` as uncached so every offer re-evaluates it live."""
+    fn._no_cache_check_fn = True  # type: ignore[attr-defined]
+    return fn
+
+
+def _check_scope_key(env: Mapping[str, str] | None = None) -> str:
+    environ = env if env is not None else os.environ
+    home = (
+        environ.get("NERVA_HOME")
+        or environ.get("JARVIS_HOME")
+        or environ.get("HERMES_HOME")
+        or environ.get("JARVIS_MEMORY_DIR")
+        or ""
+    )
+    profile = environ.get("NERVA_PROFILE") or environ.get("JARVIS_PROFILE") or "default"
+    return f"{home}::{profile}"
+
+
+@dataclass
+class _CheckCacheEntry:
+    value: bool
+    checked_at: float
+    last_good_at: float | None = None
+
+
+class CheckFnCache:
+    """TTL + last-known-good cache for per-tool backend availability probes (H295).
+
+    * Positive/negative probe verdicts are cached for ``ttl_seconds`` (~30 s) per
+      ``(scope_key, tool_name)`` so per-turn tool resolution never hammers Docker/CLI
+      subprocesses.
+    * When a tool was previously observed healthy (``last_good_at``), a transient probe
+      failure or exception after TTL expiry continues offering the tool during
+      ``grace_seconds`` (~60 s from ``last_good_at``) so an in-flight multi-turn session
+      does not lose its tool mid-task on a brief daemon hiccup.
+    * Tools that have *never* probed healthy (e.g. ``execute_code`` on a host without
+      Docker or WASM) immediately withhold on ``False``, disappearing from the turn's
+      offer rather than failing at call time with ``sandbox_not_isolated``.
+    * Callables decorated with :func:`no_cache_check_fn` or calls with ``bypass=True``
+      evaluate live without reading or populating the TTL cache.
+    """
+
+    def __init__(
+        self,
+        *,
+        ttl_seconds: float = CHECK_FN_TTL_SECONDS,
+        grace_seconds: float = LAST_KNOWN_GOOD_GRACE_SECONDS,
+        clock: Callable[[], float] = time.monotonic,
+        scope: Callable[[], str] = _check_scope_key,
+    ) -> None:
+        self.ttl_seconds = max(0.0, float(ttl_seconds))
+        self.grace_seconds = max(0.0, float(grace_seconds))
+        self._clock = clock
+        self._scope = scope
+        self._lock = threading.Lock()
+        self._entries: dict[tuple[str, str], _CheckCacheEntry] = {}
+
+    @staticmethod
+    def _probe(fn: Callable[[], bool]) -> bool:
+        try:
+            return bool(fn())
+        except Exception:
+            return False
+
+    def check(self, tool_name: str, fn: Callable[[], bool], *, bypass: bool = False) -> bool:
+        if bypass or bool(getattr(fn, "_no_cache_check_fn", False)):
+            return self._probe(fn)
+        now = float(self._clock())
+        key = (self._scope(), str(tool_name))
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is not None and (now - entry.checked_at) < self.ttl_seconds:
+                if entry.value:
+                    return True
+                return (
+                    entry.last_good_at is not None
+                    and (now - entry.last_good_at) < self.grace_seconds
+                )
+
+        # Probe outside the lock so a slow backend check never blocks other turns.
+        ok = self._probe(fn)
+        now_after = float(self._clock())
+        with self._lock:
+            prev = self._entries.get(key)
+            if ok:
+                self._entries[key] = _CheckCacheEntry(
+                    value=True, checked_at=now_after, last_good_at=now_after
+                )
+                return True
+            last_good = prev.last_good_at if prev is not None else None
+            self._entries[key] = _CheckCacheEntry(
+                value=False, checked_at=now_after, last_good_at=last_good
+            )
+            return bool(last_good is not None and (now_after - last_good) < self.grace_seconds)
+
+    def invalidate(self, tool_name: str | None = None) -> None:
+        with self._lock:
+            if tool_name is None:
+                self._entries.clear()
+                return
+            target = str(tool_name)
+            self._entries = {k: v for k, v in self._entries.items() if k[1] != target}
+
+
+DEFAULT_CHECK_FN_CACHE = CheckFnCache()
 
 
 @dataclass(frozen=True)
@@ -237,16 +352,21 @@ def resolve_tools(
     agent_patterns: Sequence[str] | None = None,
     settings: Callable[[str, Any], Any] = lambda key, default: default,
     shared_session: bool = False,
+    check_fns: Mapping[str, Callable[[], bool]] | None = None,
+    check_cache: CheckFnCache | None = None,
+    bypass_check_cache: bool = False,
 ) -> tuple[list[Mapping[str, Any]], list[str]]:
     """Split *tools* (ToolRPC metadata rows) into the ones this posture offers and the
     names it withholds. The agent's own patterns can only narrow the posture.
     ``shared_session`` says the turn runs on the shared default session: there the
     session-scoped tools are the owner's, so a turn that is not the owner's is not offered
-    them."""
+    them. ``check_fns`` (H295) probes per-tool backend availability with ~30 s TTL caching
+    and a ~60 s last-known-good grace window."""
     from .job_toolsets import allows
     guest_names = guest_tool_names(settings)
     patterns = _clean_patterns(agent_patterns)
     owners_only = shared_session and posture.principal != PRINCIPAL_OWNER
+    cache = check_cache if check_cache is not None else DEFAULT_CHECK_FN_CACHE
     offered: list[Mapping[str, Any]] = []
     withheld: list[str] = []
     for tool in tools:
@@ -267,6 +387,12 @@ def resolve_tools(
             allowed = False
         if allowed and patterns is not None:
             allowed = any(fnmatch.fnmatchcase(name, pattern) for pattern in patterns)
+        if allowed and check_fns is not None and name in check_fns:
+            probe_fn = check_fns[name]
+            if callable(probe_fn):
+                allowed = cache.check(name, probe_fn, bypass=bypass_check_cache)
+            else:
+                allowed = False
         if allowed:
             offered.append(tool)
         else:
@@ -291,12 +417,22 @@ class ToolProfileResolver:
         principal: Callable[[], Any] = lambda: None,
         origin: Callable[[], str] = current_action_origin,
         shared_session: Callable[[], bool] = lambda: True,
+        check_fns: Mapping[str, Callable[[], bool]] | None = None,
+        check_cache: CheckFnCache | None = None,
+        bypass_check_cache: Callable[[], bool] | None = None,
     ) -> None:
         self._settings = settings
         self._agent_patterns = agent_patterns
         self._principal = principal
         self._origin = origin
         self._shared_session = shared_session
+        self._check_fns = dict(check_fns) if check_fns is not None else None
+        self._check_cache = check_cache if check_cache is not None else CheckFnCache()
+        self._bypass_check_cache = bypass_check_cache
+
+    @property
+    def check_cache(self) -> CheckFnCache:
+        return self._check_cache
 
     def posture(self) -> ToolPosture:
         try:
@@ -321,9 +457,16 @@ class ToolProfileResolver:
             shared = bool(self._shared_session())
         except Exception:
             shared = True
+        bypass = False
+        if self._bypass_check_cache is not None:
+            try:
+                bypass = bool(self._bypass_check_cache())
+            except Exception:
+                bypass = False
         offered, withheld = resolve_tools(
             tools, posture=posture, agent_patterns=patterns, settings=self._settings,
-            shared_session=shared,
+            shared_session=shared, check_fns=self._check_fns,
+            check_cache=self._check_cache, bypass_check_cache=bypass,
         )
         return offered, ProfileDecision(
             surface=posture.surface,
@@ -334,9 +477,11 @@ class ToolProfileResolver:
 
 
 __all__ = [
+    "CHECK_FN_TTL_SECONDS", "CheckFnCache", "DEFAULT_CHECK_FN_CACHE",
     "DEFAULT_GUEST_TOOLS", "GUEST_TOOLS_SETTING", "INBOUND_ACTUATION_SETTING",
-    "INTERNAL_ACTUATION_SETTING", "POSTURES", "PRINCIPAL_GUEST", "PRINCIPAL_OWNER",
+    "INTERNAL_ACTUATION_SETTING", "LAST_KNOWN_GOOD_GRACE_SECONDS",
+    "POSTURES", "PRINCIPAL_GUEST", "PRINCIPAL_OWNER",
     "OWNER_OPERATOR_TOOLS", "PRINCIPAL_SYSTEM", "ProfileDecision", "SESSION_SCOPED_TOOLS", "SURFACE_INBOUND",
     "SURFACE_INTERNAL", "SURFACE_OPERATOR", "ToolPosture", "ToolProfileResolver", "classify_turn",
-    "guest_tool_names", "resolve_tools",
+    "guest_tool_names", "no_cache_check_fn", "resolve_tools",
 ]

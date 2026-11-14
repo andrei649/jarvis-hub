@@ -7,7 +7,8 @@ import base64
 from pathlib import Path
 from urllib.parse import quote
 
-from agents.core.pets import PetStore, render_terminal_protocol
+from agents.cli.client import HubUnavailable
+from agents.core.pets import PetError, PetStore, render_terminal_protocol
 
 BASE = "/api/pets"
 
@@ -18,6 +19,13 @@ def register_parser(verbs):
 
     ops.add_parser("info", help="active companion, live agent-state reaction, and settings")
     ops.add_parser("gallery", help="list all built-in and hatched/imported Petdex companions")
+    ops.add_parser("list", help="list all built-in and hatched/imported Petdex companions")
+
+    show_p = ops.add_parser("show", help="show active or named companion metadata and terminal sprite")
+    show_p.add_argument("pet_id", nargs="?", default="", help="companion id (defaults to active)")
+    show_p.add_argument("--state", default="idle", choices=["idle", "thinking", "tool", "finishing", "failing"])
+    show_p.add_argument("--protocol", default="auto", choices=["auto", "halfblock", "ascii", "kitty", "iterm2"])
+    show_p.add_argument("--json", action="store_true")
 
     meta = ops.add_parser("meta", help="metadata for one companion")
     meta.add_argument("pet_id")
@@ -42,7 +50,9 @@ def register_parser(verbs):
     scale.add_argument("factor", type=float)
 
     ops.add_parser("disable", help="switch companion off")
+    ops.add_parser("off", help="switch companion off")
     ops.add_parser("enable", help="switch companion on")
+    ops.add_parser("on", help="switch companion on")
 
     remove = ops.add_parser("remove", help="delete a custom hatched/imported companion")
     remove.add_argument("pet_id")
@@ -54,6 +64,9 @@ def register_parser(verbs):
 
     import_p = ops.add_parser("import", help="import a .pet.zip archive")
     import_p.add_argument("zip_path")
+
+    install_p = ops.add_parser("install", help="install a .pet.zip companion archive")
+    install_p.add_argument("zip_path")
 
     gen = ops.add_parser("generate", help="generate 4 Hatch-a-Pet candidate drafts")
     gen.add_argument("prompt")
@@ -85,15 +98,67 @@ def register_parser(verbs):
     return pets
 
 
+def _offline_fallback(op: str, ns: argparse.Namespace) -> dict | None:
+    store = PetStore()
+    if op in ("gallery", "list"):
+        return store.gallery()
+    if op == "info":
+        return store.info()
+    if op == "select":
+        return store.select(ns.pet_id)
+    if op == "scale":
+        return store.set_scale(float(ns.factor))
+    if op in ("disable", "off"):
+        return store.disable()
+    if op in ("enable", "on"):
+        return store.enable()
+    if op == "remove":
+        return store.remove(ns.pet_id, confirm=bool(ns.confirm))
+    if op in ("import", "install"):
+        return store.import_zip(Path(ns.zip_path).read_bytes())
+    return None
+
+
 def run(ns: argparse.Namespace, ctx) -> int:
     op = ns.operation
 
-    # Offline-capable local verbs: `render` and `doctor` work directly on local PetStore + env.
+    # Offline-capable local verbs: `render`, `show`, and `doctor` work directly on local PetStore + env.
     if op == "render":
         store = PetStore()
         cell_doc = store.cells(ns.pet or None, state=ns.state, frame=0)
         rendered = render_terminal_protocol(
             cell_doc["cells"], protocol=ns.protocol, env=ctx.environ
+        )
+        ctx.out.write(rendered["rendered"] + "\n")
+        return 0
+    if op == "show":
+        store = PetStore()
+        try:
+            info = store.info()
+            pet_id = ns.pet_id or info["active_id"]
+            meta = store.meta(pet_id)["pet"]
+            cell_doc = store.cells(pet_id, state=ns.state, frame=0)
+            rendered = render_terminal_protocol(
+                cell_doc["cells"], protocol=ns.protocol, env=ctx.environ
+            )
+        except PetError as exc:
+            ctx.err.write(f"{exc.detail}\n")
+            return 1
+        if getattr(ns, "json", False):
+            ctx.dump(
+                {
+                    "ok": True,
+                    "pet": meta,
+                    "enabled": info["enabled"],
+                    "scale": info["scale"],
+                    "protocol": rendered["protocol"],
+                    "rendered": rendered["rendered"],
+                }
+            )
+            return 0
+        ctx.say(
+            f"{meta['name']} ({meta['id']}) · {meta['rarity']} · {meta['vibe']} · "
+            f"enabled={info['enabled']} · scale={info['scale']}"
         )
         ctx.out.write(rendered["rendered"] + "\n")
         return 0
@@ -103,7 +168,7 @@ def run(ns: argparse.Namespace, ctx) -> int:
         return 0
 
     method, path, body = "GET", BASE, None
-    if op == "gallery":
+    if op in ("gallery", "list"):
         method, path = "GET", f"{BASE}/gallery"
     elif op == "meta":
         method, path = "GET", f"{BASE}/{quote(ns.pet_id, safe='')}/meta"
@@ -120,9 +185,9 @@ def run(ns: argparse.Namespace, ctx) -> int:
         method, path, body = "POST", f"{BASE}/{pid}/rename", {"name": ns.name}
     elif op == "scale":
         method, path, body = "PUT", f"{BASE}/preferences", {"scale": float(ns.factor)}
-    elif op == "disable":
+    elif op in ("disable", "off"):
         method, path, body = "PUT", f"{BASE}/preferences", {"enabled": False}
-    elif op == "enable":
+    elif op in ("enable", "on"):
         method, path, body = "PUT", f"{BASE}/preferences", {"enabled": True}
     elif op == "remove":
         pid = quote(ns.pet_id, safe="")
@@ -137,7 +202,7 @@ def run(ns: argparse.Namespace, ctx) -> int:
             reply = {**reply, "written_to": str(out_path)}
         ctx.dump(reply)
         return 0
-    elif op == "import":
+    elif op in ("import", "install"):
         raw = Path(ns.zip_path).read_bytes()
         b64 = base64.b64encode(raw).decode("ascii")
         method, path, body = "POST", f"{BASE}/import", {"zip_base64": b64}
@@ -161,5 +226,16 @@ def run(ns: argparse.Namespace, ctx) -> int:
     elif op != "info":
         raise argparse.ArgumentTypeError("unknown pets operation")
 
-    ctx.dump(ctx.client().request(method, path, body))
-    return 0
+    try:
+        ctx.dump(ctx.client().request(method, path, body))
+        return 0
+    except HubUnavailable:
+        try:
+            fallback = _offline_fallback(op, ns)
+        except PetError as exc:
+            ctx.err.write(f"{exc.detail}\n")
+            return 1
+        if fallback is None:
+            raise
+        ctx.dump(fallback)
+        return 0

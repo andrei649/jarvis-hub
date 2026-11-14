@@ -41,7 +41,9 @@ def profile_exists(name):
 
 
 def no_cache_check_fn(fn):
-    return fn
+    from agents.core.tool_profiles import no_cache_check_fn as mark_no_cache
+
+    return mark_no_cache(fn)
 
 
 def tool_error(message):

@@ -11,6 +11,12 @@ import shlex
 from collections.abc import Callable, Mapping
 from types import MappingProxyType
 
+from ..security.command_content_scanner import (
+    HOMOGRAPH_HOST_DESCRIPTION,
+    SCANNER_UNAVAILABLE_DESCRIPTION,
+    TERMINAL_ESCAPE_DESCRIPTION,
+    scan_command_content,
+)
 from . import hermes_command_detection as detector
 from .consent_ledger import ConsentCategory
 
@@ -19,6 +25,9 @@ _SESSION_ONLY = frozenset(
     {
         detector._PARSER_LIMIT_DESCRIPTION,
         detector._MALFORMED_EXEC_DESCRIPTION,
+        HOMOGRAPH_HOST_DESCRIPTION,
+        TERMINAL_ESCAPE_DESCRIPTION,
+        SCANNER_UNAVAILABLE_DESCRIPTION,
     }
 )
 _EXTRA_DESCRIPTIONS = frozenset(
@@ -26,6 +35,9 @@ _EXTRA_DESCRIPTIONS = frozenset(
         detector._PARSER_LIMIT_DESCRIPTION,
         detector._MALFORMED_EXEC_DESCRIPTION,
         detector._GATEWAY_LIFECYCLE_SPLICE_DESCRIPTION,
+        HOMOGRAPH_HOST_DESCRIPTION,
+        TERMINAL_ESCAPE_DESCRIPTION,
+        SCANNER_UNAVAILABLE_DESCRIPTION,
         "script execution via -e/-c flag",
         "script execution via heredoc",
         "shell command via -c/-lc flag",
@@ -112,11 +124,20 @@ def terminal_consent_categories(
         # A failed trusted predicate or parser can never become a benign
         # classification that a later consent consumer might reuse.
         return None
-    if not dangerous:
-        return ()
-    if not isinstance(description, str):
-        return (_UNCLASSIFIED,)
-    return (_CATEGORY_BY_DESCRIPTION.get(description, _UNCLASSIFIED),)
+    content_findings = scan_command_content(command)
+    categories: list[ConsentCategory] = []
+    if dangerous:
+        primary = (
+            _CATEGORY_BY_DESCRIPTION.get(description, _UNCLASSIFIED)
+            if isinstance(description, str)
+            else _UNCLASSIFIED
+        )
+        categories.append(primary)
+    for finding in content_findings:
+        cat = _CATEGORY_BY_DESCRIPTION.get(finding.description, _UNCLASSIFIED)
+        if cat not in categories:
+            categories.append(cat)
+    return tuple(categories)
 
 
 __all__ = [

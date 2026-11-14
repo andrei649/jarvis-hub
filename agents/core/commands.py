@@ -1391,10 +1391,13 @@ def build_default_registry() -> CommandRegistry:
                                    delegations_command, tier=ADMIN, usage="[list|collect]"))
     registry.register(SlashCommand("pet", "inspect, switch, scale or toggle your Petdex companion",
                                    _pet_command, tier=ADMIN,
-                                   usage="[info|gallery|select <id>|scale <0.5..3>|roam on|off|overlay on|off|off|on|doctor]"))
+                                   usage="[info|show|list|gallery|select <id>|scale <0.5..3>|roam on|off|overlay on|off|off|on|doctor]"))
     registry.register(SlashCommand("hatch", "generate Hatch-a-Pet candidate drafts or adopt one",
                                    _hatch_command, tier=ADMIN,
                                    usage="<concept prompt> | adopt <job_id> <draft_id> [name]"))
+    registry.register(SlashCommand("skin", "list, inspect or switch the CLI terminal colour skin",
+                                   _skin_command, tier=ADMIN,
+                                   usage="[list|use <name>|set <name>|show [name]|reset]"))
     return registry
 
 
@@ -1414,7 +1417,7 @@ async def _pet_command(ctx: CommandContext) -> str:
     parts = [p for p in (ctx.args or "").strip().split() if p]
     sub = parts[0].lower() if parts else "info"
     try:
-        if sub == "info":
+        if sub in ("info", "show"):
             info = store.info(orch=ctx.orch)
             art = render_halfblock(info["current_cells"], ansi=False)
             return (
@@ -1422,7 +1425,7 @@ async def _pet_command(ctx: CommandContext) -> str:
                 f"state={info['agent_state']} ({info['vibe_reaction']}) · "
                 f"enabled={info['enabled']} · scale={info['scale']}\n{art}"
             )
-        if sub == "gallery":
+        if sub in ("gallery", "list"):
             gal = store.gallery()
             rows = [f"- {p['id']}: {p['name']} ({p['rarity']}, {p['vibe']})" + (" [active]" if p["active"] else "") for p in gal["pets"]]
             return "Petdex gallery:\n" + "\n".join(rows)
@@ -1433,11 +1436,15 @@ async def _pet_command(ctx: CommandContext) -> str:
             res = store.set_scale(float(parts[1]))
             return f"Companion scale set to {res['scale']}x."
         if sub == "roam" and len(parts) >= 2:
-            on = parts[1].lower() in {"on", "1", "true", "yes"}
+            from .env_config import truthy
+
+            on = truthy(parts[1])
             store.update_preferences(roam=on)
             return f"Companion roaming {'enabled' if on else 'disabled'}."
         if sub == "overlay" and len(parts) >= 2:
-            on = parts[1].lower() in {"on", "1", "true", "yes"}
+            from .env_config import truthy
+
+            on = truthy(parts[1])
             store.update_preferences(overlay_enabled=on)
             return f"Companion overlay {'enabled' if on else 'disabled'}."
         if sub == "off":
@@ -1476,6 +1483,50 @@ async def _hatch_command(ctx: CommandContext) -> str:
         return "\n".join(lines)
     except PetError as exc:
         return f"Hatch refused: {exc.detail}"
+
+
+async def _skin_command(ctx: CommandContext) -> str:
+    from .skins import (
+        SkinValidationError,
+        get_active_skin,
+        get_skin,
+        list_skins,
+        reset_active_skin,
+        set_active_skin,
+    )
+
+    parts = [p for p in (ctx.args or "").strip().split() if p]
+    if not parts or parts[0].lower() == "list":
+        report = list_skins()
+        rows = [
+            f"{'*' if s['active'] else '-'} {s['name']} ({s['source']}) — {s['description']}"
+            for s in report["skins"]
+        ]
+        return f"CLI skins (active: {report['active']}):\n" + "\n".join(rows)
+    sub = parts[0].lower()
+    if sub == "reset" and len(parts) == 1:
+        chosen = reset_active_skin()
+        return f"CLI skin reset to {chosen.name}."
+    if sub == "show":
+        target = get_skin(parts[1]) if len(parts) >= 2 else get_active_skin()
+        if target is None:
+            return f"Skin command refused: unknown skin {parts[1]!r}."
+        return (
+            f"Skin: {target.name} ({target.source}) — {target.description}\n"
+            f"Prompt: {target.branding['prompt_symbol']} · Tool prefix: {target.tool_prefix} · "
+            f"Accent: {target.colors['accent']}"
+        )
+    if sub in ("use", "set") and len(parts) >= 2:
+        target_name = parts[1]
+    elif len(parts) == 1 and sub not in ("use", "set", "help"):
+        target_name = sub
+    else:
+        return "Usage: /skin [list|use <name>|set <name>|show [name]|reset]"
+    try:
+        chosen = set_active_skin(target_name)
+    except (KeyError, SkinValidationError) as exc:
+        return f"Skin command refused: {exc}"
+    return f"Active CLI skin set to {chosen.name} ({chosen.description})."
 
 
 async def _session_change(ctx: CommandContext) -> str:

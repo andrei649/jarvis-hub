@@ -41,13 +41,17 @@ import argparse
 import asyncio
 import hashlib
 import json
+import os
 import re
+import shutil
 import sqlite3
 import sys
 import threading
 import time
+import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -395,6 +399,26 @@ def parse_json_tokens(text: str, origin_file: str = "", *, prefix: str = "") -> 
     return tuple(out)
 
 
+def parse_toml_tokens(text: str, origin_file: str = "", *, prefix: str = "") -> tuple[TokenCandidate, ...]:
+    """Secret-looking string leaves of a TOML config (Codex ``~/.codex/config.toml``),
+    preserving ``[env]`` keys verbatim and naming nested keys ``PREFIX_A_B``."""
+    try:
+        data = tomllib.loads(text or "")
+    except (tomllib.TOMLDecodeError, ValueError):
+        return ()
+    if not isinstance(data, dict):
+        return ()
+    out: list[TokenCandidate] = []
+    root: tuple[str, ...] = (prefix,) if prefix else ()
+    if isinstance(data.get("env"), dict):
+        for key, value in data["env"].items():
+            if isinstance(key, str) and isinstance(value, str) and value.strip() and _SECRET_NAME_RE.search(key):
+                out.append(TokenCandidate(key, value.strip(), origin_file))
+        data = {k: v for k, v in data.items() if k != "env"}
+    _json_secret_walk(data, root, out, origin_file)
+    return tuple(out)
+
+
 def collect_tokens(source: DetectedSource) -> tuple[TokenCandidate, ...]:
     found: list[TokenCandidate] = []
     seen: set[str] = set()
@@ -405,6 +429,8 @@ def collect_tokens(source: DetectedSource) -> tuple[TokenCandidate, ...]:
             continue
         if path.suffix == ".json":
             items = parse_json_tokens(text, str(path), prefix=source.source.replace("-", "_"))
+        elif path.suffix == ".toml":
+            items = parse_toml_tokens(text, str(path), prefix=source.source.replace("-", "_"))
         else:
             items = parse_env_tokens(text, str(path))
         for item in items:
@@ -867,6 +893,162 @@ class ImportRunner:
         return await self._run(dry_run=False)
 
 
+# ── Post-migration source cleanup (`claw cleanup` analogue, H012) ────────────
+
+
+def _safe_within_install(target: Path, install_root_dir: Path) -> bool:
+    """True only when *target* and every ancestor up to *install_root_dir* are non-symlinks
+    and resolve strictly inside *install_root_dir*."""
+    try:
+        if install_root_dir.is_symlink() or not install_root_dir.is_dir():
+            return False
+        resolved_root = install_root_dir.resolve(strict=True)
+        if target.is_symlink() or not target.exists():
+            return False
+        resolved_target = target.resolve(strict=True)
+        rel = resolved_target.relative_to(resolved_root)
+        cur = install_root_dir
+        for part in rel.parts:
+            cur = cur / part
+            if cur.is_symlink():
+                return False
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def _copy_file_restricted(src: Path, dst: Path) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    data = src.read_bytes()
+    fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(data)
+
+
+def cleanup_source(
+    source: DetectedSource,
+    *,
+    dry_run: bool = True,
+    confirm: bool = False,
+    archive_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Post-migration cleanup for a foreign install (H012 `claw cleanup` analogue).
+
+    - **Dry-run first by default** (``dry_run=True``): lists every migrated artefact with
+      ``status="would_archive"`` and modifies zero bytes on disk.
+    - **Confirmation required**: ``dry_run=False`` without ``confirm=True`` refuses
+      (``ok=False, reason="confirm_required"``) with zero writes.
+    - **Targeted & recoverable**: archives migrated files and skill directories into
+      ``<archive_dir>/<source>/<timestamp>/...`` (``0o600`` file permissions) and removes
+      only the migrated artefacts inside ``source.root``, leaving unrelated files untouched.
+    """
+    from agents.core.paths import data_path
+
+    candidates: list[tuple[str, Path]] = []
+    for p in source.persona_files:
+        candidates.append(("persona", p))
+    for p in source.memory_files:
+        candidates.append(("memory", p))
+    for p in source.token_files:
+        candidates.append(("tokens", p))
+    for p in source.skill_dirs:
+        candidates.append(("skills", p))
+
+    if dry_run:
+        items = []
+        for section, path in candidates:
+            if _safe_within_install(path, source.root):
+                items.append({"section": section, "path": str(path), "status": "would_archive"})
+            else:
+                items.append({"section": section, "path": str(path), "status": "refused", "reason": "unsafe_path"})
+        return {
+            "ok": True,
+            "source": source.source,
+            "root": str(source.root),
+            "dry_run": True,
+            "archive_dir": None,
+            "items": items,
+        }
+
+    if not confirm:
+        return {
+            "ok": False,
+            "reason": "confirm_required",
+            "source": source.source,
+            "root": str(source.root),
+            "dry_run": False,
+            "archive_dir": None,
+            "items": [
+                {"section": sec, "path": str(p), "status": "skipped", "reason": "confirm_required"}
+                for sec, p in candidates
+            ],
+        }
+
+    base_archive = Path(archive_dir) if archive_dir is not None else data_path("imports", "cleanup_backups")
+    if base_archive.exists() and base_archive.is_symlink():
+        return {
+            "ok": False,
+            "reason": "symlinked_archive_dir",
+            "source": source.source,
+            "root": str(source.root),
+            "dry_run": False,
+            "archive_dir": None,
+            "items": [],
+        }
+
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    dest_root = base_archive / source.source / f"{stamp}-{os.getpid()}"
+    dest_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    resolved_install = source.root.resolve()
+
+    items: list[dict[str, Any]] = []
+    for section, path in candidates:
+        if not _safe_within_install(path, source.root):
+            items.append({"section": section, "path": str(path), "status": "refused", "reason": "unsafe_path"})
+            continue
+        rel = path.resolve().relative_to(resolved_install)
+        archived_target = dest_root / rel
+        if path.is_dir():
+            # Copy plain files inside the skill directory, skipping symlinks, then remove them.
+            copied_any = False
+            for child in sorted(path.rglob("*")):
+                if child.is_symlink():
+                    continue
+                if child.is_file() and _safe_within_install(child, source.root):
+                    child_rel = child.resolve().relative_to(resolved_install)
+                    _copy_file_restricted(child, dest_root / child_rel)
+                    copied_any = True
+            if copied_any:
+                shutil.rmtree(path)
+                items.append({
+                    "section": section,
+                    "path": str(path),
+                    "archived_to": str(archived_target),
+                    "status": "archived_and_removed",
+                })
+            else:
+                items.append({"section": section, "path": str(path), "status": "skipped", "reason": "empty_dir"})
+        else:
+            _copy_file_restricted(path, archived_target)
+            path.unlink()
+            items.append({
+                "section": section,
+                "path": str(path),
+                "archived_to": str(archived_target),
+                "status": "archived_and_removed",
+            })
+
+    return {
+        "ok": True,
+        "source": source.source,
+        "root": str(source.root),
+        "dry_run": False,
+        "archive_dir": str(dest_root),
+        "items": items,
+    }
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 
@@ -902,6 +1084,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--update", action="store_true",
         help="re-import skills whose source changed since import (needs --apply: the "
              "current copy is backed up, the skill is re-quarantined and its approval revoked)",
+    )
+    parser.add_argument(
+        "--cleanup", action="store_true",
+        help="post-migration source cleanup (dry-run by default; combine with --apply --confirm "
+             "to archive and remove migrated source files)",
+    )
+    parser.add_argument(
+        "--confirm", action="store_true",
+        help="explicitly confirm destructive source cleanup when combined with --cleanup --apply",
     )
     parser.add_argument("--json", action="store_true", help="machine-readable report")
     return parser
@@ -1020,8 +1211,36 @@ async def _main_async(args) -> int:
             if name not in present and rescan_imported(skills_dir, name, home=home):
                 detected.append(DetectedSource(source=name, root=install_root(name, home)))
     if not detected:
-        print("✗ no Hermes / OpenClaw / Claude Code install detected")
+        print("✗ no Hermes / OpenClaw / Claude Code / Codex install detected")
         return 2
+
+    if getattr(args, "cleanup", False):
+        dry = not bool(args.apply)
+        confirmed = bool(getattr(args, "confirm", False))
+        if not dry and not confirmed:
+            if args.json:
+                reports = [cleanup_source(src, dry_run=False, confirm=False) for src in detected]
+                print(json.dumps(reports, indent=2, ensure_ascii=False))
+            else:
+                print("✗ cleanup with --apply requires --confirm (run without --apply first to preview)")
+            return 2
+        cleanup_reports = [
+            cleanup_source(src, dry_run=dry, confirm=confirmed)
+            for src in detected
+        ]
+        if args.json:
+            print(json.dumps(cleanup_reports, indent=2, ensure_ascii=False))
+            return 0
+        for rep in cleanup_reports:
+            mode = "DRY RUN" if rep["dry_run"] else "CLEANED UP"
+            print(f"→ {rep['source']} at {rep['root']} [{mode}]")
+            for item in rep["items"]:
+                print(f"  {item['section']:8s} {item['status']}  {item['path']}")
+            if rep.get("archive_dir"):
+                print(f"  archived backup: {rep['archive_dir']}")
+        if dry:
+            print("  (nothing removed — re-run with --cleanup --apply --confirm to archive & remove)")
+        return 0
 
     secret_store = None
     pending_store = None

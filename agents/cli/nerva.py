@@ -212,6 +212,10 @@ def build_parser() -> argparse.ArgumentParser:
     configure_sync(verbs)
     from .pets import register_parser as configure_pets
     configure_pets(verbs)
+    from .skins import register_parser as configure_skins
+    configure_skins(verbs)
+    from .import_cmd import register_parser as configure_import
+    configure_import(verbs)
 
     from agents.core.kanban.cli_parser import build_parser as configure_kanban
     configure_kanban(verbs)
@@ -7545,6 +7549,18 @@ def cmd_pets(ns: argparse.Namespace, ctx: Context) -> int:
     return run_pets(ns, ctx)
 
 
+def cmd_skin(ns: argparse.Namespace, ctx: Context) -> int:
+    from .skins import run as run_skin
+
+    return run_skin(ns, ctx)
+
+
+def cmd_import(ns: argparse.Namespace, ctx: Context) -> int:
+    from .import_cmd import run as run_import
+
+    return run_import(ns, ctx)
+
+
 _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "secrets": cmd_secrets,
     "kanban": cmd_kanban,
@@ -7579,6 +7595,8 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "moa": cmd_moa,
     "sync": cmd_sync,
     "pets": cmd_pets,
+    "skin": cmd_skin,
+    "import": cmd_import,
     "rooms": cmd_rooms,
     "mcp": cmd_mcp,
     "webhook": cmd_webhook,
