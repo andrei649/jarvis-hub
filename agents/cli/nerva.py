@@ -930,11 +930,11 @@ def build_parser() -> argparse.ArgumentParser:
     history_agent.add_argument("--unassigned", action="store_true", help="missing, null or empty agent")
     history.add_argument("--older-than", dest="older_than_days", type=int, help="started at least DAYS ago, 0..36500")
     history.add_argument("--query", help="literal case-insensitive metadata text, 1..256 characters")
-    history.add_argument("--json", action="store_true")
+    history.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
     renamed = session_verbs.add_parser("rename", help="set a human conversation title")
     renamed.add_argument("session_id")
     renamed.add_argument("title", help="one line of 1 to 100 characters")
-    renamed.add_argument("--json", action="store_true")
+    renamed.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
     for action, explanation in (
         ("pin", "pin the whole conversation lineage"),
         ("unpin", "unpin the whole conversation lineage"),
@@ -943,7 +943,7 @@ def build_parser() -> argparse.ArgumentParser:
     ):
         stamp = session_verbs.add_parser(action, help=explanation, description=explanation)
         stamp.add_argument("session_id")
-        stamp.add_argument("--json", action="store_true")
+        stamp.add_argument("--json", action="store_true", default=argparse.SUPPRESS)
     continuation = session_verbs.add_parser("continue", help="create a new session carrying retained context; does not switch default")
     continuation.add_argument("source_session_id")
     continuation.add_argument("--request-id", required=True, help="stable UUID for safe retry")
@@ -970,7 +970,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Export the session's redacted retained current history (user and assistant text).")
     transcript.add_argument("session_id")
     transcript.add_argument("-o", "--out", default="-", help="create-only JSON output path ('-' = stdout)")
-    transcript.add_argument("--json", action="store_true", help="JSON output (already the default)")
+    transcript.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="JSON output (already the default)")
 
     chat = verbs.add_parser(
         "chat",
@@ -5703,8 +5703,9 @@ def _session_history(ns: argparse.Namespace, ctx: Context) -> int:
 
 
 def _organize_session(ns: argparse.Namespace, ctx: Context) -> int:
+    from agents.core.validation import is_valid_session_id as valid_session_id
+
     from .session_organization import organization_receipt, organization_title
-    from .session_transcript import valid_session_id
 
     if not valid_session_id(ns.session_id):
         ctx.err.write("Invalid session identifier for session organization.\n")

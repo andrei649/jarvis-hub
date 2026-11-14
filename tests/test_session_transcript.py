@@ -225,3 +225,78 @@ async def test_imported_seed_is_explicitly_addressed_and_never_copied_to_disk(ho
     assert result["turns"][0]["content"] == "imported request"
     assert not (root / f"{sid}.json").exists()
     assert before == orch.checkpoints._conn.execute("SELECT seed_json FROM session_imports WHERE session_id=?", (sid,)).fetchone()[0]
+
+
+@pytest.mark.asyncio
+async def test_cancelled_projection_releases_real_lease_without_switch(host, monkeypatch):
+    from agents.core import session_transcript as transcript
+    orch, _ = host
+    await seed(orch)
+    await seed(orch, 'other')
+    active = orch.memory.conversation.current_session_id
+    entered = asyncio.Event()
+    original = transcript.prepare_session
+
+    async def blocked(*args):
+        entered.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(transcript, 'prepare_session', blocked)
+    task = asyncio.create_task(transcript.read_transcript(orch, 'chosen'))
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    monkeypatch.setattr(transcript, 'prepare_session', original)
+    assert json.loads(await transcript.read_transcript(orch, 'chosen'))['turn_count'] == 2
+    assert orch.memory.conversation.current_session_id == active
+    assert orch.session_id == 'existing-default'
+
+
+@pytest.mark.asyncio
+async def test_unavailable_storage_is_opaque_and_uncached(host, monkeypatch):
+    orch, _ = host
+    await seed(orch)
+    orch.checkpoints.close()
+    response = client(monkeypatch, orch).get('/sessions/chosen/transcript',
+                                           headers={'X-Admin-Token': 'owner-secret'})
+    assert response.status_code == 503
+    assert response.json() == {'error': 'continuation_unavailable'}
+    assert response.headers['cache-control'] == 'no-store'
+
+
+@pytest.mark.asyncio
+async def test_cli_hubclient_through_asgi_reads_real_retained_storage(host, monkeypatch):
+    import io
+    from urllib.parse import urlsplit
+
+    from agents.cli.client import HubClient
+    from agents.cli.nerva import EXIT_OK, Context, main
+
+    orch, root = host
+    secret = 'sk-' + 'Z' * 44
+    await seed(orch, text='kept ' + secret)
+    await seed(orch, 'other', 'unselected text')
+    http = client(monkeypatch, orch)
+    calls = []
+
+    def opener(request, **kwargs):
+        calls.append((request.method, urlsplit(request.full_url).path))
+        response = http.request(request.method, urlsplit(request.full_url).path,
+                                headers=dict(request.header_items()))
+        assert response.status_code == 200
+        return io.BytesIO(response.content)
+
+    hub = HubClient(admin_token='owner-secret', opener=opener)
+    out, err = io.StringIO(), io.StringIO()
+    ctx = Context(environ={}, out=out, err=err, inp=io.StringIO())
+    monkeypatch.setattr(ctx, 'client', lambda: hub)
+    active = orch.memory.conversation.current_session_id
+    target = root / 'export.json'
+    assert main(['sessions', 'transcript', 'chosen', '-o', str(target)], context=ctx) == EXIT_OK
+    result = json.loads(target.read_bytes())
+    assert result['turns'][0]['content'] == 'kept [REDACTED:openai_key]'
+    assert secret not in target.read_text() and 'unselected text' not in target.read_text()
+    assert not out.getvalue()
+    assert calls == [('GET', '/sessions/chosen/transcript')]
+    assert orch.memory.conversation.current_session_id == active

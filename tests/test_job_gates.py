@@ -119,7 +119,8 @@ async def test_no_agent_silent_token_is_literal_output(tmp_path, scripts, held):
         async def stop(self):
             pass
 
-        async def send(self, message):
+        async def send(self, message, **kwargs):
+            assert "_literal_job_output" not in kwargs
             outputs.append(message)
             return True
 

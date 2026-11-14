@@ -27,6 +27,16 @@ from agents.core import browser_agent as browser_api  # noqa: E402
 import agents.web as web  # noqa: E402
 
 
+@pytest.fixture
+def public_example_dns(monkeypatch):
+    """Keep the real SSRF guard; only supply the public DNS answer for this test."""
+    def resolve(host, port, *args, **kwargs):
+        assert host == "example.com"
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port or 443))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
+
+
 # ── egress allowlist ──────────────────────────────────────────────
 
 def test_allowlist_suffix_match_and_fail_closed(monkeypatch):
@@ -41,9 +51,13 @@ def test_allowlist_suffix_match_and_fail_closed(monkeypatch):
 def test_allowlist_blocks_private_ip(monkeypatch):
     # an allowlisted host that resolves to a private IP is still blocked (SSRF)
     pol = BrowserPolicy(["internal.test"])
-    monkeypatch.setattr("core.security.ssrf.check_ssrf", lambda url: "private IP")
+    def resolve(host, port, *args, **kwargs):
+        assert host == "internal.test"
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.7", port or 443))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
     ok, reason = pol.domain_allowed("https://internal.test/x")
-    assert ok is False and "private" in reason.lower()
+    assert ok is False and "unsafe address" in reason.lower() and "10.0.0.7" in reason
 
 
 def test_no_hostname_blocked():
@@ -62,8 +76,7 @@ def test_classify_step():
 
 # ── preview (governance dry-run) ──────────────────────────────────
 
-def test_preview_classifies_each_step(monkeypatch):
-    monkeypatch.setattr("core.security.ssrf.check_ssrf", lambda _url: None)
+def test_preview_classifies_each_step(public_example_dns):
     gb = GovernedBrowser(policy=BrowserPolicy(["example.com"]))
     plan = [
         {"action": "navigate", "url": "https://example.com"},
@@ -197,8 +210,7 @@ def client():
     return TestClient(web.app)
 
 
-def test_endpoint_check_and_preview(client, monkeypatch):
-    monkeypatch.setattr("agents.core.security.ssrf.check_ssrf", lambda _url: None)
+def test_endpoint_check_and_preview(client, public_example_dns):
     chk = client.post("/api/browser/check",
                       json={"url": "https://example.com/x", "allowlist": ["example.com"]})
     assert chk.status_code == 200 and chk.json()["allowed"] is True

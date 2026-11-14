@@ -283,3 +283,76 @@ def test_query_never_searches_raw_metadata(hub):
     hub.pages = [page({**row(), "metadata": {"note": SECRET}, "raw_history": SECRET})]
     code, out, err = run(hub, "--query", SECRET, "--json")
     assert code == EXIT_OK and not err and json.loads(out)["sessions"] == []
+
+
+@pytest.mark.parametrize("args", [["sessions", "--json", "history"],
+                                   ["sessions", "history", "--json"]])
+def test_history_json_flag_before_or_after_subcommand(hub, args):
+    out, err = io.StringIO(), io.StringIO()
+    code = main(args, context=Context(
+        environ={"NERVA_HUB_URL": "http://127.0.0.1:8765"},
+        client_factory=hub.factory, out=out, err=err, inp=io.StringIO()))
+    assert code == EXIT_OK and not err.getvalue()
+    assert json.loads(out.getvalue())["stop_reason"] == "exhausted"
+
+
+def test_real_route_filter_page_cap_and_cursor_resume(backend):
+    # Each page has at most two rows, even when metadata filters reject all rows.
+    code, out, err = run(backend, "--limit", "2", "--max-pages", "2",
+                         "--query", "saved-00", "--json")
+    assert code == EXIT_OK and not err
+    body = json.loads(out)
+    assert body["sessions"] == [] and body["stop_reason"] == "page_limit"
+    assert body["has_more"] and body["next_cursor"]
+    assert body["scanned_pages"] == 2 and body["scanned_rows"] == 4
+    assert len(backend.calls) == 2
+    code, out, err = run(backend, "--limit", "2", "--max-pages", "20",
+                         "--cursor", body["next_cursor"], "--query", "saved-00", "--json")
+    assert code == EXIT_OK and not err
+    resumed = json.loads(out)
+    assert [r["id"] for r in resumed["sessions"]] == ["saved-00"]
+    assert resumed["stop_reason"] == "exhausted" and not resumed["has_more"]
+    assert all(int(query(req)["limit"][0]) <= 2 for req in backend.calls)
+
+
+def test_cancellation_on_late_page_has_no_partial_stdout(hub):
+    hub.pages = [page(row(), cursor="cursor-a"), KeyboardInterrupt()]
+    # BaseException is intentionally outside the fixture's Exception handler.
+    factory = hub.factory
+    def cancelled_factory(env):
+        client = factory(env)
+        original_get = client.get
+        def get(path):
+            if hub.calls:
+                hub.calls.append(path)
+                raise KeyboardInterrupt
+            return original_get(path)
+        client.get = get
+        return client
+    hub.factory = cancelled_factory
+    code, out, err = run(hub, "--json")
+    assert code == 130 and not out and len(hub.calls) == 2
+
+
+def test_initial_cursor_cycle_fails_on_first_response(hub):
+    hub.pages = [page(row(), cursor="cursor-a")]
+    code, out, err = run(hub, "--cursor", "cursor-a", "--json")
+    assert code == EXIT_FAILED and not out and err and len(hub.calls) == 1
+
+
+@pytest.mark.parametrize("failure", ["unavailable", "malformed"])
+def test_real_route_late_failure_never_claims_exhaustion(backend, monkeypatch, failure):
+    original_page = backend.cp.get_sessions_page
+    calls = []
+    def read_page(*args, **kwargs):
+        calls.append(kwargs)
+        if len(calls) == 2 and failure == "unavailable":
+            raise RuntimeError(SECRET)
+        rows, more = original_page(*args, **kwargs)
+        if len(calls) == 2:
+            rows[0]["turn_count"] = True
+        return rows, more
+    monkeypatch.setattr(backend.cp, "get_sessions_page", read_page)
+    code, out, err = run(backend, "--limit", "2", "--query", "saved-00", "--json")
+    assert code == EXIT_FAILED and not out and err and SECRET not in err
+    assert len(backend.calls) == 2 and len(calls) == 2

@@ -843,6 +843,18 @@ async def test_orphan_journal_reaps_only_exact_native_chrome_after_controller_ex
 
     journal = BrowserOwnershipJournal(tmp_path / 'journal')
     sid = 'f' * 32
+    if sys.platform == 'linux':
+        from tests.browser_orphan_fixture import supervised_orphan
+
+        profile = Path(tempfile.mkdtemp(prefix='nerva-browser-orphan-'))
+        async with supervised_orphan(chrome, journal, sid, profile, tmp_path / 'launch') as record:
+            identity = tuple(record['native'])
+            assert browser_identity_alive(identity)
+            assert await journal.reap_entry(journal._file(sid)) is True
+            assert not browser_identity_alive(identity)
+            assert not profile.exists()
+            assert not journal._file(sid).exists()
+        return
     child_code = '''
 import json, os, psutil, subprocess, sys, tempfile
 from pathlib import Path

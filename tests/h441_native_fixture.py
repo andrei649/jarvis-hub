@@ -13,7 +13,7 @@ def bind_native(orch, monkeypatch, *, session_ids=()) -> CheckpointManager:
     Keep the temporary root alive with the orchestrator; tests can create further
     sessions through memory.new_session, which records their native lineage.
     """
-    temporary = TemporaryDirectory(prefix="nerva-native-test-")
+    temporary = TemporaryDirectory(prefix="nerva-native-test-", ignore_cleanup_errors=True)
     root = Path(temporary.name)
     orch._h441_native_fixture_root = temporary
     monkeypatch.setenv("JARVIS_HOME", str(root))
@@ -21,6 +21,8 @@ def bind_native(orch, monkeypatch, *, session_ids=()) -> CheckpointManager:
     monkeypatch.setattr(persistence, "MEMORY_DIR", root / "memory")
     checkpoints = CheckpointManager(str(root / "checkpoints.db"))
     checkpoints.initialize()
+    monkeypatch.callback(temporary.cleanup)
+    monkeypatch.callback(checkpoints.close)
     orch.checkpoints = checkpoints
     if hasattr(orch, "memory") and hasattr(orch.memory, "set_checkpoint_manager"):
         orch.memory.set_checkpoint_manager(checkpoints)

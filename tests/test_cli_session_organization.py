@@ -217,7 +217,10 @@ def test_process_help_is_available_without_loading_backend():
 
 
 @pytest.mark.parametrize("args", [["pin", SID], ["rename", SID, "New name"],
-    ["unpin", SID], ["archive", SID], ["unarchive", SID], ["transcript", SID], ["export"]])
+    ["unpin", SID], ["archive", SID], ["unarchive", SID], ["transcript", SID],
+    ["export", SID],
+    ["continue", SID, "--request-id", "00000000-0000-4000-8000-000000000068"],
+    ["import", "--from", "claude", "fixture.jsonl"]])
 def test_archived_flag_is_listing_only_and_never_silently_mutates(hub, args):
     code, out, _err = run(hub, "--archived", *args)
     assert code == EXIT_USAGE and not out
@@ -283,3 +286,13 @@ def test_actual_routes_allow_native_guest_but_owner_fence_imports(backend, actio
     assert tuple(before) == tuple(after)
     assert status(backend.cp, backend.imported).tainted is True
     assert len(backend.calls) == 3
+
+
+@pytest.mark.parametrize("action", ["rename", *ACTIONS])
+def test_parent_json_flag_projects_public_receipt_with_one_request(hub, action):
+    hub.payload = {**receipt(action), "raw_history": SECRET}
+    code, out, err = run(hub, "--json", *args_for(action))
+    assert code == EXIT_OK and not err
+    assert json.loads(out) == receipt(action)
+    assert SECRET not in out
+    assert len(hub.calls) == 1

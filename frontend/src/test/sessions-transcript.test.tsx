@@ -91,4 +91,32 @@ describe('SessionsPanel retained conversation preview', () => {
   expect(screen.queryByText('Retained conversation JSON saved')).toBeNull();
  });
 
+ it.each(['preview', 'download'])('does not expose raw private refusal fields on %s', async action => {
+  render(<SessionsPanel />); await open(); await screen.findByText('Safe answer');
+  const refusal = { error: 'SECRET_RAW_ERROR', reason: 'SECRET_RAW_REASON', detail: { token: 'SECRET_RAW_DETAIL' } };
+  if (action === 'preview') { onTranscript = () => reply(403, refusal); await open('chat-b'); }
+  else {
+   globalThis.showSaveFilePicker = vi.fn(async () => ({ createWritable: async () => 'picked-file' }));
+   onDownload = () => reply(403, refusal); fireEvent.click(screen.getByLabelText('download retained conversation JSON chat-a'));
+  }
+  const alert = await screen.findByRole('alert'); expect(alert.textContent).toContain('unavailable');
+  expect(document.body.textContent).not.toContain('SECRET_RAW'); expect(screen.queryByText('Safe answer')).toBeNull();
+ });
+ it('ignores a private response after unmount and remount', async () => {
+  let release; onTranscript = () => new Promise(resolve => { release = resolve; });
+  const view = render(<SessionsPanel />); await open(); await waitFor(() => expect(release).toBeDefined());
+  view.unmount(); render(<SessionsPanel />); await screen.findByText('Topic A');
+  await act(async () => release(reply(200, transcript()))); expect(screen.queryByText('Safe answer')).toBeNull();
+ });
+ it.each(['close', 'tab', 'search', 'reload', 'mutation', 'rename'])('clears already shown private text on %s', async action => {
+  render(<SessionsPanel />); await open(); await screen.findByText('Safe answer');
+  if (action === 'close') fireEvent.click(screen.getByLabelText('close retained conversation chat-a'));
+  if (action === 'tab') fireEvent.click(screen.getByRole('tab', { name: 'archived' }));
+  if (action === 'search') fireEvent.change(screen.getByLabelText('Search loaded recent sessions'), { target: { value: 'Topic B' } });
+  if (action === 'reload') fireEvent.click(screen.getByLabelText('Reload'));
+  if (action === 'mutation') fireEvent.click(screen.getByLabelText('pin chat-a'));
+  if (action === 'rename') fireEvent.click(screen.getByLabelText('rename chat-a'));
+  expect(screen.queryByText('Safe answer')).toBeNull();
+ });
+
 });

@@ -101,10 +101,23 @@ it.each(['close', 'other-row', 'refresh', 'connection'])('does not publish a lat
   if (mode === 'connection') await act(async () => server.updateConfig(config));
   await act(async () => pending.resolve(undefined)); expect(screen.queryByText(/saved.*app.*folder/i)).toBeNull(); expect(fs.writeAsStringAsync).toHaveBeenCalledTimes(1);
 });
-it.each([403, 404, 500])('shows transcript HTTP %s without fallback or export', async status => {
-  fetchMock.mockImplementation(async (url: string) => url.endsWith('/transcript') ? response({}, status) : response({ sessions: rows, next_cursor: null }));
+it.each([403, 404, 500])('shows transcript HTTP %s without fallback, export, or error body leakage', async status => {
+  fetchMock.mockImplementation(async (url: string) => url.endsWith('/transcript') ? response({ error: 'SECRET_ERR', detail: 'SECRET_DETAIL' }, status) : response({ sessions: rows, next_cursor: null }));
   await mount(); fireEvent.click(preview()); await screen.findByText(/could not load.*transcript/i);
+  expect(document.body.textContent).not.toContain('SECRET_');
   expect(transcripts()).toHaveLength(1); expect(resumes()).toHaveLength(0); expect(screen.queryByLabelText('Export transcript JSON')).toBeNull(); expect(fs.writeAsStringAsync).not.toHaveBeenCalled();
+});
+it('renders escaped plain text, discards pending transcript on unmount, and clears prior text before a failed preview', async () => {
+  fetchMock.mockImplementation(async (url: string) => url.endsWith('/root/transcript') ? response(transcript('root', '<b>Private HTML</b>'))
+    : url.endsWith('/other/transcript') ? response({ detail: 'SECRET_NEXT' }, 500) : response({ sessions: rows, next_cursor: null }));
+  const view = render(<ServerProvider><Probe /></ServerProvider>); await screen.findByText('Root conversation');
+  fireEvent.click(preview()); await screen.findByText('<b>Private HTML</b>');
+  expect(view.container.querySelector('b')).toBeNull();
+  fireEvent.click(preview('other')); expect(screen.queryByText('<b>Private HTML</b>')).toBeNull();
+  await screen.findByText(/could not load.*transcript/i); expect(document.body.textContent).not.toContain('SECRET_NEXT');
+  const pending = deferred(); fetchMock.mockImplementation(async (url: string) => url.endsWith('/transcript') ? pending.promise : response({ sessions: rows, next_cursor: null }));
+  fireEvent.click(preview()); view.unmount(); await act(async () => pending.resolve(response(transcript('root', 'Unmounted secret'))));
+  expect(screen.queryByText('Unmounted secret')).toBeNull(); expect(fs.writeAsStringAsync).not.toHaveBeenCalled();
 });
 it('rejects wrong-session payload without rendering its private text or enabling export', async () => {
   fetchMock.mockImplementation(async (url: string) => url.endsWith('/transcript') ? response(transcript('other', 'Leaked wrong session')) : response({ sessions: rows, next_cursor: null }));

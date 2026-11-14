@@ -6,7 +6,7 @@ import re
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 
-from .session_transcript import valid_session_id
+from agents.core.validation import is_valid_session_id as valid_session_id
 
 MAX_STRING_BYTES = 16 * 1024
 MAX_OUTPUT_BYTES = 8 * 1024 * 1024

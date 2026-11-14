@@ -90,7 +90,7 @@
       "mode": "100644"
     },
     "docs/handoff/antigravity-2026-11-14/evidence/v70/compare-checkout.py": {
-      "sha256": "13e9b19d3612efd98eb1d53166878a2d4999cbbb0d8588b6da35757f38674eb2",
+      "sha256": "94b5ed2e65517bb1a85ba8a5bc6a4cd35af446ebb563c3f98af8a43b2a509ef4",
       "mode": "100644"
     },
     "docs/handoff/antigravity-2026-11-14/evidence/v70/run-reaped.py": {
@@ -178,7 +178,7 @@
       "mode": "100644"
     },
     "docs/handoff/antigravity-2026-11-14/verify_source.py": {
-      "sha256": "5340c848149320813cab7e051d81131c3c205c5ede5d05c8072059768acc936a",
+      "sha256": "6526d26e5c10e845ae70721e34080d5df12f217e047c5f8a9785c303eb53be50",
       "mode": "100644"
     }
   }

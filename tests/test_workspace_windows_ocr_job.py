@@ -567,8 +567,14 @@ async def test_malformed_and_oversize_frames_refuse_before_success(monkeypatch):
 
 
 def test_windows_child_scope_requires_real_job_claim_and_sync_stays_inert(monkeypatch):
+    from pypdf import PdfReader
+
     from agents.core.workspace import extract, win_job_process
     from tests.fixtures.workspace import samples
+
+    # Initialize the real parser before simulating Windows on a non-Windows host.
+    blank_pdf = samples.build_blank_pdf(1)
+    PdfReader(BytesIO(blank_pdf))
 
     host_platform = sys.platform
     monkeypatch.setattr(extract, 'sys', SimpleNamespace(platform='win32'))
@@ -585,7 +591,7 @@ def test_windows_child_scope_requires_real_job_claim_and_sync_stays_inert(monkey
                                   progress=lambda *_: None)
         assert result.segments[0].text == 'generated page text'
         with pytest.raises(extract.ExtractionError) as caught:
-            extract.extract_bytes(samples.build_blank_pdf(1), 'pdf')
+            extract.extract_bytes(blank_pdf, 'pdf')
         assert caught.value.code == 'no_text'
     assert sys.platform == host_platform
 

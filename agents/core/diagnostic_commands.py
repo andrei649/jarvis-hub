@@ -75,7 +75,8 @@ def _save_private_report(text: str) -> Path:
         if not stat.S_ISDIR(os.fstat(directory_fd).st_mode):
             raise OSError("report directory is not a directory")
         if os.name != "nt":
-            os.fchmod(directory_fd, 0o700)
+            # Verified O_DIRECTORY fd: private directory, not a data file.
+            os.fchmod(directory_fd, 0o700)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         name = f"nerva-debug-{stamp}-{secrets.token_hex(8)}.txt"
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)

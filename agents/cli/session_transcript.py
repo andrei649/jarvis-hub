@@ -8,18 +8,15 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import tempfile
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
+from agents.core.validation import is_valid_session_id as valid_session_id
+
 MAX_TRANSCRIPT_TURNS = 100
 MAX_TRANSCRIPT_BYTES = 2 * 1024 * 1024
-
-
-def valid_session_id(value: object) -> bool:
-    return isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value) is not None
 
 
 def project_transcript(raw: Any, session_id: str) -> dict:

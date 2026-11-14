@@ -177,6 +177,14 @@ function validTranscript(value: any, sid: string): value is RetainedTranscript {
     && JSON.stringify(value).length <= 2 * 1024 * 1024;
 }
 
+const TRANSCRIPT_REFUSALS = new Set(['owner_required', 'admin_required', 'source_busy',
+  'session_busy', 'session_not_found', 'not_found', 'transcript_unavailable',
+  'transcript_too_large', 'redaction_failed']);
+function transcriptRefusal(error: any): string {
+  const code = error?.body?.error;
+  return typeof code === 'string' && TRANSCRIPT_REFUSALS.has(code) ? code : 'unavailable';
+}
+
 const transcriptPath = (sid: string) => `/sessions/${encodeURIComponent(sid)}/transcript`;
 
 /** H440 third review — what a refused delete did before it stopped: the hub's refusal of a
@@ -336,7 +344,7 @@ export function SessionsPanel() {
       setPreview({ sid, loading: false, data: result, error: '', downloading: false, note: '' });
     } catch (error: any) {
       if (current()) setPreview({ sid, loading: false, data: null, downloading: false, note: '',
-        error: `Could not preview retained conversation · ${refusalReason(error, 'unavailable')}` });
+        error: `Could not preview retained conversation · ${transcriptRefusal(error)}` });
     }
   };
   const downloadTranscript = async (sid: string) => {
@@ -352,7 +360,7 @@ export function SessionsPanel() {
       if (!current()) return;
       const reason = error?.message === 'stream_unavailable'
         ? 'Use a browser with file saving support, or sign in with an owner session instead of a header token.'
-        : error?.name === 'AbortError' ? 'File save cancelled' : refusalReason(error, 'unavailable');
+        : error?.name === 'AbortError' ? 'File save cancelled' : transcriptRefusal(error);
       setPreview((previous) => previous && ({ ...previous, downloading: false, data: null, note: '',
         error: `Could not download retained conversation · ${reason}` }));
     }

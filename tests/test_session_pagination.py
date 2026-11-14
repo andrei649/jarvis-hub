@@ -186,3 +186,16 @@ def test_closed_checkpoint_store_is_unavailable_not_exhausted(cp, monkeypatch):
     response = client.get("/sessions/page")
     assert response.status_code == 503
     assert response.json() == {"error": "session_page_unavailable"}
+
+
+def test_page_success_and_cursor_errors_are_never_cached(cp, monkeypatch):
+    client = _client(monkeypatch, cp)
+    for params in ({}, {"cursor": "!"}):
+        response = client.get("/sessions/page", params=params)
+        assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.parametrize("limit", [True, 0, 101, "20"])
+def test_store_rejects_invalid_page_limits(cp, limit):
+    with pytest.raises(ValueError, match="invalid session page limit"):
+        cp.get_sessions_page(limit)

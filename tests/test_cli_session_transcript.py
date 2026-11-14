@@ -324,3 +324,35 @@ def test_existing_export_still_reads_training_trajectories(hub):
     assert main(["sessions", "export", SID, "--sharegpt"], context=ctx) == EXIT_OK
     assert json.loads(out.getvalue()) == hub.payload["trajectories"][0]
     assert hub.calls[0][:2] == ("GET", f"/sessions/{SID}/trajectories?format=sharegpt")
+
+
+@pytest.mark.parametrize('operation', ['fsync', 'link'])
+def test_publish_cancellation_cleans_private_temporary_files(tmp_path, monkeypatch, operation):
+    import asyncio
+
+    from agents.cli.session_transcript import write_transcript_file
+
+    def cancel(*args, **kwargs):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(os, operation, cancel)
+    with pytest.raises(asyncio.CancelledError):
+        write_transcript_file(str(tmp_path / 'out.json'), b'{}')
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_link_failure_has_no_overwrite_fallback(hub, tmp_path, monkeypatch):
+    def unsupported(*args, **kwargs):
+        raise OSError('unsupported hard links ' + SECRET)
+
+    monkeypatch.setattr(os, 'link', unsupported)
+    code, out, err = run(hub, SID, '-o', str(tmp_path / 'out.json'))
+    assert code == EXIT_FAILED and not out and SECRET not in err
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_nested_json_option_preserves_parent_parser_flag():
+    from agents.cli.nerva import build_parser
+    parser = build_parser()
+    assert parser.parse_args(['sessions', '--json', 'transcript', SID]).json is True
+    assert parser.parse_args(['sessions', 'transcript', SID, '--json']).json is True
