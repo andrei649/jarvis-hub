@@ -222,8 +222,10 @@ def test_delegate_task_is_not_registered_unless_the_owner_switched_it_on(tmp_pat
     # The model's arguments carry goals only: nothing that names a cap, a depth, a
     # timeout, a model, an agent or a tool list.
     task_props = row["input_schema"]["properties"]["tasks"]["items"]["properties"]
-    # G18 (H401): two booleans join them — run in the background, collect finished results.
-    assert set(row["input_schema"]["properties"]) == {"tasks", "background", "collect"}
+    # G18 (H401) + H320: background/collect plus scoped list/steer/stop supervision.
+    assert set(row["input_schema"]["properties"]) == {
+        "tasks", "background", "collect", "action", "spawn_id", "message",
+    }
     assert set(task_props) == {"goal", "context", "output_schema"}
 
 
@@ -1200,6 +1202,8 @@ def test_every_caller_that_starts_a_child_goes_through_the_manager():
         ("agents/core/delegate_tool.py", "spawn_batch"),
         ("agents/core/subagents.py", "spawn"),               # spawn_batch, spawn_background → spawn
         ("agents/core/review_command.py", "spawn"),          # G18: the owner's /review --wait
+        ("agents/core/subagent_lifecycle_api.py", "spawn"),  # H650: plugin lifecycle API → manager
+        ("agents/core/subagent_lifecycle_api.py", "spawn_batch"),
     }
 
 

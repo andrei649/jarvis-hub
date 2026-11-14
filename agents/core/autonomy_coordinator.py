@@ -1827,11 +1827,31 @@ class AutonomyCoordinator:
         # is a state the status route has to be able to report honestly.
         bind_external_orchestrator_attribute(self._orch, "session_kernels", kernels)
 
+        def _execute_code_usable() -> bool:
+            # H295 — hide execute_code from the turn's offer when no isolated Docker/WASM
+            # sandbox backend is reachable, instead of offering it and refusing at call time
+            # with sandbox_not_isolated. Cached (~30 s TTL + ~60 s last-known-good grace).
+            box = getattr(self._orch, "sandbox", None)
+            probe = getattr(box, "is_isolated", None)
+            if not callable(probe):
+                return False
+            return bool(probe())
+
+        def _browser_session_bound() -> bool:
+            session_id = str(getattr(self._orch, "session_id", "") or "")
+            broker = getattr(self._orch, "browser_broker", None)
+            has_session = getattr(broker, "has_bound_session", None)
+            if callable(has_session) and session_id:
+                return bool(has_session(session_id))
+            return False
+
         tool_profile = self._tool_profile = ToolProfileResolver(
             settings=_get_setting,
             agent_patterns=_agent_tool_patterns,
             principal=_turn_principal,
             shared_session=_on_shared_session,
+            check_fns={"execute_code": _execute_code_usable},
+            bypass_check_cache=_browser_session_bound,
         )
         # H315 — the model keeps a checklist of the turn's work and re-reads it on every
         # call. Ungated: it writes the session's own list, which the owner reads next to

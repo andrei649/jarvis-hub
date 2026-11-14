@@ -274,6 +274,8 @@
     "/v2/console/llm-routing/",
     "/v2/console/custom-endpoints",
     "/v2/console/custom-endpoints/",
+    "/v2/console/provider-packages",
+    "/v2/console/provider-packages/",
     "/v2/console/moa-presets",
     "/v2/console/moa-presets/",
     "/v2/console/support-voice",

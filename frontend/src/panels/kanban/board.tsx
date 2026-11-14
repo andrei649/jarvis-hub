@@ -1,7 +1,18 @@
 import { useEffect, useMemo, useState, type DragEvent, type FormEvent } from 'react';
-import { createTask, patchTask } from './api';
+import * as api from './api';
 import { columnHelp, columnLabel, useKanban } from './i18n';
-import { columnMeta, type BoardMeta, type KanbanBoard, type KanbanProfile, type KanbanTask, type OrchestrationSettings } from './types';
+import {
+  columnMeta,
+  type BoardMeta,
+  type KanbanAssignee,
+  type KanbanBoard,
+  type KanbanConfig,
+  type KanbanModelOptionsResponse,
+  type KanbanProfile,
+  type KanbanTask,
+  type OrchestrationSettings,
+  type TaskEstimate,
+} from './types';
 import { errText, isLockedTarget } from './KanbanView';
 
 export const shortId = (id: string) => id.replace(/^t_/, '').slice(0, 6);
@@ -84,18 +95,60 @@ function Column({ name, tasks, columns, selected, collapsed, onToggle, onAdd, on
     <div className="kb-lane-cards">{tasks.length ? tasks.map(task => <Card key={task.id} task={task} selected={selected.has(task.id)} onOpen={onOpen} onSelect={onSelect} onDelete={onDelete} onMove={onMove} columns={columns} fallbackAssignee={fallbackAssignee} />) : <span className="kb-empty">{k.empty}</span>}</div>
   </section>;
 }
-export function BoardCanvas({ board, meta, profiles, orchestration, auxiliaryError, selected, onSelect, onOpen, onAdd, onMove, onDelete, onBulk, onBulkDelete, onDispatch, archived, onArchived }: {
-  board: KanbanBoard | null; meta?: BoardMeta; profiles: KanbanProfile[]; orchestration: OrchestrationSettings | null; auxiliaryError: string;
+export function BoardCanvas({
+  board, meta, profiles, knownAssignees = [], orchestration, config = null, configError = '', auxiliaryError,
+  selected, onSelect, onOpen, onAdd, onMove, onDelete, onBulk, onBulkDelete, onDispatch, archived, onArchived, onRefreshProfiles,
+}: {
+  board: KanbanBoard | null; meta?: BoardMeta; profiles: KanbanProfile[]; knownAssignees?: KanbanAssignee[];
+  orchestration: OrchestrationSettings | null; config?: KanbanConfig | null; configError?: string; auxiliaryError: string;
   selected: Set<string>; onSelect: (ids: Set<string>) => void; onOpen: (id: string) => void; onAdd: (status: string) => void;
-  onMove: (id: string, status: string) => void; onDelete: (id: string) => void; onBulk: (patch: Record<string, unknown>) => void; onBulkDelete: () => void; onDispatch: () => void;
-  archived: boolean; onArchived: (v: boolean) => void;
+  onMove: (id: string, status: string) => void; onDelete: (id: string) => void; onBulk: (patch: Record<string, unknown>) => void;
+  onBulkDelete: () => void; onDispatch: () => void; archived: boolean; onArchived: (v: boolean) => void;
+  onRefreshProfiles?: () => Promise<void> | void;
 }) {
   const k = useKanban();
   const [search, setSearch] = useState(''); const [assignee, setAssignee] = useState(''); const [tenant, setTenant] = useState('');
   const [groupRunning, setGroupRunning] = useState(false); const [showFilters, setShowFilters] = useState(false); const [showOrchestration, setShowOrchestration] = useState(false);
+  const [profileDrafts, setProfileDrafts] = useState<Record<string, string>>({});
+  const [customProfile, setCustomProfile] = useState('default');
+  const [profileBusy, setProfileBusy] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState('');
+  const [profileNotice, setProfileNotice] = useState('');
   const [introDismissed, setIntroDismissed] = useState(() => { try { return localStorage.getItem('nerva.kanban.intro') === 'dismissed'; } catch { return false; } });
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem('nerva.kanban.collapsed') || '{}'); } catch { return {}; } });
   const names = board?.columns.map(c => c.name) || [];
+  const assigneeChoices = useMemo(() => {
+    const seen = new Set<string>();
+    for (const p of profiles) if (p.name) seen.add(p.name);
+    for (const a of knownAssignees) if (a.name) seen.add(a.name);
+    for (const a of board?.assignees || []) if (a) seen.add(a);
+    return [...seen].sort();
+  }, [profiles, knownAssignees, board]);
+  const editableProfiles = useMemo(() => {
+    if (profiles.length) return profiles.map(p => ({ name: p.name, description: p.description || '' }));
+    if (knownAssignees.length) return knownAssignees.map(a => ({ name: a.name, description: '' }));
+    return customProfile.trim() ? [{ name: customProfile.trim(), description: '' }] : [];
+  }, [profiles, knownAssignees, customProfile]);
+  const saveProfile = async (profileName: string) => {
+    setProfileBusy(profileName); setProfileError(''); setProfileNotice('');
+    try {
+      const description = profileDrafts[profileName] ?? editableProfiles.find(p => p.name === profileName)?.description ?? '';
+      await api.updateProfileDescription(profileName, description.trim() || null);
+      await onRefreshProfiles?.();
+      setProfileNotice(`Saved description for ${profileName}.`);
+    } catch (e) { setProfileError(errText(e)); }
+    finally { setProfileBusy(null); }
+  };
+  const autoDescribe = async (profileName: string) => {
+    setProfileBusy(profileName); setProfileError(''); setProfileNotice('');
+    try {
+      const res = await api.describeProfileAuto(profileName, true);
+      if (typeof res?.description === 'string') setProfileDrafts(prev => ({ ...prev, [profileName]: res.description! }));
+      await onRefreshProfiles?.();
+      setProfileNotice(`Updated auto-description for ${profileName}.`);
+    } catch (e) { setProfileError(errText(e)); }
+    finally { setProfileBusy(null); }
+  };
   const filtered = useMemo(() => board?.columns.map(c => ({ ...c, tasks: c.tasks.filter(t => {
     const q = search.trim().toLowerCase();
     return (!q || [t.title, t.body, t.id].some(v => v?.toLowerCase().includes(q))) && (!assignee || t.assignee === assignee) && (!tenant || t.tenant === tenant);
@@ -135,12 +188,30 @@ export function BoardCanvas({ board, meta, profiles, orchestration, auxiliaryErr
       <button type="button" onClick={onDispatch}>Request dispatch</button>
     </div>
     {showFilters && <div className="kb-filters">
-      <label>Assignee <select value={assignee} onChange={e => setAssignee(e.target.value)}><option value="">{k.allProfiles}</option>{board?.assignees.map(a => <option key={a}>{a}</option>)}</select></label>
+      <label>Assignee <select value={assignee} onChange={e => setAssignee(e.target.value)}><option value="">{k.allProfiles}</option>{assigneeChoices.map(a => <option key={a}>{a}</option>)}</select></label>
       <label>Tenant <select value={tenant} onChange={e => setTenant(e.target.value)}><option value="">{k.allTenants}</option>{board?.tenants.map(t => <option key={t}>{t}</option>)}</select></label>
       <label><input type="checkbox" checked={archived} onChange={e => onArchived(e.target.checked)} />{k.showArchived}</label>
       <label><input type="checkbox" checked={groupRunning} onChange={e => setGroupRunning(e.target.checked)} />{k.groupRunning}</label>
     </div>}
-    {showOrchestration && <div className="kb-orchestration" aria-label="Orchestration settings"><h3>Orchestration settings</h3><p className="kb-muted">{auxiliaryError || 'Configuration changes require a Nerva adapter.'}</p><label>Orchestrator profile<select disabled value={orchestration?.orchestrator_profile || ''} onChange={() => {}}><option value={orchestration?.orchestrator_profile || ''}>{orchestration?.resolved_orchestrator_profile || 'Unavailable'}</option></select></label><label>Default assignee<select disabled value={orchestration?.default_assignee || ''} onChange={() => {}}><option value={orchestration?.default_assignee || ''}>{orchestration?.resolved_default_assignee || 'Unavailable'}</option></select></label><label><input type="checkbox" aria-label="Auto decompose" checked={Boolean(orchestration?.auto_decompose)} disabled />Auto decompose</label><h4>Profile descriptions</h4>{profiles.length ? profiles.map(p => <label key={p.name}>{p.name}<input disabled value={p.description || ''} readOnly /></label>) : <span className="kb-muted">Profile adapter unavailable</span>}</div>}
+    {showOrchestration && <div className="kb-orchestration" aria-label="Orchestration settings">
+      <h3>Orchestration settings</h3>
+      <p className="kb-muted">{auxiliaryError || 'Configuration changes require a Nerva adapter.'}</p>
+      {config ? <p className="kb-muted">Runtime config loaded ({Object.keys(config).length} keys).</p> : configError ? <p className="kb-muted">Runtime config: {configError}</p> : null}
+      <label>Orchestrator profile<select disabled value={orchestration?.orchestrator_profile || ''} onChange={() => {}}><option value={orchestration?.orchestrator_profile || ''}>{orchestration?.resolved_orchestrator_profile || 'Unavailable'}</option></select></label>
+      <label>Default assignee<select disabled value={orchestration?.default_assignee || ''} onChange={() => {}}><option value={orchestration?.default_assignee || ''}>{orchestration?.resolved_default_assignee || 'Unavailable'}</option></select></label>
+      <label><input type="checkbox" aria-label="Auto decompose" checked={Boolean(orchestration?.auto_decompose)} disabled />Auto decompose</label>
+      <h4>Profile descriptions</h4>
+      {!profiles.length && !knownAssignees.length && <label>Target profile<input aria-label="Target profile" value={customProfile} onChange={e => setCustomProfile(e.target.value)} /></label>}
+      {editableProfiles.map(p => <div className="kb-profile-row" key={p.name}>
+        <label>{p.name}<input aria-label={`Profile description ${p.name}`} value={profileDrafts[p.name] ?? p.description} onChange={e => setProfileDrafts(prev => ({ ...prev, [p.name]: e.target.value }))} placeholder={k.profileGoodAt} /></label>
+        <div className="kb-inline-actions">
+          <button type="button" aria-label={`Save profile ${p.name}`} disabled={profileBusy === p.name} onClick={() => void saveProfile(p.name)}>{k.save}</button>
+          <button type="button" aria-label={`Auto-describe ${p.name}`} disabled={profileBusy === p.name} onClick={() => void autoDescribe(p.name)}>{k.auto}</button>
+        </div>
+      </div>)}
+      {profileError && <div role="alert" className="kb-alert kb-span-full">{profileError}</div>}
+      {profileNotice && <div role="status" className="kb-notice kb-span-full">{profileNotice}</div>}
+    </div>}
     {auxiliaryError && !showOrchestration && <div className="kb-muted" role="status">Orchestration/profile options unavailable: {auxiliaryError}</div>}
     {board && !introDismissed && <div className="kb-intro"><p>{k.introBody}</p><button type="button" onClick={() => { setIntroDismissed(true); try { localStorage.setItem('nerva.kanban.intro', 'dismissed'); } catch { /* storage disabled */ } }}>{k.introGotIt}</button></div>}
     {!board ? <div className="kb-loading" role="status">Loading Kanban board…</div> : <div className="kb-lanes" aria-label="Kanban board">
@@ -149,7 +220,7 @@ export function BoardCanvas({ board, meta, profiles, orchestration, auxiliaryErr
     </div>}
     {selected.size > 0 && <div className="kb-selection" role="toolbar" aria-label="Selected tasks"><strong>{k.nSelected(selected.size)}</strong>
       <select aria-label="Move selected" defaultValue="" onChange={e => { if (e.target.value) onBulk({status: e.target.value}); }}><option value="">{k.moveToShort}</option>{names.filter(n => !isLockedTarget(n)).map(n => <option key={n} value={n}>{columnLabel(k, n)}</option>)}</select>
-      <select aria-label="Assign selected" defaultValue="" onChange={e => onBulk({assignee: e.target.value === '__unassign__' ? '' : e.target.value})}><option value="">{k.assign}</option>{profiles.map(p => <option key={p.name}>{p.name}</option>)}<option value="__unassign__">{k.unassignAction}</option></select>
+      <select aria-label="Assign selected" defaultValue="" onChange={e => onBulk({assignee: e.target.value === '__unassign__' ? '' : e.target.value})}><option value="">{k.assign}</option>{assigneeChoices.map(p => <option key={p}>{p}</option>)}<option value="__unassign__">{k.unassignAction}</option></select>
       <button type="button" onClick={() => onBulk({archive: true})}>{k.archive}</button><button type="button" aria-label="Delete selected" onClick={onBulkDelete}>{k.delete}</button><button type="button" aria-label={k.clearSelection} onClick={() => onSelect(new Set())}>×</button>
     </div>}
     {meta?.default_workdir && <div className="kb-board-workspace">Board workspace: {meta.default_workdir}</div>}
@@ -157,24 +228,48 @@ export function BoardCanvas({ board, meta, profiles, orchestration, auxiliaryErr
   </>;
 }
 
-export function NewTaskDialog({ target, board, slug, profiles, orchestration, parents, onClose, onCreated }: {
-  target: string; board?: BoardMeta; slug: string; profiles: KanbanProfile[]; orchestration: OrchestrationSettings | null; parents: KanbanTask[];
-  onClose: () => void; onCreated: () => void;
+export function NewTaskDialog({
+  target, board, slug, profiles, knownAssignees = [], orchestration, modelOptions = null, modelOptionsError = '', parents, onClose, onCreated,
+}: {
+  target: string; board?: BoardMeta; slug: string; profiles: KanbanProfile[]; knownAssignees?: KanbanAssignee[];
+  orchestration: OrchestrationSettings | null; modelOptions?: KanbanModelOptionsResponse | null; modelOptionsError?: string;
+  parents: KanbanTask[]; onClose: () => void; onCreated: () => void;
 }) {
   const k = useKanban();
   const [title, setTitle] = useState(''); const [body, setBody] = useState(''); const [priority, setPriority] = useState('0');
   const [workspaceKind, setWorkspaceKind] = useState(board?.default_workspace_kind || 'scratch'); const [workspacePath, setWorkspacePath] = useState('');
   const [assignee, setAssignee] = useState(''); const [skills, setSkills] = useState(''); const [parent, setParent] = useState('');
+  const [modelOverride, setModelOverride] = useState(''); const [providerOverride, setProviderOverride] = useState(''); const [reasoningEffort, setReasoningEffort] = useState('');
+  const [draftEstimate, setDraftEstimate] = useState<TaskEstimate | null>(null); const [estimating, setEstimating] = useState(false);
   const [busy, setBusy] = useState(false); const [error, setError] = useState('');
+  const assigneeOptions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const p of profiles) if (p.name) seen.add(p.name);
+    for (const a of knownAssignees) if (a.name) seen.add(a.name);
+    return [...seen].sort();
+  }, [profiles, knownAssignees]);
+  const runDraftEstimate = async () => {
+    if (!title.trim() || estimating) return;
+    setEstimating(true); setError(''); setDraftEstimate(null);
+    try {
+      const res = await api.estimateDraft(title.trim(), body.trim() || undefined);
+      if (!res.ok) setError(res.reason || k.couldNotEstimate);
+      else setDraftEstimate(res);
+    } catch (e) { setError(errText(e)); }
+    finally { setEstimating(false); }
+  };
   const submit = async (event: FormEvent) => {
     event.preventDefault(); if (!title.trim() || busy) return; setBusy(true); setError('');
     try {
-      const result = await createTask(slug, { title: title.trim(), body: body.trim() || undefined, priority: Number(priority) || 0,
+      const result = await api.createTask(slug, { title: title.trim(), body: body.trim() || undefined, priority: Number(priority) || 0,
         triage: target === 'triage', assignee: assignee === '__parked__' ? undefined : assignee || orchestration?.resolved_default_assignee || undefined,
         parents: parent ? [parent] : undefined, skills: skills.split(',').map(s => s.trim()).filter(Boolean),
         workspace_kind: workspaceKind, workspace_path: workspaceKind !== 'scratch' && workspacePath.trim() ? workspacePath.trim() : undefined,
+        ...(modelOverride.trim() ? { model_override: modelOverride.trim() } : {}),
+        ...(providerOverride.trim() ? { provider_override: providerOverride.trim() } : {}),
+        ...(reasoningEffort.trim() ? { reasoning_effort: reasoningEffort.trim() } : {}),
       });
-      if (result.task && result.task.status !== target) await patchTask(slug, result.task.id, {status: target});
+      if (result.task && result.task.status !== target) await api.patchTask(slug, result.task.id, {status: target});
       onCreated();
     } catch (e) { setError(errText(e)); setBusy(false); }
   };
@@ -186,10 +281,22 @@ export function NewTaskDialog({ target, board, slug, profiles, orchestration, pa
       <div className="kb-grid-two"><label>Priority<input type="number" value={priority} onChange={e => setPriority(e.target.value)} /></label>
       <label>Workspace<select value={workspaceKind} onChange={e => setWorkspaceKind(e.target.value)}><option value="scratch">scratch</option><option value="dir">dir</option><option value="worktree">worktree</option></select></label></div>
       {workspaceKind !== 'scratch' && <label>Workspace override<input value={workspacePath} onChange={e => setWorkspacePath(e.target.value)} placeholder={board?.default_workdir || k.workspaceInherit} /></label>}
-      <label>Assignee<select value={assignee} onChange={e => setAssignee(e.target.value)}><option value="">Default {orchestration?.resolved_default_assignee || 'assignee'}</option>{profiles.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}<option value="__parked__">Park unassigned</option></select></label>
+      <label>Assignee<select value={assignee} onChange={e => setAssignee(e.target.value)}><option value="">Default {orchestration?.resolved_default_assignee || 'assignee'}</option>{assigneeOptions.map(name => <option key={name} value={name}>{name}</option>)}<option value="__parked__">Park unassigned</option></select></label>
       <label>Skills<input value={skills} onChange={e => setSkills(e.target.value)} placeholder={k.skillsPlaceholder} /></label>
       {parents.length > 0 && <label>Parent<select value={parent} onChange={e => setParent(e.target.value)}><option value="">{k.noParent}</option>{parents.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}</select></label>}
-      <details><summary>Model overrides · unavailable</summary><p className="kb-muted">Provider and model inventory require a Nerva adapter. Existing task overrides remain visible in task details.</p></details>
+      <div className="kb-inline-actions">
+        <button type="button" disabled={!title.trim() || busy || estimating} onClick={() => void runDraftEstimate()}>{estimating ? k.estimating : k.estimateEffort}</button>
+        {draftEstimate && <span role="status" className="kb-muted">{draftEstimate.complexity ? `${draftEstimate.complexity} · ` : ''}{typeof draftEstimate.est_tokens === 'number' ? `${draftEstimate.est_tokens} ${k.tokUnit}` : k.roughEstimate}{draftEstimate.rationale ? ` — ${draftEstimate.rationale}` : ''}</span>}
+      </div>
+      <details><summary>Model overrides</summary>
+        {modelOptionsError && <p className="kb-muted">Option catalog: {modelOptionsError}</p>}
+        {modelOptions?.models?.length ? <label>Model<select aria-label="Model override" value={modelOverride} onChange={e => setModelOverride(e.target.value)}><option value="">{k.modelInherit}</option>{modelOptions.models.map(m => <option key={m.id} value={m.id}>{m.label || m.id}</option>)}</select></label>
+          : <label>Model override<input aria-label="Model override" value={modelOverride} onChange={e => setModelOverride(e.target.value)} placeholder={k.modelInherit} /></label>}
+        <div className="kb-grid-two">
+          <label>Provider override<input aria-label="Provider override" value={providerOverride} onChange={e => setProviderOverride(e.target.value)} placeholder="Optional provider" /></label>
+          <label>Reasoning effort<select aria-label="Reasoning effort" value={reasoningEffort} onChange={e => setReasoningEffort(e.target.value)}><option value="">Inherit</option><option value="none">none</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select></label>
+        </div>
+      </details>
       <label className="kb-disabled"><input type="checkbox" disabled />Goal mode — adapter unavailable</label>
       {error && <div role="alert" className="kb-alert">{error}</div>}
       <footer><button type="button" onClick={onClose}>{k.cancel}</button><button type="submit" disabled={!title.trim() || busy}>{busy ? k.creating : k.createTask}</button></footer>

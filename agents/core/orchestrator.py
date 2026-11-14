@@ -3738,6 +3738,10 @@ class Orchestrator:
             record_turn_completion("command")
             return outcome.reply
         from .session_continuation import prepare_continuation_turn
+        from .security.rag_guard import strip_ingress_memory_fences
+
+        if isinstance(text, str) and not text.lstrip().startswith("/"):
+            text = strip_ingress_memory_fences(text)
 
         await prepare_continuation_turn(self, self.session_id)
         self._last_channel = channel  # captured for H9.2 tracer
@@ -3812,6 +3816,11 @@ class Orchestrator:
             responses = await self._call_agents_parallel(
                 [agent_override], text, intent.context, plugin_data
             )
+            from .security.rag_guard import strip_egress_memory_fences
+            responses = {
+                k: (strip_egress_memory_fences(v) if isinstance(v, str) else v)
+                for k, v in (responses or {}).items()
+            }
             synthesized = list(responses.values())[0] if responses else ""
             t_synthesize = int((time.perf_counter() - t_s0) * 1000)
             await self._complete_llm_turn(
@@ -3885,6 +3894,14 @@ class Orchestrator:
             synthesized = f"I hit an issue processing that: {e}"
             log_error(logger, E_INTERNAL_UNEXPECTED, component="synthesize", detail=str(e))
         t_synthesize = int((time.perf_counter() - t_s0) * 1000)
+
+        from .security.rag_guard import strip_egress_memory_fences
+        if isinstance(synthesized, str):
+            synthesized = strip_egress_memory_fences(synthesized)
+        responses = {
+            k: (strip_egress_memory_fences(v) if isinstance(v, str) else v)
+            for k, v in (responses or {}).items()
+        }
 
         skill_name = self._detect_skill_learning(responses, synthesized, intent)
         if skill_name:
@@ -4037,6 +4054,10 @@ class Orchestrator:
             self.last_cognition = self._command_cognition(outcome)
             return outcome.reply
         from .session_continuation import prepare_continuation_turn
+        from .security.rag_guard import strip_ingress_memory_fences
+
+        if isinstance(text, str) and not text.lstrip().startswith("/"):
+            text = strip_ingress_memory_fences(text)
 
         await prepare_continuation_turn(self, self.session_id)
         self._last_channel = channel  # captured for H9.2 tracer
@@ -4498,6 +4519,14 @@ class Orchestrator:
             responder_id = "jarvis"
         else:
             _stream_responses = {agent_id: synthesized} if agent_id else {}
+
+        from .security.rag_guard import strip_egress_memory_fences
+        if isinstance(synthesized, str):
+            synthesized = strip_egress_memory_fences(synthesized)
+        _stream_responses = {
+            k: (strip_egress_memory_fences(v) if isinstance(v, str) else v)
+            for k, v in (_stream_responses or {}).items()
+        }
 
         # Truncated-before-answer (or otherwise empty) replies must not surface
         # as a blank bubble. The backend already refuses to leak raw reasoning,
@@ -6148,6 +6177,14 @@ class Orchestrator:
         media: dict | None = None,
     ) -> None:
         """Single post-LLM seam: memory, checkpoint, logs, learning and trace."""
+        from .security.rag_guard import strip_egress_memory_fences
+        if isinstance(synthesized, str):
+            synthesized = strip_egress_memory_fences(synthesized)
+        if isinstance(responses, dict):
+            responses = {
+                k: (strip_egress_memory_fences(v) if isinstance(v, str) else v)
+                for k, v in responses.items()
+            }
         if _turn_is_untrusted():
             # H443: the conversation leaves the clean list before this reply is stored in
             # it, so a hub that stops right after the append does not restart with an

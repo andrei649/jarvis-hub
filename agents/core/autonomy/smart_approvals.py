@@ -40,11 +40,14 @@ class SmartPolicy:
 
     def command_allowed(self, command: str) -> bool:
         from ..environments.terminal_contract import _detection_variants, hardline_match
+        from ..security.command_content_scanner import scan_command_content
 
         if not self.valid or not isinstance(command, str) or not command.strip():
             return False
         try:
             if hardline_match(command):
+                return False
+            if scan_command_content(command):
                 return False
             # Reuse the terminal floor's shell unwrapping and deobfuscation.
             # These spellings are for screening only: execution retains original bytes.

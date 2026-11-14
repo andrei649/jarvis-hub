@@ -59,6 +59,9 @@ TOOL = "delegate_task"
 SETTING = "llm.delegate_task"
 TIMEOUT_SETTING = "autonomy.subagent_timeout_seconds"
 GOAL_MAX_CHARS = 4000
+SPAWN_ID_MAX_CHARS = 120
+STEER_MAX_CHARS = 2000
+ACTIONS = ("spawn", "collect", "list", "steer", "stop")
 #: What of one child's answer the parent's transcript is given (Hermes: 24 000).
 OUTPUT_MAX_CHARS = 24_000
 #: Added to the child timeout for the tool loop's own deadline on this tool, so the
@@ -132,6 +135,28 @@ INPUT_SCHEMA = {
                             "sub-agents that have finished since the last collect. Each result is "
                             "handed out once."),
         },
+        "action": {
+            "type": "string",
+            "enum": list(ACTIONS),
+            "description": ("Operation to run: 'spawn' (default when tasks are supplied), 'collect' "
+                            "(receive finished background results), 'list' (inspect this conversation's "
+                            "sub-agents and concurrency slots), 'steer' (send guidance to a running "
+                            "child of this conversation), or 'stop' (cancel a running child of this "
+                            "conversation)."),
+        },
+        "spawn_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": SPAWN_ID_MAX_CHARS,
+            "description": ("Running sub-agent id of this conversation to target when action is "
+                            "'steer' or 'stop'."),
+        },
+        "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": STEER_MAX_CHARS,
+            "description": "Guidance message delivered to the running child when action is 'steer'.",
+        },
     },
     "additionalProperties": False,
 }
@@ -199,12 +224,59 @@ class DelegateTool:
         if not isinstance(args, Mapping):
             raise ToolRPCValidationError("invalid_args")
         keys = set(args)
-        if keys == {"collect"}:
-            # G18 (H401): collect finished background results; nothing else may ride along.
-            if args["collect"] is not True:
+        action = args.get("action")
+        if action is not None and (not isinstance(action, str) or action not in ACTIONS):
+            raise ToolRPCValidationError("invalid_action")
+
+        # Collect finished background children (`{"collect": true}` or `{"action": "collect"}`).
+        if action == "collect" or (action is None and keys == {"collect"}):
+            if keys - {"action", "collect"}:
                 raise ToolRPCValidationError("invalid_args")
-            return {"collect": True}
-        if "tasks" not in keys or keys - {"tasks", "background"}:
+            if "collect" in keys and args["collect"] is not True:
+                raise ToolRPCValidationError("invalid_args")
+            return {"action": "collect", "collect": True}
+
+        # List this conversation's children and live slot usage (`{"action": "list"}`).
+        if action == "list":
+            if keys != {"action"}:
+                raise ToolRPCValidationError("invalid_args")
+            return {"action": "list"}
+
+        # Steer a running child of this conversation (`{"action": "steer", "spawn_id", "message"}`).
+        if action == "steer":
+            if keys != {"action", "spawn_id", "message"}:
+                raise ToolRPCValidationError("invalid_args")
+            spawn_id = args.get("spawn_id")
+            message = args.get("message")
+            if (
+                not isinstance(spawn_id, str)
+                or not spawn_id.strip()
+                or len(spawn_id) > SPAWN_ID_MAX_CHARS
+            ):
+                raise ToolRPCValidationError("invalid_spawn_id")
+            if (
+                not isinstance(message, str)
+                or not message.strip()
+                or len(message) > STEER_MAX_CHARS
+            ):
+                raise ToolRPCValidationError("invalid_message")
+            return {"action": "steer", "spawn_id": spawn_id.strip(), "message": message.strip()}
+
+        # Stop a running child of this conversation (`{"action": "stop", "spawn_id"}`).
+        if action == "stop":
+            if keys != {"action", "spawn_id"}:
+                raise ToolRPCValidationError("invalid_args")
+            spawn_id = args.get("spawn_id")
+            if (
+                not isinstance(spawn_id, str)
+                or not spawn_id.strip()
+                or len(spawn_id) > SPAWN_ID_MAX_CHARS
+            ):
+                raise ToolRPCValidationError("invalid_spawn_id")
+            return {"action": "stop", "spawn_id": spawn_id.strip()}
+
+        # Spawn (`{"tasks": [...]}` or `{"action": "spawn", "tasks": [...]}`).
+        if "tasks" not in keys or keys - {"action", "tasks", "background"}:
             raise ToolRPCValidationError("invalid_args")
         background = args.get("background", False)
         if not isinstance(background, bool):
@@ -240,6 +312,28 @@ class DelegateTool:
                 entry["output_schema"] = schema
             cleaned.append(entry)
         return {"tasks": cleaned, **({"background": True} if background else {})}
+
+    def schema_overrides(self) -> dict[str, Any] | None:
+        """H320 — advertise the live concurrency cap, active/free slots, turn cap and timeout."""
+        try:
+            manager = self._manager()
+            stats = manager.stats() if manager is not None else None
+        except Exception:
+            stats = None
+        if not isinstance(stats, Mapping):
+            return None
+        cap = int(stats.get("cap") or 1)
+        active = int(stats.get("active") or 0)
+        free = max(0, cap - active)
+        turn_cap = int((stats.get("turn_cap") or {}).get("cap") or BATCH_MAX)
+        max_depth = stats.get("max_depth", 1)
+        timeout_s = int(stats.get("timeout_seconds") or DEFAULT_CHILD_TIMEOUT_SECONDS)
+        live_desc = (
+            f"{DESCRIPTION} Live host limits: concurrency cap {cap} "
+            f"({active} active, {free} free slot(s)), per-turn cap {turn_cap}, "
+            f"max depth {max_depth}, child timeout {timeout_s}s."
+        )
+        return {"description": live_desc}
 
     # ── authority ────────────────────────────────────────────────────────────
 
@@ -341,8 +435,16 @@ class DelegateTool:
         if not isinstance(offer, (frozenset, set)) or TOOL not in offer:
             # No note of what this turn was offered: there is nothing to bound a child by.
             return _refusal("delegate_offer_unknown")
-        if args.get("collect") is True:
+        action = args.get("action")
+        if action == "collect" or args.get("collect") is True:
             return await self._collect(manager, agent)
+        if action == "list":
+            return self._list_children(manager, agent)
+        if action == "steer":
+            return self._steer_child(manager, agent, str(args.get("spawn_id") or ""),
+                                     str(args.get("message") or ""))
+        if action == "stop":
+            return self._stop_child(manager, agent, str(args.get("spawn_id") or ""))
         tasks = list(args.get("tasks") or [])
         refusal = self._kernel_refusal(agent, len(tasks))
         if refusal is not None:
@@ -357,6 +459,95 @@ class DelegateTool:
                                             model_authored=True, queue=False,
                                             **({"background": True} if background else {}))
         return project(outcome, tasks, time.monotonic() - started)
+
+    @staticmethod
+    def _owned_by_caller(rec: Any, agent: str, session_id: str | None) -> bool:
+        return (
+            isinstance(rec, Mapping)
+            and rec.get("parent") == agent
+            and rec.get("parent_session") == session_id
+        )
+
+    def _list_children(self, manager: Any, agent: str) -> dict:
+        from .kernel.plan_mode import current_session
+
+        refusal = self._kernel_refusal(agent, 0)
+        if refusal is not None:
+            return refusal
+        list_fn = getattr(manager, "list", None)
+        stats_fn = getattr(manager, "stats", None)
+        if not callable(list_fn) or not callable(stats_fn):
+            return _refusal("subagents_unavailable")
+        session_id = current_session()
+        rows = [
+            {
+                "id": row.get("id"),
+                "delegation_id": row.get("delegation_id"),
+                "status": row.get("status"),
+                "goal": str(row.get("task") or "")[:200],
+                "background": bool(row.get("background")),
+                "steerable": bool(row.get("steerable")),
+                "stalled": bool(row.get("stalled")),
+                "created_at": row.get("created_at"),
+                "finished_at": row.get("finished_at"),
+                **({"failure": row["failure"]} if "failure" in row else {}),
+            }
+            for row in list_fn()
+            if self._owned_by_caller(row, agent, session_id)
+        ]
+        stats = stats_fn()
+        cap = int(stats.get("cap") or 1)
+        active = int(stats.get("active") or 0)
+        return {
+            "ok": True,
+            "action": "list",
+            "count": len(rows),
+            "active": active,
+            "cap": cap,
+            "free_slots": max(0, cap - active),
+            "children": rows,
+        }
+
+    def _steer_child(self, manager: Any, agent: str, spawn_id: str, message: str) -> dict:
+        from .kernel.plan_mode import current_session
+
+        refusal = self._kernel_refusal(agent, 1)
+        if refusal is not None:
+            return refusal
+        get_fn = getattr(manager, "get", None)
+        steer_fn = getattr(manager, "steer", None)
+        if not callable(get_fn) or not callable(steer_fn):
+            return _refusal("subagents_unavailable")
+        rec = get_fn(spawn_id)
+        if not self._owned_by_caller(rec, agent, current_session()):
+            return _refusal(
+                "unknown_or_foreign_child",
+                id=spawn_id,
+                detail="no sub-agent with that id belongs to this conversation and agent",
+            )
+        # Agent-origin steer: cannot approve inbox queue cards (SubAgentManager.decide enforces user-only).
+        result = steer_fn(spawn_id, message, origin="agent")
+        return {"action": "steer", **result}
+
+    def _stop_child(self, manager: Any, agent: str, spawn_id: str) -> dict:
+        from .kernel.plan_mode import current_session
+
+        refusal = self._kernel_refusal(agent, 1)
+        if refusal is not None:
+            return refusal
+        get_fn = getattr(manager, "get", None)
+        stop_fn = getattr(manager, "stop", None)
+        if not callable(get_fn) or not callable(stop_fn):
+            return _refusal("subagents_unavailable")
+        rec = get_fn(spawn_id)
+        if not self._owned_by_caller(rec, agent, current_session()):
+            return _refusal(
+                "unknown_or_foreign_child",
+                id=spawn_id,
+                detail="no sub-agent with that id belongs to this conversation and agent",
+            )
+        result = stop_fn(spawn_id, reason=f"parent:{agent}"[:80])
+        return {"action": "stop", **result}
 
     async def _collect(self, manager: Any, agent: str) -> dict:
         """G18 (H401): this conversation's finished background results, each handed out
@@ -513,6 +704,7 @@ def register_delegate_tool(
         input_schema=INPUT_SCHEMA,
         capability_id="tool:delegate_task",
         preflight=tool.preflight,
+        schema_overrides=tool.schema_overrides,
         # A child's answer is whatever it read and concluded: third-party text to the
         # parent. The fence follows the tool, so it is declared once here.
         untrusted_output=True,

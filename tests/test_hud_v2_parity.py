@@ -684,43 +684,6 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
-    # H361: installation, credential and selection APIs have no HUD controls.
-    # Guarded physical sends do not establish graphical or native parity.
-    "/api/admin/llm/provider-credentials",
-    "/api/admin/llm/provider-selection",
-    "/api/llm/provider-packages/status",
-    "/api/llm/provider-packages/stage",
-    "/api/llm/provider-packages/{artifact_id}",
-    "/api/llm/provider-packages/{artifact_id}/propose",
-    "/api/llm/provider-packages/proposals/{proposal_id}/decision",
-    "/api/llm/provider-packages/proposals/{proposal_id}/promote",
-    "/api/llm/provider-packages/{provider_id}/revoke",
-    # H075/H581: ProjectsMode now consumes the core board, drawer, attachment,
-    # metadata and dispatch routes. Remaining advanced HUD/native controls follow.
-    # Each exact path is also recorded in docs/design/HUD_V2_REMAINING.md.
-    "/api/kanban/assignees",
-    "/api/kanban/boards/import",
-    "/api/kanban/boards/{slug}/export",
-    "/api/kanban/boards/{slug}/switch",
-    "/api/kanban/config",
-    "/api/kanban/diagnostics",
-    "/api/kanban/estimate",
-    "/api/kanban/home-channels",
-    "/api/kanban/links",
-    "/api/kanban/model-options",
-    "/api/kanban/profiles/{profile_name}",
-    "/api/kanban/profiles/{profile_name}/describe-auto",
-    "/api/kanban/runs/{run_id}",
-    "/api/kanban/runs/{run_id}/inspect",
-    "/api/kanban/runs/{run_id}/terminate",
-    "/api/kanban/stats",
-    "/api/kanban/tasks/{task_id}/decompose",
-    "/api/kanban/tasks/{task_id}/estimate",
-    "/api/kanban/tasks/{task_id}/home-subscribe/{platform}",
-    "/api/kanban/tasks/{task_id}/reassign",
-    "/api/kanban/tasks/{task_id}/reclaim",
-    "/api/kanban/tasks/{task_id}/specify",
-    "/api/kanban/workers/active",
     # H075/H581: approved backend dispatch exists; dedicated board/worker
     # controls remain in HUD_V2_REMAINING.md and native task H18.34.
     "/api/autonomy/kanban/dispatch",
@@ -787,20 +750,43 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
 # cannot discover them. Keep transport expressions and mounted consumers here so
 # a removed button/read or changed route cannot silently count as a HUD caller.
 KANBAN_HTTP_CONSUMERS: dict[str, tuple[str, str, str]] = {
+    "/api/kanban/assignees": ("scopedPath('/assignees', slug)", "fetchAssignees", "KanbanView.tsx"),
     "/api/kanban/attachments/{attachment_id}": ("scopedPath(`/attachments/${id}`, slug)", "downloadAttachment", "drawer.tsx"),
     "/api/kanban/board": ("root + '/board'", "fetchBoard", "KanbanView.tsx"),
     "/api/kanban/boards": ("root + '/boards'", "fetchBoards", "KanbanView.tsx"),
+    "/api/kanban/boards/import": ("root + '/boards/import'", "importBoard", "board-switcher.tsx"),
     "/api/kanban/boards/{slug}": ("`${root}/boards/${encodeURIComponent(slug)}`", "updateBoard", "board-switcher.tsx"),
+    "/api/kanban/boards/{slug}/export": ("`${root}/boards/${encodeURIComponent(slug)}/export`", "exportBoard", "board-switcher.tsx"),
+    "/api/kanban/boards/{slug}/switch": ("`${root}/boards/${encodeURIComponent(slug)}/switch`", "switchBoard", "board-switcher.tsx"),
+    "/api/kanban/config": ("root + '/config'", "fetchConfig", "KanbanView.tsx"),
+    "/api/kanban/diagnostics": ("root + '/diagnostics'", "fetchDiagnostics", "KanbanView.tsx"),
     "/api/kanban/dispatch": ("scopedPath('/dispatch', slug)", "dispatch", "KanbanView.tsx"),
+    "/api/kanban/estimate": ("root + '/estimate'", "estimateDraft", "board.tsx"),
+    "/api/kanban/home-channels": ("root + '/home-channels'", "fetchHomeChannels", "drawer.tsx"),
+    "/api/kanban/links": ("scopedPath('/links', slug)", "addLink", "drawer.tsx"),
+    "/api/kanban/model-options": ("root + '/model-options'", "fetchModelOptions", "KanbanView.tsx"),
     "/api/kanban/orchestration": ("root + '/orchestration'", "fetchOrchestration", "KanbanView.tsx"),
     "/api/kanban/profiles": ("root + '/profiles'", "fetchProfiles", "KanbanView.tsx"),
+    "/api/kanban/profiles/{profile_name}": ("`${root}/profiles/${encodeURIComponent(profileName)}`", "updateProfileDescription", "board.tsx"),
+    "/api/kanban/profiles/{profile_name}/describe-auto": ("`${root}/profiles/${encodeURIComponent(profileName)}/describe-auto`", "describeProfileAuto", "board.tsx"),
     "/api/kanban/projects": ("root + '/projects'", "fetchProjects", "KanbanView.tsx"),
+    "/api/kanban/runs/{run_id}": ("scopedPath(`/runs/${encodeURIComponent(String(runId))}`, slug)", "fetchRun", "drawer.tsx"),
+    "/api/kanban/runs/{run_id}/inspect": ("scopedPath(`/runs/${encodeURIComponent(String(runId))}/inspect`, slug)", "inspectRun", "drawer.tsx"),
+    "/api/kanban/runs/{run_id}/terminate": ("scopedPath(`/runs/${encodeURIComponent(String(runId))}/terminate`, slug)", "terminateRun", "drawer.tsx"),
+    "/api/kanban/stats": ("scopedPath('/stats', slug)", "fetchStats", "KanbanView.tsx"),
     "/api/kanban/tasks": ("scopedPath('/tasks', slug)", "createTask", "board.tsx"),
     "/api/kanban/tasks/bulk": ("scopedPath('/tasks/bulk', slug)", "bulkTasks", "KanbanView.tsx"),
     "/api/kanban/tasks/{task_id}": ("scopedPath(`/tasks/${encodeURIComponent(id)}`, slug)", "fetchTask", "drawer.tsx"),
     "/api/kanban/tasks/{task_id}/attachments": ("scopedPath(`/tasks/${encodeURIComponent(id)}/attachments`, slug)", "uploadAttachment", "drawer.tsx"),
     "/api/kanban/tasks/{task_id}/comments": ("scopedPath(`/tasks/${encodeURIComponent(id)}/comments`, slug)", "addComment", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/decompose": ("scopedPath(`/tasks/${encodeURIComponent(id)}/decompose`, slug)", "decomposeTask", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/estimate": ("scopedPath(`/tasks/${encodeURIComponent(id)}/estimate`, slug)", "estimateTask", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/home-subscribe/{platform}": ("scopedPath(`/tasks/${encodeURIComponent(id)}/home-subscribe/${encodeURIComponent(platform)}`, slug)", "subscribeTaskChannel", "drawer.tsx"),
     "/api/kanban/tasks/{task_id}/log": ("scopedPath(`/tasks/${encodeURIComponent(id)}/log`, slug)", "fetchLog", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/reassign": ("scopedPath(`/tasks/${encodeURIComponent(id)}/reassign`, slug)", "reassignTask", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/reclaim": ("scopedPath(`/tasks/${encodeURIComponent(id)}/reclaim`, slug)", "reclaimTask", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/specify": ("scopedPath(`/tasks/${encodeURIComponent(id)}/specify`, slug)", "specifyTask", "drawer.tsx"),
+    "/api/kanban/workers/active": ("scopedPath('/workers/active', slug)", "fetchActiveWorkers", "KanbanView.tsx"),
 }
 
 
@@ -809,9 +795,12 @@ def test_mounted_kanban_composed_callers_are_accounted_for():
     transport = files["frontend/src/panels/kanban/api.ts"]
     host = files["frontend/src/gap.tsx"]
     view = files["frontend/src/panels/kanban/KanbanView.tsx"]
+    drawer = files["frontend/src/panels/kanban/drawer.tsx"]
     assert "<KanbanView />" in host and "createKanbanSocket(" in view
     assert "const root = '/api/kanban'" in transport
     assert "root + '/events'" in transport and "new WebSocket(kanbanEventsUrl" in transport
+    assert "unlinkPath(" in transport and re.search(r"\bremoveLink\(", drawer)
+    assert re.search(r"\bunsubscribeTaskChannel\(", drawer)
     routes = set(_snapshot_routes())
     blob = _client_blob()
     for path, (expression, function, consumer) in KANBAN_HTTP_CONSUMERS.items():
@@ -852,6 +841,52 @@ def test_mounted_custom_endpoint_composed_callers_are_accounted_for():
     for path, (request, label) in CUSTOM_ENDPOINT_HTTP_CONSUMERS.items():
         assert path in routes and path in COMPUTED_URL_CALLERS
         assert request in panel and label in panel
+
+
+def test_provider_packages_routes_have_a_live_admin_surface():
+    provider_routes = {
+        "/api/admin/llm/provider-credentials",
+        "/api/admin/llm/provider-selection",
+        "/api/llm/provider-packages/status",
+        "/api/llm/provider-packages/stage",
+        "/api/llm/provider-packages/{artifact_id}",
+        "/api/llm/provider-packages/{artifact_id}/propose",
+        "/api/llm/provider-packages/proposals/{proposal_id}/decision",
+        "/api/llm/provider-packages/proposals/{proposal_id}/promote",
+        "/api/llm/provider-packages/{provider_id}/revoke",
+    }
+    routes = set(_snapshot_routes())
+    blob = _client_blob()
+    assert provider_routes.issubset(routes)
+    assert {_classify(path) for path in provider_routes} == {"admin"}
+    assert provider_routes.isdisjoint(UNCALLED_BACKLOG)
+    assert all(_has_caller(path, blob) for path in provider_routes)
+
+    files = _client_files()
+    gap_source = files["frontend/src/gap.tsx"]
+    _assert_console_registration(gap_source, "Admin", "ProviderPackagesPanel")
+
+    panel = files["frontend/src/panels/provider-packages.tsx"]
+    expected_expressions = (
+        "apiGet<PackageStatus>('/api/llm/provider-packages/status', { admin: true })",
+        "apiPost<PackagePreview>('/api/llm/provider-packages/stage', stageBody, { admin: true })",
+        "apiGet<PackagePreview>(`/api/llm/provider-packages/${encodeURIComponent(targetArtifact)}`, { admin: true })",
+        "apiPost<ProposeResult>(`/api/llm/provider-packages/${encodeURIComponent(targetArtifact)}/propose`, {}, { admin: true })",
+        "apiPost<DecisionResult>(`/api/llm/provider-packages/proposals/${encodeURIComponent(targetProposal)}/decision`, decisionBody, { admin: true })",
+        "apiPost<PromoteResult>(`/api/llm/provider-packages/proposals/${encodeURIComponent(targetProposal)}/promote`, {}, { admin: true })",
+        "apiPost<RevokeResult>(`/api/llm/provider-packages/${encodeURIComponent(targetProvider)}/revoke`, {}, { admin: true })",
+        "apiGet<CredentialStatus>(`/api/admin/llm/provider-credentials?provider=${encodeURIComponent(provider)}&package_hash=${encodeURIComponent(hash)}`, { admin: true })",
+        "apiPut<CredentialStatus>('/api/admin/llm/provider-credentials', {",
+        "apiDeleteBody<CredentialStatus>('/api/admin/llm/provider-credentials', {",
+        "apiGet<SelectionStatus>('/api/admin/llm/provider-selection', { admin: true })",
+        "apiPut<SelectionStatus>('/api/admin/llm/provider-selection', selectionBody, { admin: true })",
+        "apiDeleteBody<{ status: string; revision: number }>('/api/admin/llm/provider-selection', {",
+    )
+    for expr in expected_expressions:
+        assert expr in panel, f"ProviderPackagesPanel missing caller expression: {expr}"
+    assert not re.search(r"\bfetch\s*\(", panel)
+    assert "@ts-nocheck" not in panel
+    assert 'type="password"' in panel and "permanentConsent" in panel
 
 
 # Routes whose client call is BUILT rather than written: the last segment comes from a

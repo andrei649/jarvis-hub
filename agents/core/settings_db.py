@@ -378,6 +378,8 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="security",key="scan_output",      value=True,                  label="Scan LLM output",    kind="toggle"),
     # H507: warn-only; code the agent writes is checked for known-dangerous patterns.
     dict(category="security",key="code_guidance",    value=True,                  label="Warn when code the agent writes has a known-dangerous pattern", kind="toggle"),
+    # H508: pre-command content scanner availability policy (default True = fail-open; False = fail-closed with synthesized HIGH finding).
+    dict(category="security",key="command_scanner_fail_open", value=True,         label="Fail open when the pre-command content scanner hits an internal error (off = fail closed with a synthesized HIGH finding)", kind="toggle"),
     dict(category="security",key="sandbox_timeout",  value=30,                    label="Sandbox timeout (s)",kind="number"),
     dict(category="security",key="sandbox_memory",   value=256,                   label="Sandbox max memory (MB)",kind="number"),
     dict(category="security",key="sandbox_temp_dir", value="",                    label="Sandbox work directory root (absolute path; JARVIS_EXEC_TEMP_DIR overrides this field; empty = TMPDIR, TMP, TEMP, then the managed cache under the data root; only the managed cache is pruned after the age below; a directory chosen here or through the environment is yours and never pruned; to keep a pruned cache on a bigger disk, move the data root (JARVIS_HOME) or bind-mount cache/exec, since a linked cache is not pruned; restart to apply)", kind="text"),

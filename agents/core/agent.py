@@ -968,6 +968,26 @@ class Agent:
         from .llm.request_context import current_session, session_scope
         from .llm.usage_context import current_observer, observer_scope, text_usage_scope
         from .operating_prompt import clocked_prompt
+        from .security.rag_guard import StreamingContextScrubber, strip_egress_memory_fences
+
+        raw_on_token = on_token
+        egress_scrubber = StreamingContextScrubber() if raw_on_token is not None else None
+        if egress_scrubber is not None and raw_on_token is not None:
+            if inspect.iscoroutinefunction(raw_on_token):
+                async def scrubbed_token(piece):
+                    cleaned = egress_scrubber.feed(piece)
+                    if cleaned:
+                        await raw_on_token(cleaned)
+            else:
+                def scrubbed_token(piece):
+                    cleaned = egress_scrubber.feed(piece)
+                    if cleaned:
+                        emitted = raw_on_token(cleaned)
+                        if inspect.isawaitable(emitted):
+                            return emitted
+                    return None
+
+            on_token = scrubbed_token
 
         activity = session_activity_callback()
         if activity is not None:
@@ -1026,11 +1046,19 @@ class Agent:
                 cached_input_tokens=cached_input_tokens,
                 compaction=compaction if compaction is not None and compaction.session_id == sid else None,
             )
+            if egress_scrubber is not None and raw_on_token is not None:
+                flushed_tail = egress_scrubber.flush()
+                if flushed_tail:
+                    emitted = raw_on_token(flushed_tail)
+                    if inspect.isawaitable(emitted):
+                        await emitted
             from .llm.base import (
                 THINKING_EXHAUSTED_REPLY,
                 is_backend_failure_reply,
                 is_degraded_reply,
             )
+            if isinstance(response, str) and response != THINKING_EXHAUSTED_REPLY:
+                response = strip_egress_memory_fences(response)
             if (compaction is not None and len(reported_prompt_usage) == 1
                     and response != THINKING_EXHAUSTED_REPLY):
                 compaction.observe_usage(
