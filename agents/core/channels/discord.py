@@ -14,6 +14,7 @@ from typing import Optional
 from .base import ChannelAdapter
 from .descriptor import DIALECT_MARKDOWN, ChannelDescriptor
 from .ephemeral import EphemeralDeletes, EphemeralReply, ephemeral_ttl
+from .outbound_safety import sanitize_label
 from .render import render_outbound
 
 logger = logging.getLogger("jarvis.channels.discord")
@@ -250,6 +251,7 @@ class DiscordChannel(ChannelAdapter):
         view._h067_retired = False
         for index, (label, data) in enumerate(buttons):
             # Discord allows five buttons per row and five rows per message.
+            label = sanitize_label(label)          # H069 review M3
             label = label.encode("utf-16-le")[:158].decode("utf-16-le", errors="ignore")
             action = data.rsplit(":", 1)[-1]
             style = (discord.ButtonStyle.danger if action == "x" else

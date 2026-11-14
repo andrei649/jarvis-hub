@@ -115,6 +115,8 @@ async def channel_config_put(body: PlainBody, channel_id: str = Path(..., patter
         return nocache_json({"error": "invalid_value", "field": str(exc)}, status_code=422)
     except cc.EnvOwned as exc:
         return _env_owned(str(exc))
+    except cc.FrontDoorRefused as exc:
+        return nocache_json({"error": "front_door", "detail": str(exc)}, status_code=409)
     except cc.BoundSecretInEnv as exc:
         return nocache_json({"error": "bound_secret_in_env", "name": exc.endpoint, "secret": exc.secret,
                              "detail": str(exc)}, status_code=409)
@@ -136,6 +138,8 @@ async def channel_secret_put(body: SecretBody, channel_id: str = Path(..., patte
         return nocache_json({"error": "invalid_value", "field": body.name}, status_code=422)
     except cc.EnvOwned as exc:
         return _env_owned(str(exc))
+    except cc.FrontDoorRefused as exc:
+        return nocache_json({"error": "front_door", "detail": str(exc)}, status_code=409)
     except ManagedRefused as exc:
         return await _managed(exc, channel_id)
     await _audit(f"channels: {channel_id} secret {body.name} set", "channel_secret_set")
@@ -151,6 +155,8 @@ async def channel_secret_delete(channel_id: str = Path(..., pattern=CHANNEL_PATT
         return _not_found()
     except cc.EnvOwned as exc:
         return _env_owned(str(exc))
+    except cc.FrontDoorRefused as exc:
+        return nocache_json({"error": "front_door", "detail": str(exc)}, status_code=409)
     except ManagedRefused as exc:
         return await _managed(exc, channel_id)
     await _audit(f"channels: {channel_id} secret {name} removed", "channel_secret_cleared")

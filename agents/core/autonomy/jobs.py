@@ -2152,6 +2152,10 @@ class JobRunner:
         adapter = channels.get(channel)
         if adapter is None:
             raise RuntimeError(f"channel {channel!r} is not connected")
+        # Agent silence is handled before delivery/holding. Wrapped adapters must
+        # preserve literal script data while retaining their sanitization gate.
+        send_options = ({"_literal_job_output": True}
+                        if getattr(adapter.send, "__outbound_safe__", False) else {})
         if channel == "telegram":
             get_setting = getattr(self._orch, "get_setting", None)
             owner = os.environ.get("AUTONOMY_OWNER_CHAT_ID", "") or str(
@@ -2159,9 +2163,9 @@ class JobRunner:
             )
             if not owner.strip():
                 raise RuntimeError("no owner chat is configured (autonomy.owner_chat_id)")
-            ok = await adapter.send(text, chat_id=int(owner))
+            ok = await adapter.send(text, chat_id=int(owner), **send_options)
         else:
-            ok = await adapter.send(text)
+            ok = await adapter.send(text, **send_options)
         if not ok:
             raise RuntimeError(f"{channel} refused the message")
         return f"delivered to {channel}"

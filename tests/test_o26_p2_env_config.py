@@ -212,8 +212,9 @@ def test_web_email_ports_use_shared_env_int():
     src = (repo_root / "agents/web.py").read_text(encoding="utf-8")
     assert 'int(os.environ.get("SMTP_PORT"' not in src
     assert 'int(os.environ.get("IMAP_PORT"' not in src
-    assert 'env_int("SMTP_PORT", 587' in src
-    assert 'env_int("IMAP_PORT", 993' in src
+    # H088: the panel's port rule (channel_config.env_port), which also falls back.
+    assert 'channel_port("SMTP_PORT", 587' in src
+    assert 'channel_port("IMAP_PORT", 993' in src
 
 
 def test_webhook_channels_use_shared_env_json_object():

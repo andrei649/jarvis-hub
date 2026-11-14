@@ -1,5 +1,23 @@
 # HUD v2 — Remaining work (next PR)
 
+Retained conversation transcript candidate (2026-11-13): owner-only
+`GET /sessions/{session_id}/transcript` previews or downloads redacted retained
+current user/assistant text; `nerva sessions transcript SESSION_ID [-o FILE]`
+prints the JSON or atomically creates a private file without replacing any path.
+It addresses one existing session under identity/import/rewind fences, with no
+active-session switch or reconstruction of old archives. The web Sessions panel now
+previews escaped retained text on an explicit owner-authenticated request and offers
+JSON download. Changing row, tab, reload, rename or mutation, closing and unmounting
+invalidate private preview responses; refusal bodies are never echoed. Header-token
+downloads require browser file saving support; owner-session downloads report a
+request rather than claiming a saved file. Native Sessions now offers an explicit owner-authorized retained-text preview,
+with known-field projection and clearing on close, refresh, resume, configuration
+changes and reconnect. Native mobile export and device/live-Hub acceptance remain open. H005 remains partial; this lot claims no
+closure credit and does not restamp the Hermes assessment. Secure file export
+fails closed where private-file or hard-link APIs are unavailable; native
+Windows file export has no acceptance claim.
+
+
 Local candidates, 2026-11-03: H220 adds Usage/Billing estimates, measured
 local/cloud/unknown aggregates, a Command Center link, and current-turn usage
 in the existing shared context strip. Explicit owner field selections remain
@@ -935,3 +953,15 @@ The new panel is a local implementation, with synthetic owner/Kernel/Vault/DNS/H
 ## Governed browser sessions — local integration (2026-10-29)
 
 Operator retains one-shot approval and adds fresh-profile start/act/close, bounded owner session/ref display and later browser-task outcome. The three session/task/close routes require the owner admin credential; generic availability remains user-tier. Grounded refs, scroll/back/press, frame/focus/native form semantics, current registration and exact per-step Kernel receipts are implemented. Local Chrome coverage includes unchanged-registration lifetime and changed-control native/journal cleanup. Console/get_images now add bounded completed-task untrusted observations through separate owner-approved reads, with conservative console invalidation and atomic image row/ref semantics. Vision/dialog/JS/CDP, other engines, real profiles, recording/spill, mobile controls and owner-host/live-platform acceptance remain required separately.
+
+
+V73 backend-only session pagination: owner-authenticated `GET /sessions/page` can
+read saved history beyond the legacy newest twenty. Web/HUD and mobile pagination
+controls are not wired in this lot; both keep the legacy bounded list. No complete
+UI or mobile pagination delivery is claimed.
+
+V74 CLI-only history consumes the V73 page route through `nerva sessions history`,
+with bounded client-side metadata filters and explicit continuation receipts.
+Web/HUD and mobile history controls remain unwired; no UI acceptance is claimed.
+H005 stays partial. Retained transcripts and session organization are separate
+capabilities included in this combined candidate.

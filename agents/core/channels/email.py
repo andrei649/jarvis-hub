@@ -281,7 +281,10 @@ class EmailChannel(ChannelAdapter):
         to_addr = kwargs.get("to") or self.smtp.get("default_recipient", "")
         in_reply_to = email_inbound.message_id(kwargs.get("in_reply_to"))
         references = kwargs.get("references")
-        subject = kwargs.get("subject", "Jarvis Message")
+        from .outbound_safety import sanitize_text
+
+        # H069 review m4: the subject leaves with the message; one line, through the gate.
+        subject = " ".join(sanitize_text(str(kwargs.get("subject", "Jarvis Message"))).split())
         subject = (email_inbound.reply_subject(subject) if in_reply_to
                    else email_inbound.clean_subject(subject) or "Jarvis Message")
         msg = EmailMessage()

@@ -107,7 +107,22 @@ async def test_model_silence_before_caps_persists_without_delivery(tmp_path, scr
 
 @pytest.mark.asyncio
 async def test_no_agent_silent_token_is_literal_output(tmp_path, scripts):
+    from agents.core.channels.base import ChannelAdapter
+
+    class RecordingAdapter(ChannelAdapter):
+        async def start(self):
+            pass
+
+        async def stop(self):
+            pass
+
+        async def send(self, message, **kwargs):
+            assert "_literal_job_output" not in kwargs
+            outputs.append(message)
+            return True
+
     store, runner, job, tasks, outputs, _ = make_runtime(tmp_path, scripts)
+    runner._orch.channels['ntfy'] = RecordingAdapter('ntfy')
     try:
         await runner.fire(job.id)
         complete(tasks[1], stdout='[SILENT]')

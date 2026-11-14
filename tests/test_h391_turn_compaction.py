@@ -421,8 +421,13 @@ async def test_plain_request_over_exact_window_refuses_before_physical_send():
     assert sent == []
 
 
-async def test_unicode_prompt_uses_token_estimate_before_physical_send():
+async def test_unicode_prompt_uses_token_estimate_before_physical_send(monkeypatch):
     import pytest
+
+    from agents.core.llm import tokenizer
+
+    # Optional tokenizer data must not determine whether this safety check runs.
+    monkeypatch.setattr(tokenizer, "_ENCODING", None)
 
     from agents.core.conversation_clock import CompactionClockRefused
 
