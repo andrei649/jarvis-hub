@@ -1178,6 +1178,56 @@ class CheckpointManager:
             logger.warning(f"Failed to get sessions: {e}")
         return []
 
+    def get_sessions_page(self, limit: int = 20, *, archived: bool = False,
+                          before: tuple[str | None, str] | None = None) -> tuple[list[dict], bool]:
+        """Return one bounded, deterministic page of listed sessions for owner UI.
+
+        This deliberately leaves ``get_sessions`` and its callers unchanged. The
+        cursor boundary is ``(started_at, id)`` in descending order; null timestamps
+        follow dated rows and are ordered by id descending. Existing archive and
+        continuation predicates run before the page limit.
+
+        Unlike the compatibility list helper, failures are raised so an API caller
+        cannot mistake an unavailable page for the end of history.
+        """
+        if not self._conn:
+            raise RuntimeError("checkpoint store unavailable")
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("invalid session page limit")
+        if before is not None:
+            if (not isinstance(before, tuple) or len(before) != 2
+                    or (before[0] is not None and not isinstance(before[0], str))
+                    or not isinstance(before[1], str)):
+                raise ValueError("invalid session page boundary")
+            started_at, session_id = before
+            if len(session_id) > 128 or not session_id or len(started_at or "") > 128:
+                raise ValueError("invalid session page boundary")
+
+        clauses = [self._LISTED_SQL]
+        clauses.append(f"{self._ARCHIVED_SQL} IS NOT NULL" if archived
+                       else f"{self._ARCHIVED_SQL} IS NULL")
+        params: list[object] = []
+        if before is not None:
+            started_at, session_id = before
+            if started_at is None:
+                clauses.append("(started_at IS NULL AND id < ?)")
+                params.append(session_id)
+            else:
+                clauses.append("(started_at IS NULL OR started_at < ? OR (started_at = ? AND id < ?))")
+                params.extend((started_at, started_at, session_id))
+        sql = (f"SELECT * FROM sessions WHERE {' AND '.join(clauses)} "
+               "ORDER BY started_at DESC, id DESC LIMIT ?")  # nosec B608 - fixed clauses only; values are bound
+        params.append(limit + 1)
+        with self._lock:
+            cursor = self._conn.execute(sql, params)
+            columns = [d[0] for d in cursor.description]
+            rows = cursor.fetchall()
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        records = [{name: value for name, value in zip(columns, row) if name != "title_key"}
+                   for row in rows]
+        return records, has_more
+
     def info(self) -> dict:
         if not self._conn:
             return {"status": "unavailable"}

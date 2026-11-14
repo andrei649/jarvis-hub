@@ -230,20 +230,18 @@ def test_first_zone_pin_is_atomic_across_concurrent_callers(app_zone, tmp_path, 
 async def test_fallback_tick_uses_same_app_zone_as_registered_cron(app_zone, tmp_path):
     runner, store, scheduler = make_runner(tmp_path)
     try:
-        job = store.create(name="daily", schedule_text="every day at 9", action=REMIND)
+        job = store.create(name="daily", schedule_text="every day at 9", action=REMIND,
+                           options={"deliver": []})
         runner.register(job)
         assert scheduler.jobs[f"job-{job.id}"]["timezone"] == EASTERN
 
         async def no_op():
             return None
 
-        async def fire(job_id):
-            return job_id
-
         runner.reconcile_scripts = no_op
         runner.drain_manual = no_op
-        runner.fire = fire
-        assert await runner.tick(datetime(2026, 10, 12, 13, 0, tzinfo=UTC)) == [job.id]
+        due = await runner.tick(datetime(2026, 10, 12, 13, 0, tzinfo=UTC))
+        assert len(due) == 1 and (due[0].job_id, due[0].status) == (job.id, "ok")
         assert await runner.tick(datetime(2026, 10, 12, 13, 0, tzinfo=UTC)) == []
     finally:
         store.close()

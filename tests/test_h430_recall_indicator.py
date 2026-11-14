@@ -750,15 +750,21 @@ async def test_a_voice_mode_chat_reads_the_footer_and_hears_only_the_reply(tmp_p
     assert [m for m, _ in channel.client.calls][-1] == "sendVoice"
 
 
-async def test_a_streamed_reply_reads_the_footer_and_hears_only_the_reply(tmp_path):
+async def test_a_streamed_reply_reads_the_footer_and_hears_only_the_reply(tmp_path, monkeypatch):
+    from agents.core.channels import outbound_safety
     from agents.core.channels.telegram import TelegramDraft
+
+    # The broker's opaque redactor has no known maximum secret length. Progress is
+    # held until the whole final reply can be checked, as it is in a running hub.
+    monkeypatch.setattr(outbound_safety, "_known_redactor", lambda text: text)
 
     channel, speech = _voice_chat(tmp_path)
     draft = TelegramDraft(channel, 42, interval=0)
     await draft.push("Am ales ")
     await draft.push("varianta simpla.")
     assert await draft.finish(_footed()) is True
-    assert all(line in channel.client.texts("editMessageText")[-1] for line in FOOTER)
+    assert channel.client.texts("editMessageText") == []
+    assert all(line in channel.client.texts("sendMessage")[-1] for line in FOOTER)
     assert speech.said == [REPLY]
 
     channel, speech = _voice_chat(tmp_path)                      # a draft that never started
@@ -817,30 +823,33 @@ def _telegram_hub(channel, *, streaming, admin=True, prefetches=(2,)):
 
 @pytest.mark.parametrize("streaming", [True, False], ids=["streamed", "whole"])
 async def test_a_real_telegram_turn_in_voice_mode_speaks_the_reply_without_its_footer(
-        tmp_path, streaming):
+        tmp_path, streaming, monkeypatch):
+    from agents.core.channels import outbound_safety
+
+    monkeypatch.setattr(outbound_safety, "_known_redactor", lambda text: text)
     channel, speech = _voice_chat(tmp_path)
     orch, _ = _telegram_hub(channel, streaming=streaming)
     reply = await orch.channel_handler("ce ai ales?", channel="telegram", chat_id=42, sender="42")
     assert reply == REPLY + "\n\n🧠 Long-term memory — recalled 2 memories"
-    final = channel.client.texts("editMessageText" if streaming else "sendMessage")[-1]
+    final = channel.client.texts("sendMessage")[-1]
+    assert channel.client.texts("editMessageText") == []
     assert "🧠 Long-term memory — recalled 2 memories" in final
     assert speech.said == [REPLY]
 
 
-async def test_a_streamed_telegram_reply_shows_the_line_from_its_first_frame(tmp_path, monkeypatch):
-    """Hermes renders the line right after the prefetch. A reply written in place shows it
-    in the very first frame (the prefetch ran before the first token), and the line it
-    shows is always the LAST prefetch's: a second prefetch mid-reply replaces it."""
+async def test_a_streamed_telegram_reply_holds_footer_until_safe_final(tmp_path, monkeypatch):
+    """An opaque redactor holds preview frames; the final uses the last prefetch."""
+    from agents.core.channels import outbound_safety
     from agents.core.channels import telegram as telegram_module
 
     monkeypatch.setattr(telegram_module, "STREAM_EDIT_INTERVAL", 0)
+    monkeypatch.setattr(outbound_safety, "_known_redactor", lambda text: text)
     channel, speech = _voice_chat(tmp_path)
     orch, frames = _telegram_hub(channel, streaming=True, prefetches=(2, 1))
     reply = await orch.channel_handler("ce ai ales?", channel="telegram", chat_id=42, sender="42")
-    first = [body["text"] for method, body in frames[0] if method == "sendMessage"]
-    assert len(first) == 1 and "🧠 Long-term memory — recalled 2 memories" in first[0]
-    later = [body["text"] for method, body in frames[1][len(frames[0]):] if method == "editMessageText"]
-    assert later and "recalled 1 memory" in later[-1] and "2 memories" not in later[-1]
+    assert frames == [[], []]
+    [final] = channel.client.texts("sendMessage")
+    assert "recalled 1 memory" in final and "2 memories" not in final
     assert reply == REPLY + "\n\n🧠 Long-term memory — recalled 1 memory"
     assert speech.said == [REPLY]
 

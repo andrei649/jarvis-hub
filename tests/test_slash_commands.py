@@ -95,7 +95,7 @@ async def test_help_lists_what_the_principal_may_use(user_tier_allowed):
     owner = await registry.dispatch("/help", orch=_orch(), principal=OWNER)
     assert "/status" in guest.reply and "/pause" not in guest.reply.split("Owner commands")[0]
     assert "Owner commands" in guest.reply
-    assert "/pause [reason] — engage the emergency stop  (owner)" in owner.reply
+    assert "/pause [reason|off] — engage the emergency stop  (owner)" in owner.reply
     assert "/resume" in owner.reply
 
 
@@ -292,6 +292,13 @@ def test_the_default_registry_names_the_first_wave(monkeypatch, tmp_path):
         "help", "status", "sessions", "new", "reset", "undo", "recap", "btw", "pause", "stop", "resume", "jobs", "remind", "voice", "refine", "usage", "personality",
         "checkpoints", "rollback", "kanban", "project", "goal", "subgoal",
         "bundles", "bundle",   # H026: owner commands; a guest's set below is unchanged
+        "reload_skills",        # H084: staged owner rescan; hyphen form is an alias
+        "reload_mcp",           # H084: refresh wanted MCP servers; hyphen alias
+        "debug",                # H084: local diagnostic report
+        "egress",               # H084: read-only egress status
+        "diff",                 # H084: read-only current-project diff
+        "version", "profile",  # H084: live process identity and owner profile
+        "platform", "update", "restart",  # H083/H084: failure controls and governed owner intake
         "whoami",              # H058: a user command, so in both sets
         "approvals",           # H484: the approval dial, an owner command
         "memory",              # H443: held memory writes, an owner command (DM only)
@@ -299,6 +306,7 @@ def test_the_default_registry_names_the_first_wave(monkeypatch, tmp_path):
         "context", "compress",         # H412: the context meter, owner commands
         "verify",                      # G5 (H023/H405): project verification, an owner command
         "worktree", "review", "delegations",   # G18 (H474, H404, H401): owner commands
+        "commands",                    # H079: paginated, caller-filtered discovery
     }
     # H058: a guest sees /help and /whoami until the owner allows more; allowed everything
     # a non-owner may be allowed, it sees the user tier, never an owner command.
@@ -306,7 +314,7 @@ def test_the_default_registry_names_the_first_wave(monkeypatch, tmp_path):
     assert {c.name for c in build_default_registry().visible(GUEST)} == {"help", "whoami"}
     allow_user_tier(monkeypatch, tmp_path)
     assert {c.name for c in build_default_registry().visible(GUEST)} == {
-        "help", "status", "sessions", "recap", "btw", "jobs", "voice", "whoami",
+        "help", "status", "sessions", "recap", "btw", "jobs", "voice", "whoami", "commands", "version",
     }
     assert commands_module.USER == "user"
 

@@ -466,9 +466,16 @@ LONG_REPLY = ("Conform politicii interne, concediul anual de odihnă este de 21 
 
 async def test_a_client_that_goes_away_cancels_the_answer_under_the_hub_middleware(ws):
     """The disconnect path through the hub's own BaseHTTPMiddleware stack (the slice
-    proves it on a bare app): uvicorn's ``http.disconnect`` after the first token must
+    proves it on a bare app): uvicorn's ``http.disconnect`` while the model is running must
     still reach the stream, cancel the model call and store the answer as cancelled."""
-    engine = ws.use_engine(FakeEngine(reply=LONG_REPLY, token_delay=0.02))
+    model_started = asyncio.Event()
+
+    class StartedEngine(FakeEngine):
+        async def _run(self, system, prompt, on_token):
+            model_started.set()
+            return await super()._run(system, prompt, on_token)
+
+    engine = ws.use_engine(StartedEngine(reply=LONG_REPLY, delay=1, token_delay=0.02))
     conn = db()
     company = seed_company(conn)
     client = TestClient(web.app)
@@ -486,7 +493,6 @@ async def test_a_client_that_goes_away_cancels_the_answer_under_the_hub_middlewa
                          (b"accept", b"text/event-stream"),
                          (b"origin", origin_of(client).encode()),
                          (b"x-csrf-token", csrf.encode()), (b"cookie", cookie.encode())]}
-    first_token = asyncio.Event()
     request_sent = False
     sent: list[bytes] = []
 
@@ -495,14 +501,12 @@ async def test_a_client_that_goes_away_cancels_the_answer_under_the_hub_middlewa
         if not request_sent:
             request_sent = True
             return {"type": "http.request", "body": body, "more_body": False}
-        await first_token.wait()
+        await model_started.wait()
         return {"type": "http.disconnect"}
 
     async def send(message: dict) -> None:
         if message["type"] == "http.response.body":
             sent.append(message.get("body", b""))
-            if b"event: token" in message.get("body", b""):
-                first_token.set()
 
     try:
         await asyncio.wait_for(web.app(scope, receive, send), timeout=10)

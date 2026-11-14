@@ -421,7 +421,11 @@ async def test_plain_request_over_exact_window_refuses_before_physical_send():
     assert sent == []
 
 
-async def test_unicode_prompt_uses_token_estimate_before_physical_send():
+async def test_unicode_prompt_uses_token_estimate_before_physical_send(monkeypatch):
+    from agents.core.llm import tokenizer
+
+    # The optional tokenizer must not decide whether Unicode can bypass the cap.
+    monkeypatch.setattr(tokenizer, "_ENCODING", None)
     import pytest
 
     from agents.core.conversation_clock import CompactionClockRefused

@@ -12,9 +12,9 @@ never trusts a declaration it has not seen the code make from inside the sandbox
 something happened. What it still cannot do is act on it — see "Watching, not hooking"
 below, which is the most important section on this page.
 
-What is still not done: binding a declared *command* to the chat registry, handing
-extensions a `ctx` capability object, or letting an extension override a core command
-or a built-in tool. The acquisition pipeline
+Declared commands now bind to the shared chat registry after isolated activation.
+They are owner-only and run in the same sealed sandbox as tools. Extensions do not
+receive a host `ctx` capability object and cannot override a core command or tool. The acquisition pipeline
 remains the only authority for signed packages, quarantine, approval, promotion and
 revocation — an extension **is** an acquired package, so there is deliberately no
 second store, no second signing key and no second sandbox it could arrive through.
@@ -63,7 +63,9 @@ out; it does not grant trust or enable execution. Exit 1 reports malformed input
 collisions, cycles, missing dependencies or version mismatches. Dependencies are
 checked in this interpreter, not in any future sandbox image. Nothing is installed.
 
-Both version fields must be integer 1. Every field in the example is required;
+Both version fields must be integer 1. Every field in the example is required.
+The optional `command_requires_args` list may name only commands declared in
+`commands`; absent or empty means no commands have this metadata. Other
 unknown fields, JSON duplicate keys, executable hooks, source paths and URLs are
 refused. Files are capped at 64 KiB; a batch at 128 extensions; each declaration
 or dependency category at 64 entries. Names use lowercase letters, digits and
@@ -105,21 +107,33 @@ preserves a valid diagnostic report even when its inspection failed.
 An acquired entrypoint is projected as a declaration from its existing manifest.
 Active records undergo the package store's existing signature/integrity check;
 tampered and revoked records advertise no callable handlers. A row reads
-`execution_available: true` with `callable_tools` filled in **only** when that record
-is signature-verified *and* currently activated in this hub's runtime; anything else
-still advertises nothing. Inspection reads an already-composed runtime and never
-composes one. `signature_verified`
-does not prove approval or sandbox availability: `approval_verified` remains false,
-`quarantine_state` is `not_inspected`, and `reason` identifies the absent SDK or
-failed integrity check. Package paths, source code, signatures, receipt content and
-signing keys are not returned. The projection does not change persisted state.
+`execution_available: true` only when that record is signature-verified and currently
+activated in this hub's runtime. `callable_tools` and `callable_commands` are checked
+separately: a command namespace collision can remove command callability while valid
+tools remain available. Exact live manifests supply declared commands, required
+arguments and observation events. Inspection reads an already-composed runtime and
+never composes one. `signature_verified` does not prove approval or sandbox availability:
+`approval_verified` remains false and `quarantine_state` is `not_inspected`. Package
+paths, source code, signatures, receipt content and signing keys are not returned.
+The projection does not change persisted state.
 
-The browser and mobile acquisition screens remain available for their existing
-package lifecycle. A dedicated extension inspection UI is pending in
-`docs/design/HUD_V2_REMAINING.md` and `mobile/PARITY.md`. No native UI injection,
-install-from-Git surface or raw-shell lifecycle hook is included.
+Console → Build → Extensions and the mobile Status screen's collapsed Extensions
+section display this read-only inspection. Mobile reads only after the section opens;
+closing it or changing connections discards the snapshot. Both views distinguish
+manifest declarations, currently callable handlers, signature verification and approval.
+Failed refreshes hide old results. Existing acquisition screens retain their package
+lifecycle functions. No native UI injection, install-from-Git surface or raw-shell
+lifecycle hook is included. Live browser/device acceptance remains unverified.
 
 ## Consent: agree to a surface, not to a name
+
+Each activation also pins the exact persisted consent grant. Repeating an unchanged,
+unrevoked grant preserves it; revoking and granting again requires explicit reactivation.
+Pending registration and tool/command replies cannot reuse the older grant. Consent
+mutations are serialized across processes; inspection remains read-only. Deactivation
+also invalidates pending registration and waits for existing tool retirement before a
+replacement exposes its bindings. These paths have offline regression coverage; live
+Docker and Windows acceptance remain separate checks.
 
 ```console
 nerva extensions doctor boats.json          # what does it declare, and is it well formed
@@ -220,12 +234,13 @@ bus. Their absence remains a functional gap, not an active scope exclusion.
 | **Nothing comes back** | the delivery script prints no envelope, and `observe` reads the exit code and not one byte of output — there is no channel for a veto, an injection, an identity or an escalation, so none is filtered out |
 | **Fixed fields** | original events carry tiny summaries; guardian events add explicitly declared, force-scanned command/description excerpts; unknown fields are refused |
 | **Never blocks** | `emit` builds the payload, picks observers and returns; delivery runs on its own task, from the loop thread or a worker thread |
-| **Bounded** | past `MAX_PENDING` deliveries in flight, events are dropped and counted — a wedged observer costs a counter, never the chat |
+| **Bounded** | queued callbacks and running tasks share `MAX_PENDING` slots, reserved before scheduling; excess deliveries are dropped and counted — a wedged observer costs a counter, never the chat |
 
 ### Events and exactly what they carry
 
 | event | fields | raised at |
 |---|---|---|
+| `command.started` | `command` | immediately before an admitted registered handler; canonical name only, never arguments, sender or reply; unknown, refused and quick-exec commands do not emit |
 | `command.completed` | `command`, `status` | `CommandRegistry.dispatch` — the **reply never goes**, and an *unknown* command is not observed at all, because its "name" is whatever the sender typed |
 | `session.started` | `session_id` | `Orchestrator.new_session`, after the checkpoint is flushed |
 | `session.ended` | `session_id` | the same boundary, emitted before `session.started` |
@@ -234,6 +249,17 @@ bus. Their absence remains a functional gap, not an active scope exclusion.
 | `approval.smart.decided` | same fields plus `choice=smart_approve|smart_deny`, `decided_by=aux_llm` | after the corresponding exact task verdict is committed; stale, duplicate, ESCALATE and abandoned results emit no response |
 
 Every payload also carries `event`, a unique `event_id` and `occurred_at`.
+
+The immediate delivery report describes admission for scheduling, not successful
+observer execution. Capacity is shared across emitting threads, and tasks stay on
+the bus's captured event loop. Completion, cancellation and scheduling failures
+release capacity. `drain()` snapshots already-created tasks; it does not wait for
+callbacks still queued on the loop.
+
+`command.started` records entry into the handler, not validation of its arguments
+or authorization of an effect. Delivery is asynchronous and may run after the
+handler finishes. A new subscription requires fresh consent; it cannot veto or
+rewrite a command and is not forwarded to owner hooks.
 
 Guardian `request_id` is a random per-inference UUID, not a session/principal.
 Command and description use both SecretScanner and the credential/identifier
@@ -266,3 +292,41 @@ stale host view cannot deliver one.
 **The cost is one container per delivered event.** That is the price of not handing
 third-party code the host, and it is why this is not, and does not try to be, a
 hot-path hook system.
+
+## Owner slash commands
+
+Declare command names in the manifest and in `register()` exactly as for tools.
+The signed `main.py` must provide `command(name, args)`, returning a string:
+
+```python
+def register():
+    return {"tools": [], "commands": ["boat_report"], "events": []}
+
+def command(name, args):
+    return "Report: " + args
+```
+
+After explicit consent and activation, `/boat_report today` (or `/boat-report today`) invokes this handler
+without sending the command to a model. `/help` and `/commands` expose it only to
+the owner. Activation refuses core names, aliases, platform fallback names, stored
+quick-command names (including invalid configurations), and other registered
+commands. Live consent, signature, activation and package identity remain required;
+revocation removes owned registrations immediately and suppresses late replies.
+Results pass the outbound sanitizer. There is no network or host-context grant;
+network and shell effects still require the governed host mechanisms and cannot
+be requested through this pure-computation interface.
+
+A missing handler fails activation; a non-string or oversized protocol result
+fails closed. Native command menus are refreshed at channel startup; the live
+registry and typed slash path update immediately. Live Docker/provider acceptance
+remains separate from offline tests that execute the actual wrapper scripts.
+
+For a command that expects arguments, the descriptor may include
+`"command_requires_args": ["boat_report"]`. Telegram's menu projection omits it,
+while `/help`, `/commands` and typed owner dispatch remain available. This is
+menu metadata, not host validation of the plugin's arguments. The CLI preserves
+it when submitting consent or activation, and doctor and activation responses
+show it. Changing a nonempty declaration requires fresh consent; legacy and
+empty declarations retain their existing consent digest. Package code is still
+signature-checked, but this descriptor metadata is owner-consented rather than
+attested by the sandbox's `register()` response.

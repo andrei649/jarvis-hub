@@ -1,0 +1,6 @@
+{
+  "original_name": "pax-cache-fix.patch",
+  "sha256": "ef48b47f417ce8f04c137366edd27c96591ccf91f509c4ac19fbc71b42fe11b6",
+  "encoding": "utf-8",
+  "content": "--- a/agents/core/archive_safe.py\n+++ b/agents/core/archive_safe.py\n@@ -715,6 +715,9 @@\n                     raise ArchiveRejected(f\"truncated member: {_show(member.name)}\")\n                 result[name] = {\"sha256\": digest.hexdigest(), \"size\": member.size,\n                                 \"mode\": member.mode, \"data\": bytes(data) if data is not None else None}\n+                # Inspection uses direct TarInfo handles and refuses links. Retaining\n+                # past headers only multiplies inherited global PAX dictionaries.\n+                tar.members.clear()\n             _drain_padding(tar.fileobj)\n     except _CORRUPT as exc:\n         raise ArchiveRejected(f\"archive is corrupt or truncated: {exc}\") from exc\n"
+}

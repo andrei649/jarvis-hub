@@ -51,13 +51,16 @@ from .backfill import (
     looks_like_command,
 )
 from .base import ChannelAdapter
+from .connect_deadline import DEFAULT_CONNECT_TIMEOUT, channel_connect_timeout
 from .descriptor import DIALECT_PLAIN, ChannelDescriptor
+from .outbound_safety import sanitize_text
 from .pairing import channel_open_acknowledged, pairing_enabled
-from .reconnect import FATAL_REPROBE_S, Backoff, classify_exception, classify_status
+from .reconnect import FATAL_REPROBE_S, Backoff, PollingCircuit, classify_exception, classify_status
 from .render import chunk, render_outbound
 
 logger = logging.getLogger("jarvis.channels.ntfy")
 _private_http_logs = contextvars.ContextVar("ntfy-private-http-logs", default=False)
+_quiet_sleep = asyncio.sleep
 
 
 class _PrivateHTTPLogFilter(logging.Filter):
@@ -128,6 +131,11 @@ def _clean_title(raw: object) -> str:
     return ascii_only.strip() or DEFAULT_TITLE
 
 
+def title_header(raw: object) -> str:
+    """H069 review m4: the notification title through the outbound gate, then made a header."""
+    return _clean_title(sanitize_text(str(raw or "")))
+
+
 def _clean_priority(raw: object) -> int:
     try:
         value = int(raw)
@@ -160,6 +168,7 @@ class NtfyChannel(ChannelAdapter):
         title: str = DEFAULT_TITLE,
         client: Any = None,
         timeout: float = 10.0,
+        connect_timeout_seconds: float = DEFAULT_CONNECT_TIMEOUT,
         handler=None,
         pairing=None,
         inbound: bool = False,
@@ -194,8 +203,17 @@ class NtfyChannel(ChannelAdapter):
         self.markdown = bool(markdown)
         self.pending_reply_handler = pending_reply_handler
         self._timeout = timeout
+        self._connect_timeout_seconds = channel_connect_timeout(connect_timeout_seconds)
         self._epoch = secrets.token_hex(32)
         self._stream_task: asyncio.Task | None = None
+        self._healthy_timer: asyncio.Task | None = None
+        self._stream_close_task: asyncio.Task | None = None
+        self._active_stream_response = None
+        self._stream_close_confirmed = True
+        self._stream_lease = None
+        self._subscription_claim = None
+        self._lifecycle_lock = asyncio.Lock()
+        self._stop_cleanup_pending = False
         self._dispatch_task: asyncio.Task | None = None
         self._events: asyncio.Queue | None = None
         self._pending_callback_generation = None
@@ -204,6 +222,7 @@ class NtfyChannel(ChannelAdapter):
         self.fatal_error: str | None = None
         # H100: the shared ladder (with jitter and reset-after-healthy), on ntfy's rungs.
         self._backoff = Backoff(_RECONNECT_BACKOFF, clock=lambda: monotonic())
+        self._stream_circuit = PollingCircuit()
         # H116: the since= cursor (last message time and ids), saved in the reliability
         # store; a backfill after a start is bounded (backfill.py).
         self._cursor_store = None
@@ -217,7 +236,8 @@ class NtfyChannel(ChannelAdapter):
         self.client = client if client is not None else _NtfyHTTPClient(self._request_guard)
 
     @classmethod
-    def from_env(cls, environ: Mapping[str, str]) -> NtfyChannel | None:
+    def from_env(cls, environ: Mapping[str, str], *,
+                 connect_timeout_seconds: float = DEFAULT_CONNECT_TIMEOUT) -> NtfyChannel | None:
         """The configured channel, or None when ``NTFY_URL`` / ``NTFY_TOPIC`` are not both
         set; a malformed value is refused with a warning rather than half-wired."""
         url = str(environ.get(URL_ENV) or environ.get(SERVER_ENV) or "").strip()
@@ -235,30 +255,73 @@ class NtfyChannel(ChannelAdapter):
                 inbound=truthy(environ.get(INBOUND_ENV)),
                 publish_topic=str(environ.get(PUBLISH_TOPIC_ENV, "") or ""),
                 markdown=truthy(environ.get(MARKDOWN_ENV)),
+                connect_timeout_seconds=connect_timeout_seconds,
             )
         except ValueError as exc:
             logger.warning("ntfy channel disabled: %s", exc)
             return None
 
     async def start(self) -> None:
+        async with self._lifecycle_lock:
+            await self._start_locked()
+
+    async def _start_locked(self) -> None:
         if self._running:
+            return
+        if (self._stop_cleanup_pending or self._stream_task is not None
+                or self._subscription_claim is not None or not self._stream_circuit.reset()):
+            self.health.failed_fatally("stream_cleanup_required")
+            logger.warning("ntfy startup refused: previous stream cleanup incomplete")
             return
         if self.inbound and not self._guard_configured():
             raise ValueError("ntfy inbound requires a shared handler and pairing gate")
-        self._running = True
-        self.fatal_error = None
-        self.health.starting()
-        self._backoff.reset()
         if self.inbound:
-            self._resume_cursor()
-            self._epoch = secrets.token_hex(32)
-            self._pending_callback_generation = object()
-            self._subscription_context = self._context()
-            if callable(self.pending_reply_handler):
-                self._events = asyncio.Queue(maxsize=128)
-                self._dispatch_task = asyncio.create_task(self._dispatch_events(), name="ntfy-inbound")
-            self._stream_task = asyncio.create_task(self._run_stream(), name="ntfy-subscription")
+            from .polling_claims import ClaimUnavailable, acquire_ntfy_claim
+
+            try:
+                claim = acquire_ntfy_claim(self._subscription_resource())
+            except ClaimUnavailable as exc:
+                reason = ("stream_claim_busy" if exc.reason == "busy"
+                          else "stream_claim_unavailable")
+                self.health.failed_fatally(reason)
+                logger.warning("ntfy subscription claim unavailable")
+                return
+            except (ValueError, UnicodeError, httpx.InvalidURL):
+                self.health.failed_fatally("stream_claim_unavailable")
+                logger.warning("ntfy subscription identity unavailable")
+                return
+            self._subscription_claim = claim
+        try:
+            self._running = True
+            self.fatal_error = None
+            self.health.starting()
+            self._backoff.reset()
+            if self.inbound:
+                self._resume_cursor()
+                self._epoch = secrets.token_hex(32)
+                self._pending_callback_generation = object()
+                self._subscription_context = self._context()
+                if callable(self.pending_reply_handler):
+                    self._events = asyncio.Queue(maxsize=128)
+                    self._dispatch_task = asyncio.create_task(self._dispatch_events(), name="ntfy-inbound")
+                self._stream_task = asyncio.create_task(self._run_stream(), name="ntfy-subscription")
+        except BaseException:
+            # A later explicit stop joins any work created before this failed
+            # startup and releases only this instance's exact claim.
+            self._running = False
+            raise
         logger.info("ntfy channel ready")
+
+    def _stream_url(self) -> str:
+        return f"{self.url}/{self.topic}/json"
+
+    def _subscription_resource(self) -> str:
+        """The actual GET's wire identity, excluding token and replay cursor."""
+        wire = httpx.URL(self._stream_url())
+        scheme = wire.scheme.lower()
+        port = wire.port if wire.port is not None else (443 if scheme == "https" else 80)
+        return json.dumps([scheme, wire.host.casefold(), port, wire.raw_path.decode("ascii")],
+                          separators=(",", ":"), ensure_ascii=True)
 
     def _cursor_name(self) -> str:
         return "ntfy:" + hashlib.sha256(json.dumps([self.url, self.topic]).encode()).hexdigest()[:16]
@@ -309,24 +372,74 @@ class NtfyChannel(ChannelAdapter):
             logger.warning("ntfy cursor not saved")
 
     async def stop(self) -> None:
+        async with self._lifecycle_lock:
+            await self._stop_locked()
+
+    async def _stop_locked(self) -> None:
+        self._stop_cleanup_pending = True
         self._running = False
         self.health.stopped()
-        task, self._stream_task = self._stream_task, None
+        task = self._stream_task
+        if task is not None:
+            if not task.done() and task.cancelling() == 0:
+                task.cancel()
+            await asyncio.wait({task})
+            if not task.cancelled():
+                task.exception()
+            self._stream_task = None
+        await self._cancel_healthy_timer()
+        close_task = self._stream_close_task
+        if close_task is not None:
+            await asyncio.wait({close_task})
+            if close_task.cancelled() or close_task.exception() is not None:
+                self.health.failed_fatally("stream_cleanup_required")
+                raise RuntimeError("ntfy stream cleanup unconfirmed")
+            self._stream_close_confirmed = True
+            self._stream_close_task = None
+        task = self._dispatch_task
         if task is not None:
             task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
-        task, self._dispatch_task = self._dispatch_task, None
-        if task is not None:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+            await asyncio.wait({task})
+            if not task.cancelled():
+                task.exception()
+            self._dispatch_task = None
         self._events = None
         self._pending_callback_generation = None
         self._dedup.clear()
         close = getattr(self.client, "aclose", None) or getattr(self.client, "close", None)
         if callable(close):
             await close()
+        if self._stream_lease is not None:
+            if not self._stream_close_confirmed:
+                self.health.failed_fatally("stream_cleanup_required")
+                raise RuntimeError("ntfy stream cleanup unconfirmed")
+            self._stream_circuit.release(self._stream_lease)
+            self._stream_lease = None
+        if not self._stream_circuit.reset():
+            self.health.failed_fatally("stream_cleanup_required")
+            raise RuntimeError("ntfy stream cleanup unconfirmed")
+        claim = self._subscription_claim
+        if claim is not None:
+            claim.release()
+            self._subscription_claim = None
+        self._active_stream_response = None
+        self._stop_cleanup_pending = False
+
+    async def _cancel_healthy_timer(self) -> None:
+        task = self._healthy_timer
+        if task is not None:
+            task.cancel()
+            await asyncio.wait({task})
+            if not task.cancelled():
+                task.exception()
+            if self._healthy_timer is task:
+                self._healthy_timer = None
+
+    def health_snapshot(self) -> dict:
+        row = super().health_snapshot()
+        if self.inbound:
+            row["circuit"] = self._stream_circuit.snapshot()
+        return row
 
     def _guard_configured(self) -> bool:
         return (callable(self.handler) and callable(getattr(self.pairing, "is_allowed", None))
@@ -353,21 +466,47 @@ class NtfyChannel(ChannelAdapter):
                 self.health.failed_fatally("configuration_changed")
                 self._running = False
                 return
+            lease, gate_wait = self._stream_circuit.admit()
+            if lease is None:
+                await sleep(gate_wait)
+                continue
+            self._stream_lease = lease
+            self._stream_close_confirmed = False
             started = monotonic()
             kind = "stream_closed"
             fatal = False
+            retry_after = 0.0
+            response = None
+            open_task = None
+            timed_out = False
+            settled = False
+            transport_error = None
+            stack = contextlib.AsyncExitStack()
             try:
-                async with contextlib.AsyncExitStack() as stack:
+                await stack.__aenter__()
+                try:
                     # Restrict redaction to opening the subscription. Inbound
                     # handlers keep their ordinary HTTP diagnostics afterwards.
                     with _private_transport_logs():
-                        response = await stack.enter_async_context(self.client.stream(
-                            "GET", f"{self.url}/{self.topic}/json", params=self._stream_params(),
+                        open_task = asyncio.create_task(stack.enter_async_context(self.client.stream(
+                            "GET", self._stream_url(), params=self._stream_params(),
                             headers=self._auth_headers(),
-                            timeout=httpx.Timeout(15.0, read=90.0),
-                        ))
+                            timeout=httpx.Timeout(15.0, connect=self._connect_timeout_seconds,
+                                                  read=90.0),
+                        )), name="ntfy-stream-open")
+                        done, _ = await asyncio.wait({open_task},
+                                                     timeout=self._connect_timeout_seconds)
+                    timed_out = not done
+                    if timed_out:
+                        # The open may finish later. Its response belongs only to
+                        # the close task below; it can never enter the handler path.
+                        kind = "connect_timeout"
+                        self.health.retrying(kind, 0)
+                        logger.warning("ntfy subscription opening timed out")
+                    else:
+                        response = open_task.result()
                     failure = (classify_status(response.status_code)
-                               if response.status_code >= 400 else None)
+                               if response is not None and response.status_code >= 400 else None)
                     if failure is not None and failure.fatal:
                         # H100: a wrong or revoked credential, or a topic that is gone:
                         # the ladder cannot fix it. Say so on the status surface and look
@@ -377,30 +516,98 @@ class NtfyChannel(ChannelAdapter):
                         logger.warning("ntfy subscription refused: HTTP %s; retrying in %.0f min",
                                        response.status_code, FATAL_REPROBE_S / 60)
                         fatal = True
-                    else:
-                        response.raise_for_status()
-                        self.fatal_error = None
-                        self._backoff.success(at=started)
-                        self.health.ok()
-                        # H116: what the server replays from before this connection opened
-                        # is a backlog: bounded per connection, commands refused.
-                        self._cutoff = wall_time()
-                        if self._started_wall is not None:
-                            self._backfill = BackfillBudget()
-                        await self._consume_stream(response)
+                    elif response is not None:
+                        try:
+                            response.raise_for_status()
+                            self.fatal_error = None
+                            # H116: what the server replays from before this connection opened
+                            # is a backlog: bounded per connection, commands refused.
+                            self._cutoff = wall_time()
+                            if self._started_wall is not None:
+                                self._backfill = BackfillBudget()
+                            self._active_stream_response = response
+                            self._healthy_timer = asyncio.create_task(
+                                self._quiet_stream_healthy(
+                                    response, lease, self._subscription_context,
+                                    asyncio.current_task(), started), name="ntfy-quiet-health")
+                            await self._consume_stream(response)
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as exc:
+                            transport_error = exc
+                        finally:
+                            await self._cancel_healthy_timer()
+                finally:
+                    # A response may report is_closed before its underlying
+                    # byte stream has finished closing. Keep the lease until
+                    # this exact async exit has actually returned.
+                    close_task = asyncio.create_task(
+                        self._close_stream_stack(stack, open_task), name="ntfy-stream-close")
+                    self._stream_close_task = close_task
+                    await asyncio.shield(close_task)
+                    settled = True
+                    self._stream_close_confirmed = True
+                    if self._stream_close_task is close_task:
+                        self._stream_close_task = None
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                kind = classify_exception(exc).kind
-                logger.warning("ntfy stream error: %s", exc.__class__.__name__)
+                transport_error = exc
+                # A failed stream enter has no response to keep open. An exit
+                # failure with a response remains unconfirmed until explicit stop.
+                settled = (response is None and (open_task is None or
+                           (open_task.done() and (open_task.cancelled() or
+                            open_task.exception() is not None))))
+            if not settled:
+                self.health.failed_fatally("stream_cleanup_required")
+                logger.warning("ntfy stream cleanup unconfirmed")
+                self._running = False
+                return
+            self._active_stream_response = None
+            if transport_error is not None:
+                failure = classify_exception(transport_error)
+                kind = failure.kind
+                retry_after = failure.retry_after or 0.0
+                logger.warning("ntfy stream error: %s", type(transport_error).__name__)
             if not self._running:
+                # stop() owns the final client close before it releases this lease.
                 return
             if fatal:
+                self._stream_circuit.release(lease)
+                self._stream_lease = None
                 await sleep(FATAL_REPROBE_S)
                 continue
-            delay = self._backoff.failure()
-            self.health.retrying(kind, delay)
+            delay = max(self._backoff.failure(), retry_after,
+                        self._stream_circuit.failure(lease, retry_after=retry_after))
+            self._stream_lease = None
+            if timed_out:
+                # The timeout was already reported while the late open was
+                # settling. Updating its next retry does not count it twice.
+                self.health.next_retry_at = wall_time() + delay
+            else:
+                self.health.retrying(kind, delay)
             await sleep(delay)
+
+    async def _quiet_stream_healthy(self, response, lease, context, owner, started) -> None:
+        await _quiet_sleep(60)
+        if (self._running and self._stream_task is owner
+                and self._active_stream_response is response
+                and self._stream_lease is lease
+                and self._subscription_context == context == self._context()
+                and self._stream_circuit.mark_healthy(lease)):
+            self._backoff.success(at=started)
+            self.health.ok()
+
+    async def _close_stream_stack(self, stack, open_task=None) -> None:
+        if open_task is not None:
+            # Joining the exact open task also makes a late successful response
+            # part of this stack's exit. No caller ever receives that response.
+            await asyncio.wait({open_task})
+            if not open_task.cancelled():
+                with contextlib.suppress(Exception):
+                    open_task.result()
+        with _private_transport_logs():
+            await stack.aclose()
 
     async def _consume_stream(self, response) -> None:
         # aiter_lines buffers an unbounded unterminated frame. Bound bytes before
@@ -425,7 +632,12 @@ class NtfyChannel(ChannelAdapter):
                         except (ValueError, UnicodeError):
                             value = None
                         if isinstance(value, dict):
-                            await self._on_message(value)
+                            try:
+                                await self._on_message(value)
+                            except asyncio.CancelledError:
+                                raise
+                            except Exception:
+                                logger.warning("ntfy inbound message handling failed")
                     pending.clear()
                     oversized = False
 
@@ -554,7 +766,8 @@ class NtfyChannel(ChannelAdapter):
         ``plain=True`` sends every chunk as it is, never rendered: a notice whose text
         came from outside (a webhook's sender) keeps its file names and addresses."""
         headers = {
-            "Title": _clean_title(kwargs.get("title") or self.title),
+            # H069 review m4: the notification title is text the phone shows, too.
+            "Title": title_header(kwargs.get("title") or self.title),
             "Priority": str(_clean_priority(kwargs.get("priority", DEFAULT_PRIORITY))),
         }
         headers.update(self._auth_headers())

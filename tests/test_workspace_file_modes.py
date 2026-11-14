@@ -281,6 +281,7 @@ def _shared_folder(tmp_path: Path) -> tuple[Path, dict[str, int]]:
     foreign = {"photos": 0o755, "photos/2026": 0o755, "photos/2026/a.jpg": 0o644,
                "notes.txt": 0o664, "files/readme.txt": 0o644}
     shared.chmod(0o755)
+    (shared / "files").chmod(0o755)
     for name, mode in foreign.items():
         (shared / name).chmod(mode)
     return shared, foreign

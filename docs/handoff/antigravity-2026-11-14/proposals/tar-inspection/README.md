@@ -1,0 +1,2 @@
+Historical V51 proposal, UNAPPLIED. These text files preserve reviewed work; they are not runnable modules or a current patch recommendation. Current archive_safe.py evolved in V52. Read REPORT.md and compare contracts before adapting. No full Mac export was transferred to this executor.
+Patch bodies are preserved losslessly as JSON content strings with original SHA-256; decode explicitly for review. This avoids treating whitespace inside archived patches as current source whitespace. No automatic application.

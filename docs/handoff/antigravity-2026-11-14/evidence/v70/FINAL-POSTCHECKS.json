@@ -1,0 +1,24 @@
+{
+  "typechecks": [
+    {
+      "scope": "frontend-typecheck",
+      "exit_code": 0
+    },
+    {
+      "scope": "e2e-typecheck",
+      "exit_code": 0
+    },
+    {
+      "scope": "mobile-typecheck",
+      "exit_code": 0
+    }
+  ],
+  "mobile_jest": {
+    "tests": 420,
+    "passed": 420,
+    "failed": 0,
+    "success": true
+  },
+  "all_source_unchanged_after_postchecks": true,
+  "source_paths": 7302
+}

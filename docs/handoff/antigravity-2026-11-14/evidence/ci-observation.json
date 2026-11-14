@@ -1,0 +1,55 @@
+{
+  "source_commit": "702845ae45765583f996fdb5b2b08de9db6664bc",
+  "observed_at": "2026-11-14T09:32:03.935Z",
+  "total_count": 8,
+  "jobs": [
+    {
+      "name": "sandbox-isolation",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/andrei649/jarvis-hub/actions/runs/43567720758/job/132365101816"
+    },
+    {
+      "name": "test (windows-latest)",
+      "status": "in_progress",
+      "conclusion": null,
+      "url": "https://github.com/andrei649/jarvis-hub/actions/runs/43567720758/job/132365101895"
+    },
+    {
+      "name": "test (ubuntu-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/andrei649/jarvis-hub/actions/runs/43567720758/job/132365101900"
+    },
+    {
+      "name": "openapi-types",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/andrei649/jarvis-hub/actions/runs/43567720758/job/132365101920"
+    },
+    {
+      "name": "hud-v2-build",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/andrei649/jarvis-hub/actions/runs/43567720758/job/132365101924"
+    },
+    {
+      "name": "signal-layer-smoke (ubuntu-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/andrei649/jarvis-hub/actions/runs/43567720758/job/132365101930"
+    },
+    {
+      "name": "signal-layer-smoke (windows-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/andrei649/jarvis-hub/actions/runs/43567720758/job/132365101931"
+    },
+    {
+      "name": "frontend",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/andrei649/jarvis-hub/actions/runs/43567720758/job/132365101988"
+    }
+  ]
+}

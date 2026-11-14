@@ -1,11 +1,12 @@
-"""The three places a lifecycle event is actually raised, and what they refuse to say.
+"""The lifecycle observation call sites and what they refuse to say.
 
 An event bus nothing calls is an interface, not a feature, so this file pins the
 call sites rather than the bus. Each one carries a decision about *what a watching
 extension is allowed to learn*, and each of those decisions is the kind that is easy
 to reverse by accident later:
 
-* a command's **name and status** go out; its **reply never does**;
+* command start carries its canonical registered name, completion its name and status;
+  neither carries arguments or reply;
 * an **unknown** command is not observed at all, because its "name" is whatever the
   sender typed — a message body wearing a safe label;
 * a session boundary emits **ids only**, ended before started;
@@ -47,7 +48,7 @@ def recorder(monkeypatch):
     return made
 
 
-# ── command.completed ────────────────────────────────────────────────────────
+# ── command.started / command.completed ─────────────────────────────────────
 
 def _registry():
     registry = commands_module.CommandRegistry()
@@ -63,7 +64,10 @@ def _registry():
 async def test_an_answered_command_is_observed_by_name_and_status_only(recorder):
     outcome = await _registry().dispatch("/ping", orch=None, principal=commands_module.Principal(admin=True))
     assert outcome.reply == "pong"
-    assert recorder.emitted == [("command.completed", {"command": "ping", "status": "answered"})]
+    assert recorder.emitted == [
+        ("command.started", {"command": "ping"}),
+        ("command.completed", {"command": "ping", "status": "answered"}),
+    ]
 
 
 @pytest.mark.asyncio
@@ -73,9 +77,11 @@ async def test_the_commands_reply_never_leaves_with_the_event(recorder):
     registry.register(commands_module.SlashCommand(
         "secrets", "leaks", lambda _ctx: "the owner's private answer"))
     await registry.dispatch("/secrets", orch=None, principal=commands_module.Principal(admin=True))
-    _, fields = recorder.emitted[0]
-    assert "the owner's private answer" not in str(fields)
-    assert set(fields) == {"command", "status"}
+    assert recorder.emitted == [
+        ("command.started", {"command": "secrets"}),
+        ("command.completed", {"command": "secrets", "status": "answered"}),
+    ]
+    assert "the owner's private answer" not in str(recorder.emitted)
 
 
 @pytest.mark.asyncio
@@ -89,7 +95,10 @@ async def test_a_refused_command_is_observed_because_its_name_came_from_the_regi
 async def test_a_failing_command_is_observed_as_failed_without_its_traceback(recorder):
     outcome = await _registry().dispatch("/boom", orch=None, principal=commands_module.Principal(admin=True))
     assert outcome.status == "failed"
-    assert recorder.emitted == [("command.completed", {"command": "boom", "status": "failed"})]
+    assert recorder.emitted == [
+        ("command.started", {"command": "boom"}),
+        ("command.completed", {"command": "boom", "status": "failed"}),
+    ]
 
 
 @pytest.mark.asyncio

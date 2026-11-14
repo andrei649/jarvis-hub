@@ -35,6 +35,7 @@ core memory or recall in the prompt, no learning from the turn (``_turn_is_guest
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import logging
 import time
@@ -44,6 +45,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from agents.core.app_state import get_orch
+from agents.core.channels.outbound_stream import final_text
 from agents.core.openai_api import policy, protocol
 from agents.core.openai_api.protocol import ApiError
 from agents.core.openai_api.store import ApiKey, get_store
@@ -55,6 +57,32 @@ router = APIRouter(tags=["openai-compatible"])
 
 _NO_STORE = {"Cache-Control": "no-store"}
 _SSE_HEADERS = {"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"}
+
+
+def _safe_stored_response(payload: dict) -> dict:
+    """Recheck legacy assistant prose when a stored API object leaves the hub.
+
+    A secret may have been registered after this object was saved. The copy leaves
+    client instructions, IDs, approval/usage metadata and the stored bytes intact.
+    """
+    answer = copy.deepcopy(payload)
+    if answer.get("object") == "chat.completion":
+        for choice in answer.get("choices", []):
+            if isinstance(choice, dict) and isinstance(choice.get("message"), dict):
+                message = choice["message"]
+                if message.get("role") == "assistant" and isinstance(message.get("content"), str):
+                    message["content"] = final_text(message["content"])
+    elif answer.get("object") == "response":
+        if isinstance(answer.get("output_text"), str):
+            answer["output_text"] = final_text(answer["output_text"])
+        for item in answer.get("output", []):
+            if not isinstance(item, dict) or item.get("role") != "assistant":
+                continue
+            for part in item.get("content", []):
+                if (isinstance(part, dict) and part.get("type") == "output_text"
+                        and isinstance(part.get("text"), str)):
+                    part["text"] = final_text(part["text"])
+    return answer
 
 
 def _error(exc: ApiError, extra: dict | None = None) -> JSONResponse:
@@ -296,7 +324,8 @@ async def openai_chat_completions(request: Request):
             if stored is None:
                 raise ApiError(409, "This Idempotency-Key was used, but its answer is no longer stored.",
                                code="idempotency_expired")
-            return JSONResponse(stored[1], headers={**_NO_STORE, idempotency.REPLAYED_HEADER: "true"})
+            return JSONResponse(_safe_stored_response(stored[1]),
+                                headers={**_NO_STORE, idempotency.REPLAYED_HEADER: "true"})
     except ApiError as exc:
         return _error(exc)
 
@@ -344,8 +373,11 @@ async def _chat_stream(orch, key: ApiKey, slot: _Slot, text: str, *, session_id:
     created = int(time.time())
     queue: asyncio.Queue = asyncio.Queue()
 
-    async def on_token(token: str) -> None:
-        await queue.put(("token", token))
+    # A chat completion delta cannot be retracted if the final answer differs
+    # or a late chunk completes a credential or provider-error marker.
+    # Keep the orchestrator's streaming turn path, but send prose at finish.
+    async def on_token(_token: str) -> None:
+        return None
 
     async def runner() -> None:
         try:
@@ -367,16 +399,10 @@ async def _chat_stream(orch, key: ApiKey, slot: _Slot, text: str, *, session_id:
     try:
         yield protocol.sse_data(protocol.chat_chunk(completion_id, model, created=created,
                                                     delta={"role": "assistant", "content": ""}))
-        streamed = False
         while True:
             kind, data = await queue.get()
-            if kind == "token":
-                if data:
-                    streamed = True
-                    yield protocol.sse_data(protocol.chat_chunk(completion_id, model, created=created,
-                                                                delta={"content": data}))
-            elif kind == "end":
-                if not streamed:     # a reply that arrived whole (a command, a cached answer)
+            if kind == "end":
+                if data.text:
                     yield protocol.sse_data(protocol.chat_chunk(completion_id, model, created=created,
                                                                 delta={"content": data.text}))
                 extra = {"nerva": protocol.nerva_extension(session_id, data.approvals, data.usage)}
@@ -500,8 +526,10 @@ async def _responses_stream(orch, key: ApiKey, slot: _Slot, text: str, *, agent:
         sequence += 1
         return protocol.sse_event(name, payload)
 
-    async def on_token(token: str) -> None:
-        await queue.put(("token", token))
+    # Responses delta frames are append-only too. The completed event is
+    # authoritative, so release only its sanitized final text as a delta.
+    async def on_token(_token: str) -> None:
+        return None
 
     async def runner() -> None:
         try:
@@ -528,17 +556,10 @@ async def _responses_stream(orch, key: ApiKey, slot: _Slot, text: str, *, agent:
         yield event("response.output_item.added", output_index=0, item=item)
         yield event("response.content_part.added", item_id=message_id, output_index=0, content_index=0,
                     part={"type": "output_text", "text": "", "annotations": []})
-        parts: list[str] = []
         while True:
             kind, data = await queue.get()
-            if kind == "token":
-                if data:
-                    parts.append(data)
-                    yield event("response.output_text.delta", item_id=message_id, output_index=0,
-                                content_index=0, delta=data, logprobs=[])
-            elif kind == "end":
-                if not parts:
-                    parts.append(data.text)
+            if kind == "end":
+                if data.text:
                     yield event("response.output_text.delta", item_id=message_id, output_index=0,
                                 content_index=0, delta=data.text, logprobs=[])
                 final_text = data.text
@@ -584,7 +605,7 @@ async def openai_get_response(response_id: str, request: Request):
             raise ApiError(404, f"No stored response '{response_id[:80]}' for this key.", code="not_found")
     except ApiError as exc:
         return _error(exc)
-    return JSONResponse(stored[1], headers=_NO_STORE)
+    return JSONResponse(_safe_stored_response(stored[1]), headers=_NO_STORE)
 
 
 @router.delete("/v1/responses/{response_id}")

@@ -217,17 +217,33 @@ async def test_reconnect_backoff_reset_and_dedup_across_connections(tmp_path, mo
     channel, _, _, seen, _, _ = setup_channel(tmp_path)
     await channel.client.aclose()
 
+    channel._stream_circuit = ntfy.PollingCircuit(clock=lambda: clock[0])
+
+    class StableFrames(Frames):
+        async def __aiter__(self):
+            async for frame in super().__aiter__():
+                yield frame
+            # Keep the seventh stream alive until its owned quiet-health timer fires.
+            await until(lambda: channel.health.state == "healthy")
+
     async def transport(request):
         requests.append(request)
+        frames = StableFrames if len(requests) == 7 else Frames
+        return httpx.Response(200, stream=frames([line(event())]))
+
+    async def quiet_sleep(delay):
         if len(requests) == 7:
-            clock[0] += 61
-        return httpx.Response(200, stream=Frames([line(event())]))
+            clock[0] += delay + 1
+        else:
+            await asyncio.Event().wait()
 
     async def sleep(delay):
         delays.append(delay)
+        clock[0] += delay
         if len(delays) == 7:
             await asyncio.Event().wait()
 
+    monkeypatch.setattr(ntfy, "_quiet_sleep", quiet_sleep)
     monkeypatch.setattr(ntfy, "sleep", sleep)
     channel.client = httpx.AsyncClient(transport=httpx.MockTransport(transport))
     # G15: the shared ladder jitters each wait by up to ±20 %; pinned here to read the rungs.
@@ -236,7 +252,7 @@ async def test_reconnect_backoff_reset_and_dedup_across_connections(tmp_path, mo
         await channel.start()
         await channel.start()  # idempotent: no second listener
         await until(lambda: len(delays) == 7)
-        assert delays == [2, 5, 10, 30, 60, 60, 2]
+        assert delays == [2, 5, 10, 30, 120, 120, 2]
         assert len(requests) == 7 and len(seen) == 1
     finally:
         await channel.stop()

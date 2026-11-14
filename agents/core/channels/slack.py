@@ -16,7 +16,10 @@ from collections import OrderedDict
 from contextlib import suppress
 from typing import Optional
 
+from . import delivery_ledger
 from .base import ChannelAdapter
+from .connect_deadline import DEFAULT_CONNECT_TIMEOUT, channel_connect_timeout
+from .credentials import credential_is_configured
 from .descriptor import DIALECT_SLACK_MRKDWN, ChannelDescriptor
 from .ephemeral import EphemeralDeletes, EphemeralReply, ephemeral_ttl
 from .render import render_outbound
@@ -36,6 +39,7 @@ _TEAM_ID = re.compile(r"T[A-Z0-9]{1,63}")
 _EVENT_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
 _TIMESTAMP = re.compile(r"[0-9]{1,20}\.[0-9]{1,6}")
 _PENDING_DATA = re.compile(r"h067:[A-Za-z0-9_-]{16}:[0-9]{1,10}:[a-z][0-9]?")
+_TRIGGER_ID = re.compile(r"[A-Za-z0-9._-]{1,256}")
 
 try:
     from slack_sdk import WebClient
@@ -83,6 +87,15 @@ def _socket_client(app_token, web_client):
     )
 
 
+def _socket_workers_stopped(client) -> bool:
+    """Only explicit stopped SDK runners prove the socket connection has settled."""
+    try:
+        return all(getattr(client, name).is_alive() is False for name in (
+            "current_session_runner", "current_app_monitor", "message_processor"))
+    except Exception:
+        return False
+
+
 async def _finish_cleanup(coroutine):
     """Finish cleanup even if a caller cancels shutdown more than once."""
     task = asyncio.create_task(coroutine)
@@ -109,12 +122,18 @@ class SlackChannel(ChannelAdapter):
 
     def __init__(self, token: str = "", handler=None, *, app_token: str = "",
                  pairing=None, pending_reply_handler=None, pending_callback_handler=None,
-                 pre_turn_refused=None):
+                 pre_turn_refused=None, command_registry=None,
+                 connect_timeout_seconds: float = DEFAULT_CONNECT_TIMEOUT):
         super().__init__("slack", handler)
         # H058: a probe (Gateway.pre_lane_refused) for a command its sender may not run here.
         self.pre_turn_refused = pre_turn_refused
+        # H057: the same registry the gateway dispatches is the native slash allowlist.
+        # The adapter never grants authority; pairing and the target's slash tier still
+        # run in the normal channel handler after this envelope is acknowledged.
+        self.command_registry = command_registry
         self.token = token
         self.app_token = app_token
+        self._connect_timeout_seconds = channel_connect_timeout(connect_timeout_seconds)
         self.pairing = pairing
         self.pending_reply_handler = pending_reply_handler
         self.pending_callback_handler = pending_callback_handler
@@ -132,6 +151,8 @@ class SlackChannel(ChannelAdapter):
                                    beside=self._refused_here)
         self._client: Optional[WebClient] = None
         self._socket_client = None
+        self._socket_generation = None
+        self._socket_ready_generation = None
         self._team_id = ""
         self._bot_user_id = ""
         self._dispatch_task: asyncio.Task | None = None
@@ -143,20 +164,65 @@ class SlackChannel(ChannelAdapter):
         self._wake_pending = False
         self._lifecycle_lock = asyncio.Lock()
         self._ephemeral_deletes = EphemeralDeletes()
+        self._slack_app_claim = None
+        self._slack_bot_claim = None
+        self._startup_cleanup_task: asyncio.Task | None = None
 
     async def start(self):
         async with self._lifecycle_lock:
             if self._running:
                 return
+            if (not credential_is_configured(self.token)
+                    or not ((type(self.app_token) is str and not self.app_token)
+                            or credential_is_configured(self.app_token))):
+                self.health.failed_fatally("invalid_credential")
+                logger.warning("Slack channel credential is not configured")
+                return
             if not SLACK_AVAILABLE:
                 logger.warning("slack-sdk not installed — Slack channel unavailable")
                 return
-            if not self.token:
-                logger.warning("No Slack token configured")
+            if (self._startup_cleanup_task is not None or self._slack_app_claim is not None
+                    or self._slack_bot_claim is not None):
+                self.health.failed_fatally("connection_cleanup_required")
+                logger.warning("Slack startup refused: prior connection cleanup incomplete")
                 return
+            if self.app_token:
+                from .polling_claims import (
+                    ClaimUnavailable,
+                    acquire_slack_app_claim,
+                    acquire_slack_bot_claim,
+                )
+
+                try:
+                    app_claim = acquire_slack_app_claim(self.app_token)
+                except ClaimUnavailable as exc:
+                    reason = ("connection_claim_busy" if exc.reason == "busy"
+                              else "connection_claim_unavailable")
+                    self.health.failed_fatally(reason)
+                    logger.warning("Slack startup refused: connection claim unavailable")
+                    return
+                self._slack_app_claim = app_claim
+                try:
+                    bot_claim = acquire_slack_bot_claim(self.token)
+                except ClaimUnavailable as exc:
+                    # No SDK work has begun. Keep the handle on self if release
+                    # fails, so an explicit stop can finish the prefix rollback.
+                    self._slack_app_claim.release()
+                    self._slack_app_claim = None
+                    reason = ("connection_claim_busy" if exc.reason == "busy"
+                              else "connection_claim_unavailable")
+                    self.health.failed_fatally(reason)
+                    logger.warning("Slack startup refused: connection claim unavailable")
+                    return
+                self._slack_bot_claim = bot_claim
             if self._ephemeral_deletes._closed:
                 self._ephemeral_deletes = EphemeralDeletes()
+            self._socket_generation = object()
+            self._socket_ready_generation = None
+            self.health.starting()
             startup_task = None
+            deadline = (asyncio.get_running_loop().time() + self._connect_timeout_seconds
+                        if self.app_token else None)
             try:
                 options = ({"timeout": SLACK_HTTP_TIMEOUT, "retry_handlers": [], "logger": _SDK_LOGGER}
                            if self.app_token else {})
@@ -166,31 +232,54 @@ class SlackChannel(ChannelAdapter):
                     self._running = True
                     logger.info("Slack channel ready (manual event ingress)")
                     return
+                if asyncio.get_running_loop().time() >= deadline:
+                    self._opening_expired(startup_task)
+                    return
                 startup_task = asyncio.create_task(asyncio.to_thread(self._client.auth_test))
-                identity = await asyncio.shield(startup_task)
+                if not await self._within_opening_budget(startup_task, deadline):
+                    self._opening_expired(startup_task)
+                    return
+                identity = startup_task.result()
                 team, user = identity.get("team_id"), identity.get("user_id")
                 if (identity.get("ok") is not True
                         or not isinstance(team, str) or not _TEAM_ID.fullmatch(team)
                         or not isinstance(user, str) or not _USER_ID.fullmatch(user)):
                     raise ValueError("Slack bot identity unavailable")
                 self._team_id, self._bot_user_id = team, user
+                if asyncio.get_running_loop().time() >= deadline:
+                    self._opening_expired(startup_task)
+                    return
                 self._loop = asyncio.get_running_loop()
                 self._inbound_ready = asyncio.Event()
                 self._socket_client = _socket_client(self.app_token, self._client)
+                if asyncio.get_running_loop().time() >= deadline:
+                    # Constructing the SDK client starts its own runners; even
+                    # before connect, it needs an owned close on expiry.
+                    self._opening_expired(startup_task)
+                    return
                 self._socket_client.socket_mode_request_listeners.append(self._on_socket_request)
                 self._pending_callback_generation = object()
                 self._running = True
                 self._dispatch_task = asyncio.create_task(
                     self._dispatch_events(), name="slack-socket-ingress",
                 )
+                if asyncio.get_running_loop().time() >= deadline:
+                    self._opening_expired(startup_task)
+                    return
                 # The built-in SDK uses blocking HTTP/websocket calls. Shield the
                 # worker so cancellation can wait for connect, then close it: a
                 # cancelled to_thread alone could reopen a connection after stop.
                 startup_task = asyncio.create_task(asyncio.to_thread(self._socket_client.connect))
-                await asyncio.shield(startup_task)
-                if not self._socket_client.is_connected():
+                if not await self._within_opening_budget(startup_task, deadline):
+                    self._opening_expired(startup_task)
+                    return
+                startup_task.result()
+                if self._observe_socket(self._socket_client, self._socket_generation) is True:
+                    logger.info("Slack Socket Mode ingress connected")
+                else:
+                    # A returned handshake without an active session is a startup
+                    # failure, not evidence of a previously live disconnect.
                     raise ConnectionError("Slack Socket Mode handshake failed")
-                logger.info("Slack Socket Mode ingress connected")
             except asyncio.CancelledError:
                 with self._ingress_lock:
                     self._running = False
@@ -208,8 +297,62 @@ class SlackChannel(ChannelAdapter):
 
     async def stop(self):
         async with self._lifecycle_lock:
-            await _finish_cleanup(self._shutdown())
+            cleanup = self._startup_cleanup_task
+            if cleanup is not None:
+                # asyncio.wait leaves the retained worker/cleanup running if a
+                # bounded manager stop cancels this caller. Only a successful
+                # explicit stop clears the restart fence.
+                await asyncio.wait({cleanup})
+                if cleanup.cancelled():
+                    self.health.failed_fatally("connection_cleanup_required")
+                    raise RuntimeError("Slack Socket Mode cleanup unconfirmed")
+                if cleanup.exception() is not None:
+                    await _finish_cleanup(self._shutdown())
+                self._startup_cleanup_task = None
+            else:
+                await _finish_cleanup(self._shutdown())
             self.health.stopped()
+
+    async def _within_opening_budget(self, task: asyncio.Task, deadline: float) -> bool:
+        loop = asyncio.get_running_loop()
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            return False
+        done, _ = await asyncio.wait({task}, timeout=remaining)
+        return bool(done) and loop.time() < deadline
+
+    def _opening_expired(self, startup_task: asyncio.Task | None) -> None:
+        # The SDK can finish a blocking worker after this caller returns. Revoke
+        # ingress immediately, then let exactly one owned cleanup join that
+        # worker before closing the SDK and releasing both claims.
+        with self._ingress_lock:
+            self._running = False
+            self._pending_callback_generation = None
+            self._socket_generation = None
+            self._socket_ready_generation = None
+        self.health.failed_fatally("connect_timeout")
+        logger.warning("Slack Socket Mode opening timed out")
+        cleanup = asyncio.create_task(self._shutdown_after(startup_task),
+                                      name="slack-opening-cleanup")
+        self._startup_cleanup_task = cleanup
+        cleanup.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+
+    def _observe_socket(self, client, generation) -> bool | None:
+        """True/False for a valid probe, None if the probe or generation is unknown."""
+        if (not self._running or client is None or client is not self._socket_client
+                or generation is None or generation is not self._socket_generation):
+            return None
+        try:
+            connected = bool(client.is_connected())
+        except Exception:
+            return None
+        if connected:
+            with self._ingress_lock:
+                if (not self._running or client is not self._socket_client
+                        or generation is not self._socket_generation):
+                    return None
+                self._socket_ready_generation = generation
+        return connected
 
     def health_snapshot(self) -> dict:
         """H100 — Socket Mode's own monitor reconnects; this reports what it sees: connected
@@ -218,12 +361,14 @@ class SlackChannel(ChannelAdapter):
         row = super().health_snapshot()
         client = self._socket_client
         if self._running and client is not None and row["state"] != "fatal":
-            try:
-                connected = bool(client.is_connected())
-            except Exception:
-                connected = False
-            row["state"] = "healthy" if connected else "retrying"
-            row["error"] = None if connected else "disconnected"
+            generation = self._socket_generation
+            connected = self._observe_socket(client, generation)
+            if connected is None:
+                row.update(state="unknown", error="probe_failed", failures=0)
+            else:
+                row["state"] = "healthy" if connected else "retrying"
+                row["error"] = None if connected else "disconnected"
+                row["failures"] = 0 if connected else int(self._socket_ready_generation is generation)
         return row
 
     async def _shutdown_after(self, startup_task):
@@ -238,7 +383,9 @@ class SlackChannel(ChannelAdapter):
         with self._ingress_lock:
             self._running = False
             self._pending_callback_generation = None
-            client, self._socket_client = self._socket_client, None
+            client = self._socket_client
+            self._socket_generation = None
+            self._socket_ready_generation = None
             self._loop = None
             self._wake_pending = False
             self._seen_events.clear()
@@ -263,8 +410,22 @@ class SlackChannel(ChannelAdapter):
                 await asyncio.to_thread(client.close)
             except Exception:
                 logger.warning("Slack Socket Mode close failed")
+                self.health.failed_fatally("connection_cleanup_required")
+                raise RuntimeError("Slack Socket Mode cleanup unconfirmed") from None
+            if not _socket_workers_stopped(client):
+                self.health.failed_fatally("connection_cleanup_required")
+                logger.warning("Slack Socket Mode cleanup unconfirmed")
+                raise RuntimeError("Slack Socket Mode cleanup unconfirmed")
+        self._socket_client = None
         self._inbound_ready = None
         self._client = None
+        # Both identities remain held until SDK close and every runner settle.
+        if self._slack_bot_claim is not None:
+            self._slack_bot_claim.release()
+            self._slack_bot_claim = None
+        if self._slack_app_claim is not None:
+            self._slack_app_claim.release()
+            self._slack_app_claim = None
 
     def _normalize_event(self, payload) -> tuple[tuple[str, str], dict] | None:
         """Admit new human DMs and addressed room messages, never raw metadata."""
@@ -312,6 +473,37 @@ class SlackChannel(ChannelAdapter):
             normalized["thread_ts"] = timestamp
         return (team, event_id), normalized
 
+    def _normalize_slash(self, payload) -> tuple[tuple[str, str], dict] | None:
+        """Convert a native Socket Mode slash payload into the ordinary channel path.
+
+        Slack's response URL and any claimed role are deliberately discarded. Only
+        the authenticated workspace/member/channel identifiers reach pairing and
+        principal construction, exactly as they do for a DM or app mention.
+        """
+        from ..commands import CommandRegistry, slack_native_slashes
+
+        registry = self.command_registry
+        if not isinstance(payload, dict) or not isinstance(registry, CommandRegistry):
+            return None
+        team, user, channel = payload.get("team_id"), payload.get("user_id"), payload.get("channel_id")
+        command, text, trigger = payload.get("command"), payload.get("text"), payload.get("trigger_id")
+        if (not isinstance(team, str) or team != self._team_id or not _TEAM_ID.fullmatch(team)
+                or not isinstance(user, str) or not _USER_ID.fullmatch(user)
+                or user == self._bot_user_id
+                or not isinstance(channel, str) or not _CHANNEL_ID.fullmatch(channel)
+                or not isinstance(command, str)
+                or not isinstance(text, str) or len(text) > SLACK_MAX_MESSAGE_LENGTH - 40
+                or not isinstance(trigger, str) or not _TRIGGER_ID.fullmatch(trigger)):
+            return None
+        native = {entry["command"] for entry in slack_native_slashes(registry)}
+        if command not in native:
+            return None
+        normalized = {"text": f"{command} {text}".strip(), "channel": channel,
+                      "user": f"{team}:{user}",
+                      "provider_id": f"{team}:{channel}:{trigger}",
+                      "pending_input_eligible": False}
+        return (team, f"slash:{trigger}"), normalized
+
     def _on_socket_request(self, client, request):
         """SDK-thread callback: ACK first, then enqueue bounded validated data."""
         envelope_id = getattr(request, "envelope_id", None)
@@ -335,13 +527,19 @@ class SlackChannel(ChannelAdapter):
                                          callback, original, hook,
                                          self._pending_callback_generation)
             return
-        if getattr(request, "type", None) != "events_api":
+        request_type = getattr(request, "type", None)
+        if request_type == "slash_commands":
+            admitted = self._normalize_slash(getattr(request, "payload", None))
+        elif request_type == "events_api":
+            admitted = self._normalize_event(getattr(request, "payload", None))
+        else:
             return
-        admitted = self._normalize_event(getattr(request, "payload", None))
         if admitted is None:
             return
         event_key, event = admitted
-        hook = self.pending_reply_handler
+        # A slash command never answers a pending free-text prompt. It is its own
+        # command turn; the ordinary command/access path decides what it may do.
+        hook = self.pending_reply_handler if request_type == "events_api" else None
         with self._ingress_lock:
             if not self._running or client is not self._socket_client:
                 return
@@ -554,6 +752,9 @@ class SlackChannel(ChannelAdapter):
                 if (type(label) is not str or not label
                         or type(data) is not str or not _PENDING_DATA.fullmatch(data)):
                     return None
+                from .outbound_safety import sanitize_label
+
+                label = sanitize_label(label)      # H069 review M3
                 # Slack caps a button's plain_text at 75 characters. Keep the
                 # numbered/selected prefix visible; the value still identifies
                 # the full canonical choice in the pending-card registry.
@@ -576,16 +777,20 @@ class SlackChannel(ChannelAdapter):
                 or (thread is not None and (type(thread) is not str
                                             or not _TIMESTAMP.fullmatch(thread)))
                 or set(kwargs) - {"slack_channel", "channel", "thread_ts"}):
+            delivery_ledger.note_send_failure()
             return None
         pieces = render_outbound(message, self.descriptor)
         if not pieces:
+            delivery_ledger.note_send_failure()
             return None
         final_blocks = self._pending_blocks(pieces[-1], reply_markup)
         if final_blocks is None:
+            delivery_ledger.note_send_failure()
             return None
         receipt = None
         for index, piece in enumerate(pieces):
             if not self._pending_live(generation) or client is not self._client:
+                delivery_ledger.note_send_failure()
                 return None
             payload = {"channel": channel, "text": piece}
             if thread is not None:
@@ -598,9 +803,14 @@ class SlackChannel(ChannelAdapter):
                 if (response.get("ok") is not True or type(ack_channel) is not str
                         or ack_channel != channel or type(timestamp) is not str
                         or not _TIMESTAMP.fullmatch(timestamp)):
+                    delivery_ledger.note_unconfirmed_ack()
                     return None
                 receipt = timestamp
+                # An accepted prefix stays partial if a later part fails or the
+                # callback generation changes before this card can be bound.
+                delivery_ledger.note_partial()
             except Exception:
+                delivery_ledger.note_unconfirmed_ack()
                 logger.warning("Slack pending prompt delivery failed")
                 return None
             if not self._pending_live(generation) or client is not self._client:

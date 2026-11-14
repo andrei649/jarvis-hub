@@ -175,7 +175,8 @@ def test_serve_stops_on_a_bad_profile_before_importing_the_hub(tmp_path):
     env = {**os.environ, "JARVIS_HOME": str(tmp_path), "JARVIS_PROFILE": "Bad"}
     out = subprocess.run([sys.executable, str(REPO / "serve.py")], capture_output=True, text=True,
                          cwd=str(REPO), env=env, timeout=120)
-    assert out.returncode == 1 and "Traceback" not in out.stderr
+    # H089: a refused profile name is permanent: 78, which the service units do not restart on.
+    assert out.returncode == 78 and "Traceback" not in out.stderr
     assert "JARVIS_PROFILE='Bad' is not a profile name" in out.stderr
     assert list(tmp_path.iterdir()) == []
 

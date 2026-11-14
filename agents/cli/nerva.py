@@ -24,7 +24,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode
 
-from . import skill_sources
+from agents.core.extensions.manifest import MAX_DECLARATIONS
+
+from . import service_install, skill_sources
 from .client import HubClient, HubError, HubUnavailable, hub_url, is_loopback_url
 from .custom_endpoints import run as cmd_custom_provider
 from .mcp_catalog import run as cmd_mcp
@@ -249,7 +251,7 @@ def build_parser() -> argparse.ArgumentParser:
     extension_consent.add_argument("path", metavar="MANIFEST")
     extension_consent.add_argument("--revoke", action="store_true", help="withdraw consent and take its tools off the surface")
     extension_consent.add_argument("--json", action="store_true")
-    extension_activate = extension_verbs.add_parser("activate", help="prove a consented descriptor in the sandbox and make its tools callable (owner)")
+    extension_activate = extension_verbs.add_parser("activate", help="prove a consented descriptor in the sandbox and expose its tools and commands (owner)")
     extension_activate.add_argument("path", metavar="MANIFEST")
     extension_activate.add_argument("--json", action="store_true")
 
@@ -905,9 +907,43 @@ def build_parser() -> argparse.ArgumentParser:
     todo.add_argument("session", nargs="?", help="one session's plan (else the recent ones)")
     todo.add_argument("--json", action="store_true")
 
-    sessions = verbs.add_parser("sessions", help="recent conversation sessions")
+    sessions = verbs.add_parser(
+        "sessions", help="recent conversation sessions",
+        description="List and organize conversations. Pin, unpin, archive and unarchive apply to the "
+                    "whole conversation lineage. Archiving clears loaded skills; nothing is deleted.")
     sessions.add_argument("--json", action="store_true")
+    sessions.add_argument("--archived", action="store_true", help="list archived conversations only")
     session_verbs = sessions.add_subparsers(dest="session_action")
+    history = session_verbs.add_parser(
+        "history", help="scan paginated owner history with client-side metadata filters",
+        description="Read a bounded scan of owner session metadata, filtered client-side. "
+                    "This is not a fixed snapshot or a completeness claim. Age uses started_at "
+                    "and one UTC time per run; naive timestamps are interpreted as UTC.",
+        epilog="Resume with --cursor TOKEN and repeat the same filters. The raw server cursor "
+               "is not bound to filters; the age anchor advances on the next invocation.")
+    history.add_argument("--archived", dest="history_archived", action="store_true")
+    history.add_argument("--limit", type=int, default=100, help="matching result cap, 1..1000 (default 100)")
+    history.add_argument("--max-pages", type=int, default=10, help="scan page cap, 1..100 (default 10)")
+    history.add_argument("--cursor", help="raw server continuation token")
+    history_agent = history.add_mutually_exclusive_group()
+    history_agent.add_argument("--agent", help="exact agent identifier")
+    history_agent.add_argument("--unassigned", action="store_true", help="missing, null or empty agent")
+    history.add_argument("--older-than", dest="older_than_days", type=int, help="started at least DAYS ago, 0..36500")
+    history.add_argument("--query", help="literal case-insensitive metadata text, 1..256 characters")
+    history.add_argument("--json", action="store_true")
+    renamed = session_verbs.add_parser("rename", help="set a human conversation title")
+    renamed.add_argument("session_id")
+    renamed.add_argument("title", help="one line of 1 to 100 characters")
+    renamed.add_argument("--json", action="store_true")
+    for action, explanation in (
+        ("pin", "pin the whole conversation lineage"),
+        ("unpin", "unpin the whole conversation lineage"),
+        ("archive", "archive the whole conversation lineage; clears loaded skills, nothing is deleted"),
+        ("unarchive", "restore the whole conversation lineage to the active list"),
+    ):
+        stamp = session_verbs.add_parser(action, help=explanation, description=explanation)
+        stamp.add_argument("session_id")
+        stamp.add_argument("--json", action="store_true")
     continuation = session_verbs.add_parser("continue", help="create a new session carrying retained context; does not switch default")
     continuation.add_argument("source_session_id")
     continuation.add_argument("--request-id", required=True, help="stable UUID for safe retry")
@@ -928,6 +964,13 @@ def build_parser() -> argparse.ArgumentParser:
                           help="only turns that ended on the model's own answer")
     exported.add_argument("-o", "--out", default="-", help="output JSONL path ('-' = stdout)")
     exported.add_argument("--json", action="store_true")
+
+    transcript = session_verbs.add_parser(
+        "transcript", help="export redacted retained current conversation text as JSON",
+        description="Export the session's redacted retained current history (user and assistant text).")
+    transcript.add_argument("session_id")
+    transcript.add_argument("-o", "--out", default="-", help="create-only JSON output path ('-' = stdout)")
+    transcript.add_argument("--json", action="store_true", help="JSON output (already the default)")
 
     chat = verbs.add_parser(
         "chat",
@@ -1058,6 +1101,9 @@ def build_parser() -> argparse.ArgumentParser:
     desktop_grant = desktop_verbs.add_parser(
         "grant", help="open the OS pane where you award a permission (owner; grants nothing itself)")
     desktop_grant.add_argument("step", help="the step key from `nerva desktop status`")
+
+    # H089 — the hub as a per-user service (systemd user unit / launchd agent).
+    service_install.register(verbs)
 
     # H014 — the same module uninstall.sh / UNINSTALL.bat run; nothing is decided here.
     # On Windows the verb runs from the .venv it would delete (locked), so the module refuses
@@ -1263,13 +1309,79 @@ def _extension_descriptor(path, ctx):
     # Re-serialize from the parsed manifest rather than forwarding raw file bytes:
     # what the hub records consent for is exactly what was validated locally, and
     # an unknown field in the file can never ride along to the route.
-    return {
+    body = {
         "manifest_version": 1, "api_version": 1, "id": manifest.id, "version": manifest.version,
         "capabilities": list(manifest.capabilities), "tools": list(manifest.tools),
         "commands": list(manifest.commands), "events": list(manifest.events),
         "requires": {"extensions": dict(manifest.extension_requires),
                      "python": dict(manifest.python_requires)},
     }
+    if manifest.command_requires_args:
+        body["command_requires_args"] = list(manifest.command_requires_args)
+    return body
+
+
+def _valid_extension_names(value: Any) -> bool:
+    """Validate the bounded manifest command-name shape used by signed extensions."""
+    return (isinstance(value, list) and len(value) <= MAX_DECLARATIONS
+            and all(isinstance(name, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,63}", name)
+                    for name in value)
+            and len(set(value)) == len(value))
+
+
+_RESTART_RESTORE_STATES = frozenset({
+    "not_configured", "saved", "save_failed", "removed", "remove_failed",
+})
+_RESTART_RESTORE_REASON = re.compile(r"[a-z][a-z0-9_]{0,63}\Z")
+
+
+def _restart_restore_status(report: dict) -> tuple[bool, str | None]:
+    """Return whether the field was present and a strictly bounded state, if valid.
+
+    Older hubs omit the field; that remains compatible. Invalid new values are
+    treated as unconfirmed restoration, and reason text is never printed.
+    """
+    if "restart_restore" not in report:
+        return False, None
+    value = report.get("restart_restore")
+    if not isinstance(value, dict) or set(value) - {"state", "reason"}:
+        return True, None
+    state = value.get("state")
+    if not isinstance(state, str) or state not in _RESTART_RESTORE_STATES:
+        return True, None
+    if "reason" in value:
+        reason = value["reason"]
+        if not isinstance(reason, str) or _RESTART_RESTORE_REASON.fullmatch(reason) is None:
+            return True, None
+    return True, state
+
+
+def _restart_restore_warning(action: str, present: bool, state: str | None) -> str | None:
+    if not present:
+        return None
+    if action == "activate":
+        if state == "saved":
+            return None
+        if state == "save_failed":
+            return ("Warning: extension is active now, but restart restoration was not confirmed; "
+                    "it may not return after the hub restarts.")
+        if state == "not_configured":
+            return ("Warning: restart restoration is not configured; this extension may not "
+                    "return after the hub restarts.")
+        return ("Warning: restart restoration status is unavailable; do not assume this extension "
+                "will return after the hub restarts.")
+    if action == "revoke":
+        if state == "removed":
+            return None
+        if state == "remove_failed":
+            return ("Warning: consent is revoked, but removal of the saved restart route was not "
+                    "confirmed; authority remains revoked.")
+        if state == "not_configured":
+            return ("Warning: consent is revoked, but the saved restart-route store is not "
+                    "configured; authority remains revoked.")
+        return ("Warning: consent is revoked, but saved restart-route removal is unconfirmed; "
+                "authority remains revoked.")
+    return None
 
 
 def cmd_extensions(ns: argparse.Namespace, ctx: Context) -> int:
@@ -1291,19 +1403,28 @@ def cmd_extensions(ns: argparse.Namespace, ctx: Context) -> int:
             ctx.err.write("extension request returned a malformed response\n")
             return EXIT_FAILED
         success = report.get("ok") is True
+        restore_present, restore_state = _restart_restore_status(report)
         if ns.json:
             ctx.dump(report)
         elif not success:
             ctx.say(f"Refused: {report.get('reason', 'unknown')}")
         elif ns.action == "consent":
-            ctx.say("Consent withdrawn." if report.get("revoked") else
+            revoked = bool(ns.revoke or report.get("revoked") is True)
+            ctx.say("Consent withdrawn." if revoked else
                     f"Consent recorded for {body['id']} ({report.get('declared_digest', '')[:12]}).")
+            warning = _restart_restore_warning("revoke" if revoked else "consent",
+                                               restore_present, restore_state)
+            if warning:
+                ctx.say(warning)
         else:
             activation = report.get("activation") or {}
             tools = activation.get("callable_tools") or []
             ctx.say(f"Activated {activation.get('id')} {activation.get('version')}; callable tools: {len(tools)}")
             for tool in tools:
                 ctx.say(f"  {tool}")
+            warning = _restart_restore_warning("activate", restore_present, restore_state)
+            if warning:
+                ctx.say(warning)
         return EXIT_OK if success else EXIT_FAILED
     else:
         report = ctx.client().get("/api/plugins/extensions")
@@ -1313,12 +1434,20 @@ def cmd_extensions(ns: argparse.Namespace, ctx: Context) -> int:
                 or any(not isinstance(row, dict)
                        or any(not isinstance(row.get(key), str) for key in ("id", "version", "reason"))
                        or not isinstance(row.get("callable_tools"), list)
-                       or row.get("callable_commands") != []
-                       # An inactive row still advertises nothing; only an activated
-                       # one may, and only tools. This pin moved deliberately in S2 —
-                       # before it, "callable" was unreachable by construction.
+                       or not _valid_extension_names(row.get("callable_commands"))
+                       or ("declared_commands" in row
+                           and not _valid_extension_names(row.get("declared_commands")))
+                       or (row.get("callable_commands")
+                           and ("declared_commands" not in row
+                                or not set(row["callable_commands"]).issubset(row["declared_commands"])
+                                or row.get("signature_verified") is not True
+                                or row.get("execution_available") is not True
+                                or row.get("reason") != "activated"))
+                       # An unavailable row must not advertise any callable surface.
                        or (row.get("execution_available") is not True
-                           and (row.get("execution_available") is not False or row.get("callable_tools") != []))
+                           and (row.get("execution_available") is not False
+                                or row.get("callable_tools") != []
+                                or row.get("callable_commands") != []))
                        for row in report["extensions"])):
             ctx.err.write("extension inspection returned a malformed response\n")
             return EXIT_FAILED
@@ -1330,12 +1459,13 @@ def cmd_extensions(ns: argparse.Namespace, ctx: Context) -> int:
         ctx.dump(report)
     else:
         ctx.say("Extension inspection only; SDK dispatch is unavailable."
-                if report.get("reason") != "activated" else "Extension inspection; some tools are activated.")
+                if report.get("reason") != "activated" else "Extension inspection; some extensions are activated.")
         for error in report.get("errors", []):
             ctx.say(f"  {error['reason']}")
         for row in report.get("extensions", []):
             issues = ", ".join(row.get("issues", [])) or row["reason"]
-            ctx.say(f"  {row['id']} {row['version']}: {issues}; callable tools: {len(row.get('callable_tools') or [])}")
+            ctx.say(f"  {row['id']} {row['version']}: {issues}; callable tools: {len(row.get('callable_tools') or [])}; "
+                    f"callable commands: {len(row.get('callable_commands') or [])}")
         if not report.get("extensions") and report.get("reason"):
             ctx.say(f"  {report['reason']}")
     return EXIT_OK if success else EXIT_FAILED
@@ -5471,6 +5601,15 @@ def cmd_jobs(ns: argparse.Namespace, ctx: Context) -> int:
 
 
 def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
+    if getattr(ns, "archived", False) and getattr(ns, "session_action", None) is not None:
+        ctx.err.write("--archived is only available when listing sessions.\n")
+        return EXIT_USAGE
+    if getattr(ns, "session_action", None) == "history":
+        return _session_history(ns, ctx)
+    if getattr(ns, "session_action", None) in {"rename", "pin", "unpin", "archive", "unarchive"}:
+        return _organize_session(ns, ctx)
+    if getattr(ns, "session_action", None) == "transcript":
+        return _export_session_transcript(ns, ctx)
     if getattr(ns, "session_action", None) == "continue":
         reply = ctx.client().post("/sessions/continue", {"source_session_id": ns.source_session_id, "request_id": ns.request_id})
         if ns.json:
@@ -5499,7 +5638,7 @@ def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
         return EXIT_OK
     if getattr(ns, "session_action", None) == "export":
         return _export_trajectories(ns, ctx)
-    reply = ctx.client().get("/sessions")
+    reply = ctx.client().get("/sessions?archived=true" if getattr(ns, "archived", False) else "/sessions")
     sessions = (reply or {}).get("sessions") or []
     if ns.json:
         ctx.dump(sessions)
@@ -5521,6 +5660,111 @@ def cmd_sessions(ns: argparse.Namespace, ctx: Context) -> int:
             note += "  (earlier part, still in use)"
         ctx.say(f"{sid}  {started}  {title}".rstrip() + note)
     return EXIT_OK
+
+
+def _session_history(ns: argparse.Namespace, ctx: Context) -> int:
+    from .session_history import collect_history, display_text, encode_history, validate_options
+
+    options = {"archived": ns.history_archived, "limit": ns.limit, "max_pages": ns.max_pages,
+               "cursor": ns.cursor, "agent": ns.agent, "unassigned": ns.unassigned,
+               "older_than_days": ns.older_than_days, "query": ns.query}
+    try:
+        validate_options(**options)
+    except ValueError:
+        ctx.err.write("Invalid session history options; see sessions history --help.\n")
+        return EXIT_USAGE
+    try:
+        document = collect_history(ctx.client(), **options)
+        encoded = encode_history(document)
+    except HubUnavailable:
+        ctx.err.write("Session history hub unavailable.\n")
+        return EXIT_NO_HUB
+    except HubError as exc:
+        ctx.err.write("Session history request refused.\n")
+        return EXIT_AUTH if exc.status in (401, 403) else EXIT_FAILED
+    except (ValueError, TypeError, RecursionError, UnicodeError, OverflowError):
+        ctx.err.write("Could not read session history.\n")
+        return EXIT_FAILED
+    if ns.json:
+        ctx.out.write(encoded)
+    else:
+        lines = []
+        for row in document["sessions"]:
+            sid = row.get("resume_id") or row.get("session_id") or row.get("id")
+            lines.append("  ".join(display_text(value) for value in (
+                sid, row.get("started_at"), row.get("agent_id"), row.get("title") or row.get("summary"))).rstrip())
+        ctx.say("\n".join(lines) if lines else "No matching sessions in this scan.")
+        ctx.err.write(f"Bounded client-side metadata scan: {document['scanned_pages']} pages, "
+                      f"{document['scanned_rows']} rows; stop_reason={document['stop_reason']}.\n")
+        if document["next_cursor"] is not None:
+            ctx.err.write(f"Resume with --cursor {document['next_cursor']} and the same filters; "
+                          "this is not a fixed snapshot.\n")
+    return EXIT_OK
+
+
+def _organize_session(ns: argparse.Namespace, ctx: Context) -> int:
+    from .session_organization import organization_receipt, organization_title
+    from .session_transcript import valid_session_id
+
+    if not valid_session_id(ns.session_id):
+        ctx.err.write("Invalid session identifier for session organization.\n")
+        return EXIT_USAGE
+    action = ns.session_action
+    try:
+        title = organization_title(ns.title) if action == "rename" else None
+    except ValueError:
+        ctx.err.write("A title must be one line of 1 to 100 characters.\n")
+        return EXIT_USAGE
+    try:
+        client = ctx.client()
+        if action == "rename":
+            reply = client.request("PATCH", f"/sessions/{ns.session_id}/title", {"title": title})
+        else:
+            reply = client.post(f"/sessions/{ns.session_id}/{action}", {})
+        receipt = organization_receipt(reply, ns.session_id, action, title)
+    except HubUnavailable:
+        ctx.err.write("Session organization hub unavailable; the change may have applied; inspect before retry.\n")
+        return EXIT_NO_HUB
+    except HubError as exc:
+        reason = f" ({exc.reason})" if exc.reason in ("title_taken", "title_reserved") else ""
+        ctx.err.write(f"Session organization request refused{reason}.\n")
+        return EXIT_AUTH if exc.status in (401, 403) else EXIT_FAILED
+    except (ValueError, TypeError, RecursionError):
+        ctx.err.write("Could not confirm session organization; the change may have applied; inspect before retry.\n")
+        return EXIT_FAILED
+    if ns.json:
+        ctx.dump(receipt)
+    elif action == "rename":
+        ctx.say(f"Renamed {ns.session_id}: {title}")
+    else:
+        ctx.say(f"Confirmed {action} for conversation {ns.session_id}.")
+    return EXIT_OK
+
+
+def _export_session_transcript(ns: argparse.Namespace, ctx: Context) -> int:
+    from .session_transcript import encode_transcript, valid_session_id, write_transcript_file
+
+    if not valid_session_id(ns.session_id):
+        ctx.err.write("Invalid session identifier for retained transcript.\n")
+        return EXIT_USAGE
+    try:
+        reply = ctx.client().get(f"/sessions/{ns.session_id}/transcript")
+        data = encode_transcript(reply, ns.session_id)
+        if ns.out == "-":
+            ctx.out.write(data.decode("utf-8") + "\n")
+        else:
+            write_transcript_file(ns.out, data)
+            ctx.err.write("Saved retained current history transcript.\n")
+        return EXIT_OK
+    except HubUnavailable:
+        ctx.err.write("Retained session transcript hub unavailable.\n")
+        return EXIT_NO_HUB
+    except HubError as exc:
+        ctx.err.write("Retained session transcript request refused.\n")
+        return EXIT_AUTH if exc.status in (401, 403) else EXIT_FAILED
+    except (ValueError, TypeError, RecursionError, OSError):
+        ctx.err.write("Could not export retained session transcript.\n")
+        return EXIT_FAILED
 
 
 def _export_trajectories(ns: argparse.Namespace, ctx: Context) -> int:
@@ -7069,6 +7313,11 @@ def cmd_prompt_size(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+def cmd_service(ns: argparse.Namespace, ctx: Context) -> int:
+    """H089 — ``nerva service install|uninstall|show`` (``agents/cli/service_install.py``)."""
+    return service_install.run(ns, ctx)
+
+
 def cmd_uninstall(ns: argparse.Namespace, ctx: Context) -> int:
     """Delegate to agents.core.uninstall — its refusals, typed purge prompt and exit codes."""
     from agents.core import uninstall as _uninstall
@@ -7313,6 +7562,7 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "send": cmd_send,
     "desktop": cmd_desktop,
     "support": cmd_support,
+    "service": cmd_service,
     "uninstall": cmd_uninstall,
     "security": cmd_security,
     "completion": cmd_completion,

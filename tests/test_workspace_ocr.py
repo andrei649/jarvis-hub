@@ -563,7 +563,7 @@ async def test_memory_sampler_failure_kills_owned_native_descendant(monkeypatch,
     task = asyncio.create_task(extract.extract_document(samples.build_blank_pdf(1),
                                                         "pdf", timeout=3))
     for _ in range(200):
-        if pid_file.exists():
+        if pid_file.exists() and pid_file.read_text().strip().isdigit():
             break
         await asyncio.sleep(0.01)
     assert pid_file.exists()
@@ -757,7 +757,7 @@ async def test_cancellation_reaps_native_descendant(monkeypatch, tmp_path):
     task = asyncio.create_task(extract.extract_document(b"x" * (2 * 1024 * 1024),
                                                         "pdf", timeout=5))
     for _ in range(100):
-        if pid_file.exists():
+        if pid_file.exists() and pid_file.read_text().strip().isdigit():
             break
         await asyncio.sleep(0.01)
     assert pid_file.exists()

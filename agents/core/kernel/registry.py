@@ -166,6 +166,10 @@ ACTION_REGISTRY: dict[str, Mediation] = {
     # Owner-approved resident speech commands widen host-exec capability. Strict
     # intake persists kernel evidence; irreversible policy still requires a human.
     "settings.voice_command": Mediation.KERNEL,
+    # H084/H624 — the recorded hub update card enters the signed queue only
+    # after an exact Kernel decision. The tier-three human floor remains.
+    "hub.update": Mediation.KERNEL,
+    "hub.restart": Mediation.KERNEL,
 }
 
 
@@ -201,6 +205,10 @@ def known_broker_action_kinds() -> set[str]:
     kinds.add(PROVIDER_LOAD_KIND)
     from ..voice.command_settings import APPROVAL_KIND as VOICE_COMMAND_KIND
     kinds.add(VOICE_COMMAND_KIND)
+    from ..hub_update_apply import APPROVAL_KIND as HUB_UPDATE_KIND
+    kinds.add(HUB_UPDATE_KIND)
+    from ..autonomy.restart_records import KIND as HUB_RESTART_KIND
+    kinds.add(HUB_RESTART_KIND)
     from ..checkpoint_controller import CHECKPOINT_KINDS
     kinds.update(CHECKPOINT_KINDS)
     return kinds

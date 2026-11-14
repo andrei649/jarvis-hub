@@ -478,6 +478,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="jobs", key="run_timeout_seconds", value=900, label="Scheduled job run deadline, delivery included (0 = unbounded, 1–86400 seconds)", kind="number"),
     # channels
     dict(category="channels",key="rate_limit",       value=10,                    label="Gateway rate limit (msg/min)", kind="number"),
+    dict(category="channels", key="max_inbound_media_bytes", value=8 * 1024 * 1024, label="Maximum incoming attachment bytes (1–20971520)", kind="number"),
     dict(category="channels",key="web_enabled",      value=True,                  label="Web channel",        kind="toggle"),
     dict(category="channels",key="streaming_replies", value=True,                 label="Write chat replies in place as they are produced (channels that can edit a message)", kind="toggle"),
     dict(category="channels",key="pending_inputs_enabled", value=False, label="Chat clarification preview (restart to apply)", kind="toggle"),
@@ -577,6 +578,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="system",  key="log_backups",      value=5,                     label="Rotated log backups", kind="number"),
     # H182: on battery below this percent, the heavy background jobs skip their run (0 = never, 100 = always).
     dict(category="system",  key="battery_defer_percent", value=50,               label="On battery below this %, defer heavy background jobs (0 = never)", kind="number"),
+    dict(category="system",  key="channel_connect_timeout_seconds", value=15, label="Telegram, Discord, ntfy, IMAP and Slack opening timeout in seconds (1–25; applies on next hub start)", kind="number"),
     dict(category="system",  key="startup_warmup_timeout_seconds", value=20,      label="At start, wait up to this many seconds for the local model to warm up before accepting messages (0 = don't wait)", kind="number"),
     # H448 — Hermes `context.memory_trim`: after a turn and on the minute housekeeping tick
     # (the scheduler's memory-trim job), at most every cooldown_seconds, collect reference
@@ -1635,6 +1637,10 @@ def validate_category(cat: str, data: dict[str, Any], *, references: bool = True
         err = _validate_value(key, value, spec.get("kind", "text"), spec.get("opts", []) or [])
         if err is None and cat == "sessions":
             err = _session_setting_problem(key, value)
+        if err is None and (cat, key) == ("channels", "max_inbound_media_bytes"):
+            from .channels.media_limits import configuration_problem
+
+            err = configuration_problem(value)
         if err is None and (cat, key) == ("autonomy", "agent_modes"):
             from .autonomy.mode import overrides_problem
 

@@ -14,28 +14,26 @@ fact that **this turn read untrusted memory**. The vehicle is the existing per-t
 QUEUE. So a recall-tainted turn's actions land in the approval inbox instead of
 auto-executing — fail safe, never a DENY, never a weakened gate.
 
-Scoping — stated precisely, because two different mechanisms are doing the work and
-only one of them is a turn:
+Scoping — stated precisely, because the boundaries differ:
 
-* **Chat/tool turns** (``Orchestrator.handle_input``, orchestrator.py:1167 and :1324)
-  bind a turn origin and reset it in a ``finally``. The mark is set *without* keeping
-  its own reset token, so that reset restores the pre-turn value. Here the mark is
-  genuinely turn-scoped.
-* **The HTTP recall route** (``routers/memory_kg.py`` builds a ``MemorySearchTool``)
-  has no turn at all. What bounds the mark there is asyncio's per-task context copy:
-  the handler runs in its own Task, so a ``ContextVar`` set inside it never propagates
-  back to the parent context and dies with the request.
+* **Chat/tool turns** (``Orchestrator.handle_input`` and its prepared path) bind a
+  turn origin and reset it in ``finally``. The mark is set without keeping its own
+  reset token, so that reset restores the pre-turn value.
+* **One-shot ``Orchestrator.process``** delegates to ``process_detailed``. That method
+  binds the entry origin around media-history inspection and agent execution, then
+  resets in ``finally``. A recalled untrusted hit is therefore visible while the
+  internal call runs, and an inherited untrusted origin is retained. The current
+  scope also restores a clean entry origin before returned text reaches its caller;
+  whether that is the intended boundary for callers that may act on the returned text
+  is a separate authority decision, not settled by this helper.
+* **HTTP memory routes** use ``routers/memory_kg.py``'s ``_recall_scope`` async
+  context manager. It binds on handler entry and resets in ``finally`` after the
+  response is built. This explicit boundary also works when a test awaits the route
+  directly, without relying on asyncio Task-context isolation.
 
-The second is real isolation but it is incidental, not designed — it holds because of
-how Tasks copy context, not because anything in this module arranges it. A synchronous
-caller reaching the marking path outside a Task would leak the mark for the life of its
-context. No production caller does that today (the only two are listed above), and the
-autouse fixture in ``tests/conftest.py`` restores the binding around every test so a
-pytest worker running many files in one context cannot carry a mark across a file.
-
-Residual, recorded rather than papered over: making the second path scope the mark
-explicitly — binding and resetting around the search instead of relying on Task
-isolation — is the remaining hardening. It is not done here.
+These scopes belong to their callers; this module's marker remains escalate-only and
+does not own a reset token. See the orchestrator and route regressions for the
+boundaries currently enforced.
 """
 
 from __future__ import annotations

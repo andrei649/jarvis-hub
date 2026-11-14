@@ -323,6 +323,7 @@ async def test_in_a_group_the_voice_mark_is_the_voice_senders_own(monkeypatch):
     from agents.core.channels.inbound_voice import Transcript
 
     channel, _ = _channel(monkeypatch, policy=GroupPolicy(require_mention=False))
+    channel.allowed_users = [7, 8]  # both group senders are admitted before media is read
     channel.send_action = AsyncMock()
     monkeypatch.setattr(channel, "_echo_transcripts", lambda: False)
     monkeypatch.setattr(channel, "_read_voice", AsyncMock(return_value=Transcript(True, text="what time is it")))

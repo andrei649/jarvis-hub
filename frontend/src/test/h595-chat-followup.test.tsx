@@ -144,3 +144,26 @@ it('releases a stream whose transport closes without an end event', async () => 
   await send('Next request');
   await waitFor(() => expect(streams).toHaveLength(2));
 });
+
+it.each([
+  { final: 'Final answer', expected: 'Final answer', keepsDraft: false },
+  { final: '', expected: '', keepsDraft: false },
+  { final: undefined, expected: 'Draft answer', keepsDraft: true },
+])('uses the authoritative end text even when it is empty: $final', async ({ final, expected, keepsDraft }) => {
+  render(<App />);
+  await send('Explain this');
+  await waitFor(() => expect(streams).toHaveLength(1));
+  act(() => {
+    streams[0].event({ type: 'start', agent: 'jarvis' });
+    streams[0].event({ type: 'token', text: 'Draft answer' });
+  });
+  expect(screen.getByText('Draft answer')).toBeTruthy();
+  act(() => streams[0].event({ type: 'end', agent: 'jarvis', ...(final === undefined ? {} : { text: final }) }));
+  if (keepsDraft) {
+    expect(screen.getByText('Draft answer')).toBeTruthy();
+  } else {
+    expect(screen.queryByText('Draft answer')).toBeNull();
+  }
+  if (expected) expect(screen.getByText(expected)).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Stop generating' })).toBeNull();
+});

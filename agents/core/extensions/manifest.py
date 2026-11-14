@@ -13,7 +13,7 @@ MAX_MANIFEST_BYTES = 64 * 1024
 MAX_EXTENSIONS = 128
 MAX_DECLARATIONS = 64
 CAPABILITIES = frozenset({"tools", "commands", "events.observe"})
-EVENTS = frozenset({"command.completed", "session.started", "session.ended", "tool.completed",
+EVENTS = frozenset({"command.started", "command.completed", "session.started", "session.ended", "tool.completed",
                     "approval.smart.requested", "approval.smart.decided"})
 _NAME = re.compile(r"[a-z][a-z0-9_]{0,63}")
 _VERSION = re.compile(r"(?:0|[1-9][0-9]{0,8})\.(?:0|[1-9][0-9]{0,8})\.(?:0|[1-9][0-9]{0,8})(?:[-+][A-Za-z0-9.-]{1,40})?")
@@ -35,6 +35,7 @@ class ExtensionManifest:
     events: tuple[str, ...]
     extension_requires: tuple[tuple[str, str], ...]
     python_requires: tuple[tuple[str, str], ...]
+    command_requires_args: tuple[str, ...] = ()
 
     @property
     def qualified_tools(self) -> tuple[str, ...]:
@@ -76,7 +77,8 @@ def _dependencies(value, *, python=False):
 
 def parse_manifest(value) -> ExtensionManifest:
     fields = {"manifest_version", "api_version", "id", "version", "capabilities", "tools", "commands", "events", "requires"}
-    if not isinstance(value, dict) or set(value) != fields:
+    if (not isinstance(value, dict) or not fields <= set(value)
+            or set(value) - fields - {"command_requires_args"}):
         raise ManifestError("invalid_manifest_fields")
     if type(value["manifest_version"]) is not int or value["manifest_version"] != MANIFEST_VERSION:
         raise ManifestError("unsupported_manifest_version")
@@ -88,6 +90,7 @@ def parse_manifest(value) -> ExtensionManifest:
         raise ManifestError("invalid_extension_version")
     capabilities = _names(value["capabilities"], allowed=CAPABILITIES)
     tools, commands = _names(value["tools"]), _names(value["commands"])
+    command_requires_args = _names(value.get("command_requires_args", []), allowed=commands)
     events = _names(value["events"], allowed=EVENTS)
     required = {name for name, declarations in (("tools", tools), ("commands", commands), ("events.observe", events)) if declarations}
     if set(capabilities) != required:
@@ -98,7 +101,8 @@ def parse_manifest(value) -> ExtensionManifest:
     if not isinstance(requires, dict) or set(requires) != {"extensions", "python"}:
         raise ManifestError("invalid_dependencies")
     return ExtensionManifest(value["id"], value["version"], capabilities, tools, commands, events,
-                             _dependencies(requires["extensions"]), _dependencies(requires["python"], python=True))
+                             _dependencies(requires["extensions"]), _dependencies(requires["python"], python=True),
+                             command_requires_args)
 
 
 def _unique_object(pairs):

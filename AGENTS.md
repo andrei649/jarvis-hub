@@ -1,5 +1,14 @@
 # AGENTS.md — Nerva contributor instructions
 
+> **Current owner handoff — 2026-11-14:** follow
+> [Antigravity START_HERE](docs/handoff/antigravity-2026-11-14/START_HERE.md)
+> and its continuation prompt. The owner authorizes source transfer, continued
+> autonomous development, commits, pushes and draft PRs; **no merge or deploy**.
+> This dated mandate supersedes older local-only, model/resource and ceremony
+> instructions where they conflict. Obsolete process rules may be replaced with
+> dated rationale; security boundaries, platform refusals, data preservation and
+> truthful test/evidence reporting remain binding.
+
 > **Development posture.** Owner decision 2026-08-29 removed heavyweight blocking ceremony to keep
 > development fast. **Updated 2026-09-09:** routine Nerva engineering is now explicitly
 > **owner-out-of-loop**. `selfdev-policy.json` is the machine-readable autonomy contract and

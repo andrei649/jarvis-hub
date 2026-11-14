@@ -512,6 +512,10 @@ class _FakeClient:
         self.events: dict[str, object] = {}
         self.user = SimpleNamespace(id=1, name="the-bot")
         self.started_with = None
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+        self.ready = False
+        self.closed = False
 
     def event(self, fn):
         self.events[fn.__name__] = fn
@@ -519,12 +523,19 @@ class _FakeClient:
 
     async def start(self, token):
         self.started_with = token
+        self.started.set()
+        await self.release.wait()
 
     async def close(self):
-        pass
+        self.closed = True
+        self.ready = False
+        self.release.set()
 
     def is_ready(self):
-        return False
+        return self.ready
+
+    def is_closed(self):
+        return self.closed
 
 
 class _FakeIntents:
@@ -592,12 +603,19 @@ async def test_discord_on_message_delegates_to_the_method(fake_discord):
         return "pong"
 
     ch = DiscordChannel(token="tok", handler=handler)
-    await ch.start()
+    starting = asyncio.create_task(ch.start())
     try:
+        async with asyncio.timeout(1):
+            while ch._client is None:
+                await asyncio.sleep(0)
         client = ch._client
         assert isinstance(client, _FakeClient) and client.intents.message_content is True
-        await asyncio.sleep(0)  # let the start task run
+        await asyncio.wait_for(client.started.wait(), 1)
         assert client.started_with == "tok"
+        assert not starting.done()
+        client.ready = True
+        await client.events["on_ready"]()
+        await asyncio.wait_for(starting, 1)
         on_message = client.events["on_message"]
 
         stranger = _discord_message(7, "yo")

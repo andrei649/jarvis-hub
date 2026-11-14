@@ -71,6 +71,7 @@ import { TodayReceiptPanel } from './panels/today-receipt';
 import { JobsPanel } from './panels/jobs';
 import { ModelSetupPanel } from './panels/model-setup';
 import { HostReadinessPanel } from './panels/host-readiness';
+import { ExtensionInspectionPanel } from './panels/extension-inspection';
 import { CompanyRoomPanel } from './panels/company-room';
 import { QuickbarPanel } from './panels/quickbar';
 import { MemoryConsolidatePanel } from './panels/memory-consolidate';
@@ -5744,6 +5745,7 @@ const PANEL_COMPONENTS = {
   SandboxPanel,
   TemplatesPanel,
   AcquisitionPanel,
+  ExtensionInspectionPanel,
   MediaDirectorPanel,
   MediaGalleryPanel,
   PublishReadinessPanel,

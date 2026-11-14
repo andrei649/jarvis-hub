@@ -84,12 +84,14 @@ Stdlib-only, so it runs before any dependency exists, and tested with fakes
 |---|---|---|
 | `python` | floor check `>= 3.12` | `python_too_old:<have><<want>` |
 | `venv` | `python -m venv .venv` once; re-runs reuse it | `venv_create_failed` |
-| `deps` | `pip install --require-hashes -r requirements-beta.lock` (`--unlocked` → `requirements-beta.txt`) | `pip_install_failed`, `requirements_missing` |
+| `deps` | `pip install --require-hashes -r requirements-beta.lock` (`--unlocked` → `requirements-beta.txt`) | `pip_install_failed`, `requirements_missing`, `requirements_lock_unreadable` |
 | `runtimes` | loopback probes for Ollama / LM Studio + an accelerator hint; report only | never fails (`no_local_runtime` is a note) |
 | `smoke` | `scripts/install_smoke.py --json` in the venv, with `JARVIS_HOST=127.0.0.1` pinned and cloud keys scrubbed from the child environment | `smoke_failed`, `smoke_output_unparseable` |
 
 `python scripts/bootstrap.py --json` prints the whole report; exit status is 1 on the
 first failed step. Flags: `--skip-smoke`, `--unlocked`, `--root <checkout>`.
+
+A missing, non-file or inaccessible lockfile never selects loose requirements automatically. Restore the expected checkout/lockfile and retry; only an explicit `--unlocked` selects the `.txt` input. The final smoke accepts only JSON boolean `true` as its `ok` value; strings or numbers are failures. These rules describe `scripts/bootstrap.py` and its delegating wrappers, not separate legacy Windows installation/update scripts.
 
 ## Check-up: `doctor`
 

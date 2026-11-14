@@ -34,7 +34,8 @@ class Gateway:
                  inbox_store: Any = None, pending_handler: Optional[Callable] = None,
                  pending_callback_handler: Optional[Callable] = None,
                  interrupt_handler: Optional[Callable] = None,
-                 command_probe: Optional[Callable] = None):
+                 command_probe: Optional[Callable] = None,
+                 command_source_adapter: Optional[Callable[[], Any]] = None):
         self.handler = handler
         # A trusted, pending-only consumer: it cannot start a new model turn.
         self.pending_handler = pending_handler
@@ -42,6 +43,8 @@ class Gateway:
         self.interrupt_handler = interrupt_handler
         # H058: whether a command is one its sender may not run here (no answer, no audit).
         self.command_probe = command_probe
+        # Resolves the currently registered Telegram adapter, not a route-supplied claim.
+        self.command_source_adapter = command_source_adapter
         # H12.19 — optional inbound sender-pairing gate. When set (and pairing is
         # enabled), unknown senders are held for approval instead of reaching the
         # handler. None → unchanged behavior.
@@ -54,6 +57,8 @@ class Gateway:
         # H120: (channel, provider message id) -> first seen, upstream of pairing,
         # the handler and so of the approval queue: a provider retry is one turn.
         self._seen_ids: OrderedDict[tuple[str, str], float] = OrderedDict()
+        # A forged generic route key cannot consume an original command's key.
+        self._seen_original_commands: OrderedDict[tuple[str, str], float] = OrderedDict()
 
     def register_channel(self, channel_id: str, metadata: dict = None):
         self._channels[channel_id] = {
@@ -80,6 +85,30 @@ class Gateway:
         logger.info("Gateway: channel '%s' unregistered", log_safe(channel_id))
 
     async def route(self, text: str, channel: str = "web", **kwargs) -> Optional[str]:
+        # Event kwargs are data, never provenance. The adapter binds its candidate
+        # in this exact task and the Gateway seals it after pairing and inbox write.
+        kwargs.pop("_command_source", None)
+        kwargs.pop("command_source", None)
+        original_command = False
+        if channel == "telegram" and kwargs.get("provider_id") is not None:
+            from ..command_source import candidate_live, current_candidate
+
+            candidate = current_candidate()
+            try:
+                adapter = (self.command_source_adapter()
+                           if callable(self.command_source_adapter) else None)
+            except Exception:
+                adapter = None
+            try:
+                paired = (self.pairing is not None
+                          and self.pairing.is_allowed("telegram", str(kwargs.get("sender"))) is True)
+            except Exception:
+                paired = False
+            original_command = bool(
+                paired and candidate is not None
+                and kwargs.get("provider_id") == candidate.provider_id
+                and candidate_live(candidate, adapter=adapter, text=text,
+                                   sender=kwargs.get("sender"), chat_id=kwargs.get("chat_id")))
         if channel not in self._channels:
             self.register_channel(channel)
 
@@ -88,9 +117,14 @@ class Gateway:
         # redelivery after a reconnect) is dropped before anything else sees it.
         dedup_key = kwargs.pop("dedup_key", None)
         provider_id = kwargs.get("provider_id")
-        if dedup_key is None and isinstance(provider_id, str) and provider_id:
+        if original_command:
+            # No route kwarg can select this cache or override its exact provider key.
             dedup_key = f"{channel}:{provider_id}"
-        if self.is_duplicate(channel, dedup_key):
+        elif dedup_key is None and isinstance(provider_id, str) and provider_id:
+            dedup_key = f"{channel}:{provider_id}"
+        duplicate = (self._is_duplicate_in(self._seen_original_commands, channel, dedup_key)
+                     if original_command else self.is_duplicate(channel, dedup_key))
+        if duplicate:
             self._channels[channel]["duplicates"] = self._channels[channel].get("duplicates", 0) + 1
             logger.info("Gateway: duplicate inbound on '%s' dropped", log_safe(channel))
             return None
@@ -161,10 +195,40 @@ class Gateway:
             recorded = self._record_inbox(channel, text, sender=sender, metadata=metadata)
             if channel in {"slack", "discord", "ntfy", "sms"}:
                 kwargs["_inbox_message_id"] = recorded.get("id", "") if recorded else ""
+            from ..command_source import bind_source
+
+            # Even a nested same-task route must clear a prior route's sealed source.
+            source_scope = bind_source(None)
+            if channel == "telegram" and recorded is not None and self.pairing is not None:
+                from ..command_source import (
+                    InboundCommandSource,
+                    candidate_live,
+                    current_candidate,
+                )
+
+                candidate = current_candidate()
+                try:
+                    adapter = (self.command_source_adapter()
+                               if callable(self.command_source_adapter) else None)
+                    paired = self.pairing.is_allowed("telegram", str(sender)) is True
+                except Exception:
+                    adapter = None
+                    paired = False
+                if (paired and candidate is not None
+                        and candidate_live(candidate, adapter=adapter, text=text,
+                                           sender=sender, chat_id=kwargs.get("chat_id"))
+                        and kwargs.get("provider_id") == candidate.provider_id
+                        and recorded.get("provider_id") == candidate.provider_id
+                        and recorded.get("channel") == "telegram"
+                        and recorded.get("direction") == "in"
+                        and recorded.get("text") == text
+                        and type(recorded.get("id")) is str and recorded["id"]):
+                    source_scope = bind_source(InboundCommandSource(candidate, recorded["id"], self))
             from .. import code_interruptions
             admission_token = code_interruptions.bind_admitted_channel(channel)
             try:
-                result = await self.handler(text, channel=channel, **kwargs)
+                with source_scope:
+                    result = await self.handler(text, channel=channel, **kwargs)
             finally:
                 code_interruptions.reset_admitted_channel(admission_token)
             self._channels[channel]["last_activity"] = time.time()
@@ -242,11 +306,14 @@ class Gateway:
     def is_duplicate(self, channel: str, key, *, now: float | None = None) -> bool:
         """H120 — True when *key* was already seen on *channel* within the window (and
         remember it otherwise). A missing or malformed key is never a duplicate."""
+        return self._is_duplicate_in(self._seen_ids, channel, key, now=now)
+
+    @staticmethod
+    def _is_duplicate_in(seen: OrderedDict, channel: str, key, *, now: float | None = None) -> bool:
         if (not isinstance(key, str) or not key or len(key) > _DEDUP_KEY_MAX
                 or not key.isprintable()):
             return False
         now = time.monotonic() if now is None else now
-        seen = self._seen_ids
         while seen:
             oldest_key, oldest = next(iter(seen.items()))
             if now - oldest <= DEDUP_WINDOW_S and len(seen) <= DEDUP_MAX:

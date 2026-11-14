@@ -33,6 +33,7 @@ import contextlib
 import contextvars
 import itertools
 import logging
+import threading
 import time
 import uuid
 from typing import Any
@@ -44,6 +45,7 @@ logger = logging.getLogger("jarvis.extensions.events")
 # Exactly what each event carries, and nothing else. Adding a field here is a
 # deliberate act with a privacy consequence; forgetting to add one is harmless.
 FIELDS: dict[str, tuple[str, ...]] = {
+    "command.started": ("command",),
     "command.completed": ("command", "status"),
     "session.started": ("session_id",),
     "session.ended": ("session_id",),
@@ -57,6 +59,23 @@ MAX_PENDING = 64
 DELIVERY_TIMEOUT_SECONDS = 60.0
 
 
+class _Reservation:
+    """One admission slot, released at most once on any completion path."""
+
+    def __init__(self, bus: ExtensionEventBus) -> None:
+        self.bus = bus
+        self.released = False
+
+    def release(self, *, dropped: bool = False) -> None:
+        with self.bus._admission_lock:
+            if self.released:
+                return
+            self.released = True
+            self.bus._reserved -= 1
+            if dropped:
+                self.bus.dropped += 1
+
+
 class ExtensionEventBus:
     """Fan one lifecycle event out to the activated extensions that declared it."""
 
@@ -68,6 +87,8 @@ class ExtensionEventBus:
         self._timeout = max(0.001, float(timeout))
         self._sequence = itertools.count(1)
         self._pending: set[asyncio.Task] = set()
+        self._admission_lock = threading.Lock()
+        self._reserved = 0
         self.dropped = 0
         # Captured so an emitter that is *not* on the event loop still reaches it.
         # The tool loop hands its events to a worker thread, so without this the
@@ -168,18 +189,46 @@ class ExtensionEventBus:
             # An observer's failure is its own. It is logged and it ends there.
             logger.info("extension %s did not observe %s", extension_id, event, exc_info=True)
 
-    def _spawn(self, loop, extension_id: str, event: str, payload: dict) -> None:
-        """Create the delivery task. Only ever runs on the loop thread, so the
-        backlog set is single-threaded and its cap is authoritative here."""
-        if len(self._pending) >= self._max_pending:
-            self.dropped += 1
-            return
-        if event in SMART_EVENTS:
-            task = loop.create_task(self._deliver(extension_id, event, payload), context=contextvars.Context())
-        else:
-            task = loop.create_task(self._deliver(extension_id, event, payload))
-        self._pending.add(task)
-        task.add_done_callback(self._pending.discard)
+    def _reserve(self) -> _Reservation | None:
+        """Count callbacks waiting on the loop as well as tasks already running."""
+        with self._admission_lock:
+            if self._reserved >= self._max_pending:
+                self.dropped += 1
+                return None
+            self._reserved += 1
+            return _Reservation(self)
+
+    def _count_dropped(self, count: int) -> None:
+        with self._admission_lock:
+            self.dropped += count
+
+    def _finished(self, task: asyncio.Task, reservation: _Reservation) -> None:
+        self._pending.discard(task)
+        reservation.release()
+
+    def _spawn(self, loop, extension_id: str, event: str, payload: dict,
+               reservation: _Reservation) -> bool:
+        """Create a task on the pinned loop for an already admitted delivery."""
+        coroutine = self._deliver(extension_id, event, payload)
+        try:
+            if event in SMART_EVENTS:
+                task = loop.create_task(coroutine, context=contextvars.Context())
+            else:
+                task = loop.create_task(coroutine)
+        except Exception:
+            coroutine.close()
+            reservation.release(dropped=True)
+            return False
+        try:
+            self._pending.add(task)
+            task.add_done_callback(lambda done: self._finished(done, reservation))
+        except Exception:
+            self._pending.discard(task)
+            with contextlib.suppress(Exception):
+                task.cancel()
+            reservation.release(dropped=True)
+            return False
+        return True
 
     def _target_loop(self):
         """The loop to deliver on, and whether this thread is already running it."""
@@ -187,23 +236,24 @@ class ExtensionEventBus:
             running = asyncio.get_running_loop()
         except RuntimeError:
             running = None
-        if running is not None:
-            return running, True
-        loop = self._loop
+        with self._admission_lock:
+            if self._loop is None and running is not None:
+                self._loop = running
+            loop = self._loop
         if loop is None or loop.is_closed():
             return None, False
-        return loop, False
+        return loop, loop is running
 
     def emit(self, event: str, **fields) -> dict:
-        """Record that something happened and hand it off. Never blocks, never raises.
+        """Schedule observation without awaiting delivery; invalid payloads raise.
 
         Safe to call from a worker thread as well as from the loop: `record` on the
         tool-event store runs off-loop, and an event that only worked from one of the
         two call sites would be worse than none.
 
-        The report is about *this hub's* dispatch decision — which observers were
-        selected, whether the backlog refused it — never about what an observer did
-        with it, which this bus does not learn.
+        The report is about *this hub's* dispatch decision. ``delivered`` means
+        admitted to scheduling; task creation or observer delivery may still fail
+        later. It never reports what an observer did with the event.
         """
         if event not in EVENTS or event not in FIELDS:
             # Refused, not delivered: an unknown event name is a bug in the caller,
@@ -220,23 +270,30 @@ class ExtensionEventBus:
             # Nothing to schedule on. Say so rather than blocking a sync caller on a
             # container start.
             report["dropped"] = len(targets)
-            self.dropped += len(targets)
+            self._count_dropped(len(targets))
             return report
         for extension_id in targets:
+            reservation = self._reserve()
+            if reservation is None:
+                report["dropped"] += 1
+                continue
             if inline:
-                self._spawn(loop, extension_id, event, dict(payload))
+                if not self._spawn(loop, extension_id, event, dict(payload), reservation):
+                    report["dropped"] += 1
+                    continue
             else:
                 try:
-                    loop.call_soon_threadsafe(self._spawn, loop, extension_id, event, dict(payload))
-                except RuntimeError:
+                    loop.call_soon_threadsafe(self._spawn, loop, extension_id, event,
+                                              dict(payload), reservation)
+                except Exception:
+                    reservation.release(dropped=True)
                     report["dropped"] += 1
-                    self.dropped += 1
                     continue
             report["delivered"].append(extension_id)
         return report
 
     async def drain(self, timeout: float | None = None) -> int:
-        """Await deliveries in flight. For shutdown and for tests; never for a turn."""
+        """Await a snapshot of created tasks, not callbacks still queued on the loop."""
         pending = tuple(self._pending)
         if not pending:
             return 0

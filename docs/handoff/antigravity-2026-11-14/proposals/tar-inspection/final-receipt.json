@@ -1,0 +1,19 @@
+{
+  "native_sha256": "b503bbf9df1dcdf0894ba8113b1d51a1f6ad31cda261c723f42bd7c4f60d36ac",
+  "supplied_candidate_sha256": "8c17ee31ced67dbb1325cd8dca89c8ab39fd7bebdd1972732e341f27391592fb",
+  "bounded_candidate_sha256": "16691f0bc7791674df7de527b5f0f7c17c8782428cf5879d818ebb0b09ff76af",
+  "bounded_patch_sha256": "437cd824a73d34a7928601e6f91eced73593df41b3d76991b599a00a1427484b",
+  "tests": [
+    {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "131",
+      "time": "10.088",
+      "timestamp": "2026-11-13T08:19:17.824621+00:00",
+      "hostname": "1c2d743b51ac"
+    }
+  ],
+  "combined_patch_apply_check": "passed"
+}

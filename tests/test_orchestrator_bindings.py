@@ -693,6 +693,9 @@ def test_orchestrator_exposes_external_binding_protocol_before_wiring() -> None:
 
     assert isinstance(orch, ExternalOrchestratorBindings)
     assert all(getattr(orch, name) is None for name in EXTERNAL_BINDING_WRITERS)
+    from agents.core.restart_runtime import runtime_for
+
+    assert orch.autonomy._restart_runtime is runtime_for(orch)
 
     del orch.argus
     assert not isinstance(orch, ExternalOrchestratorBindings)

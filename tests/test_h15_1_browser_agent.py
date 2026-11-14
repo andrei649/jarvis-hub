@@ -62,7 +62,8 @@ def test_classify_step():
 
 # ── preview (governance dry-run) ──────────────────────────────────
 
-def test_preview_classifies_each_step():
+def test_preview_classifies_each_step(monkeypatch):
+    monkeypatch.setattr("core.security.ssrf.check_ssrf", lambda _url: None)
     gb = GovernedBrowser(policy=BrowserPolicy(["example.com"]))
     plan = [
         {"action": "navigate", "url": "https://example.com"},
@@ -196,7 +197,8 @@ def client():
     return TestClient(web.app)
 
 
-def test_endpoint_check_and_preview(client):
+def test_endpoint_check_and_preview(client, monkeypatch):
+    monkeypatch.setattr("agents.core.security.ssrf.check_ssrf", lambda _url: None)
     chk = client.post("/api/browser/check",
                       json={"url": "https://example.com/x", "allowlist": ["example.com"]})
     assert chk.status_code == 200 and chk.json()["allowed"] is True

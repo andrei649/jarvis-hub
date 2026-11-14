@@ -96,7 +96,10 @@ class NativePromptCards:
         data = f"h067:{card.token}:{card.revision}:{action}"
         if len(data.encode("ascii")) > 64:
             raise ValueError("callback data exceeds Telegram's limit")
-        return {"text": text, "callback_data": data}
+        from .outbound_safety import sanitize_label
+
+        # H069 review M3: a choice label is model-authored; it passes the outbound gate.
+        return {"text": sanitize_label(text), "callback_data": data}
 
     def _markup(self, card: _Card, prompt: Prompt) -> dict:
         rows: list[list[dict[str, str]]] = []

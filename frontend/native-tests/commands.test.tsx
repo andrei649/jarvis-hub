@@ -10,6 +10,11 @@ const KEY = 'jarvis.server.config.v1';
 const config = { baseUrl: 'https://hub.test/', token: 'user', adminToken: 'owner' };
 const items = [{ name: 'status', command: '/status', usage: '/status', description: 'Show hub status', tier: 'user' },
   { name: 'restart', command: '/restart', usage: '/restart <service>', description: 'Restart a service', tier: 'admin' }];
+const shortcuts = [
+  { kind: 'quick', name: 'backup', command: '/backup', usage: '/backup', description: 'Run the backup shortcut', tier: 'admin' },
+  { kind: 'skill', name: 'web-research', command: '/web-research', usage: '/web-research', description: 'Use the web research skill', tier: 'admin' },
+  { kind: 'bundle', name: 'daily-brief', command: '/bundle daily-brief', usage: '/bundle daily-brief', description: 'Load the daily brief bundle', tier: 'admin' },
+];
 const reply = (data: unknown, status = 200) => ({ ok: status < 400, status, json: async () => data });
 let server: ReturnType<typeof useServer>;
 function Probe() { server = useServer(); return <ChatScreen onGoToSettings={() => {}} />; }
@@ -38,10 +43,53 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 it('uses both configured chat credentials and returns the live catalog', async () => {
   const result = await fetchCommands(config, new AbortController().signal);
-  expect(result).toEqual({ status: 'available', commands: items });
+  expect(result).toEqual({ status: 'available', commands: items, shortcuts: [], truncated: false, shortcutsUnavailable: false });
   expect(fetch).toHaveBeenCalledWith('https://hub.test/api/commands', expect.objectContaining({
     method: 'GET', headers: expect.objectContaining({ 'X-User-Token': 'user', 'X-Admin-Token': 'owner' }),
   }));
+});
+
+it('accepts bounded shortcut rows and marks a partial catalog', async () => {
+  vi.mocked(fetch).mockResolvedValue(reply({ ok: true, commands: items, shortcuts, truncated: true,
+    shortcuts_unavailable: true }) as Response);
+  expect(await fetchCommands(config, new AbortController().signal)).toEqual({ status: 'available', commands: items,
+    shortcuts, truncated: true, shortcutsUnavailable: true });
+});
+
+it('rejects malformed or oversized shortcut rows', async () => {
+  const bad = [
+    [{ ...shortcuts[0], command: '/backup now' }],
+    [{ ...shortcuts[1], command: '/web_research' }],
+    [{ ...shortcuts[1], name: '9web', command: '/9web' }],
+    [{ ...shortcuts[1], name: 'Web', command: '/Web' }],
+    [{ ...shortcuts[2], command: '/daily-brief' }],
+    [{ ...shortcuts[0], tier: 'user' }],
+    [{ ...shortcuts[0], name: 'bad\nname' }],
+    Array(255).fill(shortcuts[0]),
+  ];
+  for (const rows of bad) {
+    vi.mocked(fetch).mockResolvedValueOnce(reply({ ok: true, commands: items, shortcuts: rows }) as Response);
+    await expect(fetchCommands(config, new AbortController().signal)).rejects.toThrow('Invalid command catalog');
+  }
+  vi.mocked(fetch).mockResolvedValueOnce(reply({ ok: true, commands: items, shortcuts,
+    shortcuts_unavailable: 'yes' }) as Response);
+  await expect(fetchCommands(config, new AbortController().signal)).rejects.toThrow('Invalid command catalog');
+});
+
+it('lists shortcut kinds and inserts a choice without sending', async () => {
+  vi.mocked(fetch).mockImplementation(async url => reply(String(url).endsWith('/api/commands')
+    ? { ok: true, commands: items, shortcuts, truncated: true, shortcuts_unavailable: true } : { agents: [] }) as Response);
+  mount(); await screen.findByPlaceholderText('Message Jarvis…');
+  fireEvent.click(screen.getByText('Commands'));
+  await screen.findByLabelText('Insert /bundle daily-brief in message');
+  expect(screen.getByText('Quick command · Owner')).toBeTruthy();
+  expect(screen.getByText('Skill · Owner')).toBeTruthy();
+  expect(screen.getByText('Bundle · Owner')).toBeTruthy();
+  expect(screen.getByText(/catalog is truncated/i)).toBeTruthy();
+  expect(screen.getByText(/some shortcuts are unavailable/i)).toBeTruthy();
+  fireEvent.click(screen.getByLabelText('Insert /bundle daily-brief in message'));
+  expect((screen.getByPlaceholderText('Message Jarvis…') as HTMLInputElement).value).toBe('/bundle daily-brief');
+  expect(ChatXHR.latest).toBeUndefined();
 });
 
 it('uses admin-only credentials and distinguishes the hub unavailable response', async () => {
@@ -166,8 +214,19 @@ it('aborts and fences old-hub results after a connection change', async () => {
   const signal = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('/api/commands'))![1]!.signal!;
   await act(async () => server.updateConfig({ ...config, baseUrl: 'https://other.test' }));
   expect(signal.aborted).toBe(true);
-  await act(async () => release(reply({ ok: true, commands: items })));
+  await act(async () => release(reply({ ok: true, commands: items, shortcuts })));
   expect(screen.queryByText('/restart')).toBeNull();
+  expect(screen.queryByLabelText('Insert /bundle daily-brief in message')).toBeNull();
+});
+
+it('clears owner shortcuts when the credential changes', async () => {
+  mount(); await screen.findByPlaceholderText('Message Jarvis…');
+  vi.mocked(fetch).mockImplementation(async url => reply(String(url).endsWith('/api/commands')
+    ? { ok: true, commands: items, shortcuts } : { agents: [] }) as Response);
+  fireEvent.click(screen.getByText('Commands'));
+  await screen.findByLabelText('Insert /backup in message');
+  await act(async () => server.updateConfig({ ...config, adminToken: '' }));
+  expect(screen.queryByLabelText('Insert /backup in message')).toBeNull();
 });
 
 it('aborts a pending catalog read when the chat screen unmounts', async () => {
