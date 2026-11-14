@@ -423,6 +423,9 @@ DEFAULTS: list[dict[str, Any]] = [
     # H674 — a compaction summary never holds a turn past this; the summarizer is cut after this long quiet.
     dict(category="memory",  key="compression_max_turn_hold_seconds", value=10,   label="Wait at most this many seconds for a conversation summary before answering (0 = never wait)", kind="number"),
     dict(category="memory",  key="compression_summary_idle_seconds", value=60,    label="Stop a conversation summary that sends nothing for this many seconds", kind="number"),
+    # H434 — pluggable ContextEngine (default = ContextCompressor) and owner switch to silence compaction status lines.
+    dict(category="memory",  key="context_engine",   value="default",             label="Context engine implementation (default = built-in compressor)", kind="text"),
+    dict(category="memory",  key="silence_compaction_status", value=False,        label="Silence compaction status lines on replies", kind="toggle"),
     dict(category="memory",  key="persist",          value=True,                  label="Persist to disk",    kind="toggle"),
     # O26-P0.3 (F2): long-term recall was read via get_setting but never seeded,
     # so it could not be enabled from the admin UI at all (put_category refuses

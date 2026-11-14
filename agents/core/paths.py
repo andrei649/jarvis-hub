@@ -157,12 +157,45 @@ def _profile_raw(environ: "Mapping[str, str] | None" = None) -> str:
     return env_str(PROFILE_ENV).strip()
 
 
+def _unprofiled_root(environ: "Mapping[str, str] | None" = None) -> Path:
+    source = os.environ if environ is None else environ
+    env = str(source.get("JARVIS_HOME", "") or "").strip() or str(source.get("JARVIS_MEMORY_DIR", "") or "").strip()
+    if env:
+        return Path(env).expanduser()
+    home = user_home(environ)
+    return home / "memory" if home is not None else _DEFAULT_ROOT
+
+
+def _resolve_alias_token(raw: str, base: Path) -> str:
+    p_root = base.parent / f"{base.name}-profiles"
+    direct = p_root / raw
+    if direct.is_dir() and not direct.is_symlink():
+        return raw
+    reg_path = p_root / "_registry.json"
+    if not reg_path.is_file() or reg_path.is_symlink():
+        return raw
+    try:
+        import json
+
+        parsed = json.loads(reg_path.read_text(encoding="utf-8"))
+        aliases = parsed.get("aliases") if isinstance(parsed, dict) else None
+        target = aliases.get(raw) if isinstance(aliases, Mapping) else None
+        if isinstance(target, str) and _PROFILE_RE.match(target):
+            return target
+    except (OSError, ValueError):
+        return raw
+    return raw
+
+
 def profile_name(environ: "Mapping[str, str] | None" = None) -> "str | None":
     """The active profile, or None for the default one (unset, blank or ``default``)."""
     raw = _profile_raw(environ)
     if not raw or raw == "default":
         return None
-    return raw if _PROFILE_RE.match(raw) else None
+    if not _PROFILE_RE.match(raw):
+        return None
+    resolved = _resolve_alias_token(raw, _unprofiled_root(environ))
+    return None if resolved == "default" else resolved
 
 
 def profile_error(environ: "Mapping[str, str] | None" = None) -> "str | None":
@@ -184,12 +217,7 @@ def install_root(environ: "Mapping[str, str] | None" = None) -> Path:
     refused = profile_error(environ)
     if refused:
         raise RuntimeError(refused)
-    source = os.environ if environ is None else environ
-    env = str(source.get("JARVIS_HOME", "") or "").strip() or str(source.get("JARVIS_MEMORY_DIR", "") or "").strip()
-    if env:
-        return Path(env).expanduser()
-    home = user_home(environ)
-    return home / "memory" if home is not None else _DEFAULT_ROOT
+    return _unprofiled_root(environ)
 
 
 def profiles_root(base: "Path | None" = None) -> Path:

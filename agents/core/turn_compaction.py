@@ -36,6 +36,7 @@ class TurnCompaction:
     _warned: bool = False
     lifetime: TurnLifetime = field(default_factory=TurnLifetime)
     _route_key: tuple | None = None
+    last_switch_warning: dict | None = None
 
     def __post_init__(self):
         self.attempts = CompressionAttempts(self.max_attempts)
@@ -46,11 +47,25 @@ class TurnCompaction:
             self._warned = prior._warned
             self.threshold_tokens = prior.threshold_tokens
             self._route_key = prior._route_key
+            self.last_switch_warning = prior.last_switch_warning
         self.previous = None
 
-    def bind_route(self, instance: str, model: str, window: int, threshold: int) -> None:
+    def bind_route(self, instance: str, model: str, window: int, threshold: int, *, current_tokens: int = 0) -> None:
         key = (str(instance), str(model), int(window))
         if self._route_key is not None and self._route_key != key:
+            prev_model = str(self._route_key[1])
+            prev_window = int(self._route_key[2])
+            if prev_model != str(model) and 0 < int(window) < prev_window:
+                from .memory.context_engine import check_context_switch_guard
+
+                self.last_switch_warning = check_context_switch_guard(
+                    prev_model,
+                    str(model),
+                    current_tokens=current_tokens,
+                    previous_window=prev_window,
+                    new_window=int(window),
+                    emit_notice=True,
+                )
             self.attempts = CompressionAttempts(self.max_attempts)
             self._warned = False
         elif self.threshold_tokens > 0 and self.threshold_tokens != threshold:

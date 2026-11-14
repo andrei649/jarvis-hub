@@ -59,6 +59,15 @@ class SmartPolicy:
         except Exception:
             return False
 
+    def allowlist_permits(self, command: str, patterns: tuple[str, ...] | list[str] | None = None) -> bool:
+        """True only when *command* clears ``command_allowed`` AND matches the safe command allowlist."""
+        if not self.command_allowed(command):
+            return False
+        from .command_allowlist import CommandAllowlistStore, evaluate_allowlist
+
+        rules = CommandAllowlistStore().list_patterns() if patterns is None else patterns
+        return evaluate_allowlist(command, rules)["matched"] is True
+
 
 @dataclass(frozen=True)
 class SmartApprovalResult:

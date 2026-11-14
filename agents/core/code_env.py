@@ -23,6 +23,11 @@ from itertools import islice
 from threading import RLock
 
 from agents.core.llm.hermes_provider_table import ADOPTED_MODEL_PROVIDER_KEYS
+from agents.core.security.env_write_guard import (
+    SECURITY_POLICY_ENV_NAMES as _SECURITY_POLICY_ENV_NAMES,
+    SHARED_CONTROL_ENV_NAMES as _CONTROL_NAMES,
+    SHARED_CONTROL_ENV_PREFIXES as _CONTROL_PREFIXES,
+)
 
 _NAME = re.compile(r"[A-Z_][A-Z0-9_]{0,127}\Z")
 _MAX_ID_LENGTH = 256
@@ -77,25 +82,6 @@ _MANAGED_NAMES = frozenset({
     "IMAP_PASS", "NTFY_TOKEN", "NTFY_TOPIC", "NTFY_PUBLISH_TOPIC",
 }) | ADOPTED_MODEL_PROVIDER_KEYS  # the model providers adopted from Hermes (Adopt lane, slice 2)
 
-# These names either load code, alter the host's controlled child base, or carry
-# private RPC/control authority. They cannot be supplied by a skill or config.
-_CONTROL_NAMES = frozenset({
-    "PATH", "HOME", "USER", "LOGNAME", "SHELL", "TERM", "TMP", "TEMP", "TMPDIR",
-    "TZ", "LANG", "ENV", "BASH_ENV", "PROMPT_COMMAND", "NODE_OPTIONS", "RUBYOPT",
-    "PERL5OPT", "JAVA_TOOL_OPTIONS", "ELECTRON_RUN_AS_NODE", "SSL_CERT_FILE",
-    "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "VIRTUAL_ENV",
-    "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "PATHEXT", "APPDATA",
-    "LOCALAPPDATA", "USERPROFILE", "USERNAME", "HOMEDRIVE", "HOMEPATH",
-    # RB-2: the hub's own notes of which variables were spelled NERVA_ (env_alias)
-    "_NERVA_ENV_PREFERRED", "_NERVA_ENV_PREFERRED_PID",
-})
-_CONTROL_PREFIXES = (
-    "PYTHON", "LD_", "DYLD_", "GIT_CONFIG", "JARVIS_RPC_", "HERMES_RPC_",
-    "JARVIS_TOOL_RPC_", "HERMES_TOOL_RPC_", "GATEWAY_RELAY_", "CODEX_",
-    "LC_", "XDG_", "CONDA_",
-)
-
-
 def _valid_name(name: object) -> bool:
     return isinstance(name, str) and _NAME.fullmatch(name) is not None
 
@@ -104,7 +90,7 @@ def _passable_name(name: object) -> bool:
     if not _valid_name(name):
         return False
     upper = name.upper()
-    if upper in _MANAGED_NAMES or upper in _CONTROL_NAMES:
+    if upper in _MANAGED_NAMES or upper in _CONTROL_NAMES or upper in _SECURITY_POLICY_ENV_NAMES:
         return False
     if upper.startswith(_CONTROL_PREFIXES):
         return False

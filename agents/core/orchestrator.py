@@ -6623,7 +6623,7 @@ class Orchestrator:
                 from .route_compaction import HistoryStage
                 return HistoryStage("", lambda: None)
             return ""
-        from .context_compressor import ContextCompressor
+        from .memory.context_engine import load_context_engine
         summarizer = None
         if self.get_setting("memory.compression_summarizer", False):
             summarizer = self._compression_summarizer()
@@ -6633,15 +6633,30 @@ class Orchestrator:
         prior = cache.get(sid) if summarizer is not None and micro is None else None
         if tainted_history and prior is not None and prior.get("summary_tainted") is not True:
             prior = None
-        compressor = ContextCompressor(
-            summarizer=summarizer,
-            max_tokens=int(self.get_setting("memory.compression_max_tokens", 2000)),
-            keep_first=int(self.get_setting("memory.compression_keep_first", 0) or 0),
-            structured=summarizer is not None,
-            checkpoint=_precompress_checkpoint(self, sid),   # H427
-            gate=self._summary_gate(sid, cache, prior, tainted=tainted_history) if summarizer is not None else None,   # H674
-            untrusted_history=tainted_history,
-        )
+        engine_spec = str(self.get_setting("memory.context_engine", "default") or "default")
+        try:
+            compressor = load_context_engine(
+                engine_spec,
+                summarizer=summarizer,
+                max_tokens=int(self.get_setting("memory.compression_max_tokens", 2000)),
+                keep_first=int(self.get_setting("memory.compression_keep_first", 0) or 0),
+                structured=summarizer is not None,
+                checkpoint=_precompress_checkpoint(self, sid),   # H427
+                gate=self._summary_gate(sid, cache, prior, tainted=tainted_history) if summarizer is not None else None,   # H674
+                untrusted_history=tainted_history,
+            )
+        except ValueError:
+            logger.warning("Unknown memory.context_engine=%r; falling back to default", engine_spec)
+            compressor = load_context_engine(
+                "default",
+                summarizer=summarizer,
+                max_tokens=int(self.get_setting("memory.compression_max_tokens", 2000)),
+                keep_first=int(self.get_setting("memory.compression_keep_first", 0) or 0),
+                structured=summarizer is not None,
+                checkpoint=_precompress_checkpoint(self, sid),
+                gate=self._summary_gate(sid, cache, prior, tainted=tainted_history) if summarizer is not None else None,
+                untrusted_history=tainted_history,
+            )
         # The compaction path knows the model's own window, so a long run on a
         # local 32k model is bounded by the thing that actually limits it rather
         # than by a fixed token budget that is wrong for every model but one.
@@ -6694,7 +6709,8 @@ class Orchestrator:
         idle = False
         if turn_state is not None:
             turn_state.bind_route(snapshot.instance_id if snapshot is not None else "",
-                                  model, policy.window(model), threshold)
+                                  model, policy.window(model), threshold,
+                                  current_tokens=pressure)
             idle_after = self.get_setting("memory.compression_idle_after_seconds", 0)
             if type(idle_after) is int and idle_after > 0 and len(source_turns) >= 2:
                 from datetime import datetime

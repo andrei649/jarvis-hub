@@ -20,6 +20,25 @@ from contextvars import ContextVar
 #: nothing to say.
 _turn_notices: ContextVar[list[dict] | None] = ContextVar("jarvis_turn_notices", default=None)
 
+#: Compaction status notice codes silenced when the owner enables
+#: ``memory.silence_compaction_status`` (H434). Blocking/overflow and model-switch
+#: safety warnings stay visible even when status lines are silenced.
+COMPACTION_STATUS_CODES: frozenset[str] = frozenset({
+    "compaction_deferred",
+    "compaction_status",
+    "compaction_completed",
+})
+
+
+def compaction_status_silenced() -> bool:
+    """Whether the owner turned on ``memory.silence_compaction_status`` (H434)."""
+    try:
+        from . import safe_mode
+
+        return safe_mode.get_value("memory", "silence_compaction_status", False) is True
+    except Exception:
+        return False
+
 
 def open_turn_notices() -> tuple[list[dict], object]:
     """Start a fresh collector; the caller keeps the list and resets its own bind."""
@@ -39,9 +58,17 @@ def record_turn_notice(code: str, text: str) -> bool:
     sink = _turn_notices.get()
     if sink is None:
         return False
-    if not any(item.get("code") == code for item in sink):
-        sink.append({"code": str(code), "text": str(text)})
+    code_str = str(code)
+    if code_str in COMPACTION_STATUS_CODES and compaction_status_silenced():
+        return True
+    if not any(item.get("code") == code_str for item in sink):
+        sink.append({"code": code_str, "text": str(text)})
     return True
+
+
+def record_compaction_status(text: str, *, code: str = "compaction_status") -> bool:
+    """Record a compaction status footer line unless silenced by owner setting (H434)."""
+    return record_turn_notice(code, text)
 
 
 class FootedReply(str):
@@ -75,5 +102,13 @@ def spoken_text(message: object) -> str:
     return str(message or "")
 
 
-__all__ = ["FootedReply", "open_turn_notices", "record_turn_notice", "reset_turn_notices",
-           "spoken_text"]
+__all__ = [
+    "COMPACTION_STATUS_CODES",
+    "FootedReply",
+    "compaction_status_silenced",
+    "open_turn_notices",
+    "record_compaction_status",
+    "record_turn_notice",
+    "reset_turn_notices",
+    "spoken_text",
+]

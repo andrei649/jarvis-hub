@@ -27,9 +27,12 @@ from urllib.parse import quote, urlencode
 from agents.core.extensions.manifest import MAX_DECLARATIONS
 
 from . import service_install, skill_sources
+from .approvals_policy import POLICY_ACTIONS, configure_approvals_policy, run_approvals_policy
 from .client import HubClient, HubError, HubUnavailable, hub_url, is_loopback_url
 from .custom_endpoints import run as cmd_custom_provider
+from .env_cmd import cmd_env
 from .mcp_catalog import run as cmd_mcp
+from .profiles import cmd_profile
 from .rooms import run as cmd_rooms
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -216,6 +219,10 @@ def build_parser() -> argparse.ArgumentParser:
     configure_skins(verbs)
     from .import_cmd import register_parser as configure_import
     configure_import(verbs)
+    from .profiles import register_parser as configure_profiles
+    configure_profiles(verbs)
+    from .env_cmd import register_parser as configure_env
+    configure_env(verbs)
 
     from agents.core.kanban.cli_parser import build_parser as configure_kanban
     configure_kanban(verbs)
@@ -331,6 +338,7 @@ def build_parser() -> argparse.ArgumentParser:
         "mode", help="show or set how much runs without asking: auto|ask|off (owner)")
     approvals_mode.add_argument("value", nargs="?", metavar="auto|ask|off")
     approvals_mode.add_argument("--json", action="store_true")
+    configure_approvals_policy(approvals_verbs)
 
     curator = verbs.add_parser("curator", help="review and request owner-governed skill curation")
     curator_verbs = curator.add_subparsers(dest="action", required=True, metavar="action")
@@ -436,7 +444,8 @@ def build_parser() -> argparse.ArgumentParser:
         "explain",
         help="replay the real gates for an action without executing it (offline)",
     )
-    explain.add_argument("kind", help="action kind, e.g. writeback.notion.page or payment.send")
+    explain.add_argument("kind", nargs="?", help="action kind, e.g. writeback.notion.page or terminal.exec")
+    explain.add_argument("--command", help="shell command string for terminal.exec policy & variant dry-run")
     explain.add_argument("--title", default="")
     explain.add_argument("--payload", help="JSON object: target, amount, url, …")
     explain.add_argument("--tier", type=int, help="explicit risk tier 0-3 (else classified)")
@@ -2849,6 +2858,8 @@ def _cmd_approvals_mode(ns: argparse.Namespace, ctx: Context) -> int:
 
 
 def cmd_approvals(ns: argparse.Namespace, ctx: Context) -> int:
+    if ns.action in POLICY_ACTIONS:
+        return run_approvals_policy(ns, ctx)
     if ns.action == "mode":
         return _cmd_approvals_mode(ns, ctx)
     if ns.action == "list":
@@ -3463,6 +3474,7 @@ def explain_action(
     title: str = "",
     payload: Mapping[str, Any] | None = None,
     tier: int | None = None,
+    command: str | None = None,
     environ: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Replay the kernel's gates for one action, statically, from this box's data root.
@@ -3477,7 +3489,15 @@ def explain_action(
     from agents.core.autonomy.policy import AutonomyPolicy
     from agents.core.kernel.registry import classify
 
-    task: dict[str, Any] = {"kind": kind, "title": title, "payload": dict(payload or {})}
+    effective_payload = dict(payload or {})
+    shell_cmd = command
+    if shell_cmd is None and kind in ("terminal.exec", "toolrpc.terminal_run"):
+        raw_cmd = effective_payload.get("command")
+        if isinstance(raw_cmd, str) and raw_cmd.strip():
+            shell_cmd = raw_cmd
+    if shell_cmd is not None and "command" not in effective_payload:
+        effective_payload["command"] = shell_cmd
+    task: dict[str, Any] = {"kind": kind, "title": title, "payload": effective_payload}
     if tier is not None:
         task["risk_tier"] = tier
     policy = AutonomyPolicy()
@@ -3497,8 +3517,15 @@ def explain_action(
         approval_required = bool(preview["requires_approval"]) or classified >= 1
     else:
         approval_required = bool(preview["requires_approval"])
+    shell_policy: dict[str, Any] | None = None
+    if shell_cmd is not None:
+        from agents.core.autonomy.command_allowlist import explain_command_policy
+
+        shell_policy = explain_command_policy(shell_cmd, environ=environ, autonomy_mode=mode)
     if estop_state is not None:
         verdict = "DENY — emergency stop engaged"
+    elif shell_policy is not None and shell_policy["verdict"] == "deny":
+        verdict = f"DENY — {', '.join(shell_policy['reasons'])}"
     elif mediation is None:
         verdict = (
             "NO BROKER — no component of Nerva emits this kind; the gates above are what "
@@ -3518,7 +3545,9 @@ def explain_action(
         {"gate": "autonomy mode", "result": str(mode)},
         {"gate": "approval", "result": "required" if approval_required else "not required"},
     ]
-    return {
+    if shell_policy is not None:
+        path.append({"gate": "shell-policy", "result": f"{shell_policy['verdict']} ({', '.join(shell_policy['reasons'])})"})
+    out: dict[str, Any] = {
         "kind": kind,
         "title": title,
         "effects": preview["effects"],
@@ -3532,19 +3561,33 @@ def explain_action(
         "path": path,
         "note": "static replay from this data root; the running hub's live policy, spend and tokens may tighten this, never loosen it",
     }
+    if shell_policy is not None:
+        out["shell_policy"] = shell_policy
+    return out
 
 
 def cmd_kernel(ns: argparse.Namespace, ctx: Context) -> int:
+    kind = ns.kind or ("terminal.exec" if getattr(ns, "command", None) else None)
+    if not kind:
+        ctx.err.write("kernel explain requires an action kind or --command\n")
+        return EXIT_USAGE
     try:
         payload = _payload(ns.payload)
     except ValueError as exc:
         ctx.err.write(f"{exc}\n")
         return EXIT_USAGE
-    result = explain_action(ns.kind, title=ns.title, payload=payload, tier=ns.tier, environ=ctx.environ)
+    result = explain_action(
+        kind,
+        title=ns.title,
+        payload=payload,
+        tier=ns.tier,
+        command=getattr(ns, "command", None),
+        environ=ctx.environ,
+    )
     if ns.json:
         ctx.dump(result)
         return EXIT_OK
-    ctx.say(f"kernel explain: {ns.kind}")
+    ctx.say(f"kernel explain: {kind}")
     for step in result["path"]:
         ctx.say(f"  {step['gate']:14s} {step['result']}")
     if result["effects"]:
@@ -7597,6 +7640,8 @@ _VERBS: dict[str, Callable[[argparse.Namespace, Context], int]] = {
     "pets": cmd_pets,
     "skin": cmd_skin,
     "import": cmd_import,
+    "profile": cmd_profile,
+    "env": cmd_env,
     "rooms": cmd_rooms,
     "mcp": cmd_mcp,
     "webhook": cmd_webhook,
