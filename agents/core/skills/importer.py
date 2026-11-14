@@ -1093,7 +1093,7 @@ class SkillImporter:
                     data = json.load(f)
             except (json.JSONDecodeError, IOError):
                 continue
-            if data.get("imported") or data.get("source") in ("hermes", "openclaw"):
+            if data.get("imported") or data.get("source") in MIGRATION_SOURCES:
                 # H349: the install id says which install a usage row belongs to; it is the
                 # hub's own bookkeeping and is not served (this listing is an open route).
                 imported.append({k: v for k, v in data.items() if k != "install_id"})
@@ -1114,7 +1114,40 @@ class SkillImporter:
 # cross the ``kg.write`` kernel kind there; nothing here writes outside the
 # skills tree.
 
-MIGRATION_SOURCES: tuple[str, ...] = ("hermes", "openclaw", "claude-code")
+MIGRATION_SOURCES: tuple[str, ...] = ("hermes", "openclaw", "claude-code", "codex")
+
+# Documented Codex CLI (`~/.codex`) migration mapping (H012):
+# - `~/.codex/AGENTS.md` and `~/.codex/instructions.md` -> tainted persona preview at
+#   `<data_root>/imports/codex/persona_preview.md` (`applies_to_soul=False`; owner adopts manually).
+# - `~/.codex/memory.md`, `~/.codex/MEMORY.md`, `~/.codex/memories/MEMORY.md` -> tainted
+#   `MemoryFact` rows (`taint_source="import:codex"`) crossing `kg.write` into `PendingMemoryStore`.
+# - `~/.codex/config.toml`, `config.json`, `auth.json`, `.env` -> secret-bearing leaves parsed
+#   (including `[env]` and provider API keys) into `SecretStore` with masked-only reporting.
+# - `~/.codex/skills/**/SKILL.md` -> quarantined (`PENDING_REVIEW`) skills crossing `skill.install`.
+CODEX_MIGRATION_MAPPING: dict[str, object] = {
+    "root": "~/.codex",
+    "persona": {
+        "sources": ("AGENTS.md", "instructions.md"),
+        "target": "imports/codex/persona_preview.md",
+        "mode": "preview_only",
+    },
+    "memory": {
+        "sources": ("memory.md", "MEMORY.md", "memories/MEMORY.md"),
+        "target": "imports/imports.db:pending_memory",
+        "kernel_kind": "kg.write",
+        "taint_source": "import:codex",
+    },
+    "tokens": {
+        "sources": ("config.toml", "config.json", "auth.json", ".env"),
+        "target": "SecretStore",
+        "mode": "masked_report",
+    },
+    "skills": {
+        "sources": ("skills/**/SKILL.md",),
+        "target": "skills/<slug>/SKILL.md + PENDING_REVIEW",
+        "kernel_kind": "skill.install",
+    },
+}
 
 # Documented on-disk layouts (research: docs/research/2026-09-06-hermes-and-field-gap-matrix.md).
 # Globs are relative to the install root; a missing file simply yields nothing.
@@ -1138,6 +1171,13 @@ _MIGRATION_LAYOUTS: dict[str, dict[str, tuple[str, ...]]] = {
         "persona": ("CLAUDE.md",),
         "memory": ("projects/*/memory/MEMORY.md",),
         "tokens": ("settings.json",),
+        "skills": ("skills",),
+    },
+    "codex": {
+        "root": (".codex",),
+        "persona": ("AGENTS.md", "instructions.md"),
+        "memory": ("memory.md", "MEMORY.md", "memories/MEMORY.md"),
+        "tokens": ("config.toml", "config.json", "auth.json", ".env"),
         "skills": ("skills",),
     },
 }
