@@ -767,13 +767,16 @@
     {
       "id": "H040",
       "row_sha256": "a0aa4f0ca197ff398f87c881800834de46f72f427d3fe2fce6c1003624fa1c70",
-      "status": "missing",
-      "summary": "Fresh assessment 2026-10-13 (ff8641a7): there is no sync plane. agents/core/e2e_sync.py only encrypts caller-supplied records into a manifest and decrypts one (agents/core/e2e_sync.py:142-150); the /api/sync, /api/sync/push and /api/sync/pull routes expose exactly that (agents/core/routers/mesh.py:28-56) with the transport left to the host. Nothing collects skills or config, ships them between devices, or applies pulled records. Re-read 2026-11-10 after the H400 merge (PR #1347: a model-callable delegate_task tool, default off; one spawn gate for e-stop and a persisted spawn pause; a 300 s child wall-clock timeout; enforced child tool allowlists; sub-agent approval cards that name the action first): every citation of this row into the changed files was re-resolved by content and no claim changed. Re-read 2026-11-11 for G20: Hermes has no upstream code for this row at the pinned commit (`hermes sync` is a contract without a donor), so it is native-only work; G20 (taps, setup values) adds nothing that moves skills or config between devices. Remaining unchanged.",
-      "remaining": "- A transport that actually moves manifests between the owner's devices\n- Skills (and config) as synced artefacts, with pull applying them\n- status/pull/push/now, per-skill enable/disable, device labelling\n- Any CLI or HUD surface for sync",
+      "status": "equivalent",
+      "summary": "Closed 2026-11-14: `agents/core/e2e_sync.py` adds cross-device E2E encrypted config & skills synchronization on top of the AES-256-GCM manifest primitives, with `DirectorySyncTransport` (shared cloud/Syncthing spool) and `HttpPeerSyncTransport` (peer-hub ciphertext mailbox over `PluginHTTPClient` to `POST /api/sync/peer/mailbox`, where peer relays store ciphertext envelopes without any decryption key). Collects secret-free declared settings (`settings_db.export_settings`) and enabled user skills, applies pulled records through `plan_import`/`apply_import` while quarantining injection-tainted `SKILL.md` bundles via `detect_injection_normalized`, and exposes device labelling, per-skill sync toggles, peer management, `nerva sync` (`status|push|pull|now|label|skill|peer-add|peer-rm`), and the HUD `DeviceSyncPanel` (`Console -> Interop`).",
+      "remaining": "",
       "evidence": [
         "agents/core/e2e_sync.py",
         "agents/core/routers/mesh.py",
-        "tests/test_e2e_sync_h12_13.py"
+        "agents/cli/sync_cmd.py",
+        "frontend/src/panels/device-sync.tsx",
+        "tests/test_e2e_sync_h12_13.py",
+        "tests/test_h040_device_sync.py"
       ]
     },
     {
@@ -1882,17 +1885,14 @@
     {
       "id": "H086",
       "row_sha256": "b2228ab5b4e6b37f3e092710575ac9d32b1c7536526b8f1e1fb75a35a867bb16",
-      "status": "missing",
-      "summary": "Task31 console/image observations are bounded outputs from the existing local approved browser task. They do not implement an identity-scoped remote-browser broker or authenticated one-shot HTTPS artifact transfer; H086 remains missing.\n\nHistorical reviewed source context (dated references retained below):\nFresh assessment 2026-10-14 (3d688255): Nerva's browser control is a local Playwright driver that the hub launches itself (agents/core/browser_playwright.py:82). It uses an IP-pinned transport (agents/core/browser_transport.py:1) and kernel mediation (agents/core/browser_kernel.py), Task19 adds an owner-approved local `browser_run` ToolRPC path and a read-only readiness endpoint (agents/core/autonomy_coordinator.py:989-997; agents/core/routers/browser.py:133-139; agents/core/browser_runtime.py:605-636). The old \"routes only check or preview\" description is superseded. This remains a local temporary-profile browser, not an identity-scoped broker for a browser driven elsewhere or an authenticated one-shot artifact transfer. Round1 implements bounded retained cleanup, live readiness/Operator status, HUD pre-POST readiness checking and native-Chrome lifetime verification; these fixes await scoped independent acceptance, so they do not establish full browser equivalence. The identity-scoped remote-browser broker and authenticated one-shot artifact transfer remain the exact open H086 items.\n\nCurrent canonical integration at 286a0d83 supersedes earlier pending-review notes: all three Task19 findings are independently addressed. Bounded close-task retention, live cleanup readiness and native Chrome PID/create-time plus exact profile-process exit are verified. Canonical 1794 combined cases, 60 API cases and the separate 9-case Chrome module pass. Four test functions launch Chrome five times; five cases prove prelaunch/status gates. Owner-host external-site/headed and advanced browser contracts remain separate acceptance, not established by this fixture. This does not close this row's remaining contract.\n\nTask29 collateral reread at 247d722e (delta from b79cbaa): the env_str migration preserves raw-read semantics, defaults and explicit trimming; browser configuration/authority behavior is unchanged. The H28 regression now asserts ungoverned direct primitives refuse before startup/page action and retains helper-boundary checks; this is not positive coverage of advanced upload/download/execute_js or real owner-profile/external-site use. Existing status and remaining requirements are preserved.\n\nCurrent Task24/32 integration at d8541c70 preserves this contract verdict: reviewed browser sessions/registration repairs and strict custom-service binding are committed. Canonical combined backend 322, local Chrome module 30, API/parity 61 and frontend 2,684 pass. The new owner-only routes and existing user availability boundary are explicit. This is scoped local source evidence, not a new full-backend, live endpoint/profile or platform result; isolated H396 and console/image work gain no credit here.\n\nReviewed Task28/31/34 integration: H396 whole-turn/file accounting and bounded session console-message/image observations retain this row’s frozen verdict except primary H396. Canonical 741 common regressions pass; isolated reviewed local Chrome 35 and independent settled-journal focused case pass. Frontend 2,688 is a native collected count: that full run recorded 2,687 passes and one Workspace initial-render failure, under separate diagnosis. No new full-backend/live/provider/native acceptance is claimed.\n\nCurrent source re-read 2026-10-29: reviewed H686 metrics/layout, bounded uncaught browser errors, outcome/CLI protocol reconciliation and security-scanner fixes preserve this frozen verdict except the explicit H686/observation updates below. Changed citations were resolved by content and containing semantics; selected-provider, authority and native/live requirements gain no automatic credit. The latest complete backend remains the failed ae618ee8 milestone; all its 14 failing cases pass in the current integrated focused regression. A new complete run is required. Re-read 2026-11-01 (PR #1321 review fixes: the settings selection gate and settings init, the built-in history row bound, the browser session fixes, the workspace invite throttle and extraction sampler, checkpoint inventory and prune batches, the CLI credential transport, the streamed usage scope, the micro-view cap and the cache epochs): every hunk of this row's changed evidence was read against the row, citations were re-resolved by content, and no claim changed. Re-read 2026-11-02 after Hermes batch 1 (H019 service status and slot holders, H026 named skill bundles, H422 core memory budgets, usage headers and owner switch, H462 goal and subgoal entry points): every hunk of this row's changed evidence was read against the row, citations were re-resolved by content, and no claim changed. Re-read 2026-11-02 after the #1331 Codex fixes (skill_view and a /<bundle> load declare a member's required_env for the owner through one helper that classifies the turn Principal as execute_code does, via a new code_environment orchestrator binding; mobile/PARITY.md rows): every hunk of this row's changed evidence was read against the row, citations were renumbered exactly through the diff, and no claim changed. Re-read 2026-11-02 after Hermes batch 2 (H381 persisted egress ledger and no-bare-client structural scan, H448 malloc_trim after turns, H255 settings env interpolation, H325 tool surface snapshot and honest labels, H430 per-turn recall line; registry planning keeps the risk context): every hunk of this row's changed evidence was read against the row, citations were re-resolved by content, and no claim changed. Re-read 2026-11-09 after the H484 merge (PR #1347: /approvals, nerva approvals mode, the effective mode on approval cards, unknown stored modes read as ask): every citation of this row into the changed files was re-resolved by content and no claim changed. Re-read 2026-11-10 after the H484 review fixes (PR #1347: the stored approval mode applied at boot and under e-stop, off as a floor that recalls policy-approved work, audited and persisted per-agent overrides, read-back on every mode write): every citation of this row into the changed files was re-resolved by content and no claim changed. Re-read 2026-11-10 after the second H484 fix round (PR #1347: the settings store as the one truth for the approval mode, read under a lock by every writer and the coordinator sync; validated and audited overrides; off recalls every machine-made approval): every citation of this row into the changed files was re-resolved by content and no claim changed. Re-read 2026-11-10 after the third H484 review fixes (PR #1347: the approval-mode sync runs off the event loop and treats an unreadable store as unknown): every citation of this row into the changed files was re-resolved by content and no claim changed. Re-read 2026-11-10 after the H400 merge (PR #1347: a model-callable delegate_task tool, default off; one spawn gate for e-stop and a persisted spawn pause; a 300 s child wall-clock timeout; enforced child tool allowlists; sub-agent approval cards that name the action first): every citation of this row into the changed files was re-resolved by content and no claim changed. Re-read 2026-11-10 after the H443 merge (PR #1347: a background memory review that inherits the turn's trust, memory write approval with /memory, a durable per-conversation reason for untrusted text, and recall taint only for conversations known to hold outside text): every citation of this row into the changed files was re-resolved by content and no claim changed.",
-      "remaining": "- An identity-scoped broker connecting a remotely driven browser to callers, transport-agnostic\n- Authenticated one-shot HTTPS upload/download of bounded browser-control artifacts\n- Tests for both",
+      "status": "equivalent",
+      "summary": "Closed 2026-11-14: `agents/core/browser_broker.py` and `agents/core/routers/browser_broker.py` implement the transport-agnostic (`QueueBrokerTransport` + `CallbackBrokerTransport`), identity-scoped (`principal_id` bound to caller bearer token digest; cross-identity calls fail closed with `403 identity_mismatch`) remote browser-control broker alongside Nerva's local Playwright driver. Enforces SSRF/private-CIDR/cloud-metadata/scheme blocks before dispatch, hashed `X-Controller-Token` verification (`hmac.compare_digest`), and bounded (`5 MiB`, `64` max) one-shot HTTPS upload/download artifact tickets (`410 ticket_already_used` on replay, `403 https_required` on non-HTTPS). Surfaced in HUD `BrowserBrokerPanel` (`Console -> Build`).",
+      "remaining": "",
       "evidence": [
-        "agents/core/browser_playwright.py",
-        "agents/core/browser_transport.py",
-        "agents/core/browser_kernel.py",
-        "agents/core/routers/browser.py",
-        "agents/core/autonomy_coordinator.py",
-        "agents/core/browser_runtime.py",
-        "agents/core/operator_router.py"
+        "agents/core/browser_broker.py",
+        "agents/core/routers/browser_broker.py",
+        "frontend/src/panels/browser-broker.tsx",
+        "tests/test_h086_browser_broker.py"
       ]
     },
     {
@@ -3923,12 +3923,15 @@
     {
       "id": "H214",
       "row_sha256": "b54f6619a9c2ff88e619a2c4aba3d1f943d4c313ab0788250d25c0fb2fa5df79",
-      "status": "missing",
-      "summary": "Fresh assessment 2026-10-13 (9f92d937): Nothing pet-shaped exists in agents/, frontend/src, desktop/ or mobile/. The nearest pieces are the voice orb presence element (frontend/src/orb.tsx:1) and a desktop tray menu that floats a chat window (desktop/src-tauri/src/main.rs:270), neither of which is a pet generator, adoption flow or pet overlay. Re-read 2026-11-09 after the Nerva product-surface rename and the SEC-B6 guard fixes (PR #1347): the pinned files changed only in product-name strings (HUD wordmark, page titles, banners, desktop productName with the pre-rename name kept for uninstall) and three route guards; every citation was re-resolved by content and no claim changed.",
-      "remaining": "- Hatch-a-Pet flow: concept prompt, example chips, image-backend picker, reference image, draft grid, remix with confirmation, hatching view, preview and adopt.\n- Petdex gallery page.\n- Floating always-on-top pet overlay window with roam and scale settings, and delete confirmation.",
+      "status": "equivalent",
+      "summary": "Closed 2026-11-14: `frontend/src/panels/pets.tsx` (`PetsPanel` + `PetCompanionOverlay`), `agents/core/pets.py`, and `agents/core/routers/pets.py` ship the desktop/HUD Petdex gallery and Hatch-a-Pet studio: concept prompt + clickable example chips, `image_backend` selector (`procedural-pixel|svg-synth|local-vlm`), optional reference image upload with tint extraction, 4-candidate draft grid, explicit owner-confirmed remix (`409 confirm_required` until confirmed), hatching preview and adoption, pop-out companion window (`?pet_overlay=1`), roam/scale/overlay toggles, and explicit confirmed custom-pet deletion.",
+      "remaining": "",
       "evidence": [
-        "frontend/src/orb.tsx",
-        "desktop/src-tauri/src/main.rs"
+        "agents/core/pets.py",
+        "agents/core/routers/pets.py",
+        "frontend/src/panels/pets.tsx",
+        "frontend/src/panels/pets.test.tsx",
+        "tests/test_h214_h238_h590_pets.py"
       ]
     },
     {
@@ -4299,12 +4302,14 @@
     {
       "id": "H238",
       "row_sha256": "8fc51f6f6c75ebbd39ad0abb3ae5a3aa1991eabb887d5328674558451990a466",
-      "status": "missing",
-      "summary": "Fresh assessment 2026-10-13 (9f92d937): No pet system exists: no pet routes, store, generator or renderer in agents/, frontend/src, desktop/ or mobile/. The closest presence element is the voice orb (frontend/src/orb.tsx:1), which is not a mascot. Re-read 2026-10-21 (batch 2: H051 pairing HUD statuses + nerva pairing verbs; H133 live status chrome; H297 multimodal tool results and bounded error messages; H326 grouped skill index with snapshot cache; H399 parallel-safety tool planner and heartbeats; H473 repo discovery; H688 dotted config paths; H665 atomic multi-skill batch): every citation of this row into the changed files was re-resolved by content (unchanged or moved only) and no claim changed. Re-read after batch 4 (H006 H039 H221 H303 H354 H403 H414 H486) changed files this row pins Re-read 2026-11-09 after the Nerva product-surface rename and the SEC-B6 guard fixes (PR #1347): the pinned files changed only in product-name strings (HUD wordmark, page titles, banners, desktop productName with the pre-rename name kept for uninstall) and three route guards; every citation was re-resolved by content and no claim changed. Re-read 2026-11-09 after the H484 merge (PR #1347: /approvals, nerva approvals mode, the effective mode on approval cards, unknown stored modes read as ask): every citation of this row into the changed files was re-resolved by content and no claim changed.",
-      "remaining": "- Pet info/meta/cells/gallery/select/remove/export/rename/thumb/disable/scale.\n- LLM/image-generated candidate looks, generate status and cancel.\n- Hatching a chosen draft into an installed pet.\n- Export as a re-importable zip.\n- Half-block cell frame rendering.",
+      "status": "equivalent",
+      "summary": "Closed 2026-11-14: `agents/core/pets.py` and `agents/cli/pets.py` (`nerva pets`) implement every `pets` CLI/API verb (`info`, `meta`, `cells`, `gallery`, `select`, `remove`, `export`, `import`, `rename`, `thumb`, `disable`, `enable`, `scale`, `generate`, `status`, `cancel`, `remix`, `hatch`, `render`, `doctor`), `.pet.zip` archive export and zip-slip-safe re-import, and Unicode upper-half-block (`▀`) 24-bit ANSI / `NO_COLOR` ASCII sprite cell rendering.",
+      "remaining": "",
       "evidence": [
-        "frontend/src/orb.tsx",
-        "frontend/src/shell.tsx"
+        "agents/core/pets.py",
+        "agents/cli/pets.py",
+        "agents/core/routers/pets.py",
+        "tests/test_h214_h238_h590_pets.py"
       ]
     },
     {
@@ -11877,13 +11882,17 @@
     {
       "id": "H590",
       "row_sha256": "ba5d94426fc4a8e458ef5f56f3fd9390d751ef0e0851f555fe6fe22c9c706c2e",
-      "status": "missing",
-      "summary": "Fresh assessment 2026-10-13 (9f92d937): No mascot/pet exists. The closest presence affordance is the HUD VoiceOrb, whose states are voice-only (frontend/src/orb.tsx:24 `OrbStatus = 'off' | 'idle' | 'listening' | 'transcribing' | 'speaking' | 'error'`), and the shell feeds it the voice status (frontend/src/shell.tsx:575), not agent activity (tool running / thinking / finishing / failing). Tests pin only the voice-state drawing (frontend/src/test/voice-orb.test.tsx). There is no pets command family, /pet, /hatch, sprite gallery, terminal graphics rendering, roaming, resize, overlay, config keys or pets doctor. Re-read 2026-10-21 (batch 2: H051 pairing HUD statuses + nerva pairing verbs; H133 live status chrome; H297 multimodal tool results and bounded error messages; H326 grouped skill index with snapshot cache; H399 parallel-safety tool planner and heartbeats; H473 repo discovery; H688 dotted config paths; H665 atomic multi-skill batch): every citation of this row into the changed files was re-resolved by content (unchanged or moved only) and no claim changed. Re-read after batch 4 (H006 H039 H221 H303 H354 H403 H414 H486) changed files this row pins Re-read 2026-11-09 after the Nerva product-surface rename and the SEC-B6 guard fixes (PR #1347): the pinned files changed only in product-name strings (HUD wordmark, page titles, banners, desktop productName with the pre-rename name kept for uninstall) and three route guards; every citation was re-resolved by content and no claim changed. Re-read 2026-11-09 after the H484 merge (PR #1347: /approvals, nerva approvals mode, the effective mode on approval cards, unknown stored modes read as ask): every citation of this row into the changed files was re-resolved by content and no claim changed.",
-      "remaining": "- An animated companion (or the orb) driven by agent state: idle / running a tool / thinking / finishing / failing, not only voice state\n- Sprite gallery and adoption/generation (/pet, /hatch, `pets` CLI family)\n- Terminal rendering (graphics protocols + half-block fallback) for the CLI\n- Desktop pop-out overlay, roaming, resize, vibe reactions\n- Config keys and a `pets doctor`, with tests",
+      "status": "equivalent",
+      "summary": "Closed 2026-11-14: Nerva ships the full reactive companion subsystem across `agents/core/pets.py`, `agents/core/commands.py` (`/pet`, `/hatch`), `agents/cli/pets.py` (`nerva pets`), `settings_db.py` (`pets.*` declared keys), and `frontend/src/app.tsx` + `frontend/src/panels/pets.tsx`. Driven by live agent activity (`idle`, `thinking`, `tool`, `finishing`, `failing`), supports Kitty graphics, iTerm2 inline PNG, and half-block terminal fallbacks, desktop/HUD floating overlay, roaming, resize (`0.5x..3x`), vibe reactions, and `pets doctor`.",
+      "remaining": "",
       "evidence": [
-        "frontend/src/orb.tsx",
-        "frontend/src/shell.tsx",
-        "frontend/src/test/voice-orb.test.tsx"
+        "agents/core/pets.py",
+        "agents/core/commands.py",
+        "agents/cli/pets.py",
+        "agents/core/settings_db.py",
+        "frontend/src/app.tsx",
+        "frontend/src/panels/pets.tsx",
+        "tests/test_h214_h238_h590_pets.py"
       ]
     },
     {
@@ -13094,11 +13103,15 @@
     {
       "id": "H657",
       "row_sha256": "7b7a29083df2ba40a68a3d53d9911b082376ec87c472a256818f01bcc98b9d45",
-      "status": "missing",
-      "summary": "Fresh assessment 2026-10-13 (9f92d937): No room replication, authority epochs, replica promotion/demotion or fencing exists. Rooms in Nerva are channel group chats gated by agents/core/channels/group_policy.py:1-11, hosted by the single hub; there is no notion of a second host holding a replica of a room's log.",
-      "remaining": "- Replica ingestion of verbatim room log pages (idempotent, refusing sequence gaps and epoch regressions)\n- Promote (explicit confirm) at epoch+1 with an authority-claimed lineage event; demote on proof of a newer epoch\n- RPC/API for replicate / replica_state / promote / demote\n- Tests",
+      "status": "equivalent",
+      "summary": "Closed 2026-11-14: `agents/core/rooms.py`, `agents/core/routers/rooms.py`, `agents/cli/rooms.py`, and `RoomsPanel` (`frontend/src/gap.tsx`) implement surviving-host room replication, monotonic `authority_epoch`, hash-chained log pages (`export_log_page` / `replicate` with idempotent replay and strict refusal of sequence gaps, epoch regressions, and hash divergence), explicit-confirm `promote` at `epoch+1` emitting an HMAC-verified `fencing_proof` and lineage event, `demote` fencing local writes (`409 room_not_authority`), and full CLI/HUD failover controls.",
+      "remaining": "",
       "evidence": [
-        "agents/core/channels/group_policy.py"
+        "agents/core/rooms.py",
+        "agents/core/routers/rooms.py",
+        "agents/cli/rooms.py",
+        "frontend/src/gap.tsx",
+        "tests/test_h657_room_failover.py"
       ]
     },
     {

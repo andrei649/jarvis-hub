@@ -306,6 +306,7 @@ def test_the_default_registry_names_the_first_wave(monkeypatch, tmp_path):
         "context", "compress",         # H412: the context meter, owner commands
         "verify",                      # G5 (H023/H405): project verification, an owner command
         "worktree", "review", "delegations",   # G18 (H474, H404, H401): owner commands
+        "pet", "hatch",                # H214/H238/H590: Petdex & Hatch-a-Pet owner commands
         "commands",                    # H079: paginated, caller-filtered discovery
     }
     # H058: a guest sees /help and /whoami until the owner allows more; allowed everything

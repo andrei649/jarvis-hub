@@ -26,6 +26,7 @@ import {
 } from './shortcuts';
 import { ShortcutsPanel } from './shortcuts-panel';
 import { PointerOverlay } from './pointer';
+import { PetCompanionOverlay, type AgentPetState } from './panels/pets';
 import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
 import { useVoice } from './voice';
 import { noticeMessages } from './turn-notices';
@@ -719,6 +720,23 @@ function App({ floating = false, shortcuts, onWorld }: {
   </div>;
   const questionPanel=question && <PendingQuestion key={question.id} question={question} onAnswer={answerQuestion} lang={lang}/>;
 
+  const petAgentState: AgentPetState = safeMode.enabled
+    ? 'failing'
+    : thinking
+      ? (String(thinking.label || '').toLowerCase().includes('tool') ? 'tool' : 'thinking')
+      : tasks.some((tk: any) => tk?.status === 'running')
+        ? 'tool'
+        : currentOutcome
+          ? 'finishing'
+          : 'idle';
+  const petStandalone = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('pet_overlay') === '1';
+
+  if (petStandalone) return (
+    <div {...rootAttrs} style={{ padding: 12, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <PetCompanionOverlay enabled={!demo} agentState={petAgentState} standalone />
+    </div>
+  );
+
   if (floating) return <RouteBoundary routeKey={`floating:${demo}`}><div {...rootAttrs} className="hud-root desktop-floating">
     <DesktopControls floating />
     {appearanceNotice}
@@ -823,6 +841,7 @@ function App({ floating = false, shortcuts, onWorld }: {
       {consoleOpen && <RouteBoundary overlay routeKey={`${route.path}:${demo}`}><ConsoleOverlay panelId={route.panel} onClose={() => setConsoleOpen(false)} /></RouteBoundary>}
       {firstRun && <RouteBoundary overlay><FirstRunGate onClose={() => setFirstRun(false)} /></RouteBoundary>}
       {!floating && <PointerOverlay enabled={!demo} />}
+      {!floating && <PetCompanionOverlay enabled={!demo} agentState={petAgentState} />}
       <button className="tool-btn" data-anchor="console" onClick={() => setConsoleOpen(true)} title={`console (${displayChord(chordOf(shortcutOverrides, 'view.console'))})`}
         style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 50 }}>▦ CONSOLE</button>
       <Palette open={palette} onClose={() => setPalette(false)} onMode={setMode}

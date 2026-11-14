@@ -73,6 +73,9 @@ import { JobsPanel } from './panels/jobs';
 import { ModelSetupPanel } from './panels/model-setup';
 import { HostReadinessPanel } from './panels/host-readiness';
 import { ExtensionInspectionPanel } from './panels/extension-inspection';
+import { BrowserBrokerPanel } from './panels/browser-broker';
+import { DeviceSyncPanel } from './panels/device-sync';
+import { PetsPanel } from './panels/pets';
 import { CompanyRoomPanel } from './panels/company-room';
 import { QuickbarPanel } from './panels/quickbar';
 import { MemoryConsolidatePanel } from './panels/memory-consolidate';
@@ -3414,19 +3417,67 @@ export function RoomsPanel() {
   const { d, e, loading, reload } = useApi('/api/rooms');
   const rooms = arr(d, 'rooms');
   const [name, setName] = useState(''); const [sel, setSel] = useState(''); const [msg, setMsg] = useState('');
+  const [showFailover, setShowFailover] = useState(false);
+  const [confirmPromote, setConfirmPromote] = useState(false);
+  const [failoverJson, setFailoverJson] = useState('');
+  const [failoverNote, setFailoverNote] = useState('');
   const hist = useApi(sel ? '/api/rooms/' + encodeURIComponent(sel) + '/history' : '/api/rooms', Boolean(sel));
+  const rep = useApi(sel ? `/api/rooms/${encodeURIComponent(sel)}/replica-state` : '/api/rooms', Boolean(sel));
   const turns = arr(hist.d, 'history');
   const inp = { background: 'var(--surface)', color: 'var(--ink)', border: '1px solid var(--panel-line)', borderRadius: 4, padding: 5, ...mono, fontSize: 11, flex: 1 };
   const create = () => { if (!name.trim()) return; apiPost('/api/rooms', { name: name.trim() }).then(() => { setName(''); reload(); }).catch(() => {}); };
   const send = () => {
     if (!sel || !msg.trim()) return;
     apiPost('/api/rooms/' + encodeURIComponent(sel) + '/message', { message: msg.trim() })
-      .then(() => { setMsg(''); hist.reload(); })
-      .catch(() => {});
+      .then(() => { setMsg(''); hist.reload(); rep.reload(); })
+      .catch((err: any) => { setFailoverNote(String(err?.message || 'message refused')); });
   };
+  const exportLogPage = () => {
+    if (!sel) return;
+    apiGet(`/api/rooms/${encodeURIComponent(sel)}/log-page`)
+      .then((page: any) => {
+        setFailoverJson(JSON.stringify(page, null, 2));
+        setFailoverNote(`exported ${(page?.entries || []).length} log entries @ epoch ${page?.authority_epoch ?? 1}`);
+      })
+      .catch((err: any) => setFailoverNote(String(err?.message || 'export failed')));
+  };
+  const ingestReplicaPage = () => {
+    if (!sel || !failoverJson.trim()) return;
+    let parsed: any = null;
+    try { parsed = JSON.parse(failoverJson); } catch { setFailoverNote('invalid JSON log page'); return; }
+    apiPost(`/api/rooms/${encodeURIComponent(sel)}/replicate`, { page: parsed }, { admin: true })
+      .then((res: any) => {
+        setFailoverNote(`replicated ${res?.applied ?? 0} entries (skipped ${res?.skipped_duplicates ?? 0})`);
+        hist.reload(); rep.reload(); reload();
+      })
+      .catch((err: any) => setFailoverNote(String(err?.message || 'replicate refused')));
+  };
+  const promoteRoom = () => {
+    if (!sel) return;
+    apiPost(`/api/rooms/${encodeURIComponent(sel)}/promote`, { confirm: confirmPromote }, { admin: true })
+      .then((res: any) => {
+        if (res?.fencing_proof) setFailoverJson(JSON.stringify(res.fencing_proof, null, 2));
+        setConfirmPromote(false);
+        setFailoverNote(`promoted to owner @ epoch ${res?.authority_epoch}`);
+        rep.reload(); reload();
+      })
+      .catch((err: any) => setFailoverNote(String(err?.message || 'promote refused')));
+  };
+  const demoteRoom = () => {
+    if (!sel || !failoverJson.trim()) return;
+    let parsed: any = null;
+    try { parsed = JSON.parse(failoverJson); } catch { setFailoverNote('invalid JSON fencing proof'); return; }
+    apiPost(`/api/rooms/${encodeURIComponent(sel)}/demote`, { proof: parsed }, { admin: true })
+      .then((res: any) => {
+        setFailoverNote(`fenced @ epoch ${res?.authority_epoch} (${res?.authority_host || 'remote'})`);
+        rep.reload(); reload();
+      })
+      .catch((err: any) => setFailoverNote(String(err?.message || 'demote refused')));
+  };
+  const repData: any = rep.d || {};
   return <Card title="ROOMS" live={asLive(d)} sub={rooms.length} onReload={reload}>
     <State e={e} loading={loading} n={rooms.length} />
-    {rooms.slice(0, 10).map((r, i) => <Row key={i}><span style={{ ...mono, color: sel === (r.id || r.name) ? 'var(--accent)' : 'var(--accent-light)', cursor: 'pointer' }} onClick={() => setSel(r.id || r.name)}>{r.name || r.id}</span><span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>{(r.agents || []).join(', ')}</span></Row>)}
+    {rooms.slice(0, 10).map((r, i) => <Row key={i}><span style={{ ...mono, color: sel === (r.id || r.name) ? 'var(--accent)' : 'var(--accent-light)', cursor: 'pointer' }} onClick={() => { setSel(r.id || r.name); setFailoverNote(''); }}>{r.name || r.id}</span>{r.authority_role && <Tag c={r.authority_role === 'fenced' ? 'var(--warn, #e07a5f)' : 'var(--ink-2)'}>{r.authority_role}·e{r.authority_epoch ?? 1}</Tag>}<span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--ink-2)' }}>{(r.agents || []).join(', ')}</span></Row>)}
     <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
       <input value={name} onChange={(ev) => setName(ev.target.value)} placeholder="new room" style={inp} />
       <button className="tool-btn" onClick={create}>+ room</button>
@@ -3434,6 +3485,25 @@ export function RoomsPanel() {
     {sel && <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
       <input value={msg} onChange={(ev) => setMsg(ev.target.value)} placeholder={'message ' + sel + ' (@agent)'} onKeyDown={(ev) => { if (ev.key === 'Enter') send(); }} style={inp} />
       <button className="tool-btn" onClick={send}>send</button>
+      <button className="tool-btn" onClick={() => setShowFailover((v) => !v)} title="H657 room replica failover and fencing">{showFailover ? 'hide failover' : 'failover'}</button>
+    </div>}
+    {sel && showFailover && <div style={{ marginTop: 8, padding: 8, background: 'var(--surface)', border: '1px solid var(--panel-line)', borderRadius: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+        <Tag c={repData.authority_role === 'fenced' ? 'var(--warn, #e07a5f)' : 'var(--accent-light)'}>{repData.authority_role || 'owner'} · epoch {repData.authority_epoch ?? 1}</Tag>
+        <span style={{ ...mono, fontSize: 10, color: 'var(--ink-2)' }}>host {repData.authority_host || 'local'} · seq {repData.last_seq ?? 0}</span>
+        <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={exportLogPage}>export page</button>
+        <button className="tool-btn" onClick={ingestReplicaPage}>replicate</button>
+        <button className="tool-btn" onClick={demoteRoom}>fence/demote</button>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <label style={{ ...mono, fontSize: 10, color: 'var(--ink-2)', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <input type="checkbox" checked={confirmPromote} onChange={(ev) => setConfirmPromote(ev.target.checked)} />
+          confirm epoch+1 takeover
+        </label>
+        <button className="tool-btn" disabled={!confirmPromote} onClick={promoteRoom}>promote replica</button>
+      </div>
+      <textarea value={failoverJson} onChange={(ev) => setFailoverJson(ev.target.value)} rows={3} placeholder="paste room log page JSON (replicate) or fencing proof JSON (demote)" style={{ ...inp, width: '100%', resize: 'vertical' }} />
+      {failoverNote && <div style={{ ...mono, fontSize: 10, color: 'var(--accent-light)', marginTop: 4 }}>{failoverNote}</div>}
     </div>}
     {sel && <div style={{ marginTop: 8, padding: 8, background: 'var(--surface)', border: '1px solid var(--panel-line)', borderRadius: 4 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
@@ -5914,6 +5984,9 @@ const PANEL_COMPONENTS = {
   ProviderQuotaPanel,
   CustomEndpointsPanel,
   MoaPresetsPanel,
+  BrowserBrokerPanel,
+  DeviceSyncPanel,
+  PetsPanel,
   InspectorPanel,
   MemoryHygienePanel,
   MemoryConsolidatePanel,
