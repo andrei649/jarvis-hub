@@ -179,7 +179,7 @@ The backlog itself has confirmed-stale rows; executing a stale plan wastes every
 
 ### Phase 3 — The reachability wave (weeks 3–8) — the DRA headline
 
-41 shipped, user-facing routes have **no graphical client caller** (DRA-15/36 — the CI-enforced
+18 shipped, user-facing routes have **no graphical client caller** (DRA-15/36 — the CI-enforced
 `UNCALLED_BACKLOG` punch list in `tests/test_hud_v2_parity.py`; it held 79 before this wave, and
 `tests/test_doc_reference_integrity.py` keeps this number honest). The owner-jobs routes under
 `/api/jobs` added 2026-09-07 (Hermes absorption, wave 2) were on this list for one commit — the
@@ -192,10 +192,10 @@ six are deliberate refusals (an agent-produced input, a route that swaps nothing
 construction, two duplicates of already-wired surfaces) and eight are deliberately-open UI work.
 HA-4i-S1 adds CLI extension inspection; its `/api/plugins/extensions` view still needs a
 dedicated HUD/mobile caller, separate from the existing acquisition panel.
-The local Kanban CLI/chat/backend integration adds explicitly tracked graphical-client gaps:
-board and task views, attachments, reviews, runs, diagnostics, configuration and other donor
-surfaces still need their HUD/native consumers. Signed-provider installation and credential
-routes also remain on this list. On 2026-11-14, 13 routes left the punch list (`54 -> 41`) with live
+The local Kanban CLI/chat/backend integration now has browser HUD consumers across all mounted
+`/api/kanban/*` routes (`41 -> 18`, surfacing explicit 503/409 refusals where backend Nerva
+adapters remain unbound); `/api/autonomy/kanban/dispatch` and native Kanban controls remain open.
+Signed-provider installation and credential routes also remain on this list. On 2026-11-14, 13 earlier routes left the punch list (`54 -> 41`) with live
 HUD consumers (`OAuthPanel` Nous Portal status/start/poll/logout, `SubAgentsPanel` transcript/result/claim,
 `A2AInboxPanel` outbound peer send, `MCPPanel` elicitation answer, `ChannelDeliveriesPanel` dead-target clear,
 and `JobsPanel` run history, completion ack and KV notepad keys); native mobile controls remain tracked separately,
