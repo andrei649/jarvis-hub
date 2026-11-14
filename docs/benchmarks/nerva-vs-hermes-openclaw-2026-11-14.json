@@ -1,13 +1,13 @@
 {
   "schema_version": "nerva.differentiator_bench.v1",
-  "suite_spec_sha256": "0c2ebda3580e4370f5b8cdfb50eb940443dc687859b159f399d69e2d739d8dd2",
+  "suite_spec_sha256": "b5778bfe81d21004d3da61fc2d4c5f9623f9ebb4600a1c141a22d84b34e966e6",
   "execution_mode": "hermetic_in_process",
   "live_network_llm_calls": 0,
-  "honest_scope_note": "All 5 benchmarks execute Nerva's real Python subsystems in-process against deterministic synthetic LLM/transport backends (0 live network LLM calls). Baseline columns measure representative single-chain / unguarded local-agent patterns (Hermes / OpenClaw architectural defaults without parallel MoA quorum, H513 per-member consent binding, H657 monotonic authority epochs, H086 principal-scoped SSRF/one-shot artifact tickets, or H040 secret-stripped authenticated E2E sync). In B5 (H040), `E2ESync.encrypt_record()` stamps `(ts, device)` metadata on ciphertext envelopes enabling canonical `(max_ts, device_id)` LWW sorting \u2014 exercised here via `_lww_order_manifests` in the benchmark harness, whereas production `DirectorySyncTransport.fetch_manifests()` orders lexically by device ID and `E2ESync.pull_state()` mailbox iteration without caller sorting follows arrival order. Live hardware tok/s and owner-gated live head-to-head runs are tracked separately in docs/HARDWARE_BENCHMARKS.md and docs/HERMES_HEAD_TO_HEAD.md.",
+  "honest_scope_note": "All 5 benchmarks execute Nerva's real Python subsystems in-process against deterministic synthetic LLM/transport backends (0 live network LLM calls). Fixture token telemetry uses len(text.encode('utf-8')) // 4 + 1 synthetic units, not a provider vocabulary or billed/live token count. Baseline columns measure representative single-chain / unguarded local-agent patterns (Hermes / OpenClaw architectural defaults without parallel MoA quorum, H513 per-member consent binding, H657 monotonic authority epochs, H086 principal-scoped SSRF/one-shot artifact tickets, or H040 secret-stripped authenticated E2E sync). In B5 (H040), `E2ESync.encrypt_record()` stamps `(ts, device)` metadata on ciphertext envelopes enabling canonical `(max_ts, device_id)` LWW sorting \u2014 exercised here via `_lww_order_manifests` in the benchmark harness, whereas production `DirectorySyncTransport.fetch_manifests()` orders lexically by device ID and `E2ESync.pull_state()` mailbox iteration without caller sorting follows arrival order. Live hardware tok/s and owner-gated live head-to-head runs are tracked separately in docs/HARDWARE_BENCHMARKS.md and docs/HERMES_HEAD_TO_HEAD.md.",
   "environment": {
-    "python_version": "3.12.13",
-    "platform": "Darwin",
-    "suite_wall_time_s": 8.827
+    "python_version": "3.12.14",
+    "platform": "Linux",
+    "suite_wall_time_s": 9.872
   },
   "summary": {
     "total_benchmarks": 5,
@@ -38,38 +38,38 @@
           {
             "round": "timeout_fault",
             "nerva_ok": true,
-            "nerva_proposer_wall_ms": 2010.67,
-            "nerva_sum_proposer_ms": 3964.66,
+            "nerva_proposer_wall_ms": 2002.85,
+            "nerva_sum_proposer_ms": 3955.41,
             "nerva_parallel_speedup": 1.97,
             "baseline_ok": false,
-            "baseline_wall_ms": 3954.76
+            "baseline_wall_ms": 3954.88
           },
           {
             "round": "transport_exception",
             "nerva_ok": true,
-            "nerva_proposer_wall_ms": 61.31,
-            "nerva_sum_proposer_ms": 244.46,
+            "nerva_proposer_wall_ms": 60.38,
+            "nerva_sum_proposer_ms": 240.92,
             "nerva_parallel_speedup": 3.99,
             "baseline_ok": false,
-            "baseline_wall_ms": 244.49
+            "baseline_wall_ms": 240.77
           },
           {
             "round": "degraded_reply",
             "nerva_ok": true,
-            "nerva_proposer_wall_ms": 60.39,
-            "nerva_sum_proposer_ms": 240.72,
+            "nerva_proposer_wall_ms": 60.4,
+            "nerva_sum_proposer_ms": 240.87,
             "nerva_parallel_speedup": 3.99,
             "baseline_ok": false,
-            "baseline_wall_ms": 244.67
+            "baseline_wall_ms": 241.57
           },
           {
             "round": "all_healthy",
             "nerva_ok": true,
-            "nerva_proposer_wall_ms": 61.35,
-            "nerva_sum_proposer_ms": 244.52,
+            "nerva_proposer_wall_ms": 60.39,
+            "nerva_sum_proposer_ms": 240.9,
             "nerva_parallel_speedup": 3.99,
             "baseline_ok": true,
-            "baseline_wall_ms": 244.26
+            "baseline_wall_ms": 240.78
           }
         ]
       }
@@ -87,7 +87,7 @@
         "nerva_local_grounded_synthesis_rate": 1.0,
         "strict_local_specialist_blocked_hybrid": true,
         "baseline_unconsented_cloud_calls_leaked": 4,
-        "baseline_unconsented_cloud_tokens_leaked": 78,
+        "baseline_unconsented_cloud_tokens_leaked": 71,
         "baseline_policy_block_accuracy": 0.0,
         "internal_principal_surface_checked": "internal"
       },
@@ -112,7 +112,7 @@
         "baseline_unfenced_stale_write_rejection_rate": 0.0
       },
       "timing_telemetry": {
-        "failover_promote_latency_ms": 0.5345
+        "failover_promote_latency_ms": 0.5866
       }
     },
     {

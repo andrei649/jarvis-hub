@@ -285,9 +285,9 @@ def _default_probe(command: str) -> tuple[CommandScanFinding, ...]:
 def _configured_fail_open() -> bool:
     """Read ``security.command_scanner_fail_open`` (default ``True`` = fail-open)."""
     try:
-        from agents.core import safe_mode
+        from agents.core import settings_db
 
-        val = safe_mode.get_value("security", "command_scanner_fail_open", True)
+        val = settings_db.get_value("security", "command_scanner_fail_open", True)
         if isinstance(val, bool):
             return val
         return bool(val)

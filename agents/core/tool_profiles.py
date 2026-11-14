@@ -80,6 +80,7 @@ from agents.core.action_origin import (
     TRUSTED_TURN_CHANNELS,
     current_action_origin,
 )
+from agents.core.env_config import resolve_spellings
 
 SURFACE_OPERATOR = "operator"
 SURFACE_INBOUND = "inbound"
@@ -133,13 +134,12 @@ def no_cache_check_fn(fn: Callable[[], bool]) -> Callable[[], bool]:
 def _check_scope_key(env: Mapping[str, str] | None = None) -> str:
     environ = env if env is not None else os.environ
     home = (
-        environ.get("NERVA_HOME")
-        or environ.get("JARVIS_HOME")
+        resolve_spellings(environ, "JARVIS_HOME")[0]
         or environ.get("HERMES_HOME")
-        or environ.get("JARVIS_MEMORY_DIR")
+        or resolve_spellings(environ, "JARVIS_MEMORY_DIR")[0]
         or ""
     )
-    profile = environ.get("NERVA_PROFILE") or environ.get("JARVIS_PROFILE") or "default"
+    profile = resolve_spellings(environ, "JARVIS_PROFILE")[0] or "default"
     return f"{home}::{profile}"
 
 

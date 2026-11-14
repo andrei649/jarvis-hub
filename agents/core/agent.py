@@ -970,7 +970,10 @@ class Agent:
         from .operating_prompt import clocked_prompt
         from .security.rag_guard import StreamingContextScrubber, strip_egress_memory_fences
 
-        raw_on_token = on_token
+        # Normalize the legacy falsey-sink opt-out before activity/runtime wrappers
+        # can turn it into an enabled callback and accidentally deliver raw text.
+        raw_on_token = on_token if on_token else None
+        on_token = raw_on_token
         egress_scrubber = StreamingContextScrubber() if raw_on_token is not None else None
         if egress_scrubber is not None and raw_on_token is not None:
             if inspect.iscoroutinefunction(raw_on_token):

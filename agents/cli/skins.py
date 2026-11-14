@@ -5,19 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from agents.core.skins import (
-    SkinValidationError,
-    format_spinner_done,
-    format_spinner_frame,
-    format_tool_line,
-    get_active_skin,
-    get_skin,
-    list_skins,
-    render_banner,
-    reset_active_skin,
-    set_active_skin,
-    validate_skin_file,
-)
+from agents.core.env_config import resolve_spellings
 
 
 def register_parser(verbs):
@@ -56,14 +44,34 @@ def register_parser(verbs):
 
 def _skins_dir_for(ctx) -> Path | None:
     env = getattr(ctx, "environ", None) or {}
-    for key in ("NERVA_HOME", "JARVIS_HOME"):
-        val = str(env.get(key, "") or "").strip()
-        if val:
-            return Path(val).expanduser() / "skins"
+    value, _ = resolve_spellings(env, "JARVIS_HOME")
+    val = str(value or "").strip()
+    if val:
+        return Path(val).expanduser() / "skins"
     return None
 
 
 def run(ns: argparse.Namespace, ctx) -> int:
+    try:
+        from agents.core.skins import (
+            SkinValidationError,
+            format_spinner_done,
+            format_spinner_frame,
+            format_tool_line,
+            get_active_skin,
+            get_skin,
+            list_skins,
+            render_banner,
+            reset_active_skin,
+            set_active_skin,
+            validate_skin_file,
+        )
+    except ModuleNotFoundError as exc:
+        if exc.name != "yaml":
+            raise
+        ctx.err.write("Skin commands require PyYAML; install the project's pinned dependencies.\n")
+        return 1
+
     op = ns.operation
     directory = _skins_dir_for(ctx)
 

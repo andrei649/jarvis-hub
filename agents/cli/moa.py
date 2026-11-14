@@ -82,7 +82,6 @@ def _run_offline(ns: argparse.Namespace, ctx) -> int:
             return _render_list(payload, ns, ctx)
 
         if action == "set":
-            check_llm_write(selection=False)
             proposers = [part.strip() for part in str(ns.proposers).split(",") if part.strip()]
             preset = validate_preset(
                 ns.name,

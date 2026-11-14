@@ -28,7 +28,7 @@ import os
 import re
 import shutil
 import stat
-import subprocess
+import subprocess  # nosec B404  # Argument-list codesign/boot probes below; no shell.
 import sys
 from collections.abc import Callable
 from pathlib import Path

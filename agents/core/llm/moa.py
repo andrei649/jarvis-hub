@@ -23,7 +23,9 @@ import asyncio
 import collections
 import contextlib
 import hashlib
+import inspect
 import json
+import logging
 import os
 import re
 import threading
@@ -34,7 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from agents.core.env_config import env_flag
+from agents.core.env_config import env_flag, env_str
 from agents.core.paths import data_root
 
 from .base import LLMBackend, is_degraded_reply
@@ -151,7 +153,7 @@ def validate_preset(
 
 
 def _store_path() -> Path:
-    if env_flag("JARVIS_TESTING", False) and not os.environ.get("JARVIS_HOME", "").strip():
+    if env_flag("JARVIS_TESTING", False) and not env_str("JARVIS_HOME").strip():
         # Keep unconfigured unit tests hermetic against a developer's local memory_logs/.
         return data_root() / ".test_isolated_moa_presets.json"
     return data_root() / "moa_presets.json"
@@ -228,8 +230,13 @@ def get_preset(name_or_model: str) -> MoAPreset | None:
 
 
 def save_preset(preset: MoAPreset) -> MoAPreset:
+    from agents.core.managed_scope import check_llm_write
+
     with _STORE_LOCK:
         raw = _read_raw()
+        # Editing the active committee changes model selection just like activation.
+        # Keep the active-state read, authority check and write under the same lock.
+        check_llm_write(selection=raw.get("active") == preset.name)
         presets = dict(raw["presets"])
         if preset.name not in presets and len(presets) >= MAX_PRESETS:
             raise MoAConfigError(f"maximum of {MAX_PRESETS} MoA presets reached")
@@ -412,8 +419,10 @@ class MoACommitteeBackend(LLMBackend):
                     w = probe(member_model)
                     if isinstance(w, int) and w > 0:
                         windows.append(w)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logging.getLogger(__name__).debug(
+                        "MoA context-window probe unavailable (%s)", type(exc).__name__,
+                    )
         return min(windows) if windows else 32768
 
     async def is_available(self) -> bool:
@@ -666,16 +675,24 @@ class MoACommitteeBackend(LLMBackend):
         await self._router.ensure_resident(self._agg_model, self._agg_route)
         t_agg = time.perf_counter()
         final = ""
+        streamer = self._agg_backend.generate_stream
+        # Match compaction_hold's optional callback dispatch: legacy cloud
+        # adapters support token streaming without an activity callback.
+        try:
+            accepts_activity = "on_activity" in inspect.signature(streamer).parameters
+        except (TypeError, ValueError):
+            accepts_activity = False
+        stream_options = {"on_activity": on_activity} if accepts_activity else {}
         try:
             final = await asyncio.wait_for(
-                self._agg_backend.generate_stream(
+                streamer(
                     self._agg_model,
                     synth_prompt,
                     system=system,
                     max_tokens=max_tokens,
                     temperature=min(temperature, self.preset.temperature),
                     on_token=on_token,
-                    on_activity=on_activity,
+                    **stream_options,
                 ),
                 timeout=self.preset.timeout_s,
             )

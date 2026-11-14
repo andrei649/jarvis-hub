@@ -93,7 +93,7 @@ _INSTALL_ID_RE = re.compile(r"[0-9a-f]{32}")
 #: Where an import can come from (review m2): the local installs the migration importer
 #: reads (``importer.MIGRATION_SOURCES``) and the two upstream catalogs. Anything else an
 #: install record names is shown only when it has the shape of a GitHub repository name.
-KNOWN_SOURCES = ("hermes", "openclaw", "claude-code")
+KNOWN_SOURCES = ("hermes", "openclaw", "claude-code", "codex")
 SOURCE_MARKETPLACE = "marketplace"       # only the marketplace installer's own marker says so
 _RESERVED_SOURCES = (SOURCE_MARKETPLACE, "bundled", "agent", "local", "unknown", "import", "nerva", "owner")
 _REPO_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,38}")
