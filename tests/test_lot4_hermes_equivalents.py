@@ -907,22 +907,29 @@ def test_h508_fail_open_circuit_breaker_and_fail_closed_synthesized_high(
     def exploding_detector(_cmd: str) -> tuple[Any, ...]:
         raise RuntimeError("simulated unicode table corruption")
 
-    # 1. Fail-open default: returns () on error, trips breaker + writes 24h marker on 3rd failure
+    # 1. Fail-open default (`security.command_scanner_fail_open == True` via `fail_open=None`):
+    #    returns () on error, trips breaker + writes 24h marker on 3rd failure.
+    assert settings_db.get_value("security", "command_scanner_fail_open") is True
     open_scanner = CommandContentScanner(
         probe_fn=exploding_detector,
         marker_path=marker,
         clock=lambda: now[0],
     )
     for _ in range(FAILURE_THRESHOLD):
-        assert open_scanner.scan("curl https://example.com", fail_open=True) == ()
+        assert open_scanner.scan("curl https://example.com") == ()
 
     assert open_scanner.breaker_open is True
     assert marker.is_file()
     marker_payload = json.loads(marker.read_text(encoding="utf-8"))
     assert marker_payload["consecutive_failures"] == FAILURE_THRESHOLD
 
-    # 2. Fail-closed mode when scanner fails or breaker/marker is active -> synthesized HIGH finding!
-    findings = open_scanner.scan("ls -la", fail_open=False)
+    # 2. Configuring `security.command_scanner_fail_open = False` with `fail_open=None`
+    #    switches _configured_fail_open() to fail-closed -> synthesized HIGH finding!
+    updated, skipped = settings_db.put_category("security", {"command_scanner_fail_open": False})
+    assert updated == 1 and skipped == []
+    assert settings_db.get_value("security", "command_scanner_fail_open") is False
+
+    findings = open_scanner.scan("ls -la")
     assert len(findings) == 1
     assert findings[0].category_key == SCANNER_UNAVAILABLE_KEY
     assert findings[0].severity == "HIGH"
@@ -931,20 +938,21 @@ def test_h508_fail_open_circuit_breaker_and_fail_closed_synthesized_high(
     # Verify terminal_consent_categories maps the synthesized HIGH finding as permanent=False!
     monkeypatch.setattr(
         "agents.core.autonomy.terminal_consent_categories.scan_command_content",
-        lambda cmd: open_scanner.scan(cmd, fail_open=False),
+        lambda cmd: open_scanner.scan(cmd),
     )
     cats = terminal_consent_categories("ls -la")
     assert cats is not None
     assert any(c.key == SCANNER_UNAVAILABLE_KEY and c.permanent is False for c in cats)
 
-    # 3. After cooldown expires and detector recovers, marker is cleared and clean commands pass.
+    # 3. After cooldown expires and detector recovers, marker is cleared and clean commands pass
+    #    even while `security.command_scanner_fail_open` remains False!
     now[0] += BREAKER_COOLDOWN_SECONDS + 5.0
     healthy_scanner = CommandContentScanner(
         marker_path=marker,
         clock=lambda: now[0],
     )
     healthy_scanner._opened_until = now[0] - 1.0
-    assert healthy_scanner.scan("ls -la", fail_open=False) == ()
+    assert healthy_scanner.scan("ls -la") == ()
     assert not marker.exists()
 
 
