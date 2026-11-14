@@ -7,15 +7,25 @@ Nerva governance and budget gate:
 1. ``JARVIS_STRICT_LOCAL`` process kill-switch
 2. Agent privacy floor (``LOCAL_ONLY_AGENTS`` and ``POLICY_LOCAL``)
 3. Agent model allowlist (``approved_models`` / ``ModelNotApprovedError``)
-4. H513 configuration-bound data-handling consent (``data_handling.authorize``)
+4. H513 configuration-bound data-handling consent (``data_handling.authorize``),
+   checked before reservation and re-checked per physical request by binding
+   ``data_handling.physical_request_scope`` around the cloud call
 5. Vendor-verified pricing + pre-flight per-turn & per-session USD budget caps
    (``cost_estimator.estimate_cost``, honoring ADV-078 ``priced`` fail-closed)
 6. Per-tier SLA wall-clock timeout bounds (``asyncio.wait_for``)
 
 Whenever cloud escalation is disallowed, unconsented, over-budget, or times out,
 the cascade degrades gracefully to local synthesis (`$0.00` marginal cloud spend,
-`0` leaked cloud tokens, `0` USD cap overruns) instead of failing the turn or
-silently overspending.
+`0` leaked cloud tokens) instead of failing the turn.
+
+Honest scope:
+  - Spend is *estimated*: settlement uses ``estimate_cost`` over
+    ``estimate_tokens(reply)``, not provider-reported usage, so USD caps are
+    enforced on Nerva's estimate and live billing can differ.
+  - On an SLA timeout the reservation is released at ``$0``; in live use a
+    provider may still bill an abandoned request.
+  - This is library code. It is not yet wired into the live ``HybridRouter`` /
+    agent dispatch path.
 """
 
 from __future__ import annotations
@@ -32,7 +42,7 @@ from agents.core.env_config import env_flag
 
 from .base import LLMBackend, is_backend_failure_reply
 from .cost_estimator import estimate_cost
-from .data_handling import DataHandlingRefused, authorize
+from .data_handling import DataHandlingRefused, authorize, physical_request_scope
 from .hybrid_router import (
     LOCAL_ONLY_AGENTS,
     POLICY_LOCAL,
@@ -66,6 +76,7 @@ _GOVERNANCE_REASONS = frozenset(
         "model_not_approved",
         "h513_data_handling_refused",
         "h513_unacknowledged_policy",
+        "cloud_h513_recheck_refused",
         "cloud_unavailable_or_disabled",
     }
 )
@@ -190,9 +201,12 @@ class CascadeSessionBudget:
             self._reserved_usd = round(self._reserved_usd + amount, 10)
             return True, None
 
-    def settle_cloud(self, reserved_usd: float, actual_usd: float) -> float:
-        """Release pre-flight reservation and commit actual billed cloud USD."""
-        actual = _require_non_negative_finite("actual_usd", actual_usd)
+    def settle_cloud(self, reserved_usd: float, settled_usd: float) -> float:
+        """Release the pre-flight reservation and commit the settled (estimated) cloud USD.
+
+        Callers pass a ``cost_estimator`` estimate, not provider-reported usage.
+        """
+        actual = _require_non_negative_finite("settled_usd", settled_usd)
         with self._lock:
             self._reserved_usd = max(0.0, round(self._reserved_usd - reserved_usd, 10))
             self._spent_usd = round(self._spent_usd + actual, 10)
@@ -462,6 +476,46 @@ class AdaptiveCostCascade(LLMBackend):
             return None, "degraded_or_empty"
         return reply, None
 
+    async def _call_cloud_scoped(
+        self,
+        backend: LLMBackend,
+        model: str,
+        route: str,
+        prompt: str,
+        *,
+        system: str,
+        max_tokens: int,
+        temperature: float,
+        principal: Any,
+    ) -> tuple[str | None, str | None]:
+        """Run the cloud call with H513 consent re-checked on every physical request."""
+
+        def _recheck() -> None:
+            ok, reason = _check_h513_consent(
+                self._router,
+                backend,
+                model,
+                route,
+                principal=principal,
+                require_ack=self.policy.require_h513_consent,
+            )
+            if not ok:
+                raise DataHandlingRefused(f"H513 physical-request recheck refused ({reason})")
+
+        try:
+            with physical_request_scope(_recheck):
+                return await self._call_bounded(
+                    backend,
+                    model,
+                    prompt,
+                    system=system,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    timeout_s=self.policy.cloud_sla_timeout_s,
+                )
+        except DataHandlingRefused:
+            return None, "h513_recheck_refused"
+
     async def _synthesize_locally_on_fallback(
         self,
         prompt: str,
@@ -566,19 +620,20 @@ class AdaptiveCostCascade(LLMBackend):
         )
         if allowed and cloud_slot[0] is not None:
             c_backend, c_model, c_route = cloud_slot
-            cloud_reply, cloud_err = await self._call_bounded(
+            cloud_reply, cloud_err = await self._call_cloud_scoped(
                 c_backend,
                 c_model,
+                c_route,
                 prompt,
                 system=system,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                timeout_s=self.policy.cloud_sla_timeout_s,
+                principal=principal,
             )
             if cloud_reply is not None:
                 out_tokens = estimate_tokens(cloud_reply)
-                actual_usd = float(estimate_cost(c_model, in_tokens, out_tokens)["total"])
-                spent = self.session_budget.settle_cloud(reserved_usd, actual_usd)
+                estimated_usd = float(estimate_cost(c_model, in_tokens, out_tokens)["total"])
+                spent = self.session_budget.settle_cloud(reserved_usd, estimated_usd)
                 return self._record_result(
                     CascadeTurnResult(
                         text=cloud_reply,
@@ -590,7 +645,7 @@ class AdaptiveCostCascade(LLMBackend):
                         escalated_to_cloud=True,
                         degraded_gracefully=False,
                         block_reason=None,
-                        usd_cost=actual_usd,
+                        usd_cost=estimated_usd,
                         worst_case_reserved_usd=reserved_usd,
                         session_spent_usd=spent,
                         input_tokens=in_tokens,

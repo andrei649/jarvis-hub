@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -19,6 +20,7 @@ from agents.core.llm.cost_cascade import (
     clear_cascade_runs,
     recent_cascade_runs,
 )
+from agents.core.llm.data_handling import DataHandlingRefused, check_physical_request
 from scripts import bench_nerva_differentiators as bench
 from tests.test_doc_reference_integrity import REPO, _candidate_paths
 
@@ -125,7 +127,8 @@ def test_benchmark_5_h040_secret_stripped_e2e_sync_metrics(measured_report: dict
     assert dm["hostile_skill_injection_quarantined"] is True
     assert dm["ciphertext_bitflip_trials"] == 8
     assert dm["nerva_authenticated_tamper_rejection_rate"] == 1.0
-    assert dm["lww_ordering_source"] == "production_e2e_sync_pull_state_canonical_ts_device"
+    assert dm["lww_ordering_source"] == "production_e2e_sync_pull_state_sealed_fernet_ts_inner_device"
+    assert dm["plaintext_envelope_ts_forgery_resisted"] is True
     assert dm["lww_arrival_permutations_tested"] == 6
     assert dm["nerva_lww_convergence_rate"] == 1.0
     assert dm["baseline_arrival_order_convergence_rate"] < 1.0
@@ -150,6 +153,51 @@ def test_benchmark_6_governed_adaptive_cost_sla_cascade_metrics(measured_report:
     assert dm["nerva_unconsented_cloud_escalations"] == 0
     assert dm["nerva_governance_block_accuracy"] == 1.0
     assert dm["sla_timeout_graceful_local_fallback"] is True
+    assert dm["usd_accounting"] == "estimated_via_cost_estimator_and_tokenizer_not_provider_reported"
+    assert dm["live_routing_wired"] is False
+
+
+class _RevokedMidFlightCloud:
+    """Cloud backend whose H513 consent passes pre-flight but is revoked at the physical request."""
+
+    def __init__(self) -> None:
+        self.consent_checks = 0
+        self.sent = 0
+
+    def authorize_data_handling(self, *, actual_use: bool = True) -> dict[str, Any]:
+        self.consent_checks += 1
+        if self.consent_checks > 1:
+            raise DataHandlingRefused("consent revoked between pre-flight and physical request")
+        return {"acknowledged": True}
+
+    async def generate(self, model: str, prompt: str, **_kwargs: Any) -> str:
+        # Real HTTP adapters call this from their request hook before any byte leaves the host.
+        await check_physical_request(SimpleNamespace(method="POST"))
+        self.sent += 1
+        return "cloud reply that must never be produced"
+
+
+def test_adaptive_cost_cascade_rechecks_h513_per_physical_request() -> None:
+    router, _loc, _consented, _unconsented = bench._build_cascade_fixture()
+    cloud = _RevokedMidFlightCloud()
+    budget = CascadeSessionBudget(0.05, session_id="recheck-sess")
+    cascade = AdaptiveCostCascade(
+        router=router,
+        agent_id="jarvis",
+        policy=CascadePolicy(max_turn_usd=0.05, max_session_usd=0.05),
+        session_budget=budget,
+        cloud_binding=(cloud, "claude-opus-4-7", "claude"),
+    )
+    res = asyncio.run(cascade.execute_turn("[NEEDS_ESCALATION] Check revoked consent.", max_tokens=128))
+    assert cloud.consent_checks == 2
+    assert cloud.sent == 0
+    assert res.escalated_to_cloud is False
+    assert res.block_reason == "cloud_h513_recheck_refused"
+    assert res.usd_cost == 0.0
+    assert res.degraded_gracefully is True
+    snap = budget.snapshot()
+    assert snap["reserved_usd"] == 0.0 and snap["spent_usd"] == 0.0
+    assert snap["policy_blocks"] == 1
 
 
 def test_adaptive_cost_cascade_unit_guards_and_prompt_free_telemetry() -> None:

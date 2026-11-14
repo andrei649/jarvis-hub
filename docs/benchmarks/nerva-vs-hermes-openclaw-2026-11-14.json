@@ -3,11 +3,11 @@
   "suite_spec_sha256": "41749416ec5f0ac25d1db6ed78ff9ddb631e357746d4081cacec81009f1a0167",
   "execution_mode": "hermetic_in_process",
   "live_network_llm_calls": 0,
-  "honest_scope_note": "All 6 benchmarks execute Nerva's real Python subsystems in-process against deterministic synthetic LLM/transport backends (0 live network LLM calls). Baseline columns measure representative single-chain / cloud-always / unguarded local-agent patterns (Hermes / OpenClaw architectural defaults without parallel MoA quorum, H513 per-member consent binding, H657 monotonic authority epochs, H086 principal-scoped SSRF/one-shot artifact tickets, H040 secret-stripped authenticated E2E sync with canonical `(max_ts, device_id)` LWW ordering in `E2ESync.pull_state()`, or governed USD-capped local-first cost/SLA cascades). Live hardware tok/s and owner-gated live head-to-head runs are tracked separately in docs/HARDWARE_BENCHMARKS.md and docs/HERMES_HEAD_TO_HEAD.md.",
+  "honest_scope_note": "All 6 benchmarks execute Nerva's real Python subsystems in-process against deterministic synthetic LLM/transport backends (0 live network LLM calls). Baseline columns measure representative single-chain / cloud-always / unguarded local-agent patterns (Hermes / OpenClaw architectural defaults without parallel MoA quorum, H513 per-member consent binding, H657 monotonic authority epochs, H086 principal-scoped SSRF/one-shot artifact tickets, H040 secret-stripped authenticated E2E sync with authenticated `(max_sealed_ts, device_id)` LWW ordering in `E2ESync.pull_state()`, or governed USD-capped local-first cost/SLA cascades). B6 settles cloud spend from `cost_estimator` token estimates (not provider-reported usage), and `AdaptiveCostCascade` is library code exercised here directly; it is not yet wired into the live `HybridRouter` / agent dispatch path. Live hardware tok/s and owner-gated live head-to-head runs are tracked separately in docs/HARDWARE_BENCHMARKS.md and docs/HERMES_HEAD_TO_HEAD.md.",
   "environment": {
     "python_version": "3.12.13",
     "platform": "Darwin",
-    "suite_wall_time_s": 9.134
+    "suite_wall_time_s": 9.158
   },
   "summary": {
     "total_benchmarks": 6,
@@ -31,45 +31,45 @@
         "below_quorum_fail_closed": true
       },
       "timing_telemetry": {
-        "steady_state_parallel_speedup": 3.98,
+        "steady_state_parallel_speedup": 3.94,
         "overall_wall_speedup_vs_sequential_baseline": 2.14,
         "timeout_cap_s": 2.0,
         "rounds": [
           {
             "round": "timeout_fault",
             "nerva_ok": true,
-            "nerva_proposer_wall_ms": 2009.82,
-            "nerva_sum_proposer_ms": 3963.41,
+            "nerva_proposer_wall_ms": 2009.51,
+            "nerva_sum_proposer_ms": 3962.7,
             "nerva_parallel_speedup": 1.97,
             "baseline_ok": false,
-            "baseline_wall_ms": 3954.67
+            "baseline_wall_ms": 3955.85
           },
           {
             "round": "transport_exception",
             "nerva_ok": true,
-            "nerva_proposer_wall_ms": 61.39,
-            "nerva_sum_proposer_ms": 244.65,
-            "nerva_parallel_speedup": 3.99,
+            "nerva_proposer_wall_ms": 64.56,
+            "nerva_sum_proposer_ms": 251.33,
+            "nerva_parallel_speedup": 3.89,
             "baseline_ok": false,
-            "baseline_wall_ms": 244.92
+            "baseline_wall_ms": 245.33
           },
           {
             "round": "degraded_reply",
             "nerva_ok": true,
-            "nerva_proposer_wall_ms": 61.64,
-            "nerva_sum_proposer_ms": 245.05,
-            "nerva_parallel_speedup": 3.98,
+            "nerva_proposer_wall_ms": 60.94,
+            "nerva_sum_proposer_ms": 241.9,
+            "nerva_parallel_speedup": 3.97,
             "baseline_ok": false,
-            "baseline_wall_ms": 245.8
+            "baseline_wall_ms": 244.53
           },
           {
             "round": "all_healthy",
             "nerva_ok": true,
-            "nerva_proposer_wall_ms": 61.57,
-            "nerva_sum_proposer_ms": 244.66,
+            "nerva_proposer_wall_ms": 61.83,
+            "nerva_sum_proposer_ms": 245.23,
             "nerva_parallel_speedup": 3.97,
             "baseline_ok": true,
-            "baseline_wall_ms": 243.62
+            "baseline_wall_ms": 244.79
           }
         ]
       }
@@ -112,7 +112,7 @@
         "baseline_unfenced_stale_write_rejection_rate": 0.0
       },
       "timing_telemetry": {
-        "failover_promote_latency_ms": 0.4781
+        "failover_promote_latency_ms": 0.5772
       }
     },
     {
@@ -149,9 +149,10 @@
         "hostile_skill_injection_quarantined": true,
         "ciphertext_bitflip_trials": 8,
         "nerva_authenticated_tamper_rejection_rate": 1.0,
-        "lww_ordering_source": "production_e2e_sync_pull_state_canonical_ts_device",
+        "lww_ordering_source": "production_e2e_sync_pull_state_sealed_fernet_ts_inner_device",
         "lww_arrival_permutations_tested": 6,
         "nerva_lww_convergence_rate": 1.0,
+        "plaintext_envelope_ts_forgery_resisted": true,
         "baseline_arrival_order_convergence_rate": 0.3333,
         "baseline_raw_config_secret_leak_count": 4
       },
@@ -169,6 +170,8 @@
         "baseline_completion_rate": 0.95,
         "nerva_local_zero_cost_turns": 17,
         "nerva_consented_cloud_escalations": 3,
+        "usd_accounting": "estimated_via_cost_estimator_and_tokenizer_not_provider_reported",
+        "live_routing_wired": false,
         "nerva_total_usd": 0.006975,
         "baseline_cloud_always_usd": 0.045925,
         "nerva_usd_cost_reduction_ratio": 0.8481,
@@ -183,7 +186,7 @@
         "sla_timeout_graceful_local_fallback": true
       },
       "timing_telemetry": {
-        "cascade_suite_wall_ms": 304.31,
+        "cascade_suite_wall_ms": 303.94,
         "cloud_sla_timeout_s": 0.12
       }
     }

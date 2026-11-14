@@ -328,3 +328,60 @@ def test_h040_pull_state_ignores_unauthenticated_forged_timestamp_in_lww_ranking
     assert pulled["lww_device_order"] == ["dev-z-older", "dev-a-newer"]
     assert settings_db.export_settings()["settings"]["sessions"]["idle_minutes"] == 840
 
+
+
+def _config_push(peer: E2ESync, dev_id: str, idle: int, exported: int, ts: float) -> dict:
+    return peer.build_push(
+        [
+            {
+                "artefact_type": "config",
+                "device_id": dev_id,
+                "device_label": dev_id,
+                "document": {
+                    "format": settings_db.EXPORT_FORMAT,
+                    "exported_at": exported,
+                    "settings": {"sessions": {"idle_minutes": idle}},
+                },
+            }
+        ],
+        kind="device_state",
+        ts=ts,
+    )
+
+
+def test_h040_lww_ranks_on_sealed_fernet_timestamp_not_plaintext_envelope_ts(tmp_path, monkeypatch):
+    """A relay editing the plaintext `ts`/`device` of an AUTHENTIC entry cannot reorder LWW.
+
+    The ciphertext (and its HMAC) stays valid, so the entry still decrypts. Ranking must use the
+    HMAC-covered Fernet timestamp and the device_id inside the decrypted record.
+    """
+    monkeypatch.setenv("JARVIS_E2E_SYNC", "1")
+    old_peer = E2ESync(passphrase="shared-lww-secret", device_id="dev-z-older")
+    new_peer = E2ESync(passphrase="shared-lww-secret", device_id="dev-a-newer")
+    old_manifest = _config_push(old_peer, "dev-z-older", 180, 100, 1700000100.0)
+    new_manifest = _config_push(new_peer, "dev-a-newer", 840, 500, 1700000500.0)
+
+    # The sealed stamp is HMAC-covered and equals the requested whole-second ts.
+    assert old_peer._fernet.extract_timestamp(old_manifest["entries"][0]["ct"].encode()) == 1700000100
+
+    # Relay tampering: forge plaintext envelope ts + manifest/envelope device labels + digest.
+    old_manifest["entries"][0]["ts"] = 9999999999.0
+    old_manifest["entries"][0]["device"] = "zzz-forged"
+    old_manifest["device"] = "zzz-forged"
+    old_manifest["digest"] = "f" * 64
+
+    _switch_settings_db(monkeypatch, tmp_path / "sealed_ts.db")
+    dest = E2ESync(
+        passphrase="shared-lww-secret",
+        device_id="dev-dest",
+        state_path=tmp_path / "sealed_state.json",
+        skills_dir=tmp_path / "sealed_skills",
+    )
+    dest.accept_peer_manifest(new_manifest)
+    dest.accept_peer_manifest(old_manifest)
+
+    pulled = dest.pull_state()
+    assert pulled["ok"] is True
+    assert pulled["records_decrypted"] == 2
+    assert pulled["lww_device_order"] == ["dev-z-older", "dev-a-newer"]
+    assert settings_db.export_settings()["settings"]["sessions"]["idle_minutes"] == 840

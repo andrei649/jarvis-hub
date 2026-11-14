@@ -21,8 +21,13 @@ Security invariants (Nerva > Hermes/OpenClaw):
     (:class:`HttpPeerSyncTransport` over ``PluginHTTPClient`` / injected client).
   - **Deterministic LWW convergence**: ``pull_state()`` authenticates/decrypts
     each peer manifest and sorts verified manifests canonically by
-    ``(max_ts, device_id, digest)`` so concurrent edits converge identically
-    regardless of mailbox or transport arrival order.
+    ``(max_sealed_ts, device_id, digest)`` so concurrent edits converge identically
+    regardless of mailbox or transport arrival order. ``max_sealed_ts`` is the
+    whole-second timestamp sealed inside each Fernet token (HMAC-covered); the
+    plaintext envelope ``ts`` is display-only and never ranked. ``device_id`` comes
+    from the decrypted records when they carry one (else the unauthenticated
+    manifest label, which can then only affect same-second ties), and ``digest`` is
+    recomputed locally over the verified ciphertext.
 """
 
 from __future__ import annotations
@@ -55,22 +60,11 @@ def _safe_envelope_ts(value: Any) -> float:
     return ts_val if math.isfinite(ts_val) else 0.0
 
 
-def order_manifests_lww(manifests: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return manifests ordered canonically by ``(max_ts, device_id, digest)`` LWW."""
+def _fernet_stamp(ts: float | None) -> int:
+    """Whole-second, non-negative stamp sealed inside the Fernet token (HMAC-covered)."""
+    raw = time.time() if ts is None else _safe_envelope_ts(ts)
+    return max(0, int(raw))
 
-    def _key(manifest: dict[str, Any]) -> tuple[float, str, str]:
-        entries = manifest.get("entries") or []
-        max_ts = max(
-            (_safe_envelope_ts(e.get("ts", 0.0)) for e in entries if isinstance(e, dict)),
-            default=0.0,
-        )
-        return (
-            max_ts,
-            str(manifest.get("device") or ""),
-            str(manifest.get("digest") or ""),
-        )
-
-    return sorted(manifests, key=_key)
 
 # Fixed app salt: cross-device key derivation must be deterministic so two
 # devices with the same passphrase land on the same key. Security comes from the
@@ -500,24 +494,35 @@ class E2ESync:
     # ── envelope ─────────────────────────────────────────────────────────────
 
     def encrypt_record(self, record: dict, *, ts: float | None = None) -> dict:
+        """Encrypt *record*, sealing the LWW stamp inside the authenticated Fernet token.
+
+        The plaintext envelope ``ts`` mirrors the sealed stamp for display only; LWW
+        ranking never reads it (a relay can edit it without breaking the HMAC).
+        """
         if self._fernet is None:
             raise E2ESyncError("E2E sync unavailable (no crypto / no shared secret)")
         plaintext = json.dumps(record, ensure_ascii=False, sort_keys=True).encode("utf-8")
-        token = self._fernet.encrypt(plaintext).decode("ascii")
-        stamp = time.time() if ts is None else _safe_envelope_ts(ts)
-        return {"v": 1, "device": self.device_id, "ct": token, "ts": stamp}
+        stamp = _fernet_stamp(ts)
+        token = self._fernet.encrypt_at_time(plaintext, stamp).decode("ascii")
+        return {"v": 1, "device": self.device_id, "ct": token, "ts": float(stamp)}
 
     def decrypt_record(self, envelope: dict) -> dict:
+        return self._decrypt_authenticated(envelope)[0]
+
+    def _decrypt_authenticated(self, envelope: dict) -> tuple[dict, int]:
+        """Decrypt *envelope* and return ``(record, sealed_stamp)``; both are HMAC-verified."""
         if self._fernet is None:
             raise E2ESyncError("E2E sync unavailable (no crypto / no shared secret)")
         ct = (envelope or {}).get("ct")
-        if not ct:
+        if not ct or not isinstance(ct, str):
             raise E2ESyncError("envelope has no ciphertext")
         try:
-            plaintext = self._fernet.decrypt(ct.encode("ascii"))
+            token = ct.encode("ascii")
+            plaintext = self._fernet.decrypt(token)
+            sealed_ts = int(self._fernet.extract_timestamp(token))
         except Exception as e:
             raise E2ESyncError("decryption failed (tamper / wrong key)") from e
-        return json.loads(plaintext.decode("utf-8"))
+        return json.loads(plaintext.decode("utf-8")), sealed_ts
 
     # ── manifest ─────────────────────────────────────────────────────────────
 
@@ -546,10 +551,17 @@ class E2ESync:
     def _decrypt_manifest_lww(
         self, manifest: dict[str, Any]
     ) -> tuple[tuple[float, str, str], list[dict[str, Any]]] | None:
-        """Authenticate & decrypt peer manifest entries and compute ``(max_ts, device_id, digest)``.
+        """Authenticate & decrypt peer manifest entries and compute an authenticated LWW key.
 
-        Only entries that pass Fernet HMAC authentication contribute to ``max_ts`` or
-        decrypted records, preventing unauthenticated envelope metadata from skewing LWW order.
+        The key is ``(max_sealed_ts, device_id, digest)`` where every component is derived
+        from HMAC-verified data only:
+
+        - ``max_sealed_ts``: the Fernet token timestamp (``extract_timestamp``), which is
+          covered by the token HMAC; the plaintext envelope ``ts`` is never read.
+        - ``device_id``: the ``device_id`` carried *inside* the decrypted records when they
+          all agree; only records without one fall back to the (unauthenticated) manifest
+          ``device`` label, which can then influence same-second tie-breaks only.
+        - ``digest``: recomputed locally over the verified ciphertext tokens.
         """
         if not self.enabled() or not isinstance(manifest, dict):
             return None
@@ -557,27 +569,32 @@ class E2ESync:
         if not isinstance(entries, list) or not entries:
             return None
         records: list[dict[str, Any]] = []
-        verified_ts: list[float] = []
-        fallback_dev = ""
+        sealed_ts: list[int] = []
+        verified_cts: list[str] = []
         for env in entries:
             if not isinstance(env, dict):
                 continue
-            env_dev = str(env.get("device") or "")
-            if env_dev == self.device_id:
+            if str(env.get("device") or "") == self.device_id:
                 continue  # don't re-ingest our own push
             try:
-                records.append(self.decrypt_record(env))
-            except E2ESyncError:
+                record, stamp = self._decrypt_authenticated(env)
+            except (E2ESyncError, ValueError):
                 logger.warning("E2E sync: dropping unverifiable entry", exc_info=True)
                 continue
-            verified_ts.append(_safe_envelope_ts(env.get("ts", 0.0)))
-            if env_dev and not fallback_dev:
-                fallback_dev = env_dev
+            records.append(record)
+            sealed_ts.append(stamp)
+            verified_cts.append(str(env["ct"]))
         if not records:
             return None
-        dev_id = str(manifest.get("device") or fallback_dev or "")
-        digest = str(manifest.get("digest") or "")
-        return ((max(verified_ts, default=0.0), dev_id, digest), records)
+        inner_devs = {
+            str(r.get("device_id")) for r in records if isinstance(r, dict) and r.get("device_id")
+        }
+        if len(inner_devs) == 1:
+            dev_id = next(iter(inner_devs))
+        else:
+            dev_id = str(manifest.get("device") or "")
+        digest = hashlib.sha256("".join(verified_cts).encode("ascii")).hexdigest()
+        return ((float(max(sealed_ts)), dev_id, digest), records)
 
     # ── H040 config + skills artefact collection & application ───────────────
 
@@ -772,7 +789,7 @@ class E2ESync:
         return manifests
 
     def pull_state(self, *, manifest: dict[str, Any] | None = None) -> dict[str, Any]:
-        """Fetch inbound manifests across sources, sort canonically by `(max_ts, device_id)` LWW, and apply."""
+        """Fetch inbound manifests, rank by authenticated `(max_sealed_ts, device_id, digest)` LWW, and apply."""
         if not self.enabled():
             return {"ok": False, "enabled": False, "reason": "sync_disabled", "records_decrypted": 0}
 

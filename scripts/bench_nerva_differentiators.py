@@ -918,14 +918,14 @@ def _run_lww_convergence_permutations(
     sandbox: Path,
     shared_fernet_key: str,
 ) -> tuple[int, int, int]:
-    """Verify production `E2ESync.pull_state()` `(max_ts, device_id)` LWW convergence on all 3! orders."""
+    """Verify production `E2ESync.pull_state()` `(max_sealed_ts, device_id)` LWW convergence on all 3! orders."""
     peer_specs = [
         ("dev-alpha", 1700000100.0, 360, "# Shared Ops\nRevision alpha (t=100).\n"),
         ("dev-gamma", 1700000300.0, 960, "# Shared Ops\nRevision gamma (t=300).\n"),
         ("dev-beta", 1700000300.0, 720, "# Shared Ops\nRevision beta (t=300).\n"),
     ]
-    # Note: dev-gamma and dev-beta share ts=1700000300.0; production `E2ESync.pull_state()`
-    # tie-breaker `(max_ts, device_id, digest)` deterministically selects `dev-gamma`
+    # Note: dev-gamma and dev-beta share sealed ts=1700000300; production `E2ESync.pull_state()`
+    # tie-breaker `(max_sealed_ts, device_id, digest)` deterministically selects `dev-gamma`
     # (`"dev-gamma" > "dev-beta"`) regardless of mailbox or transport arrival order.
     manifests: list[dict[str, Any]] = []
     for dev_id, ts, idle_min, skill_md in peer_specs:
@@ -996,6 +996,44 @@ def _run_lww_convergence_permutations(
         and next(iter(lww_outcomes))[2] == expected_order
     )
     return (len(perms) if converged else 0), len(perms), naive_winner_matches
+
+
+def _check_sealed_ts_forgery_resistance(sandbox: Path, shared_fernet_key: str) -> bool:
+    """Relay edits plaintext `ts`/`device`/`digest` of an AUTHENTIC older entry; LWW must not flip."""
+
+    def _push(dev_id: str, idle: int, ts: float) -> dict[str, Any]:
+        peer = E2ESync(key=shared_fernet_key, device_id=dev_id)
+        record = {
+            "artefact_type": "config",
+            "device_id": dev_id,
+            "device_label": dev_id,
+            "document": {
+                "format": settings_db.EXPORT_FORMAT,
+                "exported_at": int(ts),
+                "settings": {"sessions": {"idle_minutes": idle}},
+            },
+        }
+        return peer.build_push([record], kind="device_state", ts=ts)
+
+    older = _push("dev-z-older", 180, 1700000100.0)
+    newer = _push("dev-a-newer", 840, 1700000500.0)
+    older["entries"][0]["ts"] = 9999999999.0
+    older["entries"][0]["device"] = "zzz-forged"
+    older["device"] = "zzz-forged"
+    older["digest"] = "f" * 64
+
+    _switch_db(sandbox / "lww_sealed_ts_probe.db")
+    dest = E2ESync(
+        key=shared_fernet_key,
+        device_id="dev-dest-probe",
+        state_path=sandbox / "lww_sealed_ts_probe.json",
+        skills_dir=sandbox / "lww_sealed_ts_probe_skills",
+    )
+    dest.accept_peer_manifest(newer)
+    dest.accept_peer_manifest(older)
+    pulled = dest.pull_state()
+    winner = int(settings_db.export_settings()["settings"]["sessions"]["idle_minutes"])
+    return pulled.get("lww_device_order") == ["dev-z-older", "dev-a-newer"] and winner == 840
 
 
 def bench_5_secret_stripped_e2e_sync(sandbox: Path) -> dict[str, Any]:
@@ -1083,6 +1121,7 @@ def bench_5_secret_stripped_e2e_sync(sandbox: Path) -> dict[str, Any]:
 
     tamper_rejected, tamper_total = _check_e2e_tamper_rejection(dest_clean, shared_key)
     lww_converged, lww_total, naive_matches = _run_lww_convergence_permutations(sandbox, shared_key)
+    sealed_ts_resisted = _check_sealed_ts_forgery_resistance(sandbox, shared_key)
 
     tamper_rate = round(tamper_rejected / tamper_total, 4)
     lww_rate = round(lww_converged / lww_total, 4)
@@ -1096,6 +1135,7 @@ def bench_5_secret_stripped_e2e_sync(sandbox: Path) -> dict[str, Any]:
         and quarantined_slugs == ["hostile-skill"]
         and tamper_rate == 1.0
         and lww_rate == 1.0
+        and sealed_ts_resisted
     )
     return {
         "id": "B5_h040_secret_stripped_e2e_sync",
@@ -1112,9 +1152,10 @@ def bench_5_secret_stripped_e2e_sync(sandbox: Path) -> dict[str, Any]:
             "hostile_skill_injection_quarantined": quarantined_slugs == ["hostile-skill"],
             "ciphertext_bitflip_trials": tamper_total,
             "nerva_authenticated_tamper_rejection_rate": tamper_rate,
-            "lww_ordering_source": "production_e2e_sync_pull_state_canonical_ts_device",
+            "lww_ordering_source": "production_e2e_sync_pull_state_sealed_fernet_ts_inner_device",
             "lww_arrival_permutations_tested": lww_total,
             "nerva_lww_convergence_rate": lww_rate,
+            "plaintext_envelope_ts_forgery_resisted": sealed_ts_resisted,
             "baseline_arrival_order_convergence_rate": naive_rate,
             "baseline_raw_config_secret_leak_count": len(secret_markers),
         },
@@ -1388,6 +1429,8 @@ async def bench_6_adaptive_cost_sla_cascade() -> dict[str, Any]:
             "baseline_completion_rate": round((len(all_results) - 1) / len(all_results), 4),
             "nerva_local_zero_cost_turns": len(all_results) - escalated_count,
             "nerva_consented_cloud_escalations": escalated_count,
+            "usd_accounting": "estimated_via_cost_estimator_and_tokenizer_not_provider_reported",
+            "live_routing_wired": False,
             "nerva_total_usd": nerva_usd,
             "baseline_cloud_always_usd": baseline_usd,
             "nerva_usd_cost_reduction_ratio": cost_reduction,
@@ -1434,8 +1477,11 @@ async def run_all_benchmarks_async() -> dict[str, Any]:
             "local-agent patterns (Hermes / OpenClaw architectural defaults without parallel MoA "
             "quorum, H513 per-member consent binding, H657 monotonic authority epochs, H086 "
             "principal-scoped SSRF/one-shot artifact tickets, H040 secret-stripped authenticated "
-            "E2E sync with canonical `(max_ts, device_id)` LWW ordering in `E2ESync.pull_state()`, "
-            "or governed USD-capped local-first cost/SLA cascades). Live hardware tok/s and "
+            "E2E sync with authenticated `(max_sealed_ts, device_id)` LWW ordering in `E2ESync.pull_state()`, "
+            "or governed USD-capped local-first cost/SLA cascades). B6 settles cloud spend from "
+            "`cost_estimator` token estimates (not provider-reported usage), and "
+            "`AdaptiveCostCascade` is library code exercised here directly; it is not yet wired "
+            "into the live `HybridRouter` / agent dispatch path. Live hardware tok/s and "
             "owner-gated live head-to-head runs are tracked separately in "
             "docs/HARDWARE_BENCHMARKS.md and docs/HERMES_HEAD_TO_HEAD.md."
         ),
@@ -1568,7 +1614,7 @@ def render_markdown_report(
         (
             f"| 6 | **Governed Cost- & SLA-Aware Adaptive Model Cascade** (`{m6['total_turns']}` mixed turns: local, consented cloud, USD-capped, H513/strict-local/pinned, SLA stall) "
             f"| [`agents/core/llm/cost_cascade.py`]({lnk_cascade}) + [`cost_estimator.py`]({lnk_cost}) "
-            f"| `{m6['nerva_usd_cost_reduction_ratio'] * 100:.1f}%` USD cost reduction (`${m6['nerva_total_usd']:.6f}` vs `${m6['baseline_cloud_always_usd']:.6f}`); `{m6['nerva_budget_overruns']}` budget overruns (`{m6['nerva_usd_cap_enforcement_rate'] * 100:.0f}%` cap enforcement); `{m6['nerva_unconsented_cloud_escalations']}` unconsented cloud escalations; `{m6['nerva_completion_rate'] * 100:.0f}%` completion via graceful local fallback "
+            f"| `{m6['nerva_usd_cost_reduction_ratio'] * 100:.1f}%` estimated USD cost reduction (`${m6['nerva_total_usd']:.6f}` vs `${m6['baseline_cloud_always_usd']:.6f}`); `{m6['nerva_budget_overruns']}` budget overruns (`{m6['nerva_usd_cap_enforcement_rate'] * 100:.0f}%` cap enforcement); `{m6['nerva_unconsented_cloud_escalations']}` unconsented cloud escalations; `{m6['nerva_completion_rate'] * 100:.0f}%` completion via graceful local fallback (library code, not yet wired into live routing) "
             f"| Cloud-always static routing spends `${m6['baseline_cloud_always_usd']:.6f}`, leaks `{m6['baseline_unconsented_cloud_escalations']}` unconsented/restricted escalations, and aborts on cloud SLA stall (`{m6['baseline_completion_rate'] * 100:.0f}%` completion) "
             f"| {'PASS' if b6['passed'] else 'FAIL'} |"
         ),
@@ -1593,11 +1639,12 @@ def render_markdown_report(
         "",
         "### 5. Secret-Stripped E2E Cross-Device Sync (`H040`)",
         "- **Workload & Cipher Note:** `E2ESync` (`agents/core/e2e_sync.py`) encrypts artefacts using authenticated **Fernet (`AES-128-CBC + HMAC-SHA256`)** with keys derived via `PBKDF2-HMAC-SHA256` (`390,000` iterations) — not AES-GCM — providing identical `100%` authenticated-ciphertext bit-flip tamper rejection across IV, ciphertext blocks, and MAC tag (`8/8` tampered envelopes rejected). `settings_db.export_settings()` strips all `SECRET_KEYS`, `ROUTE_ONLY` consent rows, and credential-shaped strings (`0` secrets in envelope), and `detect_injection_normalized` quarantines hostile synced `SKILL.md` payloads before disk write.",
-        f"- **Production LWW Convergence:** `E2ESync.pull_state()` authenticates/decrypts inbound peer manifests first (so forged unauthenticated entries cannot skew timestamps) and sorts verified manifests canonically by `(max_ts, device_id, digest)` before applying artefacts, achieving `6/6` (`100%`) deterministic convergence directly in production across all `3!` multi-device arrival permutations vs `{m5['baseline_arrival_order_convergence_rate'] * 100:.1f}%` on unsorted FIFO ingestion.",
+        f"- **Production LWW Convergence:** `E2ESync.pull_state()` authenticates/decrypts inbound peer manifests first and ranks only verified entries by `(max_sealed_ts, device_id, digest)`: `max_sealed_ts` is the whole-second timestamp sealed inside each Fernet token (covered by its HMAC; the plaintext envelope `ts` is display-only and never ranked), `device_id` is read from the decrypted records (falling back to the unauthenticated manifest label only for records that carry none, which can then affect only same-second ties), and `digest` is recomputed over the verified ciphertext. This achieves `6/6` (`100%`) deterministic convergence across all `3!` multi-device arrival permutations vs `{m5['baseline_arrival_order_convergence_rate'] * 100:.1f}%` on unsorted FIFO ingestion, and a relay that rewrites the plaintext `ts`/`device`/`digest` of an authentic older entry cannot flip the winner (`plaintext_envelope_ts_forgery_resisted={m5['plaintext_envelope_ts_forgery_resisted']}`).",
         "",
         "### 6. Governed Cost- & SLA-Aware Adaptive Model Cascade",
         f"- **Workload:** 20-turn mixed session (`10` confident local fast/deep turns on `google/gemma-4-12b` / `deepseek-r1-distill-qwen-32b`, `3` consented low-confidence escalations to `claude-opus-4-7` priced via `cost_estimator.estimate_cost`, `2` turns exceeding `max_turn_usd=${m6['max_turn_usd_cap']:.3f}` and `max_session_usd=${m6['max_session_usd_cap']:.3f}`, `4` governance-restricted escalations across unacknowledged H513 `data_policy=\"unknown\"`, `LOCAL_ONLY_AGENTS` `ultron`, `JARVIS_STRICT_LOCAL=1`, and `approved_models` pinning, plus `1` cloud SLA stall).",
-        f"- **Why Nerva wins:** `AdaptiveCostCascade` (`agents/core/llm/cost_cascade.py`) reserves worst-case `(input_tokens + max_tokens)` USD atomically **before** any cloud call and settles actual token spend afterward, guaranteeing `0` USD cap overruns (`${m6['session_final_spent_usd']:.6f} <= ${m6['max_session_usd_cap']:.3f}`), `0` unconsented cloud escalations, `{m6['nerva_usd_cost_reduction_ratio'] * 100:.1f}%` USD savings vs static cloud routing, and `100%` (`20/20`) turn completion via `$0.00` local fallback synthesis.",
+        f"- **Why Nerva wins:** `AdaptiveCostCascade` (`agents/core/llm/cost_cascade.py`) reserves worst-case `(input_tokens + max_tokens)` USD atomically **before** any cloud call and settles the *estimated* spend afterward, yielding `0` estimated USD cap overruns in this run (`${m6['session_final_spent_usd']:.6f} <= ${m6['max_session_usd_cap']:.3f}`), `0` unconsented cloud escalations, `{m6['nerva_usd_cost_reduction_ratio'] * 100:.1f}%` estimated USD savings vs static cloud routing, and `100%` (`20/20`) turn completion via `$0.00` local fallback synthesis. H513 consent is checked before reservation and re-checked per physical request inside `data_handling.physical_request_scope` around the cloud call.",
+        "- **Scope caveats:** (1) Spend is settled from `cost_estimator.estimate_cost` over `tokenizer.estimate_tokens(reply)`, not provider-reported usage, so caps are enforced on Nerva's estimate and live billing can differ. (2) On `cloud_sla_timeout` the reservation is released at `$0`, but in live use a provider may still bill an abandoned request. (3) `AdaptiveCostCascade` is library code exercised directly by this benchmark and its tests; it is **not yet wired** into the live `HybridRouter` / agent dispatch path.",
         "",
         "## Reproducing & Verifying",
         "",
