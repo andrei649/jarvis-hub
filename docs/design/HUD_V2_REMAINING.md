@@ -206,7 +206,8 @@ profile and orchestration data; supports board/task CRUD, bulk task changes,
 comments, local attachment upload/download and an explicit dispatch request;
 it refreshes on the authenticated board event WebSocket, reconnects and polls.
 There is no tenant configuration UI yet.
-Approved worker intake is available through the existing admin API
+Approved worker intake (`POST /api/autonomy/kanban/dispatch`) is available through
+`AutonomyControlPanel` (`frontend/src/panels/autonomy-legacy.tsx`), the admin API
 and coordinator with a separate default-off dispatch flag; approvals use the
 existing inbox. The coordinator runs approved workers concurrently within total
 and per-agent caps. Explicit owner chat dispatch uses the same signed queue;
@@ -233,11 +234,12 @@ adapters for the 503-gated worker/config/archive routes, and native board/worker
 controls remain open. This is not full Hermes parity.
 
 Kanban client route gaps: all mounted `/api/kanban/*` HTTP contracts now have
-HUD consumers in `ProjectsMode` (`frontend/src/panels/kanban/`). Native Kanban
-controls remain open even for the routes consumed by the browser, and
-`/api/autonomy/kanban/dispatch` remains tracked separately. Host CLI/chat and
-API bindings above are local progress; registered but unbound effects retain
-explicit HTTP 503/409 refusals in the HUD until their Nerva adapters land.
+HUD consumers in `ProjectsMode` (`frontend/src/panels/kanban/`), and governed
+board intake (`POST /api/autonomy/kanban/dispatch`) has its admin HUD consumer in
+`AutonomyControlPanel` (`frontend/src/panels/autonomy-legacy.tsx`). Native Kanban
+controls (`H18.34`) remain open even for the routes consumed by the browser. Host
+CLI/chat and API bindings above are local progress; registered but unbound effects
+retain explicit HTTP 503/409 refusals in the HUD until their Nerva adapters land.
 
 
 H011 checkpoints (2026-10-04): authenticated owner status/list and exact

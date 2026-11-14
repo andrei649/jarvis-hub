@@ -1,6 +1,7 @@
-/* AUTONOMY CONTROL — the four autonomy-surface routes that ship in the backend and had
-   no client at all. Handlers read in full: agents/core/routers/autonomy.py (status:158,
-   observer status:172, observer run:186, suggestions:364, call:114), the queue helpers
+/* AUTONOMY CONTROL — the five autonomy-surface routes that ship in the backend and had
+   no client at all. Handlers read in full: agents/core/routers/autonomy.py (kanban
+   dispatch:46, status:158, observer status:172, observer run:186, suggestions:364,
+   call:114), the dispatcher agents/core/kanban/dispatcher.py:47-321, the queue helpers
    agents/core/autonomy/queue.py:1653/1669, the observer agents/core/autonomy/observer.py:252
    and the broker agents/core/autonomy/call_broker.py:207-287.
 
@@ -51,6 +52,8 @@ const OBSERVER_PATH = '/autonomy/observer';
 const OBSERVER_RUN_PATH = '/autonomy/observer/run';
 const SUGGESTIONS_PATH = '/autonomy/preferences/suggestions';
 const CALL_PATH = '/api/autonomy/call';
+const KANBAN_DISPATCH_PATH = '/api/autonomy/kanban/dispatch';
+const BOARD_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 /* Presentation order only — taken from the queue's own _TRANSITIONS machine
    (queue.py). A status with zero rows is ABSENT from stats() (GROUP BY status), so
@@ -169,6 +172,25 @@ export function AutonomyControlPanel() {
       (err) => { setCallErr(err); setCallBusy(false); });
   };
   const cred = (PROVIDERS.find((p) => p.id === provider) || {} as any).credential;
+
+  // ── governed Kanban intake (POST /api/autonomy/kanban/dispatch) ──
+  const [kbBoard, setKbBoard] = useState('default');
+  const [kbLimit, setKbLimit] = useState('4');
+  const [kbRes, setKbRes] = useState<any>(null);
+  const [kbErr, setKbErr] = useState<any>(null);
+  const [kbBusy, setKbBusy] = useState(false);
+  const trimmedKbBoard = kbBoard.trim();
+  const parsedKbLimit = /^\d+$/.test(kbLimit.trim()) ? Number(kbLimit.trim()) : NaN;
+  const validKbBoard = BOARD_SLUG_RE.test(trimmedKbBoard);
+  const validKbLimit = Number.isSafeInteger(parsedKbLimit) && parsedKbLimit >= 1 && parsedKbLimit <= 16;
+  const canDispatchKanban = validKbBoard && validKbLimit && !kbBusy;
+  const dispatchKanban = () => {
+    if (!canDispatchKanban) return;
+    setKbBusy(true); setKbRes(null); setKbErr(null);
+    actA(KANBAN_DISPATCH_PATH, { board: trimmedKbBoard, limit: parsedKbLimit },
+      (r) => { setKbRes(r || {}); setKbBusy(false); status.reload(); },
+      (err) => { setKbErr(err); setKbBusy(false); });
+  };
 
   const suggestions = arr(gd, 'suggestions');
   const tierColor = (n) => (n >= 3 ? 'var(--red)' : n === 2 ? 'var(--amber)' : 'var(--ink-2)');
@@ -468,9 +490,106 @@ export function AutonomyControlPanel() {
         </div>
       )}
 
+      {/* ── S5 · governed Kanban board intake ────────────────────────────── */}
+      <div style={head}>GOVERNED KANBAN DISPATCH · POST {KANBAN_DISPATCH_PATH}</div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', margin: '2px 0 6px' }}>
+        <input
+          aria-label="Kanban dispatch board"
+          style={{ ...inpS, flex: '1 1 160px' } as any}
+          maxLength={64}
+          placeholder="board slug (default)"
+          value={kbBoard}
+          onChange={(ev) => setKbBoard(ev.target.value)}
+        />
+        <input
+          aria-label="Kanban dispatch limit"
+          type="number"
+          min={1}
+          max={16}
+          style={{ ...inpS, width: 96 } as any}
+          placeholder="limit (1–16)"
+          value={kbLimit}
+          onChange={(ev) => setKbLimit(ev.target.value)}
+        />
+      </div>
+      <Row>
+        <span style={{ ...mono, color: 'var(--ink-2)' }}>
+          {!validKbBoard || !validKbLimit
+            ? 'board slug (^[a-z0-9][a-z0-9_-]{0,63}$) and integer limit 1–16 required'
+            : `board ${trimmedKbBoard} · max ${parsedKbLimit} proposal(s) (admin)`}
+        </span>
+        <button className="tool-btn" style={{ marginLeft: 'auto' }} disabled={!canDispatchKanban} onClick={dispatchKanban}>
+          {kbBusy ? 'dispatching…' : 'intake ready cards'}
+        </button>
+      </Row>
+      <div style={note}>
+        Proposes tier-2 (<code>kanban.worker</code>) ASK tasks onto the signed autonomy queue — never claims the
+        board or starts a worker in this request. Approvals happen in DECISION INBOX, and worker execution runs
+        only when <code>llm.kanban</code>, <code>llm.kanban_dispatch</code>, <code>llm.tool_loop_enabled</code>{' '}
+        and <code>enforce</code> mediation are active.
+      </div>
+      {kbRes && kbRes.ok === true && kbRes.status === 'busy' && (
+        <div role="status" style={{ ...amber, marginTop: 6 }}>
+          dispatch busy · another host or board dispatch pass holds the lock; 0 proposals enqueued.
+        </div>
+      )}
+      {kbRes && kbRes.ok === true && kbRes.status === 'queued' && Array.isArray(kbRes.queued) && kbRes.queued.length === 0 && (
+        <div role="status" style={{ ...amber, marginTop: 6 }}>
+          0 eligible cards queued — no ready, review or continuation cards matched an active agent profile within
+          worker caps (or kernel/policy refused intake).
+        </div>
+      )}
+      {kbRes && kbRes.ok === true && kbRes.status === 'queued' && Array.isArray(kbRes.queued) && kbRes.queued.length > 0 && (
+        <div role="status" style={{ marginTop: 6 }}>
+          <div style={{ color: 'var(--green)', fontSize: 11 }}>
+            {kbRes.queued.length} proposal(s) queued for approval — worker claim and execution have not started:
+          </div>
+          {kbRes.queued.map((item: any, idx: number) => (
+            <Row key={`${item?.queue_id ?? idx}-${item?.task_id ?? idx}`}>
+              <span style={{ ...mono, color: 'var(--ink-2)' }}>
+                card {String(item?.task_id ?? '?')} · queue #{String(item?.queue_id ?? '?')}
+              </span>
+              <span style={{ marginLeft: 'auto' }}>
+                <Tag c={item?.status === 'proposed' || item?.status === 'blocked' ? 'var(--amber)' : 'var(--ink-2)'}>
+                  {String(item?.status ?? 'unknown')}
+                </Tag>
+              </span>
+            </Row>
+          ))}
+        </div>
+      )}
+      {kbRes && !(kbRes.ok === true && (kbRes.status === 'busy' || (kbRes.status === 'queued' && Array.isArray(kbRes.queued)))) && (
+        <div style={{ marginTop: 6 }}>
+          <div style={amber}>unexpected dispatch response — nothing confirmed queued.</div>
+          <Json v={kbRes} />
+        </div>
+      )}
+      {kbErr && (
+        <div role="alert" style={{ marginTop: 6 }}>
+          <div style={{ color: 'var(--red)', fontSize: 11 }}>
+            dispatch refused · HTTP {String(kbErr.status ?? '?')}
+            {kbErr.body && kbErr.body.reason != null
+              ? <> · reason: {String(kbErr.body.reason)}</>
+              : kbErr.body && typeof kbErr.body.error === 'string'
+                ? <> · {kbErr.body.error}</>
+                : (!kbErr.body || kbErr.body.detail === undefined)
+                  ? <> · {String(kbErr.message || 'refused')}</>
+                  : null}
+          </div>
+          {kbErr.body && kbErr.body.detail !== undefined && <Json v={kbErr.body.detail} />}
+          {kbErr.body && kbErr.body.reason === 'governed_worker_unavailable' && (
+            <div style={note}>
+              governed_worker_unavailable: orch._autonomy.kanban_dispatcher is absent or KanbanDispatcher._runtime()
+              is disabled (requires default-off llm.kanban, llm.kanban_dispatch and llm.tool_loop_enabled plus
+              kernel_enabled() and enforce mediation).
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ ...note, borderTop: '1px solid var(--panel-line)', paddingTop: 6, marginTop: 8 }}>
         admin reads: {STATUS_PATH} · {SUGGESTIONS_PATH} · {OBSERVER_PATH} (X-Admin-Token) ·
-        admin write: POST {OBSERVER_RUN_PATH} · user-tier write: POST {CALL_PATH}.
+        admin writes: POST {OBSERVER_RUN_PATH} · POST {KANBAN_DISPATCH_PATH} · user-tier write: POST {CALL_PATH}.
       </div>
     </Card>
   );

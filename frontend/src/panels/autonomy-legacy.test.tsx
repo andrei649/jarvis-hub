@@ -51,6 +51,7 @@ const baseline = (over = {}) => (u, m) => {
   if (u === '/autonomy/preferences/suggestions') return o.suggestions || { status: 200, body: { suggestions: [] } };
   if (u === '/autonomy/observer/run' && m === 'POST') return o.run || { status: 200, body: { ok: true, summary: { sampled: 0, findings: 0, submitted: 0, unhealthy: [] } } };
   if (u === '/api/autonomy/call' && m === 'POST') return o.call || { status: 200, body: { ok: true, queued: true, task_id: 7, kind: 'call.outbound', title: 'Call +40712 via twilio' } };
+  if (u === '/api/autonomy/kanban/dispatch' && m === 'POST') return o.kanbanDispatch || { status: 200, body: { ok: true, status: 'queued', queued: [{ task_id: 't_alpha', queue_id: 41, status: 'proposed' }] } };
   return null;
 };
 
@@ -316,8 +317,112 @@ describe('AutonomyControlPanel — the queue census, the observer and the govern
     expect(screen.getByText('approval_rate 0.917 over 12 sample(s)')).toBeTruthy();
     expect(screen.getByText('raise autonomy → act autonomously on this class')).toBeTruthy();
     expect(screen.getByText(/NO endpoint applies a per-\(agent, kind, risk_tier\) raise/)).toBeTruthy();
-    // the only buttons on the panel are the reload arrow, the observer sample and the call request
+    // the only buttons on the panel are the reload arrow, the observer sample, the call request, and governed Kanban intake
     const labels = Array.from(document.querySelectorAll('button')).map((b) => b.textContent);
-    expect(labels.sort()).toEqual(['request approval', 'sample now', '↻']);
+    expect(labels.sort()).toEqual(['intake ready cards', 'request approval', 'sample now', '↻']);
+  });
+});
+
+describe('AutonomyControlPanel — governed Kanban dispatch (POST /api/autonomy/kanban/dispatch)', () => {
+  it('posts strict { board, limit } with X-Admin-Token, reloads census, and states execution has not started', async () => {
+    const fn = mockRoutes(baseline({
+      kanbanDispatch: {
+        status: 200,
+        body: {
+          ok: true,
+          status: 'queued',
+          queued: [
+            { task_id: 't_1', queue_id: 77, status: 'proposed' },
+            { task_id: 't_2', queue_id: 78, status: 'blocked' },
+          ],
+        },
+      },
+    }));
+    render(<AutonomyControlPanel />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'intake ready cards' })).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText('Kanban dispatch board'), { target: { value: ' research_1 ' } });
+    fireEvent.change(screen.getByLabelText('Kanban dispatch limit'), { target: { value: '6' } });
+    fireEvent.click(screen.getByRole('button', { name: 'intake ready cards' }));
+
+    await waitFor(() => expect(screen.getByText(/2 proposal\(s\) queued for approval — worker claim and execution have not started/)).toBeTruthy());
+    expect(screen.getByText('card t_1 · queue #77')).toBeTruthy();
+    expect(screen.getByText('card t_2 · queue #78')).toBeTruthy();
+    expect(screen.queryByText(/worker started/i)).toBeNull();
+
+    const post = lastPost(fn, '/api/autonomy/kanban/dispatch');
+    expect(post[1].headers['X-Admin-Token']).toBe('adm');
+    expect(JSON.parse(post[1].body)).toEqual({ board: 'research_1', limit: 6 });
+    // Queue census reloaded after proposal enqueue (initial mount + post-dispatch reload)
+    expect(fn.mock.calls.filter(([path]) => String(path) === '/autonomy/status')).toHaveLength(2);
+  });
+
+  it('distinguishes busy lock and empty eligible queue without claiming proposals were enqueued', async () => {
+    let pass = 0;
+    mockRoutes((path, method, init) => {
+      if (path === '/api/autonomy/kanban/dispatch' && method === 'POST') {
+        pass += 1;
+        return pass === 1
+          ? { status: 200, body: { ok: true, status: 'busy', queued: [] } }
+          : { status: 200, body: { ok: true, status: 'queued', queued: [] } };
+      }
+      return baseline()(path, method, init);
+    });
+    render(<AutonomyControlPanel />);
+    const btn = await screen.findByRole('button', { name: 'intake ready cards' });
+
+    fireEvent.click(btn);
+    await waitFor(() => expect(screen.getByText(/dispatch busy · another host or board dispatch pass holds the lock/)).toBeTruthy());
+    expect(screen.queryByText(/proposal\(s\) queued for approval/)).toBeNull();
+
+    fireEvent.click(btn);
+    await waitFor(() => expect(screen.getByText(/0 eligible cards queued/)).toBeTruthy());
+    expect(screen.queryByText(/proposal\(s\) queued for approval/)).toBeNull();
+  });
+
+  it('surfaces HTTP 503 and 409 refusals verbatim in role="alert" without claiming queued', async () => {
+    let pass = 0;
+    mockRoutes((path, method, init) => {
+      if (path === '/api/autonomy/kanban/dispatch' && method === 'POST') {
+        pass += 1;
+        return pass === 1
+          ? { status: 503, body: { ok: false, status: 'refused', reason: 'governed_worker_unavailable', queued: [] } }
+          : { status: 409, body: { detail: 'board intake conflict' } };
+      }
+      return baseline()(path, method, init);
+    });
+    render(<AutonomyControlPanel />);
+    const btn = await screen.findByRole('button', { name: 'intake ready cards' });
+
+    fireEvent.click(btn);
+    const firstAlert = await screen.findByRole('alert');
+    expect(firstAlert.textContent).toContain('dispatch refused · HTTP 503');
+    expect(firstAlert.textContent).toContain('reason: governed_worker_unavailable');
+    expect(firstAlert.textContent).toContain('llm.kanban_dispatch');
+    expect(screen.queryByText(/proposal\(s\) queued for approval/)).toBeNull();
+
+    fireEvent.click(btn);
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('dispatch refused · HTTP 409'));
+    expect(screen.getByRole('alert').textContent).toContain('board intake conflict');
+  });
+
+  it('disables submission when board slug or limit violates KanbanDispatchBody bounds', async () => {
+    mockRoutes(baseline());
+    render(<AutonomyControlPanel />);
+    const btn = (await screen.findByRole('button', { name: 'intake ready cards' })) as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+
+    fireEvent.change(screen.getByLabelText('Kanban dispatch board'), { target: { value: '../escape' } });
+    expect(btn.disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText('Kanban dispatch board'), { target: { value: 'default' } });
+    fireEvent.change(screen.getByLabelText('Kanban dispatch limit'), { target: { value: '17' } });
+    expect(btn.disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText('Kanban dispatch limit'), { target: { value: '0' } });
+    expect(btn.disabled).toBe(true);
+
+    fireEvent.change(screen.getByLabelText('Kanban dispatch limit'), { target: { value: '16' } });
+    expect(btn.disabled).toBe(false);
   });
 });

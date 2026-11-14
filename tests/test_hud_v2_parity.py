@@ -684,9 +684,6 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
-    # H075/H581: approved backend dispatch exists; dedicated board/worker
-    # controls remain in HUD_V2_REMAINING.md and native task H18.34.
-    "/api/autonomy/kanban/dispatch",
     # STAYS UNWIRED ON PURPOSE (verified 2026-09-01). Its docstring calls it a
     # "/model hot-swap", but models_llm.py:69-77 swaps nothing: it parses the command
     # string and returns `base` (a hardcoded module constant) plus `configured` (an
@@ -819,6 +816,20 @@ def test_kanban_route_gap_document_matches_the_uncalled_routes():
     documented = set(re.findall(r"^- `(/api/kanban/[^`]+)`$", section, flags=re.MULTILINE))
     uncalled = {path for path in UNCALLED_BACKLOG if path.startswith("/api/kanban/")}
     assert documented == uncalled
+
+
+def test_mounted_autonomy_kanban_dispatch_caller_is_accounted_for():
+    files = _client_files()
+    panel = files["frontend/src/panels/autonomy-legacy.tsx"]
+    routes = set(_snapshot_routes())
+    path = "/api/autonomy/kanban/dispatch"
+    assert path in routes
+    assert _classify(path) == "autonomy"
+    assert "AutonomyControlPanel" in files["frontend/src/gap.tsx"]
+    assert '"component": "AutonomyControlPanel"' in files["frontend/src/console-routes.ts"]
+    assert "const KANBAN_DISPATCH_PATH = '/api/autonomy/kanban/dispatch'" in panel
+    assert "actA(KANBAN_DISPATCH_PATH," in panel
+    assert path not in UNCALLED_BACKLOG
 
 # The owner panel composes these exact URLs from BASE and its encoded key helper.
 # The dedicated gate verifies both the mounted panel and the actual request expression.
