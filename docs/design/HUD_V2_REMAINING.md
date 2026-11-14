@@ -1,5 +1,30 @@
 # HUD v2 — Remaining work (next PR)
 
+Local gateway continuation, 2026-11-12: native Slack slash commands and the
+`/nerva` fallback use the existing command access, inbox and approval surfaces.
+This is host/Slack-specific behavior; it adds no HUD endpoint or screen. Workspace
+configuration and live Slack acceptance remain external prerequisites.
+Native Discord commands likewise use existing inbox/approval surfaces; health
+reports registration/hidden counts. Live Discord acceptance is unrun. The
+`channels.max_inbound_media_bytes` limit uses existing generic admin settings;
+no dedicated media control or frontend/device acceptance is claimed.
+
+H079 single-skill slash loads and `/commands [page]` use existing chat surfaces.
+Local V24 extends the HUD command catalog with owner-only quick commands,
+web-enabled unambiguous skills and explicit `/bundle <slug>` entries. It shows fixed
+metadata and partial/truncated notices without executing or loading skill bodies.
+The combined catalog is capped at256 rows, registry first; skill inventories over512
+are omitted rather than resolving against an incomplete pool. H069 now tests App SSE final replacement (including empty final); device acceptance
+is unrun. Main chat SSE labels/prose use outbound safety; opaque secret redactors
+withhold incremental prose until whole-response verification.
+
+Owner `/reload-skills` uses the shared chat registry and existing command catalog;
+no dedicated reload screen is added. Telegram static sticker caption/cache is a
+host channel feature. Native/mobile media and reload acceptance remain unrun.
+Owner `/debug` returns a local report path through existing chat; it has no upload
+or new screen and currently refuses on Windows. Discord attachments use existing
+inbox/approval cards; native provider acceptance is unrun.
+
 Local candidates, 2026-11-03: H220 adds Usage/Billing estimates, measured
 local/cloud/unknown aggregates, a Command Center link, and current-turn usage
 in the existing shared context strip. Explicit owner field selections remain
@@ -594,14 +619,15 @@ Generic failures, malformed results, ambiguous delivery and withheld output rema
 [typed local evidence](../project-local-image-response-20261009.md) and
 [ComfyUI history evidence](../project-comfyui-response-20261009.md).
 
-**HA-4i-S1 declarative extension inspection (2026-09-09):** user-guarded
-`GET /api/plugins/extensions` projects already-composed acquired package declarations
-without activation; `nerva extensions doctor` validates local JSON offline. A dedicated
-HUD view remains pending: show unavailable/disabled/uncomposed states, declaration and
-integrity results, and the explicit absence of SDK dispatch. Signature verification
-must not become an approval/ready badge. The existing acquisition panel does not close
-this extension-specific UI gap. Native mobile inspection also remains pending in
-`mobile/PARITY.md`; no third-party UI injection is added. See `docs/EXTENSIONS.md`.
+**HA-4i extension inspection (local V44/V46/V47, 2026-11-13):**
+Console → Build → Extensions now reads user-guarded `GET /api/plugins/extensions`.
+It separates declared and currently callable tools/commands, required arguments,
+observation events, signature verification and approval. Disabled/uncomposed/error
+states remain explicit; failed refreshes hide previous metadata. Mobile Status has an
+opt-in equivalent. Neither view activates code or grants consent. Offline tests and
+build checks cover these surfaces; live browser/device acceptance remains unverified.
+Native third-party UI injection remains excluded. See `docs/EXTENSIONS.md` and the
+cumulative local continuation checkpoint for exact executed evidence.
 
 *Parity gate (`tests/test_hud_v2_parity.py`) tracks all routes → every one is mapped to a v2
 surface or `NOT_IN_HUD`, so nothing above can silently disappear — these items are about depth, not
@@ -935,3 +961,74 @@ The new panel is a local implementation, with synthetic owner/Kernel/Vault/DNS/H
 ## Governed browser sessions — local integration (2026-10-29)
 
 Operator retains one-shot approval and adds fresh-profile start/act/close, bounded owner session/ref display and later browser-task outcome. The three session/task/close routes require the owner admin credential; generic availability remains user-tier. Grounded refs, scroll/back/press, frame/focus/native form semantics, current registration and exact per-step Kernel receipts are implemented. Local Chrome coverage includes unchanged-registration lifetime and changed-control native/journal cleanup. Console/get_images now add bounded completed-task untrusted observations through separate owner-approved reads, with conservative console invalidation and atomic image row/ref semantics. Vision/dialog/JS/CDP, other engines, real profiles, recording/spill, mobile controls and owner-host/live-platform acceptance remain required separately.
+
+
+2026-11-12 local continuation v5: shared chat handlers add owner /egress, /reload-mcp, /diff and /profile, plus /version. No dedicated native-mobile or HUD maintenance panel was added; live-device acceptance remains unrun. /diff session and saved-config MCP reread remain unsupported. Native provider menu descriptions are sanitized before truncation and unsafe command identifiers are withheld. See docs/hermes/evidence/2026-11-12-local-continuation.md for tested scope.
+
+2026-11-12 local continuation v6: owner shared chat now exposes failed-channel `/platform` controls and `/update` approval intake. No dedicated HUD/native-mobile maintenance UI was added; no device/live-channel acceptance is claimed. Update intake still refuses in strict Kernel mode until exact registration exists, and requester progress/restart notifications remain open.
+
+2026-11-12 local continuation v7 supersedes the v6 strict-intake limitation: exact hub.update mediation is implemented with current signed/human/AUTO execution checks; no dedicated maintenance UI or live-device proof is added. /pause recovery spelling and confirmed Slack/Discord disconnect controls share the existing chat surfaces. Requester update progress/restart notification and other recorded gaps remain.
+
+2026-11-12 local continuation v8 supersedes the earlier saved-MCP reread gap: shared owner chat now previews and confirms exact saved-config reconciliation. Boot load-set and owner disconnect intent persist; new servers remain disconnected. The confirmation is one-time and expires; no permanent always preference or dedicated native mobile/HUD panel is implemented. Provider/device reconnect acceptance remains unrun.
+
+2026-11-12 local continuation v9: owner chat `/diff session [--stat]` now reads the earliest retained full-project terminal checkpoint against current allowed project files. Explicit approximation/exclusions and missing/corrupt-history refusals; no Git required. Existing chat command surface only; no dedicated checkpoint-diff UI or live mobile/device acceptance claimed.
+
+2026-11-12 local v10: existing owner `/update` chat/approval flow now reports pending-or-running when the shared queue atomically refuses another executable update card. No dedicated UI change; requester progress and post-restart notification remain open, and no live mobile/device acceptance is claimed.
+
+2026-11-12 local v11: keyed channel replies and Telegram/Discord attachments now withhold transport when a durable claim cannot be obtained; shared-database claims and recovery are conditional/atomic. Recent keyed evidence has a500protected-row quota for24h, with new keyed claims refused on capacity. Existing receipts API remains; no new receipt panel/mobile UI or live device acceptance in this slice.
+
+2026-11-12 local v12: HUD Admin Channels now has a lazy owner-only Delivery receipts disclosure with recent50 metadata rows, retained counts, explicit uncertain outcomes and manual refresh. It reads the existing authenticated endpoint, bounds response data, hides stale results on failed refresh and has no send/retry/clear controls. This closes the HUD receipt-reading gap only; native mobile receipt UI, live device/platform acceptance and dead-target-clear UI remain open.
+
+2026-11-12 local continuation v13 (H084 prerequisite): ephemeral restart admission/drain counts existing work and refuses fresh job/subagent/turn starts before claims or budgets; emergency commands retain owner checks. No restart endpoint/command or mobile/HUD restart behavior added. Worker admission, signed completion, physical restart and requester notification remain open; full restart is not claimed.
+
+2026-11-12 local v14 (H084 prerequisite): worker admission covers ordinary/consent/owner-once claims, and original Telegram owner-DM command provenance carries bot-scoped provider identity through paired inbox to registry. No restart command/effect or new HUD/mobile endpoint yet; signed completion and requester notice remain open.
+
+2026-11-12 local v15 (H084): original owner Telegram /restart now creates an exact signed human-approval card. Atomic DONE completion precedes a one-use physical claim, bounded drain and late authority checks; a different boot may attempt one fixed keyed same-owner availability notice. No real restart or Telegram send was performed. Service-manager/provider acceptance remains open; this is a chat-only command with the existing approval surface, no new HUD/mobile endpoint. Supersedes the v14 command/completion/notifier implementation gaps; full H084 remains partial.
+
+2026-11-12 local v16 (H084): bounded private Telegram restart phrases route to the fixed owner command before pending input and conversation context. Original inbox text is preserved and signed in v2 source tickets; historical v1 literal commands remain verifiable. Only the verified original human control intent receives scoped manual classification for signed intake; generic taint and human approval stay enforced. Group prose and other services are unchanged. Historical boot cleanup works with execution disabled without granting a stop or send. Full real ingress/Kernel/approval/DONE pipeline uses a mocked stopper; live acceptance remains open.
+
+2026-11-12 local v25: Mobile Status adds an opt-in Delivery receipts disclosure backed by the existing owner-guarded endpoint. It validates and projects at most50 metadata rows, explains retained counts and uncertain delivery states, and offers refresh/close only. No fetch before opening; connection/credential changes remount closed and erase owner data. Refused refresh, close and unmount clear/abort/fence stale results. No resend or dead-target mutation. Native TypeScript and full mobile Jest are now verified locally; real device/platform acceptance remains open.
+
+Local V44 (2026-11-13): extension inspection/host CLI now distinguish exact live declarations from currently callable tools and commands, using consent/package/registry checks. The dedicated HUD and mobile extension-inspection views remain pending; this diagnostic change adds no activation control.
+
+### Local V51 — signed extension restart routes
+
+Backend startup now restores owner-only command routes from saved activation hints and current consent, without running an extension or composing promotion. The first owner command revalidates package bytes and the exact consent grant before activation. Explicit admin activation may compose acquisition; read-only inspection still does not. Activation/revoke responses expose `restart_restore` separately from live success; `nerva extensions` prints persistence warnings. Build → Extensions remains read-only: no new HUD activation/revoke control is claimed. Native menu updates are queued after explicit activation/revoke and preserve the channel manager's pause/ownership guards. Live Docker/channel/browser acceptance remains unverified.
+
+H697 local continuation (2026-11-13, V53): initial transcript rehydration and desktop cross-window refresh share exact missing-session recovery, coalescing current fallback reads and latching healed ids. A changed selection or started/completed turn fences late reads; malformed fallback snapshots cannot change selection. 403/409/503/network/proxy failures do not rebind. Reclaimed-session push integration remains open; this adds no new route or control.
+
+
+2026-11-13 local V55 (H624/H695): existing updater status/receipts expose `data_restore_staged` separately from `data_restored`; private archive identity stays hidden. Required data restoration is confirmed only by an exact successful backup result. The existing host-maintenance surfaces retain their scope; no new HUD/mobile restoration control or live device acceptance is claimed.
+
+
+2026-11-13 local V56 (H624/H695): updater receipts distinguish `stash_restored`; refused or failed automatic owner-stash replay provides recovery guidance through the existing maintenance status. No new HUD/mobile controls or live device proof; host-only maintenance scope remains.
+
+
+2026-11-13 local V57 (H695): host updater/bootstrap refuse unsafe POSIX venv mutation with named diagnostics through existing logs/errors. No new HUD/mobile controls. Windows ownership is explicitly unchecked; device/native ACL acceptance remains open.
+
+
+2026-11-13 local V59 (H697, still partial): mobile now offers explicit Start new chat after an exact selected-session-missing response. The unsent message persists until Add to draft or Dismiss; adding preserves newer composer text and never sends automatically. A per-turn server marker confirms successful governed /new before selection changes. Older hubs without that marker preserve the old selection and show guidance. Authorization, busy/corrupt/network errors and stale owner/selection responses cannot trigger recovery. Native device acceptance, automatic terminal-pull and reclaimed-session push remain open.
+
+
+2026-11-13 local V60 (H141/H195, still partial): mobile History adds a local filter over loaded recent conversations by title, summary, session identifier and agent. Search scope is explicitly limited to the loaded recent list (the current API returns up to 20 rows); it is not full-history or transcript search. Clearing restores the list, refresh retains the query, closing or changing connection resets it, and choosing a match still explicitly resumes its lineage target. Browser search/paging, full-history indexing and live native acceptance remain separate.
+
+
+2026-11-13 local V61 (H141/H195, still partial): web Sessions now exposes all loaded recent rows instead of silently truncating the list to12. Local title/summary/identifier/agent filtering has explicit loaded-list scope, clear and no-match states; tab changes reset the query and query changes dismiss pending rename/delete confirmation. Existing governed session actions remain explicit. The API still returns up to20 rows; full-history transcript indexing/pagination and device acceptance remain separate. Mobile loaded-list search was already implemented in V60 and is unchanged.
+
+
+2026-11-13 local V62 (H141/H195, still partial): owner web history now loads older sessions beyond20 through a bounded keyset API. Pages retain archive/lineage filtering and deterministic date+ID ordering; local search covers all loaded pages. Failed later pages retain the list and support retry; stale requests cannot cross tabs/reload. Guests and older hubs retain the recent-list fallback. Mobile pagination, full-text indexing and live device acceptance remain open; pagination is not a fixed historical snapshot. Existing mobile GET/sessions stays unchanged; web initial owner-route refusal can use the independently authorized legacy recent list.
+
+
+2026-11-13 local V63 (H141/H195, still partial): mobile History adopts the existing owner keyset API and explicitly loads older conversations. Local search includes all loaded pages; retry preserves rows after later failures. Initial401/403/404/405 alone falls back to the legacy recent list. Refresh, close, connection changes and explicit resume fence late responses. No backend or Windows changes; physical-device acceptance and full-text indexing remain open. Guest/older-server fallback remains recent-only; no live device or deployment claim.
+
+2026-11-13 local V64 (H141/H195, still partial): owner web Sessions adds per-row retained-text preview and explicit JSON download without resuming, changing the default session or unarchiving. The admin-only read uses existing identity, turn-lease, import and rewind fences; bounds and automatic secret redaction fail closed. Only retained user/assistant text is included, not compacted archives, tool/media/system content. Mobile preview/export, full-archive export and live device acceptance remain separate.
+
+2026-11-13 local V65 (H141/H195, still partial): mobile History adds explicit retained-transcript preview separate from resume and user-initiated JSON save to the app documents folder. It uses the existing owner-only V64 read with strict exact-session/schema/UTF8-size validation and a field whitelist. Close, search, refresh, resume and connection changes retire private preview/save status. The UI states retained-only automatic redaction; full compacted archives, external sharing and real-device acceptance remain separate.
+
+2026-11-13 local V66 (H141/H195, still partial): web and mobile history add conjunctive agent/date filters over loaded metadata and adjacent local-day group labels without reordering keyset results. All/exact/unassigned agents and all/last7days/last30days/unknown dates are explicit; reset, pagination and retained-transcript privacy fences are preserved. This is loaded-history navigation; full-text/source filters, server-wide filtering and live device acceptance remain separate. Legacy complete archive export is blocked by missing instance/branch provenance and incomplete capture; old logs must not resurrect rewound messages.
+
+2026-11-13 local V67 (H005, still partial): `nerva sessions transcript ID [-o PATH]` exports the owner-authorized V64 retained-current-history JSON with strict identity/schema/UTF8 bounds and a field whitelist. Stdout contains JSON only; diagnostics are generic on stderr. File output is owner-only and create-only, published from a flushed temporary file without clobbering existing files or symlinks. Existing opt-in training `sessions export` is unchanged. Full historical capture/archive, JSONL and other session administration remain separate. This is CLI parity with existing web/mobile retained JSON, with no endpoint or UI change.
+
+2026-11-13 local V68 (H005, still partial): CLI session organization adds rename, pin/unpin, archive/unarchive and archived listing through existing protected routes. Inputs are checked before requests, titles use backend normalization, and strict exact-session/action receipts prevent false success. Malformed success receipts report that the change may have applied; no automatic retry. JSON output includes only known receipt fields. Existing lineage/import ownership, transcript/trajectory exports and default listing are preserved; delete/prune and full historical capture remain separate. CLI parity only; existing web/mobile behavior and endpoints unchanged.
+
+2026-11-13 local V69 (H005, still partial): `sessions history` adds bounded owner keyset traversal beyond the recent20 list, with exact-agent/unassigned, age and loaded metadata query filters. Explicit result/page caps, cursor continuation and stop reasons distinguish exhausted pages from a partial scan. Strict bounded whitelisted pages, dedup/order preservation and buffered output refuse malformed/repeated cursors or late failures without false completion. Default recent listing and existing session mutations/exports remain unchanged. Filtering is client-side within the scanned pages; source/tool-call filters, interactive browse and fixed snapshot isolation remain separate. CLI-only parity; existing UI/endpoints unchanged.

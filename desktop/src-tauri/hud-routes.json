@@ -220,6 +220,8 @@
     "/v2/console/templates/",
     "/v2/console/acquisition",
     "/v2/console/acquisition/",
+    "/v2/console/extensions",
+    "/v2/console/extensions/",
     "/v2/console/media-director",
     "/v2/console/media-director/",
     "/v2/console/media-gallery",

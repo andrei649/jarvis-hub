@@ -226,7 +226,12 @@ def test_chat_json_and_stream_share_completion_with_live_progress(monkeypatch):
     assert events[-1]['outcome']['latency_ms'] == 17
 
 
-def test_stream_reconciles_visible_estimate_with_late_provider_usage(monkeypatch):
+@pytest.mark.parametrize("opaque_redactor", [False, True])
+def test_stream_reconciles_visible_estimate_with_late_provider_usage(monkeypatch, opaque_redactor):
+    from agents.core.channels import outbound_safety
+
+    monkeypatch.setattr(outbound_safety, "_known_redactor",
+                        (lambda text: text) if opaque_redactor else None)
     import httpx
     from fastapi.testclient import TestClient
 
@@ -258,7 +263,7 @@ def test_stream_reconciles_visible_estimate_with_late_provider_usage(monkeypatch
     events = [json.loads(chunk[6:]) for chunk in TestClient(web.app).post(
         '/chat/stream', json={'message': 'generate'}).text.split('\n\n') if chunk.startswith('data: ')]
     flow = [item['outcome']['output'] for item in events if item['type'] == 'outcome_progress']
-    assert flow[0]['basis'] == 'visible_estimate'
+    assert flow[0]['basis'] == ('provider_complete' if opaque_redactor else 'visible_estimate')
     assert flow[-1] == {'tokens': 17, 'basis': 'provider_complete'}
     assert events[-1]['outcome']['output'] == flow[-1]
 

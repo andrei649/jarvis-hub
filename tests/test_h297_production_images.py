@@ -317,7 +317,7 @@ async def test_a_transport_error_is_not_marked_rejected():
 
     turn = await _http_claude(handler).generate_tool_turn(
         model=MODEL, messages=[{"role": "user", "content": "hi"}], tools=[ToolSpec("file_read")])
-    assert turn.content.startswith("[Claude API error:") and "connection reset" in turn.content
+    assert turn.content == "[Claude API error: request failed]"
     assert turn.finish_reason != PROVIDER_REJECTED_FINISH
 
 
@@ -372,7 +372,7 @@ async def test_a_transport_error_on_an_image_request_keeps_the_images(tmp_path):
     assert len(sent) == 2
     (with_image,) = _tool_results(sent[1])
     assert [part["type"] for part in with_image["content"]] == ["text", "image"]
-    assert answer.startswith("[Claude API error:") and "timed out" in answer
+    assert answer == "[Claude API error: request failed]"
     assert not any(e.get("event") == "tool_result_images_detached" for e in events)
 
 

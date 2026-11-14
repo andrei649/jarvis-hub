@@ -90,6 +90,7 @@ export const CONSOLE_PANELS = [
   {"id": "sandbox", "label": "Sandbox", "group": "Build", "component": "SandboxPanel"},
   {"id": "templates", "label": "Templates", "group": "Build", "component": "TemplatesPanel"},
   {"id": "acquisition", "label": "Acquisition", "group": "Build", "component": "AcquisitionPanel"},
+  {"id": "extensions", "label": "Extensions", "group": "Build", "component": "ExtensionInspectionPanel"},
   {"id": "media-director", "label": "Media Director", "group": "Build", "component": "MediaDirectorPanel"},
   {"id": "media-gallery", "label": "Media Gallery", "group": "Build", "component": "MediaGalleryPanel"},
   {"id": "publish-readiness", "label": "Publish Readiness", "group": "Build", "component": "PublishReadinessPanel"},

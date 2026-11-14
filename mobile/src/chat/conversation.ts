@@ -1,10 +1,16 @@
-import { resumeSession, streamChat, type HistoryTurn } from '../api/client';
+import { resumeSession, streamChat, type HistoryTurn, type SessionTransition, type StreamErrorDetail } from '../api/client';
 import { loadConversation, saveConversation, type SavedConversation } from '../storage/chat';
 import type { ServerConfig } from '../storage/settings';
 import type { ChatMessage } from './types';
 import type { TurnOutcome } from './turnOutcome';
 
-export type ConversationState = SavedConversation & { ready: boolean; sending: boolean; turnOutcome: TurnOutcome | null };
+export type ConversationState = SavedConversation & {
+  ready: boolean;
+  sending: boolean;
+  turnOutcome: TurnOutcome | null;
+  missingSessionId: string | null;
+  recoveryPrompt: string | null;
+};
 let sequence = 0;
 const nextId = () => `m${Date.now()}_${sequence++}`;
 const validId = (id: unknown): id is string => typeof id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(id);
@@ -17,7 +23,8 @@ function visibleTurns(turns: HistoryTurn[]): ChatMessage[] {
 
 /** One mounted connection owns hydration, selection and all its in-flight callbacks. */
 export class Conversation {
-  state: ConversationState = { sessionId: null, messages: [], ready: false, sending: false, turnOutcome: null };
+  state: ConversationState = { sessionId: null, messages: [], ready: false, sending: false,
+    turnOutcome: null, missingSessionId: null, recoveryPrompt: null };
   private epoch = 0;
   private metricGeneration = 0;
   private active = true;
@@ -32,20 +39,24 @@ export class Conversation {
     if (!this.active) return;
     this.state = { ...this.state, ...update };
     this.changed(this.state);
-    if (persist && this.state.ready) void saveConversation(this.scope,
-      { sessionId: this.state.sessionId, messages: this.state.messages });
+    if (persist && this.state.ready) void saveConversation(this.scope, {
+      sessionId: this.state.sessionId, messages: this.state.messages,
+      ...(this.state.recoveryPrompt !== null ? { recoveryPrompt: this.state.recoveryPrompt } : {}),
+    });
   }
 
   async hydrate() {
     const epoch = this.epoch;
     const saved = await loadConversation(this.scope);
-    if (this.active && epoch === this.epoch) this.publish({ ...saved, ready: true, turnOutcome: null });
+    if (this.active && epoch === this.epoch) this.publish({ ...saved, recoveryPrompt: saved.recoveryPrompt ?? null,
+      missingSessionId: null, ready: true, turnOutcome: null });
   }
 
   resume(sessionId: string, turns: HistoryTurn[]) {
     if (!this.active || !validId(sessionId) || !Array.isArray(turns)) return;
     this.invalidate();
-    this.publish({ sessionId, messages: visibleTurns(turns), ready: true, sending: false, turnOutcome: null }, true);
+    this.publish({ sessionId, messages: visibleTurns(turns), ready: true, sending: false,
+      turnOutcome: null, missingSessionId: null }, true);
   }
 
   private invalidate() {
@@ -72,6 +83,12 @@ export class Conversation {
     if (!this.active) return;
     ++this.metricGeneration;
     this.publish({ turnOutcome: null });
+  }
+
+  /** Explicitly discard the retained prompt after the user has copied or dismissed it. */
+  dismissRecoveryPrompt() {
+    if (!this.active || this.state.recoveryPrompt === null) return;
+    this.publish({ recoveryPrompt: null }, true);
   }
 
   /** The selected-image sender shares the text turn lock and epoch. No image bytes enter state. */
@@ -107,6 +124,20 @@ export class Conversation {
   }
 
   send(message: string, agent: string): boolean {
+    if (this.state.missingSessionId !== null) return false;
+    if (this.state.recoveryPrompt !== null && !['/new', '/reset', '/undo'].includes(message.trim())) return false;
+    return this.sendInternal(message, agent, this.state.sessionId, null);
+  }
+
+  /** Start a fresh governed session only after the selected server session was proven missing. */
+  recoverWithNewSession(agent: string): boolean {
+    const missing = this.state.missingSessionId;
+    if (!validId(missing) || this.state.sessionId !== missing) return false;
+    return this.sendInternal('/new', agent, null, missing);
+  }
+
+  private sendInternal(message: string, agent: string, requestedSessionId: string | null,
+    recoveringMissingSession: string | null): boolean {
     const text = message.trim();
     if (!this.active || !this.state.ready || this.state.sending || !text) return false;
     this.invalidate();
@@ -114,6 +145,7 @@ export class Conversation {
     const metricGeneration = this.metricGeneration;
     const botId = nextId();
     const selected = this.state.sessionId;
+    const missingAtStart = recoveringMissingSession;
     const current = () => this.active && epoch === this.epoch;
     const patch = (update: (m: ChatMessage) => ChatMessage) => {
       if (current()) this.publish({ messages: this.state.messages.map(m => m.id === botId ? update(m) : m) });
@@ -123,14 +155,31 @@ export class Conversation {
     const cancel = streamChat(this.config, text, agent, {
       onStart: responder => patch(m => ({ ...m, agent: responder || agent })),
       onToken: token => patch(m => ({ ...m, text: m.text + token })),
-      onDone: (full, sessionId, outcome) => {
+      onDone: (full, sessionId, outcome, transition?: SessionTransition) => {
         if (!current()) return;
         this.cancel = null;
         const changed = validId(sessionId) && sessionId !== selected;
-        const rollover = changed && ['/new', '/reset', '/undo'].includes(text);
-        const messages = this.state.messages.map(m => m.id === botId ? { ...m, text: full || m.text, pending: false } : m);
-        this.publish({ sending: false, sessionId: validId(sessionId) ? sessionId : selected,
+        const transitionSessionId = transition?.command === 'new' && validId(transition.sessionId)
+          && transition.sessionId === sessionId ? transition.sessionId : null;
+        const confirmedRecovery = missingAtStart !== null && selected === missingAtStart && text === '/new'
+          && transitionSessionId !== null && transitionSessionId !== missingAtStart;
+        const rollover = changed && ['/new', '/reset', '/undo'].includes(text)
+          && (missingAtStart === null || confirmedRecovery);
+        const resolvedMissing = (confirmedRecovery || (missingAtStart === null && validId(sessionId)))
+          ? null : this.state.missingSessionId;
+        const recoveryPrompt = this.state.recoveryPrompt;
+        const nextSessionId = missingAtStart !== null && !confirmedRecovery
+          ? selected : validId(sessionId) ? sessionId : selected;
+        const unconfirmedRecovery = missingAtStart !== null && text === '/new' && !confirmedRecovery;
+        const displayedFull = unconfirmedRecovery
+          ? `The hub did not confirm a new conversation. Your previous chat remains selected. `
+            + `Select a saved chat or update the hub before trying again.${full ? `\nHub response: ${full}` : ''}`
+          : full;
+        const messages = this.state.messages.map(m => m.id === botId
+          ? { ...m, text: displayedFull || m.text, pending: false } : m);
+        this.publish({ sending: false, sessionId: nextSessionId,
           messages: rollover ? messages.filter(m => m.id === botId) : messages,
+          missingSessionId: resolvedMissing, recoveryPrompt,
           turnOutcome: !rollover && metricGeneration === this.metricGeneration ? outcome ?? null : null }, true);
         if (rollover && text === '/undo') {
           void resumeSession(this.config, sessionId).then(result => {
@@ -140,13 +189,17 @@ export class Conversation {
           }).catch(() => { /* Keep the acknowledgement when the transcript cannot be fetched. */ });
         }
       },
-      onError: error => {
+      onError: (error, detail?: StreamErrorDetail) => {
         if (!current()) return;
         this.cancel = null;
         patch(m => ({ ...m, text: m.text || `⚠ ${error}`, pending: false, error: !m.text }));
-        this.publish({ sending: false, turnOutcome: null }, true);
+        const provesMissing = recoveringMissingSession === null && selected !== null
+          && this.state.sessionId === selected && detail?.kind === 'session_missing'
+          && detail.sessionId === selected;
+        this.publish({ sending: false, turnOutcome: null,
+          ...(provesMissing ? { missingSessionId: selected, recoveryPrompt: this.state.recoveryPrompt ?? text } : {}) }, true);
       },
-    }, selected);
+    }, requestedSessionId);
     // Missing configuration can report an error synchronously before streamChat returns.
     if (current() && this.state.sending) this.cancel = cancel;
     return true;

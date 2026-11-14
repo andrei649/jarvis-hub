@@ -1,0 +1,5 @@
+{
+  "gitleaks": null,
+  "semgrep": null,
+  "pip_audit": false
+}

@@ -106,12 +106,38 @@ async def test_model_silence_before_caps_persists_without_delivery(tmp_path, scr
 
 
 @pytest.mark.asyncio
-async def test_no_agent_silent_token_is_literal_output(tmp_path, scripts):
+@pytest.mark.parametrize('held', [False, True])
+async def test_no_agent_silent_token_is_literal_output(tmp_path, scripts, held):
+    from agents.core.channels.base import ChannelAdapter
+
     store, runner, job, tasks, outputs, _ = make_runtime(tmp_path, scripts)
+
+    class Transport(ChannelAdapter):
+        async def start(self):
+            pass
+
+        async def stop(self):
+            pass
+
+        async def send(self, message, **kwargs):
+            assert "_literal_job_output" not in kwargs
+            outputs.append(message)
+            return True
+
+    runner._orch.channels['ntfy'] = Transport('ntfy')
     try:
         await runner.fire(job.id)
         complete(tasks[1], stdout='[SILENT]')
         await runner.reconcile_scripts()
+        assert outputs == ['[SILENT]']
+        if held:
+            outputs.clear()
+            runner.quiet_hours = lambda: True
+            await runner._deliver('[SILENT]', 'ntfy', job=job)
+            assert not outputs and store.held_count() == 1
+            runner.quiet_hours = lambda: False
+            assert await runner.flush_held() == 1
+            assert store.held_count() == 0
         assert outputs == ['[SILENT]']
     finally:
         store.close()

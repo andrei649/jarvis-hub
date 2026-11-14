@@ -2,12 +2,14 @@ import { Text } from './ThemedText';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { ApiError } from '../api/client';
-import { fetchCommands, type CommandSummary } from '../api/commands';
+import { fetchCommands, type CommandSummary, type ShortcutSummary } from '../api/commands';
 import { useServer } from '../context/ServerContext';
 import { useThemeStyles, type Theme } from '../theme';
 
 type CatalogState = { scope: string; status: 'loading' | 'available' | 'unavailable' | 'error';
-  commands: CommandSummary[]; error?: string };
+  commands: CommandSummary[]; shortcuts: ShortcutSummary[]; truncated: boolean;
+  shortcutsUnavailable: boolean; error?: string };
+const emptyCatalog = { commands: [], shortcuts: [], truncated: false, shortcutsUnavailable: false };
 
 export function CommandsModal({ visible, onClose, onChoose }: {
   visible: boolean;
@@ -16,7 +18,7 @@ export function CommandsModal({ visible, onClose, onChoose }: {
 }) {
   const { theme, styles } = useThemeStyles(makeStyles);
   const { config, chatScope } = useServer();
-  const [catalog, setCatalog] = useState<CatalogState>({ scope: '', status: 'loading', commands: [] });
+  const [catalog, setCatalog] = useState<CatalogState>({ scope: '', status: 'loading', ...emptyCatalog });
   const epoch = useRef(0);
   const controller = useRef<AbortController | null>(null);
 
@@ -25,14 +27,17 @@ export function CommandsModal({ visible, onClose, onChoose }: {
     const abort = new AbortController();
     controller.current = abort;
     const request = ++epoch.current;
-    setCatalog({ scope: chatScope, status: 'loading', commands: [] });
+    setCatalog({ scope: chatScope, status: 'loading', ...emptyCatalog });
     void fetchCommands(config, abort.signal).then(result => {
       if (epoch.current === request && !abort.signal.aborted) {
-        setCatalog({ scope: chatScope, status: result.status, commands: result.commands });
+        setCatalog({ scope: chatScope, status: result.status, commands: result.commands,
+          shortcuts: result.status === 'available' ? result.shortcuts : [],
+          truncated: result.status === 'available' && result.truncated,
+          shortcutsUnavailable: result.status === 'available' && result.shortcutsUnavailable });
       }
     }).catch(error => {
       if (epoch.current === request && !abort.signal.aborted) {
-        setCatalog({ scope: chatScope, status: 'error', commands: [],
+        setCatalog({ scope: chatScope, status: 'error', ...emptyCatalog,
           error: error instanceof ApiError ? error.message : 'Failed to load commands' });
       }
     });
@@ -47,12 +52,16 @@ export function CommandsModal({ visible, onClose, onChoose }: {
     ++epoch.current;
     controller.current?.abort();
     controller.current = null;
-    setCatalog({ scope: '', status: 'loading', commands: [] });
+    setCatalog({ scope: '', status: 'loading', ...emptyCatalog });
     onClose();
   }, [onClose]);
 
   const current: CatalogState = catalog.scope === chatScope ? catalog
-    : { scope: chatScope, status: 'loading', commands: [] };
+    : { scope: chatScope, status: 'loading', ...emptyCatalog };
+  const rows: Array<{ kind: 'command'; item: CommandSummary } | { kind: 'shortcut'; item: ShortcutSummary }> = [
+    ...current.commands.map(item => ({ kind: 'command' as const, item })),
+    ...current.shortcuts.map(item => ({ kind: 'shortcut' as const, item })),
+  ];
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
       <View style={styles.backdrop}>
@@ -70,21 +79,27 @@ export function CommandsModal({ visible, onClose, onChoose }: {
           </View>}
           {current.status === 'unavailable' && <Text style={styles.muted}>Commands unavailable on this hub.</Text>}
           {current.status === 'error' && <Text style={styles.error}>Could not load commands: {current.error}</Text>}
-          {current.status === 'available' && current.commands.length === 0 &&
+          {current.status === 'available' && rows.length === 0 &&
             <Text style={styles.muted}>No commands available for this account.</Text>}
-          {current.status === 'available' && current.commands.length > 0 && <FlatList
-            data={current.commands}
-            keyExtractor={item => item.name}
+          {current.status === 'available' && current.truncated &&
+            <Text style={styles.muted}>Command catalog is truncated. Some choices are not shown.</Text>}
+          {current.status === 'available' && current.shortcutsUnavailable &&
+            <Text style={styles.muted}>Some shortcuts are unavailable right now.</Text>}
+          {current.status === 'available' && rows.length > 0 && <FlatList
+            data={rows}
+            keyExtractor={row => `${row.kind}:${row.kind === 'shortcut' ? `${row.item.kind}:` : ''}${row.item.name}`}
             style={styles.list}
-            renderItem={({ item }) => <Pressable style={styles.option}
-              accessibilityLabel={`Insert ${item.command} in message`}
-              onPress={() => { onChoose(item.command); close(); }}>
+            renderItem={({ item: row }) => <Pressable style={styles.option}
+              accessibilityLabel={`Insert ${row.item.command} in message`}
+              onPress={() => { onChoose(row.item.command); close(); }}>
               <View style={styles.optionHeader}>
-                <Text style={styles.command}>{item.command}</Text>
-                <Text style={styles.tier}>{item.tier === 'admin' ? 'Owner' : 'User'}</Text>
+                <Text style={styles.command}>{row.item.command}</Text>
+                <Text style={styles.tier}>{row.kind === 'shortcut'
+                  ? `${({ quick: 'Quick command', skill: 'Skill', bundle: 'Bundle' })[row.item.kind]} · Owner`
+                  : row.item.tier === 'admin' ? 'Owner' : 'User'}</Text>
               </View>
-              <Text style={styles.usage}>{item.usage}</Text>
-              <Text style={styles.description}>{item.description}</Text>
+              <Text style={styles.usage}>{row.item.usage}</Text>
+              <Text style={styles.description}>{row.item.description}</Text>
             </Pressable>}
           />}
           {current.status !== 'loading' && <Pressable style={styles.retry} onPress={load} accessibilityLabel="Retry commands">

@@ -1,0 +1,12 @@
+{
+  "ruff": 0,
+  "locks": 0,
+  "policy_validate": 0,
+  "policy_selftest": 0,
+  "api_doc": 0,
+  "hermes_metadata": 0,
+  "generated_status": 0,
+  "diff_whitespace": 0,
+  "bandit_new_findings": 0,
+  "full_source_manifest_sha256": "d96d1d91efa6d208cda3b5f094a8ef123f9393b210a3b5f06bc24d44d8cb27da"
+}

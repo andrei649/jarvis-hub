@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 from io import BytesIO
+from types import SimpleNamespace
 
 import pytest
 
@@ -566,11 +567,19 @@ async def test_malformed_and_oversize_frames_refuse_before_success(monkeypatch):
 
 
 def test_windows_child_scope_requires_real_job_claim_and_sync_stays_inert(monkeypatch):
+    from pypdf import PdfReader
+
     from agents.core.workspace import extract, win_job_process
     from tests.fixtures.workspace import samples
 
-    monkeypatch.setattr(extract.sys, 'platform', 'win32')
-    monkeypatch.setattr(win_job_process.sys, 'platform', 'win32')
+    # Initialize the real parser before simulating Windows on a non-Windows host.
+    blank_pdf = samples.build_blank_pdf(1)
+    PdfReader(BytesIO(blank_pdf))
+
+    host_platform = sys.platform
+    monkeypatch.setattr(extract, 'sys', SimpleNamespace(platform='win32'))
+    monkeypatch.setattr(win_job_process, 'sys', SimpleNamespace(platform='win32'))
+    assert sys.platform == host_platform
     monkeypatch.setenv('NERVA_WORKSPACE_OCR', '1')
     monkeypatch.setenv('NERVA_WORKSPACE_KILLABLE_EXTRACTION', '1')
     monkeypatch.setattr(extract, '_ocr_engine', lambda: lambda *_: 'generated page text')
@@ -582,8 +591,9 @@ def test_windows_child_scope_requires_real_job_claim_and_sync_stays_inert(monkey
                                   progress=lambda *_: None)
         assert result.segments[0].text == 'generated page text'
         with pytest.raises(extract.ExtractionError) as caught:
-            extract.extract_bytes(samples.build_blank_pdf(1), 'pdf')
+            extract.extract_bytes(blank_pdf, 'pdf')
         assert caught.value.code == 'no_text'
+    assert sys.platform == host_platform
 
 
 @pytest.mark.asyncio
@@ -607,7 +617,10 @@ async def test_closed_native_gate_keeps_windows_ocr_on_time_only_refusal(monkeyp
     async def forbidden(*args, **kwargs):
         pytest.fail('closed production gate entered native Job OCR')
 
-    monkeypatch.setattr(extract_process.sys, 'platform', 'win32')
+    host_platform = sys.platform
+    monkeypatch.setattr(extract_process, 'sys',
+                        SimpleNamespace(platform='win32', executable=sys.executable))
+    assert sys.platform == host_platform
     monkeypatch.setattr(extract_process, '_WINDOWS_OCR_NATIVE_ACCEPTED', False)
     monkeypatch.setenv('NERVA_WORKSPACE_OCR', '1')
     monkeypatch.setenv('NERVA_WORKSPACE_KILLABLE_EXTRACTION', '1')
@@ -617,6 +630,7 @@ async def test_closed_native_gate_keeps_windows_ocr_on_time_only_refusal(monkeyp
     with pytest.raises(extract.ExtractionError) as caught:
         await extract_process.extract_in_child(b'generated-blank-pdf', 'pdf', timeout=2)
     assert caught.value.code == 'no_text'
+    assert sys.platform == host_platform
 
 
 @pytest.mark.skipif(sys.platform != 'win32', reason='requires native Windows Job and IOCP')

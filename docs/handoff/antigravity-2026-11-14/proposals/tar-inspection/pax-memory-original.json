@@ -1,0 +1,18 @@
+[
+  {
+    "files": 50,
+    "global_pax_keys": 2000,
+    "archive_bytes": 71680,
+    "result_members": 50,
+    "peak_bytes": 4002620,
+    "retained_bytes": 158198
+  },
+  {
+    "files": 500,
+    "global_pax_keys": 2000,
+    "archive_bytes": 296960,
+    "result_members": 500,
+    "peak_bytes": 27694349,
+    "retained_bytes": 204054
+  }
+]

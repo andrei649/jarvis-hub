@@ -19,6 +19,10 @@ class AcquisitionRuntime:
         enabled: Callable[[], bool] = lambda: False,
         root: str | Path | None = None,
         store_factory: Callable[..., CapabilityRequestStore] = CapabilityRequestStore,
+        commands=None,
+        extension_consent=None,
+        activation_hints=None,
+        command_bindings=None,
     ) -> None:
         self._enabled = enabled
         self._root = root
@@ -32,6 +36,14 @@ class AcquisitionRuntime:
         self.ledger = None
         self.sandbox_profile = None
         self.extension_runtime = None
+        self.commands = commands
+        self.extension_consent = extension_consent
+        self.activation_hints = activation_hints
+        self.command_bindings = command_bindings
+        self._restored_extension_commands = None
+        self._extension_restore_attempted = False
+        self._extension_restored_ids: tuple[str, ...] = ()
+        self._uncomposed_extension_status: dict[str, dict] = {}
 
     def is_enabled(self) -> bool:
         from agents.core import safe_mode
@@ -73,7 +85,11 @@ class AcquisitionRuntime:
         request = self.request_store.get(request_id)
         if request is None:
             return None
-        from .resolver import ReuseDecisionStore, ReuseResolver, collect_reuse_candidates
+        from .resolver import (
+            ReuseDecisionStore,
+            ReuseResolver,
+            collect_reuse_candidates,
+        )
 
         if self.decision_store is None:
             ledger = self.ensure_ledger()
@@ -195,17 +211,209 @@ class AcquisitionRuntime:
         from agents.core.paths import data_path
 
         base = _Path(self._root) if self._root is not None else data_path("acquisition")
+        self._ensure_extension_metadata()
+        bindings = self._ensure_extension_bindings()
         self.extension_runtime = ExtensionRuntime(
             packages=self.package_store,
             profile=self.sandbox_profile,
             runtime_root=base / "extension-runs",
             enabled=self.is_enabled,
             rpc=(self._promotion_config or {}).get("tool_rpc"),
+            commands=self.commands,
+            consent=self.extension_consent,
+            activation_hints=self.activation_hints,
+            command_bindings=bindings,
         )
         # Lifecycle events have somewhere to go only once a runtime exists; before
         # that every emitting call site is a no-op that costs a None check.
         EXTENSION_EVENTS.bind(self.extension_runtime)
         return self.extension_runtime
+
+    def _ensure_extension_metadata(self) -> None:
+        """Create only lightweight store objects; their read methods do not write."""
+        if self.extension_runtime is not None:
+            if self.extension_consent is None:
+                self.extension_consent = getattr(self.extension_runtime, "consent", None)
+            if self.activation_hints is None:
+                self.activation_hints = getattr(self.extension_runtime, "activation_hints", None)
+        if self.extension_consent is None:
+            from agents.core.extensions.consent import ExtensionConsentStore
+
+            self.extension_consent = ExtensionConsentStore()
+        if self.activation_hints is None:
+            from agents.core.extensions.activation_hints import ActivationHintStore
+
+            self.activation_hints = ActivationHintStore()
+
+    def _ensure_extension_bindings(self):
+        if self.command_bindings is None and self.extension_runtime is not None:
+            existing = getattr(self.extension_runtime, "command_bindings", None)
+            if existing is not None:
+                self.command_bindings = existing
+        if self.command_bindings is None:
+            from agents.core.extensions.command_bindings import ExtensionCommandBindings
+
+            self.command_bindings = ExtensionCommandBindings(self.commands)
+        return self.command_bindings
+
+    def _runtime_for_restored_extension(self):
+        """Compose acquisition only after an owner has invoked a restored command."""
+        if not self.is_enabled():
+            return None
+        if ((self.package_store is None or self.sandbox_profile is None)
+                and self.ensure_promotion() is None):
+            return None
+        return self.extensions()
+
+    def restore_extension_commands(self) -> tuple[str, ...]:
+        """Install data-only command placeholders once for this host composition."""
+        if self._extension_restore_attempted:
+            return self._extension_restored_ids
+        if not self.is_enabled():
+            return ()
+        from agents.core.commands import CommandRegistry
+
+        if not isinstance(self.commands, CommandRegistry):
+            return ()
+        try:
+            self._ensure_extension_metadata()
+            bindings = self._ensure_extension_bindings()
+            if self._restored_extension_commands is None:
+                from agents.core.extensions.restored_commands import (
+                    RestoredExtensionCommands,
+                )
+
+                self._restored_extension_commands = RestoredExtensionCommands(
+                    bindings,
+                    self.extension_consent,
+                    self.activation_hints,
+                    runtime_provider=self._runtime_for_restored_extension,
+                    enabled=self.is_enabled,
+                )
+            # Mark only after enablement and registry validation. In safe mode
+            # startup leaves this eligible for a later explicit composition attempt.
+            self._extension_restore_attempted = True
+            self._extension_restored_ids = tuple(self._restored_extension_commands.restore())
+        except Exception:
+            logger.warning("extension command restore failed closed")
+            self._extension_restored_ids = ()
+        return self._extension_restored_ids
+
+    def forget_extension_commands(self, extension_id: str) -> bool:
+        """Invalidate one restored route without asking for a package runtime."""
+        controller = self._restored_extension_commands
+        if controller is None:
+            return False
+        try:
+            return bool(controller.forget(extension_id))
+        except Exception:
+            logger.warning("extension command invalidation failed closed")
+            return False
+
+    def retire_extension_command_routes(self) -> tuple[str, ...]:
+        """Invalidate and remove this host's routes before its registry is rewired.
+
+        This is synchronous and deliberately avoids runtime composition and hint
+        persistence. ``ExtensionCommandBindings.remove`` unregisters only exact
+        command objects owned by this acquisition instance, so replacements from
+        another host survive retirement.
+        """
+        controller = self._restored_extension_commands
+        bindings = self.command_bindings
+        extension_ids: set[str] = set()
+        registrations = getattr(bindings, "registrations", None)
+        if isinstance(registrations, dict):
+            extension_ids.update(item for item in registrations if isinstance(item, str))
+        rows = getattr(controller, "_rows", None)
+        if isinstance(rows, dict):
+            extension_ids.update(item for item in rows if isinstance(item, str))
+
+        # Retired host compositions must never restore themselves again, even if
+        # the coordinator accidentally invokes the startup hook twice.
+        self._extension_restore_attempted = True
+        self._extension_restored_ids = ()
+        for extension_id in sorted(extension_ids):
+            if controller is not None:
+                try:
+                    controller.forget(extension_id)
+                except Exception:
+                    logger.warning("extension command retirement failed closed")
+            if bindings is not None:
+                try:
+                    bindings.remove(extension_id)
+                except Exception:
+                    logger.warning("extension command retirement failed closed")
+        return tuple(sorted(extension_ids))
+
+    async def deactivate_extension(self, extension_id: str) -> bool:
+        """Forget routes, then deactivate if composed or delete the hint directly."""
+        forgotten = self.forget_extension_commands(extension_id)
+        if self.extension_runtime is not None:
+            try:
+                result = bool(await self.extension_runtime.deactivate(extension_id) or forgotten)
+                self._uncomposed_extension_status.pop(extension_id, None)
+                return result
+            except Exception as exc:
+                logger.warning("extension deactivation failed closed")
+                reason = getattr(exc, "reason", "activation_hints_unavailable")
+                allowed = {
+                    "activation_hints_unavailable", "activation_hints_corrupt",
+                    "activation_hints_capacity", "activation_hint_invalid",
+                    "activation_hints_durability_uncertain",
+                }
+                if not isinstance(reason, str) or reason not in allowed:
+                    reason = "activation_hints_unavailable"
+                self._uncomposed_extension_status[extension_id] = {
+                    "state": "remove_failed", "reason": reason,
+                }
+                return forgotten
+
+        try:
+            self._ensure_extension_metadata()
+            removed = bool(self.activation_hints.remove(extension_id))
+            self._uncomposed_extension_status[extension_id] = {"state": "removed"}
+            return bool(removed or forgotten)
+        except Exception as exc:
+            reason = getattr(exc, "reason", "activation_hints_unavailable")
+            if not isinstance(reason, str) or reason not in {
+                "activation_hints_unavailable", "activation_hints_corrupt",
+                "activation_hints_capacity", "activation_hint_invalid",
+                "activation_hints_durability_uncertain",
+            }:
+                reason = "activation_hints_unavailable"
+            self._uncomposed_extension_status[extension_id] = {
+                "state": "remove_failed", "reason": reason,
+            }
+            return forgotten
+
+    def extension_restoration_status(self, extension_id: str) -> dict:
+        """Return bounded persistence status without composing acquisition."""
+        override = self._uncomposed_extension_status.get(extension_id)
+        if override is not None:
+            return dict(override)
+        if self.extension_runtime is not None:
+            status_method = getattr(self.extension_runtime, "restoration_status", None)
+            if callable(status_method):
+                try:
+                    status = status_method(extension_id)
+                    state = status.get("state") if isinstance(status, dict) else None
+                    if isinstance(state, str) and state in {
+                        "not_configured", "unknown", "saved", "save_failed", "removed", "remove_failed",
+                    }:
+                        result = {"state": state}
+                        reason = status.get("reason")
+                        if result["state"] in {"save_failed", "remove_failed"}:
+                            allowed = {
+                                "activation_hints_unavailable", "activation_hints_corrupt",
+                                "activation_hints_capacity", "activation_hint_invalid",
+                                "activation_hints_durability_uncertain",
+                            }
+                            result["reason"] = (reason if isinstance(reason, str) and reason in allowed
+                                                 else "activation_hints_unavailable")
+                        return result
+                except Exception:
+                    return {"state": "unknown"}
+        return dict(self._uncomposed_extension_status.get(extension_id, {"state": "not_configured"}))
 
     async def synthesize_and_propose(
         self,

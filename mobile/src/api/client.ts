@@ -1,5 +1,7 @@
 import type { ServerConfig } from '../storage/settings';
 import { SseDecoder } from './sse';
+import { projectSessionTranscript, validTranscriptSessionId, type SessionTranscript } from './sessionTranscript';
+export type { SessionTranscript } from './sessionTranscript';
 import { normalizeTurnOutcome, type TurnOutcome } from '../chat/turnOutcome';
 
 /**
@@ -2521,6 +2523,56 @@ export async function fetchSessions(config: ServerConfig): Promise<SessionInfo[]
   return res.sessions ?? [];
 }
 
+export type SessionsPage = { sessions: SessionInfo[]; next_cursor: string | null };
+
+const SESSION_CURSOR_PATTERN = /^[A-Za-z0-9_-]{1,512}$/;
+
+/** An explicit owner-authorized page; callers decide whether legacy history is available. */
+export async function fetchSessionsPage(config: ServerConfig, cursor?: string | null): Promise<SessionsPage> {
+  if (cursor != null && (typeof cursor !== 'string' || !SESSION_CURSOR_PATTERN.test(cursor))) {
+    throw new ApiError('Invalid session cursor');
+  }
+  const path = '/sessions/page?archived=false&limit=20'
+    + (cursor != null ? `&cursor=${encodeURIComponent(cursor)}` : '');
+  const raw = await request<unknown>(config, 'GET', path, undefined, { admin: true });
+  const invalid = () => new ApiError('Invalid session page received from the hub');
+  if (!isRecord(raw) || !Array.isArray(raw.sessions) || raw.sessions.length > 20
+    || !(raw.next_cursor === null || (typeof raw.next_cursor === 'string'
+      && SESSION_CURSOR_PATTERN.test(raw.next_cursor)))) throw invalid();
+  const sessions = raw.sessions.map((row): SessionInfo => {
+    if (!isRecord(row) || !validSessionId(row.id)) throw invalid();
+    const session: SessionInfo = { id: row.id };
+    for (const key of ['agent_id', 'started_at', 'ended_at', 'summary', 'title', 'title_source'] as const) {
+      if (row[key] == null) continue;
+      if (typeof row[key] !== 'string') throw invalid();
+      session[key] = row[key];
+    }
+    if (row.resume_id != null) {
+      if (!validSessionId(row.resume_id)) throw invalid();
+      session.resume_id = row.resume_id;
+    }
+    for (const key of ['turn_count', 'continuations'] as const) {
+      if (row[key] == null) continue;
+      if (typeof row[key] !== 'number' || !Number.isSafeInteger(row[key]) || row[key] < 0) throw invalid();
+      session[key] = row[key];
+    }
+    return session;
+  });
+  return { sessions, next_cursor: raw.next_cursor };
+}
+
+/** Read only the selected session's redacted retained text; never resumes or falls back. */
+export async function fetchSessionTranscript(config: ServerConfig, sessionId: string): Promise<SessionTranscript> {
+  if (!validTranscriptSessionId(sessionId)) throw new ApiError('Invalid session ID');
+  const raw = await request<unknown>(config, 'GET', `/sessions/${encodeURIComponent(sessionId)}/transcript`,
+    undefined, { admin: true });
+  try {
+    return projectSessionTranscript(raw, sessionId);
+  } catch {
+    throw new ApiError('Invalid retained session transcript received from the hub');
+  }
+}
+
 export async function resumeSession(
   config: ServerConfig,
   sessionId: string,
@@ -2587,9 +2639,13 @@ function blobToBase64(blob: Blob): Promise<string> {
 export type StreamHandlers = {
   onStart?: (agent: string) => void;
   onToken: (text: string) => void;
-  onDone: (full: string, sessionId?: string | null, outcome?: TurnOutcome) => void;
-  onError: (message: string) => void;
+  onDone: (full: string, sessionId?: string | null, outcome?: TurnOutcome,
+    transition?: SessionTransition) => void;
+  onError: (message: string, detail?: StreamErrorDetail) => void;
 };
+
+export type StreamErrorDetail = { kind: 'session_missing'; sessionId: string };
+export type SessionTransition = { command: 'new'; sessionId: string };
 
 /** Abort the stream if no data arrives for this long. */
 const STREAM_IDLE_TIMEOUT_MS = 45000;
@@ -2597,6 +2653,23 @@ const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 function validSessionId(value: unknown): value is string {
   return typeof value === 'string' && SESSION_ID_PATTERN.test(value);
+}
+
+function sessionMissingDetail(status: number, body: string, requestedId?: string | null): StreamErrorDetail | undefined {
+  if (status !== 404 || !validSessionId(requestedId)) return undefined;
+  try {
+    const raw: unknown = JSON.parse(body);
+    if (isRecord(raw) && raw.error === 'session_not_found') {
+      return { kind: 'session_missing', sessionId: requestedId };
+    }
+  } catch { /* Only the exact machine-readable 404 earns recovery authority. */ }
+  return undefined;
+}
+
+function sessionTransition(value: unknown, endSessionId: string | null | undefined): SessionTransition | undefined {
+  if (!isRecord(value) || value.command !== 'new' || !validSessionId(value.session_id)
+    || value.session_id !== endSessionId) return undefined;
+  return { command: 'new', sessionId: value.session_id };
 }
 
 /**
@@ -2663,8 +2736,11 @@ export function streamChat(
         finished = true;
         const endSessionId = evt.session_id === null ? null : validSessionId(evt.session_id) ? evt.session_id : undefined;
         const outcome = normalizeTurnOutcome(evt.outcome);
+        const transition = sessionTransition(evt.session_transition, endSessionId);
         finish(() => {
-          if (outcome) handlers.onDone(evt.text || '', endSessionId, outcome);
+          if (transition && outcome) handlers.onDone(evt.text || '', endSessionId, outcome, transition);
+          else if (transition) handlers.onDone(evt.text || '', endSessionId, undefined, transition);
+          else if (outcome) handlers.onDone(evt.text || '', endSessionId, outcome);
           else handlers.onDone(evt.text || '', endSessionId);
         });
       }
@@ -2690,11 +2766,13 @@ export function streamChat(
     if (xhr.readyState === 4) {
       if (xhr.status === 0) return; // aborted
       if (xhr.status !== 200) {
-        finish(() =>
-          handlers.onError(
-            xhr.status === 401 ? 'Unauthorized — check your user token' : `Server returned HTTP ${xhr.status}`,
-          ),
-        );
+        finish(() => {
+          const message = xhr.status === 401
+            ? 'Unauthorized — check your user token' : `Server returned HTTP ${xhr.status}`;
+          const detail = sessionMissingDetail(xhr.status, xhr.responseText, sessionId);
+          if (detail) handlers.onError(message, detail);
+          else handlers.onError(message);
+        });
       } else if (!finished) {
         // Stream closed without an explicit end frame — flush any tail.
         handleEvents('\n');

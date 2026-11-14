@@ -1430,7 +1430,22 @@ class JobRunner:
         self.register_scripts()
 
     async def reconcile_scripts(self):
-        return await self._script_runtime.reconcile()
+        return await self._restart_counted("script", self._script_runtime.reconcile, refused=0)
+
+    async def _restart_counted(self, kind, action, *, refused):
+        """Count local job work without changing its saved schedule or attempts."""
+        if self._orch is None:  # Legacy unit runners have no hub to drain.
+            return await action()
+        from agents.core.restart_runtime import runtime_for
+
+        lease = runtime_for(self._orch).acquire(kind)
+        if lease is None:
+            return refused
+        try:
+            with lease.bind():
+                return await action()
+        finally:
+            lease.release()
 
     def register_scripts(self):
         sched = self._scheduler()
@@ -1587,9 +1602,28 @@ class JobRunner:
                 continue
             due = schedule_trigger(job.cron, timezone).get_next_fire_time(None, slot)
             # A one-shot's time need not fall on a minute: it is due in the minute it is in.
-            if due is not None and due.replace(second=0, microsecond=0) == slot \
-                    and self.store.claim_tick(job.id, slot.astimezone(UTC).isoformat()):
-                runs.append(await self.fire(job.id))
+            if due is None or due.replace(second=0, microsecond=0) != slot:
+                continue
+            # A closed restart gate must not spend this cadence slot. Hold one
+            # lease from before claim_tick through the completed job body.
+            with self.store.dispatch.gate(job.id) as acquired:
+                if not acquired:
+                    continue
+                from agents.core.restart_runtime import runtime_for
+
+                lease = runtime_for(self._orch).acquire("job") if self._orch is not None else None
+                if self._orch is not None and lease is None:
+                    continue
+                try:
+                    if lease is not None:
+                        with lease.bind():
+                            if self.store.claim_tick(job.id, slot.astimezone(UTC).isoformat()):
+                                runs.append(await self._fire_once(job.id))
+                    elif self.store.claim_tick(job.id, slot.astimezone(UTC).isoformat()):
+                        runs.append(await self._fire_once(job.id))
+                finally:
+                    if lease is not None:
+                        lease.release()
         return runs
 
     # lifecycle --------------------------------------------------------------
@@ -1749,9 +1783,27 @@ class JobRunner:
     async def fire(self, job_id: str, *, force: bool = False) -> JobRun:
         """The shared cross-process cron/manual execution gate."""
         while True:
-            with self.store.dispatch.gate(job_id) as acquired:
-                if acquired:
-                    return await self._fire_once(job_id, force=force)
+            lease = None
+            if self._orch is not None:
+                from agents.core.restart_runtime import runtime_for
+
+                lease = runtime_for(self._orch).acquire("job")
+                if lease is None:
+                    now = utc_now()
+                    return JobRun(0, job_id, now, now, STATUS_SKIPPED,
+                                  "Restart drain is withholding new job runs")
+            try:
+                if lease is not None:
+                    with lease.bind(), self.store.dispatch.gate(job_id) as acquired:
+                        if acquired:
+                            return await self._fire_once(job_id, force=force)
+                else:
+                    with self.store.dispatch.gate(job_id) as acquired:
+                        if acquired:
+                            return await self._fire_once(job_id, force=force)
+            finally:
+                if lease is not None:
+                    lease.release()
             # Hash collisions may serialize unrelated jobs, but never discard cron
             # firings. Cancellation remains interruptible without holding a lock.
             await asyncio.sleep(0.05)
@@ -2077,6 +2129,9 @@ class JobRunner:
     async def flush_held(self) -> int:
         """Deliver held messages once quiet hours are over. Returns how many went out;
         the first refusal stops the pass so nothing is delivered out of order."""
+        return await self._restart_counted("held", self._flush_held_open, refused=0)
+
+    async def _flush_held_open(self) -> int:
         from agents.core import estop
 
         if self.quiet_hours() or estop.check_paused("jobs-held-flush", logger):
@@ -2152,6 +2207,14 @@ class JobRunner:
         adapter = channels.get(channel)
         if adapter is None:
             raise RuntimeError(f"channel {channel!r} is not connected")
+        # Agent silence was handled before delivery/holding. Do not reinterpret
+        # literal script output as an agent instruction at the transport seam.
+        # Only wrapped adapters understand this marker (plain sinks need not).
+        send_options = (
+            {"_literal_job_output": True}
+            if getattr(adapter.send, "__outbound_safe__", False)
+            else {}
+        )
         if channel == "telegram":
             get_setting = getattr(self._orch, "get_setting", None)
             owner = os.environ.get("AUTONOMY_OWNER_CHAT_ID", "") or str(
@@ -2159,9 +2222,9 @@ class JobRunner:
             )
             if not owner.strip():
                 raise RuntimeError("no owner chat is configured (autonomy.owner_chat_id)")
-            ok = await adapter.send(text, chat_id=int(owner))
+            ok = await adapter.send(text, chat_id=int(owner), **send_options)
         else:
-            ok = await adapter.send(text)
+            ok = await adapter.send(text, **send_options)
         if not ok:
             raise RuntimeError(f"{channel} refused the message")
         return f"delivered to {channel}"

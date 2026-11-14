@@ -129,6 +129,7 @@ FORCED_SETTINGS: dict[str, object] = {
     "llm.delegate_task": _ON_LOOSENS,
     "autonomy.worktree_auto_reclaim": _ON_LOOSENS,          # G18: removes worktrees on the tick
     "channels.rate_limit": _MORE_LOOSENS,
+    "channels.max_inbound_media_bytes": _MORE_LOOSENS,
     "learning.review_daily_budget": _MORE_LOOSENS,
     # H378: a higher line, or 0 (never ask), asks before fewer expensive models.
     "llm.cost_confirm_usd_per_mtok": _UNCAPPED_AT_0,

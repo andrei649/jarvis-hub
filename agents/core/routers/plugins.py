@@ -202,6 +202,33 @@ def _extension_manifest(body):
         return None, nocache_json({"ok": False, "reason": str(exc)}, status_code=422)
 
 
+def _extension_restart_status(source, extension_id, *, failure="save_failed"):
+    getter = getattr(source, "extension_restoration_status", None)
+    if not callable(getter):
+        getter = getattr(source, "restoration_status", None)
+    if not callable(getter):
+        return {"state": "not_configured"}
+    try:
+        status = getter(extension_id)
+        state = status.get("state") if isinstance(status, dict) else None
+        if state in {"not_configured", "unknown", "saved", "save_failed", "removed", "remove_failed"}:
+            return {"state": state}
+    except Exception:
+        return {"state": failure}
+    return {"state": failure}
+
+
+def _extension_menu_refresh(orch):
+    manager = getattr(orch, "channel_manager", None)
+    if manager is None:
+        return
+    try:
+        manager.queue_command_menu_refresh(owner_current=lambda: (
+            get_orch() is orch and getattr(orch, "channel_manager", None) is manager))
+    except Exception:
+        logger.warning("Extension commands changed; menu refresh could not be queued")
+
+
 @router.post("/api/plugins/extensions/consent", dependencies=[Depends(admin_guard)])
 async def extension_consent(body: ExtensionConsentBody):
     """Record or withdraw the owner's consent to exactly these declarations."""
@@ -215,12 +242,31 @@ async def extension_consent(body: ExtensionConsentBody):
         # Withdrawing consent also takes the tools off the surface, if a runtime
         # is composed: a grant the owner took back must not stay callable.
         removed = store.revoke(manifest.id)
-        _, acquisition, error = require_component("acquisition", "extension acquisition not available")
+        orch, acquisition, error = require_component("acquisition", "extension acquisition not available")
+        status = {"state": "remove_failed"}
+        if error is None and callable(getattr(acquisition, "deactivate_extension", None)):
+            try:
+                await acquisition.deactivate_extension(manifest.id)
+                status = _extension_restart_status(acquisition, manifest.id, failure="remove_failed")
+            except Exception:
+                logger.warning("Extension consent revoked; runtime cleanup unconfirmed")
+        else:
+            # Consent withdrawal is durable even when no runtime has been composed.
+            from agents.core.extensions.activation_hints import ActivationHintStore
+
+            try:
+                ActivationHintStore().remove(manifest.id)
+                status = {"state": "removed"}
+            except Exception:
+                logger.warning("Extension consent revoked; restart hint removal unconfirmed")
+            if error is None:
+                runtime = acquisition.extensions()
+                if runtime is not None:
+                    await runtime.deactivate(manifest.id)
         if error is None:
-            runtime = acquisition.extensions()
-            if runtime is not None:
-                await runtime.deactivate(manifest.id)
-        return nocache_json({"ok": True, "revoked": removed, **store.check(manifest).as_dict()})
+            _extension_menu_refresh(orch)
+        return nocache_json({"ok": True, "revoked": removed,
+                             "restart_restore": status, **store.check(manifest).as_dict()})
     try:
         decision = store.grant(manifest)
     except ValueError as exc:
@@ -230,16 +276,26 @@ async def extension_consent(body: ExtensionConsentBody):
 
 @router.post("/api/plugins/extensions/activate", dependencies=[Depends(admin_guard)])
 async def extension_activate(body: ExtensionActivateBody):
-    """Prove the declared surface inside the sandbox, then make its tools callable."""
+    """Prove the declared surface in the sandbox, then expose its tools and commands."""
     from agents.core.extensions.runtime import ExtensionRuntimeError
 
     manifest, refusal = _extension_manifest(body)
     if refusal is not None:
         return refusal
-    _, acquisition, error = require_component("acquisition", "extension acquisition not available")
+    orch, acquisition, error = require_component("acquisition", "extension acquisition not available")
     if error is not None:
         return error
     runtime = acquisition.extensions()
+    if runtime is None:
+        # This admin request explicitly asks to activate; inspection/startup never
+        # enters promotion composition merely to display a command route.
+        prepare = getattr(acquisition, "ensure_promotion", None)
+        if callable(prepare):
+            try:
+                prepare()
+                runtime = acquisition.extensions()
+            except Exception:
+                logger.warning("Extension activation composition unavailable")
     if runtime is None:
         return nocache_json({"ok": False, "reason": "extensions_unavailable"}, status_code=503)
     try:
@@ -247,4 +303,6 @@ async def extension_activate(body: ExtensionActivateBody):
     except ExtensionRuntimeError as exc:
         # Bounded reason codes only; nothing the extension printed reaches here.
         return nocache_json({"ok": False, "reason": exc.reason}, status_code=422)
-    return nocache_json({"ok": True, "activation": activation.as_dict()})
+    _extension_menu_refresh(orch)
+    return nocache_json({"ok": True, "activation": activation.as_dict(),
+                         "restart_restore": _extension_restart_status(runtime, manifest.id)})

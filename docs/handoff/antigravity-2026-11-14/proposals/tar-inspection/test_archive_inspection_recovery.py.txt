@@ -1,0 +1,161 @@
+"""Read-only recovery inspection contract; stdlib-only to run without live services."""
+import gzip
+import hashlib
+import io
+import tarfile
+import tempfile
+import unittest
+from unittest.mock import patch
+from pathlib import Path
+
+from agents.core import archive_safe
+from agents.core.archive_safe import ArchiveLimits, ArchiveRejected
+
+
+class ArchiveInspectionRecoveryTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.archive = self.root / 'input.tar.gz'
+
+    def make_archive(self, members):
+        with tarfile.open(self.archive, 'w:gz', format=tarfile.GNU_FORMAT) as tar:
+            for name, data, kind in members:
+                info = tarfile.TarInfo(name)
+                info.type = kind
+                info.mode = 0o755
+                info.size = len(data) if kind == tarfile.REGTYPE else 0
+                if kind in (tarfile.SYMTYPE, tarfile.LNKTYPE):
+                    info.linkname = 'outside'
+                tar.addfile(info, io.BytesIO(data) if kind == tarfile.REGTYPE else None)
+
+    def inspect(self, **kwargs):
+        method = getattr(archive_safe, 'inspect_tar_path', None)
+        self.assertTrue(callable(method), 'read-only tar inspection is not implemented')
+        return method(self.archive, **kwargs)
+
+    def test_hashes_every_file_but_returns_only_selected_bytes_without_writes(self):
+        self.make_archive([('bin/run.sh', b'not executable here', tarfile.REGTYPE),
+                           ('manifest.json', b'{}', tarfile.REGTYPE)])
+        original = self.archive.read_bytes()
+        entries = self.inspect(read_members=('manifest.json',), max_selected_bytes=2)
+        self.assertEqual(entries['bin/run.sh'], {'sha256': hashlib.sha256(b'not executable here').hexdigest(),
+                         'size': 19, 'mode': 0o755, 'data': None})
+        self.assertEqual(entries['manifest.json']['data'], b'{}')
+        self.assertEqual(self.archive.read_bytes(), original)
+        self.assertEqual([p.name for p in self.root.iterdir()], ['input.tar.gz'])
+
+    def test_rejects_normalized_duplicate(self):
+        self.make_archive([('a/b', b'1', tarfile.REGTYPE), ('a/./b', b'2', tarfile.REGTYPE)])
+        with self.assertRaises(ArchiveRejected): self.inspect()
+
+    def test_rejects_file_parent_conflict_in_both_orders(self):
+        for paths in [('a', 'a/b'), ('a/b', 'a')]:
+            with self.subTest(paths=paths):
+                self.make_archive([(p, b'x', tarfile.REGTYPE) for p in paths])
+                with self.assertRaises(ArchiveRejected): self.inspect()
+
+    def test_rejects_unsafe_names(self):
+        for name in ('../escape', '/absolute', 'C:/drive', 'a/../../escape', 'a//b'):
+            with self.subTest(name=name):
+                self.make_archive([(name, b'x', tarfile.REGTYPE)])
+                with self.assertRaises(ArchiveRejected): self.inspect()
+
+    def test_refuses_links_directories_and_special_types(self):
+        for kind in (tarfile.SYMTYPE, tarfile.LNKTYPE, tarfile.DIRTYPE, tarfile.FIFOTYPE, tarfile.CHRTYPE):
+            with self.subTest(kind=kind):
+                self.make_archive([('item', b'', kind)])
+                with self.assertRaises(ArchiveRejected): self.inspect()
+
+    def test_member_count_limit(self):
+        self.make_archive([('a', b'x', tarfile.REGTYPE), ('b', b'y', tarfile.REGTYPE)])
+        with self.assertRaises(ArchiveRejected): self.inspect(limits=ArchiveLimits(1, 20))
+
+    def test_declared_total_byte_limit(self):
+        self.make_archive([('a', b'xxx', tarfile.REGTYPE), ('b', b'yyy', tarfile.REGTYPE)])
+        with self.assertRaises(ArchiveRejected): self.inspect(limits=ArchiveLimits(3, 5))
+
+    def test_selected_byte_limit_is_cumulative(self):
+        self.make_archive([('a', b'xx', tarfile.REGTYPE), ('b', b'yy', tarfile.REGTYPE)])
+        with self.assertRaises(ArchiveRejected): self.inspect(read_members=('a', 'b'), max_selected_bytes=3)
+
+    def test_empty_archive_and_missing_selection_are_explicit(self):
+        self.make_archive([])
+        self.assertEqual(self.inspect(read_members=('missing',)), {})
+
+    def test_negative_selection_limit_is_refused(self):
+        self.make_archive([])
+        with self.assertRaises(ValueError): self.inspect(max_selected_bytes=-1)
+
+    def test_bad_gzip_crc_is_refused_before_return(self):
+        self.make_archive([('a', b'x', tarfile.REGTYPE)])
+        data = bytearray(self.archive.read_bytes()); data[-8] ^= 0xff
+        self.archive.write_bytes(data)
+        with self.assertRaises(ArchiveRejected): self.inspect()
+
+    def test_nonzero_trailing_data_is_refused(self):
+        self.make_archive([('a', b'x', tarfile.REGTYPE)])
+        raw = gzip.decompress(self.archive.read_bytes()) + b'not-padding'
+        self.archive.write_bytes(gzip.compress(raw))
+        with self.assertRaises(ArchiveRejected): self.inspect()
+
+    def test_truncated_payload_is_refused(self):
+        self.make_archive([('a', b'x' * 2048, tarfile.REGTYPE)])
+        raw = gzip.decompress(self.archive.read_bytes())[:600]
+        self.archive.write_bytes(gzip.compress(raw))
+        with self.assertRaises(ArchiveRejected): self.inspect()
+
+    def test_gnu_long_name_uses_existing_header_guard(self):
+        name = 'a/' + 'n' * 180 + '/entry'
+        self.make_archive([(name, b'x', tarfile.REGTYPE)])
+        self.assertEqual(self.inspect()[name]['size'], 1)
+
+    def test_inspection_refuses_depth_over_128_even_for_empty_file(self):
+        self.make_archive([('/'.join(['x'] * 129), b'', tarfile.REGTYPE)])
+        with self.assertRaisesRegex(ArchiveRejected, 'depth'):
+            self.inspect()
+
+    def test_inspection_accepts_depth_exactly_128(self):
+        name = '/'.join(['x'] * 128)
+        self.make_archive([(name, b'', tarfile.REGTYPE)])
+        self.assertEqual(self.inspect()[name]['size'], 0)
+
+    def test_inspection_refuses_gnu_long_name_over_4096_bytes(self):
+        self.make_archive([('x' * 4097, b'', tarfile.REGTYPE)])
+        with self.assertRaisesRegex(ArchiveRejected, 'name'):
+            self.inspect()
+
+    def test_inspection_accepts_name_exactly_4096_bytes(self):
+        name = 'x' * 4096
+        self.make_archive([(name, b'', tarfile.REGTYPE)])
+        self.assertEqual(self.inspect()[name]['size'], 0)
+
+    def test_inspection_name_limit_counts_utf8_bytes(self):
+        self.make_archive([('é' * 2049, b'', tarfile.REGTYPE)])
+        with self.assertRaisesRegex(ArchiveRejected, 'name'):
+            self.inspect()
+
+    def test_inspection_bounds_cumulative_name_bytes(self):
+        self.make_archive([('aaa', b'', tarfile.REGTYPE), ('bbb', b'', tarfile.REGTYPE)])
+        with patch.object(archive_safe, '_MAX_INSPECT_NAME_TOTAL', 5, create=True):
+            with self.assertRaisesRegex(ArchiveRejected, 'metadata'):
+                self.inspect()
+        with patch.object(archive_safe, '_MAX_INSPECT_NAME_TOTAL', 6, create=True):
+            self.assertEqual(len(self.inspect()), 2)
+
+    def test_inspection_bounds_cumulative_components_including_shared_parents(self):
+        self.make_archive([('a/b', b'', tarfile.REGTYPE), ('a/c', b'', tarfile.REGTYPE)])
+        with patch.object(archive_safe, '_MAX_INSPECT_COMPONENTS', 3, create=True):
+            with self.assertRaisesRegex(ArchiveRejected, 'metadata'):
+                self.inspect()
+        with patch.object(archive_safe, '_MAX_INSPECT_COMPONENTS', 4, create=True):
+            self.assertEqual(len(self.inspect()), 2)
+
+    def test_inspection_rejects_reviewer_depth_2000_case(self):
+        self.make_archive([('/'.join(['x'] * 2000), b'', tarfile.REGTYPE)])
+        with self.assertRaisesRegex(ArchiveRejected, 'depth'):
+            self.inspect()
+
+if __name__ == '__main__':
+    unittest.main()

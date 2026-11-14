@@ -38,6 +38,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
+from .media_limits import DEFAULT_BYTES, current_max_bytes
+
 logger = logging.getLogger("jarvis.channels.inbound_voice")
 
 PROVENANCE = "local_whisper"
@@ -53,7 +55,7 @@ REASON_DOWNLOAD = "download_failed"
 
 #: A voice note is speech, not a podcast. Telegram's own ceiling is 20 MB; this
 #: is what may be handed to a local transcriber in one call.
-MAX_AUDIO_BYTES = 8 * 1024 * 1024
+MAX_AUDIO_BYTES = DEFAULT_BYTES
 #: Bounds what reaches the transcript even if a long recording gets through.
 MAX_TRANSCRIPT_CHARS = 4000
 
@@ -105,17 +107,32 @@ class InboundVoiceReader:
         *,
         transcribe: Transcriber | None = None,
         available: bool | None = None,
-        max_bytes: int = MAX_AUDIO_BYTES,
+        max_bytes: int | None = None,
         max_chars: int = MAX_TRANSCRIPT_CHARS,
     ) -> None:
-        if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes <= 0:
+        if max_bytes is not None and (
+            isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes <= 0
+        ):
             raise ValueError("max_bytes must be a positive integer")
         if isinstance(max_chars, bool) or not isinstance(max_chars, int) or max_chars < 32:
             raise ValueError("max_chars must be an integer of at least 32")
         self._transcribe = transcribe
         self._available = available
-        self.max_bytes = max_bytes
+        self._max_bytes_override = max_bytes
         self.max_chars = max_chars
+
+    @property
+    def max_bytes(self) -> int:
+        """The current owner cap, or this reader's explicit fixed override."""
+        if self._max_bytes_override is not None:
+            return self._max_bytes_override
+        return current_max_bytes()
+
+    @max_bytes.setter
+    def max_bytes(self, value: int) -> None:
+        if type(value) is not int or value <= 0:
+            raise ValueError("max_bytes must be a positive integer")
+        self._max_bytes_override = value
 
     @property
     def is_available(self) -> bool:

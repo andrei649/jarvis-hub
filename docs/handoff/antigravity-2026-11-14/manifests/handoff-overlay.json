@@ -1,0 +1,185 @@
+{
+  "note": "Handover-only overlay; this manifest excludes its own bytes. Git commit tree authenticates the complete result.",
+  "files": {
+    "AGENTS.md": {
+      "sha256": "fa8d0c384350ea262bb7820538765265a9f271ff066946dc5475f6bf2b5f6b2d",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/HANDOVER-VERIFICATION.md": {
+      "sha256": "1bcb62cf105dcc3d47112f641dcaf9b3df3d25a92c40eeaba1e9fad448ab220d",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/INVENTORY-REVIEW.md": {
+      "sha256": "739af2c7da503c4c3c20e703235fb0dec016de0c8a97eea2ecbb10c6a51de7cb",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/PROMPT.md": {
+      "sha256": "704b92320a56b8107d7d3ceb91746dae805a529392410ed4bfdcd63f5ce5ced9",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/START_HERE.md": {
+      "sha256": "bbc90ccd8f5bb7869776e3ee3638f56433d9fae2e9022cf95d69ca9d4d47437f",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/README.md": {
+      "sha256": "3e562b257acd66d098631243feaa42b291168b6337d430b509f039ec5a8da57c",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/ci-observation.json": {
+      "sha256": "81fe15da4972d007bb02d61461c5bc9256aab3a5f859c2795456bef24306c987",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v70/CHECKPOINT.md": {
+      "sha256": "c46e0e41770081812a75dbd5e0e58517e5467b47d7c2ac2153e3d04fb228843a",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v70/DELTA-AUDIT.md": {
+      "sha256": "2a820533460841a1beb58e5ca13c39cd1a3dc3893c246d3ff051285e6f94f23a",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v70/EVIDENCE-AUDIT.md": {
+      "sha256": "654f15ece5f331b006133e4ee3de565d38b786036cf44c6e28d529e02d6f93c1",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v70/FINAL-BACKEND-RECEIPT.json": {
+      "sha256": "9ff2c84a0ccb6d058fe76469aa42db16903f32997e6550ba821329948c7e9f0d",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v70/FINAL-JUNIT-SUMMARY.json": {
+      "sha256": "fdc9f2de77a4e1a53c636e60265975d83b30003027f42bd7a7bdd09e2da5615a",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v70/FINAL-POSTCHECKS.json": {
+      "sha256": "4c437428019cf4cdbd5d6a6a393f488b19c0cbdc4b8036be42a15491a3ce62aa",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v70/FINAL-SKIP-REASONS.json": {
+      "sha256": "6f69e29866cbedf3073fd6fa4083b05f5eaa4de5bb27bf3f7dc7e12d9efe3661",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v70/FINAL-STATIC-CHECKS.json": {
+      "sha256": "adea95a39b969c2c3a570ad9bc61937b0574eb7a0e94a1a751c6c2478af0dde8",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v70/FINAL-VERDICT.md": {
+      "sha256": "7c1c821d5258a6ddd7ec6e9ded3bdfb8fc805dd1c2cf842ebfb28ee234fc5d3c",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v70/NEXT.md": {
+      "sha256": "97c47f09863d2e337b7ad69abc5a18c3787810eb765f6f4ffac4e55eb83a446b",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v70/OPTIONAL-TOOLS.json": {
+      "sha256": "306ad6d0f310451c1604f3da02b7578dbde4fe2a543eb9bbac412986d0e73099",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v70/PR-PATH.md": {
+      "sha256": "3c224933a4cfcf1dbafeba9b0284961126152d56c8aebb69a80f992d9c2d4276",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v70/PROCESS-RCA.md": {
+      "sha256": "b6b46c74490e6e5081a77a0a65efac849622ba79b56b64ce4f558278803a848c",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v70/PROVIDER-ENV-RCA.md": {
+      "sha256": "2e0fa3ab07bda12cd343506a9ce24217245ed297740573d9c5674de4ee8f41ec",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v70/REMEDIATION-REVIEW.md": {
+      "sha256": "4564f8e11ecebc225f18e7f16fb1c4a773d19c8d36a6b0b38dcbcab3902e67d9",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v70/compare-checkout.py": {
+      "sha256": "94b5ed2e65517bb1a85ba8a5bc6a4cd35af446ebb563c3f98af8a43b2a509ef4",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v70/run-reaped.py": {
+      "sha256": "c14cf881f9e09ed7276d5f2da3662a5c0a5eba1c3c233e67954a526da0c923e2",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v70/windows-comparison-input-final.json": {
+      "sha256": "9e9a41e52b5d89406044810a47a25e46e3a8e82395d39284899075c53769e090",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v81/CHROME-RECEIPT.json": {
+      "sha256": "1e687b926f239fba5cfda65fb4823db6fd36d2715d0ed3b8adce11bef0613b55",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v81/FINAL-LOCAL-RECEIPT.json": {
+      "sha256": "7ba0f4afa597e448f3c3721f57f7c4be753722beb73a7a3df6b5055810240996",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v81/PUBLICATION.json": {
+      "sha256": "e21d7929aa46be49a9a605e5bc43526c7e36181aa158c3a8811ae456f4707fdf",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v81/TEST-COMMAND.json": {
+      "sha256": "a95521e7dca5081a093bd738e158b7838d9e7cea2271a02ea7c68ff876cd29f8",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v81/TYPEGEN-REPORT.md": {
+      "sha256": "fe4c53763a0bccf4deafa00d8c8283414b773beab5d0b383202e84f0a5e312af",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/evidence/v81/V80-README.md": {
+      "sha256": "a6a44cf8fb0c1e92f2bf465eb23e5c262729fa4018125792cde4335ae4cb5ae9",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/manifests/cumulative-source.json": {
+      "sha256": "6cb71c8de547369ea5bb072d9d99308d48251d48c478d9cf9c41430c8b702ca8",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/manifests/v70-v81-comparison.json": {
+      "sha256": "4851815755970080a934efc98021c52d0a211f6c3886595ae48adf373c69c346",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/proposals/tar-inspection/README.md": {
+      "sha256": "56a72747360d1ef655fd3eef25b2985d1a3b7e6ba779f728932a64a563b1580e",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/proposals/tar-inspection/REPORT.md": {
+      "sha256": "e7d55fbbdd703254d38f2c25f587223cb2aae43f05decc929ca053dfc704416b",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/proposals/tar-inspection/bounded-inspection-combined.patch.json": {
+      "sha256": "a7bf01c0ec7748ae0a21f529067ce33e77e0df803406c366e0d6726a3d1a27f3",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/proposals/tar-inspection/final-receipt.json": {
+      "sha256": "5d3babd5be260a655bfec2b652b0d81339fd8632792db22f84bacedd6fc95765",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/proposals/tar-inspection/pax-cache-fix.patch.json": {
+      "sha256": "64f879038b18be8e64eec2d85c8091b8627b550c2321aef75d6021850b0869c8",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/proposals/tar-inspection/pax-memory-bounded.json": {
+      "sha256": "63180f1b1c1f278746841c5ef0ef8d0155dbf039c908321454646285ac288610",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/proposals/tar-inspection/pax-memory-original.json": {
+      "sha256": "f3d34e3f2c3df9612fd4c7473a8176384c487a2f83cb2c2e6fd9c24cf7d4ddef",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/proposals/tar-inspection/pax_memory_probe.py.txt": {
+      "sha256": "02386b41f4c8c1083a17da60a95d71a1f93b6169eeb2b49990ba61bce42e6ac5",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/proposals/tar-inspection/test_archive_inspection_adversarial.py.txt": {
+      "sha256": "35baa4d484e090466945f7d3b3bc83d652d2bf9dbbf85879a95cb3148a9e748d",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/proposals/tar-inspection/test_archive_inspection_pax_cache.py.txt": {
+      "sha256": "f637998d6f0e38d5f8b5525a59e34dc73af916b2a6de517a10c0d46a9b5c26cc",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/proposals/tar-inspection/test_archive_inspection_recovery.py.txt": {
+      "sha256": "994aa078fa53430c87c3852d1a4a858ba3603d8a28a8192a815b868d1960f629",
+      "mode": "100644"
+    },
+    "docs/handoff/antigravity-2026-11-14/verify_source.py": {
+      "sha256": "6526d26e5c10e845ae70721e34080d5df12f217e047c5f8a9785c303eb53be50",
+      "mode": "100644"
+    }
+  }
+}

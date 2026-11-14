@@ -230,6 +230,8 @@ _NUMBERS_NOT_FORCED = {
     "system.poll_interval", "system.log_max_mb", "system.log_backups", "system.battery_defer_percent",
     "system.startup_warmup_timeout_seconds", "system.autonomy_tick", "autonomy.running_ttl_seconds",
     "autonomy.task_max_seconds",
+    # Bounded opening wait (1..25s), not action/spend authority; ntfy stays off.
+    "system.channel_connect_timeout_seconds",
     # G18: when a running sub-agent is flagged stalled (a warning, it stops nothing), and
     # how old a clean, pushed worktree must be before the tick may reclaim it (a larger
     # value keeps trees longer); the reclaim itself, autonomy.worktree_auto_reclaim, is forced.
@@ -511,7 +513,7 @@ def test_the_inbound_receiver_answers_503_in_safe_mode(monkeypatch):
 
 def test_the_lifespan_starts_no_ntfy_or_webhook_channel_in_safe_mode():
     source = (REPO / "agents/web.py").read_text(encoding="utf-8")
-    ntfy = source.split("ntfy_ch = NtfyChannel.from_env(os.environ)", 1)[1].split("await orch.register_channel(ntfy_ch)", 1)[0]
+    ntfy = source.split("ntfy_ch = NtfyChannel.from_env(", 1)[1].split("await orch.register_channel(ntfy_ch)", 1)[0]
     assert "if ntfy_ch is not None and safe_mode.enabled():" in ntfy
     assert 'safe_mode.note("outbound_webhooks")' in ntfy and "ntfy_ch = None" in ntfy
     hooks = source.split('wh_cfg = env_json_object("JARVIS_WEBHOOK_CHANNELS", {})', 1)[1].split("channels_from_config(", 1)[0]

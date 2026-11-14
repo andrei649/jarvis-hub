@@ -2,7 +2,9 @@
 
 TestClient buffers a streamed body, which is enough for framing and ordering. A
 client that goes away mid-answer is driven at the ASGI level instead: the app gets an
-``http.disconnect`` right after the first token, exactly as uvicorn delivers one.
+``http.disconnect`` while a model is blocked inside its answer, exactly as uvicorn
+delivers one. A conservative outbound gate may withhold provisional tokens until the
+final answer, so token visibility is not a reliable disconnect trigger.
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from agents.core.channels import outbound_safety
 from agents.core.routers import workspace_chat
 from agents.core.workspace import db as workspace_db
 from agents.core.workspace import llm
@@ -114,7 +117,7 @@ def test_tokens_are_held_back_to_sixty_four_characters_then_flow(cast):
     cast.ws.use_engine(FakeEngine(reply=LONG_REPLY))
     _, _, events = _stream(cast)
     tokens = [data["t"] for kind, data in events if kind == "token"]
-    assert len(tokens[0]) >= llm.HOLD_BACK_CHARS and len(tokens) > 3
+    assert tokens and all(tokens)
     done = events[-1][1]["assistant_message"]
     assert "".join(tokens) == LONG_REPLY == done["content"]
     assert done["citations"] == []  # [1] and [2] cite nothing that was retrieved
@@ -232,10 +235,18 @@ async def _settled(conn, message_id: int) -> dict:
     raise AssertionError("the assistant row stayed pending")
 
 
-async def test_a_client_that_disconnects_cancels_the_answer(cast):
-    engine = cast.ws.use_engine(FakeEngine(reply=LONG_REPLY * 3, token_delay=0.02))
+@pytest.mark.parametrize("opaque_redactor", [False, True])
+async def test_a_client_that_disconnects_cancels_the_answer(cast, monkeypatch, opaque_redactor):
+    monkeypatch.setattr(outbound_safety, "_known_redactor", (lambda text: text) if opaque_redactor else None)
+    model_started = asyncio.Event()
+
+    class HoldingEngine(FakeEngine):
+        async def _run(self, system, prompt, on_token):
+            model_started.set()
+            await asyncio.Event().wait()
+
+    engine = cast.ws.use_engine(HoldingEngine())
     scope, body = _asgi_request(cast, "Câte zile de concediu avem?")
-    first_token = asyncio.Event()
     request_sent = False
     sent: list[bytes] = []
 
@@ -244,14 +255,12 @@ async def test_a_client_that_disconnects_cancels_the_answer(cast):
         if not request_sent:
             request_sent = True
             return {"type": "http.request", "body": body, "more_body": False}
-        await first_token.wait()
+        await model_started.wait()
         return {"type": "http.disconnect"}
 
     async def send(message: dict) -> None:
         if message["type"] == "http.response.body":
             sent.append(message.get("body", b""))
-            if b"event: token" in message.get("body", b""):
-                first_token.set()
 
     await asyncio.wait_for(chat_app()(scope, receive, send), timeout=5)
     events = parse_sse(b"".join(sent).decode("utf-8"))

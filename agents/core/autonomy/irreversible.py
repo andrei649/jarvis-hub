@@ -53,6 +53,7 @@ BUILTIN_KINDS: dict[str, tuple[str, str]] = {
     "hooks.define": ("agents.core.hooks.store", "apply_approved"),
     # H624: updating the hub's own code, rolling it back, and which commits it may update to.
     "hub.update": ("agents.core.hub_update_apply", "apply_approved"),
+    "hub.restart": ("agents.core.hub_restart_apply", "apply_approved"),
     "hub.update_rollback": ("agents.core.hub_update_apply", "apply_approved"),
     "hub.update_trust": ("agents.core.hub_update_apply", "apply_approved"),
 }
@@ -63,6 +64,7 @@ BUILTIN_HOLDS: dict[str, tuple[str, str]] = {
     "backup.restore": ("agents.core.backup", "restore_held_here"),   # H010 review r6
     # H624: only the hub can restart itself into the new (or previous) code.
     "hub.update": ("agents.core.hub_update_apply", "held_here"),
+    "hub.restart": ("agents.core.hub_restart_apply", "held_here"),
     "hub.update_rollback": ("agents.core.hub_update_apply", "held_here"),
 }
 
@@ -90,6 +92,8 @@ def enqueue(orch: Any, kind: str, *, title: str, payload: dict, preview: dict) -
     ``approval_queue_refused``) — never a write."""
     if kind not in kinds():
         return {"refused": "unknown_kind"}
+    from .queue import HubRestartActive, HubRestartReplay, HubUpdateActive
+
     worker = getattr(orch, "autonomy", None) if orch is not None else None
     govern = getattr(worker, "govern_enqueue", None)
     if not callable(govern):
@@ -100,6 +104,14 @@ def enqueue(orch: Any, kind: str, *, title: str, payload: dict, preview: dict) -
             payload={**payload, "risk_tier": RISK_TIER, "reversible": False, "preview": preview},
             risk_tier=RISK_TIER, autonomy_level="ask", origin="manual",
         )
+    except HubUpdateActive:
+        # A different signed update card already owns the durable singleton.
+        # Never return its task ID as though it were this request's payload.
+        return {"refused": "update_in_progress"}
+    except HubRestartActive:
+        return {"refused": "restart_in_progress"}
+    except HubRestartReplay:
+        return {"refused": "restart_request_seen"}
     except Exception as exc:  # noqa: BLE001 — TaskQueueError (mediation), a store error: never write
         logger.warning("the approval queue refused a %s request (%s)", kind, type(exc).__name__)
         return {"refused": "approval_queue_refused"}

@@ -207,42 +207,66 @@ class ManualDispatch:
                         "unknown",
                         reason="execution interrupted after claim; not replayed",
                     )
-                elif origin := self.claim(row["id"]):
-                    # A policy first run is checked again when it comes to run (H687):
-                    # the job may have changed, or quiet hours or its first slot come.
-                    due = getattr(runner, "first_run_due", None)
-                    if origin == "first_run" and due is not None:
-                        still, why = due(row["job_id"])
-                        if not still:
-                            self.state(row["id"], "cancelled", reason=f"first run no longer due: {why}")
-                            continue
-                    try:
-                        # A first run obeys pause like a cron slot; only the owner's own
-                        # ▶ now runs a paused job (H687).
-                        run = await runner._fire_once(
-                            row["job_id"], force=origin == "manual", expected_identity=row["fingerprint"]
-                        )
-                    except BaseException as exc:
-                        self.state(
-                            row["id"],
-                            "unknown",
-                            reason="execution interrupted after claim; not replayed",
-                        )
-                        if not isinstance(exc, Exception):
-                            raise
-                        continue
-                    if self.store.get(row["job_id"]) is None:
-                        self.state(
-                            row["id"],
-                            "unknown",
-                            reason="job deleted during execution; effects not replayed",
-                            run=run.as_dict(),
-                        )
-                        continue
-                    self.state(
-                        row["id"],
-                        "waiting" if run.status == "pending" else "completed",
-                        run=run.as_dict(),
-                    )
-                elif (current := self.get(row["id"])) and current["status"] == "cancelled":
-                    self.state(row["id"], "cancelled", reason=current["reason"])
+                    continue
+                # Do not consume queued -> running until a fresh per-request
+                # admission succeeds. A drain already in flight may process a
+                # later row after restart admission closes.
+                orch = getattr(runner, "_orch", None)
+                if orch is None:
+                    await self._run_queued(runner, row)
+                    continue
+                from agents.core.restart_runtime import runtime_for
+
+                lease = runtime_for(orch).acquire("manual")
+                if lease is None:
+                    continue
+                try:
+                    with lease.bind():
+                        await self._run_queued(runner, row)
+                finally:
+                    lease.release()
+
+    async def _run_queued(self, runner, row):
+        """Caller holds the per-job gate and, when available, admission."""
+        origin = self.claim(row["id"])
+        if not origin:
+            current = self.get(row["id"])
+            if current and current["status"] == "cancelled":
+                self.state(row["id"], "cancelled", reason=current["reason"])
+            return
+        # A policy first run is checked again when it comes to run (H687):
+        # the job may have changed, or quiet hours or its first slot come.
+        due = getattr(runner, "first_run_due", None)
+        if origin == "first_run" and due is not None:
+            still, why = due(row["job_id"])
+            if not still:
+                self.state(row["id"], "cancelled", reason=f"first run no longer due: {why}")
+                return
+        try:
+            # A first run obeys pause like a cron slot; only the owner's own
+            # ▶ now runs a paused job (H687).
+            run = await runner._fire_once(
+                row["job_id"], force=origin == "manual", expected_identity=row["fingerprint"]
+            )
+        except BaseException as exc:
+            self.state(
+                row["id"],
+                "unknown",
+                reason="execution interrupted after claim; not replayed",
+            )
+            if not isinstance(exc, Exception):
+                raise
+            return
+        if self.store.get(row["job_id"]) is None:
+            self.state(
+                row["id"],
+                "unknown",
+                reason="job deleted during execution; effects not replayed",
+                run=run.as_dict(),
+            )
+            return
+        self.state(
+            row["id"],
+            "waiting" if run.status == "pending" else "completed",
+            run=run.as_dict(),
+        )

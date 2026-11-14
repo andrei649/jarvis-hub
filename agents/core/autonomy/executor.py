@@ -77,6 +77,7 @@ class TaskExecutor:
         max_wall_seconds: Optional[float] = None,
         budget_ledger=None,
         execution_guard=None,
+        restart_runtime=None,
     ):
         self._handlers: dict[str, Handler] = {}
         self.fallback = fallback
@@ -87,6 +88,7 @@ class TaskExecutor:
         self.max_wall_seconds = max_wall_seconds
         self.budget_ledger = budget_ledger
         self.execution_guard = execution_guard
+        self._restart_runtime = restart_runtime
         # H288 review: prefixes whose handler enforces its own owner-set runtime cap (the
         # Kanban worker's per-card ``max_runtime_seconds``). The global budget must not cut
         # them short and pre-empt their own timeout outcome.
@@ -176,7 +178,12 @@ class TaskExecutor:
 
         budget = self.budget_for(getattr(dispatch_task, "kind", ""))
         if budget is not None or consent_scope_present():
-            handler_task = asyncio.create_task(handler(dispatch_task))
+            if self._restart_runtime is not None:
+                operation = self._restart_runtime.bind_child_operation(
+                    lambda: handler(dispatch_task))
+            else:
+                operation = handler(dispatch_task)
+            handler_task = asyncio.create_task(operation)
             authorized = authorize_consent_handler(self, dispatch_task, handler_task)
             if authorized is False:
                 handler_task.cancel()

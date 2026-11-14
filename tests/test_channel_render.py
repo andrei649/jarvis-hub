@@ -4,7 +4,7 @@ Telegram was sent the model's Markdown verbatim: an odd `*`, an unclosed fence o
 over 4,096 characters was an HTTP 400, `send()` returned False and the owner saw nothing.
 Now the channel declares what it can show, the reply is chunked on the source (never inside
 a code block), each chunk is rendered with only balanced markers turned into markup, and a
-chunk Telegram still rejects is resent as plain text — the words always arrive.
+chunk Telegram still rejects is resent as plain text when rejection is definite.
 """
 import os
 import sys
@@ -143,22 +143,31 @@ def test_render_outbound_renders_every_chunk_in_the_dialect():
 # ── Telegram delivery ────────────────────────────────────────────────────────
 
 class _Resp:
-    def __init__(self, status: int) -> None:
+    def __init__(self, status: int, message_id: int) -> None:
         self.status_code = status
+        self.is_success = 200 <= status < 300
+        self.message_id = message_id
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
             raise RuntimeError(f"HTTP {self.status_code}")
+
+    def json(self):
+        return {"ok": self.status_code < 400,
+                "result": {"message_id": self.message_id} if self.status_code < 400 else {}}
 
 
 class _Client:
     def __init__(self, statuses) -> None:
         self.posts: list[tuple[str, dict]] = []
         self.statuses = list(statuses)
+        self.next_id = 100
 
     async def post(self, url, json=None, **kwargs):
         self.posts.append((url, dict(json or {})))
-        return _Resp(self.statuses.pop(0) if self.statuses else 200)
+        status = self.statuses.pop(0) if self.statuses else 200
+        self.next_id += 1
+        return _Resp(status, self.next_id)
 
     async def aclose(self) -> None:
         pass

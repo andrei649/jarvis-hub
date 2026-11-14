@@ -218,7 +218,7 @@ RULES = [
     ("/api/room-peers", "admin"),  # H658: remote room members (Remote Members panel)
     ("/api/hooks", "admin"),  # G17 (H163/H021/H514/H408): owner event hooks (Hooks panel)
     ("/plugins", "admin"),
-    ("/api/plugins/extensions", "admin"),  # S1 inspection view pending below; CLI exists
+    ("/api/plugins/extensions", "build"),  # read-only Extensions panel; mutations remain host CLI
     ("/api/models", "admin"),
     ("/api/llm/", "admin"),
     ("/api/oauth", "admin"),
@@ -680,9 +680,8 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/subagents/{spawn_id}/transcript",
     "/api/subagents/{spawn_id}/result",
     "/api/subagents/completions/claim",
-    # H081 (G15 delivery receipts and dead targets): the owner reads them through the API;
-    # no HUD panel yet (ledger row H081, remaining).
-    "/api/channels/deliveries",
+    # H081: receipt history is in the Channels panel; clearing dead targets
+    # remains API-only (no mutation control in the read-only receipt view).
     "/api/channels/dead-targets/clear",
     # H562 (A2A outbound): peers get an address and token through the admin API; no HUD
     # panel yet (ADOPT_LANE.md slice 4, remaining).
@@ -741,9 +740,6 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
     "/api/oauth/nous/logout",
     "/api/oauth/nous/poll",
     "/api/oauth/nous/status",
-    # HA-4i-S1: host CLI inspection exists; dedicated HUD/mobile views are pending.
-    # The existing acquisition panel does not show this extension projection.
-    "/api/plugins/extensions",
     # STAYS UNWIRED ON PURPOSE (verified 2026-09-01). Its docstring calls it a
     # "/model hot-swap", but models_llm.py:69-77 swaps nothing: it parses the command
     # string and returns `base` (a hardcoded module constant) plus `configured` (an

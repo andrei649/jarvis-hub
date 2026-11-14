@@ -1,5 +1,17 @@
 # Hermes campaign — cumulative implementation handoff
 
+## Active continuation — 2026-11-12
+
+Owner-requested local work has resumed above PR #1359 head
+`686fcbf4f25ebfbb416b3a35dff29045163cffbd`, on
+`codex/hermes-continuation-20261112`. See the current cumulative
+[implementation checkpoint](evidence/2026-11-12-local-continuation.md) for scope,
+changed paths, tests, limits and next actions. No external schedule was resumed.
+The November 4 pause and counts below are preserved as history, not current
+checkout state. November 10's feature-area acceptance suites now govern evidence;
+the old per-file restamping workflow is retired. No inventory rows are removed
+and no completion is inferred from historical CI or test counts.
+
 Updated: 2026-11-04T09:30:00Z. Application root: `jarvis-hub/` under
 `/Users/andrei649/Documents/Nerva`. Working branch: `security/open-read-projections`.
 Starting HEAD: `446cc7cb626d5b2a2093b15c377733cb313bb6b3`; initially clean.

@@ -3,9 +3,10 @@
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from agents.core.app_state import get_orch
+from agents.core.command_shortcuts import MAX_ROWS, project
 from agents.core.commands import CommandRegistry
 from agents.core.routers._deps import _web, user_guard
 from agents.core.web_helpers import nocache_json
@@ -21,9 +22,21 @@ class CommandSummary(BaseModel):
     usage: str
 
 
+class ShortcutSummary(BaseModel):
+    kind: Literal["quick", "skill", "bundle"]
+    name: str
+    command: str
+    description: str
+    tier: Literal["admin"]
+    usage: str
+
+
 class CommandCatalog(BaseModel):
     ok: bool
     commands: list[CommandSummary]
+    shortcuts: list[ShortcutSummary] = Field(default_factory=list)
+    truncated: bool = False
+    shortcuts_unavailable: bool = False
 
 
 @router.get("/api/commands", response_model=CommandCatalog, dependencies=[Depends(user_guard)])
@@ -33,19 +46,33 @@ async def command_catalog(request: Request):
     No handler is invoked. A hub that has not started its registry reports that
     absence, rather than advertising commands it cannot currently dispatch.
     """
-    registry = getattr(get_orch(), "commands", None)
+    orch = get_orch()
+    registry = getattr(orch, "commands", None)
     if not isinstance(registry, CommandRegistry):
         return nocache_json(
             {"ok": False, "reason": "commands_unavailable", "commands": []}, status_code=503,
         )
     principal = _web()._web_principal(request)
+    visible = registry.visible(principal)
+    commands = [
+        {"name": command.name, "command": f"/{command.name}",
+         "description": command.description, "tier": command.tier, "usage": command.usage}
+        for command in visible[:MAX_ROWS]
+    ]
+    truncated = len(visible) > MAX_ROWS
+    shortcuts = []
+    shortcuts_unavailable = False
+    if principal.admin is True:
+        projected = project(registry, getattr(orch, "skills", None), slots=MAX_ROWS - len(commands))
+        shortcuts = projected.rows
+        truncated |= projected.truncated
+        shortcuts_unavailable = projected.unavailable
     return nocache_json({
         "ok": True,
-        "commands": [
-            {"name": command.name, "command": f"/{command.name}",
-             "description": command.description, "tier": command.tier, "usage": command.usage}
-            for command in registry.visible(principal)
-        ],
+        "commands": commands,
+        "shortcuts": shortcuts,
+        "truncated": truncated,
+        "shortcuts_unavailable": shortcuts_unavailable,
     })
 
 

@@ -90,7 +90,7 @@ beforeEach(() => {
   vi.stubGlobal('XMLHttpRequest', ChatXHR);
   vi.stubGlobal('fetch', vi.fn(async (url: string) => ({ ok: true, status: 200, json: async () =>
     url.endsWith('/sessions/resume') ? { ok: true, session: 'older', turns: [{ role: 'assistant', content: 'Older answer' }] }
-      : url.endsWith('/sessions') ? { sessions: [{ id: 'older', title: 'Older session' }] } : { agents: [
+      : (url.endsWith('/sessions') || url.includes('/sessions/page?')) ? { sessions: [{ id: 'older', title: 'Older session' }], next_cursor: null } : { agents: [
       { id: 'jarvis', name: 'Jarvis' }, { id: 'frigga', name: 'Frigga' },
     ] },
   })));

@@ -48,13 +48,15 @@ on the box at once.
 
 import asyncio
 import fnmatch
+import hashlib
 import json
 import logging
 import os
 import re
 import shlex
+import threading
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
@@ -99,6 +101,8 @@ from agents.core.mcp.resources import (
     utility_ops_for,
     warm_cleaner,
 )
+from agents.core.mcp.saved_reload import SavedReloadPlan, SavedReloadRefused, config_digest
+from agents.core.mcp.saved_reload import candidates as _saved_candidates
 from agents.core.mcp.schema_normalize import (
     PROVIDER_NAME_PREFIX,
     mcp_provider_name,
@@ -106,6 +110,7 @@ from agents.core.mcp.schema_normalize import (
 )
 
 logger = logging.getLogger("jarvis.mcp")
+SAVED_RELOAD_CLOSE_SECONDS = 12.0
 
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9_.:/@\-]{1,200}$")
 _SHELL_METACHARS = frozenset(";&|<>`\n\r")
@@ -602,6 +607,14 @@ class MCPServer:
                 return False
             epoch = self._epoch
             ok = await self._connect_guarded()
+            stop = self._halted()
+            if stop and (ok or self.is_connected()):
+                # A stop engaged during the handshake must not leave a new transport
+                # live. Keep wanted: lifting the stop may allow the supervisor to retry.
+                await self._teardown()
+                self.health.refused(stop)
+                self.last_error = stop
+                return False
             if ok and (self._epoch != epoch or (require_wanted and not self.wanted)):
                 # The owner disconnected or removed the server while it was connecting.
                 await self._teardown()
@@ -613,6 +626,7 @@ class MCPServer:
     async def _connect_guarded(self) -> bool:
         self.health.begin()
         started = time.monotonic()
+        prior_proc, prior_http = self._proc, self._http
         try:
             ok = bool(await asyncio.wait_for(self._connect_impl(), timeout=self.connect_timeout))
         except TimeoutError:
@@ -628,6 +642,10 @@ class MCPServer:
             self.last_error = "connect_error"
             await self._teardown()
             ok = False
+        if not ok and (self._proc is not prior_proc or self._http is not prior_http):
+            # A failed handshake may have opened a transport but listed no tools.
+            # Close that new transport; preserve only an old one that was retained.
+            await self._teardown()
         if ok:
             self.health.succeeded(connect_ms=(time.monotonic() - started) * 1000.0)
         elif _permanent_refusal(self.last_error):
@@ -729,7 +747,8 @@ class MCPServer:
                 from agents.core.mcp.oauth_client import mark_rejected
 
                 mark_rejected(self.name)
-            self._http = None
+            # Leave the allocated transport attached: _connect_guarded detects the
+            # failed new connection and closes it, including any pooled HTTP client.
             return False
         if not (self.tools or self.utility_tools):
             self.last_error = "handshake_failed"
@@ -1204,6 +1223,45 @@ class MCPServer:
         await self._teardown()
 
 
+def _reload_tool_snapshot(server: MCPServer) -> dict[tuple[str, bool], tuple[bytes, ...]]:
+    """Freeze listed definitions, including duplicate names, without publishing schemas."""
+    groups: dict[tuple[str, bool], list[bytes]] = {}
+    for tool in server.all_tools():
+        definition = json.dumps((tool.description, tool.input_schema, tool.annotations),
+                                sort_keys=True, ensure_ascii=True, default=str)
+        digest = hashlib.sha256(definition.encode("utf-8")).digest()
+        groups.setdefault((tool.name, tool.utility), []).append(digest)
+    return {key: tuple(sorted(values)) for key, values in groups.items()}
+
+
+def _saved_row(srv: MCPServer) -> dict:
+    """The effective persisted fields, excluding connection and tool state."""
+    return {
+        "name": srv.name, "transport": srv.transport, "command": srv.command,
+        "url": srv.url, "cwd": srv.cwd, "trust": srv.trust,
+        "tools_allow": srv.tools_allow, "tools_deny": srv.tools_deny,
+        "sampling": srv.sampling.to_config(), "elicitation": srv.elicitation.to_config(),
+        **({"auth": srv.auth} if srv.auth != "none" else {}),
+        **({"env": dict(srv.env)} if srv.env and srv.origin else {}),
+        **({"secret_env": list(srv.secret_env)} if srv.secret_env else {}),
+        **({"secret_headers": dict(srv.secret_headers)} if srv.secret_headers else {}),
+        **({"oauth": dict(srv.oauth)} if srv.oauth else {}),
+        **({"origin": dict(srv.origin)} if srv.origin else {}),
+    }
+
+
+def _effective_saved_row(srv: MCPServer) -> dict:
+    """Include historical in-memory HTTP headers when comparing live authority."""
+    row = _saved_row(srv)
+    if srv.headers:
+        row["_runtime_headers"] = dict(srv.headers)
+    return row
+
+
+def _reload_tool_label(key: tuple[str, bool]) -> str:
+    return f"{key[0]} (utility)" if key[1] else key[0]
+
+
 class MCPManager:
     def __init__(self, *, host: MCPHost | None = None, policy: ReconnectPolicy | None = None):
         self.servers: dict[str, MCPServer] = {}
@@ -1217,6 +1275,10 @@ class MCPManager:
         self.keepalive_interval = KEEPALIVE_INTERVAL
         self._supervisor: asyncio.Task | None = None
         self._last_ping: dict[str, float] = {}
+        self._reload_lock = threading.Lock()
+        # A saved-config close that outlives its caller remains owned here. A
+        # replacement cannot connect while the prior transport may still be live.
+        self._saved_closing: dict[str, asyncio.Task] = {}
 
     def attach_host(self, host: MCPHost) -> None:
         self.host = host
@@ -1315,10 +1377,23 @@ class MCPManager:
     # ── H556: parallel bounded connects, reconnect with backoff, keepalive ──
 
     async def _connect_one(self, srv: MCPServer, gate: asyncio.Semaphore, *,
-                           supervised: bool = False) -> bool:
+                           supervised: bool = False,
+                           pre_connect: Callable[[], Awaitable[bool]] | None = None) -> bool:
         async with gate:
+            if srv.name in self._saved_closing:
+                return False
             self._adopt(srv)
             await warm_cleaner()          # build the cleaner's character table off the loop
+            if pre_connect is not None:
+                try:
+                    permitted = bool(await pre_connect())
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    return False
+                if (not permitted or self.servers.get(srv.name) is not srv
+                        or srv.name in self._saved_closing or (supervised and not srv.wanted)):
+                    return False
             try:
                 ok = await srv.connect(require_wanted=supervised)
             except Exception as e:                       # connect() records; this is a last net
@@ -1359,6 +1434,321 @@ class MCPManager:
             return False
         srv.wanted = True                                # only the owner sets this
         return await self._connect_one(srv, asyncio.Semaphore(1))
+
+    async def reload_wanted(self) -> dict:
+        """Refresh wanted configured servers, preserving owner disconnect intent.
+
+        This is a live connection/tool refresh, not a saved-config read. A concurrent
+        reload returns busy. Cancellation waits for each connect's teardown before
+        releasing the single-flight lock.
+        """
+        if not self._reload_lock.acquire(blocking=False):
+            return {"status": "busy", "servers": {}}
+        try:
+            stopped = self._halted()
+            if stopped:
+                return {"status": "halted", "reason": stopped, "servers": {}}
+            selected = list(self.servers.items())
+            gate = asyncio.Semaphore(max(1, int(self.connect_concurrency)))
+            async def refresh(name: str, srv: MCPServer) -> dict:
+                before = _reload_tool_snapshot(srv)
+                connected_before = srv.is_connected()
+                status = ""
+                if srv.session_scope:
+                    status = "skipped_session"
+                elif self.servers.get(name) is not srv:
+                    status = "removed"
+                elif not srv.wanted:
+                    status = "skipped_unwanted"
+                elif self._halted(name) or srv._halted():
+                    status = "skipped_halted"
+                elif srv._connect_lock.locked():
+                    status = "skipped_busy"
+                else:
+                    epoch = srv._epoch
+                    ok = await self._connect_one(srv, gate, supervised=True)
+                    if self.servers.get(name) is not srv:
+                        status = "removed"
+                    elif not srv.wanted or srv._epoch != epoch:
+                        status = "disconnected_by_owner"
+                    elif self._halted(name) or srv._halted():
+                        status = "skipped_halted"
+                    elif ok and srv.is_connected():
+                        status = "refreshed"
+                    elif srv.is_connected():
+                        status = "failed_retained"
+                    else:
+                        status = "failed_disconnected"
+                after = _reload_tool_snapshot(srv) if self.servers.get(name) is srv else {}
+                old, new = set(before), set(after)
+                return {
+                    "status": status,
+                    "connected_before": connected_before,
+                    "connected_after": srv.is_connected() if self.servers.get(name) is srv else False,
+                    "added": sorted(_reload_tool_label(k) for k in new - old),
+                    "removed": sorted(_reload_tool_label(k) for k in old - new),
+                    "changed": sorted(_reload_tool_label(k) for k in old & new
+                                      if before[k] != after[k]),
+                    "unchanged": sum(before[k] == after[k] for k in old & new),
+                    "reason": str(srv.last_error or "") if status.startswith("failed") else "",
+                }
+
+            tasks: dict[str, asyncio.Task] = {}
+            async with asyncio.TaskGroup() as group:
+                for name, srv in selected:
+                    tasks[name] = group.create_task(refresh(name, srv))
+            return {"status": "ok", "servers": {name: task.result() for name, task in tasks.items()}}
+        finally:
+            self._reload_lock.release()
+
+    def _saved_reload_state(self) -> tuple:
+        """Bind a preview to exact live objects and owner connection intent."""
+        rows = {name: _effective_saved_row(srv) for name, srv in self.servers.items()
+                if not srv.session_scope}
+        return tuple(sorted((name, id(srv), srv._epoch, bool(srv.wanted),
+                             srv.session_scope, config_digest(rows.get(name, {})))
+                            for name, srv in self.servers.items()))
+
+    def prepare_saved_reload(self, configs: list[dict]) -> SavedReloadPlan:
+        """Preview effective, already load-set-filtered rows without connecting."""
+        if self._saved_closing:
+            raise SavedReloadRefused("cleanup_pending")
+        parsed, encoded = _saved_candidates(configs)
+        if set(parsed) & {name for name, srv in self.servers.items() if srv.session_scope}:
+            raise SavedReloadRefused("session_name_collision")
+        live_rows = {name: _effective_saved_row(srv) for name, srv in self.servers.items()
+                     if not srv.session_scope}
+        candidate_rows = {name: _effective_saved_row(srv) for name, srv in parsed.items()}
+        old, new = set(live_rows), set(candidate_rows)
+        changed = {name for name in old & new
+                   if config_digest(live_rows[name]) != config_digest(candidate_rows[name])}
+        state = self._saved_reload_state()
+        fingerprint = hashlib.sha256(json.dumps(
+            [id(self), hashlib.sha256(encoded).hexdigest(), state],
+            sort_keys=True, default=str).encode()).hexdigest()
+        return SavedReloadPlan(
+            fingerprint,
+            {"added": len(new - old), "removed": len(old - new),
+             "changed": len(changed), "unchanged": len(old & new) - len(changed)},
+            self, parsed, state,
+        )
+
+    async def apply_saved_reload(self, plan: SavedReloadPlan, *, still_current) -> dict:
+        """Reconcile one confirmed preview; later owner decisions always win."""
+        from agents.core import safe_mode
+
+        if not self._reload_lock.acquire(blocking=False):
+            return {"status": "busy", "servers": {}}
+        rows: dict[str, dict] = {}
+
+        async def current() -> bool:
+            try:
+                return bool(await still_current())
+            except Exception:
+                return False
+
+        def live() -> bool:
+            return (isinstance(plan, SavedReloadPlan) and plan._manager is self
+                    and self._saved_reload_state() == plan._state)
+
+        def stopped(name: str | None = None) -> bool:
+            return bool(safe_mode.enabled() or self._halted(name))
+
+        def report(name: str, old: MCPServer | None, status: str,
+                   before: dict | None = None) -> dict:
+            prior = before if before is not None else (_reload_tool_snapshot(old) if old else {})
+            now = self.servers.get(name)
+            after = _reload_tool_snapshot(now) if now is not None and not now.session_scope else {}
+            former, latter = set(prior), set(after)
+            return {"status": status, "connected_before": bool(old and old.is_connected()),
+                    "connected_after": bool(now and now.is_connected()),
+                    "added": sorted(_reload_tool_label(k) for k in latter - former),
+                    "removed": sorted(_reload_tool_label(k) for k in former - latter),
+                    "changed": sorted(_reload_tool_label(k) for k in former & latter
+                                      if prior[k] != after[k]),
+                    "unchanged": sum(prior[k] == after[k] for k in former & latter)}
+
+        async def revoke_cancelled_connection(name: str, srv: MCPServer, epoch: int) -> None:
+            """Own cleanup through repeated cancellation; leave newer intent alone."""
+            if (self.servers.get(name) is not srv or
+                    not (srv._epoch == epoch or (srv._epoch == epoch + 1 and not srv.wanted))):
+                return
+            close = asyncio.create_task(srv.close())
+            self._saved_closing[name] = close
+            while not close.done():
+                try:
+                    await asyncio.shield(close)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:
+                    break
+            try:
+                close.result()
+            except BaseException:
+                return  # quarantine the failed close; never reconnect this name
+            if self._saved_closing.get(name) is close:
+                self._saved_closing.pop(name, None)
+
+        try:
+            if self._saved_closing or not live() or not await current():
+                return {"status": "stale", "servers": {}}
+            if stopped():
+                return {"status": "halted", "servers": {}}
+            selected = dict(plan._candidates)
+            existing = {name: srv for name, srv in self.servers.items()
+                        if not srv.session_scope}
+            gate = asyncio.Semaphore(max(1, int(self.connect_concurrency)))
+            overall = "ok"
+            for name in sorted(set(existing) | set(selected)):
+                old = existing.get(name)
+                candidate = selected.get(name)
+                expected = next((entry for entry in plan._state if entry[0] == name), None)
+                actual = next((entry for entry in self._saved_reload_state() if entry[0] == name), None)
+                if (actual != expected or (old is None and name in self.servers)
+                        or (old is not None and self.servers.get(name) is not old)):
+                    overall = "partial"
+                    rows[name] = report(name, old, "owner_changed")
+                    continue
+                before = _reload_tool_snapshot(old) if old is not None else {}
+                was_connected = bool(old and old.is_connected())
+                was_wanted = bool(old and old.wanted)
+                prior_epoch = old._epoch if old is not None else None
+                status = ""
+                if not await current() or stopped(name):
+                    overall = "partial"
+                    status = "halted" if stopped(name) else "stale"
+                elif (next((entry for entry in self._saved_reload_state()
+                            if entry[0] == name), None) != expected):
+                    overall = "partial"
+                    status = "owner_changed"
+                elif old is None or candidate is None or (old is not None and
+                        config_digest(_effective_saved_row(old))
+                        != config_digest(_effective_saved_row(candidate))):
+                    if old is not None:
+                        close = asyncio.create_task(old.close())
+                        self._saved_closing[name] = close
+
+                        def close_done(task, server_name=name):
+                            try:
+                                failure = task.exception()
+                            except asyncio.CancelledError:
+                                failure = True
+                            if failure is None and self._saved_closing.get(server_name) is task:
+                                self._saved_closing.pop(server_name, None)
+
+                        close.add_done_callback(close_done)
+                        cancelled = False
+                        while not close.done():
+                            try:
+                                await asyncio.wait_for(asyncio.shield(close),
+                                                       timeout=SAVED_RELOAD_CLOSE_SECONDS)
+                            except TimeoutError:
+                                overall = "partial"
+                                status = "failed_close_timeout"
+                                break
+                            except asyncio.CancelledError:
+                                # Repeated cancellation still cannot detach teardown.
+                                cancelled = True
+                            except Exception:
+                                break
+                        if cancelled:
+                            while not close.done():
+                                try:
+                                    await asyncio.shield(close)
+                                except asyncio.CancelledError:
+                                    continue
+                            with suppress(Exception):
+                                close.result()
+                            raise asyncio.CancelledError
+                        if not status:
+                            try:
+                                close.result()
+                            except Exception:
+                                overall = "partial"
+                                status = "failed_close"
+                            else:
+                                if self._saved_closing.get(name) is close:
+                                    self._saved_closing.pop(name, None)
+                    if not status:
+                        if (not await current() or stopped(name)
+                                or (old is None and name in self.servers)
+                                or (old is not None and (self.servers.get(name) is not old
+                                    or old._epoch != prior_epoch + 1 or old.wanted))):
+                            overall = "partial"
+                            status = "owner_changed_or_halted"
+                        elif candidate is None:
+                            self.servers.pop(name, None)
+                            status = "removed"
+                        else:
+                            self.register(candidate)
+                            status = "added" if old is None else "replaced"
+                            if was_wanted and not stopped(name):
+                                candidate.wanted = True
+                                epoch = candidate._epoch
+
+                                async def replacement_current(server_name=name, server=candidate,
+                                                              expected_epoch=epoch) -> bool:
+                                    authorized = await current()
+                                    return bool(authorized and self.servers.get(server_name) is server
+                                                and server._epoch == expected_epoch and server.wanted
+                                                and not stopped(server_name))
+
+                                try:
+                                    ok = await self._connect_one(candidate, gate, supervised=True,
+                                                                 pre_connect=replacement_current)
+                                    authorized = await current()
+                                    if (self.servers.get(name) is not candidate
+                                            or candidate._epoch != epoch or not candidate.wanted):
+                                        overall = "partial"
+                                        status = "owner_changed"
+                                    elif not authorized or stopped(name):
+                                        await candidate.close()
+                                        overall = "partial"
+                                        status = "halted_after_connect"
+                                    elif not ok:
+                                        overall = "partial"
+                                        status = "failed_connect"
+                                except asyncio.CancelledError:
+                                    await revoke_cancelled_connection(name, candidate, epoch)
+                                    raise
+                else:
+                    status = "skipped_unwanted" if old is not None and not old.wanted else "unchanged"
+                    if old is not None and old.wanted and not old._connect_lock.locked():
+                        epoch = old._epoch
+
+                        async def unchanged_current(server_name=name, server=old,
+                                                    expected_epoch=epoch) -> bool:
+                            authorized = await current()
+                            return bool(authorized and self.servers.get(server_name) is server
+                                        and server._epoch == expected_epoch and server.wanted
+                                        and not stopped(server_name))
+
+                        try:
+                            ok = await self._connect_one(old, gate, supervised=True,
+                                                         pre_connect=unchanged_current)
+                            authorized = await current()
+                            if self.servers.get(name) is not old or old._epoch != epoch or not old.wanted:
+                                overall = "partial"
+                                status = "owner_changed"
+                            elif not authorized or stopped(name):
+                                if ok and self.servers.get(name) is old and old._epoch == epoch:
+                                    await old.close()
+                                overall = "partial"
+                                status = "halted_after_connect"
+                            elif not ok:
+                                overall = "partial"
+                                status = "failed_refresh"
+                            else:
+                                status = "refreshed"
+                        except asyncio.CancelledError:
+                            if not was_connected and old.is_connected():
+                                await revoke_cancelled_connection(name, old, epoch)
+                            raise
+                rows[name] = report(name, old, status, before)
+                rows[name]["connected_before"] = was_connected
+            return {"status": overall, "servers": rows}
+        finally:
+            self._reload_lock.release()
 
     async def tick(self, now: float | None = None) -> dict[str, str]:
         """One supervisor pass: reconnect what is due, ping what is idle. Returns what it did.
@@ -1513,29 +1903,7 @@ class MCPManager:
     def to_config(self) -> list[dict]:
         """Export the configured servers to config format for persistence. A server an
         editor handed over for one conversation (G11, ``session_scope``) is never saved."""
-        return [
-            {
-                "name": srv.name,
-                "transport": srv.transport,
-                "command": srv.command,
-                "url": srv.url,
-                "cwd": srv.cwd,
-                "trust": srv.trust,
-                "tools_allow": srv.tools_allow,
-                "tools_deny": srv.tools_deny,
-                "sampling": srv.sampling.to_config(),
-                "elicitation": srv.elicitation.to_config(),
-                # G9 — written only when set, so a config saved before stays byte-identical.
-                **({"auth": srv.auth} if srv.auth != "none" else {}),
-                **({"env": dict(srv.env)} if srv.env and srv.origin else {}),
-                **({"secret_env": list(srv.secret_env)} if srv.secret_env else {}),
-                **({"secret_headers": dict(srv.secret_headers)} if srv.secret_headers else {}),
-                **({"oauth": dict(srv.oauth)} if srv.oauth else {}),
-                **({"origin": dict(srv.origin)} if srv.origin else {}),
-            }
-            for srv in self.servers.values()
-            if not srv.session_scope
-        ]
+        return [_saved_row(srv) for srv in self.servers.values() if not srv.session_scope]
 
     def load_from_config(self, configs: list[dict]):
         """Load servers from config list."""

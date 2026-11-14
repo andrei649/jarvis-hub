@@ -5,10 +5,19 @@ import type { ChatMessage } from '../chat/types';
 
 const KEY = 'jarvis.chat.history.v1';
 const MAX_MESSAGES = 200;
+const MAX_RECOVERY_PROMPT = 4096;
 const CONVERSATION_KEY = 'jarvis.chat.conversation.v2';
 let writes: Promise<void> = Promise.resolve();
 
-export type SavedConversation = { sessionId: string | null; messages: ChatMessage[] };
+export type SavedConversation = {
+  sessionId: string | null;
+  messages: ChatMessage[];
+  recoveryPrompt?: string | null;
+};
+
+function validRecoveryPrompt(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0 && value.length <= MAX_RECOVERY_PROMPT;
+}
 
 function settledMessages(value: unknown): ChatMessage[] {
   if (!Array.isArray(value)) return [];
@@ -29,7 +38,8 @@ export async function loadConversation(scope: string): Promise<SavedConversation
     if (scope && record?.version === 2 && record.scope === scope
       && (record.sessionId === null || (typeof record.sessionId === 'string'
         && /^[A-Za-z0-9_-]{1,128}$/.test(record.sessionId)))) {
-      return { sessionId: record.sessionId, messages: settledMessages(record.messages) };
+      return { sessionId: record.sessionId, messages: settledMessages(record.messages),
+        ...(validRecoveryPrompt(record.recoveryPrompt) ? { recoveryPrompt: record.recoveryPrompt } : {}) };
     }
   } catch { /* Unavailable/corrupt storage never chooses another session. */ }
   // The legacy unscoped cache is retained, but never attached to a different hub.
@@ -40,7 +50,8 @@ export async function loadConversation(scope: string): Promise<SavedConversation
 export function saveConversation(scope: string, conversation: SavedConversation): Promise<void> {
   if (!scope) return Promise.resolve();
   const snapshot = JSON.stringify({ version: 2, scope, sessionId: conversation.sessionId,
-    messages: settledMessages(conversation.messages) });
+    messages: settledMessages(conversation.messages),
+    ...(validRecoveryPrompt(conversation.recoveryPrompt) ? { recoveryPrompt: conversation.recoveryPrompt } : {}) });
   writes = writes.catch(() => {}).then(() => AsyncStorage.setItem(CONVERSATION_KEY, snapshot)).catch(() => {});
   return writes;
 }
