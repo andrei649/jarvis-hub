@@ -158,3 +158,44 @@ Acest document este raportul cumulativ unic menținut lot cu lot conform mandatu
 - **Analiză statică, securitate și suite rulate efectiv secvențial:** `ruff check .` (`0` erori), `bandit -r agents -ll -b .bandit-baseline.json -q` (`0` constatări peste baseline), `semgrep scan --config p/python --config p/security-audit` (`0` constatări), `npm run typecheck && npm run build`, Vitest (`10/10` fișiere, `60/60` teste), `bench_nerva_differentiators.py --check` (`5/5 passed`), `pytest` pe 23 suite de integrare/paritate/securitate (`579 passed, 1 skipped, 0 failed`), și `development_preflight.py --frontend --smoke --json` (`ok: true`, `12/12` checks pass).
 - **Igienă depozite & siguranță PR:** toate worktree-urile temporare `jarvis-wt-*.nosync` au fost eliminate curat; `/Users/andrei649/Documents/Antigravity/jarvis-hub` este 100% neatins (`git status --short` gol); toate PR-urile deschise (`#1365`, `#1366`, `#1367`, `#1368`) sunt verificate `isDraft: true`, fără merge și fără deploy.
 - **Limitări oneste menținute:** toate benchmark-urile și testele rulate local sunt deterministe și ermetice (`live_network_llm_calls = 0`); rularea completă a celor `36.743` teste backend pe matricea CI Ubuntu/Windows și acceptanța pe provideri comerciali live, clustere multi-host reale sau dispozitive mobile fizice rămân distincte.
+
+---
+
+## Lot 5 — PAUZĂ (2026-11-14, în lucru — backup salvat pe ramuri, fără Draft PR #5)
+
+- **Ramură țintă Lot 5:** `antigravity/lot5-backlog-hermes-autonomy-20261114` (peste `antigravity/lot4-hud-kanban-providers-bench-20261114` / Draft PR `#1368`, base SHA `ffbfce81a2733f4b10dc2e60463b2931a51cdadf`)
+- **Motiv pauză:** oprire solicitată de proprietar după atingerea limitei de cotă pe workerii swarm; tot progresul a fost salvat curat în commit-uri și împins ca ramuri de backup pe `origin` (fără PR pentru Lot 5, fără merge, fără deploy).
+
+### Starea exactă a celor 4 ramuri Lot 5 (păstrate și ca worktree-uri locale în `jarvis-wt-lot5-*.nosync`)
+
+1. **`antigravity/lot5-kanban`** (`37a3a5615b220e8bacc1fcee16580b746b19205a`, `/Users/andrei649/Documents/Antigravity/jarvis-wt-lot5-kanban.nosync`) — **VERIFICAT GREEN (`1/4` în `#24`)**:
+   - Conectat `POST /api/autonomy/kanban/dispatch` în `AutonomyControlPanel` (`frontend/src/panels/autonomy-legacy.tsx`) cu validare strictă `KanbanDispatchBody`, afișare onestă `503`/`409`/`422`, teste Vitest (`4` noi, `54/54` / `58/58` pass), `npm run typecheck`, `ruff` și `pytest tests/test_hud_v2_parity.py tests/test_doc_reference_integrity.py` (`26 passed`).
+   - `UNCALLED_BACKLOG` redus `9 -> 8` (rămân exclusiv cele 8 refuzuri/aliasuri arhitecturale deliberate). `H18.34` rămâne deschis pentru paritatea nativă mobilă.
+   - *Notă la integrare:* necesită `python scripts/status_sync.py` pentru a actualiza contorul frontend (`+4` teste Vitest).
+
+2. **`antigravity/lot5-bench`** (`bd93bff5caf993bd150828a87d3cd1b4bfd88fa5`, `/Users/andrei649/Documents/Antigravity/jarvis-wt-lot5-bench.nosync`) — **REVIZUIT & TESTAT DE AUTOR (`#27`), RE-VERIFICARE `verifier` ÎN AȘTEPTARE**:
+   - LWW canonic în `agents/core/e2e_sync.py` mutat pe timestamp-ul autentificat Fernet (`encrypt_at_time` / `extract_timestamp`) + `device_id` din înregistrarea decriptată și recalculare `digest` peste `ct`; adăugat `agents/core/llm/cost_cascade.py` (cu `physical_request_scope` H513 per cerere fizică) + Benchmark `B6` (`84.8%` reducere estimată de cost, `0` depășiri de plafon în rularea ermetică; bibliotecă neconectată încă în `HybridRouter`).
+   - Autorul a raportat `ruff`, `bandit`, `semgrep`, `bench_nerva_differentiators.py --check` (`6/6`) și `pytest` (`41 passed`) verzi pe `bd93bff5`.
+   - *Două eșecuri pre-existente confirmate la baza `ffbfce81` (nemodificate de Lot 5):* `test_o26_p2_env_config::test_raw_env_reads_do_not_grow` (`115 > 110` citiri brute `os.environ`) și `3` eșecuri de identitate callback în `test_agent_runtime_v2.py`.
+
+3. **`antigravity/lot5-hermes-core`** (`cc7aba9a8301251884b1770425313b0a9cd21e2f`, `/Users/andrei649/Documents/Antigravity/jarvis-wt-lot5-hermes-core.nosync`) — **WIP NEVERIFICAT (salvat înainte de pauză)**:
+   - Commit `WIP(lot5, UNVERIFIED)` cu 16 fișiere (`+3109/-48`): `agents/cli/{nerva.py,approvals_policy.py,env_cmd.py,profiles.py}`, `agents/core/{code_env.py,orchestrator.py,paths.py,profiles.py,settings_db.py,turn_compaction.py,turn_notices.py}`, `agents/core/autonomy/{command_allowlist.py,smart_approvals.py}`, `agents/core/memory/context_engine.py`, `agents/core/security/env_write_guard.py`, `docs/ENV_WRITE_GUARD.md`.
+   - **NU** s-au rulat teste, `ruff`/`bandit`/`semgrep` și **NU** s-au actualizat `docs/hermes/{assessment.json,areas.json}` sau testele dedicate.
+
+4. **`antigravity/lot5-hermes-gw`** (`207eda49bc5d39cada27b58f1f58e9eba9cef017`, `/Users/andrei649/Documents/Antigravity/jarvis-wt-lot5-hermes-gw.nosync`) — **WIP NEVERIFICAT (salvat înainte de pauză)**:
+   - Commit `WIP(lot5, UNVERIFIED)` cu 6 fișiere (`+2244/-336`): `agents/core/channels/{gateway.py,group_policy.py,slack.py,slack_ai_surfaces.py,webhook_channels.py}`, `agents/core/mcp/oauth_client.py`.
+   - **NU** s-au rulat teste, `ruff`/`bandit`/`semgrep` și **NU** s-au actualizat `docs/hermes/{assessment.json,areas.json}` sau testele dedicate.
+
+### Pași exacți la reluare
+
+1. Audit & finalizare pe cele 4 ramuri din `jarvis-wt-lot5-*.nosync`:
+   - Re-verificare formală pe `antigravity/lot5-bench` (`bd93bff5`) față de observațiile `#26`.
+   - Finalizare + teste hermetice dedicate + `ruff`/`bandit`/`semgrep` + actualizare cinstită `docs/hermes/{assessment.json,areas.json}` pe `antigravity/lot5-hermes-core` și `antigravity/lot5-hermes-gw` (fără a supra-declara echivalențe).
+2. Integrare pe `antigravity/lot5-backlog-hermes-autonomy-20261114` în `jarvis-work.nosync`: merge cele 4 ramuri verificate, reconciliere `docs/hermes/`, apoi secvențial: `python scripts/hermes_status.py write && check`, `(cd frontend && npm run typecheck && npm run build)`, `python scripts/status_sync.py && --check --reuse-test-counts`, `ruff check .`, `bandit -r agents -ll -b .bandit-baseline.json -q`, `semgrep scan`, `pytest` pe suitele relevante + paritate/auth/OpenAPI/doc-integrity, și `python scripts/development_preflight.py --frontend --smoke --json`.
+3. Curățare worktree-uri `jarvis-wt-lot5-*.nosync`, actualizare `CONTINUATION_LEDGER.md`, push + deschidere **Draft PR #5** (`--draft --base antigravity/lot4-hud-kanban-providers-bench-20261114`, verificat `isDraft: true`).
+
+### Ce rămâne deschis per ansamblu în proiect
+
+- **Contracte Hermes:** `474` rămase `partial` (din `697` total; `187 equivalent`, `0 missing`, `36 excluded`).
+- **HUD `UNCALLED_BACKLOG`:** `8` rute rămase după integrarea Lot 5 (`antigravity/lot5-kanban`), toate fiind refuzuri/aliasuri arhitecturale deliberate (`STAYS UNWIRED ON PURPOSE` / `RESTORED`).
+- **Porți de release & backlog:** porțile deschise din `project-status.json` (`A1`, `A3`, `A4`, `A6`), rularea integrală CI pe Ubuntu/Windows pentru Draft PR-urile `#1365`–`#1368`, cele 2 regresii pre-existente la baza `ffbfce81`, conectarea în producție a `AdaptiveCostCascade` (dacă se dorește în Lot 6), plus acceptanța pe provideri live și dispozitive fizice/mobile.
