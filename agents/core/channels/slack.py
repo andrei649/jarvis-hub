@@ -47,6 +47,13 @@ try:
     from slack_sdk.socket_mode.response import SocketModeResponse
     SLACK_AVAILABLE = True
 except ImportError:
+    WebClient = None  # type: ignore[assignment,misc]
+    SocketModeClient = None  # type: ignore[assignment,misc]
+
+    class SocketModeResponse:  # type: ignore[no-redef]
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
     SLACK_AVAILABLE = False
 
 

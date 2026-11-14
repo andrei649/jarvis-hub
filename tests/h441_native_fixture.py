@@ -7,6 +7,24 @@ from agents.core.checkpoint import CheckpointManager
 from agents.core.memory import conversation, persistence
 
 
+def _register_undo_callback(monkeypatch, fn) -> None:
+    """Register *fn* on *monkeypatch* teardown across both pytest 8.x and pytest 9+."""
+    if hasattr(monkeypatch, "callback"):
+        monkeypatch.callback(fn)
+        return
+
+    class _UndoHook:
+        active = True
+
+        def __setattr__(self, name, value):
+            object.__setattr__(self, name, value)
+            if name == "active" and value is True:
+                fn()
+
+    hook = _UndoHook()
+    monkeypatch.setattr(hook, "active", False)
+
+
 def bind_native(orch, monkeypatch, *, session_ids=()) -> CheckpointManager:
     """Bind a real private checkpoint store before creating native sessions.
 
@@ -21,8 +39,8 @@ def bind_native(orch, monkeypatch, *, session_ids=()) -> CheckpointManager:
     monkeypatch.setattr(persistence, "MEMORY_DIR", root / "memory")
     checkpoints = CheckpointManager(str(root / "checkpoints.db"))
     checkpoints.initialize()
-    monkeypatch.callback(temporary.cleanup)
-    monkeypatch.callback(checkpoints.close)
+    _register_undo_callback(monkeypatch, temporary.cleanup)
+    _register_undo_callback(monkeypatch, checkpoints.close)
     orch.checkpoints = checkpoints
     if hasattr(orch, "memory") and hasattr(orch.memory, "set_checkpoint_manager"):
         orch.memory.set_checkpoint_manager(checkpoints)
