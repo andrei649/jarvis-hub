@@ -10,9 +10,11 @@ holding the shared secret.
 Security invariants (Nerva > Hermes/OpenClaw):
   - **Honest crypto, fail-closed**: PBKDF2-HMAC-SHA256 (390k iterations) or raw
     32-byte Fernet key; off unless ``JARVIS_E2E_SYNC`` is enabled and a key is set.
-  - **Secret-free config sync**: uses ``settings_db.export_settings()`` and
-    ``plan_import()`` / ``apply_import()`` so secrets, credentials, ``ROUTE_ONLY``
-    switches, and ``managed_scope`` pins are never exported or overwritten.
+  - **Incoming containment**: authenticated config/skill candidates are retained
+    encrypted in a private inbox, never automatically applied or installed. Secrets,
+    credentials, environment references, and ROUTE_ONLY settings are excluded.
+    Owner import/install and conflict reconciliation remain separate, unfinished UX.
+    Inbox decryption requires its original shared key; key rotation does not migrate it.
   - **Per-skill sync controls & injection quarantine**: per-skill enable/disable
     policy plus ``detect_injection_normalized`` scan on ``pull`` before any synced
     ``SKILL.md`` reaches disk.
@@ -29,6 +31,7 @@ import json
 import logging
 import os
 import re
+import sqlite3
 import stat
 import tempfile
 import threading
@@ -54,6 +57,10 @@ _DEVICE_ID_SAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
 _MAX_SKILL_MD_BYTES = 256 * 1024
 _MAX_MAILBOX_ITEMS = 32
 _MAX_MAILBOX_JSON_BYTES = 2 * 1024 * 1024
+_MAX_PENDING_CANDIDATES = 256
+_MAX_PENDING_BYTES = 16 * 1024 * 1024
+_MAX_PENDING_RECORD_BYTES = 512 * 1024
+_INBOX_APPLICATION_ID = 0x4E535931
 
 
 class E2ESyncError(Exception):
@@ -381,6 +388,7 @@ class E2ESync:
         transports = [getattr(t, "name", "custom") for t in self._active_transports()]
         return {
             "enabled": self.enabled(),
+            "inbound_mode": "stage_only",
             "available": self.available,
             "backend": self.backend,
             "device_id": self.device_id,
@@ -486,7 +494,10 @@ class E2ESync:
             plaintext = self._fernet.decrypt(ct.encode("ascii"))
         except Exception as e:
             raise E2ESyncError("decryption failed (tamper / wrong key)") from e
-        return json.loads(plaintext.decode("utf-8"))
+        try:
+            return json.loads(plaintext.decode("utf-8"))
+        except (UnicodeError, ValueError, RecursionError):
+            raise E2ESyncError("invalid encrypted record") from None
 
     # ── manifest ─────────────────────────────────────────────────────────────
 
@@ -513,10 +524,14 @@ class E2ESync:
         for env in manifest["entries"]:
             if not isinstance(env, dict):
                 continue
-            if env.get("device") == self.device_id:
-                continue  # don't re-ingest our own push
             try:
-                out.append(self.decrypt_record(env))
+                record = self.decrypt_record(env)
+                # Device-state identity comes from authenticated plaintext, never
+                # the mutable outer transport label. Keep legacy memory behavior.
+                identity = record.get("device_id") if isinstance(record, dict) else None
+                if identity == self.device_id or identity is None and env.get("device") == self.device_id:
+                    continue
+                out.append(record)
             except E2ESyncError:
                 logger.warning("E2E sync: dropping unverifiable entry", exc_info=True)
         return out
@@ -590,83 +605,168 @@ class E2ESync:
                     )
         return artefacts
 
+    def _incoming_path(self) -> Path:
+        state = self._resolved_state_path()
+        return state.with_name(state.name + ".incoming.sqlite3")
+
+    def _stage_candidate(self, candidate: dict[str, Any]) -> dict[str, str]:
+        """Atomically retain an encrypted immutable candidate, never an apply receipt."""
+        canonical = json.dumps(candidate, sort_keys=True, separators=(",", ":"),
+                               ensure_ascii=True, allow_nan=False).encode("ascii")
+        if len(canonical) > _MAX_PENDING_RECORD_BYTES:
+            raise E2ESyncError("stage_capacity_exhausted")
+        fingerprint = hashlib.sha256(b"nerva-sync-stage-v1\0" + canonical).hexdigest()
+        payload = json.dumps(self.encrypt_record(candidate), separators=(",", ":"))
+        path = self._incoming_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+        except FileExistsError:
+            pass
+        else:
+            os.close(descriptor)
+        info = path.lstat()
+        if (not stat.S_ISREG(info.st_mode)
+                or os.name != "nt" and (stat.S_IMODE(info.st_mode) & 0o077
+                                        or info.st_uid != os.getuid())):
+            raise E2ESyncError("stage_unavailable")
+        conn = sqlite3.connect(path, timeout=5, isolation_level=None)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            application = conn.execute("PRAGMA application_id").fetchone()[0]
+            if application == 0:
+                if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table'").fetchone():
+                    raise E2ESyncError("stage_unavailable")
+                conn.execute(f"PRAGMA application_id={_INBOX_APPLICATION_ID}")
+            elif application != _INBOX_APPLICATION_ID:
+                raise E2ESyncError("stage_unavailable")
+            conn.execute("CREATE TABLE IF NOT EXISTS incoming_candidates ("
+                         "fingerprint TEXT PRIMARY KEY, payload TEXT NOT NULL)")
+            previous = conn.execute("SELECT payload FROM incoming_candidates WHERE fingerprint=?",
+                                    (fingerprint,)).fetchone()
+            if previous is not None:
+                restored = self.decrypt_record(json.loads(previous[0]))
+                if restored != candidate:
+                    raise E2ESyncError("stage_unavailable")
+                status = "already_staged"
+            else:
+                count, size = conn.execute(
+                    "SELECT count(*), COALESCE(sum(length(payload)),0) FROM incoming_candidates"
+                ).fetchone()
+                if count >= _MAX_PENDING_CANDIDATES or size + len(payload) > _MAX_PENDING_BYTES:
+                    raise E2ESyncError("stage_capacity_exhausted")
+                conn.execute("INSERT INTO incoming_candidates(fingerprint,payload) VALUES (?,?)",
+                             (fingerprint, payload))
+                status = "staged"
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return {"fingerprint": fingerprint, "status": status}
+
     def apply_synced_artefacts(self, records: list[dict[str, Any]]) -> dict[str, Any]:
-        """Apply decrypted config and skill artefacts from peer owner devices."""
+        """Stage incoming candidates for owner review; automatic application is disabled.
+
+        This containment does not install skills, write settings, resolve competing
+        changes, or acknowledge successful application. Staging receipts are separate
+        from the still-unimplemented atomic application/reconciliation protocol.
+        """
         from agents.core import settings_db
         from agents.core.security.quarantine import detect_injection_normalized
+        from agents.core.settings_interpolation import has_refs
 
-        config_applied = 0
-        config_errors: list[str] = []
-        skills_applied: list[str] = []
-        skills_skipped_disabled: list[str] = []
-        skills_quarantined: list[dict[str, Any]] = []
-        source_devices: list[str] = []
-
-        sdir = self._resolved_skills_dir()
-        for rec in records:
-            if not isinstance(rec, dict):
-                continue
-            src_label = str(rec.get("device_label") or rec.get("device_id") or "")
-            if src_label and src_label not in source_devices:
-                source_devices.append(src_label)
-
-            kind = rec.get("artefact_type")
-            if kind == "config":
-                doc = rec.get("document")
-                changes, errs = settings_db.plan_import(doc)
-                if errs:
-                    config_errors.extend(errs)
-                    continue
-                if changes:
-                    try:
-                        config_applied += int(settings_db.apply_import(changes))
-                    except Exception as exc:
-                        config_errors.append(str(exc)[:200])
-            elif kind == "skill":
-                slug = str(rec.get("slug") or "").strip().lower()
-                if not _SKILL_SLUG_RE.fullmatch(slug):
-                    continue
-                if not self.is_skill_sync_enabled(slug):
-                    skills_skipped_disabled.append(slug)
-                    continue
-                md_text = rec.get("skill_md")
-                if not isinstance(md_text, str) or not md_text.strip():
-                    continue
-                raw_md = md_text.encode("utf-8")
-                if len(raw_md) > _MAX_SKILL_MD_BYTES:
-                    continue
-                expected_sha = str(rec.get("sha256") or "")
-                if expected_sha and hashlib.sha256(raw_md).hexdigest() != expected_sha:
-                    continue
-                findings = detect_injection_normalized(md_text)
-                if findings:
-                    skills_quarantined.append({"slug": slug, "findings": findings[:5]})
-                    continue
-
-                target_dir = sdir / slug
-                target_dir.mkdir(parents=True, exist_ok=True)
-                (target_dir / "SKILL.md").write_text(md_text, encoding="utf-8")
-                meta = rec.get("manifest") if isinstance(rec.get("manifest"), dict) else {}
-                synced_meta = {
-                    **meta,
-                    "synced_from_device": rec.get("device_id", ""),
-                    "synced_from_label": rec.get("device_label", ""),
-                    "synced_at": time.time(),
-                    "sha256": hashlib.sha256(raw_md).hexdigest(),
-                }
-                (target_dir / "manifest.json").write_text(
-                    json.dumps(synced_meta, indent=2, sort_keys=True), encoding="utf-8"
-                )
-                skills_applied.append(slug)
-
-        return {
-            "config_applied": config_applied,
-            "config_errors": config_errors,
-            "skills_applied": skills_applied,
-            "skills_skipped_disabled": skills_skipped_disabled,
-            "skills_quarantined": skills_quarantined,
-            "source_devices": source_devices,
+        result: dict[str, Any] = {
+            "inbound_mode": "stage_only", "config_applied": 0, "config_errors": [],
+            "skills_applied": [], "skills_skipped_disabled": [], "skills_quarantined": [],
+            "source_devices": [], "config_pending_import": [], "skills_pending_install": [],
+            "staging_errors": [], "config_excluded": [],
         }
+        specs = {(row["category"], row["key"]) for row in settings_db.DEFAULTS}
+        seen = set()
+        for rec in records:
+            kind = rec.get("artefact_type") if isinstance(rec, dict) else None
+            if not isinstance(kind, str) or kind not in {"config", "skill"}:
+                result["staging_errors"].append({"reason": "invalid_candidate"})
+                continue
+            source = rec.get("device_id")
+            if not isinstance(source, str) or not 1 <= len(source) <= 80:
+                result["staging_errors"].append({"artefact_type": kind, "reason": "invalid_source_identity"})
+                continue
+            candidate: dict[str, Any] = {"artefact_type": kind, "device_id": source}
+            extra: dict[str, Any] = {}
+            try:
+                if kind == "config":
+                    doc = rec.get("document")
+                    if (not isinstance(doc, dict) or doc.get("format", settings_db.EXPORT_FORMAT) != settings_db.EXPORT_FORMAT
+                            or not isinstance(doc.get("settings"), dict)):
+                        raise ValueError("invalid_config")
+                    wanted = {}
+                    total = 0
+                    for category, values in doc["settings"].items():
+                        if not isinstance(category, str) or not isinstance(values, dict):
+                            raise ValueError("invalid_config")
+                        total += len(values)
+                        if total > settings_db.MAX_IMPORT_KEYS:
+                            raise ValueError("invalid_config")
+                        for key, value in values.items():
+                            if not isinstance(key, str):
+                                raise ValueError("invalid_config")
+                            if ((category, key) in settings_db.EXPORT_EXCLUDED
+                                    or (category, key) in settings_db.ROUTE_ONLY
+                                    or settings_db.is_secret_setting(category, key)
+                                    or settings_db._looks_like_credential(value) or has_refs(value)):
+                                name = f"{category}.{key}" if (category, key) in specs else "undeclared_credential"
+                                result["config_excluded"].append(name)
+                                continue
+                            if (category, key) not in specs:
+                                raise ValueError("invalid_config")
+                            wanted.setdefault(category, {})[key] = value
+                        if settings_db.validate_category(category, wanted.get(category, {})):
+                            raise ValueError("invalid_config")
+                    if not wanted:
+                        continue
+                    candidate["document"] = {"format": settings_db.EXPORT_FORMAT, "settings": wanted}
+                else:
+                    slug = rec.get("slug")
+                    if not isinstance(slug, str) or not _SKILL_SLUG_RE.fullmatch(slug):
+                        raise ValueError("invalid_skill")
+                    if not self.is_skill_sync_enabled(slug):
+                        result["skills_skipped_disabled"].append(slug)
+                        continue
+                    text = rec.get("skill_md")
+                    if not isinstance(text, str) or not text.strip():
+                        raise ValueError("invalid_skill")
+                    raw = text.encode("utf-8")
+                    digest = hashlib.sha256(raw).hexdigest()
+                    if len(raw) > _MAX_SKILL_MD_BYTES or rec.get("sha256") not in (None, "", digest):
+                        raise ValueError("invalid_skill")
+                    findings = detect_injection_normalized(text)
+                    if findings:
+                        result["skills_quarantined"].append({"slug": slug, "findings": findings[:5]})
+                        continue
+                    candidate.update(slug=slug, skill_md=text, sha256=digest)
+                    extra = {"slug": slug, "sha256": digest}
+                json.dumps(candidate, allow_nan=False)  # finite, serializable before private staging
+            except (ValueError, TypeError, RecursionError, UnicodeError):
+                result["staging_errors"].append({"artefact_type": kind, "reason": "invalid_candidate"})
+                continue
+            try:
+                receipt = self._stage_candidate(candidate)
+            except (OSError, sqlite3.Error, E2ESyncError, ValueError, TypeError, RecursionError, UnicodeError) as exc:
+                reason = "stage_capacity_exhausted" if str(exc) == "stage_capacity_exhausted" else "stage_unavailable"
+                result["staging_errors"].append({"artefact_type": kind, "reason": reason})
+                continue
+            if receipt["fingerprint"] in seen:
+                continue
+            seen.add(receipt["fingerprint"])
+            pending = {**receipt, **extra, "required_action": "owner_import" if kind == "config" else "owner_install",
+                       "conflict": "automatic_apply_disabled"}
+            result["config_pending_import" if kind == "config" else "skills_pending_install"].append(pending)
+            if source not in result["source_devices"]:
+                result["source_devices"].append(source)
+        return result
 
     def push_state(
         self,
@@ -703,7 +803,8 @@ class E2ESync:
     def pull_state(self, *, manifest: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         """Fetch inbound manifests from explicit payload, mailbox, and active transports, then apply."""
         if not self.enabled():
-            return {"ok": False, "enabled": False, "reason": "sync_disabled", "records_decrypted": 0}
+            return {"ok": False, "enabled": False, "reason": "sync_disabled", "records_decrypted": 0,
+                    "inbound_mode": "stage_only", "config_pending_import": [], "skills_pending_install": [], "staging_errors": []}
 
         manifests: list[dict[str, Any]] = []
         if isinstance(manifest, dict) and manifest.get("entries"):
@@ -715,21 +816,16 @@ class E2ESync:
             manifests.extend(t.fetch_manifests(exclude_device=self.device_id))
 
         decrypted: list[dict[str, Any]] = []
-        seen_digests: set[str] = set()
-        for m in manifests:
-            d = str(m.get("digest") or "")
-            if d and d in seen_digests:
-                continue
-            if d:
-                seen_digests.add(d)
-            decrypted.extend(self.apply_pull(m))
+        for incoming in manifests:
+            # The peer's outer digest is not authentication or replay authority.
+            decrypted.extend(self.apply_pull(incoming))
 
         applied = self.apply_synced_artefacts(decrypted)
         with self._lock:
             self._last_pull_at = time.time()
             self._save_state()
         return {
-            "ok": True,
+            "ok": not applied["staging_errors"],
             "enabled": True,
             "device_id": self.device_id,
             "device_label": self.device_label,
@@ -739,16 +835,17 @@ class E2ESync:
         }
 
     def sync_now(self) -> dict[str, Any]:
-        """Bidirectional sync pass: pull remote changes first, then push local config & skills."""
+        """Stage incoming candidates, then export local state; never reconcile/apply incoming state."""
         if not self.enabled():
-            return {"ok": False, "enabled": False, "reason": "sync_disabled"}
+            return {"ok": False, "enabled": False, "inbound_mode": "stage_only", "reason": "sync_disabled"}
         pulled = self.pull_state()
         pushed = self.push_state()
         return {
-            "ok": True,
+            "ok": bool(pulled.get("ok") and pushed.get("ok")),
             "enabled": True,
             "device_id": self.device_id,
             "device_label": self.device_label,
+            "inbound_mode": "stage_only",
             "pull": pulled,
             "push": {k: v for k, v in pushed.items() if k != "manifest"},
         }

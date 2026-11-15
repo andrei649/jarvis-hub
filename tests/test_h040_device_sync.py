@@ -159,18 +159,19 @@ def test_h040_cross_device_config_and_skills_sync_with_injection_quarantine(tmp_
     )
     pulled = dev_b.pull_state()
     assert pulled["ok"] is True
-    assert pulled["config_applied"] >= 1
-    assert pulled["skills_applied"] == ["deploy-helper"]
+    assert pulled["inbound_mode"] == "stage_only"
+    assert pulled["config_applied"] == 0 and pulled["skills_applied"] == []
+    assert len(pulled["config_pending_import"]) == 1
+    assert [p["slug"] for p in pulled["skills_pending_install"]] == ["deploy-helper"]
     assert [q["slug"] for q in pulled["skills_quarantined"]] == ["hostile-skill"]
     assert not (skills_b / "private-draft").exists()
     assert not (skills_b / "hostile-skill").exists()
-    assert (skills_b / "deploy-helper" / "SKILL.md").is_file()
-    meta = json.loads((skills_b / "deploy-helper" / "manifest.json").read_text(encoding="utf-8"))
-    assert meta["synced_from_label"] == "MacBook Pro M4"
-
-    # Confirm Device B's settings_db now has idle_minutes == 720!
+    assert not (skills_b / "deploy-helper").exists()
+    # Fresh defaults remain local; receiving a candidate grants no write authority.
     exported_b = settings_db.export_settings()
-    assert exported_b["settings"]["sessions"]["idle_minutes"] == 720
+    default = next(r["value"] for r in settings_db.DEFAULTS
+                   if (r["category"], r["key"]) == ("sessions", "idle_minutes"))
+    assert exported_b["settings"]["sessions"]["idle_minutes"] == default
 
 
 def test_h040_peer_http_mailbox_sync_now_router_and_cli(tmp_path, monkeypatch):
@@ -230,11 +231,13 @@ def test_h040_peer_http_mailbox_sync_now_router_and_cli(tmp_path, monkeypatch):
     assert push_res["ok"] is True
     assert push_res["deliveries"][0]["delivered_peers"] == 1
 
-    # Hub 2 runs POST /api/sync/now via HTTP router and materializes ops-playbook!
+    # Hub 2 stages the candidate via the real route; it does not install a skill.
     now_res = client.post("/api/sync/now")
     assert now_res.status_code == 200
-    assert now_res.json()["pull"]["skills_applied"] == ["ops-playbook"]
-    assert (skills_2 / "ops-playbook" / "SKILL.md").is_file()
+    assert now_res.json()["inbound_mode"] == "stage_only"
+    assert now_res.json()["pull"]["skills_applied"] == []
+    assert now_res.json()["pull"]["skills_pending_install"][0]["slug"] == "ops-playbook"
+    assert not (skills_2 / "ops-playbook").exists()
 
     # Exercise remaining HTTP owner routes: label, skill toggle, peer add/remove, status.
     assert client.put("/api/sync/device", json={"label": "Studio GPU"}).status_code == 200
@@ -283,3 +286,198 @@ def test_h040_peer_http_mailbox_sync_now_router_and_cli(tmp_path, monkeypatch):
         "/api/sync/peers",
         "/api/sync/peers/bonobo",
     ]
+
+
+def _incoming_records(idle=720):
+    return [
+        {"artefact_type": "config", "device_id": "source", "document": {
+            "format": settings_db.EXPORT_FORMAT, "exported_at": 1,
+            "settings": {"sessions": {"idle_minutes": idle}}}},
+        {"artefact_type": "skill", "device_id": "source", "slug": "local-ops",
+         "skill_md": "# Remote ops\nReview the incoming candidate manually.\n"},
+    ]
+
+
+@pytest.mark.parametrize("explicit_default", [False, True])
+def test_h040_stage_only_preserves_edits_defaults_and_replays(tmp_path, monkeypatch, explicit_default):
+    monkeypatch.setenv("JARVIS_E2E_SYNC", "1")
+    _switch_settings_db(monkeypatch, tmp_path / "settings.db")
+    default = next(r["value"] for r in settings_db.DEFAULTS
+                   if (r["category"], r["key"]) == ("sessions", "idle_minutes"))
+    local = default if explicit_default else 1440
+    settings_db.put_category("sessions", {"idle_minutes": local})
+    skills = tmp_path / "skills"
+    (skills / "local-ops").mkdir(parents=True)
+    target = skills / "local-ops" / "SKILL.md"
+    target.write_text("# Local ops\nOwner's newer instructions.\n")
+    before = target.read_bytes()
+    source = E2ESync(passphrase="stage-fixture", device_id="source", state_path=tmp_path / "source.json")
+    kwargs = {"passphrase": "stage-fixture", "device_id": "dest", "state_path": tmp_path / "dest.json", "skills_dir": skills}
+    dest = E2ESync(**kwargs)
+    records = _incoming_records()
+    first = dest.pull_state(manifest=source.build_push(records))
+    assert settings_db.get_value("sessions", "idle_minutes") == local
+    assert target.read_bytes() == before
+    assert first["inbound_mode"] == "stage_only" and first["config_applied"] == 0
+    assert first["skills_applied"] == [] and first["staging_errors"] == []
+    assert len(first["config_pending_import"]) == len(first["skills_pending_install"]) == 1
+    assert dest.status()["inbound_mode"] == "stage_only"
+    fingerprints = {p["fingerprint"] for k in ("config_pending_import", "skills_pending_install") for p in first[k]}
+    settings_db.put_category("sessions", {"idle_minutes": 2880})
+    target.write_text("# Local ops\nAnother edit after staging.\n")
+    # New ciphertext and export timestamp cannot reopen an already-staged content identity.
+    records[0]["document"]["exported_at"] = 999
+    restarted = E2ESync(**kwargs)
+    second = restarted.pull_state(manifest=source.build_push(records))
+    assert {p["fingerprint"] for k in ("config_pending_import", "skills_pending_install") for p in second[k]} == fingerprints
+    assert all(p["status"] == "already_staged" for k in ("config_pending_import", "skills_pending_install") for p in second[k])
+    assert settings_db.get_value("sessions", "idle_minutes") == 2880
+    assert "Another edit" in target.read_text()
+
+
+def test_h040_forged_outer_digest_cannot_suppress_distinct_authenticated_candidates(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_E2E_SYNC", "1")
+    source = E2ESync(passphrase="stage-fixture", device_id="source", state_path=tmp_path / "source.json")
+    first = source.build_push(_incoming_records(720)[:1])
+    second = source.build_push(_incoming_records(960)[:1])
+    second["digest"] = first["digest"]
+    second["entries"][0]["device"] = "dest"  # outer identity is not authenticated
+    transport = SimpleNamespace(name="fixture", fetch_manifests=lambda **kwargs: [first, second])
+    dest = E2ESync(passphrase="stage-fixture", device_id="dest", state_path=tmp_path / "dest.json", transport=transport)
+    result = dest.pull_state()
+    assert len({p["fingerprint"] for p in result["config_pending_import"]}) == 2
+    assert result["config_applied"] == 0 and result["staging_errors"] == []
+
+
+def test_h040_stage_capacity_concurrency_duplicates_and_no_eviction(tmp_path, monkeypatch):
+    import sqlite3
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    monkeypatch.setenv("JARVIS_E2E_SYNC", "1")
+    monkeypatch.setattr(e2e_sync, "_MAX_PENDING_CANDIDATES", 1, raising=False)
+    kwargs = {"passphrase": "stage-fixture", "device_id": "dest", "state_path": tmp_path / "dest.json"}
+    instances = [E2ESync(**kwargs), E2ESync(**kwargs)]
+    barrier = Barrier(2)
+
+    def stage(index):
+        barrier.wait(timeout=5)
+        return instances[index].apply_synced_artefacts(_incoming_records(720 + index * 240)[:1])
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(stage, range(2)))
+    assert sum(len(r["config_pending_import"]) for r in results) == 1
+    assert sum(len(r["staging_errors"]) for r in results) == 1
+    winner = next(i for i, r in enumerate(results) if r["config_pending_import"])
+    repeat = instances[1].apply_synced_artefacts(_incoming_records(720 + winner * 240)[:1])
+    assert repeat["config_pending_import"][0]["status"] == "already_staged"
+    assert repeat["staging_errors"] == []
+    with sqlite3.connect(instances[0]._incoming_path()) as conn:
+        assert conn.execute("SELECT count(*) FROM incoming_candidates").fetchone()[0] == 1
+
+
+def test_h040_stage_write_failure_is_retryable_and_mixed_batch_is_explicit(tmp_path, monkeypatch):
+    monkeypatch.setenv("JARVIS_E2E_SYNC", "1")
+    dest = E2ESync(passphrase="stage-fixture", device_id="dest", state_path=tmp_path / "dest.json")
+    original = getattr(dest, "_stage_candidate", None)
+
+    def fail_config(candidate):
+        if candidate["artefact_type"] == "config":
+            raise OSError("synthetic private stage failure")
+        return original(candidate)
+
+    monkeypatch.setattr(dest, "_stage_candidate", fail_config, raising=False)
+    partial = dest.apply_synced_artefacts(_incoming_records())
+    assert len(partial["staging_errors"]) == 1
+    assert partial["config_pending_import"] == [] and len(partial["skills_pending_install"]) == 1
+    monkeypatch.setattr(dest, "_stage_candidate", original)
+    retry = dest.apply_synced_artefacts(_incoming_records())
+    assert retry["staging_errors"] == [] and retry["config_pending_import"][0]["status"] == "staged"
+    assert retry["skills_pending_install"][0]["status"] == "already_staged"
+
+
+def test_h040_stage_excludes_credentials_and_keeps_encrypted_private_payload(tmp_path, monkeypatch):
+    import sqlite3
+    import stat
+
+    from cryptography.fernet import Fernet
+
+    key = Fernet.generate_key().decode()
+    dest = E2ESync(key=key, device_id="dest", state_path=tmp_path / "dest.json")
+    record = _incoming_records()[0]
+    record["document"]["settings"]["integrations"] = {"tuya_secret": "synthetic private credential"}
+    record["document"]["settings"]["skills"] = {"disabled": ["private-skill"]}
+    record["document"]["settings"]["llm"] = {
+        "lm_studio_url": "https://owner:synthetic-private@host.example",
+        "ollama_url": "${env:ANTHROPIC_API_KEY}",
+    }
+    result = dest.apply_synced_artefacts([record])
+    assert len(result["config_pending_import"]) == 1
+    with sqlite3.connect(dest._incoming_path()) as conn:
+        payload = conn.execute("SELECT payload FROM incoming_candidates").fetchone()[0]
+    candidate = dest.decrypt_record(json.loads(payload))
+    assert candidate["document"]["settings"] == {"sessions": {"idle_minutes": 720}}
+    assert b"synthetic private credential" not in dest._incoming_path().read_bytes()
+    if e2e_sync.os.name != "nt":
+        assert stat.S_IMODE(dest._incoming_path().stat().st_mode) == 0o600
+
+
+@pytest.mark.parametrize("failure_at", ["insert", "commit"])
+def test_h040_byte_capacity_and_failed_transaction_do_not_claim_staging(tmp_path, monkeypatch, failure_at):
+    import sqlite3
+
+    dest = E2ESync(passphrase="stage-fixture", device_id="dest", state_path=tmp_path / "dest.json")
+    monkeypatch.setattr(e2e_sync, "_MAX_PENDING_BYTES", 1)
+    refused = dest.apply_synced_artefacts(_incoming_records()[:1])
+    assert refused["config_pending_import"] == []
+    assert refused["staging_errors"][0]["reason"] == "stage_capacity_exhausted"
+    monkeypatch.setattr(e2e_sync, "_MAX_PENDING_BYTES", 16 * 1024 * 1024)
+    original = sqlite3.connect
+
+    class _FailInsert:
+        def __init__(self, *args, **kwargs):
+            self.conn = original(*args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(self.conn, name)
+
+        def execute(self, sql, *args):
+            if failure_at == "insert" and sql.startswith("INSERT INTO incoming_candidates"):
+                raise sqlite3.OperationalError("synthetic failed receipt write")
+            return self.conn.execute(sql, *args)
+
+        def commit(self):
+            if failure_at == "commit":
+                raise sqlite3.OperationalError("synthetic failed commit")
+            return self.conn.commit()
+
+    with monkeypatch.context() as changes:
+        changes.setattr(e2e_sync.sqlite3, "connect", _FailInsert)
+        failed = dest.apply_synced_artefacts(_incoming_records()[:1])
+    assert failed["staging_errors"][0]["reason"] == "stage_unavailable"
+    with original(dest._incoming_path()) as conn:
+        # Byte-capacity refusal rolled back schema creation too; no candidate was acknowledged.
+        assert conn.execute("SELECT name FROM sqlite_master WHERE name='incoming_candidates'").fetchone() is None
+    retry = dest.apply_synced_artefacts(_incoming_records()[:1])
+    assert retry["staging_errors"] == [] and retry["config_pending_import"][0]["status"] == "staged"
+    with original(dest._incoming_path()) as conn:
+        count = conn.execute("SELECT count(*) FROM incoming_candidates").fetchone()[0]
+    assert count == 1
+    monkeypatch.setattr(e2e_sync, "_MAX_PENDING_BYTES", 1)
+    duplicate = dest.apply_synced_artefacts(_incoming_records()[:1])
+    assert duplicate["staging_errors"] == []
+    assert duplicate["config_pending_import"][0]["status"] == "already_staged"
+
+
+@pytest.mark.parametrize("raw", [b"not-json", b"\xff"])
+def test_h040_malformed_authenticated_plaintext_is_opaque_and_does_not_abort_other_candidates(tmp_path, monkeypatch, raw):
+    monkeypatch.setenv("JARVIS_E2E_SYNC", "1")
+    dest = E2ESync(passphrase="stage-fixture", device_id="dest", state_path=tmp_path / "dest.json")
+    bad = {"v": 1, "device": "source", "ct": dest._fernet.encrypt(raw).decode(), "ts": 0}
+    good = dest.encrypt_record(_incoming_records()[0])
+    with pytest.raises(E2ESyncError, match="invalid encrypted record"):
+        dest.decrypt_record(bad)
+    result = dest.pull_state(manifest={"entries": [bad, good]})
+    assert len(result["config_pending_import"]) == 1 and result["config_applied"] == 0
+    malformed = dest.apply_synced_artefacts([{"artefact_type": []}])
+    assert malformed["staging_errors"] == [{"reason": "invalid_candidate"}]

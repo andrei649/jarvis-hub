@@ -3,8 +3,11 @@
 **Goal:** let smaller coding models deliver one clear behavior at a time without
 reconstructing the project, making authority decisions, or guessing missing contracts.
 
-**Reviewed source:** `e355da06d7c4a5275401ee2925582c195d270235` (2026-11-14),
-PR #1368 with the repaired #1366/#1367 parent stack. The lot5 pause checkpoint is
+**Reviewed source:** `c235250071b49b24e0b92e7f78c5d952fa0e2095` (2026-11-15),
+after incoming sync containment and the honest stage-only benchmark refresh.
+Inbound `stage_only` handling retains encrypted candidates in a private SQLite inbox;
+it never applies settings or installs skills. Retrieval, explicit owner import/install,
+key migration and reconciliation remain unfinished. The lot5 pause checkpoint is
 preserved. The original review reports describe their dated `587977` baseline;
 use [the current integration handoff](../../../reviews/2026-11-14-integration-status.md)
 for later repairs, exact heads and remaining merge holds.
@@ -14,6 +17,12 @@ SM-004, SM-005, SM-006, SM-008**. This is not a claim of full CI, main integrati
 or live acceptance. SM-001 awaits exact-head executed count confirmation; SM-007
 still requires its remaining scanner evidence. Planning files preserve all original
 requirements and do not change the Hermes verdicts.
+
+SM-009 is ready only for outbound collection from the real owner `user_skills_dir()`;
+its explicit directory override and opt-outs remain. It does not reassign the completed
+inbound receipt/UI changes or propose direct skill writes. SM-010 remains `needs_design`
+for retrieval, consent and safe application/reconciliation: current inbox receipts prove
+staging, not successful application or a complete replay protocol for installed data.
 
 ## What is covered
 
@@ -46,7 +55,7 @@ From the repository root, using the project's Python where available:
 python docs/superpowers/plans/2026-11-14-small-model-backlog/taskpack.py stats
 python docs/superpowers/plans/2026-11-14-small-model-backlog/taskpack.py validate --check-source
 python docs/superpowers/plans/2026-11-14-small-model-backlog/taskpack.py next
-python docs/superpowers/plans/2026-11-14-small-model-backlog/taskpack.py show SM-008
+python docs/superpowers/plans/2026-11-14-small-model-backlog/taskpack.py show SM-009
 ```
 
 The planning helper's own offline checks are available with

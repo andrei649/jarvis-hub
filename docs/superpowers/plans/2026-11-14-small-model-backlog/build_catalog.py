@@ -10,12 +10,12 @@ from pathlib import Path
 
 PACKAGE = Path(__file__).resolve().parent
 ROOT = PACKAGE.parents[3]
-BASE = 'e355da06d7c4a5275401ee2925582c195d270235'
+BASE = 'c235250071b49b24e0b92e7f78c5d952fa0e2095'
 INPUTS = ['BACKLOG.md', 'docs/hermes/assessment.json', 'docs/hermes/areas.json',
           'docs/research/2026-09-07-hermes-absorption-ledger.json']
 # Review flags are planning overlays, never changes to the assessment ledger.
 REVIEW = {
-    'H040': 'Default-constructor metadata reload is locally repaired; discovery roots and conflict/replay semantics still need repair.',
+    'H040': 'Incoming stage_only containment preserves local data in an encrypted SQLite candidate inbox; outbound owner skill discovery, candidate retrieval, consented import/install and application/reconciliation semantics remain unfinished. Inbox receipts prove staging only.',
     'H032': 'Early-quorum/timeout claims need alignment with gather and unbounded model loading.',
     'H657': 'Manual promotion does not fence a partitioned old owner automatically; state the guarantee precisely.',
     'H214': 'Web/procedural companion does not prove native desktop or VLM generation acceptance.',

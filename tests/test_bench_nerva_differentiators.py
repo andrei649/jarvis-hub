@@ -32,8 +32,9 @@ def test_suite_metadata_and_honest_scope_invariants(measured_report: dict[str, A
     assert measured_report["execution_mode"] == "hermetic_in_process"
     assert measured_report["live_network_llm_calls"] == 0
     assert "0 live network LLM calls" in measured_report["honest_scope_note"]
-    assert "_lww_order_manifests" in measured_report["honest_scope_note"]
-    assert "DirectorySyncTransport.fetch_manifests()" in measured_report["honest_scope_note"]
+    assert "candidate staging" in measured_report["honest_scope_note"]
+    assert "no competitor superiority" in measured_report["honest_scope_note"]
+    assert "not timestamp LWW" in measured_report["honest_scope_note"]
     assert measured_report["summary"] == {
         "total_benchmarks": 5,
         "passed_benchmarks": 5,
@@ -130,13 +131,16 @@ def test_benchmark_5_h040_secret_stripped_e2e_sync_metrics(measured_report: dict
     assert dm["hostile_skill_injection_quarantined"] is True
     assert dm["ciphertext_bitflip_trials"] == 8
     assert dm["nerva_authenticated_tamper_rejection_rate"] == 1.0
-    assert (
-        dm["lww_ordering_source"]
-        == "benchmark_harness__lww_order_manifests_over_e2e_envelope_ts_device"
-    )
-    assert dm["lww_arrival_permutations_tested"] == 6
-    assert dm["nerva_lww_convergence_rate"] == 1.0
-    assert dm["baseline_arrival_order_convergence_rate"] < 1.0
+    assert dm["inbound_mode"] == "stage_only"
+    assert dm["automatic_apply_disabled"] is True
+    assert dm["arrival_permutations_tested"] == 6
+    assert dm["staged_candidates_per_permutation"] == 6
+    assert dm["staged_candidate_sets_identical"] is True
+    assert dm["local_edit_preservation_rate"] == 1.0
+    assert dm["restart_replay_idempotence_rate"] == 1.0
+    assert dm["outer_metadata_cannot_suppress_candidates"] is True
+    assert dm["staged_payloads_encrypted_at_rest"] is True
+    assert not any("lww" in key.lower() or "convergence" in key.lower() for key in dm)
 
 
 def test_committed_benchmark_artifacts_and_doc_reference_integrity() -> None:
@@ -145,8 +149,10 @@ def test_committed_benchmark_artifacts_and_doc_reference_integrity() -> None:
     assert bench.main(["--check"]) == 0
 
     md_text = bench.DEFAULT_MD_OUT.read_text(encoding="utf-8")
-    assert "_lww_order_manifests" in md_text
-    assert "DirectorySyncTransport" in md_text
+    assert "stage_only" in md_text
+    assert "not competitor measurement" in md_text
+    assert "Hermes / OpenClaw Default" not in md_text
+    assert "Why Nerva wins" not in md_text
     base = bench.DEFAULT_MD_OUT.parent
     missing: list[str] = []
     for line_no, target in _candidate_paths(md_text):
