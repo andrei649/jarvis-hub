@@ -23,3 +23,7 @@ The inbox has no finished candidate retrieval/import/install UI yet. General con
 No real-device/provider acceptance, deployment, service activation or resumption of the blocked lifecycle review occurred. The inherited cumulative review and composed/native macOS acceptance remain open; keep the stack draft.
 
 The expected locked counts are backend **36790** and frontend **3205**, with mobile unchanged at 420. Backend accounting uses authentic prior CI 36768 plus a paired full-collection delta of 22 cases (local 36777 to 36799, no removed cases); frontend adds six executed cases to the prior 3199 count. New-head CI must verify these totals.
+
+## Generated HUD follow-up
+
+CI on `4f61b8d196eeaab8dcdffd9bcf65a427ea089493` passed all 325 HUD test files, both TypeScript checks and the build, then rejected stale committed bundles (job 132598356191). The canonical `npm run build` was run with existing locked dependencies to regenerate both HUD outputs. A second build reproduced every output hash exactly. No source, test, dependency or workflow was changed in this follow-up; new-head CI still must confirm freshness.
