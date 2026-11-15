@@ -274,8 +274,10 @@ NOT_A_MODEL_PROVIDER: dict[str, tuple[str, frozenset[str]]] = {
         "exception classes with isinstance; it dials nothing and carries no prompt",
         frozenset({"classify_exception"})),
     "agents/core/channels/telegram.py": (
-        "Telegram Bot API channel transport (messages to/from the owner's chat)",
-        frozenset({"TelegramChannel.__init__", "TelegramChannel.start"})),
+        "Telegram Bot API channel transport (messages to/from the owner's chat); every send "
+        "goes through TelegramChannel._post (H069 outbound gate) to the channel's client, "
+        "which refuses any host but HTTPS api.telegram.org",
+        frozenset({"TelegramChannel.__init__", "TelegramChannel._start_claimed", "TelegramChannel._answer_callback", "TelegramChannel._edit_message", "TelegramChannel._handle_pending_callback", "TelegramChannel._post_clip", "TelegramChannel._send_ephemeral_chunk", "TelegramChannel._send_message", "TelegramChannel._send_plain_chunk", "TelegramChannel.publish_command_menu", "TelegramChannel.request_decision_reason", "TelegramChannel.send_action", "TelegramChannel.send_card", "TelegramChannel.send_file", "TelegramChannel.send_media", "TelegramChannel.send_owner_once_card", "TelegramChannel.send_pending_card", "TelegramChannel.send_scheduled_text"})),
     "agents/core/cameras/frigate.py": (
         "Frigate NVR API on the owner's LAN", frozenset({"_FrigateHTTP.request_bytes"})),
     "agents/core/house/home_assistant.py": (

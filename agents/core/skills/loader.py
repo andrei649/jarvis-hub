@@ -905,6 +905,14 @@ class SkillLoader:
         self._usage = None
         # H349: set while discover() walks the roots (origins are recorded once, at its end).
         self._discovering = False
+        # H084: a reload candidate reports refused folders without changing live
+        # registration, approvals, usage or load-set status during its scan.
+        self.discovery_failures: list[str] = []
+        self.discovery_skipped: list[str] = []
+        self.discovery_load_set_skipped: list[str] = []
+        self.discovery_folders: set[str] = set()
+        self.discovery_owner_unread = False
+        self._staging_discovery = False
         # What a creation in progress must put back in the usage sidecar if it fails.
         self._creation_undo = None
         self._approval_store = approval_store or SkillApprovalStore()
@@ -1122,30 +1130,49 @@ class SkillLoader:
             logger.warning("Skill approval revoke failed for %s", path, exc_info=True)
             return False
 
-    def discover(self):
-        SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+    def discover(self, *, staging: bool = False, declared_lists: dict | None = None):
+        """Discover skills. A staging pass builds a private candidate registry.
+
+        It uses the caller's captured load set and never publishes itself as the
+        live loader or mutates approval cleanup, usage origins or load-set status.
+        The ordinary boot/import path retains its existing behavior.
+        """
+        if staging and declared_lists is None:
+            raise ValueError("staged discovery requires a captured load set")
+        if not staging:
+            SKILLS_DIR.mkdir(parents=True, exist_ok=True)
         # DRA-54 — self-heal approvals whose skill directory was removed out of
         # band. Never fatal: a store failure must not break skill discovery.
-        try:
-            self._approval_store.prune_missing()
-        except Exception:
-            logger.warning("Skill approval prune failed", exc_info=True)
+        if not staging:
+            try:
+                self._approval_store.prune_missing()
+            except Exception:
+                logger.warning("Skill approval prune failed", exc_info=True)
         global _LIVE_LOADER
-        _LIVE_LOADER = weakref.ref(self)
+        if not staging:
+            _LIVE_LOADER = weakref.ref(self)
         roots = skill_roots()
         owner_unread = False
         # The owner's personal skills (Documents/Jarvis/skills) load AFTER the
         # bundled tree so a same-named user skill wins the registry slot.
         if len(roots) > 1 and safe_mode.enabled():
             # H275: safe mode discovers the shipped skills only.
-            safe_mode.note("owner_skills")
+            if not staging:
+                safe_mode.note("owner_skills")
             owner_unread = True
             roots = roots[:1]
         # H285: the owner's load set, read once for this pass.
-        load_set.begin("skills")
-        self._load_lists = load_set.declared("skills")
+        if not staging:
+            load_set.begin("skills")
+        self._load_lists = declared_lists if staging else load_set.declared("skills")
         folders: set[str] = set()
+        self.discovery_failures = []
+        self.discovery_skipped = []
+        self.discovery_load_set_skipped = []
+        self.discovery_folders = folders
+        self.discovery_owner_unread = owner_unread
         self._discovering = True
+        self._staging_discovery = staging
         try:
             for root in roots:
                 for skill_dir in sorted(root.iterdir()):
@@ -1158,8 +1185,9 @@ class SkillLoader:
                         except Exception:
                             # One hostile or unreadable SKILL.md must not take the rest of
                             # discovery (and startup) down with it; it simply is not registered.
+                            self.discovery_failures.append(skill_dir.name)
                             logger.warning("Skill at %s could not be loaded; skipped", skill_dir, exc_info=True)
-            if not owner_unread:
+            if not owner_unread and not staging:
                 # With the owner folder left unread (safe mode), a name that matches no
                 # shipped skill may name an installed one of the owner's: not "unknown".
                 load_set.finish("skills", folders | set(self.skills) | set(load_set.status("skills")["skipped"]),
@@ -1168,9 +1196,11 @@ class SkillLoader:
             # A later single-skill load (sign, approve) reads the lists as they are then.
             self._load_lists = None
             self._discovering = False
+            self._staging_discovery = False
         # H349: one pass over the sidecar — every registered skill's origin. Rows of skills
         # this pass did not see are left as they are.
-        self.sync_origins()
+        if not staging:
+            self.sync_origins()
         logger.info(f"Skills loaded: {list(self.skills.keys())}")
         return self.skills
 
@@ -1197,6 +1227,8 @@ class SkillLoader:
         # for in-process import. Their only execution path is the acquired Docker/
         # WASM runner registered through ToolRPC.
         if (path / "ACQUIRED_SANDBOX_ONLY").exists():
+            if self._staging_discovery:
+                self.discovery_skipped.append(path.name)
             logger.warning("Refused in-process discovery of sandbox-only acquired package")
             return
         skill_file = path / "SKILL.md"
@@ -1222,7 +1254,10 @@ class SkillLoader:
         if external and safe_mode.enabled():
             # H275: a generated, imported, edited or pending-review skill in the bundled
             # tree is the owner's, not the release's; safe mode leaves it out entirely.
-            safe_mode.note("owner_skills")
+            if not self._staging_discovery:
+                safe_mode.note("owner_skills")
+            if self._staging_discovery:
+                self.discovery_skipped.append(path.name)
             logger.info("Safe mode: skill at %s is not a shipped skill; not loaded", path.name)
             return
 
@@ -1236,7 +1271,11 @@ class SkillLoader:
             previous = self.skills.get(name)
             if previous is not None and Path(previous.path) == path:
                 del self.skills[name]
-            load_set.note_skipped("skills", name)
+            if self._staging_discovery:
+                self.discovery_skipped.append(name)
+                self.discovery_load_set_skipped.append(name)
+            else:
+                load_set.note_skipped("skills", name)
             return
         skill = Skill(name, path, manifest)
         skill.source_fingerprint = snapshot.fingerprint if snapshot is not None else None

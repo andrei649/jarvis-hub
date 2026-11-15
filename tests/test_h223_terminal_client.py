@@ -333,10 +333,14 @@ def _events(body: str) -> list[dict]:
 
 @pytest.mark.asyncio
 async def test_a_streamed_turn_is_interrupted_only_by_its_own_credential(tmp_path, monkeypatch):
+    from agents.core.channels import outbound_safety
     from agents.core.security.token_store import TokenStore
     from agents.core.turn_interrupts import INTERRUPTED_REPLY, NOTICE_CODE
     from tests.test_h226_cli_governance_prompts import _host
 
+    # A running hub installs the broker's opaque redactor: hold incomplete output
+    # until the authoritative end event can be checked as a whole.
+    monkeypatch.setattr(outbound_safety, "_known_redactor", lambda text: text)
     store = TokenStore(str(tmp_path / "tokens.db"))
     owner, stranger = store.issue("user"), store.issue("user")
     orch, _cap, stream = await _host(tmp_path, monkeypatch, store=store)
@@ -366,7 +370,7 @@ async def test_a_streamed_turn_is_interrupted_only_by_its_own_credential(tmp_pat
             assert mine.json()["interrupted"] == 1
             response = await asyncio.wait_for(turn, 5)
         events = _events(response.text)
-        assert [e["text"] for e in events if e["type"] == "token"] == ["partial "]
+        assert [e["text"] for e in events if e["type"] == "token"] == [INTERRUPTED_REPLY]
         (end,) = [e for e in events if e["type"] == "end"]
         assert end["text"] == INTERRUPTED_REPLY
         assert [n["code"] for n in end["notices"]] == [NOTICE_CODE]

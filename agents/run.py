@@ -23,6 +23,7 @@ load_hub_env()
 from agents.core.config import JarvisConfig  # noqa: E402
 from agents.core.log import setup_logging  # noqa: E402
 from agents.core.orchestrator import Orchestrator  # noqa: E402
+from agents.core.skins import format_prompt, get_active_skin, render_banner  # noqa: E402
 
 setup_logging()
 
@@ -32,6 +33,15 @@ async def main():
     config = JarvisConfig()
     orch = Orchestrator(config)
     await orch.load_agents()
+    skin = get_active_skin()
+    print(
+        render_banner(
+            skin,
+            backend=str(orch.llm_router.name),
+            agents_count=len(orch.agents),
+            skills_count=len(orch.skills.skills),
+        )
+    )
     print(f"LLM backend: {orch.llm_router.name}")
     print(f"Agents loaded: {list(orch.agents.keys())}")
     print(f"Skills loaded: {list(orch.skills.skills.keys())}")
@@ -44,7 +54,7 @@ async def main():
 
     while True:
         try:
-            text = await _prompt("> ")
+            text = await _prompt(format_prompt())
         except asyncio.CancelledError:  # Ctrl-C while waiting for input
             break
         if text is None or text.strip().lower() in ("exit", "quit"):

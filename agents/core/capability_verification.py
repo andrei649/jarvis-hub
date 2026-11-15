@@ -9,6 +9,8 @@ def reality_ref(case_name: str) -> str:
 
 def action_case_name(kind: str) -> str:
     slug = kind.replace(".*", "-wildcard").replace(".", "-")
+    if kind == "hub.update":
+        return "action-hub-update-signed-late-revocation"
     if kind == "provider.custom_endpoint":
         # Its owner-service receipt cannot be exercised by the generic
         # Kernel-halt probe. The dedicated negative is intentionally

@@ -24,6 +24,8 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
+from agents.core.channels.outbound_stream import final_text
+
 from .store import ApiKey
 
 logger = logging.getLogger("nerva.openai_api")
@@ -164,7 +166,9 @@ async def run_turn(orch, key: ApiKey, text: str, *, session_id: str, agent_overr
         raise NoModel()
     if not isinstance(reply, str) or not reply.strip():
         raise TurnIncomplete("empty_reply")
-    return TurnOutcome(text=reply, approvals=approvals, usage=usage)
+    # This is the authoritative model answer for every OpenAI protocol shape and
+    # every stored response. Keep client inputs and protocol metadata untouched.
+    return TurnOutcome(text=final_text(reply), approvals=approvals, usage=usage)
 
 
 __all__ = ["CHANNEL", "NoModel", "Speaker", "TurnBusy", "TurnIncomplete", "TurnOutcome", "run_turn",

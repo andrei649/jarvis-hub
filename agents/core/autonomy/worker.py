@@ -390,6 +390,16 @@ _REFUSALS_BY_KIND: dict[str, tuple[str, ...]] = {
         "edit_not_supported", "decision_not_accept", "not_requested", "payload_changed",
         "invalid_provider_id", "payload_invalid", "invalid_command", "not_armed", "safe_mode",
         "changed_since_request", "provider_revision_conflict", "provider_capacity_full"),
+    # hub.update — the irreversible human guard and recorded-card checks can
+    # refuse before the updater begins. `authority_changed` is intentionally
+    # excluded: it can also follow a completed merge and bounded rollback.
+    "hub.update": (
+        "human_decision_required", "decision_not_approval", "payload_required",
+        "edit_not_supported", "not_requested", "payload_changed",
+        "hub_applies_update", "update_in_progress", "action_running"),
+    # hub.restart arming guards return explicit refused status; an unexpected
+    # apply_failed or DONE bookkeeping error remains a real execution failure.
+    "hub.restart": (),
     # goal.approve — the coordinator's _open_approved_goal: its refusals are all
     # ``refused`` (the GoalContractError / WorkRunError reason). A work-run ledger that
     # failed to construct is ``failed`` / ``work_run_ledger_unavailable``, a failure
@@ -680,6 +690,8 @@ class AutonomyWorker:
         mediation_signer: DetachedHMACSigner | None = None,
         mediation_clock_ms: Optional[Callable[[], int]] = None,
         mediation_receipt_ttl_ms: int = 86_400_000,
+        restart_runtime=None,
+        restart_completed=None,
     ):
         self.queue = queue
         self.policy = policy or AutonomyPolicy()
@@ -719,6 +731,8 @@ class AutonomyWorker:
         self._mediation_signer = mediation_signer or DetachedHMACSigner(None)
         self._mediation_clock_ms = mediation_clock_ms or (lambda: int(time.time() * 1000))
         self._mediation_receipt_ttl_ms = int(mediation_receipt_ttl_ms)
+        self._restart_runtime = restart_runtime
+        self._restart_completed = restart_completed
         self._execution_context = ContextVar(
             f"autonomy_mediated_execution_{id(self)}", default=None
         )
@@ -1970,6 +1984,58 @@ class AutonomyWorker:
         return summary
 
     async def _run_runnable(self, runnable):
+        """Admit one row, commit it, release its lease, then run an exact restart hook."""
+        from contextlib import nullcontext
+
+        runtime = self._restart_runtime
+        summary = {"ran": 0, "done": 0, "failed": 0, "held": 0}
+        for task in runnable:
+            lease = runtime.acquire("worker", allow_reentrant=True) if runtime is not None else None
+            if runtime is not None and lease is None:
+                summary["held"] += 1
+                continue
+            completions = []
+            completion_queue = self.queue
+
+            def refuse_unspent(completed, bound_queue=completion_queue):
+                try:
+                    bound_queue.refuse_restart_physical(
+                        completed.task_id, completed.intent_digest, completed.boot_id)
+                except Exception:
+                    logger.warning("restart pre-effect refusal could not be recorded", exc_info=True)
+
+            try:
+                with lease.bind() if lease is not None else nullcontext():
+                    result = await self._run_runnable_admitted([task], restart_completions=completions)
+            except BaseException:
+                for completed in completions:
+                    refuse_unspent(completed)
+                raise
+            finally:
+                if lease is not None:
+                    lease.release()
+            for key in summary:
+                summary[key] += result[key]
+            # Outside execution-permit scope, worker lease and every retry catch.
+            # A failed hook cannot replay an already committed physical intent.
+            if callable(self._restart_completed):
+                for completed in completions:
+                    try:
+                        outcome = await self._restart_completed(completed.task_id, completed.intent_digest)
+                        if isinstance(outcome, dict) and outcome.get("status") in {"refused", "unknown"}:
+                            refuse_unspent(completed)
+                    except asyncio.CancelledError:
+                        refuse_unspent(completed)
+                        raise
+                    except Exception:
+                        refuse_unspent(completed)
+                        logger.warning("restart post-completion hook failed", exc_info=True)
+            else:
+                for completed in completions:
+                    refuse_unspent(completed)
+        return summary
+
+    async def _run_runnable_admitted(self, runnable, *, restart_completions=None):
         """Original serial execution path, shared by ordinary and parallel rows."""
         ran = done = failed = held = 0
         for task in runnable:
@@ -1991,7 +2057,7 @@ class AutonomyWorker:
                 held += 1
                 continue
             if self.queue.consent_task_marker(task.id):
-                summary = await self._run_consent(task)
+                summary = await self._run_consent_admitted(task)
                 ran += summary['ran']
                 done += summary['done']
                 failed += summary['failed']
@@ -2125,7 +2191,14 @@ class AutonomyWorker:
                             and task.decided_by == "smart_approval"
                             and task.decision == "smart-approve"):
                         result = self.queue.issue_smart_terminal_result(task, result)
-                    self.queue.transition(task.id, TaskStatus.DONE, result=result)
+                    if task.kind == "hub.restart":
+                        completed = self.queue.complete_restart(task, result)
+                        if completed is None:
+                            raise TaskQueueError("restart completion refused")
+                        if restart_completions is not None:
+                            restart_completions.append(completed)
+                    else:
+                        self.queue.transition(task.id, TaskStatus.DONE, result=result)
                 except Exception as e:
                     # The handler returned; the WORKER's own bookkeeping raised (round 5,
                     # item 3). Not an attempt of the capability that broke: this
@@ -2166,6 +2239,19 @@ class AutonomyWorker:
         return {"ran": ran, "done": done, "failed": failed, "held": held}
 
     async def _run_consent(self, task: Task) -> dict:
+        runtime = self._restart_runtime
+        if runtime is None:
+            return await self._run_consent_admitted(task)
+        lease = runtime.acquire("worker", allow_reentrant=True)
+        if lease is None:
+            return {"ran": 0, "done": 0, "failed": 0, "held": 1}
+        try:
+            with lease.bind():
+                return await self._run_consent_admitted(task)
+        finally:
+            lease.release()
+
+    async def _run_consent_admitted(self, task: Task) -> dict:
         """Spend one private consent claim; every exit settles one attempt."""
         from .consent_execution import _worker_scope as consent_worker_scope
         from .consent_execution import consent_current
@@ -2249,6 +2335,20 @@ class AutonomyWorker:
 
     async def _run_owner_once(self, claim: OwnerOnceClaim, *,
                               live_check: Callable[[], bool]) -> dict:
+        runtime = self._restart_runtime
+        if runtime is None:
+            return await self._run_owner_once_admitted(claim, live_check=live_check)
+        lease = runtime.acquire("worker", allow_reentrant=True)
+        if lease is None:
+            return {"ran": 0, "done": 0, "failed": 0, "held": 1}
+        try:
+            with lease.bind():
+                return await self._run_owner_once_admitted(claim, live_check=live_check)
+        finally:
+            lease.release()
+
+    async def _run_owner_once_admitted(self, claim: OwnerOnceClaim, *,
+                                       live_check: Callable[[], bool]) -> dict:
         """Run one exact owner claim outside the scheduler's approved-task lane."""
         empty = {"ran": 0, "done": 0, "failed": 0, "held": 1}
         if type(claim) is not OwnerOnceClaim or not callable(live_check):

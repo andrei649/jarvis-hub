@@ -1,0 +1,344 @@
+[
+  {
+    "id": "H566",
+    "title": "Write, install and validate a third-party extension",
+    "area": "extensions",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "b6972f5f0508020fafb457913bab19e4ddb3d4af0f65c5ae7c3f4a35e1c14309",
+    "contract": "A declarative `plugin.yaml` (v1 plus an additive v2 with `manifest_version`/`api_version` as separate axes, `requires_plugins` with topological load ordering, declared-but-never-auto-installed `python_dependencies`, and a `config_schema`) discovered from bundled dirs, `~/.hermes/plugins/`, the project dir and pip entry points, with one `register(ctx)` entry point whose failure disables only that plugin. A written five-rule compatibility contract with a four-condition deprecation policy enforced by frozen behaviour fixtures. `hermes plugins doctor` runs the real registries — invalid hook names, callbacks missing `**kwargs`, declared-vs-registered drift — under a temporary HERMES_HOME with direct sockets blocked (acp-mcp-dev.plugin-manifest-v1, .plugin-manifest-v2, .plugin-compat-contract, .plugin-register, .plugin-doctor-contract, .ctx-register-tool, .ctx-register-command, .ctx-register-cli-command, .ctx-register-skill, .ctx-dispatch-tool, .plugin-context-api, .plugin-storage, .plugin-utils, .plugin-lazy-deps).",
+    "governance": "installing an extension is capability growth: `skill.install`-shaped (KERNEL, owner-approval floor that a GRANT cannot bypass). An extension that registers a tool performing effects must have those effects cross their own kernel kinds — a plugin must never be able to register a tool that bypasses the kernel, which means the registration API cannot expose a raw driver handle.",
+    "remaining_verbatim": "Lipseste calea de distributie/instalare pentru un autor tert (extensia trebuie sa soseasca prin pipeline-ul de achizitie semnat), nu exista ctx, iar comenzile declarate nu sunt legate de registrul de chat. Evenimentele S3 exista, dar numai ca observare. Nedovedit pe un Docker real.",
+    "requirement_sections": [
+      "Lipseste calea de distributie/instalare pentru un autor tert (extensia trebuie sa soseasca prin pipeline-ul de achizitie semnat), nu exista ctx, iar comenzile declarate nu sunt legate de registrul de chat. Evenimentele S3 exista, dar numai ca observare. Nedovedit pe un Docker real."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the skills signing/curation/approval pipeline as the trust substrate",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/extensions/manifest.py",
+      "agents/core/extensions/doctor.py",
+      "docs/EXTENSIONS.md",
+      "agents/core/extensions/consent.py",
+      "agents/core/extensions/runtime.py",
+      "agents/core/extensions/events.py",
+      "agents/core/autonomy/smart_observers.py",
+      "docs/hermes/h485-smart-observers-plan-2026-10-03.md",
+      "docs/hermes/evidence/h485-smart-observers-mutations-2026-10-03.py",
+      "docs/hermes/evidence/h485-smart-observers-mutations-2026-10-03.json",
+      "docs/hermes/evidence/h485-smart-observers-verification-2026-10-03.md",
+      "agents/core/extensions/manifest_catalog.py"
+    ],
+    "existing_test_files": [
+      "tests/test_extension_consent.py",
+      "tests/test_extension_runtime.py",
+      "tests/test_extension_events.py",
+      "tests/test_extension_event_emission.py",
+      "tests/test_h485_smart_observer_dispatch.py",
+      "tests/test_h485_smart_observer_events.py",
+      "tests/test_extension_manifest_catalog.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H566",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H566"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H567",
+    "title": "Run custom logic at a lifecycle event, in Python or in any language",
+    "area": "extensions",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "17015511b5fa0147b4caac8b8a0a6b3ede2ffc635963b8f9bb64192ee1bb2de4",
+    "contract": "37 named hook points validated loudly at registration — session start/end/reset/finalize, pre/post_llm_call, pre/post_tool_call, pre/post_api_request, api_request_error, pre/post_approval_request, pre_command, pre_gateway_dispatch, pre_verify, pre_transcription, subagent_start/stop, stream start/delta/end, the kanban family, and four `transform_*` hooks — with correlation fields (turn_id, api_request_id, task_id, session_id) on every payload, a bounded-timeout allowlist for hot-path hooks and an explicit unbounded set for gates and flushes. `pre_tool_call` can veto or escalate to human approval; `pre_llm_call` returns context injected into the *user* turn (never the cached system prefix) with a 10 K-char spill to disk. The same hook set is reachable from shell scripts: a `hooks:` config block, argv execution with shell=False, a documented JSON stdin/stdout wire protocol accepting both Hermes and Claude-Code directive spellings, exit code 2 as a block, opt-in fail-closed per entry, process-tree kill on timeout, and a first-use consent allowlist keyed on (event, command) with a file lock. Plus drop-in gateway hooks (HOOK.yaml + handler.py) for lifecycle events (acp-mcp-dev.plugin-hooks-list, .ctx-register-hook, .plugin-context-injection, .shell-hooks-schema, .shell-hooks-protocol, .shell-hooks-consent, .gateway-event-hooks).",
+    "governance": "a hook that can BLOCK a tool call is a policy component, so it must be able to tighten and never to loosen: a hook may veto or escalate to approval, but a hook return must never be able to grant an action the kernel would have queued or denied. Registering a hook is itself capability growth (arbitrary local execution) → permission.grant plus the consent allowlist, and HERMES_SAFE_MODE's equivalent must skip hook registration entirely.",
+    "remaining_verbatim": "Lipsesc restul catalogului de 37 de puncte de hook, orice hook care poate bloca sau injecta, si rularea in alt limbaj decat pachetul semnat. Blocking/transforming hooks remain accepted and unimplemented requirements. The integration path is a kernel-governed hook.exec kind with per-hook capability tokens and hash-pinned scripts. Owner-authorized autonomous local development covers these paths; no active exclusion or pending permission is claimed.",
+    "requirement_sections": [
+      "Lipsesc restul catalogului de 37 de puncte de hook, orice hook care poate bloca sau injecta, si rularea in alt limbaj decat pachetul semnat. Blocking/transforming hooks remain accepted and unimplemented requirements. The integration path is a kernel-governed hook.exec kind with per-hook capability tokens and hash-pinned scripts. Owner-authorized autonomous local development covers these paths; no active exclusion or pending permission is claimed."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing for shell hooks; the plugin authoring row for Python hooks",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/extensions/manifest.py",
+      "agents/core/extensions/doctor.py",
+      "docs/EXTENSIONS.md",
+      "agents/core/extensions/events.py",
+      "agents/core/autonomy/smart_observers.py",
+      "docs/hermes/h485-smart-observers-plan-2026-10-03.md",
+      "docs/hermes/evidence/h485-smart-observers-mutations-2026-10-03.py",
+      "docs/hermes/evidence/h485-smart-observers-mutations-2026-10-03.json",
+      "docs/hermes/evidence/h485-smart-observers-verification-2026-10-03.md"
+    ],
+    "existing_test_files": [
+      "tests/test_extension_events.py",
+      "tests/test_extension_event_emission.py",
+      "tests/test_h485_smart_observer_dispatch.py",
+      "tests/test_h485_smart_observer_events.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H567",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H567"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H568",
+    "title": "Rewrite a tool call or a model request before it happens",
+    "area": "extensions",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "a225a7b56baeafdd15a1df4a06b2d0749c967cde0cad6685c9665b536c51f326",
+    "contract": "Four middleware kinds distinct from observing hooks: `tool_request` returns `{args}` replacing the effective arguments *before* hooks, guardrails, approvals and execution see them; `llm_request` replaces the provider kwargs; `tool_execution` and `llm_execution` wrap the call with a single-use `next_call` that may be skipped to short-circuit. Request middleware chains with `original_args`/`original_request` always carrying the pre-middleware copy, payloads copied between callbacks, a `middleware_trace` handed to downstream observers, a schema version on the payload, and unknown kinds registering with a warning for forward compatibility (acp-mcp-dev.ctx-register-middleware).",
+    "governance": "as specified by Hermes it would run before approvals and guardrails on a path that reaches privileged effects — an unmediated rewrite of a mediated action. That is the reason to decline it.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": "A seam that lets third-party code silently rewrite a tool's arguments before approvals and guardrails see them is the exact inverse of Nerva's design. The approval card the owner reads would describe post-middleware arguments while the audit chain records an action the model never asked for, and 'the kernel mediates every privileged action' stops meaning anything if what it mediates can be swapped underneath it. Nerva's declarative contract layer is the right shape for this need — it can refuse, and a refusal is legible. Re-open only as a *pre-kernel, pre-approval, trace-recorded* transform whose before/after both land in the audit row, which is a different feature than what Hermes ships.",
+    "source_files": [],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H568",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H568"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H569",
+    "title": "Swap in a different backend for memory, models, search, browser, speech or secrets",
+    "area": "extensions",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "485c77599da10da184c1c0e410e4e2e5e98ac1d3ddb513381dd9277b57aec666",
+    "contract": "A published routing table mapping 'I want to add X' to the exact seam, with ~14 provider ABCs each growing through defaults so a new method never breaks an existing implementation: model-provider (`ProviderProfile` with prepare_messages / build_extra_body / fetch_models overrides, user plugins overriding bundled ones by name), platform adapter, memory provider (single-select via `memory.provider`, auto-detected as `kind: exclusive`), context engine, image-gen, video-gen, web-search, cloud browser, secret source, TTS, transcription, dashboard auth, plus config-driven TTS/STT command providers with no Python at all (acp-mcp-dev.plugin-interface-map, .plugin-context-api, .plugin-compat-contract).",
+    "governance": "mixed by seam. A secret source handles credentials and must never expose them to the model (fill-by-reference only). A driver seam actuates and must be `requires_kernel`: agents/core/kernel/registry.py already encodes this for desktop.step ('a requires_kernel driver cannot use the legacy direct path') — that rule generalises to every provider that touches the world.",
+    "remaining_verbatim": "- Third-party-pluggable provider ABCs (registration by an external package) for model providers, memory, context engine, web search, secret sources, image/video gen, TTS/STT\n- Default-method growth contract so new methods do not break implementations\n- A published 'I want to add X' routing table mapping each extension to its seam",
+    "requirement_sections": [
+      "- Third-party-pluggable provider ABCs (registration by an external package) for model providers, memory, context engine, web search, secret sources, image/video gen, TTS/STT\n- Default-method growth contract so new methods do not break implementations\n- A published 'I want to add X' routing table mapping each extension to its seam"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the plugin authoring row for the discovery/install half",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/media_providers.py",
+      "agents/core/voice/provider_registry.py",
+      "agents/core/llm/base.py",
+      "agents/core/memory/store.py",
+      "agents/core/channels/base.py",
+      "agents/core/extensions/runtime.py"
+    ],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H569",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H569"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H570",
+    "title": "Declare what an extension is allowed to do, and consent to it once",
+    "area": "extensions",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "0925a7a683605d100096d89823e8d52fa47f1555b18755a8d65314ac86414322",
+    "contract": "A canonical `CAPABILITY_REGISTRY` of seven ids (tools.override, five llm.* overrides, gateway.platform_actions), each with the legacy config gate it replaces and the risk sentence shown on the consent screen; grants stored as `granted_capabilities` plus a `capabilities_consent` recording the SHA-256 of the declared set at consent time, so an update declaring more re-asks with a diff; everything defaults OFF and any failure to read consent state means not-granted; pip-distributed plugins declare capabilities through a companion entry-point group read from installed metadata without importing the code. Documented honestly as 'a consent and audit layer over host API surfaces — NOT a sandbox'; in-process Python can still import anything and monkey-patch core (acp-mcp-dev.plugin-capabilities).",
+    "governance": "granting a capability is itself the privileged act — `permission.grant` (already KERNEL in agents/core/kernel/registry.py, with the grant written only from the approved task's execution and never by the requester). Keep that discipline: an extension must not be able to grant itself anything.",
+    "remaining_verbatim": "Consimtamantul pe hash acopera si evenimentele declarate; lipsesc registrul canonic de capabilitati cu fraze de risc, ecranul de consimtamant si declararea prin entry-point-uri pip.",
+    "requirement_sections": [
+      "Consimtamantul pe hash acopera si evenimentele declarate; lipsesc registrul canonic de capabilitati cu fraze de risc, ecranul de consimtamant si declararea prin entry-point-uri pip."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the plugin authoring row",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/extensions/manifest.py",
+      "agents/core/extensions/doctor.py",
+      "docs/EXTENSIONS.md",
+      "agents/core/extensions/consent.py",
+      "agents/core/extensions/runtime.py",
+      "agents/core/extensions/events.py",
+      "agents/core/autonomy/smart_observers.py",
+      "docs/hermes/h485-smart-observers-plan-2026-10-03.md",
+      "docs/hermes/evidence/h485-smart-observers-mutations-2026-10-03.py",
+      "docs/hermes/evidence/h485-smart-observers-mutations-2026-10-03.json",
+      "docs/hermes/evidence/h485-smart-observers-verification-2026-10-03.md",
+      "agents/core/extensions/manifest_catalog.py"
+    ],
+    "existing_test_files": [
+      "tests/test_extension_consent.py",
+      "tests/test_extension_runtime.py",
+      "tests/test_extension_events.py",
+      "tests/test_extension_event_emission.py",
+      "tests/test_h485_smart_observer_dispatch.py",
+      "tests/test_h485_smart_observer_events.py",
+      "tests/test_extension_manifest_catalog.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H570",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H570"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H571",
+    "title": "Distribute and reproduce a set of extensions",
+    "area": "extensions",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "85e2999cdcf26dc4403d102039935a8428e8a102565ffa0a608db36e1c3708b6",
+    "contract": "Three formats. Plugin packs (`hermes-pack.yaml`) pin every plugin to an exact 40-character commit SHA — tags and branches rejected — with optional non-secret config seeds that are refused if a key name looks like a credential, that may never touch `granted_capabilities`/`capabilities_consent`, and where installing a pack still runs the per-plugin consent flow (never bulk-granted), capped at 1 MiB. Pip distribution via the `hermes_agent.plugins` entry-point group. Portable Agent Plugins v1 directory packages (plugin.json + skills/ + mcp.json), validated locally, skipped per-component on a bad entry, namespaced deterministically, installed disabled by default, with the honest note that v1 defines no trust, permissions or sandbox (acp-mcp-dev.plugin-packs, .portable-agent-plugins, .plugin-pip-distribution, .plugin-nix-distribution).",
+    "governance": "each item in a bundle installs through `skill.install` (KERNEL + owner-approval floor) individually — a bundle must fan out to N consents, never collapse to one.",
+    "remaining_verbatim": "Exact-commit extension packs, credential-safe config seeds with per-plugin consent, pip entry-point distribution and portable Agent Plugins v1 installation remain missing or unverified. Runtime dispatch and observer delivery are implemented, with real Docker acceptance still unverified; they must not be described as absent.",
+    "requirement_sections": [
+      "Exact-commit extension packs, credential-safe config seeds with per-plugin consent, pip entry-point distribution and portable Agent Plugins v1 installation remain missing or unverified. Runtime dispatch and observer delivery are implemented, with real Docker acceptance still unverified; they must not be described as absent."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the skills marketplace (present); the plugin authoring row for the plugin half",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/extensions/manifest.py",
+      "agents/core/extensions/doctor.py",
+      "docs/EXTENSIONS.md",
+      "agents/core/autonomy/smart_observers.py",
+      "docs/hermes/h485-smart-observers-plan-2026-10-03.md",
+      "docs/hermes/evidence/h485-smart-observers-mutations-2026-10-03.py",
+      "docs/hermes/evidence/h485-smart-observers-mutations-2026-10-03.json",
+      "docs/hermes/evidence/h485-smart-observers-verification-2026-10-03.md"
+    ],
+    "existing_test_files": [
+      "tests/test_h485_smart_observer_dispatch.py",
+      "tests/test_h485_smart_observer_events.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H571",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H571"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H572",
+    "title": "Extend the desktop app and the web dashboard with custom UI",
+    "area": "extensions",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "00d76198530d75cf021d77e63468a799f63eeec30af84ee83a3b3d0accb4b4b0",
+    "contract": "A published Electron desktop SDK (`apps/desktop/src/sdk/index.ts`) with nine contribution areas — panes, routes, sidebar nav, status bar, title bar, palette commands, keybinds, themes, composer extensions — plus transcript directives the model can address, a host API, React Query + nanostores data layer, a full UI kit, OKLCH theming math, and a bundled agent-facing skill with a copy-ready template. Separately a web dashboard plugin manifest that can add a nav tab, replace a built-in page, or contribute only to shell slots, with a JS bundle, optional CSS and optional FastAPI routes mounted at `/api/plugins/<name>/` (acp-mcp-dev.desktop-plugin-sdk, .dashboard-plugin-manifest).",
+    "governance": "read-only chrome, but a dashboard plugin that mounts FastAPI routes at `/api/plugins/<name>/` would be adding unaudited endpoints to a hub whose route-auth matrix is snapshot-tested — that alone would need its own gate.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "the plugin authoring row",
+    "historical_exclusion_reason": "The desktop half is the wrong stack: Nerva chose Tauri deliberately, and docs/research/2026-09-06-hermes-and-field-gap-matrix.md already lists the Electron shell among the patterns not to copy. The dashboard half is a real capability but premature — third-party UI in the HUD is only worth building once third-party *logic* exists to surface, and shipping a slot system before an extension format means designing the surface for users who cannot yet exist. Re-open after the plugin authoring row lands, and then dashboard-first: a tab-or-slot manifest for the HUD is far more useful to a governance product than desktop chrome.",
+    "source_files": [],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H572",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H572"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H573",
+    "title": "Deploy Nerva as a container or a declarative system service",
+    "area": "extensions",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "21ebac4a85b696990428c29fc638bb8d741eb6cefbb10fab0e774cbeb192915a",
+    "contract": "A multi-stage Debian image with a pinned custom SQLite build, s6-overlay supervision, uv-managed Python and Node, and a stage-2 bootstrap doing UID/GID remapping (with PUID/PGID aliases for NAS users) so container-written files land owned by the host user; the CMD runs as /init's main program rather than a supervised service to preserve every invocation contract; a dashboard service that exits 125 when disabled so it reads as down rather than crash-looping, and an auth gate that engages automatically on non-loopback binds with `HERMES_DASHBOARD_INSECURE` accepted-but-ignored after the June-2026 hardening. Plus docker-compose (default and Windows variants) and a Nix flake with NixOS/Home-Manager modules mirroring the YAML config as typed options with a deep-merge escape hatch (acp-mcp-dev.docker-image, .docker-compose, .docker-compose-windows, .nix-flake, .nix-module-options).",
+    "governance": "read-only, with one live constraint already enforced: agents/core/boot_guards.py refuses a non-loopback bind without a token, which is the check Hermes only added after an incident.",
+    "remaining_verbatim": "- The image runs as root, with no PUID/PGID or UID/GID remap, so files written to bind mounts are root-owned (Hermes remaps to the host user)\n- No supervisor or legibility contract for disabled services (Hermes' s6 exit-125)\n- No Nix flake or NixOS/Home-Manager module\n- No Windows compose variant",
+    "requirement_sections": [
+      "- The image runs as root, with no PUID/PGID or UID/GID remap, so files written to bind mounts are root-owned (Hermes remaps to the host user)\n- No supervisor or legibility contract for disabled services (Hermes' s6 exit-125)\n- No Nix flake or NixOS/Home-Manager module\n- No Windows compose variant"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "Dockerfile",
+      "docker-compose.yml",
+      "deploy/systemd/jarvis-hub.service"
+    ],
+    "existing_test_files": [
+      "tests/test_package_manifests.py",
+      "tests/test_backup_h010_review4.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H573",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H573"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H574",
+    "title": "Shell completion and native search-index extensions",
+    "area": "extensions",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "3f00ec990487cbf4c482bcae1e1aaa56a25f8972ff84845ef432aa56a7efa516",
+    "contract": "`hermes completion bash|zsh|fish` generates a completion script by walking the *live* argparse tree — canonical names only, help text stripped of quotes and backslashes, profile-name completion special-cased — so a plugin-registered subcommand appears automatically. Separately `native/fts5_cjk/` builds a `cjk_unicode61` FTS5 tokenizer (unicode61 + CJK bigrams) with vendored SQLite headers so 1–2 character CJK terms stop falling through to LIKE full-table scans in session search (acp-mcp-dev.completion, .native-fts5-cjk).",
+    "governance": "read-only.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "a Nerva CLI, which does not exist",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/cli/completion.py",
+      "agents/cli/nerva.py",
+      "agents/core/memory/cjk_fts.py",
+      "agents/core/memory/session_index.py",
+      "agents/core/memory/session_search.py",
+      "agents/core/memory/store.py"
+    ],
+    "existing_test_files": [
+      "tests/test_cli_fish_completion.py",
+      "tests/test_cli_shell_completion.py",
+      "tests/test_memory_cjk_search.py",
+      "tests/test_session_index_erasure.py",
+      "tests/test_session_search_index.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H574",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H574"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  }
+]

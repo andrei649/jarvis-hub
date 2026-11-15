@@ -159,6 +159,11 @@ RUNTIME_RESTORE_GRACE_DEFAULT = 600.0
 # Both are owner-tunable; a malformed or non-positive value keeps the default.
 BACKUP_MAX_MEMBERS_DEFAULT = 1_000_000
 BACKUP_MAX_BYTES_DEFAULT = 64 * 1024 ** 3
+# Bound the raw compressed/encrypted file snapshot without imposing the upload-only
+# 512 MiB limit on local full backups. Besides the expanded payload budget, account for
+# one tar header per member and archive_safe PAX/trailing-padding caps. The factor of two
+# covers the Fernet base64 envelope (about 4/3) and the fallback cipher envelope.
+_ARCHIVE_SNAPSHOT_FIXED_HEADROOM = 320 * 1024 ** 2
 
 # An atomic_write temp file older than this is debris from a killed backup, not one
 # still being written (a live one's mtime moves with every write).
@@ -171,6 +176,13 @@ def backup_limits() -> ArchiveLimits:
         max_members=env_int("JARVIS_BACKUP_MAX_MEMBERS", BACKUP_MAX_MEMBERS_DEFAULT, minimum=1),
         max_bytes=env_int("JARVIS_BACKUP_MAX_BYTES", BACKUP_MAX_BYTES_DEFAULT, minimum=1),
     )
+
+
+def _archive_snapshot_max_bytes() -> int:
+    limits = backup_limits()
+    compressed_input = (limits.max_bytes + limits.max_members * 1024
+                        + _ARCHIVE_SNAPSHOT_FIXED_HEADROOM)
+    return compressed_input * 2
 
 
 def _now_iso() -> str:
@@ -1586,7 +1598,8 @@ def prune_quick_backups(keep: Optional[int] = None, out_dir: Optional[str] = Non
 
 def stage_restore(name: str, source_root=None, key: Optional[str] = None,
                   requested_by: str = "", task_id: Optional[int] = None,
-                  restart: Optional[str] = None, replace_credentials: bool = False) -> dict:
+                  restart: Optional[str] = None, replace_credentials: bool = False,
+                  expected_sha256: Optional[str] = None) -> dict:
     """Drill backup *name* and, when it verifies, stage it for an in-place restore.
 
     ``restart`` (``"self"`` / ``"manual"``, an approved task's apply only) is written on
@@ -1602,18 +1615,34 @@ def stage_restore(name: str, source_root=None, key: Optional[str] = None,
     path = resolve_backup(name, out_dir=str(out))
     if path is None:
         raise FileNotFoundError(f"no such backup: {name}")
+    if expected_sha256 is not None and (not isinstance(expected_sha256, str)
+            or re.fullmatch(r"[0-9a-f]{64}", expected_sha256) is None):
+        return {"ok": False, "name": path.name, "reason": "backup_changed",
+                "problem": "the accepted archive digest is missing or invalid; request restore again"}
     try:
-        report = verify_backup(str(path), key=key)
-    except (archive_safe.ArchiveRejected, ValueError, OSError) as exc:
-        return {"ok": False, "name": path.name, "problem": f"archive rejected: {exc}"}
+        with archive_safe.snapshot_archive(
+                path, max_bytes=_archive_snapshot_max_bytes(),
+                expected_sha256=expected_sha256) as snapshot:
+            report = verify_backup(str(snapshot.path), key=key)
+            st = path.stat()
+            snapshot_hash = snapshot.sha256
+            snapshot_size = snapshot.size
+    except archive_safe.ArchiveRejected as exc:
+        return {"ok": False, "name": path.name,
+                **({"reason": "backup_changed"} if expected_sha256 is not None else {}),
+                "problem": f"archive rejected: {exc}"}
+    except (ValueError, OSError) as exc:
+        return {"ok": False, "name": path.name,
+                **({"reason": "backup_changed"} if expected_sha256 is not None else {}),
+                "problem": f"archive rejected: {exc}"}
     if not report["ok"]:
         bad = {k: v for k, v in report["dbs"].items() if v != "ok"}
         return {"ok": False, "name": path.name,
                 "problem": report["problem"] or f"integrity check failed: {bad}"}
-    st = path.stat()
     mode = (report.get("manifest") or {}).get("mode")
     now = datetime.now(timezone.utc)
-    staged = {"name": path.name, "bytes": st.st_size, "mtime": st.st_mtime,
+    staged = {"name": path.name, "bytes": snapshot_size, "mtime": st.st_mtime,
+              "sha256": snapshot_hash,
               "mode": mode if mode in ("quick", "full") else "full",
               "staged_at": now.isoformat(),
               "expires_at": datetime.fromtimestamp(now.timestamp() + stage_ttl_seconds(),
@@ -1644,8 +1673,7 @@ def _defer(out: Path, staged: dict, reason: str) -> dict:
     """Record that a staged restore was put off, and why (H010 review r2: a deferral left
     no trace). last-restore.json says ``deferred`` with the reason; restore-history.jsonl
     gets one ``deferred`` line per process and reason, not one per poll."""
-    result = {**{k: staged.get(k) for k in ("name", "staged_at", "expires_at",
-                                            "requested_by", "task_id")},
+    result = {**_base(staged),
               "status": "deferred", "reason": reason, "applied_at": _now_iso(),
               "pid": os.getpid()}
     try:
@@ -1675,8 +1703,7 @@ def cancel_staged_restore(source_root=None, cancelled_by: str = "") -> dict:
         marker.unlink()
     except FileNotFoundError:   # claimed by the applying process between the read and here
         return {"ok": False, "reason": "applying", "name": staged.get("name")}
-    result = {**{k: staged.get(k) for k in ("name", "staged_at", "expires_at",
-                                            "requested_by", "task_id")},
+    result = {**_base(staged),
               "status": "cancelled", "ok": False, "reason": "cancelled",
               "cancelled_by": cancelled_by, "applied_at": _now_iso()}
     _finish(out, result)
@@ -1743,7 +1770,7 @@ def apply_pending_restore(source_root=None, key: Optional[str] = None, *,
 
 
 def _base(staged: dict) -> dict:
-    return {k: staged.get(k) for k in ("name", "staged_at", "expires_at", "requested_by", "task_id")}
+    return {k: staged.get(k) for k in ("name", "staged_at", "expires_at", "requested_by", "task_id", "sha256")}
 
 
 def _apply_locked(root: Path, out: Path, key: Optional[str], runtime_wait: float,
@@ -1817,36 +1844,64 @@ def _apply_locked(root: Path, out: Path, key: Optional[str], runtime_wait: float
         return _expired(out, staged)
     name = str(staged.get("name") or "")
     result: dict = {**base, "name": name, "applied_at": _now_iso()}
-    path = resolve_backup(name, out_dir=str(out)) if name else None
-    st = path.stat() if path is not None else None
+    try:
+        path = resolve_backup(name, out_dir=str(out)) if name else None
+        st = path.stat() if path is not None else None
+    except OSError:
+        path, st = None, None
+    expected_sha256 = staged.get("sha256")
     if path is None or st is None:
         result.update(status="failed", reason="backup_missing", ok=False)
+    elif not isinstance(expected_sha256, str) or re.fullmatch(r"[0-9a-f]{64}", expected_sha256) is None:
+        result.update(status="failed", reason="backup_changed", ok=False,
+                      detail="the stage has no valid archive digest; stage the restore again")
     elif st.st_size != staged.get("bytes") or st.st_mtime != staged.get("mtime"):
         result.update(status="failed", reason="backup_changed", ok=False,
                       detail="the archive changed after it was drilled and staged")
     else:
+        snapshot_acquired = False
         try:
-            rollback = create_backup(source_root=str(root), out_dir=str(out),
-                                     quick=staged.get("mode") == "quick",
-                                     label="pre-restore", key=key, rollback=True)
-            result["rollback"] = Path(rollback["archive"]).name
-            try:
-                result["pruned"] = prune_quick_backups(out_dir=str(out),
-                                                       protect=(name, result["rollback"]))
-            except OSError:
-                logger.warning("could not prune old quick rollback points")
-            _write_json(journal_path, {**base, "phase": "restoring", "pid": os.getpid(),
-                                       "rollback": result["rollback"]})
-            restored = restore_backup(str(path), str(root), force=True, key=key,
-                                      replace_credentials=staged.get("replace_credentials") is True)
+            with archive_safe.snapshot_archive(
+                    path, max_bytes=_archive_snapshot_max_bytes(),
+                    expected_sha256=expected_sha256) as snapshot:
+                snapshot_acquired = True
+                rollback = create_backup(source_root=str(root), out_dir=str(out),
+                                         quick=staged.get("mode") == "quick",
+                                         label="pre-restore", key=key, rollback=True)
+                result["rollback"] = Path(rollback["archive"]).name
+                try:
+                    result["pruned"] = prune_quick_backups(out_dir=str(out),
+                                                           protect=(name, result["rollback"]))
+                except OSError:
+                    logger.warning("could not prune old quick rollback points")
+                _write_json(journal_path, {**base, "phase": "restoring", "pid": os.getpid(),
+                                           "rollback": result["rollback"]})
+                try:
+                    restored = restore_backup(
+                        str(snapshot.path), str(root), force=True, key=key,
+                        replace_credentials=staged.get("replace_credentials") is True)
+                except archive_safe.ArchiveRejected as exc:
+                    result.update(status="failed", reason="archive_rejected", ok=False,
+                                  partial=bool(exc.partial), detail=str(exc))
+                except (OSError, ValueError) as exc:
+                    result.update(status="failed", reason="restore_error", ok=False,
+                                  detail=str(exc))
+                else:
+                    result.update(status="restored", ok=restored["ok"], problem=restored["problem"],
+                                  file_count=restored["file_count"], dbs=restored["dbs"])
         except archive_safe.ArchiveRejected as exc:
-            result.update(status="failed", reason="archive_rejected", ok=False,
-                          partial=bool(exc.partial), detail=str(exc))
+            if snapshot_acquired:
+                result.update(status="failed", reason="archive_rejected", ok=False,
+                              partial=bool(exc.partial), detail=str(exc))
+            else:
+                result.update(status="failed", reason="backup_changed", ok=False,
+                              detail=f"the archive changed after it was drilled and staged: {exc}")
         except (OSError, ValueError) as exc:
-            result.update(status="failed", reason="restore_error", ok=False, detail=str(exc))
-        else:
-            result.update(status="restored", ok=restored["ok"], problem=restored["problem"],
-                          file_count=restored["file_count"], dbs=restored["dbs"])
+            if snapshot_acquired:
+                result.update(status="failed", reason="restore_error", ok=False, detail=str(exc))
+            else:
+                result.update(status="failed", reason="backup_changed", ok=False,
+                              detail=f"the archive could not be matched to the accepted bytes: {exc}")
     journal_path.unlink(missing_ok=True)
     return _finish(out, result)
 
@@ -1873,8 +1928,9 @@ def restore_request(name: str, replace_credentials: bool = False) -> dict:
     path = resolve_backup(name)
     if path is None:
         raise FileNotFoundError(f"no such backup: {name}")
-    report = verify_backup(str(path))
-    st = path.stat()
+    with archive_safe.snapshot_archive(path, max_bytes=_archive_snapshot_max_bytes()) as snapshot:
+        report = verify_backup(str(snapshot.path))
+        st = path.stat()
     manifest = report.get("manifest") or {}
     mode = manifest.get("mode", "full")
     uploaded = is_uploaded(path)
@@ -1892,7 +1948,8 @@ def restore_request(name: str, replace_credentials: bool = False) -> dict:
              + (" including credentials and hooks" if replace else "") + " (the hub restarts)")
     return {
         "title": title,
-        "payload": {"name": path.name, "bytes": st.st_size, "mtime": st.st_mtime,
+        "payload": {"name": path.name, "bytes": snapshot.size, "mtime": st.st_mtime,
+                    "sha256": snapshot.sha256,
                     "replace_credentials": replace, "origin": "upload" if uploaded else "local"},
         "preview": {
             "origin": "upload" if uploaded else "local",
@@ -1974,22 +2031,38 @@ async def apply_approved(task, orch) -> dict:
     name = payload.get("name")
     if not isinstance(name, str) or not name:
         return await _refuse(task, "payload_invalid")
-    path = resolve_backup(name)
-    if path is None:
+    expected_sha256 = payload.get("sha256")
+    if not isinstance(expected_sha256, str) or re.fullmatch(r"[0-9a-f]{64}", expected_sha256) is None:
+        return await _refuse(task, "backup_changed")
+    try:
+        path = resolve_backup(name)
+        st = path.stat() if path is not None else None
+    except OSError:
+        path, st = None, None
+    if path is None or st is None:
         return await _refuse(task, "backup_missing")
-    st = path.stat()
     if st.st_size != payload.get("bytes") or st.st_mtime != payload.get("mtime"):
         return await _refuse(task, "backup_changed")
     task_id = getattr(task, "id", None)
     # Known before the stage is written (review r6), so the stage never reads as waiting
     # for a restart that is not coming.
     planned = "self" if hub_restart.available() else "manual"
-    staged = await asyncio.to_thread(stage_restore, name,
-                                     requested_by=str(getattr(task, "decided_by", "") or ""),
-                                     task_id=task_id if isinstance(task_id, int) else None,
-                                     restart=planned,
-                                     replace_credentials=payload.get("replace_credentials") is True)
+    try:
+        staged = await asyncio.to_thread(stage_restore, name,
+                                         requested_by=str(getattr(task, "decided_by", "") or ""),
+                                         task_id=task_id if isinstance(task_id, int) else None,
+                                         restart=planned,
+                                         replace_credentials=payload.get("replace_credentials") is True,
+                                         expected_sha256=expected_sha256)
+    except FileNotFoundError:
+        return await _refuse(task, "backup_missing")
+    except (OSError, ValueError):
+        # The archive can disappear or become unreadable after the earlier stat.
+        # Preserve the explicit refusal; cancellation still propagates normally.
+        return await _refuse(task, "backup_changed")
     if not staged["ok"]:
+        if staged.get("reason") == "backup_changed":
+            return await _refuse(task, "backup_changed")
         return await _refuse(task, "backup_failed_verify", problem=staged["problem"])
     restart = "requested" if planned == "self" and hub_restart.request(APPROVAL_KIND) else "manual"
     result = {"status": "ok", "kind": APPROVAL_KIND, "staged": name, "restart": restart,

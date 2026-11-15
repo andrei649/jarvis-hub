@@ -12,6 +12,7 @@ export type SseEvent = {
   text?: string;
   agent?: string;
   session_id?: unknown;
+  session_transition?: unknown;
   outcome?: unknown;
 };
 

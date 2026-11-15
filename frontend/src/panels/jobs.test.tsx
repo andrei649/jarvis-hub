@@ -372,3 +372,42 @@ it('loads and clears a saved reasoning pin when editing without dropping other o
   fireEvent.click(screen.getByText('save'));
   await waitFor(()=>expect(calls.find(c=>c.method==='PATCH')?.body.options).toEqual({repeat:2,enabled_toolsets:['web']}));
 });
+
+it('acknowledges job incidents, reads cross-job recent runs, and edits structured notepad keys (H015)', async () => {
+  const calls = mockFetch({
+    'GET /api/jobs/doctor': { toolsets: [] },
+    'GET /api/jobs/incidents': { incidents: [{ id: 9, job_id: JOB.id, state: 'detected', summary: '3 failures' }] },
+    'POST /api/jobs/incidents/9/ack': { ok: true, incident: { id: 9, job_id: JOB.id, state: 'closed', summary: '3 failures' } },
+    'GET /api/jobs/runs': { runs: [{ job_id: 'deleted-job-1', status: 'ok', started_at: '2026-11-14T08:00:00Z', summary: 'archived run' }] },
+    'GET /api/jobs/abc123abc123/notepad/keys': { entries: [{ key: 'cursor', value: '41' }] },
+    'PUT /api/jobs/abc123abc123/notepad/keys': { ok: true, entry: { key: 'cursor', value: '42' } },
+    'DELETE /api/jobs/abc123abc123/notepad/keys': { ok: true, key: 'cursor' },
+    'GET /api/jobs/blueprints': BLUEPRINTS,
+    'GET /api/jobs': { jobs: [JOB], scheduler: { alive: true } },
+  });
+  render(<JobsPanel />);
+  await screen.findByText('stand-up');
+
+  fireEvent.click(screen.getByText('incidents'));
+  fireEvent.click(await screen.findByText('ack incident #9'));
+  await screen.findByText(/acknowledged incident #9/);
+  expect(calls.some((c) => c.method === 'POST' && c.url.includes('/api/jobs/incidents/9/ack'))).toBe(true);
+
+  fireEvent.click(screen.getByText('recent runs'));
+  await screen.findByText(/deleted-job-1/);
+  expect(calls.some((c) => c.method === 'GET' && c.url.includes('/api/jobs/runs?limit=20'))).toBe(true);
+
+  fireEvent.click(screen.getByText('edit'));
+  fireEvent.click(screen.getByText('notepad keys'));
+  await screen.findByText('41');
+
+  fireEvent.change(screen.getByLabelText('notepad key name for abc123abc123'), { target: { value: 'cursor' } });
+  fireEvent.change(screen.getByLabelText('notepad key value for abc123abc123'), { target: { value: '42' } });
+  fireEvent.click(screen.getByText('set key'));
+  await screen.findByText(/saved key cursor/);
+  expect(calls.find((c) => c.method === 'PUT' && c.url.includes('/notepad/keys'))?.body).toEqual({ key: 'cursor', value: '42' });
+
+  fireEvent.click(screen.getByText('delete key cursor'));
+  await screen.findByText(/deleted key cursor/);
+  expect(calls.some((c) => c.method === 'DELETE' && c.url.includes('/notepad/keys?key=cursor'))).toBe(true);
+});

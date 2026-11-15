@@ -119,6 +119,7 @@ export function QuickbarPanel() {
 
   const commands = arr(help.d, 'commands');
   const chatCommands = catalog.e || catalog.loading ? [] : arr(catalog.d, 'commands');
+  const chatShortcuts = catalog.e || catalog.loading ? [] : arr(catalog.d, 'shortcuts');
 
   return (
     <Card
@@ -201,11 +202,17 @@ export function QuickbarPanel() {
       </div>
       {catalog.loading && <Note>Loading chat commands…</Note>}
       {catalog.e && <Note c="var(--amber)">Chat commands unavailable.</Note>}
-      {!catalog.loading && !catalog.e && catalog.d?.ok && chatCommands.length === 0 && (
+      {!catalog.loading && !catalog.e && catalog.d?.ok && chatCommands.length + chatShortcuts.length === 0 && (
         <Note>No chat commands available for this session.</Note>
       )}
+      {!catalog.loading && !catalog.e && catalog.d?.ok && catalog.d.truncated === true && (
+        <Note c="var(--amber)">Command catalog is truncated. Some choices are not shown.</Note>
+      )}
+      {!catalog.loading && !catalog.e && catalog.d?.ok && catalog.d.shortcuts_unavailable === true && (
+        <Note c="var(--amber)">Some shortcuts are unavailable right now.</Note>
+      )}
       {chatCommands.map((command: any) => (
-        <div key={command.name} style={{ padding: '5px 0', borderBottom: '1px solid var(--panel-line)' }}>
+        <div key={`command:${command.name}`} style={{ padding: '5px 0', borderBottom: '1px solid var(--panel-line)' }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
             <span style={{ ...mono, fontSize: 11, overflowWrap: 'anywhere' }}>
               {command.command}{command.usage ? ` ${command.usage}` : ''}
@@ -215,7 +222,19 @@ export function QuickbarPanel() {
           <Note>{command.description}</Note>
         </div>
       ))}
-      {chatCommands.length > 0 && <Note>Send a command in chat to run it.</Note>}
+      {chatShortcuts.map((shortcut: any) => (
+        <div key={`shortcut:${shortcut.kind}:${shortcut.name}`} style={{ padding: '5px 0', borderBottom: '1px solid var(--panel-line)' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+            <span style={{ ...mono, fontSize: 11, overflowWrap: 'anywhere' }}>
+              {shortcut.command}{shortcut.usage ? ` ${shortcut.usage}` : ''}
+            </span>
+            <Tag c="var(--amber)">{shortcut.kind}</Tag>
+            <Tag c="var(--amber)">owner</Tag>
+          </div>
+          <Note>{shortcut.description}</Note>
+        </div>
+      ))}
+      {chatCommands.length + chatShortcuts.length > 0 && <Note>Send a command in chat to run it.</Note>}
 
       <Note>
         Preview a line here; use chat to send it. Recent lines stay in this browser.

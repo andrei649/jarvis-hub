@@ -1,0 +1,11 @@
+{
+  "source_sha256": "c2a290f66f92ff430d807e098cd49447326fbd5571d574378756d128f1b8e826",
+  "scope": "isolated local metadata, no network, crypto patched out; no service restart",
+  "saved_file_exists": true,
+  "before_peers": 1,
+  "default_reinstantiation_peers": 0,
+  "explicit_path_peers": 1,
+  "before_skill_sync": false,
+  "default_reinstantiation_skill_sync": true,
+  "explicit_path_skill_sync": false
+}

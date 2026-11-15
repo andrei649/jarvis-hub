@@ -1,0 +1,1199 @@
+[
+  {
+    "id": "SM-013",
+    "title": "Make pet backend selection truthful",
+    "spec_state": "ready",
+    "priority": "P1",
+    "risk": "medium",
+    "hermes_ids": [
+      "H214",
+      "H238",
+      "H590"
+    ],
+    "backlog_ids": [],
+    "goal": "Owners see procedural generation accurately; unsupported model backends cannot silently generate procedural sprites.",
+    "non_goals": [
+      "No merge, ready-for-review promotion, deploy, paid activation or real-provider success claims."
+    ],
+    "depends_on": [],
+    "owned_files": [
+      "agents/core/pets.py",
+      "frontend/src/panels/pets.tsx",
+      "tests/test_h214_h238_h590_pets.py",
+      "frontend/src/panels/pets.test.tsx"
+    ],
+    "read_files": [
+      "agents/core/routers/pets.py"
+    ],
+    "interfaces": [
+      "Existing IMAGE_BACKENDS, PetStore.update_preferences and hatch generation in agents/core/pets.py; GET /api/pets exposes image_backends and current image_backend.",
+      "Keep procedural-pixel as the only offered backend. Reject explicit svg-synth/local-vlm with PetError unsupported_backend HTTP 400; do not implement a model adapter.",
+      "Legacy stored unsupported preference resolves to procedural-pixel at load; preserve pets/gallery/archives. Label selector Procedural pixel sprites; remove local VLM quality claims."
+    ],
+    "acceptance": [
+      {
+        "case": "test_unsupported_pet_backend_never_generates",
+        "given": "local-vlm or svg-synth in explicit generate/preference request",
+        "when": "request is submitted",
+        "then": "HTTP 400 unsupported_backend; no job/candidate created"
+      },
+      {
+        "case": "test_legacy_pet_backend_load_is_truthful",
+        "given": "stored local-vlm preference and an adopted pet",
+        "when": "store reloads",
+        "then": "procedural-pixel offered/selected; adopted pet unchanged"
+      },
+      {
+        "case": "procedural backend selector",
+        "given": "mounted PetsPanel",
+        "when": "owner opens hatch flow",
+        "then": "only procedural pixel sprites offered and 4 procedural candidates still work"
+      }
+    ],
+    "steps": [
+      "Add named backend and reload regression cases to existing Python suite and mounted selector case to existing Vitest suite.",
+      "Run named new cases and confirm red on the pinned base.",
+      "Restrict offered backends and explicit requests; migrate only unsupported preference in memory/load path.",
+      "Run focused suites, verify existing adoption/export behavior; record mobile gap without claiming native companion."
+    ],
+    "commands": [
+      {
+        "cmd": "python -m pytest tests/test_h214_h238_h590_pets.py -q",
+        "expected": "All pet tests pass including explicit unsupported backend and legacy preference cases."
+      },
+      {
+        "cmd": "cd frontend && npm test -- src/panels/pets.test.tsx",
+        "expected": "Mounted selector/adoption tests pass; no unavailable backend offered."
+      }
+    ],
+    "review_focus": [
+      "Explicit requests must fail instead of silently fallback.",
+      "Do not delete old adopted assets when preference changes."
+    ],
+    "stop_conditions": [
+      "Stop on a changed base/interface or overlapping writer; inspect and reconcile without overwrite.",
+      "If preserving legacy archive metadata requires archive schema changes, split a design packet first."
+    ],
+    "rollback": "Revert only this packet’s isolated change; preserve user data and other branches. No automatic runtime rollback or data deletion.",
+    "source_refs": [
+      "AGENTS.md",
+      "docs/handoff/antigravity-2026-11-14/CONTINUATION_LEDGER.md",
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/REPORT.md",
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/ui-review.md"
+    ]
+  },
+  {
+    "id": "SM-014",
+    "title": "Extract pet reference color from real pixels",
+    "spec_state": "ready",
+    "priority": "P1",
+    "risk": "medium",
+    "hermes_ids": [
+      "H214"
+    ],
+    "backlog_ids": [],
+    "goal": "An owner’s solid-color reference image yields that color independent of image encoding.",
+    "non_goals": [
+      "No merge, ready-for-review promotion, deploy, paid activation or real-provider success claims."
+    ],
+    "depends_on": [
+      "SM-013"
+    ],
+    "owned_files": [
+      "agents/core/pets.py",
+      "tests/test_h214_h238_h590_pets.py"
+    ],
+    "read_files": [
+      "agents/core/routers/pets.py",
+      "requirements.txt"
+    ],
+    "interfaces": [
+      "Existing _extract_reference_color(reference_image_b64: str) -> str | None; retain empty-input None and 1 MiB decoded-byte cap.",
+      "Use installed Pillow, local byte decode only. Decode PNG/JPEG/WebP; reject other/invalid formats as invalid_reference_image 400. Cap decoded width*height at 4,194,304 before load; oversized dimensions -> reference_image_too_large 413.",
+      "Define representative color as alpha-weighted arithmetic mean of original RGB pixels, rounded with floor(x+0.5); fully transparent -> None. Output lowercase #rrggbb. No network/file URLs or EXIF metadata use."
+    ],
+    "acceptance": [
+      {
+        "case": "test_reference_color_uses_visible_pixels",
+        "given": "solid red PNG and lossless WebP encodings",
+        "when": "_extract_reference_color called",
+        "then": "both equal #ff0000"
+      },
+      {
+        "case": "test_reference_color_alpha_and_bounds",
+        "given": "opaque blue plus transparent red; fully transparent image; oversized header",
+        "when": "decoded",
+        "then": "blue is #0000ff; transparent returns None; oversized raises 413 before full decode"
+      },
+      {
+        "case": "test_invalid_reference_has_no_hash_color",
+        "given": "base64 of arbitrary bytes",
+        "when": "hatch requested",
+        "then": "invalid_reference_image 400; no job created"
+      }
+    ],
+    "steps": [
+      "Add fixtures generated in memory with Pillow, named pixel/alpha/bounds cases.",
+      "Run new cases red, confirming current hash output violates exact expected colors.",
+      "Replace hashing with bounded pixel decoding and specified alpha-weighted mean.",
+      "Run complete pet suite; verify same reference works through hatch and remix."
+    ],
+    "commands": [
+      {
+        "cmd": "python -m pytest tests/test_h214_h238_h590_pets.py -q",
+        "expected": "Pixel, malformed/decompression and existing hatch/remix/archive regressions pass."
+      }
+    ],
+    "review_focus": [
+      "Keep Pillow decompression-bomb exceptions fail closed.",
+      "Do not silently map corrupt bytes to a random color."
+    ],
+    "stop_conditions": [
+      "Stop on a changed base/interface or overlapping writer; inspect and reconcile without overwrite.",
+      "Stop if Pillow is unavailable in the supported runtime; do not add a custom decoder."
+    ],
+    "rollback": "Revert only this packet’s isolated change; preserve user data and other branches. No automatic runtime rollback or data deletion.",
+    "source_refs": [
+      "AGENTS.md",
+      "docs/handoff/antigravity-2026-11-14/CONTINUATION_LEDGER.md",
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/REPORT.md",
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/ui-review.md"
+    ]
+  },
+  {
+    "id": "SM-015",
+    "title": "Correct benchmark claims and define honest competitor comparison",
+    "spec_state": "ready",
+    "priority": "P1",
+    "risk": "low",
+    "hermes_ids": [
+      "H032",
+      "H040",
+      "H086",
+      "H657"
+    ],
+    "backlog_ids": [],
+    "goal": "Users can distinguish hermetic Nerva invariant results from unmeasured Hermes/OpenClaw product comparisons.",
+    "non_goals": [
+      "No merge, ready-for-review promotion, deploy, paid activation or real-provider success claims."
+    ],
+    "depends_on": [],
+    "owned_files": [
+      "scripts/bench_nerva_differentiators.py",
+      "tests/test_bench_nerva_differentiators.py",
+      "docs/benchmarks/nerva-vs-hermes-openclaw-2026-11-14.md",
+      "docs/benchmarks/nerva-vs-hermes-openclaw-2026-11-14.json"
+    ],
+    "read_files": [],
+    "interfaces": [
+      "Existing render_markdown_report, run_all_benchmarks and --json-out/--md-out/--check CLI remain compatible.",
+      "Report scope explicitly: synthetic backends, live_network_llm_calls=0, no competitor executable run, baseline is a synthetic pattern. Replace Hermes / OpenClaw Default and Why Nerva wins headings.",
+      "Methodology section requires actual product/version/commit, configuration, models, hardware, network, task fixtures, repetitions, raw timings/errors, prices and confidence/variance before any competitor win claim. Missing measurements render not measured, never numeric zero.",
+      "B1 currently gathers every proposer and loading is outside generate timeout: describe those limits; B3 explicitly requires old-owner demotion; B5 helper ordering is harness-only at pinned base."
+    ],
+    "acceptance": [
+      {
+        "case": "test_report_cannot_claim_unrun_competitor_win",
+        "given": "hermetic run without competitor records",
+        "when": "markdown rendered",
+        "then": "synthetic baseline labelled; competitor not measured; no product-win conclusion"
+      },
+      {
+        "case": "test_report_discloses_quorum_and_fencing_limits",
+        "given": "B1/B3/B5 results",
+        "when": "report rendered",
+        "then": "no early-quorum bound, transparent failover or production LWW attributed without production evidence"
+      }
+    ],
+    "steps": [
+      "Add named report assertions before changing copy/schema.",
+      "Run focused suite red on misleading headings/claims.",
+      "Change generated report text and metadata, preserve invariant checks and all raw values.",
+      "Regenerate the two artifacts using runner; run --check and tests. Record no competitor measured; real comparison remains external."
+    ],
+    "commands": [
+      {
+        "cmd": "python -m pytest tests/test_bench_nerva_differentiators.py -q",
+        "expected": "Regression tests pass and actual invariants retain their meaning."
+      },
+      {
+        "cmd": "python scripts/bench_nerva_differentiators.py",
+        "expected": "Regenerates only declared artifacts with synthetic scope and no competitor win."
+      },
+      {
+        "cmd": "python scripts/bench_nerva_differentiators.py --check",
+        "expected": "Reproducibility & link integrity check: OK; never described as real competitor acceptance."
+      }
+    ],
+    "review_focus": [
+      "Do not use hardcoded baseline 0.0 as a competitor measurement.",
+      "Latency and cost estimates must identify their scope and units."
+    ],
+    "stop_conditions": [
+      "Stop on a changed base/interface or overlapping writer; inspect and reconcile without overwrite.",
+      "Do not install/run paid competitors or providers in this correction."
+    ],
+    "rollback": "Revert only this packet’s isolated change; preserve user data and other branches. No automatic runtime rollback or data deletion.",
+    "source_refs": [
+      "AGENTS.md",
+      "docs/handoff/antigravity-2026-11-14/CONTINUATION_LEDGER.md",
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/REPORT.md",
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/ui-review.md"
+    ]
+  },
+  {
+    "id": "SM-016",
+    "title": "Recover Lot5 Kanban dispatch on a separate integration branch",
+    "spec_state": "ready",
+    "priority": "P1",
+    "risk": "medium",
+    "hermes_ids": [
+      "H075",
+      "H581"
+    ],
+    "backlog_ids": [
+      "H18.34"
+    ],
+    "goal": "Owners can submit governed board dispatch from the HUD with visible refusal and pending states, without overwriting paused work.",
+    "non_goals": [
+      "No merge, ready-for-review promotion, deploy, paid activation or real-provider success claims."
+    ],
+    "depends_on": [],
+    "owned_files": [
+      "frontend/src/panels/autonomy-legacy.tsx",
+      "frontend/src/panels/autonomy-legacy.test.tsx",
+      "tests/test_hud_v2_parity.py",
+      "docs/design/HUD_V2_REMAINING.md",
+      "docs/handoff/antigravity-2026-11-14/CONTINUATION_LEDGER.md"
+    ],
+    "read_files": [
+      "agents/core/routers/autonomy.py",
+      "tests/test_hermes_kanban_dispatch_wiring.py"
+    ],
+    "interfaces": [
+      "Donor antigravity/lot5-kanban frozen SHA 37a3a5615b220e8bacc1fcee16580b746b19205a; verify object/ref and actual changed paths before adoption.",
+      "Existing POST /api/autonomy/kanban/dispatch admin_guard; KanbanDispatchBody extra=forbid, board ^[a-z0-9][a-z0-9_-]{0,63}$ default default, strict limit integer 1..16 default 4.",
+      "503 governed_worker_unavailable, 409 conflict, 422 invalid body remain visible; successful intake is not completed worker execution. No backend flag enablement."
+    ],
+    "acceptance": [
+      {
+        "case": "lot5_dispatch_refusals",
+        "given": "owner enters valid board and limit",
+        "when": "server returns 503/409/422",
+        "then": "alert shows refusal and no completed-task badge"
+      },
+      {
+        "case": "lot5_dispatch_invalid_body",
+        "given": "negative/fractional limit or bad board",
+        "when": "owner submits",
+        "then": "client blocks request; backend contract unchanged"
+      },
+      {
+        "case": "lot5_donor_safety",
+        "given": "donor and target both available",
+        "when": "integration prepared",
+        "then": "new branch based on verified repaired base; donor and existing PR refs unchanged; duplicate patch not reapplied"
+      }
+    ],
+    "steps": [
+      "Inspect clean status, base and donor ancestry/diff; record exact SHAs. Create a new isolated integration branch; never reset donor or #1359–#1368 branches.",
+      "Inspect whether donor patch already exists using ancestry and content; adopt only missing owned changes; stop on unrelated donor paths/conflicts.",
+      "Run named new UI cases red if wiring absent; port smallest verified implementation.",
+      "Run frontend focused suite, typecheck and parity checks on combined head. Only update counts after an actual fresh count; do not claim 8 uncalled routes before integration.",
+      "Record exact head and actual tests in handoff. Publication, if separately authorized, is draft only and requires exact-head CI inspection; no merge/deploy."
+    ],
+    "commands": [
+      {
+        "cmd": "git show --stat 37a3a5615b220e8bacc1fcee16580b746b19205a",
+        "expected": "Donor object exists and changed paths match intended dispatch slice; otherwise stop."
+      },
+      {
+        "cmd": "cd frontend && npm test -- src/panels/autonomy-legacy.test.tsx",
+        "expected": "Mounted dispatch success/refusal/validation cases pass."
+      },
+      {
+        "cmd": "cd frontend && npm run typecheck",
+        "expected": "Exit 0 on combined branch."
+      },
+      {
+        "cmd": "python -m pytest tests/test_hud_v2_parity.py tests/test_hermes_kanban_dispatch_wiring.py tests/test_doc_reference_integrity.py -q",
+        "expected": "Combined route caller, dispatch authorization and document references pass."
+      }
+    ],
+    "review_focus": [
+      "Draft status is not an exclusive lease; inspect genuine overlapping paths.",
+      "Donor green evidence does not transfer to new integration head."
+    ],
+    "stop_conditions": [
+      "Stop on a changed base/interface or overlapping writer; inspect and reconcile without overwrite.",
+      "Missing donor objects or changed donor ref: read-only inspect first; never invent patch from handoff prose.",
+      "Combined base CI regressions remain blockers to claiming integration complete."
+    ],
+    "rollback": "Revert only this packet’s isolated change; preserve user data and other branches. No automatic runtime rollback or data deletion.",
+    "source_refs": [
+      "AGENTS.md",
+      "docs/handoff/antigravity-2026-11-14/CONTINUATION_LEDGER.md",
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/REPORT.md"
+    ]
+  },
+  {
+    "id": "SM-017",
+    "title": "Triage Lot5 core WIP with bounded tests before adoption",
+    "spec_state": "ready",
+    "priority": "P1",
+    "risk": "high",
+    "hermes_ids": [],
+    "backlog_ids": [],
+    "goal": "Produce a reviewable decision for one core WIP behavior so untested policy/env changes are not silently shipped.",
+    "non_goals": [
+      "No merge, ready-for-review promotion, deploy, paid activation or real-provider success claims."
+    ],
+    "depends_on": [],
+    "owned_files": [
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/lot5-core-triage.md"
+    ],
+    "read_files": [
+      "agents/core/system_profiles.py",
+      "agents/core/code_env.py",
+      "agents/core/turn_compaction.py",
+      "tests/test_h595_code_env.py",
+      "tests/test_h391_turn_compaction.py",
+      "tests/test_h689b_profile_env.py"
+    ],
+    "interfaces": [
+      "Donor cc7aba9a8301251884b1770425313b0a9cd21e2f is explicitly UNVERIFIED; 16 files span CLI, env, profiles, approvals and compaction. agents/core/profiles.py is donor-only at this base; inspect with git show, not a nonexistent working-tree path.",
+      "Deliverable is a decision record with exact donor/base, hunk map, one behavior selected, test names/assertions, authority/data impact and adopt/reject/needs_design verdict. No production patch adoption in this packet.",
+      "New evidence file declared above; proposed tests must use isolated temp env/profile state and fake side effects. Privilege/env-write semantics require explicit contract review."
+    ],
+    "acceptance": [
+      {
+        "case": "core_triage_has_bounded_contract",
+        "given": "16-file WIP donor",
+        "when": "triage completes",
+        "then": "every file categorized; one bounded follow-on change specifies owned paths, exact failing regression and rollback"
+      },
+      {
+        "case": "core_triage_never_certifies_unrun",
+        "given": "no donor suite was previously run",
+        "when": "record written",
+        "then": "historical unverified status retained; executed checks separated from planned red/green tests"
+      }
+    ],
+    "steps": [
+      "Inspect donor with git show --stat and diff only its 16 paths against donor parent; do not cherry-pick whole WIP.",
+      "Select one behavior (profile env precedence or compaction boundary); map existing signatures and test fixtures.",
+      "Specify one named red test and expected old/new results; run existing focused baseline suites only, record failures without changing them.",
+      "Write adopt/reject/needs_design decision; any implementation needs a fresh packet capped at three production files and a real red-green cycle."
+    ],
+    "commands": [
+      {
+        "cmd": "git show --stat cc7aba9a8301251884b1770425313b0a9cd21e2f",
+        "expected": "16-file unverified core donor identifiable; mismatch stops triage."
+      },
+      {
+        "cmd": "python -m pytest tests/test_h595_code_env.py tests/test_h391_turn_compaction.py tests/test_h689b_profile_env.py -q",
+        "expected": "Record actual baseline outcomes; failures are not waived or reported as passing."
+      }
+    ],
+    "review_focus": [
+      "Env writes must not bypass approval, read-only roots or symlink boundaries.",
+      "Profiles must preserve local-only/cloud opt-in policy."
+    ],
+    "stop_conditions": [
+      "Stop on a changed base/interface or overlapping writer; inspect and reconcile without overwrite.",
+      "Donor absent: record unavailable object and no adoption.",
+      "Any unstated env precedence or authority expansion -> needs_design; small model must not infer policy."
+    ],
+    "rollback": "Revert only this packet’s isolated change; preserve user data and other branches. No automatic runtime rollback or data deletion.",
+    "source_refs": [
+      "AGENTS.md",
+      "docs/handoff/antigravity-2026-11-14/CONTINUATION_LEDGER.md",
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/REPORT.md"
+    ]
+  },
+  {
+    "id": "SM-018",
+    "title": "Triage Lot5 gateway WIP at identity and token boundaries",
+    "spec_state": "ready",
+    "priority": "P1",
+    "risk": "high",
+    "hermes_ids": [
+      "H083"
+    ],
+    "backlog_ids": [],
+    "goal": "Produce bounded adoption decisions for gateway WIP while protecting group identity, webhook delivery and OAuth tokens.",
+    "non_goals": [
+      "No merge, ready-for-review promotion, deploy, paid activation or real-provider success claims."
+    ],
+    "depends_on": [],
+    "owned_files": [
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/lot5-gateway-triage.md"
+    ],
+    "read_files": [
+      "agents/core/channels/gateway.py",
+      "agents/core/channels/group_policy.py",
+      "agents/core/channels/slack.py",
+      "agents/core/channels/webhook_channels.py",
+      "agents/core/mcp/oauth_client.py",
+      "tests/test_h083_slack_claims.py",
+      "tests/test_h153b_webhook_delivery.py",
+      "tests/test_h16_1_mcp_oauth.py"
+    ],
+    "interfaces": [
+      "Donor 207eda49bc5d39cada27b58f1f58e9eba9cef017: six files, UNVERIFIED; agents/core/channels/slack_ai_surfaces.py is donor-only at this base (inspect via git show). Do not import a 2,244-line patch as a single delivery.",
+      "New triage evidence maps each changed externally visible signature, actor binding, retry/cancellation behavior, token persistence and matching current tests. Select one independent contract for a follow-on packet.",
+      "No live Slack/webhook/OAuth requests; fake transports, clocks and temp credential storage only."
+    ],
+    "acceptance": [
+      {
+        "case": "gateway_triage_preserves_identity",
+        "given": "six-file donor",
+        "when": "review written",
+        "then": "actor/session pairing and token boundaries are explicit for every hunk; ambiguous authority remains needs_design"
+      },
+      {
+        "case": "gateway_triage_has_red_first_follow_on",
+        "given": "one behavior selected",
+        "when": "next slice proposed",
+        "then": "named regression proves duplicate delivery, cross-principal or cancellation invariant before adoption; remaining WIP stays untouched"
+      }
+    ],
+    "steps": [
+      "Read donor stat then diffs separately by gateway/group, Slack, webhook and OAuth.",
+      "Map each behavior to current tests; choose one bounded regression contract, do not alter all six files.",
+      "Run existing three baseline suites and record exact outcomes.",
+      "Write triage decision, precise follow-on test name/expected denial, overlap and rollback. Do not promote Hermes equivalence."
+    ],
+    "commands": [
+      {
+        "cmd": "git show --stat 207eda49bc5d39cada27b58f1f58e9eba9cef017",
+        "expected": "Six-file unverified donor available; absent object -> blocked evidence only."
+      },
+      {
+        "cmd": "python -m pytest tests/test_h083_slack_claims.py tests/test_h153b_webhook_delivery.py tests/test_h16_1_mcp_oauth.py -q",
+        "expected": "Actual baseline reported with no live external requests."
+      }
+    ],
+    "review_focus": [
+      "A group display name is never an authenticated principal.",
+      "Cancelled OAuth refresh must not publish late credentials or log tokens."
+    ],
+    "stop_conditions": [
+      "Stop on a changed base/interface or overlapping writer; inspect and reconcile without overwrite.",
+      "Unclear delivery replay or credential ownership semantics -> needs_design before code adoption."
+    ],
+    "rollback": "Revert only this packet’s isolated change; preserve user data and other branches. No automatic runtime rollback or data deletion.",
+    "source_refs": [
+      "AGENTS.md",
+      "docs/handoff/antigravity-2026-11-14/CONTINUATION_LEDGER.md",
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/REPORT.md"
+    ]
+  },
+  {
+    "id": "SM-019",
+    "title": "Expose provider selection status natively without expanding authority",
+    "spec_state": "ready",
+    "priority": "P2",
+    "risk": "medium",
+    "hermes_ids": [
+      "H361"
+    ],
+    "backlog_ids": [
+      "H18.10",
+      "TASK-2"
+    ],
+    "goal": "A mobile owner can inspect the real admitted provider selection and understand unavailable or stale state.",
+    "non_goals": [
+      "No merge, ready-for-review promotion, deploy, paid activation or real-provider success claims."
+    ],
+    "depends_on": [],
+    "owned_files": [
+      "mobile/src/api/client.ts",
+      "mobile/src/screens/StatusScreen.tsx",
+      "mobile/src/api/__tests__/providerSelection.test.ts",
+      "mobile/src/screens/__tests__/providerSelectionStatus.test.ts",
+      "mobile/PARITY.md"
+    ],
+    "read_files": [
+      "agents/core/routers/provider_selection.py",
+      "agents/core/routers/provider_credentials.py",
+      "agents/core/routers/models_llm.py",
+      "frontend/src/panels/provider-packages.tsx",
+      "frontend/src/panels/provider-packages.test.tsx",
+      "agents/core/llm/providers/install_service.py"
+    ],
+    "interfaces": [
+      "NEW export fetchProviderSelectionStatus(config: ServerConfig): Promise<Record<string, unknown>> in existing client.ts uses GET /api/admin/llm/provider-selection with admin:true and no mutation.",
+      "selection_status in providers/install_service.py returns {status: unselected}, or {status: selected|stale, provider, model, package_hash, revision, credential_generation}. StatusScreen projects only status/provider/model/revision after validating known status, bounded strings and nonnegative safe revision. Strip package_hash and credential_generation. Unselected, stale and unavailable are distinct.",
+      "PUT SelectBody/ClearBody expected_revision CAS, signed package_hash, explicit consent and credential lifecycle remain exclusively existing HUD/backend; mobile view supplies no decisions or keys. New tests declared in owned_files."
+    ],
+    "acceptance": [
+      {
+        "case": "providerSelection_read_is_admin_scoped",
+        "given": "configured admin token",
+        "when": "Status is opened",
+        "then": "GET uses X-Admin-Token; UI contains no rotate/promote/select controls or credentials"
+      },
+      {
+        "case": "providerSelection_stale_result_is_hidden",
+        "given": "old connection request is pending",
+        "when": "connection/token changes then old reply arrives",
+        "then": "old provider/model is not rendered"
+      },
+      {
+        "case": "providerSelection_refusal",
+        "given": "401/403/409/503 or malformed result",
+        "when": "read completes",
+        "then": "unavailable/error shown; no success badge or fallback provider fabricated"
+      }
+    ],
+    "steps": [
+      "Read exact GET response shape and existing mobile request/error/connection-epoch patterns.",
+      "Add new API and mounted status tests, run red for missing section/export.",
+      "Add bounded read projection and mounted status panel; link Settings when admin token missing; invalidate on refresh and connection changes.",
+      "Run new tests plus existing provider HUD tests; add native read-only row to PARITY, keep provider management/native mutations open."
+    ],
+    "commands": [
+      {
+        "cmd": "cd mobile && npm test -- --runInBand src/api/__tests__/providerSelection.test.ts src/screens/__tests__/providerSelectionStatus.test.ts",
+        "expected": "Admin auth, malformed/no-selection, refusals and stale connection tests pass."
+      },
+      {
+        "cmd": "cd mobile && npx tsc --noEmit",
+        "expected": "Exit 0."
+      },
+      {
+        "cmd": "cd frontend && npm test -- src/panels/provider-packages.test.tsx",
+        "expected": "Existing explicit-consent, credential clearing and CAS refusal tests remain green."
+      }
+    ],
+    "review_focus": [
+      "Read-only status must not imply live SDK/container/provider acceptance.",
+      "No secrets/raw signed package material in DOM, logs or storage."
+    ],
+    "stop_conditions": [
+      "Stop on a changed base/interface or overlapping writer; inspect and reconcile without overwrite.",
+      "If current GET includes secret material or authority is unclear, stop and write design before mobile exposure."
+    ],
+    "rollback": "Revert only this packet’s isolated change; preserve user data and other branches. No automatic runtime rollback or data deletion.",
+    "source_refs": [
+      "AGENTS.md",
+      "docs/handoff/antigravity-2026-11-14/CONTINUATION_LEDGER.md",
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/REPORT.md"
+    ]
+  },
+  {
+    "id": "SM-020",
+    "title": "Make manual room failover admission explicit",
+    "spec_state": "ready",
+    "priority": "P1",
+    "risk": "medium",
+    "hermes_ids": [
+      "H657"
+    ],
+    "backlog_ids": [],
+    "goal": "An owner promoting a room replica explicitly acknowledges that the old host can still write until manually demoted.",
+    "non_goals": [
+      "No merge, ready-for-review promotion, deploy, paid activation or real-provider success claims."
+    ],
+    "depends_on": [],
+    "owned_files": [
+      "agents/core/routers/rooms.py",
+      "agents/cli/rooms.py",
+      "frontend/src/gap.tsx",
+      "tests/test_h657_room_failover.py",
+      "frontend/src/test/gap-panels.test.tsx",
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/manual-room-failover.md"
+    ],
+    "read_files": [
+      "agents/core/rooms.py"
+    ],
+    "interfaces": [
+      "Existing RoomStore.promote(room_id, *, confirm=False, new_host=None, reason=\"\") and demote(room_id, *, proof: dict) remain manual local primitives.",
+      "Extend HTTP RoomPromoteBody with StrictBool acknowledge_manual_demotion=False. POST /api/rooms/{room_id}/promote refuses absent/false ack with 409 manual_demotion_ack_required before store mutation; still require existing confirm=True.",
+      "Successful HTTP response adds failover_mode=manual and old_owner_demotion_required=True; never asserts demotion completed. Existing /replica-state, /replicate and /demote routes retain auth/proof validation.",
+      "Verified current class is RoomStore(JsonStore), not RoomsStore. Current router RoomPromoteBody fields are confirm: bool=False, new_host max_length=80, reason max_length=300. Do not change RoomStore.promote signature or store proof fields.",
+      "Existing CLI agents/cli/rooms.py promote parser and execute promote branch currently serialize {confirm: bool(ns.confirm), new_host: ns.host, reason: ns.reason}. Add --acknowledge-manual-demotion action=store_true default false, with help: The old owner can still write until manually demoted. Serialize acknowledge_manual_demotion: bool(ns.acknowledge_manual_demotion) alongside existing fields. Both --confirm and this flag required for HTTP success; no automatic true value or interactive prompt in scripts.",
+      "Existing HUD is RoomsPanel in frontend/src/gap.tsx; promoteRoom currently posts {confirm: confirmPromote}. Add independent unchecked acknowledgement checkbox labelled I understand the old owner can still write until I manually demote or isolate it. Disable promotion unless both checkboxes are checked; POST {confirm: confirmPromote, acknowledge_manual_demotion: acknowledgeManualDemotion}, admin:true. Clear acknowledgement on selected-room change and after every submit outcome, including refusal; never infer it from confirmPromote.",
+      "Existing tests/test_h657_room_failover.py::test_h657_http_router_and_cli_round_trip must supply the new explicit acknowledgement in successful HTTP and CLI examples; add absent/false cases that remain 409 without changing epoch. Existing frontend/src/test/gap-panels.test.tsx imports RoomsPanel: extend it with mounted checkbox, exact request body, selection-change reset and 409 refusal cases. All caller changes ship in the same packet."
+    ],
+    "acceptance": [
+      {
+        "case": "test_http_promotion_requires_manual_demotion_ack",
+        "given": "replica with prior owner",
+        "when": "POST confirm true without ack",
+        "then": "409 manual_demotion_ack_required, epoch/role unchanged"
+      },
+      {
+        "case": "test_manual_ack_does_not_fence_uncontacted_owner",
+        "given": "two replicated stores",
+        "when": "promote with confirm+ack",
+        "then": "new host active; old host still writable before explicit valid proof demotion; reply warns manual demotion required"
+      },
+      {
+        "case": "test_demotion_proof_blocks_old_owner_writes",
+        "given": "valid signed promotion proof",
+        "when": "old owner receives demote",
+        "then": "stale write refused; tampered proof rejected"
+      },
+      {
+        "case": "test_cli_manual_demotion_ack_serialized",
+        "given": "rooms promote with --confirm and explicit --acknowledge-manual-demotion",
+        "when": "CLI builds HTTP request",
+        "then": "both booleans true are sent with unchanged host/reason; missing flag sends false and cannot succeed"
+      },
+      {
+        "case": "RoomsPanel manual failover acknowledgement",
+        "given": "mounted RoomsPanel with selected replica",
+        "when": "owner checks both confirmations and submits",
+        "then": "one admin POST includes both true flags; checkbox reset after submit/error/room change; no implicit acknowledgement"
+      }
+    ],
+    "steps": [
+      "Add named HTTP admission and two-host tests alongside existing split-brain case; run red.",
+      "Implement request-boundary ack and truthful additive response fields, no consensus algorithm or distributed lock.",
+      "Update existing CLI promote parser/payload and RoomsPanel checkbox/payload together with router guard. Extend existing HTTP/CLI round-trip and mounted gap-panel tests before changing callers; confirm all three surfaces red first, then green together.",
+      "Run room suite; write two-host operator sequence including old-host isolation when unreachable, proof transfer, demotion verification and rollback limits."
+    ],
+    "commands": [
+      {
+        "cmd": "python -m pytest tests/test_h657_room_failover.py -q",
+        "expected": "Admission has no pre-ack mutation; explicit demotion fencing and forged-proof rejection pass."
+      },
+      {
+        "cmd": "cd frontend && npm test -- src/test/gap-panels.test.tsx",
+        "expected": "RoomsPanel requires both explicit confirmations, serializes acknowledgement, clears it on room changes/errors and surfaces refusal."
+      },
+      {
+        "cmd": "cd frontend && npm run typecheck",
+        "expected": "Exit 0 with complete router/CLI/HUD caller contract."
+      }
+    ],
+    "review_focus": [
+      "Promotion does not send proof or stop the old owner.",
+      "Never auto-retry promotion on network timeout."
+    ],
+    "stop_conditions": [
+      "Stop on a changed base/interface or overlapping writer; inspect and reconcile without overwrite.",
+      "Do not claim automatic safe failover or invent distributed consensus.",
+      "Any additional promotion caller discovered must be mapped and migrated in this same delivery; otherwise set needs_design and do not land the server guard alone."
+    ],
+    "rollback": "Revert only this packet’s isolated change; preserve user data and other branches. No automatic runtime rollback or data deletion.",
+    "source_refs": [
+      "AGENTS.md",
+      "docs/handoff/antigravity-2026-11-14/CONTINUATION_LEDGER.md",
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/REPORT.md"
+    ]
+  },
+  {
+    "id": "SM-021",
+    "title": "Run real macOS TCC upgrade acceptance as external matrix",
+    "spec_state": "external",
+    "priority": "P1",
+    "risk": "high",
+    "hermes_ids": [
+      "H690"
+    ],
+    "backlog_ids": [
+      "FB1",
+      "A1"
+    ],
+    "goal": "Provide evidence whether real macOS permission grants survive managed Python update, separately from simulated codesign tests.",
+    "non_goals": [
+      "No merge, ready-for-review promotion, deploy, paid activation or real-provider success claims."
+    ],
+    "depends_on": [],
+    "owned_files": [
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/macos-tcc-matrix.md"
+    ],
+    "read_files": [
+      "agents/core/macos_tcc_anchor.py",
+      "tests/test_h690_macos_tcc_anchor.py",
+      "scripts/bootstrap.py",
+      "agents/core/hub_update_apply.py"
+    ],
+    "interfaces": [
+      "Existing anchor_venv_interpreter entry point and test_live_macos_venv_codesign_and_boot_gate_end_to_end; platform skip is unavailable evidence, not pass.",
+      "External matrix: macOS version/arch, managed Python source/version before+after, codesign identity/path/hash, launch identity (terminal vs installed app), actual permissions exercised, before/after grant behavior, refusal result and rollback outcome. At least supported Apple Silicon host; Intel only if advertised supported.",
+      "No tccutil reset, TCC DB editing, disabled SIP or fabricated grant state. Update/permission actions require an authorized real test device and owner interaction where macOS requests it."
+    ],
+    "acceptance": [
+      {
+        "case": "mac_tcc_grant_survives_real_upgrade",
+        "given": "real host with an explicitly granted supported permission",
+        "when": "managed Python upgrade under same launch identity",
+        "then": "actual permitted operation works afterward without unexplained regrant, with before/after evidence; otherwise fail"
+      },
+      {
+        "case": "mac_tcc_denial_stays_denied",
+        "given": "permission explicitly denied",
+        "when": "upgrade then operation retried",
+        "then": "operation remains denied; no bypass or self-granted permission"
+      },
+      {
+        "case": "mac_tcc_external_unavailable",
+        "given": "Linux or unmanaged host",
+        "when": "test is skipped",
+        "then": "matrix cell unavailable; H690 remains unaccepted live"
+      }
+    ],
+    "steps": [
+      "Prepare matrix and isolate host/app/permission requirements; record all unrun cells unavailable.",
+      "On authorized macOS host run existing live codesign/boot gate and record exact revision/output.",
+      "Perform manual permission operation before and after genuine supported upgrade; record prompts and refusal without sensitive content.",
+      "Test supported rollback on disposable venv; retain grants/data; publish evidence only after actual run."
+    ],
+    "commands": [
+      {
+        "cmd": "python -m pytest tests/test_h690_macos_tcc_anchor.py -q",
+        "expected": "Record actual passed/skipped count; Linux skips provide no TCC persistence proof."
+      }
+    ],
+    "review_focus": [
+      "Boot success and stable signing identifier alone do not prove TCC persistence.",
+      "Do not touch personal permission databases or upgrade the working owner installation for this test."
+    ],
+    "stop_conditions": [
+      "Stop on a changed base/interface or overlapping writer; inspect and reconcile without overwrite.",
+      "No authorized macOS host: deliver matrix only, keep external.",
+      "Platform refusal stops this cell; no workaround retry."
+    ],
+    "rollback": "Revert only this packet’s isolated change; preserve user data and other branches. No automatic runtime rollback or data deletion.",
+    "source_refs": [
+      "AGENTS.md",
+      "docs/handoff/antigravity-2026-11-14/CONTINUATION_LEDGER.md",
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/REPORT.md"
+    ]
+  },
+  {
+    "id": "SM-022",
+    "title": "Design cost cascade authority before HybridRouter integration",
+    "spec_state": "needs_design",
+    "priority": "P2",
+    "risk": "high",
+    "hermes_ids": [
+      "H513"
+    ],
+    "backlog_ids": [],
+    "goal": "Determine whether an optional cost cascade can route safely without cloud-policy, physical-request accounting or model-selection regressions.",
+    "non_goals": [
+      "No merge, ready-for-review promotion, deploy, paid activation or real-provider success claims."
+    ],
+    "depends_on": [],
+    "owned_files": [
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/cost-cascade-design.md"
+    ],
+    "read_files": [
+      "agents/core/llm/hybrid_router.py",
+      "agents/core/llm/data_handling.py"
+    ],
+    "interfaces": [
+      "Lot5-bench donor bd93bff5caf993bd150828a87d3cd1b4bfd88fa5 adds agents/core/llm/cost_cascade.py; this file is ABSENT at pinned base. Inspect donor before defining any class/function signature.",
+      "Required design output: actual AdaptiveCostCascade signature, HybridRouter insertion point, chosen model authority, strict-local exclusions frigga/ultron/howard, cloud-only athena, opt-in flag default false, physical_request_scope ownership and budget atomicity.",
+      "No production router/cascade modification authorized by this packet. Estimated B6 savings are hermetic estimates, not billed live cost."
+    ],
+    "acceptance": [
+      {
+        "case": "cascade_design_preserves_model_authority",
+        "given": "actual donor inspected",
+        "when": "integration contract proposed",
+        "then": "selection, fallback, price-unknown, cancellation and budget owner explicit; no bypass of data-handling policy"
+      },
+      {
+        "case": "cascade_design_bounds_physical_requests",
+        "given": "retry/stream/error cases",
+        "when": "test plan written",
+        "then": "every physical attempt accounted exactly once; no cloud request for strict-local agents; no spend cap overrun claimed from unrun tests"
+      }
+    ],
+    "steps": [
+      "Read exact donor cascade and current router signatures using git show; record absent object as blocker.",
+      "Map request lifecycle, retry/streaming, physical_request_scope and policy admission; identify whether cascade or router owns each step.",
+      "Specify deterministic fake-backend red tests and default-off rollout; list unresolved semantics instead of implementing a guess.",
+      "Finish needs_design until coordinator accepts exact interface/authority. New implementation packet must cap production paths and include rollback flag."
+    ],
+    "commands": [
+      {
+        "cmd": "git show bd93bff5caf993bd150828a87d3cd1b4bfd88fa5:agents/core/llm/cost_cascade.py",
+        "expected": "Inspect actual donor API without installing it; missing object means design blocked."
+      }
+    ],
+    "review_focus": [
+      "A cheap model choice must not weaken owner-approved provider selection.",
+      "Cancellation and concurrent requests may race budget accounting."
+    ],
+    "stop_conditions": [
+      "Stop on a changed base/interface or overlapping writer; inspect and reconcile without overwrite.",
+      "Unresolved authority, unknown prices or scope ownership: no production integration."
+    ],
+    "rollback": "Revert only this packet’s isolated change; preserve user data and other branches. No automatic runtime rollback or data deletion.",
+    "source_refs": [
+      "AGENTS.md",
+      "docs/handoff/antigravity-2026-11-14/CONTINUATION_LEDGER.md",
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/REPORT.md",
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/ui-review.md"
+    ]
+  },
+  {
+    "id": "SM-023",
+    "title": "Deliver native Kanban board and explicit governed dispatch",
+    "spec_state": "ready",
+    "priority": "P2",
+    "risk": "medium",
+    "hermes_ids": [
+      "H075",
+      "H581"
+    ],
+    "backlog_ids": [
+      "H18.34"
+    ],
+    "goal": "Phone owners can inspect a durable board and request governed dispatch while seeing approval/run states accurately.",
+    "non_goals": [
+      "No merge, ready-for-review promotion, deploy, paid activation or real-provider success claims."
+    ],
+    "depends_on": [
+      "SM-016",
+      "SM-019"
+    ],
+    "owned_files": [
+      "mobile/src/api/client.ts",
+      "mobile/src/screens/TasksScreen.tsx",
+      "mobile/src/api/__tests__/kanban.test.ts",
+      "mobile/src/screens/__tests__/kanbanControls.test.ts",
+      "mobile/PARITY.md"
+    ],
+    "read_files": [
+      "agents/core/routers/autonomy.py",
+      "agents/core/routers/kanban.py",
+      "agents/core/kanban/dashboard_api.py",
+      "frontend/src/panels/kanban/api.ts",
+      "frontend/src/panels/kanban/types.ts",
+      "mobile/src/screens/ApprovalsScreen.tsx"
+    ],
+    "interfaces": [
+      "NEW client.ts exports fetchKanbanBoards(config), fetchKanbanBoard(config, slug), dispatchKanban(config, {board,limit}); derive read types from current dashboard_api + frontend types, not display-string guesses.",
+      "GET /api/kanban/boards, GET /api/kanban/board?board=<encoded>, POST /api/autonomy/kanban/dispatch all admin:true. Dispatch retries=0; strict board/limit bounds exactly SM-016 contract.",
+      "TasksScreen board section separate from existing tasks. Request dispatch only on explicit tap; pending approval remains pending and links existing Approvals tab if available. No new approval API or execute button.",
+      "NEW types in existing client.ts: NativeBoardMeta={slug:string; name?:string|null; is_current?:boolean; total?:number}; NativeBoardsResponse={boards:NativeBoardMeta[]; current:string}; NativeKanbanTask={id:string; title:string; status:string}; NativeKanbanBoard={columns:{name:string; tasks:NativeKanbanTask[]}[]; latest_event_id:number; now:number}. Project only these existing dashboard fields; validate bounded identifiers, strings and nonnegative safe integer counters, throw ApiError on malformed required fields.",
+      "NEW NativeKanbanDispatch={ok:boolean; status:queued|busy|refused; reason?:string; queued:{task_id:string; queue_id:string; status:string}[]}, with status represented as a TypeScript string-literal union. Exact async signatures: fetchKanbanBoards(config:ServerConfig):Promise<NativeBoardsResponse>; fetchKanbanBoard(config:ServerConfig, slug:string):Promise<NativeKanbanBoard>; dispatchKanban(config:ServerConfig, body:{board:string;limit:number}):Promise<NativeKanbanDispatch>. Current dispatcher.request returns queued/busy/refused; queue status is server supplied, never reinterpret it as completion."
+    ],
+    "acceptance": [
+      {
+        "case": "kanban_dispatch_not_execution",
+        "given": "valid selected board",
+        "when": "dispatch returns intake/pending approval",
+        "then": "UI says requested/pending; does not mark completed"
+      },
+      {
+        "case": "kanban_unavailable_does_not_enable_flags",
+        "given": "Kanban or worker disabled, or absent admin token",
+        "when": "screen loads/dispatch tapped",
+        "then": "503/unavailable or Settings guidance; no setting mutation"
+      },
+      {
+        "case": "kanban_late_dispatch_is_not_replayed",
+        "given": "dispatch times out or owner changes board/connection",
+        "when": "request completes late",
+        "then": "no auto retry; old response cannot alter new board; manual refresh allowed"
+      }
+    ],
+    "steps": [
+      "Write new API/mounted cases for board, strict limit, 401/403/409/422/503 and stale context; run red.",
+      "Add typed read/dispatch helpers in existing client using existing auth transport; preserve retries=0 on POST.",
+      "Mount board selection and explicit dispatch in TasksScreen; render actual task states and safe pending labels.",
+      "Run focused tests/typecheck; update partial H18.34 parity row, retain physical device/provider acceptance open."
+    ],
+    "commands": [
+      {
+        "cmd": "cd mobile && npm test -- --runInBand src/api/__tests__/kanban.test.ts src/screens/__tests__/kanbanControls.test.ts",
+        "expected": "Board selection, guarded one-shot dispatch and refusal/stale-context cases pass."
+      },
+      {
+        "cmd": "cd mobile && npx tsc --noEmit",
+        "expected": "Exit 0."
+      }
+    ],
+    "review_focus": [
+      "Do not confuse SQLite metadata with adapter-backed worker availability.",
+      "Do not store admin credentials in board data."
+    ],
+    "stop_conditions": [
+      "Stop on a changed base/interface or overlapping writer; inspect and reconcile without overwrite.",
+      "If existing navigation cannot reach approvals, display pending with instruction; do not invent approval authority."
+    ],
+    "rollback": "Revert only this packet’s isolated change; preserve user data and other branches. No automatic runtime rollback or data deletion.",
+    "source_refs": [
+      "AGENTS.md",
+      "docs/handoff/antigravity-2026-11-14/CONTINUATION_LEDGER.md",
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/REPORT.md",
+      "BACKLOG.md:9891"
+    ]
+  },
+  {
+    "id": "SM-024",
+    "title": "Deliver native memory budgets and owner switch",
+    "spec_state": "ready",
+    "priority": "P2",
+    "risk": "medium",
+    "hermes_ids": [
+      "H422"
+    ],
+    "backlog_ids": [
+      "H18.35"
+    ],
+    "goal": "Phone owners see true curated-memory ring budgets and can explicitly switch memory without deleting their stores.",
+    "non_goals": [
+      "No merge, ready-for-review promotion, deploy, paid activation or real-provider success claims."
+    ],
+    "depends_on": [
+      "SM-023"
+    ],
+    "owned_files": [
+      "mobile/src/api/client.ts",
+      "mobile/src/screens/MemoryScreen.tsx",
+      "mobile/src/api/__tests__/memoryControls.test.ts",
+      "mobile/src/screens/__tests__/memoryControls.test.ts",
+      "mobile/PARITY.md"
+    ],
+    "read_files": [
+      "agents/core/routers/memory_kg.py",
+      "mobile/src/api/__tests__/memoryNotes.test.ts",
+      "agents/core/learning/core_block.py"
+    ],
+    "interfaces": [
+      "NEW fetchMemoryStatus(config) uses GET /api/memory (distinct from existing fetchMemory GET /memory transcript). NEW setMemorySwitch(config, enabled:boolean) uses POST /api/memory/switch {enabled} admin:true retries:0.",
+      "Project current GET body available/enabled/switch/cognition/stores and block_max_chars from _memory_status_body; stores[target] contains the ring bytes/entries/chars and char_budget, shown, omitted, blocked and rendered_chars fields (flat in each store, not nested core_block); never coerce absence to zero. Set result is authoritative only after refresh of current GET.",
+      "Keep transcript/notes UI intact. Explicit owner toggle only; no reset/delete, bundle editor or goals form in this slice. H18.35 remains open for those remaining controls.",
+      "Exact current ring keys verified in core_block_usage/_sections: entries, chars, char_budget, shown, omitted, blocked, rendered_chars, merged with store_sizes bytes. Display chars/char_budget, not a nonexistent nested core_block object. New helper signatures fetchMemoryStatus(config:ServerConfig):Promise<Record<string,unknown>> and setMemorySwitch(config:ServerConfig,enabled:boolean):Promise<Record<string,unknown>> preserve raw responses only until bounded projection at screen boundary."
+    ],
+    "acceptance": [
+      {
+        "case": "memory_status_is_not_transcript",
+        "given": "transcript endpoint returns turns",
+        "when": "memory budget section loads",
+        "then": "also GET /api/memory; ring sizes never inferred from turns"
+      },
+      {
+        "case": "memory_switch_saved_but_not_applied",
+        "given": "POST returns ok false/503 or runtime old value",
+        "when": "owner toggles",
+        "then": "UI shows refusal/actual GET state; never optimistic enabled success"
+      },
+      {
+        "case": "memory_control_stale_context",
+        "given": "pending switch/read",
+        "when": "hub/token changes",
+        "then": "old result ignored and no automatic switch on new hub"
+      }
+    ],
+    "steps": [
+      "Add named status-vs-transcript, explicit switch and stale response cases; run red.",
+      "Implement separate status projection/helper and switch; reuse existing admin transport with zero mutation retries.",
+      "Mount ring size/budget and switch status in MemoryScreen; missing admin leads to Settings.",
+      "Run new and existing memory tests/typecheck; record delivered subset in PARITY without closing bundle/goal/reset work."
+    ],
+    "commands": [
+      {
+        "cmd": "cd mobile && npm test -- --runInBand src/api/__tests__/memoryControls.test.ts src/screens/__tests__/memoryControls.test.ts src/api/__tests__/memoryNotes.test.ts",
+        "expected": "Budget projection, truthful switch and existing transcript behavior pass."
+      },
+      {
+        "cmd": "cd mobile && npx tsc --noEmit",
+        "expected": "Exit 0."
+      }
+    ],
+    "review_focus": [
+      "switch true can coexist with effective enabled false due to cognition/posture.",
+      "No destructive reset hidden behind a toggle."
+    ],
+    "stop_conditions": [
+      "Stop on a changed base/interface or overlapping writer; inspect and reconcile without overwrite.",
+      "Unexpected runtime status schema: stop, inspect route; do not reinterpret turns as memory stats."
+    ],
+    "rollback": "Revert only this packet’s isolated change; preserve user data and other branches. No automatic runtime rollback or data deletion.",
+    "source_refs": [
+      "AGENTS.md",
+      "docs/handoff/antigravity-2026-11-14/CONTINUATION_LEDGER.md",
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/REPORT.md",
+      "BACKLOG.md:9892"
+    ]
+  },
+  {
+    "id": "SM-025",
+    "title": "Render native per-turn recall without speech or persistence",
+    "spec_state": "ready",
+    "priority": "P2",
+    "risk": "low",
+    "hermes_ids": [
+      "H430"
+    ],
+    "backlog_ids": [
+      "H18.36"
+    ],
+    "goal": "Native chat shows the server’s current-turn recall explanation under the reply while keeping it out of spoken and stored text.",
+    "non_goals": [
+      "No merge, ready-for-review promotion, deploy, paid activation or real-provider success claims."
+    ],
+    "depends_on": [],
+    "owned_files": [
+      "mobile/src/chat/turnOutcome.ts",
+      "mobile/src/screens/ChatScreen.tsx",
+      "mobile/src/chat/__tests__/turnOutcomeRecall.test.ts",
+      "mobile/src/chat/__tests__/conversation.test.ts",
+      "mobile/src/screens/__tests__/recallLine.test.ts",
+      "mobile/PARITY.md"
+    ],
+    "read_files": [
+      "mobile/src/api/client.ts",
+      "mobile/src/chat/conversation.ts",
+      "mobile/src/storage/chat.ts",
+      "frontend/src/turn-outcome.tsx",
+      "frontend/src/test/recall-line-cases.json",
+      "agents/core/memory/recall_admission.py"
+    ],
+    "interfaces": [
+      "Extend existing TurnOutcome (currently latency_ms only) with optional validated recall; normalizeTurnOutcome consumes untrusted evt.outcome via existing streamChat onDone. Valid recall must survive even if latency_ms absent/invalid; make latency_ms optional and preserve current duration display guards.",
+      "Mirror closed schema nerva.recall-status.v1 and frontend recallLine/recallLines using shared fixture cases; last prefetch per provider only, no memory content. New helper recallLines(outcome): string[] in turnOutcome.ts.",
+      "Conversation already clears turnOutcome on new work/history/stop/context invalidation; extend tests to recall lifecycle. Render separate accessible Text after reply, never append to assistant content, toPlain TTS or saved messages."
+    ],
+    "acceptance": [
+      {
+        "case": "recall_matches_shared_cases",
+        "given": "frontend recall-line-cases.json fixtures",
+        "when": "native recallLines invoked",
+        "then": "same lines including relevant-memory and malformed omission cases"
+      },
+      {
+        "case": "recall_without_latency",
+        "given": "valid recall with absent/invalid latency_ms",
+        "when": "SSE end processed",
+        "then": "recall renders; invalid duration omitted"
+      },
+      {
+        "case": "recall_is_ephemeral_and_silent",
+        "given": "reply with recall then new turn/stop/session/agent/hub change",
+        "when": "state transitions or TTS/storage invoked",
+        "then": "recall clears; spoken and persisted assistant text has no recall footer"
+      }
+    ],
+    "steps": [
+      "Add new shared-fixture projection tests and extend existing conversation tests; add mounted recall/TTS separation test; run red.",
+      "Extend TurnOutcome projection and helper with exact closed schema; preserve latency safety and do not alter network protocol.",
+      "Render ephemeral accessible recall lines beneath reply. If optional latency typing exposes callers, adjust only duration guard in owned ChatScreen; stop for broader interface changes.",
+      "Run focused suites and tsc; update parity row with device accessibility acceptance still open."
+    ],
+    "commands": [
+      {
+        "cmd": "cd mobile && npm test -- --runInBand src/chat/__tests__/turnOutcomeRecall.test.ts src/chat/__tests__/conversation.test.ts src/screens/__tests__/recallLine.test.ts src/api/__tests__/streamChat.test.ts",
+        "expected": "Shared recall cases, latency compatibility, lifecycle, TTS and storage boundaries pass."
+      },
+      {
+        "cmd": "cd mobile && npx tsc --noEmit",
+        "expected": "Exit 0; optional latency callers accounted for."
+      }
+    ],
+    "review_focus": [
+      "Invalid duration must not suppress valid recall.",
+      "No recall from an old turn or restored transcript."
+    ],
+    "stop_conditions": [
+      "Stop on a changed base/interface or overlapping writer; inspect and reconcile without overwrite.",
+      "If TurnOutcome consumers beyond owned paths require changes, negotiate expanded ownership before editing."
+    ],
+    "rollback": "Revert only this packet’s isolated change; preserve user data and other branches. No automatic runtime rollback or data deletion.",
+    "source_refs": [
+      "AGENTS.md",
+      "docs/handoff/antigravity-2026-11-14/CONTINUATION_LEDGER.md",
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/REPORT.md",
+      "BACKLOG.md:9893"
+    ]
+  },
+  {
+    "id": "SM-026",
+    "title": "Deliver native roster inspection and explicit agent rename",
+    "spec_state": "ready",
+    "priority": "P2",
+    "risk": "medium",
+    "hermes_ids": [
+      "H202"
+    ],
+    "backlog_ids": [
+      "H18.37"
+    ],
+    "goal": "A phone owner can inspect the real agent roster and rename one agent through the existing Action Kernel guarded route.",
+    "non_goals": [
+      "No merge, ready-for-review promotion, deploy, paid activation or real-provider success claims."
+    ],
+    "depends_on": [
+      "SM-024"
+    ],
+    "owned_files": [
+      "mobile/src/api/client.ts",
+      "mobile/src/screens/SettingsScreen.tsx",
+      "mobile/src/api/__tests__/agentRoster.test.ts",
+      "mobile/src/screens/__tests__/agentRoster.test.ts",
+      "mobile/PARITY.md"
+    ],
+    "read_files": [
+      "agents/core/routers/agents_api.py",
+      "agents/core/agent_roster.py",
+      "mobile/src/context/ServerContext.tsx"
+    ],
+    "interfaces": [
+      "NEW fetchAgentRoster(config) GET /api/admin/agents/roster; NEW renameRosterAgent(config, agentId, name) POST /api/admin/agents/{encoded_agent_id}/rename {name}; admin:true, retries:0.",
+      "Derive name/id constraints and response projection from current AgentRenameBody (name length 1..64, extra forbid)/agent_roster validation. Preserve immutable id; rename changes display name only. No create, retire, restore, persona or learned-entry editor in this slice.",
+      "Mount owner roster section inside existing SettingsScreen; no new navigation route. Preserve server Action Kernel denial, default-off posture and revision/audit handling; caller cannot supply actor authority."
+    ],
+    "acceptance": [
+      {
+        "case": "roster_rename_preserves_id",
+        "given": "owner selects existing roster entry",
+        "when": "explicit rename submits",
+        "then": "one admin POST with encoded immutable id and body name; refresh roster on success"
+      },
+      {
+        "case": "roster_kernel_refusal_is_visible",
+        "given": "401/403/409/422/503 or kernel denial",
+        "when": "rename submitted",
+        "then": "no successful rename badge or local roster mutation; entered name retained for correction"
+      },
+      {
+        "case": "roster_connection_change_invalidates_form",
+        "given": "edit pending for hub A",
+        "when": "switch to hub B",
+        "then": "old target/form/result cleared; no accidental POST to B"
+      }
+    ],
+    "steps": [
+      "Read exact rename request limits and GET response; add API and mounted refusal/connection tests, run red.",
+      "Add existing-transport helpers and Settings roster form with explicit submit, disabled in flight.",
+      "Refresh authoritative roster only after success; ignore stale responses and preserve immutable id.",
+      "Run focused tests/typecheck; add partial native row keeping create/retire/restore and H046 Today work open."
+    ],
+    "commands": [
+      {
+        "cmd": "cd mobile && npm test -- --runInBand src/api/__tests__/agentRoster.test.ts src/screens/__tests__/agentRoster.test.ts",
+        "expected": "Admin auth, immutable id, no retries, kernel refusal and stale context tests pass."
+      },
+      {
+        "cmd": "cd mobile && npx tsc --noEmit",
+        "expected": "Exit 0."
+      }
+    ],
+    "review_focus": [
+      "Never mutate selected chat agent identity when display name changes.",
+      "Do not bypass kernel default-off refusal or grant capability tokens."
+    ],
+    "stop_conditions": [
+      "Stop on a changed base/interface or overlapping writer; inspect and reconcile without overwrite.",
+      "Unknown rename authority/name limits or incompatible Settings mount -> design first; do not guess."
+    ],
+    "rollback": "Revert only this packet’s isolated change; preserve user data and other branches. No automatic runtime rollback or data deletion.",
+    "source_refs": [
+      "AGENTS.md",
+      "docs/handoff/antigravity-2026-11-14/CONTINUATION_LEDGER.md",
+      "docs/superpowers/plans/2026-11-14-small-model-backlog/evidence/REPORT.md",
+      "BACKLOG.md:9894"
+    ]
+  }
+]

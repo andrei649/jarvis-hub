@@ -28,6 +28,7 @@ ntfy/adapter.py), generalised; the classifier is Nerva's own.
 from __future__ import annotations
 
 import logging
+import math
 import secrets
 import time
 from collections.abc import Callable
@@ -41,6 +42,12 @@ JITTER = 0.2
 HEALTHY_AFTER = 60.0
 #: Longest wait a server's retry_after can impose (a bogus huge value must not park us).
 MAX_RETRY_AFTER = 300.0
+
+# An inbound poller probes once after this much quiet time when transient calls
+# have repeatedly failed. Existing Backoff and provider Retry-After may wait longer.
+CIRCUIT_FAILURE_THRESHOLD = 5
+CIRCUIT_RECOVERY_TIMEOUT = 120.0
+_BUSY_RECHECK = 1.0
 
 #: How often a channel stopped by a fatal answer looks again (a fixed token heals by itself).
 FATAL_REPROBE_S = 600.0
@@ -99,6 +106,118 @@ class Backoff:
     def reset(self) -> None:
         self.rung = 0
         self._healthy_since = None
+
+
+class ProbeLease:
+    """Opaque ownership of one admitted inbound transport attempt."""
+
+    __slots__ = ()
+
+
+class PollingCircuit:
+    """Per-adapter closed/open/half-open gate with one live recovery probe.
+
+    A quiet stream may become healthy while its lease stays active. That lease
+    still blocks a second stream until the first settles. The caller owns all
+    sleeps and must check :meth:`admit` immediately before network I/O.
+    """
+
+    def __init__(self, *, clock: Callable[[], float] = time.monotonic,
+                 failure_threshold: int = CIRCUIT_FAILURE_THRESHOLD,
+                 recovery_timeout: float = CIRCUIT_RECOVERY_TIMEOUT) -> None:
+        if type(failure_threshold) is not int or failure_threshold < 1:
+            raise ValueError("invalid circuit failure threshold")
+        if not math.isfinite(recovery_timeout) or recovery_timeout <= 0:
+            raise ValueError("invalid circuit recovery timeout")
+        self._clock = clock
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = float(recovery_timeout)
+        self.state = "closed"
+        self.failures = 0
+        self._open_until = 0.0
+        self._not_before = 0.0
+        self._active: ProbeLease | None = None
+
+    def _remaining(self, now: float) -> float:
+        deadline = max(self._not_before, self._open_until if self.state == "open" else 0.0)
+        return max(0.0, deadline - now)
+
+    def admit(self) -> tuple[ProbeLease | None, float]:
+        """Reserve a transport call or return the positive wait before rechecking."""
+        if self._active is not None:
+            return None, _BUSY_RECHECK
+        now = self._clock()
+        remaining = self._remaining(now)
+        if remaining > 0:
+            return None, remaining
+        if self.state == "open":
+            self.state = "half_open"
+        lease = ProbeLease()
+        self._active = lease
+        return lease, 0.0
+
+    def mark_healthy(self, lease: ProbeLease) -> bool:
+        """Close the circuit while retaining this stream's exclusive lease."""
+        if self._active is not lease or lease is None:
+            return False
+        self.state = "closed"
+        self.failures = 0
+        self._open_until = 0.0
+        self._not_before = 0.0
+        return True
+
+    def success(self, lease: ProbeLease) -> bool:
+        """Settle a successful one-shot call and release its lease."""
+        if not self.mark_healthy(lease):
+            return False
+        self._active = None
+        return True
+
+    def failure(self, lease: ProbeLease, retry_after: float | None = 0) -> float:
+        """Settle a transient failure; return the next gate wait in seconds."""
+        if self._active is not lease or lease is None:
+            return 0.0
+        now = self._clock()
+        try:
+            requested = float(retry_after) if retry_after is not None else 0.0
+        except (TypeError, ValueError):
+            requested = 0.0
+        wait = min(MAX_RETRY_AFTER, max(0.0, requested)) if math.isfinite(requested) else 0.0
+        was_half_open = self.state == "half_open"
+        self._active = None
+        self.failures += 1
+        self._not_before = max(self._not_before, now + wait)
+        if was_half_open or self.failures >= self.failure_threshold:
+            self.state = "open"
+            self._open_until = now + max(self.recovery_timeout, wait)
+        return self._remaining(now)
+
+    def release(self, lease: ProbeLease) -> bool:
+        """Release a cancelled or fatal call without counting a transient error."""
+        if self._active is not lease or lease is None:
+            return False
+        self._active = None
+        if self.state == "half_open":
+            # An unproved recovery must not allow an immediate next probe.
+            self.state = "open"
+            self._open_until = self._clock() + self.recovery_timeout
+        return True
+
+    def reset(self) -> bool:
+        """Reset only after the actual transport has settled."""
+        if self._active is not None:
+            return False
+        self.state = "closed"
+        self.failures = 0
+        self._open_until = 0.0
+        self._not_before = 0.0
+        return True
+
+    def snapshot(self) -> dict:
+        """Fixed metadata only; no URL, token, exception, or response body."""
+        return {"state": self.state, "failures": self.failures,
+                "retry_in_s": math.ceil(self._remaining(self._clock())),
+                "probe_active": self._active is not None}
 
 
 @dataclass
@@ -238,7 +357,8 @@ class ChannelHealth:
 
 
 __all__ = [
-    "Backoff", "ChannelHealth", "Failure", "FATAL_STATUSES", "HEALTHY_AFTER", "JITTER",
+    "Backoff", "ChannelHealth", "CIRCUIT_FAILURE_THRESHOLD", "CIRCUIT_RECOVERY_TIMEOUT",
+    "Failure", "FATAL_STATUSES", "HEALTHY_AFTER", "JITTER", "PollingCircuit", "ProbeLease",
     "LADDER", "STATE_FATAL", "STATE_HEALTHY", "STATE_IDLE", "STATE_RETRYING",
     "STATE_STOPPED", "classify_exception", "classify_status",
 ]

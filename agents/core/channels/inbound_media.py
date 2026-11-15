@@ -21,8 +21,10 @@ Three rules shape everything here:
   reported otherwise would be the exact dishonesty the approval surfaces exist
   to prevent. Photos are in it because :mod:`media_reader` reads them over a
   proven-local vision model, and voice notes because :mod:`inbound_voice`
-  transcribes them on the host's own speech engine. Documents, video and
-  stickers are not: nothing reads those yet, so they still get the honest line.
+  transcribes them on the host's own speech engine. Documents with a supported
+  extension have a bounded extractor whose magic-byte check decides whether one
+  file can be read. Static WebP stickers may be captioned locally; animated
+  stickers and video still get the honest unsupported line.
   *Readable* remains a statement about the pipeline, never about one message:
   a photo is readable here and can still fail to be read (no local model
   configured, download refused), which is why :func:`describe` takes a ``note``.
@@ -67,7 +69,7 @@ FILE_KINDS: frozenset[str] = frozenset(_FIELD_ORDER) - {KIND_LOCATION, KIND_CONT
 #: What Nerva can currently turn into model input — see the module docstring.
 #: Adding a kind here is how the capability is switched on, and it is only ever
 #: correct once that kind's reading path exists.
-READABLE_KINDS: frozenset[str] = frozenset({KIND_PHOTO, KIND_VOICE})
+READABLE_KINDS: frozenset[str] = frozenset({KIND_PHOTO, KIND_VOICE, KIND_DOCUMENT, KIND_STICKER})
 
 #: Telegram's own ceiling for what a bot may download. A declared size above it
 #: can never be fetched, so it is refused here rather than at the wire.
@@ -95,6 +97,7 @@ DISPLAY: Mapping[str, tuple[str, str]] = {
 REASON_TOO_LARGE = "media_too_large"
 REASON_NO_HANDLE = "media_handle_missing"
 REASON_NOT_READABLE = "media_pipeline_not_wired"
+REASON_ANIMATED_STICKER = "animated_sticker_not_supported"
 
 
 @dataclass(frozen=True)
@@ -106,6 +109,10 @@ class Attachment:
     size: int = 0
     caption: str = ""
     reason: str = ""
+    #: Sender supplied, only used to select a document parser; never logged or echoed.
+    filename: str = ""
+    #: Telegram's stable content id, used only for the transient static-sticker cache.
+    file_unique_id: str = ""
 
     @property
     def readable(self) -> bool:
@@ -177,7 +184,16 @@ def classify(message: object) -> Attachment | None:
             return Attachment(kind, file_id=file_id, size=size, caption=caption,
                               reason=REASON_TOO_LARGE)
         reason = "" if kind in READABLE_KINDS else REASON_NOT_READABLE
-        return Attachment(kind, file_id=file_id, size=size, caption=caption, reason=reason)
+        if kind == KIND_STICKER and (payload.get("is_animated", False) is not False
+                                    or payload.get("is_video", False) is not False):
+            reason = REASON_ANIMATED_STICKER
+        filename = _clean(payload.get("file_name"), 255) if kind == KIND_DOCUMENT else ""
+        unique = payload.get("file_unique_id") if kind == KIND_STICKER else ""
+        if (type(unique) is not str or not 1 <= len(unique) <= 128
+                or not unique.isascii() or not unique.isprintable()):
+            unique = ""
+        return Attachment(kind, file_id=file_id, size=size, caption=caption,
+                          reason=reason, filename=filename, file_unique_id=unique)
     return None
 
 
@@ -186,6 +202,7 @@ _NOTES: Mapping[str, str] = {
     REASON_TOO_LARGE: "it is larger than the {cap} MB a bot is allowed to download",
     REASON_NO_HANDLE: "it arrived without a usable file reference",
     REASON_NOT_READABLE: "reading {plural} is not wired up yet",
+    REASON_ANIMATED_STICKER: "reading animated or video stickers is not supported",
 }
 
 
@@ -254,6 +271,7 @@ __all__ = [
     "MAX_DECLARED_BYTES",
     "READABLE_KINDS",
     "REASON_NOT_READABLE",
+    "REASON_ANIMATED_STICKER",
     "REASON_NO_HANDLE",
     "REASON_TOO_LARGE",
     "Attachment",

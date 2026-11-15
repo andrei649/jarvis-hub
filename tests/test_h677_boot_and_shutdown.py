@@ -642,15 +642,18 @@ async def test_telegram_reads_the_next_update_while_a_chat_is_answered(monkeypat
     assert finished == [2, 1]
 
 
-async def test_a_voice_note_read_while_its_chat_is_busy_marks_its_own_reply(monkeypatch):
+async def test_a_voice_note_read_while_its_chat_is_busy_marks_its_own_reply(monkeypatch, tmp_path):
     """The voice mark ("answer speech with speech") is set when the note is read. With
     lanes the chat's previous, typed, turn can still be running then: it must not take
     the mark (and be spoken), and the voice note's own reply must keep it."""
     from agents.core.channels import telegram as tg
     from agents.core.channels.inbound_media import KIND_VOICE
     from agents.core.channels.inbound_voice import Transcript
+    from agents.core.channels.pairing import SenderPairing
 
-    channel = tg.TelegramChannel("t")
+    pairing = SenderPairing(tmp_path / "pairing.json")
+    pairing.approve("telegram", "10")
+    channel = tg.TelegramChannel("t", pairing=pairing)
     channel._lanes = ChatLanes(name="telegram")
     channel.send_action = AsyncMock()
     monkeypatch.setattr(channel, "_echo_transcripts", lambda: False)
@@ -758,8 +761,13 @@ async def test_telegram_stop_drains_the_lanes_within_budget(monkeypatch):
 
     monkeypatch.setattr(tg, "LANE_DRAIN_BUDGET", 0.1)
     channel = tg.TelegramChannel.__new__(tg.TelegramChannel)
+    from agents.core.channels.sticker_reader import StickerCaptioner
+
+    channel._sticker_captioner = StickerCaptioner()
     channel._running = True
     channel._poll_task = None
+    # This lane-only fixture has no admitted inbound transport.
+    channel._poll_circuit = tg.PollingCircuit()
     channel._ephemeral_deletes = tg.EphemeralDeletes()
     channel.client = SimpleNamespace(aclose=AsyncMock())
     channel._lanes = ChatLanes(name="telegram")

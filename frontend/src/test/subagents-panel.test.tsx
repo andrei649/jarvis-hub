@@ -410,4 +410,43 @@ describe('SubAgentsPanel — the spawn pause (H400)', () => {
     await waitFor(() => expect(screen.getByText('sub-jarvis-1')).toBeTruthy());
     expect(screen.queryByText('pause spawning')).toBeNull();
   });
+
+  it('tails a sub-agent transcript, reads its durable result, and claims completed runs (H401)', async () => {
+    const calls = [];
+    global.fetch = vi.fn().mockImplementation((url, init = {}) => {
+      const method = init.method || 'GET';
+      const u = String(url);
+      calls.push({ method, url: u });
+      if (u.includes('/transcript?after=0')) {
+        return ok({ events: [{ seq: 0, kind: 'tool_call', tool: 'read_file', status: 'ok' }], next: 1, status: 'done' });
+      }
+      if (u.includes('/transcript?after=1')) {
+        return ok({ events: [{ seq: 1, kind: 'final', status: 'done', detail: 'finished' }], next: 2, status: 'done' });
+      }
+      if (u.endsWith('/sub-jarvis-1/result')) {
+        return ok({ id: 'sub-jarvis-1', status: 'done', result: 'full durable report body' });
+      }
+      if (method === 'POST' && u === '/api/subagents/completions/claim') {
+        return ok({ ok: true, claimed: 1, results: [{ spawn_id: 'sub-jarvis-1', status: 'done', summary: 'changelog summarised' }] });
+      }
+      return ok(LIST);
+    });
+    render(<SubAgentsPanel />);
+    await waitFor(() => expect(screen.getByText('sub-jarvis-1')).toBeTruthy());
+
+    fireEvent.click(screen.getAllByText('transcript')[0]);
+    await waitFor(() => expect(screen.getByText(/tool_call · read_file · ok/)).toBeTruthy());
+    fireEvent.click(screen.getByText('tail next'));
+    await waitFor(() => expect(screen.getByText(/final · done · finished/)).toBeTruthy());
+
+    // result button is offered only on non-running spawns (sub-jarvis-1)
+    expect(screen.getAllByText('result').length).toBe(1);
+    fireEvent.click(screen.getByText('result'));
+    await waitFor(() => expect(screen.getByText('full durable report body')).toBeTruthy());
+
+    fireEvent.click(screen.getByText('claim completed'));
+    await waitFor(() => expect(screen.getByText(/claimed 1 completion/)).toBeTruthy());
+    expect(screen.getByText(/changelog summarised/)).toBeTruthy();
+    expect(calls.some((c) => c.method === 'POST' && c.url === '/api/subagents/completions/claim')).toBe(true);
+  });
 });

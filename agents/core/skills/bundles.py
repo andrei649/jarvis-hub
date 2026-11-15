@@ -752,11 +752,13 @@ def invocation(text: Any, *, taken: Any = None) -> Invocation | None:
 
 @dataclass
 class _Load:
-    bundle: Bundle
+    bundle: Bundle | None
     instruction: str
     members: tuple[str, ...]                 # the installed members readable when invoked
     skipped: tuple[tuple[str, str], ...]     # (member, why), when invoked
     reads: list = field(default_factory=list)   # what the model was given, for the ledger
+    skill_name: str = ""                       # nonempty for a single-skill slash invocation
+    skill_names: tuple[str, ...] = ()           # requested names for a stacked slash invocation
 
 
 _TURN: contextvars.ContextVar[dict | None] = contextvars.ContextVar("nerva_skill_bundle_turn", default=None)
@@ -801,30 +803,33 @@ def _why(loader: Any, skill: Any, reply: dict, agent: str = "") -> str:
 def _summary(load: _Load, loaded: Iterable[str], skipped: Iterable[tuple[str, str]]) -> str:
     loaded = list(loaded)
     skipped = list(skipped)
-    text = f"Bundle {load.bundle.name}: "
+    if load.bundle is not None:
+        text = f"Bundle {load.bundle.name}: "
+    elif len(load.skill_names) > 1:
+        text = f"Skills {', '.join(load.skill_names)}: "
+    else:
+        text = f"Skill {load.skill_name}: "
     text += (f"loaded {', '.join(loaded)}" if loaded else "loaded no skill")
     if skipped:
         text += "; skipped " + "; ".join(f"{name} ({why})" for name, why in skipped)
     return text + "."
 
 
-def begin_load(inv: Invocation, loader: Any, *, session: str, template_vars: Any = None) -> str | None:
-    """Bind ``inv``'s load to the turn in progress; None when the turn goes on to the
-    model, else the answer to give instead (no member can be read). Each member is read
-    with skill_view's own read, gates and all: one not installed, switched off (here or
-    everywhere), quarantined, sandboxed, failing its signature, for another host or too
-    large is skipped and named in a notice beside the reply. A member that reads as
-    data (not vouched for, or injection-flagged), or an injection-flagged instruction,
-    taints the turn as skill_view's tainted answer does, so an action it plans asks."""
+def _begin_members(bundle: Bundle | None, skill_name: str, members: tuple[str, ...],
+                   instruction: str, loader: Any, *, session: str,
+                   template_vars: Any = None, strict: bool = False) -> str | None:
+    """One guarded turn-load path for a stored bundle or an owner's single skill."""
     from ..security.recall_taint import mark_turn_recall_tainted
     from ..turn_notices import record_turn_notice
     from . import tools
 
     holder = _TURN.get()
-    bundle = inv.bundle
-    if holder is None or bundle is None:
-        return "A skill bundle loads into a conversation turn; nothing was loaded."
-    installed, missing = resolve_reasons(bundle.skills, list((getattr(loader, "skills", None) or {}).values()))
+    if holder is None:
+        return ("A skill bundle loads into a conversation turn; nothing was loaded."
+                if bundle is not None else "A skill loads into a conversation turn; nothing was loaded.")
+    installed, missing = resolve_reasons(members, list((getattr(loader, "skills", None) or {}).values()))
+    if strict and missing:
+        return "The skill stack could not be loaded; nothing was sent to the model."
     readable: list[str] = []
     skipped: list[tuple[str, str]] = list(missing)
     tainted = False
@@ -835,12 +840,18 @@ def begin_load(inv: Invocation, loader: Any, *, session: str, template_vars: Any
             continue
         readable.append(skill.name)
         tainted = tainted or reply.get("tainted") is True
-    load = _Load(bundle=bundle, instruction=inv.instruction, members=tuple(readable), skipped=tuple(skipped))
+    if strict and skipped:
+        return "The skill stack could not be loaded; nothing was sent to the model."
+    load = _Load(bundle=bundle, instruction=instruction, members=tuple(readable),
+                 skipped=tuple(skipped), skill_name=skill_name,
+                 skill_names=members if bundle is None else ())
     if not readable:
+        if bundle is None:
+            return _summary(load, (), skipped) + " Nothing was sent to the model."
         return (_summary(load, (), skipped) + " Nothing was sent to the model; "
                 "`nerva skills bundles show " + bundle.slug + "` lists its skills.")
     holder["load"] = load
-    if tainted or (bundle.instruction and tools._flags(bundle.instruction)):
+    if tainted or (bundle is not None and bundle.instruction and tools._flags(bundle.instruction)):
         mark_turn_recall_tainted()
     for name in readable:          # H354: a load is a read of each skill, as a view is
         try:
@@ -849,8 +860,37 @@ def begin_load(inv: Invocation, loader: Any, *, session: str, template_vars: Any
                 note(name, "view")
         except Exception:
             logger.debug("bundle load: usage note skipped for %s", name, exc_info=True)
-    record_turn_notice(NOTICE_CODE, _summary(load, readable, skipped))
+    record_turn_notice(NOTICE_CODE if bundle is not None else "skill_slash",
+                       _summary(load, readable, skipped))
     return None
+
+
+def begin_load(inv: Invocation, loader: Any, *, session: str, template_vars: Any = None) -> str | None:
+    """Bind a stored bundle; its members share skill_view's read and taint gates."""
+    bundle = inv.bundle
+    if bundle is None:
+        return "A skill bundle loads into a conversation turn; nothing was loaded."
+    return _begin_members(bundle, "", bundle.skills, inv.instruction, loader,
+                          session=session, template_vars=template_vars)
+
+
+def begin_skill_load(skill_name: str, instruction: str, loader: Any, *, session: str,
+                     template_vars: Any = None) -> str | None:
+    """Bind one installed skill through the same gates, with truthful skill wording."""
+    if not isinstance(skill_name, str) or not skill_name:
+        return "No skill was loaded."
+    return _begin_members(None, skill_name, (skill_name,), instruction, loader,
+                          session=session, template_vars=template_vars)
+
+
+def begin_skill_stack_load(skill_names: tuple[str, ...], instruction: str, loader: Any, *,
+                           session: str, template_vars: Any = None) -> str | None:
+    """Preflight every requested skill before binding a stack to the turn."""
+    if (not isinstance(skill_names, tuple) or not 2 <= len(skill_names) <= 5
+            or any(not isinstance(name, str) or not name for name in skill_names)):
+        return "The skill stack could not be loaded; nothing was sent to the model."
+    return _begin_members(None, skill_names[0], skill_names, instruction, loader,
+                          session=session, template_vars=template_vars, strict=True)
 
 
 def load_budget(window_tokens: Any) -> int:
@@ -891,7 +931,9 @@ def turn_block(loader: Any, agent: str, *, session: str, template_vars: Any = No
         if skill is None:
             late.append((name, _why(loader, (getattr(loader, "skills", None) or {}).get(name), reply, agent)))
             continue
-        attrs = f"name={json.dumps(skill.name)} bundle={json.dumps(load.bundle.slug)}"
+        attrs = f"name={json.dumps(skill.name)}"
+        if load.bundle is not None:
+            attrs += f" bundle={json.dumps(load.bundle.slug)}"
         text = tools._fence(tools._carry_text(reply))
         if reply.get("tainted"):
             attrs += ' tainted="true"'
@@ -921,18 +963,36 @@ def turn_block(loader: Any, agent: str, *, session: str, template_vars: Any = No
                 and not any(r[1] == agent and r[2] is skill for r in load.reads)):
             load.reads.append((session, agent, skill, tools._reply_digest(reply), reply, rendered))
     if late:
-        record_turn_notice(f"{NOTICE_CODE}:{agent}", f"Bundle {load.bundle.name} for {agent}: skipped "
+        if load.bundle is not None:
+            label = f"Bundle {load.bundle.name}"
+        elif len(load.skill_names) > 1:
+            label = f"Skills {', '.join(load.skill_names)}"
+        else:
+            label = f"Skill {load.skill_name}"
+        record_turn_notice(f"{NOTICE_CODE if load.bundle is not None else 'skill_slash'}:{agent}",
+                           f"{label} for {agent}: skipped "
                            + "; ".join(f"{n} ({why})" for n, why in late) + ".")
     skipped += late
     count = len(loaded)
-    lines = [f'[The owner invoked the "{load.bundle.name}" skill bundle, loading {count} '
-             f'skill{"s" if count != 1 else ""} together. Treat every skill below as active guidance '
-             "for this turn.]",
-             f"Bundle: {load.bundle.name}",
-             f"Skills loaded: {', '.join(loaded) if loaded else 'none'}"]
+    if load.bundle is not None:
+        lines = [f'[The owner invoked the "{load.bundle.name}" skill bundle, loading {count} '
+                 f'skill{"s" if count != 1 else ""} together. Treat every skill below as active guidance '
+                 "for this turn.]",
+                 f"Bundle: {load.bundle.name}",
+                 f"Skills loaded: {', '.join(loaded) if loaded else 'none'}"]
+    elif len(load.skill_names) > 1:
+        lines = ['[The owner invoked a stack of skills for this turn. '
+                 "Treat every readable skill below as active guidance for this turn.]",
+                 f"Skills requested: {', '.join(load.skill_names)}",
+                 f"Skills loaded: {', '.join(loaded) if loaded else 'none'}"]
+    else:
+        lines = [f'[The owner invoked the "{load.skill_name}" skill for this turn. '
+                 "Treat the readable skill below as active guidance for this turn.]",
+                 f"Skill: {load.skill_name}",
+                 f"Skills loaded: {', '.join(loaded) if loaded else 'none'}"]
     if skipped:
         lines.append("Skills skipped: " + "; ".join(f"{n} ({why})" for n, why in skipped))
-    instruction = load.bundle.instruction
+    instruction = load.bundle.instruction if load.bundle is not None else ""
     if instruction:
         if tools._flags(instruction):
             mark_turn_recall_tainted()

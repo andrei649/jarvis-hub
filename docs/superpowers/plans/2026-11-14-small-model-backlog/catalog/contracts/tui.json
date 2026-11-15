@@ -1,0 +1,905 @@
+[
+  {
+    "id": "H223",
+    "title": "Run and drive the agent from a terminal (interactive client: launch, resume, clean exit, crash/OOM safety, shipped bundle)",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "647bce06b13598a6e0358136f4ece907fb4c5cab51a4a6e8a11122368e9763ee",
+    "contract": "`hermes --tui` spawns an Ink/React Node client against the same Python runtime and sessions (20-tui.md §1 `tui.launch`). Around it: prebuilt-vs-build-from-source bundle resolution, cgroup-aware V8 heap sizing, TTY refusal + DEC mode reset on every exit path, a memory monitor that heap-dumps and exits 137 before a fatal OOM, exit-code-42 self-update, an active-session hand-off file so the shell prints a resume hint, `HERMES_TUI_RESUME`, startup query/image, inline (non-alt-screen) mode, Termux mode, dashboard-embedded PTY mode, plus esbuild/tsx build tooling, a visual-regression harness, benchmarks and a vendored Ink fork (§15).",
+    "governance": "read-only in itself — the client renders and calls existing guarded routes; every privileged effect it triggers already crosses its own kernel kind server-side (registry.py). Must ship default-off behind a flag per docs/FLAGS.md.",
+    "remaining_verbatim": "- Flag decision for the owner: the frozen row asks the surface to ship default-off behind a flag (docs/FLAGS.md); `nerva chat -i` is opt-in per invocation, but the hub-side `/chat/stream` additions (interrupt registration under the caller's credential, the `X-Nerva-Pending: poll` header) are always on and no flag gates them\n- Termux mode (the client is untested on Termux/Android) and the dashboard-embedded PTY mode (a terminal chat inside the HUD) from the frozen row are not built",
+    "requirement_sections": [
+      "- Flag decision for the owner: the frozen row asks the surface to ship default-off behind a flag (docs/FLAGS.md); `nerva chat -i` is opt-in per invocation, but the hub-side `/chat/stream` additions (interrupt registration under the caller's credential, the `X-Nerva-Pending: poll` header) are always on and no flag gates them\n- Termux mode (the client is untested on Termux/Android) and the dashboard-embedded PTY mode (a terminal chat inside the HUD) from the frozen row are not built"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing — /chat/stream (agents/web.py:970) and the 458-route HTTP surface already exist",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/cli/repl.py",
+      "agents/cli/client.py",
+      "agents/cli/nerva.py",
+      "agents/web.py",
+      "agents/core/turn_interrupts.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h223_terminal_client.py",
+      "tests/test_h224_terminal_interaction.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H223",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H223"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H224",
+    "title": "Terminal keyboard and mouse interaction model",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "1b4b3bc3992aba576697abc25b364cf55ac478cdc726b56d9c9271058fc9e100",
+    "contract": "20 entries (§2): Ctrl+C with three ordered meanings (clear draft / interrupt turn / exit), Ctrl+D exit, Cmd/Ctrl+G to open $EDITOR, Ctrl+L redraw, Cmd+V paste text-or-image, Esc-Esc discard-to-history, Tab completion, ↑/↓ across completions→queue→history, Ctrl+X (cut / delete queued / session switcher), Ctrl+O model picker, full readline chords, Enter-vs-Shift+Enter, Shift+Tab YOLO, Ctrl+B push-to-talk, Cmd+K flush one queued message, wheel scrolling with acceleration and a precision mode, drag selection, DEC mouse-tracking presets.",
+    "governance": "read-only (input handling). The Ctrl+C \"interrupt\" branch needs a real server-side interrupt, which Nerva lacks (see session-control row).",
+    "remaining_verbatim": "- Up/Down cannot walk a completion menu: readline has no popup, so Tab and Shift+Tab cycle completions and Up/Down stay on history (needs prompt_toolkit, a new dependency)\n- Shift+Enter works only where the terminal sends it as a separate sequence; elsewhere Alt+Enter or a trailing backslash\n- Pasting an image with Cmd/Ctrl+V is not detected; images go through /image or /paste-image\n- A question a turn asks while the prompt is open is answered after the next Enter, not on its own\n- macOS libedit Python gets Tab completion only, and Windows without readline gets plain input\n- Push-to-talk, flushing one queued message ahead, and the mouse half (wheel, drag selection, DEC tracking presets) are skipped by this row's decision",
+    "requirement_sections": [
+      "- Up/Down cannot walk a completion menu: readline has no popup, so Tab and Shift+Tab cycle completions and Up/Down stay on history (needs prompt_toolkit, a new dependency)\n- Shift+Enter works only where the terminal sends it as a separate sequence; elsewhere Alt+Enter or a trailing backslash\n- Pasting an image with Cmd/Ctrl+V is not detected; images go through /image or /paste-image\n- A question a turn asks while the prompt is open is answered after the next Enter, not on its own\n- macOS libedit Python gets Tab completion only, and Windows without readline gets plain input\n- Push-to-talk, flushing one queued message ahead, and the mouse half (wheel, drag selection, DEC tracking presets) are skipped by this row's decision"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the terminal client (row 1)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/cli/repl.py",
+      "agents/core/turn_interrupts.py",
+      "agents/core/routers/chat_pending.py",
+      "agents/web.py",
+      "agents/cli/nerva.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h223_terminal_client.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H224",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H224"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H225",
+    "title": "Composer: type-ahead queueing while the agent is busy, editable queue, $EDITOR handoff",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "d4474d3ffd8907d9616485db40579cb0c6cb9a2faf1f8e7a5e5314189bf85013",
+    "contract": "6 entries (§3): a multi-line composer with placeholder rotation; a queued-messages panel with a 3-row scroll window where a queued message can be selected, edited or deleted before it flushes; a background-task counter line; a session-not-ready hint that explains why a typed message has not sent; a masked prompt for secret entry. Plus `{!cmd}` / `!cmd` inline shell substitution from the composer (§2).",
+    "governance": "read-only for the queue itself. The refused `!cmd` path would have bypassed the `terminal.exec` kernel kind — that is the reason it is refused, not effort.",
+    "remaining_verbatim": "- Type-ahead queue in the HUD and mobile: messages typed during a turn queued, shown in a panel, editable and deletable before they flush (the terminal chat has this: /queue, /queue edit N, /queue drop N)\n- Multi-line composer in the HUD\n- Background-task counter, and a not-ready hint in the HUD explaining why a message has not sent\n- Masked prompt for secret entry from the HUD composer",
+    "requirement_sections": [
+      "- Type-ahead queue in the HUD and mobile: messages typed during a turn queued, shown in a panel, editable and deletable before they flush (the terminal chat has this: /queue, /queue edit N, /queue drop N)\n- Multi-line composer in the HUD\n- Background-task counter, and a not-ready hint in the HUD explaining why a message has not sent\n- Masked prompt for secret entry from the HUD composer"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing for the HUD half; row 1 for the terminal half",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "mobile/src/screens/ChatScreen.tsx",
+      "frontend/src/cockpit.tsx",
+      "frontend/src/app.tsx",
+      "agents/cli/repl.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h235_terminal_info.py",
+      "tests/test_h224_terminal_interaction.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H225",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H225"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H226",
+    "title": "Answer the governance queue from the terminal (approval, clarify, confirm, sudo, secret prompts)",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "6237448ab8d2eaf96c0a0ff83dd4f78551f8b274e4898562fa3316b597d4f166",
+    "contract": "6 entries (§4): an in-flow approval prompt that shows the exact command before a guarded tool call runs; single and batch clarify prompts with per-question locking; a confirm prompt for destructive local actions; a non-echoing sudo password prompt; a secret-entry prompt for a missing API key. All answered where you are, mid-turn, without leaving the terminal (backed by `approval.pending` / `approval.received` / `approval.respond`, `clarify.respond`, `sudo.respond`, `secret.respond`).",
+    "governance": "Privileged. The decision itself is the effect: it must cross `POST /api/actions/{id}/decide` / `/autonomy/tasks/{id}/decision` under admin_guard, and the approved action then crosses its own kernel kind (terminal.exec, file.write, house.control, …) exactly as it does from the HUD. The hash-chained audit must record the surface.",
+    "remaining_verbatim": "- An approval prompt answered mid-turn: a Nerva turn that needs approval queues the card and stops; the card is decided in the same command only after the turn has ended\n- Confirm and sudo prompts while the turn blocks: both are approval cards, decided after the turn; no blocking confirm and no sudo password prompt exist (Nerva never relays a sudo password)\n- The audit record of an approval decided from the terminal does not name the terminal: the decision route records decided_by='admin' for the HUD and the CLI alike (agents/core/routers/autonomy.py:438), and the row's governance asks that the surface be recorded",
+    "requirement_sections": [
+      "- An approval prompt answered mid-turn: a Nerva turn that needs approval queues the card and stops; the card is decided in the same command only after the turn has ended\n- Confirm and sudo prompts while the turn blocks: both are approval cards, decided after the turn; no blocking confirm and no sudo password prompt exist (Nerva never relays a sudo password)\n- The audit record of an approval decided from the terminal does not name the terminal: the decision route records decided_by='admin' for the HUD and the CLI alike (agents/core/routers/autonomy.py:438), and the row's governance asks that the surface be recorded"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "row 1 (a terminal client to render into)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/cli/nerva.py",
+      "agents/cli/chat_prompts.py",
+      "agents/core/channels/pending_input_runtime.py",
+      "agents/core/channels/pending_input.py",
+      "agents/core/routers/chat_pending.py",
+      "agents/core/routers/secrets.py"
+    ],
+    "existing_test_files": [
+      "tests/test_nerva_cli.py",
+      "tests/test_h487_consent_cli.py",
+      "tests/test_h226_cli_governance_prompts.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H226",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H226"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H227",
+    "title": "\"What can it do right now\" inspector: live status line plus a session panel of tools, skills, resolved system prompt and MCP servers",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "4f9c0d30c2a5fab5c2b3f64fa932518a530579ad6d97986c602f974fc939d0b3",
+    "contract": "10 entries (§3): a status rule showing agent state, model, context usage and optional read-outs that shed segments as the terminal narrows; a session panel with brand/version/model/cwd/session-id and four collapsible sections — Available Tools (toolsets and members), Available Skills (grouped, counted), the full resolved System Prompt, MCP Servers with transport and status — plus a footer count line, an update nag, a shared accordion primitive, a generic titled-panel renderer, and a `?` cheat-sheet popover.",
+    "governance": "read-only",
+    "remaining_verbatim": "The fixed empty-turn estimate excludes actual history, input, schemas and active-job/cache state. Cold local toolchain facts stay unavailable during read-only inspection, so this is not byte equality with a future generation. Historical shared CLI/web evidence outside the repaired preview still requires claim review; client rendering alone does not establish full Hermes-equivalence acceptance. The inspector skills section still lists the flat prompt_catalog rows rather than the grouped index the prompt carries, so a skill with no command appears in the prompt preview but not in the skills section.",
+    "requirement_sections": [
+      "The fixed empty-turn estimate excludes actual history, input, schemas and active-job/cache state. Cold local toolchain facts stay unavailable during read-only inspection, so this is not byte equality with a future generation. Historical shared CLI/web evidence outside the repaired preview still requires claim review; client rendering alone does not establish full Hermes-equivalence acceptance. The inspector skills section still lists the flat prompt_catalog rows rather than the grouped index the prompt carries, so a skill with no command appears in the prompt preview but not in the skills section."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "row 1",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/inspector.py",
+      "agents/core/routers/status.py",
+      "agents/cli/nerva.py",
+      "agents/core/orchestrator.py",
+      "agents/core/skills/loader.py",
+      "agents/core/agent.py",
+      "frontend/src/panels/inspector.tsx",
+      "frontend/src/panels/inspector.test.tsx",
+      "docs/hermes/h277-vision-selection-consent-plan-2026-10-02.md",
+      "docs/hermes/h277-nous-auth-plan-2026-10-02.md",
+      "docs/hermes/evidence/h487-telegram-collateral-review-2026-10-04.md",
+      "agents/core/llm/hybrid_router.py",
+      "agents/core/operating_prompt.py",
+      "agents/core/execution_guidance_context.py"
+    ],
+    "existing_test_files": [
+      "tests/test_inspector.py",
+      "tests/test_h326_skill_discovery.py",
+      "tests/test_h277_vision_selection_cli.py",
+      "tests/test_h277_nous_auth_surface.py",
+      "tests/test_h388_steering_runtime.py",
+      "tests/test_h227_prompt_preview_clients.py",
+      "tests/test_hermes_kanban_surfaces_wiring.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H227",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H227"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H228",
+    "title": "Personality and ambient chrome (busy indicators, kaomoji faces, verb tickers, long-run charms, fortunes, ASCII hero art, pet mascot pane, ambient docks and floats)",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "098bfc8ed7b85ce7a1e8d9f8c08a9da28bc8e8e910204c77b7ad22f0f0540c36",
+    "contract": "11 entries (§3): four busy-indicator styles (kaomoji/emoji/unicode/ascii) with a rotating verb and elapsed clock, a 15-face kaomoji palette rotating every 2.5s, a tool→present-participle verb map, reassurance charms during long tool calls, a 650ms 'good-vibes heart', the ASCII startup banner, 15-row braille caduceus hero art, a floating animated pet sprite that reserves no layout rows, and ambient rails/docks (in-flow chrome rows) vs floats (overlay corners).",
+    "governance": "read-only",
+    "remaining_verbatim": "- Selectable busy-indicator styles (kaomoji/emoji/unicode/ascii) with a rotating verb and elapsed clock on chat turns.\n- Rotating kaomoji face palette and tool -> present-participle verb map.\n- Reassurance charms during long tool calls and the 'good-vibes heart'.\n- ASCII startup banner and hero art.\n- Floating animated pet sprite.\n- Ambient docks (in-flow rows) vs floats (overlay corners) as a chrome system.",
+    "requirement_sections": [
+      "- Selectable busy-indicator styles (kaomoji/emoji/unicode/ascii) with a rotating verb and elapsed clock on chat turns.\n- Rotating kaomoji face palette and tool -> present-participle verb map.\n- Reassurance charms during long tool calls and the 'good-vibes heart'.\n- ASCII startup banner and hero art.\n- Floating animated pet sprite.\n- Ambient docks (in-flow rows) vs floats (overlay corners) as a chrome system."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "frontend/src/app.tsx",
+      "frontend/src/panels/kanban/board.tsx",
+      "frontend/src/orb.tsx",
+      "frontend/src/burst.tsx"
+    ],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H228",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H228"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H229",
+    "title": "Rich turn rendering: markdown/syntax/math, incremental streaming, virtualised history, and the agent's working area (thinking panel, tool trail, todo panel, subagent tree)",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "6d4c9abdcb6f223d566903f8c0dcc29d37d4be37bf08292f42be8fe4a4ebc609",
+    "contract": "21 entries (§9 + §3): a full markdown renderer (headings, lists, tables, code, OSC-8 links, LaTeX→Unicode), syntax highlighting on theme tokens, incremental streaming markdown that tokenizes each block once, live render budgets that bound the streaming tail so a heavy session cannot OOM, a virtualised transcript with an exact scrollbar and a sticky prompt tracker, message timestamps, block-grouping blank-line rhythm, paste collapse to a chip, a streaming thinking/reasoning panel that auto-collapses, a collapsible **tool trail** tree (reasoning, tool calls with results, progress, spawned subagents), a **todo panel** as a nested checklist, and a measured **subagent tree**.",
+    "governance": "read-only rendering — but the tool trail must render the *same bounded payload* the kernel is asked about, never a friendlier summary, so what the owner reads is what gets authorized.",
+    "remaining_verbatim": "- Inline, collapsible tool trail in the turn (tool calls with results, progress), fed by tool events on the stream\n- Streaming reasoning/thinking panel that auto-collapses\n- Inline todo panel and subagent tree for the running turn\n- Syntax highlighting on fenced code; LaTeX to Unicode (optional)\n- Virtualised transcript with a render budget bounding a long session\n- Paste collapse to a chip",
+    "requirement_sections": [
+      "- Inline, collapsible tool trail in the turn (tool calls with results, progress), fed by tool events on the stream\n- Streaming reasoning/thinking panel that auto-collapses\n- Inline todo panel and subagent tree for the running turn\n- Syntax highlighting on fenced code; LaTeX to Unicode (optional)\n- Virtualised transcript with a render budget bounding a long session\n- Paste collapse to a chip"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "row 12 (an event stream with enough structure to place tool lifecycle inline)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "frontend/src/markdown.tsx",
+      "frontend/src/cockpit.tsx",
+      "frontend/src/app.tsx",
+      "frontend/src/todo-tree.ts"
+    ],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H229",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H229"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H230",
+    "title": "Theme/skin engine and terminal color adaptation",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "2f04a8f1353884925d49623ee529d00c4f046f18ef6c83e6221910bff595e2fb",
+    "contract": "13 entries (§8): a full theme token model derived from identity seeds, default brand tokens, separate dark and light palette seeds, light-terminal background detection, Apple Terminal ANSI-256 normalisation so foregrounds stay legible, a flash-free theme boot cache so frame one paints correctly, skin loading from a shared skin definition, generic color math, text chart primitives and shimmer/skeleton loaders.",
+    "governance": "read-only",
+    "remaining_verbatim": "- Theme token model derived from identity seeds, with separate dark and light palette seeds (no light palette exists).\n- Skin loading from a shared skin definition.\n- Light-terminal background detection and Apple Terminal ANSI-256 normalisation (no terminal client).\n- Generic color math, text chart primitives and shimmer/skeleton loaders as a shared kit.",
+    "requirement_sections": [
+      "- Theme token model derived from identity seeds, with separate dark and light palette seeds (no light palette exists).\n- Skin loading from a shared skin definition.\n- Light-terminal background detection and Apple Terminal ANSI-256 normalisation (no terminal client).\n- Generic color math, text chart primitives and shimmer/skeleton loaders as a shared kit."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "row 1, if the carve-out is taken",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "frontend/src/styles.css",
+      "frontend/src/appearance.ts"
+    ],
+    "existing_test_files": [
+      "frontend/src/test/tag-consent-contrast.test.ts",
+      "frontend/src/test/appearance-state.test.tsx"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H230",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H230"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H231",
+    "title": "Slash-command system: a catalog of commands with fuzzy, description-aware resolution and a dispatch fallback chain",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "36a4d56afed9c23a17528205afc0381f67f378a5b20f7ceaee0ea2b4ea0a3ade",
+    "contract": "69 entries (§7): the full TUI command set — /help /status /usage /model /sessions /branch /undo /retry /steer /queue /bg /btw /compress /stop /rollback /agents /journey /replay /skills /plugins /tools /reload-mcp /reload /browser /wake /setup /voice /image /paste /copy /save /history /logs /title /focus /density /details /verbose /reasoning /fast /busy /theme /skin /indicator /pet /fortune /yolo /topup /subscription /heapdump /mem and more — plus a dispatch chain (TUI-owned → widget apps → gateway alias/canon catalog → `slash.exec` → `command.dispatch`) and description-aware fuzzy scoring so `/summary` finds a command whose *description* mentions summaries.",
+    "governance": "The catalog and resolution stay read-only (quickbar.py's existing promise). Execution is never done by the dispatcher — each resolved command calls its existing guarded route, so /rollback crosses file.write, /stop crosses estop, an approval decision crosses admin_guard + kernel.",
+    "remaining_verbatim": "- A much larger catalog: /branch, /retry, /steer, /bg, /agents, /skills, /tools, /reload-mcp, /title, /history, /logs, /save, /reasoning and similar as chat commands (the terminal client has /model, /queue and /copy locally; /compress, /context, /plan and /review now exist)\n- One catalog shared by the quickbar and the chat command registry, with a dispatch fallback chain",
+    "requirement_sections": [
+      "- A much larger catalog: /branch, /retry, /steer, /bg, /agents, /skills, /tools, /reload-mcp, /title, /history, /logs, /save, /reasoning and similar as chat commands (the terminal client has /model, /queue and /copy locally; /compress, /context, /plan and /review now exist)\n- One catalog shared by the quickbar and the chat command registry, with a dispatch fallback chain"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing for the catalog; row 1 to expose it in a terminal",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/commands.py",
+      "agents/core/routers/commands.py",
+      "agents/core/quickbar.py",
+      "agents/core/fuzzy_match.py",
+      "agents/cli/repl.py"
+    ],
+    "existing_test_files": [
+      "tests/test_commands_catalog.py",
+      "tests/test_h231_fuzzy_commands.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H231",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H231"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H232",
+    "title": "Modal overlay surfaces (pager, live session switcher, model picker, skills hub, plugins hub, pet picker, billing/subscription overlays, agents overlay, journey overlay) and their stage machinery",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "3641a195e79e5dfa50dc1362e6473ef0ae63affa9ee068d218e4d9e805d298f2",
+    "contract": "33 entries (§5 + §12): 15 overlay surfaces plus 18 internals documenting each one's stages, keys and row labels — model picker's provider→model→API-key→disconnect stages, Skills Hub's category→list→detail stages, the session switcher's rows and hints, the agents overlay's list/detail/replay-diff modes, the journey overlay's timeline and node detail, pet picker rows, grid-test rendering, pet sprite renderers.",
+    "governance": "read-only overlays; the actions behind them (skill install, plugin toggle) already cross skill.install / admin_guard server-side",
+    "remaining_verbatim": "- Hosted billing/subscription overlay; the new read-only Billing tab only shows usage estimates.\n- Pet picker, model provider→model→key→disconnect stage flow, agents replay-diff and journey timeline/node detail.\n- Pager/grid-test rendering and terminal overlay host.",
+    "requirement_sections": [
+      "- Hosted billing/subscription overlay; the new read-only Billing tab only shows usage estimates.\n- Pet picker, model provider→model→key→disconnect stage flow, agents replay-diff and journey timeline/node detail.\n- Pager/grid-test rendering and terminal overlay host."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "frontend/src/panels/model-setup.tsx",
+      "agents/core/routers/model_setup.py",
+      "agents/core/routers/skills.py",
+      "frontend/src/panels/marketplace-admin.tsx",
+      "agents/core/routers/plugins.py",
+      "frontend/src/panels/sessions.tsx",
+      "frontend/src/panels/agents-arena.tsx",
+      "agents/core/routers/swarm.py",
+      "frontend/src/panels/model-setup.test.tsx",
+      "frontend/src/panels/marketplace-admin.test.tsx",
+      "frontend/src/panels/usage.tsx",
+      "frontend/src/turn-outcome.tsx",
+      "agents/core/cost_tracker.py",
+      "frontend/src/panels/usage.test.tsx"
+    ],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H232",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H232"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H233",
+    "title": "Terminal widget SDK: user-authored, hot-loaded widget apps with a grid layout engine and ambient zones",
+    "area": "tui",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "44998c46454388206c8d946ee27d65ea1c89d9707a1c613ae6113baffc0c7c22",
+    "contract": "8 entries (§6): a widget app contract (own state, input reducer, render, composing the same layout/theme primitives the built-ins use), a modal widget slot that owns every keystroke while open, ambient dock/float zones, a CSS-grid-like terminal layout engine with fr tracks and named areas, demo apps (/grid-test, /dialog-test, /ticker, /weather), and **user widget apps loaded from `$HERMES_HOME/tui-widgets/*.mjs`, hot-reloaded without a restart** — explicitly so that Hermes itself can author new widgets at runtime.",
+    "governance": "Would perform a privileged effect (arbitrary code execution in the client). If ever revisited, loading a widget must cross `skill.install` with the same digest + owner-approval floor as any other acquired capability.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "row 1",
+    "historical_exclusion_reason": "A hot-loaded `.mjs` file that the agent may author and that runs unsandboxed inside the client process is the exact code-execution seam Nerva's skill importer exists to close: digest verification, owner approval, recorded provenance, and a `skill.install` kernel crossing that even a kernel GRANT cannot bypass. Shipping a parallel widget loader would reopen it under the cover of 'it's only UI', which is worse than reopening it honestly. This is the clearest case in the cluster where copying a working feature would be a governance regression. Re-open path: only as a *rendering* format — declarative widget descriptions the hub emits and the client draws, with no executable code crossing the boundary.",
+    "source_files": [],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H233",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H233"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H234",
+    "title": "Client↔agent transport: streaming, reconnect, and lossless resume by event sequence",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "a0b25129ff15b92829948fa8f9dde0b6cf345fba9f8e8161aae9eeaa55c3f26e",
+    "contract": "23 entries (§10 + §14): newline-delimited JSON-RPC over stdio to a spawned gateway, an alternative WebSocket attach mode, heartbeat + exponential-backoff reconnect for silently-dropped sockets, a typed server→client event stream (session info, streaming text, tool lifecycle, prompts, lifecycle signals), **`session.events.since(seq)` replay so a reconnecting client loses nothing**, a transport abstraction so one dispatcher serves both stdio and WS peers, a sidecar event mirror, a long-handler thread pool that keeps `approval.respond` and `session.interrupt` from being stuck behind a slow handler, shutdown grace, stdin-EOF recovery, crash-log breadcrumbs, an event publisher, and a gateway crash-recovery budget.",
+    "governance": "read-only (event reads), with one hard constraint: the replay buffer holds conversation content, so it must be inside the erasure boundary of /home/user/jarvis-hub/agents/core/data_purge.py — a forget that leaves a replay buffer intact would break the AUD-2 completeness invariant.",
+    "remaining_verbatim": "- Monotonic event sequence numbers on the chat stream and a `since` replay route so a reconnecting client loses nothing\n- Keep the turn running across a client disconnect (bounded) so the client can reattach\n- Heartbeat and backoff reconnect in the HUD and mobile clients\n- Typed tool-lifecycle events on the stream",
+    "requirement_sections": [
+      "- Monotonic event sequence numbers on the chat stream and a `since` replay route so a reconnecting client loses nothing\n- Keep the turn running across a client disconnect (bounded) so the client can reattach\n- Heartbeat and backoff reconnect in the HUD and mobile clients\n- Typed tool-lifecycle events on the stream"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/web.py",
+      "frontend/src/app.tsx",
+      "agents/core/routers/chat_pending.py"
+    ],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H234",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H234"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H235",
+    "title": "TUI client internal architecture (UI/overlay/turn stores, event handler, session lifecycle hook, submission pipeline, config sync, small stores, cwd/branch label, battery polling, clipboard/OSC-52, text utils)",
+    "area": "tui",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "4330a978e45b868e2aaf399e5a42ed06d144e32bb8f8afc2bdcba35aeadca3d6",
+    "contract": "15 entries (§13): the Zustand-style store layer behind the Ink app — UI store, overlay store, turn store and turn controller, the gateway event handler, session lifecycle, the submission pipeline, composer state, config sync, the main app hook, plus small helpers (working-directory + git-branch label, battery polling, graceful exit, clipboard/OSC-52, fuzzy text utilities).",
+    "governance": "read-only",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/cli/repl.py",
+      "agents/cli/term_info.py",
+      "agents/core/fuzzy_match.py",
+      "agents/cli/client.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h235_terminal_info.py",
+      "tests/test_h223_terminal_client.py",
+      "tests/test_h224_terminal_interaction.py",
+      "tests/test_h231_fuzzy_commands.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H235",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H235"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H236",
+    "title": "Session control plane: create, list, resume, activate, retitle, hide, delete, undo, retry, compress, save/export, branch/fork, close, interrupt, steer, redirect, plus per-session usage and context breakdown",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "d85bbcba1fa5e3bfdb2d3f5682f30b97423f4ca1eb3ddcf7aea8d8bb0a798fe3",
+    "contract": "34 entries (§11 methods_session): `session.create/list/most_recent/resume/activate/delete/title/set_hidden/cwd.set/workspace.move/active_list`, `session.undo/compress/save/close/branch/status/history/interrupt`, `session.steer` (inject a message into the next tool result without interrupting), `session.redirect` (redirect the active turn while preserving valid work), `session.usage`, `session.context_breakdown`, `message.react`, `llm.oneshot`, `project.facts`, `verification.status`, handoff request/state/fail, `terminal.resize`, `session.events.since/stats`.",
+    "governance": "Mixed. Read-only: list, status, usage, context breakdown. Privileged: `session.delete` must route through /home/user/jarvis-hub/agents/core/data_purge.py so a deletion is a real erasure, not an unlink; `session.interrupt` is estop-adjacent (/home/user/jarvis-hub/agents/core/estop.py) and must not be able to pause the owner's own conversation, only work; steer/redirect must carry a validated origin the way subagents.py:57 already does.",
+    "remaining_verbatim": "- Branch/fork a conversation at a chosen point\n- Interrupt a turn from another device that holds a different credential than the one that started it (today the interrupt is bound to the starting credential; the e-stop is the cross-device stop)\n- Steer/redirect the active turn\n- Per-session usage breakdown (the context breakdown exists as /context)\n- Retry the last turn, export/save a session, session-scoped compress that acts (/compress only previews)\n- Message reactions, and a context-free one-shot side call (llm.oneshot; /btw answers a side question about the conversation without adding to it)",
+    "requirement_sections": [
+      "- Branch/fork a conversation at a chosen point\n- Interrupt a turn from another device that holds a different credential than the one that started it (today the interrupt is bound to the starting credential; the e-stop is the cross-device stop)\n- Steer/redirect the active turn\n- Per-session usage breakdown (the context breakdown exists as /context)\n- Retry the last turn, export/save a session, session-scoped compress that acts (/compress only previews)\n- Message reactions, and a context-free one-shot side call (llm.oneshot; /btw answers a side question about the conversation without adding to it)"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing — checkpoint.py and context_compressor.py already hold the state",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/sessions.py",
+      "agents/core/commands.py",
+      "agents/core/routers/tools.py",
+      "agents/core/turn_interrupts.py",
+      "agents/core/routers/chat_pending.py"
+    ],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H236",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H236"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H237",
+    "title": "Delegation control: subagent status, pause, interrupt, steer, and spawn-tree archive/replay",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "6a0edbcfffe6bd79b2e61970d6b6fc5f60166ee20f5761d1f15d4275611a9fab",
+    "contract": "7 entries: `delegation.status`, `delegation.pause`, `subagent.interrupt`, `subagent.steer` (queue steering text into a live child without stopping it), `spawn_tree.save/list/load` — archive a completed delegation tree to disk and reopen it later, including a side-by-side diff of two archived trees (`/replay`, `/replay-diff`).",
+    "governance": "read-only for status/archive/replay. Steer and stop already cross the guarded HTTP surface with origin validation (subagents.py:57); persisted trees fall inside the data_purge erasure boundary.",
+    "remaining_verbatim": "- Pause/resume of a running delegation (not only stop); the H400 spawn pause (POST /api/subagents/pause · /resume) only refuses NEW spawns and leaves running children alone\n- Spawn-tree save/list/load: archive a completed delegation tree and reopen it later\n- Side-by-side diff of two archived trees (replay-diff)\n- HUD view for archived trees",
+    "requirement_sections": [
+      "- Pause/resume of a running delegation (not only stop); the H400 spawn pause (POST /api/subagents/pause · /resume) only refuses NEW spawns and leaves running children alone\n- Spawn-tree save/list/load: archive a completed delegation tree and reopen it later\n- Side-by-side diff of two archived trees (replay-diff)\n- HUD view for archived trees"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/mesh.py",
+      "agents/core/subagents.py"
+    ],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H237",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H237"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H238",
+    "title": "Pet system (adopt, generate, hatch, rename, export, scale, disable a mascot)",
+    "area": "tui",
+    "recorded_status": "equivalent",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "8fc51f6f6c75ebbd39ad0abb3ae5a3aa1991eabb887d5328674558451990a466",
+    "contract": "15 entries: `pet.info/info.meta/cells/gallery/select/remove/export/rename/thumb/disable/scale/cancel/generate.status/generate/hatch` — a full mascot economy including LLM-generated candidate looks, hatching a chosen draft into an installed pet, exporting one as a re-importable zip, and half-block cell frames rendered in the terminal.",
+    "governance": "read-only today; if ever built, `pet.generate` would be a model spend and would need the media/image generation path plus budget accounting",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": "Backend labels and reference palette extraction overstate the procedural implementation.",
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/pets.py",
+      "agents/cli/pets.py",
+      "agents/core/routers/pets.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h214_h238_h590_pets.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H238",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H238"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H239",
+    "title": "Hosted wallet: balance, top-up, auto-reload, spending limits, subscription plan change/upgrade/resume, charge settlement polling",
+    "area": "tui",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "155841b3396135130b9507f2f036e02e3e4561afefd9a19623288a31b4255f70",
+    "contract": "11 entries: `billing.state`, `usage.bars`, `billing.charge` + `charge_status` polling to a terminal state, `billing.auto_reload`, `billing.step_up` (a device flow for the `billing:manage` scope), `subscription.state/preview/change/resume/upgrade` — all in-terminal, backed by the hosted Nous billing API, with client-side amount validation and typed error copy that funnels to a web portal.",
+    "governance": "read-only in Hermes' shape; Nerva's own payment kind is already kernel-mediated",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": "Nerva is local-first and owner-owned: there is no hosted service metering the owner's tokens, so there is no balance to top up and no plan to upgrade. Porting this would mean building a business model to justify a UI. Note the interesting inversion: Nerva's 'payment' concept is the opposite of Hermes' — Hermes bills the user, Nerva governs the user spending money in the world, and that one already crosses the kernel. Re-open path: only if Nerva ever offers a hosted tier, and then the *cost visibility* half (usage bars against a budget) is the piece worth taking, since Nerva already has cost_tracker.py.",
+    "source_files": [],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H239",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H239"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H240",
+    "title": "Prompt submission and attachments: image, PDF (page-rendered), arbitrary file staging, drag-drop detection, background prompts, side questions, and image generation",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "67f57ca9d01b2283ea3ed99dd46255f7b899bdb30f24b43550f086fb5125a95f",
+    "contract": "26 entries (§11 methods_prompt + methods_images): `prompt.submit`, `clipboard.paste`, `image.attach` / `image.attach_bytes` (base64, for remote clients) / `image.detach`, `pdf.attach` (renders each page to PNG and queues the pages), `file.attach` (stages a non-image file into the session workspace), `input.detect_drop`, `prompt.background` (run a prompt in the background while the foreground stays free), `prompt.btw` (answer a side question from a conversation snapshot without polluting the thread), the typed prompt-response methods, and `image.generate`.",
+    "governance": "Privileged. `file.attach` stages bytes onto the owner's disk: it must land inside `JARVIS_FILE_ROOTS` and cross the `file.write` kernel kind with the snapshot contract at /home/user/jarvis-hub/agents/core/file_tools.py:13-35 — never a side path that writes into a session workspace unmediated. Attached content also enters memory, so it is inside the data_purge boundary.",
+    "remaining_verbatim": "- PDF attach by page render (pages queued as images for the VLM)\n- Generic file staging into the session workspace (non-image, non-text)\n- Background prompts that run while the foreground stays free\n- Side questions (btw) answered from a conversation snapshot without entering the thread or memory",
+    "requirement_sections": [
+      "- PDF attach by page render (pages queued as images for the VLM)\n- Generic file staging into the session workspace (non-image, non-text)\n- Background prompts that run while the foreground stays free\n- Side questions (btw) answered from a conversation snapshot without entering the thread or memory"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "row 14 (session control) for background-prompt bookkeeping",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "frontend/src/composer-images.tsx",
+      "frontend/src/cockpit.tsx",
+      "agents/cli/nerva.py",
+      "agents/core/context_refs.py",
+      "agents/core/routers/multimodal.py"
+    ],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H240",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H240"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H241",
+    "title": "Tools, MCP servers, plugins, skills, cron jobs, checkpoint rollback and background processes — the operator control plane",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "40a1dbc8dc21cc83445137f68a3a737dc08ccfd9ec341d8b92e1203aeaa1b499",
+    "contract": "42 entries (§11 methods_tools): `tools.list/show/configure`, `toolsets.list`, `agents.list`, `commands.catalog`, `cli.exec`, `command.resolve/dispatch`, `slash.exec`, `shell.exec`, `plugins.list/manage`, `skills.manage/reload`, `cron.manage`, `rollback.list/restore/diff`, `browser.manage`, `process.stop/list/kill` (a session-scoped background-process registry so one window cannot reap another's work), `reload.mcp`, `reload.env`, `insights.get`, `system.battery`, `learning.frames/detail/delete/edit`, and a full MCP server management set: `mcp.catalog`, `servers.list/add/set_api_key/test/remove` and a three-call **client-side OAuth flow** (`oauth.start/poll/callback`).",
+    "governance": "Privileged, several kinds. MCP mutating tools already cross `mcp.mutating`; plugin egress crosses `plugin.egress`; skill install crosses `skill.install` with a permanent owner-approval floor; rollback/restore is a file mutation and crosses `file.write`. Any process kill on the host must cross the same host-effect boundary, not sit beside it.",
+    "remaining_verbatim": "- Client-side MCP OAuth flow (start/poll/callback) for connecting to OAuth-protected external MCP servers\n- Connect-and-list test probe before saving an MCP server\n- Session-scoped background-process registry with list and kill-one\n- reload.mcp / reload.env without restart, and an MCP catalog",
+    "requirement_sections": [
+      "- Client-side MCP OAuth flow (start/poll/callback) for connecting to OAuth-protected external MCP servers\n- Connect-and-list test probe before saving an MCP server\n- Session-scoped background-process registry with list and kill-one\n- reload.mcp / reload.env without restart, and an MCP catalog"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/mcp.py",
+      "agents/core/routers/plugins.py",
+      "agents/core/routers/skills.py",
+      "agents/core/mcp/oauth.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h331_pending_skill_review.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H241",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H241"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H242",
+    "title": "Workspace/project model, repo discovery, strict setup verification and diagnostics bundle",
+    "area": "tui",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "d7f67c816e494e797fad2d7df8442d4440eb3c7220d1c12054f2ddf267a44213",
+    "contract": "21 entries (§11 methods_config + the projects RPC group): first-class multi-folder projects (`projects.list/get/create/update/add_folder/remove_folder/set_primary/archive/delete/set_active/for_cwd`), `projects.discover_repos` / `record_repos` / `tree` / `project_sessions`, `config.get`, `setup.status`, **`setup.runtime_check`** (a strict check that runs the same `resolve_runtime_provider()` the agent uses at session creation, rather than accepting any discoverable auth state), and `diagnostics.share_nous` (upload a redacted debug bundle).",
+    "governance": "read-only for the runtime check. The refused upload path would have been outbound egress of owner data — it stays refused, which is why support_bundle.py writes locally.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/onboarding.py",
+      "scripts/doctor.py",
+      "agents/cli/nerva.py",
+      "agents/cli/client.py",
+      "agents/core/support_bundle.py",
+      "agents/core/routers/support.py",
+      "docs/INSTALL.md",
+      "docs/hermes/h277-vision-selection-consent-plan-2026-10-02.md",
+      "docs/hermes/h277-nous-auth-plan-2026-10-02.md",
+      "docs/hermes/evidence/h487-telegram-collateral-review-2026-10-04.md"
+    ],
+    "existing_test_files": [
+      "tests/test_doctor.py",
+      "tests/test_nerva_cli.py",
+      "tests/test_first_run_command_center.py",
+      "tests/test_support_bundle.py",
+      "tests/test_h277_vision_selection_cli.py",
+      "tests/test_h277_nous_auth_surface.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H242",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H242"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H243",
+    "title": "Completions (filesystem paths, slash commands) and provider/model options (list, save key, disconnect)",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "36fa8665278f6af976ac648ed620600e3d9dedf4f3d499208615703e569aaad1",
+    "contract": "7 entries (§11 methods_complete): `complete.path` (filesystem completion for the composer), `complete.slash` (command + argument completion), `paste.collapse`, `model.options` (models grouped by provider with cost hints), `model.save_key` (save an API key then return the refreshed model list), `model.disconnect` (remove a provider's credentials).",
+    "governance": "Privileged. Saving or removing a provider credential writes the secret store (secrets_vault.py) and must stay admin-guarded and audited; `model.pull`'s Nerva equivalent already crosses the `model.pull` kernel kind (registry.py).",
+    "remaining_verbatim": "(1) No provider options: no route returns models grouped by provider (cloud and local) with cost hints, and cost_tracker's price table is not shown per model. (2) Built-in pool save-key remains absent: the signed-package Vault API does not write Anthropic/Gemini pool keys or return a refreshed grouped model list. Built-in pools read env vars and need a pool rebuild for a new key. (3) Built-in pool disconnect remains absent: the signed-package owner route can remove its exact credential and quiesce selected sends, but no route removes a built-in pool key and rebuilds that pool. The requested unified provider disconnect surface remains open. `/api/secrets/broker` (agents/core/routers/secrets.py:29, agents/core/routers/secrets.py:56) stores action-time `{{secret:NAME}}` values, not the router's provider keys. (4) No slash completion: neither the chat composer nor QuickbarPanel completes command names or their `usage` arguments from `/api/commands` as the user types.",
+    "requirement_sections": [
+      "(1) No provider options: no route returns models grouped by provider (cloud and local) with cost hints, and cost_tracker's price table is not shown per model. (2) Built-in pool save-key remains absent: the signed-package Vault API does not write Anthropic/Gemini pool keys or return a refreshed grouped model list. Built-in pools read env vars and need a pool rebuild for a new key. (3) Built-in pool disconnect remains absent: the signed-package owner route can remove its exact credential and quiesce selected sends, but no route removes a built-in pool key and rebuilds that pool. The requested unified provider disconnect surface remains open. `/api/secrets/broker` (agents/core/routers/secrets.py:29, agents/core/routers/secrets.py:56) stores action-time `{{secret:NAME}}` values, not the router's provider keys. (4) No slash completion: neither the chat composer nor QuickbarPanel completes command names or their `usage` arguments from `/api/commands` as the user types."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "row 9 for the shared command catalog",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/models_llm.py",
+      "agents/core/llm/hybrid_router.py",
+      "agents/core/llm/auth_rotation.py",
+      "agents/core/routers/commands.py",
+      "agents/core/routers/quickbar.py",
+      "agents/core/routers/secrets.py",
+      "frontend/src/gap.tsx",
+      "frontend/src/panels/quickbar.tsx",
+      "frontend/src/context-refs.tsx",
+      "agents/core/routers/provider_selection.py",
+      "agents/core/llm/providers/install_service.py",
+      "agents/core/routers/custom_endpoints.py"
+    ],
+    "existing_test_files": [
+      "tests/test_commands_catalog.py",
+      "tests/test_quickbar_route.py",
+      "tests/test_local_models_api.py",
+      "tests/test_local_model_status.py",
+      "tests/test_h12_20_auth_rotation.py",
+      "frontend/src/test/context-refs.test.tsx",
+      "tests/test_h579_context_refs.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H243",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H243"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H244",
+    "title": "Agent profiles: list, create, describe, configure and attach assets to named agent configurations",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "d380488dea3b74683e415b15b32c4bc45121c296e45e2f645c6e660157486010",
+    "contract": "7 entries (§11 methods_profiles): `profiles.list` (name, path, model, description, skill count), `profiles.create`, `profiles.describe` (a full configuration snapshot for an editor UI), `profiles.configure` (apply editor changes), `profiles.set_asset` / `get_asset` (small binary assets as data URLs).",
+    "governance": "read-only listing; writing an agent config is admin-guarded today",
+    "remaining_verbatim": "- profiles.describe: one snapshot of an agent's full config (model, tools, skills, schedule, soul) for an editor\n- profiles.configure: persisted, validated edits of that config (not the in-memory override)\n- list fields: path, description and skill count\n- set_asset/get_asset: small per-agent binary assets (avatar) as data URLs\n- Tests for each",
+    "requirement_sections": [
+      "- profiles.describe: one snapshot of an agent's full config (model, tools, skills, schedule, soul) for an editor\n- profiles.configure: persisted, validated edits of that config (not the in-memory override)\n- list fields: path, description and skill count\n- set_asset/get_asset: small per-agent binary assets (avatar) as data URLs\n- Tests for each"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/agents_api.py",
+      "agents/web.py",
+      "agents/core/routers/admin.py",
+      "agents/core/agent_templates.py",
+      "agents/core/system_profiles.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h10_29_agent_templates.py",
+      "tests/test_soul_edit_route.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H244",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H244"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H245",
+    "title": "Hosted multi-gateway rooms: create, send, approve, replicate, promote/demote authority with epoch fencing",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "9a5ec23f305741e99f79321a720ee0b0bdb31184abd8c18f2620e22ecfd770ad",
+    "contract": "19 entries (§11 methods_groups + §14 hosted rooms): `groups.create/list/state/send/rename/disband/stop/approve/retry/log`, peer grant `invite/revoke/register`, and a replication set — `groups.replicate` (persist an authority-stamped replay page), `groups.replica_state`, `groups.promote` (continue a replicated room on this gateway at epoch+1), `groups.demote` (fence stale authority against a proven newer epoch). Approvals inside a room can be requested by a local *or peer* member.",
+    "governance": "Would be privileged — a peer-requested approval crossing into the local queue must cross the same admin_guard + kernel path as any local decision, never a room-specific shortcut",
+    "remaining_verbatim": "- Peer membership: invite/revoke/register grants for other gateways.\n- Room state/rename/stop/retry/log as hosted operations, and approvals requested by a peer member and resolved on the local approval queue.\n- Replication: replicate (authority-stamped replay page), replica_state, promote at epoch+1, demote with epoch fencing.",
+    "requirement_sections": [
+      "- Peer membership: invite/revoke/register grants for other gateways.\n- Room state/rename/stop/retry/log as hosted operations, and approvals requested by a peer member and resolved on the local approval queue.\n- Replication: replicate (authority-stamped replay page), replica_state, promote at epoch+1, demote with epoch fencing."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/rooms.py",
+      "agents/core/routers/rooms.py",
+      "agents/core/node_mesh.py",
+      "agents/core/routers/mesh.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h10_20_chat_rooms.py",
+      "tests/test_node_mesh_h12_17.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H245",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H245"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H246",
+    "title": "Cross-process brokers: relaying agent DMs between gateways, and brokering an externally-registered browser controller",
+    "area": "tui",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "b24304c31a678aa3e458cbff8dd25d963a943cea4c1954373d670ecb75981202",
+    "contract": "10 entries (§11 methods_bot_relay + methods_browser_control): `bot_relay.roster.sync` (this gateway's view of agents on other connections), `bot_relay.outbox.drain`, `bot_relay.deliver` (deliver a relayed DM into a profile's Bot Chat here), `bot_relay.reply`; and `browser.controller.register/result/heartbeat/detach` — an external browser controller (extension or app) registers with the gateway, receives commands, heartbeats, and detaches.",
+    "governance": "Would be privileged. An external controller executing a browser step must cross `browser.step` — the kernel is what applies the kill switch, taint escalation and the policy floor, and a broker that hands commands to an unmediated external process would bypass exactly that.",
+    "remaining_verbatim": "- Bot relay: roster sync of agents on other connections, outbox drain, deliver a relayed DM into a profile's chat, and reply.\n- Browser controller broker: register an external already-logged-in browser (extension/app), send it commands, receive results, heartbeat and detach (governed, with steps still crossing browser.step).\n- Approved inbound A2A tasks are neither executed nor delivered into a chat; A2A is off by default and there is no outbound send.",
+    "requirement_sections": [
+      "- Bot relay: roster sync of agents on other connections, outbox drain, deliver a relayed DM into a profile's chat, and reply.\n- Browser controller broker: register an external already-logged-in browser (extension/app), send it commands, receive results, heartbeat and detach (governed, with steps still crossing browser.step).\n- Approved inbound A2A tasks are neither executed nor delivered into a chat; A2A is off by default and there is no outbound send."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "node_mesh.py's capability-token model, if ever reopened",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/a2a.py",
+      "agents/core/routers/a2a.py",
+      "agents/core/routers/mesh.py"
+    ],
+    "existing_test_files": [
+      "tests/test_a2a_hf16_2.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H246",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H246"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H247",
+    "title": "Wake word arming per surface, push-to-talk capture, TTS, and liveness/config primitives",
+    "area": "tui",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "94ecae68de964160b1410e6c7447d58441b6ba51b64f157d1d85737879946f4f",
+    "contract": "12 entries (§11 server.py core): `wake.start/stop/pause/resume/status/feed` — arm the wake-word listener **for the calling surface** ('tui' | 'gui'), release and reclaim the mic, and push client-captured PCM into the armed detector; `voice.toggle`, `voice.record` (VAD-bounded push-to-talk), `voice.tts`; plus `config.set` and `ping` (the cheapest liveness probe).",
+    "governance": "Privileged in one direction: arming a listener opens the household microphone, which is a capture decision, not a UI toggle. It must cross the same consent/capture policy the mobile capture path uses (mobile/src/screens/capturePolicy.ts) and be visible in the audit trail; `ping`/`config.set` are read-only/settings.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/voice/mic.py",
+      "agents/core/routers/voice.py",
+      "agents/core/channels/voice.py",
+      "agents/core/settings_db.py",
+      "frontend/src/mic-lease.ts",
+      "frontend/src/voice.ts",
+      "frontend/src/mic-leases.tsx",
+      "frontend/src/cockpit.tsx"
+    ],
+    "existing_test_files": [
+      "tests/test_h247_mic_lease.py",
+      "frontend/src/test/mic-lease.test.tsx"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H247",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H247"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  }
+]

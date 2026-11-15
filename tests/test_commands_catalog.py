@@ -82,13 +82,17 @@ def test_catalog_requires_user_authorization_before_reading_registry(catalog):
     assert "commands" not in response.json()
 
 
-@pytest.mark.parametrize("orch", [None, SimpleNamespace(), SimpleNamespace(commands=None)])
+@pytest.mark.parametrize("orch", [
+    None, SimpleNamespace(), SimpleNamespace(commands=None),
+    SimpleNamespace(commands=object()),
+])
 def test_unavailable_registry_is_not_replaced_by_an_invented_default(catalog, monkeypatch, orch):
     client, _ = catalog
     monkeypatch.setattr(web, "orch", orch)
     response = client.get("/api/commands")
     assert response.status_code == 503
     assert response.json() == {"ok": False, "reason": "commands_unavailable", "commands": []}
+    assert response.headers["cache-control"] == "no-cache, no-store, must-revalidate"
 
 
 def test_empty_live_registry_is_distinct_from_unavailable(catalog, monkeypatch):
@@ -96,7 +100,8 @@ def test_empty_live_registry_is_distinct_from_unavailable(catalog, monkeypatch):
     monkeypatch.setattr(web, "orch", SimpleNamespace(commands=CommandRegistry()))
     response = client.get("/api/commands")
     assert response.status_code == 200
-    assert response.json() == {"ok": True, "commands": []}
+    assert response.json() == {"ok": True, "commands": [], "shortcuts": [],
+                               "truncated": False, "shortcuts_unavailable": False}
 
 
 def test_catalog_tracks_the_live_registry_after_startup(catalog, monkeypatch, tmp_path):

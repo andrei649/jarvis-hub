@@ -148,7 +148,8 @@ async def admin_mcp_list():
     # H285: the saved servers the load set switched off, and what it names that is not saved.
     return {"servers": servers, "total": len(servers), "load_set": load_set.status("mcp"),
             "sampling_budget": _safe_call(getattr(budget, "status", None)),
-            "pending_elicitations": _safe_call(getattr(host, "pending_elicitations", None)) or []}
+            "pending_elicitations": _safe_call(getattr(host, "pending_elicitations", None)) or [],
+            "elicitation_cards": _safe_call(getattr(host, "pending_elicitation_cards", None)) or []}
 
 
 def _safe_call(fn):

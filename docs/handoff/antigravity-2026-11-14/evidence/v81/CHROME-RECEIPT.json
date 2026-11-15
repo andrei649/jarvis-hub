@@ -1,0 +1,135 @@
+{
+  "base_tree": "dfdeb6d1498a65f9421bd63ff691a108c2a228ce",
+  "files": {
+    "tests/test_browser_chromium_runtime.py": "98205f0024d01b39877e645622c16d7c444fc0dc8455ed68622af026e20bb7e7",
+    "tests/browser_orphan_fixture.py": "bf4df65715e1cb66f97bc078176104c7a072fd48fa51c543d09247527143c646",
+    "tests/test_browser_orphan_fixture.py": "606e57f96f61ec2ddcbf0f406a2dd8138821e60616c505397a4e2defdd7c005a"
+  },
+  "patch_sha256": "ee9dc1e0103030f41e76315b1215be9a8e8b11804bab54244640c89571d1353c",
+  "tests": {
+    "probes-diag-final": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "12",
+        "time": "23.152",
+        "timestamp": "2026-11-13T20:00:55.674051+00:00",
+        "hostname": "1c2d743b51ac"
+      }
+    ],
+    "final64": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "64",
+        "time": "7.301",
+        "timestamp": "2026-11-13T20:02:32.991372+00:00",
+        "hostname": "1c2d743b51ac"
+      }
+    ],
+    "permanent": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "4",
+        "time": "2.843",
+        "timestamp": "2026-11-13T20:02:03.678887+00:00",
+        "hostname": "1c2d743b51ac"
+      }
+    ],
+    "browser-units": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "59",
+        "time": "5.616",
+        "timestamp": "2026-11-13T19:59:59.837342+00:00",
+        "hostname": "1c2d743b51ac"
+      }
+    ],
+    "headroom-permanent": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "5",
+        "time": "4.461",
+        "timestamp": "2026-11-13T20:07:05.758891+00:00",
+        "hostname": "1c2d743b51ac"
+      }
+    ],
+    "headroom-probes": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "12",
+        "time": "22.235",
+        "timestamp": "2026-11-13T20:07:13.625031+00:00",
+        "hostname": "1c2d743b51ac"
+      }
+    ],
+    "stderr-diag": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "2",
+        "time": "1.724",
+        "timestamp": "2026-11-13T20:12:28.112874+00:00",
+        "hostname": "1c2d743b51ac"
+      }
+    ]
+  },
+  "candidate_tree": "944d02c1f2f01b85dce3d6d5dcc564f2e0b4f84f",
+  "source_file_count": 7068,
+  "changed_files": [
+    {
+      "path": "tests/test_browser_chromium_runtime.py",
+      "before": [
+        "100644",
+        "31ce4db9a21fffeef689d6c0a723ca6d24a83aa8"
+      ],
+      "after": [
+        "100644",
+        "1db98ab75da8f7c5daa110af60f809b274c01888"
+      ],
+      "sha256": "98205f0024d01b39877e645622c16d7c444fc0dc8455ed68622af026e20bb7e7"
+    },
+    {
+      "path": "tests/browser_orphan_fixture.py",
+      "before": null,
+      "after": [
+        "100644",
+        "07a80df346e3c8600d925dda43830715b0fd5cac"
+      ],
+      "sha256": "bf4df65715e1cb66f97bc078176104c7a072fd48fa51c543d09247527143c646"
+    },
+    {
+      "path": "tests/test_browser_orphan_fixture.py",
+      "before": null,
+      "after": [
+        "100644",
+        "a83653f02586e878aab6d23419e44b4ccdfeec90"
+      ],
+      "sha256": "606e57f96f61ec2ddcbf0f406a2dd8138821e60616c505397a4e2defdd7c005a"
+    }
+  ],
+  "test_only_budgets_seconds": {
+    "controller_readiness": 15,
+    "supervisor_launch": 20,
+    "parent_publication": 25,
+    "cleanup_wait": 10
+  }
+}

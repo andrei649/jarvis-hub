@@ -363,7 +363,7 @@ def _channel(voice_reader=None):
         turns.append(text)
         return "ok"
 
-    ch = TelegramChannel(token="t", handler=handler)
+    ch = TelegramChannel(token="t", handler=handler, allowed_user_ids=[42])
     ch._bot_id, ch._bot_username = 1, "nerva_bot"
 
     async def fake_send(message, chat_id=None, **kwargs):

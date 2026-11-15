@@ -1,0 +1,10 @@
+{
+  "exit_code": 0,
+  "source_paths": 7302,
+  "source_unchanged": true,
+  "changed": [],
+  "tmpdir": "/workspace/scratch/nerva-v70-integration",
+  "basetemp": "/workspace/scratch/nerva-v70-integration/pytest-final",
+  "workers": 4,
+  "launcher": "private outer Linux subreaper, no signals"
+}

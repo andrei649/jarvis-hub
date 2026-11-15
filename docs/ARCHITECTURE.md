@@ -689,7 +689,7 @@ table, the snapshot, or a tool named in these docs drifts from the registry.
 | `browser_run` | gated | sensitive | implementation_specific | untrusted | static | `tool:browser_run` |
 | `canvas_point` | ungated | reversible | cancel | trusted | static | `tool:canvas_point` |
 | `clarify` | ungated | read_only | none | untrusted | static | `tool:clarify` |
-| `delegate_task` | ungated | sensitive | implementation_specific | untrusted | static | `tool:delegate_task` |
+| `delegate_task` | ungated | sensitive | implementation_specific | untrusted | narrowed live | `tool:delegate_task` |
 | `desktop_plan` | ungated | read_only | none | trusted | static | `tool:desktop_plan` |
 | `desktop_run` | gated | sensitive | implementation_specific | trusted | narrowed live | `tool:desktop_run` |
 | `echo` | ungated | read_only | none | trusted | static | `tool:echo` |

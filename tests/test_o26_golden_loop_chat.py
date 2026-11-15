@@ -17,6 +17,7 @@ fixture precedent). Offline: the fake backend never touches a socket.
 """
 
 import asyncio
+import inspect
 import sys
 from functools import lru_cache
 from pathlib import Path
@@ -51,7 +52,9 @@ class FakeBackend(LLMBackend):
         self.calls += 1
         if on_token:
             for word in REPLY.split(" "):
-                on_token(word + " ")
+                emitted = on_token(word + " ")
+                if inspect.isawaitable(emitted):
+                    await emitted
         return REPLY
 
 

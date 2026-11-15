@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -161,7 +160,7 @@ def _runtime(tmp_path, catalog):
         runtime_root=tmp_path / "runs", runner=object(), consent=object(),
         catalog=catalog, enabled=lambda: True,
     )
-    runtime._require_consent = lambda _manifest: None
+    runtime._require_consent = lambda _manifest, _revision=None: "f" * 64
     runtime._require_package = lambda _manifest: SimpleNamespace(package_hash="a" * 64,
                                                                   version="1.0.0")
     async def registered(_record, **_kwargs):

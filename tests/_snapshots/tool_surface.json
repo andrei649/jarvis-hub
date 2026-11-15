@@ -367,7 +367,7 @@
       "gated": false,
       "capability_id": "tool:delegate_task",
       "untrusted_output": true,
-      "live_overrides": false,
+      "live_overrides": true,
       "risk": "sensitive",
       "rollback": {
         "mode": "implementation_specific",
@@ -417,6 +417,29 @@
           "collect": {
             "type": "boolean",
             "description": "Alone (no tasks): receive the results of this conversation's background sub-agents that have finished since the last collect. Each result is handed out once."
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "spawn",
+              "collect",
+              "list",
+              "steer",
+              "stop"
+            ],
+            "description": "Operation to run: 'spawn' (default when tasks are supplied), 'collect' (receive finished background results), 'list' (inspect this conversation's sub-agents and concurrency slots), 'steer' (send guidance to a running child of this conversation), or 'stop' (cancel a running child of this conversation)."
+          },
+          "spawn_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "Running sub-agent id of this conversation to target when action is 'steer' or 'stop'."
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Guidance message delivered to the running child when action is 'steer'."
           }
         },
         "additionalProperties": false

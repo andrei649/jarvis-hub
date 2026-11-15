@@ -100,7 +100,9 @@ async def list_pending(request: Request,
             for question in questions:
                 runtime.acknowledge_http(question["id"], actor)
 
-    return JSONResponse({"questions": questions, "has_more": has_more},
+    from ..channels.outbound_stream import safe_prompt
+
+    return JSONResponse({"questions": [safe_prompt(question) for question in questions], "has_more": has_more},
                         headers={"Cache-Control": "no-store"}, background=BackgroundTask(acknowledged))
 
 

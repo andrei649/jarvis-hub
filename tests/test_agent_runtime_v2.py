@@ -1412,14 +1412,20 @@ async def test_agent_generate_response_tool_mode_does_not_emit_blank_final_answe
 
 
 @pytest.mark.asyncio
-async def test_agent_generate_response_disabled_preserves_stream_callback_identity():
+@pytest.mark.parametrize("async_callback", [False, True])
+async def test_agent_disabled_preserves_stream_delivery_and_scrubs_memory(async_callback):
     class _StreamingBackend:
         def __init__(self):
             self.calls = []
 
         async def generate_stream(self, **kwargs):
             self.calls.append(kwargs)
-            kwargs["on_token"]("legacy token")
+            import inspect
+
+            for piece in ("legacy token", "<memory-", "context>private recall", "</memory-context>"):
+                result = kwargs["on_token"](piece)
+                if inspect.isawaitable(result):
+                    await result
             return "legacy streamed answer"
 
         async def generate(self, **kwargs):
@@ -1430,6 +1436,9 @@ async def test_agent_generate_response_disabled_preserves_stream_callback_identi
     backend = _StreamingBackend()
     emitted = []
     on_token = emitted.append
+    if async_callback:
+        async def on_token(piece):
+            emitted.append(piece)
 
     answer = await agent.generate_response(
         backend=backend,
@@ -1444,7 +1453,8 @@ async def test_agent_generate_response_disabled_preserves_stream_callback_identi
     assert answer == "legacy streamed answer"
     assert emitted == ["legacy token"]
     assert len(backend.calls) == 1
-    assert backend.calls[0]["on_token"] is on_token
+    # The runtime may wrap the sink to enforce H429 even with tool runtime off.
+    # Visible delivery and removal of fenced content are the public contract.
 
 
 class _FalseyAsyncSink:
@@ -3070,3 +3080,57 @@ async def test_streamed_orchestrator_scopes_the_request_with_its_agent_and_windo
             "question", channel="web", on_token=lambda _t: None, session_id="scoped-session")
     assert answer == "answer"
     assert seen == [("jarvis", 8192)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tool_mode,track_activity", [(False, True), (True, False), (True, True)])
+async def test_falsey_sink_cannot_receive_raw_memory_via_activity_or_tools(tool_mode, track_activity):
+    import inspect
+
+    from agents.core.channels.session_lifecycle import _activity
+
+    raw_answer = "before<memory-context>private recall</memory-context>after"
+    pieces = ("before", "<memory-", "context>private recall", "</memory-context>", "after")
+
+    class _FencedBackend(_LegacyDualBackend):
+        async def generate_stream(self, **kwargs):
+            self.stream_calls += 1
+            for piece in pieces:
+                emitted = kwargs["on_token"](piece)
+                if inspect.isawaitable(emitted):
+                    await emitted
+            return self.response
+
+    class _Runtime:
+        def __init__(self):
+            self.calls = 0
+
+        def can_run(self, backend, agent_id=None):
+            return tool_mode
+
+        async def run(self, **kwargs):
+            self.calls += 1
+            return raw_answer
+
+    agent = Agent("jarvis", {"name": "Jarvis"})
+    runtime = _Runtime()
+    agent.tool_runtime = runtime
+    backend = _FencedBackend(raw_answer)
+    sink = _FalseyAsyncSink()
+    activity = []
+    token = _activity.set((lambda: activity.append(True)) if track_activity else None)
+    try:
+        answer = await agent.generate_response(
+            backend=backend, model="legacy-model", prompt="answer", system="system",
+            max_tokens=100, temperature=0.4, on_token=sink,
+        )
+    finally:
+        _activity.reset(token)
+
+    assert answer == "beforeafter"  # final-return redaction remains mandatory
+    assert sink.values == []  # observers and tool mode must not revive a disabled sink
+    assert runtime.calls == int(tool_mode)
+    if track_activity:
+        assert len(activity) == (1 if tool_mode else len(pieces))
+    else:
+        assert activity == []

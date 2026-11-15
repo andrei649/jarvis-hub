@@ -29,17 +29,22 @@ import contextlib
 import hashlib
 import json
 import os
+import re
+import secrets
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from .manifest import MAX_EXTENSIONS, ExtensionManifest
+from .store_lock import StoreLockError, locked_store
 
 CONSENT_VERSION = 1
 MAX_STORE_BYTES = 256 * 1024
 GRANTED = "granted"
 NOT_GRANTED = "not_granted"
 CHANGED = "changed"
+_REVISION_RE = re.compile(r"[0-9a-f]{64}\Z")
+_LEGACY_REVISION_DOMAIN = b"nerva-extension-consent-legacy-revision-v1\0"
 
 
 def declared_digest(manifest: ExtensionManifest) -> str:
@@ -50,14 +55,17 @@ def declared_digest(manifest: ExtensionManifest) -> str:
     every patch trains an owner to click through. What must never change silently
     is the *surface*, and that is what this covers.
     """
-    canonical = json.dumps({
+    declaration = {
         "consent_version": CONSENT_VERSION,
         "id": manifest.id,
         "capabilities": list(manifest.capabilities),
         "tools": list(manifest.qualified_tools),
         "commands": list(manifest.commands),
         "events": list(manifest.events),
-    }, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    }
+    if manifest.command_requires_args:
+        declaration["command_requires_args"] = list(manifest.command_requires_args)
+    canonical = json.dumps(declaration, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -68,6 +76,9 @@ class ConsentDecision:
     granted_digest: str | None = None
     added: tuple[str, ...] = ()
     removed: tuple[str, ...] = ()
+    # Private lifecycle fence. Deliberately omitted from as_dict() so existing
+    # HTTP/CLI payloads remain stable.
+    grant_revision: str | None = None
 
     @property
     def allowed(self) -> bool:
@@ -84,6 +95,7 @@ def _surface(manifest: ExtensionManifest) -> set[str]:
     return ({f"capability:{name}" for name in manifest.capabilities}
             | {f"tool:{name}" for name in manifest.qualified_tools}
             | {f"command:{name}" for name in manifest.commands}
+            | {f"command_requires_args:{name}" for name in manifest.command_requires_args}
             | {f"event:{name}" for name in manifest.events})
 
 
@@ -115,10 +127,27 @@ class ExtensionConsentStore:
         grants = value.get("grants")
         if not isinstance(grants, dict) or len(grants) > MAX_EXTENSIONS:
             return {}
-        return {name: row for name, row in grants.items()
-                if isinstance(name, str) and isinstance(row, dict)
-                and isinstance(row.get("declared_digest"), str)
-                and len(row["declared_digest"]) == 64}
+        valid = {}
+        for name, row in grants.items():
+            if (not isinstance(name, str) or not isinstance(row, dict)
+                    or not isinstance(row.get("declared_digest"), str)
+                    or len(row["declared_digest"]) != 64):
+                continue
+            # Missing means a legacy row. Presence is explicit: null, uppercase,
+            # short, or non-string revisions are malformed and cannot grant.
+            if "grant_revision" in row and (
+                    not isinstance(row["grant_revision"], str)
+                    or _REVISION_RE.fullmatch(row["grant_revision"]) is None):
+                continue
+            valid[name] = row
+        return valid
+
+    @staticmethod
+    def _legacy_revision(row: dict) -> str:
+        """Stable, domain-separated fence for an unmodified legacy grant row."""
+        canonical = json.dumps(row, ensure_ascii=False, sort_keys=True,
+                               separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(_LEGACY_REVISION_DOMAIN + canonical).hexdigest()
 
     def _write(self, grants: dict) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -143,7 +172,11 @@ class ExtensionConsentStore:
         if row is None:
             return ConsentDecision(NOT_GRANTED, digest)
         if row["declared_digest"] == digest:
-            return ConsentDecision(GRANTED, digest, row["declared_digest"])
+            revision = row.get("grant_revision")
+            if revision is None:
+                revision = self._legacy_revision(row)
+            return ConsentDecision(GRANTED, digest, row["declared_digest"],
+                                   grant_revision=revision)
         # The owner agreed to something; this is not it. Say what moved rather than
         # re-asking for a blanket yes.
         previous = set(row.get("declarations") or ())
@@ -154,38 +187,55 @@ class ExtensionConsentStore:
 
     def grant(self, manifest: ExtensionManifest) -> ConsentDecision:
         """Record consent for exactly these declarations. Idempotent for the same set."""
-        grants = self._read()
-        if len(grants) >= MAX_EXTENSIONS and manifest.id not in grants:
-            raise ValueError("extension_capacity")
-        # Both the CLI and HTTP owner paths arrive here. Persist the exact Python
-        # pins as an auditable declared candidate before consent becomes durable;
-        # this metadata grants no authority and does not claim package installation.
+        # Both owner paths persist pins before consent becomes durable.
         from .manifest_catalog import ExtensionManifestCatalog
 
         catalog = ExtensionManifestCatalog(self._path.with_name("manifest_catalog.json"),
                                            consent_path=self._path)
         try:
-            catalog.record(manifest)
-        except ValueError:
-            raise
-        except Exception:
-            raise ValueError("manifest_catalog_unavailable") from None
-        digest = declared_digest(manifest)
-        row = {"declared_digest": digest, "version": manifest.version,
-               "declarations": sorted(_surface(manifest))}
-        if self._clock is not None:
-            row["granted_at"] = float(self._clock())
-        grants[manifest.id] = row
-        self._write(grants)
-        return ConsentDecision(GRANTED, digest, digest)
+            with locked_store(self._path):
+                grants = self._read()
+                if len(grants) >= MAX_EXTENSIONS and manifest.id not in grants:
+                    raise ValueError("extension_capacity")
+                # Both the CLI and HTTP owner paths arrive here. Persist the exact
+                # Python pins as an auditable declaration before consent is durable.
+                try:
+                    catalog.record(manifest)
+                except ValueError:
+                    raise
+                except Exception:
+                    raise ValueError("manifest_catalog_unavailable") from None
+                digest = declared_digest(manifest)
+                row = {"declared_digest": digest, "version": manifest.version,
+                       "declarations": sorted(_surface(manifest))}
+                previous = grants.get(manifest.id)
+                if previous is not None and previous.get("declared_digest") == digest:
+                    revision = previous.get("grant_revision")
+                    if revision is None:
+                        # Explicitly approving a legacy row creates a new durable epoch.
+                        revision = secrets.token_hex(32)
+                else:
+                    revision = secrets.token_hex(32)
+                row["grant_revision"] = revision
+                if self._clock is not None:
+                    row["granted_at"] = float(self._clock())
+                grants[manifest.id] = row
+                self._write(grants)
+                return ConsentDecision(GRANTED, digest, digest, grant_revision=revision)
+        except StoreLockError:
+            raise ValueError("consent_unavailable") from None
 
     def revoke(self, extension_id: str) -> bool:
-        grants = self._read()
-        if extension_id not in grants:
-            return False
-        del grants[extension_id]
-        self._write(grants)
-        return True
+        try:
+            with locked_store(self._path):
+                grants = self._read()
+                if extension_id not in grants:
+                    return False
+                del grants[extension_id]
+                self._write(grants)
+                return True
+        except StoreLockError:
+            raise ValueError("consent_unavailable") from None
 
     def granted_ids(self) -> tuple[str, ...]:
         return tuple(sorted(self._read()))

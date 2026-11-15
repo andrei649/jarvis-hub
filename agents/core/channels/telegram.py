@@ -18,6 +18,8 @@ from typing import Callable, NamedTuple, Optional
 import httpx
 
 from . import audio_container, delivery_ledger, media_delivery
+from .credentials import credential_is_configured
+from .connect_deadline import DEFAULT_CONNECT_TIMEOUT, channel_connect_timeout
 from .backfill import (
     COMMAND_REFUSED,
     LATE_COMMAND_REFUSED,
@@ -28,12 +30,14 @@ from .backfill import (
     looks_like_command,
 )
 from .base import ChannelAdapter
-from .reconnect import FATAL_REPROBE_S, Backoff, classify_exception
+from .reconnect import FATAL_REPROBE_S, Backoff, PollingCircuit, classify_exception
 from .descriptor import DIALECT_TELEGRAM_HTML, ChannelDescriptor
 from .ephemeral import EphemeralDeletes, EphemeralReply, ephemeral_ttl
 from .group_policy import ANSWER, OBSERVE, GroupPolicy, gate_message
 from .inbound_media import (
+    KIND_DOCUMENT,
     KIND_PHOTO,
+    KIND_STICKER,
     KIND_VOICE,
     READABLE_KINDS,
     RECOGNISED_KINDS,
@@ -41,6 +45,11 @@ from .inbound_media import (
     describe,
     turn_text,
 )
+from .inbound_document import InboundDocumentReader
+from .inbound_document import DocumentText as InboundDocumentText
+from .inbound_document import REASON_DOWNLOAD as DOCUMENT_REASON_DOWNLOAD
+from .inbound_document import note as document_note
+from .inbound_document import turn_text as document_turn_text
 from . import voice_mode
 from .batching import Coalescer, configured, is_command
 from .inbound_voice import InboundVoiceReader, Transcript, echo_line
@@ -54,9 +63,14 @@ from .media_reader import (
 )
 from .media_reader import note as read_note
 from .media_reader import turn_text as image_turn_text
+from .sticker_reader import StickerCaptioner
+from .sticker_reader import note as sticker_note
+from .sticker_reader import turn_text as sticker_turn_text
+from .outbound_safety import may_become_silence, safe_stream_prefix, sanitize_outbound
 from .render import chunk, to_plain, to_telegram_html
 from .spoken_reply import REASON_SEND, Audio, SpokenReply
 from ..commands import side_question_command_name
+from ..command_source import plaintext_restart, restart_command_text
 from ..log_safe import log_safe
 from ..settings_db import get_value
 from ..turn_notices import FootedReply, spoken_text
@@ -146,10 +160,11 @@ class TelegramDraft:
     message; later tokens edit it, at most one edit per :data:`STREAM_EDIT_INTERVAL` and
     only when the visible text changed; ``finish()`` renders the final text exactly as
     ``send()`` would — the first chunk lands in the edited message, further chunks follow
-    as new messages. Every step is best effort and never raises into the turn: a failed
-    edit is a skipped frame, a failed final edit becomes a fresh send, markup Telegram
-    rejects is retried as plain text. ``finish()`` is True only when the final text was
-    delivered. The turn's status lines (H430: the recall indicator, from the moment each
+    as new messages. Every step is best effort and never raises into the turn. A definite
+    failed edit may fall back to a fresh send; an uncertain send or edit permanently
+    stops this draft's transport so it cannot duplicate a message Telegram may have
+    stored. ``finish()`` is True only when the final text was confirmed delivered.
+    The turn's status lines (H430: the recall indicator, from the moment each
     memory prefetch lands, ``show_footer``) sit under the text while it is written; the
     final text brings its own (a ``FootedReply``), and a voice note speaks the reply alone.
     """
@@ -162,6 +177,7 @@ class TelegramDraft:
         self._clock = clock
         self._text = ""
         self._message_id: Optional[int] = None
+        self._uncertain = False
         self._last_edit = 0.0
         self._last_shown = ""
         self._cap = channel.descriptor.max_message_length or TELEGRAM_MAX_MESSAGE_LENGTH
@@ -170,18 +186,28 @@ class TelegramDraft:
 
     @property
     def started(self) -> bool:
-        return self._message_id is not None
+        # An unconfirmed first send may already be visible to the recipient.
+        # Tell the orchestrator it started so it cannot resend the whole reply.
+        return self._message_id is not None or self._uncertain
 
     @property
     def text(self) -> str:
         return self._text
 
     async def push(self, token) -> None:
-        """Append *token*; show progress when the edit budget allows. Never raises."""
+        """Append *token*; show progress when allowed. Cancellation propagates."""
         if self.finished:
             return
         self._text += str(token or "")
+        if self._uncertain:
+            return
         if not self._text.strip():
+            return
+        if self._message_id is None and may_become_silence(self._text):
+            # H069: a reply that may still be the agent's "[SILENT]" is not started.
+            return
+        if self._message_id is None and not safe_stream_prefix(media_delivery.strip_partial(self._text)):
+            # Review M2: nothing whole to show yet (an unfinished word may be a secret).
             return
         try:
             now = self._clock()
@@ -189,6 +215,10 @@ class TelegramDraft:
                 self._message_id = await self._channel._send_message(
                     self._chat_id, self._preview(), plain=to_plain(self._preview_source()),
                 )
+                if type(self._message_id) is not int or self._message_id <= 0:
+                    self._message_id = None
+                    self._uncertain = True
+                    return
                 self._last_edit = now
                 self._last_shown = self._preview()
                 return
@@ -197,13 +227,25 @@ class TelegramDraft:
             shown = self._preview()
             if shown == self._last_shown:
                 return
-            if await self._channel._edit_message(
+            edited = await self._channel._edit_message(
                 self._chat_id, self._message_id, shown, plain=to_plain(self._preview_source()),
-            ):
+            )
+            if edited is None:
+                self._uncertain = True
+                return
+            if edited:
                 self._last_shown = shown
             self._last_edit = now
-        except Exception:
-            logger.debug("Telegram draft frame skipped", exc_info=True)
+        except asyncio.CancelledError:
+            # The request may have reached Telegram before the caller cancelled.
+            # Propagate cancellation while fencing every later draft transport.
+            self._uncertain = True
+            raise
+        except Exception as exc:
+            delivery_ledger.note_send_failure(exc=exc)
+            if delivery_ledger.classify_send_failure(exc=exc).ambiguous:
+                self._uncertain = True
+            logger.debug("Telegram draft frame skipped: %s", type(exc).__name__)
 
     def show_footer(self, lines) -> None:
         """Show *lines* under the text from the next frame on. One assignment, so it is
@@ -215,7 +257,8 @@ class TelegramDraft:
         footer = ("\n\n" + "\n".join(self._footer)) if self._footer else ""
         budget = self._cap - len(_STREAM_CURSOR) - 1 - len(footer)
         # G16: a `MEDIA: /path` line is never streamed; finish() attaches the file.
-        source = media_delivery.strip_partial(self._text)
+        # Review M2: whole words only, and the tail a held credential could hide in.
+        source = safe_stream_prefix(media_delivery.strip_partial(self._text))
         if len(source) > budget:
             source = source[:budget] + "…"
         return source + _STREAM_CURSOR + footer
@@ -228,6 +271,16 @@ class TelegramDraft:
         if self.finished:
             return False
         self.finished = True
+        if self._uncertain:
+            return False
+        try:
+            return await self._finish_delivery(final_text)
+        except asyncio.CancelledError:
+            self._uncertain = True
+            raise
+
+    async def _finish_delivery(self, final_text: Optional[str]) -> bool:
+        """One final delivery attempt; the wrapper owns cancellation fencing."""
         text = self._text if final_text is None else str(final_text or "")
         if not text.strip():
             return False
@@ -239,7 +292,8 @@ class TelegramDraft:
                 if not str(cleaned or "").strip():
                     return await self._channel._deliver_media(self._chat_id, media)
                 ok = await self._channel.send(cleaned, chat_id=self._chat_id)
-                await self._channel._deliver_media(self._chat_id, media)
+                if ok:
+                    await self._channel._deliver_media(self._chat_id, media)
                 return ok
             final_text, text = cleaned, str(cleaned or "") or "\u2026"
         if self._message_id is None:
@@ -251,10 +305,16 @@ class TelegramDraft:
             ok = await self._channel._edit_message(
                 self._chat_id, self._message_id, to_telegram_html(pieces[0]), plain=to_plain(pieces[0]),
             )
-        except Exception:
-            ok = False
-        if not ok:
+        except Exception as exc:
+            delivery_ledger.note_send_failure(exc=exc)
+            ok = None if delivery_ledger.classify_send_failure(exc=exc).ambiguous else False
+        if ok is None:
+            self._uncertain = True
+            return False
+        if ok is False:
             ok = await self._channel._send_chunk(self._chat_id, pieces[0])
+            if not ok:
+                return False
         for piece in pieces[1:]:
             if not await self._channel._send_chunk(self._chat_id, piece):
                 return False
@@ -269,14 +329,18 @@ class TelegramDraft:
 
 
 def _message_id_of(resp) -> int:
-    """The message id Telegram returned, or 0 when the body did not carry one."""
+    """A confirmed Bot API message id; zero means the send is unconfirmed."""
+    status = getattr(resp, "status_code", None)
+    if (type(status) is not int or not 200 <= status < 300
+            or getattr(resp, "is_success", True) is False):
+        return 0
     try:
         payload = resp.json()
     except Exception:
         return 0
-    result = payload.get("result") if isinstance(payload, dict) else None
-    value = result.get("message_id") if isinstance(result, dict) else None
-    return int(value) if isinstance(value, int) and not isinstance(value, bool) else 0
+    result = payload.get("result") if type(payload) is dict and payload.get("ok") is True else None
+    value = result.get("message_id") if type(result) is dict else None
+    return value if type(value) is int and value > 0 else 0
 
 
 TELEGRAM_API_HOST = "api.telegram.org"
@@ -312,6 +376,9 @@ def _update_message(up) -> Optional[dict]:
 
 
 class TelegramChannel(ChannelAdapter):
+    #: H057: ``() -> (everyone's menu, (owner chat id, owner's menu) | None)``, set by the
+    #: hub's wiring; None publishes nothing.
+    command_menu: Optional[Callable[[], tuple]] = None
     # H116 defaults, so a channel built without __init__ (tests) behaves as before.
     _cursor_store = None
     _cursor_name: Optional[str] = None
@@ -336,7 +403,8 @@ class TelegramChannel(ChannelAdapter):
                  pairing=None, pending_reply_handler: Optional[Callable] = None,
                  pending_callback_handler: Optional[Callable] = None,
                  pre_turn_interrupt: Optional[Callable] = None,
-                 pre_turn_refused: Optional[Callable] = None):
+                 pre_turn_refused: Optional[Callable] = None,
+                 connect_timeout_seconds: float = DEFAULT_CONNECT_TIMEOUT):
         super().__init__("telegram", handler)
         #: G16 (H070): the bound ``kernel.authorize`` a MEDIA: attachment crosses when the
         #: Action Kernel is on (web.py binds it). None while the kernel is on refuses it.
@@ -354,7 +422,10 @@ class TelegramChannel(ChannelAdapter):
         self._batch_session_meta: dict = {}
         self.token = token
         self.api_base = f"https://{TELEGRAM_API_HOST}/bot{token}"
-        self.client = httpx.AsyncClient(timeout=15.0, event_hooks={"request": [_bot_api_only]})
+        self._connect_timeout_seconds = channel_connect_timeout(connect_timeout_seconds)
+        self.client = httpx.AsyncClient(
+            timeout=httpx.Timeout(15.0, connect=self._connect_timeout_seconds),
+            event_hooks={"request": [_bot_api_only]})
         self.allowed_users = allowed_user_ids or []
         # Hermes absorption 0.4: what to do with a message that arrives in a group.
         # Default is fail-closed — answer only when mentioned or replied to.
@@ -363,6 +434,7 @@ class TelegramChannel(ChannelAdapter):
         # detection need it, and without it a group message is never "addressed".
         self._bot_id: Optional[int] = None
         self._bot_username: Optional[str] = None
+        self._verified_bot_generation: str | None = None
         self._offset = 0
         # H116: the offset is kept in the reliability store while start() runs the channel,
         # so a restart resumes where it stopped; a poll loop run without start() keeps it
@@ -375,7 +447,13 @@ class TelegramChannel(ChannelAdapter):
         self._started_wall: Optional[float] = None
         # H100: the shared reconnect ladder (reconnect.py) instead of a flat 3 s.
         self._backoff = Backoff()
+        self._poll_circuit = PollingCircuit()
         self._poll_task = None
+        self._identity_task: asyncio.Task | None = None
+        self._poll_claim = None
+        self._menu_refresh_task: asyncio.Task | None = None
+        self._menu_request_counter = 0
+        self._menu_latest_guard: Callable[[], bool] | None = None
         self._owner_once_generation: str | None = None
         self._owner_once_fast: dict[str, asyncio.Task] = {}
         self._owner_once_denial_fast: dict[tuple[int, int], asyncio.Task] = {}
@@ -436,6 +514,8 @@ class TelegramChannel(ChannelAdapter):
         # model. Built on first use from the environment, so a deployment with
         # no local VLM costs nothing and simply refuses with a reason.
         self._image_reader: Optional[InboundImageReader] = None
+        self._document_reader: Optional[InboundDocumentReader] = None
+        self._sticker_captioner = StickerCaptioner()
         # The same shape for a voice note, transcribed on the host's own speech
         # engine. Built on first use; a host without one simply refuses.
         self._voice_reader: Optional[InboundVoiceReader] = None
@@ -458,29 +538,189 @@ class TelegramChannel(ChannelAdapter):
         self._voice_pending: set = set()
         self._ephemeral_deletes = EphemeralDeletes()
 
+    def _poll_lifecycle_lock(self) -> asyncio.Lock:
+        # Some lifecycle harnesses build a minimal adapter with __new__; its stop
+        # still needs the same serialization without relying on __init__ fields.
+        lock = getattr(self, "_poll_start_stop_lock", None)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._poll_start_stop_lock = lock
+        return lock
+
     async def start(self):
+        async with self._poll_lifecycle_lock():
+            await self._start_locked()
+
+    async def _start_locked(self):
+        """Claim startup and getUpdates polling, not outbound sends or auxiliary tasks."""
+        if self._running:
+            return
+        if not credential_is_configured(self.token):
+            self.health.failed_fatally("invalid_credential")
+            logger.warning("Telegram startup refused: credential is missing or a placeholder")
+            return
+        if getattr(self, "_poll_claim", None) is not None:
+            self.health.failed_fatally("polling_cleanup_required")
+            logger.warning("Telegram startup refused: prior polling cleanup incomplete")
+            return
+        from .polling_claims import ClaimUnavailable, acquire_telegram_claim
+
+        try:
+            claim = acquire_telegram_claim(self.token)
+        except ClaimUnavailable as exc:
+            reason = "polling_claim_busy" if exc.reason == "busy" else "polling_claim_unavailable"
+            self.health.failed_fatally(reason)
+            logger.warning("Telegram startup refused: polling claim unavailable")
+            return
+        self._poll_claim = claim
+        try:
+            await self._start_claimed()
+        except BaseException:
+            # The acquired claim remains owned until stop actually completes.
+            self._running = False
+            raise
+
+    async def _start_claimed(self):
         if self.client.is_closed:
-            self.client = httpx.AsyncClient(timeout=15.0, event_hooks={"request": [_bot_api_only]})
+            self.client = httpx.AsyncClient(
+                timeout=httpx.Timeout(15.0, connect=self._connect_timeout_seconds),
+                event_hooks={"request": [_bot_api_only]})
         if self._ephemeral_deletes._closed:
             self._ephemeral_deletes = EphemeralDeletes()
         self._pending_callback_generation = object()
         self._owner_once_generation = uuid.uuid4().hex
+        generation = self._owner_once_generation
+        self._bot_id = None
+        self._bot_username = None
+        self._verified_bot_generation = None
         self.health.starting()
         self._ladder().reset()
+        self._poll_circuit.reset()
         self._resume_offset()
         self._running = True
-        me = await self._get_me()
-        if me:
-            self._bot_id = me.get("id")
+        identity_task = asyncio.create_task(self._get_me(), name="telegram-identity")
+        self._identity_task = identity_task
+        done, _ = await asyncio.wait({identity_task}, timeout=self._connect_timeout_seconds)
+        if not done:
+            # A late HTTP response has no route to identity/menu/poller binding.
+            # Keep the task and claim until stop joins this exact request.
+            self._running = False
+            self.health.failed_fatally("connect_timeout")
+            logger.warning("Telegram startup identity timed out")
+            return
+        me = await identity_task
+        self._identity_task = None
+        if not self._running or self._owner_once_generation != generation:
+            return
+        if me and type(me.get("id")) is int and me["id"] > 0:
+            self._bot_id = me["id"]
             self._bot_username = me.get("username")
+            self._verified_bot_generation = generation
             logger.info(f"Telegram bot connected: {me.get('username', '?')}")
         else:
             logger.warning(
                 "Telegram getMe failed — the bot cannot recognise its own mentions, so "
                 "group messages will be dropped until it can"
             )
+        await self.publish_command_menu()
         self._poll_task = __import__("asyncio").create_task(self._poll_loop())
         logger.info("Telegram channel started")
+
+    def _menu_publication_lock(self) -> asyncio.Lock:
+        # A few direct adapter fixtures use __new__; publication still serializes.
+        lock = getattr(self, "_menu_publish_lock", None)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._menu_publish_lock = lock
+        return lock
+
+    def request_command_menu_refresh(self, *, guard: Callable[[], bool]) -> asyncio.Task | None:
+        """Coalesce committed registry changes into one owned menu publication task."""
+        generation = getattr(self, "_owner_once_generation", None)
+        if (not callable(guard) or not getattr(self, "_running", False)
+                or getattr(self, "_poll_claim", None) is None or not generation
+                or getattr(self, "_verified_bot_generation", None) != generation):
+            return None
+        try:
+            if guard() is not True:
+                return None
+        except Exception:
+            return None
+        self._menu_request_counter = getattr(self, "_menu_request_counter", 0) + 1
+        self._menu_latest_guard = guard
+        task = getattr(self, "_menu_refresh_task", None)
+        if task is None or task.done():
+            task = asyncio.create_task(self._refresh_command_menu(generation),
+                                       name="telegram-command-menu-refresh")
+            self._menu_refresh_task = task
+            task.add_done_callback(lambda done: done.cancelled() or done.exception())
+        return task
+
+    async def _refresh_command_menu(self, generation: str) -> bool:
+        result = False
+        while True:
+            counter = self._menu_request_counter
+            guard = self._menu_latest_guard
+
+            def current(guard=guard) -> bool:
+                if (not getattr(self, "_running", False)
+                        or getattr(self, "_poll_claim", None) is None
+                        or getattr(self, "_owner_once_generation", None) != generation
+                        or getattr(self, "_verified_bot_generation", None) != generation):
+                    return False
+                try:
+                    return guard() is True
+                except Exception:
+                    return False
+
+            if not current():
+                if self._menu_request_counter != counter:
+                    continue
+                return False
+            result = await self.publish_command_menu(guard=current)
+            if self._menu_request_counter != counter:
+                continue
+            return result if current() else False
+
+    async def publish_command_menu(self, *, guard: Callable[[], bool] | None = None) -> bool:
+        """H057: the command menu Telegram shows under "/" — the commands everyone may
+        run in the default scope, and every command in the owner's own chat. Best effort:
+        a failure is logged and the bot runs without a menu. True when every call landed."""
+        async with self._menu_publication_lock():
+            provider = self.command_menu
+            if not callable(provider):
+                return False
+            try:
+                if guard is not None and guard() is not True:
+                    return False
+                everyone, _owner = provider()
+                # The default scope is always only the provider's guest projection.
+                if guard is not None and guard() is not True:
+                    return False
+                response = await self._post(f"{self.api_base}/setMyCommands",
+                                            json={"commands": list(everyone or [])})
+                ok = bool(getattr(response, "is_success", False))
+                # An owner may have moved while the default POST was in flight.
+                # Reproject the recipient immediately before the scoped POST.
+                if guard is not None and guard() is not True:
+                    return False
+                _everyone, owner = provider()
+                if owner:
+                    chat_id, owner_menu = owner
+                    if type(chat_id) is int and owner_menu:
+                        if guard is not None and guard() is not True:
+                            return False
+                        response = await self._post(
+                            f"{self.api_base}/setMyCommands",
+                            json={"commands": list(owner_menu),
+                                  "scope": {"type": "chat", "chat_id": chat_id}})
+                        ok = bool(getattr(response, "is_success", False)) and ok
+                if not ok:
+                    logger.warning("Telegram did not accept the command menu")
+                return ok
+            except Exception as exc:
+                logger.warning("Telegram command menu not published: %s", type(exc).__name__)
+                return False
 
     def _resume_offset(self) -> None:
         """H116 — read the saved offset (if any) and arm the bounded catch-up."""
@@ -509,11 +749,18 @@ class TelegramChannel(ChannelAdapter):
             logger.warning("Telegram offset not saved")
 
     async def stop(self):
+        async with self._poll_lifecycle_lock():
+            await self._stop_locked()
+
+    async def _stop_locked(self):
+        """Retain the poll claim until identity/poller settle and the client closes."""
         self._running = False
         self.health.stopped()
         self._pending_callback_generation = None
         generation = getattr(self, "_owner_once_generation", None)
         self._owner_once_generation = None
+        self._verified_bot_generation = None
+        self._bot_id = None
         stop_hook = getattr(self, "on_owner_once_stop", None)
         if generation is not None and stop_hook is not None:
             try:
@@ -551,12 +798,37 @@ class TelegramChannel(ChannelAdapter):
             # end never runs; once the loop has let go, what is held goes out here.
             await asyncio.wait({self._poll_task})
             await self._flush_all_turns()
+        identity_task = getattr(self, "_identity_task", None)
+        if identity_task is not None:
+            # asyncio.wait does not forward a cancelled stop into the request.
+            # A later stop can join the same task and only then release the claim.
+            await asyncio.wait({identity_task})
+            if not identity_task.cancelled():
+                identity_task.exception()
+            self._identity_task = None
+        menu_task = getattr(self, "_menu_refresh_task", None)
+        if menu_task is not None:
+            # No new POST can start after the generation fence above. Do not
+            # cancel an HTTP request whose physical settlement is unconfirmed.
+            await asyncio.wait({menu_task})
+            if not menu_task.cancelled():
+                menu_task.exception()
+            if self._menu_refresh_task is menu_task:
+                self._menu_refresh_task = None
         lanes, self._lanes = self._lanes, None
         if lanes is not None:
             await lanes.drain(LANE_DRAIN_BUDGET)
+        self._sticker_captioner.clear()
         if not await self._ephemeral_deletes.aclose(timeout=LANE_DRAIN_BUDGET):
             logger.warning("Telegram ephemeral deletion did not finish within the shutdown budget")
         await self.client.aclose()
+        if not self._poll_circuit.reset():
+            self.health.failed_fatally("polling_cleanup_required")
+            raise RuntimeError("Telegram polling cleanup unconfirmed")
+        claim = getattr(self, "_poll_claim", None)
+        if claim is not None:
+            claim.release()
+            self._poll_claim = None
         logger.info("Telegram channel stopped")
 
     async def send(self, message: str, chat_id: int = None, **kwargs) -> bool:
@@ -631,16 +903,14 @@ class TelegramChannel(ChannelAdapter):
                 body["link_preview_options"] = {"is_disabled": True}
             else:
                 body.update(text=to_telegram_html(piece), parse_mode="HTML")
-            response = await self.client.post(self.api_base + "/sendMessage", json=body)
+            response = await self._post(self.api_base + "/sendMessage", json=body)
             if not plain and response.status_code == 400:
-                response = await self.client.post(self.api_base + "/sendMessage", json={
+                response = await self._post(self.api_base + "/sendMessage", json={
                     "chat_id": cid, "text": to_plain(piece), **topic})
             response.raise_for_status()
-            payload = response.json()
-            result = payload.get("result") if isinstance(payload, dict) else None
-            message_id = result.get("message_id") if isinstance(result, dict) else None
-            if (not isinstance(payload, dict) or payload.get("ok") is not True
-                    or type(message_id) is not int or message_id <= 0):
+            message_id = _message_id_of(response)
+            if not message_id:
+                delivery_ledger.note_unconfirmed_ack()
                 return False
 
             client = self.client
@@ -665,23 +935,20 @@ class TelegramChannel(ChannelAdapter):
         """One bounded plain-text request, without fallback, retries or exception logging."""
         if not isinstance(text, str) or not 0 < len(text) <= 2000 or type(chat_id) is not int or not chat_id:
             return False
-        response = await self.client.post(self.api_base + '/sendMessage',
+        response = await self._post(self.api_base + '/sendMessage',
                                           json={'chat_id': chat_id, 'text': text})
+        if not response.is_success:
+            delivery_ledger.note_send_failure(status=response.status_code)
         return self._scheduled_ack(response)
 
     @staticmethod
     def _scheduled_ack(response) -> bool:
         if not response.is_success:
             return False
-        try:
-            body = response.json()
-        except ValueError:
-            return False
-        if not isinstance(body, dict):
-            return False
-        result = body.get('result')
-        return (body.get('ok') is True and isinstance(result, dict)
-                and type(result.get('message_id')) is int and result['message_id'] > 0)
+        confirmed = _message_id_of(response) > 0
+        if not confirmed:
+            delivery_ledger.note_unconfirmed_ack()
+        return confirmed
 
     async def send_media(self, data: bytes, *, mime: str, filename: str, chat_id: int) -> bool:
         """Send captured bounded bytes to an already-bound owner. Never retries."""
@@ -698,7 +965,7 @@ class TelegramChannel(ChannelAdapter):
                 return False
         except ValueError:
             return False
-        response = await self.client.post(self.api_base + '/sendDocument',
+        response = await self._post(self.api_base + '/sendDocument',
             data={'chat_id': str(chat_id)}, files={'document': (filename, data, mime)})
         return self._scheduled_ack(response)
 
@@ -813,6 +1080,10 @@ class TelegramChannel(ChannelAdapter):
                                                    key=f"media:{cid}:{turn}:{item.sha256}")
                 except Exception:
                     logger.warning("Delivery ledger unavailable for an attachment", exc_info=True)
+            if delivery is None:
+                lines.append(f"Attachment {index} was not sent: its delivery could not be recorded.")
+                delivered_all = False
+                continue
             if delivery is not None and not delivery.send:
                 if not delivery.already_sent:
                     # In flight, unknown or given up: say so, never claim it was delivered.
@@ -820,11 +1091,21 @@ class TelegramChannel(ChannelAdapter):
                                  "still arrive.")
                     delivered_all = False
                 continue   # this turn already delivered it
+            try:
+                claimed = delivery.attempting_checked() is True
+            except Exception:
+                logger.warning("Attachment delivery claim unavailable", exc_info=True)
+                claimed = False
+            if not claimed:
+                lines.append(f"Attachment {index} was not sent: its delivery claim is unavailable.")
+                delivered_all = False
+                continue
             outcome, token = delivery_ledger.begin_outcome()
             try:
-                if delivery is not None:
-                    delivery.attempting()
                 ok = await self.send_file(cid, item)
+            except BaseException as exc:
+                delivery.raised(exc)
+                raise
             finally:
                 delivery_ledger.end_outcome(token)
             if delivery is not None:
@@ -848,10 +1129,10 @@ class TelegramChannel(ChannelAdapter):
                 item.kind, ("sendDocument", "document"))
             if method == "sendPhoto" and len(item.data) > 10 * 1024 * 1024:
                 method, field = "sendDocument", "document"   # Telegram's photo limit
-            resp = await self.client.post(f"{self.api_base}/{method}", data={"chat_id": str(cid), **topic},
+            resp = await self._post(f"{self.api_base}/{method}", data={"chat_id": str(cid), **topic},
                                           files={field: (item.name, item.data, item.mime)})
             if resp.status_code == 400 and method != "sendDocument":
-                resp = await self.client.post(f"{self.api_base}/sendDocument",
+                resp = await self._post(f"{self.api_base}/sendDocument",
                                               data={"chat_id": str(cid), **topic},
                                               files={"document": (item.name, item.data, item.mime)})
             if not resp.is_success:
@@ -868,11 +1149,11 @@ class TelegramChannel(ChannelAdapter):
         topic = {k: str(v) for k, v in self._topic_args(cid).items()}
         if clip.mode == "document":
             # Not audio by its bytes: never handed to a converter, sent as a plain file.
-            resp = await self.client.post(f"{self.api_base}/sendDocument", data={"chat_id": str(cid), **topic},
+            resp = await self._post(f"{self.api_base}/sendDocument", data={"chat_id": str(cid), **topic},
                                           files={"document": (clip.filename, clip.data, clip.mime)})
             return self._scheduled_ack(resp)
         if clip.mode == "voice":
-            resp = await self.client.post(f"{self.api_base}/sendVoice", data={"chat_id": str(cid), **topic},
+            resp = await self._post(f"{self.api_base}/sendVoice", data={"chat_id": str(cid), **topic},
                                           files={"voice": (clip.filename, clip.data, clip.mime)})
             if resp.status_code != 400:
                 return self._scheduled_ack(resp)
@@ -880,13 +1161,35 @@ class TelegramChannel(ChannelAdapter):
         data = {"chat_id": str(cid), **topic}
         if clip.note:
             data["caption"] = clip.note
-        resp = await self.client.post(f"{self.api_base}/sendAudio", data=data,
+        resp = await self._post(f"{self.api_base}/sendAudio", data=data,
                                       files={"audio": (clip.filename, clip.data, clip.mime)})
         return self._scheduled_ack(resp)
 
+    async def _post(self, url: str, **kwargs):
+        """Every Bot API call this adapter makes. H069: the text and caption of a body
+        pass the outbound gate here, whatever built them (a reply, a card, a notice, an
+        in-place edit), so nothing reaches Telegram that the gate has not seen."""
+        from .outbound_safety import sanitize_markup, sanitize_outbound, sanitize_text
+
+        for key in ("json", "data"):
+            body = kwargs.get(key)
+            if isinstance(body, dict) and any(f in body for f in ("text", "caption", "reply_markup")):
+                # Review M3: inline button labels are text the chat shows, too.
+                kwargs[key] = {k: (sanitize_outbound(v) if k in ("text", "caption")
+                                   else sanitize_markup(v) if k == "reply_markup" else v)
+                               for k, v in body.items()}
+        files = kwargs.get("files")
+        if isinstance(files, dict):
+            # Review m4: an attachment's filename is shown in the chat (its bytes are not
+            # scanned: a file the owner asked for is delivered as it is).
+            kwargs["files"] = {field: (sanitize_text(part[0]) or "file", *part[1:])
+                               if isinstance(part, tuple) and part and isinstance(part[0], str) else part
+                               for field, part in files.items()}
+        return await self.client.post(url, **kwargs)
+
     async def _send_chunk(self, cid, piece: str) -> bool:
         try:
-            return await self._send_message(cid, to_telegram_html(piece), plain=to_plain(piece)) is not None
+            return await self._send_message(cid, to_telegram_html(piece), plain=to_plain(piece)) > 0
         except Exception as e:
             # H081: why it failed, for the delivery ledger and the dead-target registry.
             delivery_ledger.note_send_failure(exc=e)
@@ -897,10 +1200,13 @@ class TelegramChannel(ChannelAdapter):
         """One chunk as plain text: no parse mode, no link preview. False on any failure
         (logged by type only: an HTTP error names the URL, and the URL holds the token)."""
         try:
-            resp = await self.client.post(f"{self.api_base}/sendMessage", json={
+            resp = await self._post(f"{self.api_base}/sendMessage", json={
                 "chat_id": cid, "text": piece, "link_preview_options": {"is_disabled": True},
                 **self._topic_args(cid)})
             resp.raise_for_status()
+            if _message_id_of(resp) <= 0:
+                delivery_ledger.note_unconfirmed_ack()
+                return False
             return True
         except Exception as e:
             delivery_ledger.note_send_failure(exc=e)
@@ -913,36 +1219,49 @@ class TelegramChannel(ChannelAdapter):
             return {"message_thread_id": scope.message_thread_id}
         return {}
 
-    async def _send_message(self, cid, html_text: str, *, plain: str) -> Optional[int]:
+    async def _send_message(self, cid, html_text: str, *, plain: str) -> int:
         """POST one message as HTML, as plain text if Telegram rejects the markup (400).
         Returns the new message id (or 0 when Telegram did not say), raises on failure."""
-        resp = await self.client.post(
+        resp = await self._post(
             f"{self.api_base}/sendMessage",
             json={"chat_id": cid, "text": html_text, "parse_mode": "HTML", **self._topic_args(cid)},
         )
         if resp.status_code == 400:
             logger.info("Telegram rejected the markup; resending the chunk as plain text")
-            resp = await self.client.post(
+            resp = await self._post(
                 f"{self.api_base}/sendMessage", json={"chat_id": cid, "text": plain, **self._topic_args(cid)},
             )
         resp.raise_for_status()
-        return _message_id_of(resp)
+        message_id = _message_id_of(resp)
+        if message_id <= 0:
+            delivery_ledger.note_unconfirmed_ack()
+        return message_id
 
-    async def _edit_message(self, cid, message_id, html_text: str, *, plain: str) -> bool:
-        """Edit a message in place, HTML first and plain on a 400. False on any failure."""
+    async def _edit_message(self, cid, message_id, html_text: str, *, plain: str) -> bool | None:
+        """Edit in place; None means the result is uncertain and must not be replayed."""
         try:
             body = {"chat_id": cid, "message_id": message_id, "text": html_text, "parse_mode": "HTML"}
-            resp = await self.client.post(f"{self.api_base}/editMessageText", json=body)
+            resp = await self._post(f"{self.api_base}/editMessageText", json=body)
             if resp.status_code == 400:
-                resp = await self.client.post(
+                resp = await self._post(
                     f"{self.api_base}/editMessageText",
                     json={"chat_id": cid, "message_id": message_id, "text": plain},
                 )
             resp.raise_for_status()
+            try:
+                body = resp.json()
+            except Exception:
+                body = None
+            result = body.get("result") if type(body) is dict and body.get("ok") is True else None
+            value = result.get("message_id") if type(result) is dict else None
+            if type(value) is not int or value <= 0 or value != message_id:
+                delivery_ledger.note_unconfirmed_ack()
+                return None
             return True
         except Exception as e:
-            logger.debug(f"Telegram edit failed: {e}")
-            return False
+            delivery_ledger.note_send_failure(exc=e)
+            logger.debug("Telegram edit failed: %s", type(e).__name__)
+            return None if delivery_ledger.classify_send_failure(exc=e).ambiguous else False
 
     def begin_stream(self, chat_id=None, **kwargs) -> Optional[TelegramDraft]:
         """A draft for a reply that will be written in place; None without a chat."""
@@ -955,11 +1274,11 @@ class TelegramChannel(ChannelAdapter):
         """Send a decision-inbox card (text + inline keyboard) built by inbox.py."""
         try:
             body = {"chat_id": chat_id, **card}
-            resp = await self.client.post(f"{self.api_base}/sendMessage", json=body)
+            resp = await self._post(f"{self.api_base}/sendMessage", json=body)
             resp.raise_for_status()
-            return True
+            return self._scheduled_ack(resp)
         except Exception as e:
-            logger.error(f"Telegram send_card error: {e}")
+            logger.error("Telegram send_card error: %s", type(e).__name__)
             return False
 
     def _owner_once_live(self, generation: str | None) -> bool:
@@ -1021,15 +1340,17 @@ class TelegramChannel(ChannelAdapter):
                                 message_thread_id: int | None = None) -> int | None:
         """Plain prompt parts with buttons only on the exact final receipt."""
         generation = self._pending_callback_generation
-        parts = self._owner_once_parts(text)
+        parts = self._owner_once_parts(sanitize_outbound(text))
         if (not self._running or generation is None or self.client.is_closed
                 or type(chat_id) is not int or chat_id == 0 or parts is None
                 or type(reply_markup) is not dict
                 or (message_thread_id is not None
                     and (type(message_thread_id) is not int or message_thread_id <= 0))):
+            delivery_ledger.note_send_failure()
             return None
         for index, part in enumerate(parts):
             if not self._running or generation is not self._pending_callback_generation:
+                delivery_ledger.note_send_failure()
                 return None
             body = {"chat_id": chat_id, "text": part, "disable_web_page_preview": True}
             if message_thread_id is not None:
@@ -1037,17 +1358,37 @@ class TelegramChannel(ChannelAdapter):
             if index == len(parts) - 1:
                 body["reply_markup"] = reply_markup
             try:
-                response = await self.client.post(f"{self.api_base}/sendMessage", json=body)
-                response.raise_for_status()
-                reply = response.json()
-                result = reply.get("result") if type(reply) is dict and reply.get("ok") is True else None
-                message_id = result.get("message_id") if type(result) is dict else None
-                if type(message_id) is not int or message_id <= 0:
-                    return None
-            except Exception:
+                response = await self._post(f"{self.api_base}/sendMessage", json=body)
+            except Exception as exc:
+                if isinstance(exc, httpx.HTTPStatusError):
+                    delivery_ledger.note_send_failure(status=exc.response.status_code)
+                elif isinstance(exc, (httpx.RequestError, TimeoutError)):
+                    delivery_ledger.note_send_failure(exc=exc)
+                else:
+                    # An unexpected transport failure supplies no proof of refusal.
+                    delivery_ledger.note_unconfirmed_ack()
                 logger.warning("Pending prompt delivery failed")
                 return None
+            if not response.is_success:
+                try:
+                    error_body = response.json()
+                    description = error_body.get("description", "") if type(error_body) is dict else ""
+                except (ValueError, TypeError):
+                    description = ""
+                delivery_ledger.note_send_failure(
+                    status=response.status_code,
+                    description=description if type(description) is str else "",
+                )
+                return None
+            message_id = _message_id_of(response)
+            if message_id <= 0:
+                delivery_ledger.note_unconfirmed_ack()
+                return None
+            # A later part or lifecycle fence can fail after this part was accepted.
+            # A fully acknowledged send is still recorded as sent by finished(True).
+            delivery_ledger.note_partial()
             if not self._running or generation is not self._pending_callback_generation:
+                delivery_ledger.note_send_failure()
                 return None
         return message_id
 
@@ -1066,7 +1407,7 @@ class TelegramChannel(ChannelAdapter):
                 message = callback["message"]
                 markup = getattr(result, "markup", None) or {"inline_keyboard": []}
                 try:
-                    response = await self.client.post(f"{self.api_base}/editMessageReplyMarkup", json={
+                    response = await self._post(f"{self.api_base}/editMessageReplyMarkup", json={
                         "chat_id": message["chat"]["id"], "message_id": message["message_id"],
                         "reply_markup": markup,
                     })
@@ -1092,7 +1433,7 @@ class TelegramChannel(ChannelAdapter):
         if (not self._owner_once_live(generation) or type(chat_id) is not int
                 or chat_id == 0 or not isinstance(card, dict)):
             return None
-        parts = self._owner_once_parts(card.get("text"))
+        parts = self._owner_once_parts(sanitize_outbound(card.get("text")))
         markup = card.get("reply_markup")
         if parts is None or (markup is not None and type(markup) is not dict):
             return None
@@ -1103,7 +1444,7 @@ class TelegramChannel(ChannelAdapter):
             if number == len(parts) - 1 and markup is not None:
                 body["reply_markup"] = markup
             try:
-                response = await self.client.post(f"{self.api_base}/sendMessage", json=body)
+                response = await self._post(f"{self.api_base}/sendMessage", json=body)
                 response.raise_for_status()
                 reply = response.json()
                 result = reply.get("result") if type(reply) is dict and reply.get("ok") is True else None
@@ -1126,7 +1467,7 @@ class TelegramChannel(ChannelAdapter):
         posting = self._reason_prompts_posting
         posting[chat_id] = posting.get(chat_id, 0) + 1
         try:
-            response = await self.client.post(f"{self.api_base}/sendMessage", json={
+            response = await self._post(f"{self.api_base}/sendMessage", json={
                 "chat_id": chat_id,
                 "text": f"Task #{task_id} rejected. Reply to this message within 2 minutes with an optional reason (maximum 280 characters).",
                 "reply_markup": {"force_reply": True, "selective": True},
@@ -1142,7 +1483,7 @@ class TelegramChannel(ChannelAdapter):
 
     async def _answer_callback(self, callback_id: str, text: str = ""):
         try:
-            await self.client.post(
+            await self._post(
                 f"{self.api_base}/answerCallbackQuery",
                 json={"callback_query_id": callback_id, "text": text},
             )
@@ -1151,7 +1492,7 @@ class TelegramChannel(ChannelAdapter):
 
     async def send_action(self, chat_id: int, action: str = "typing"):
         try:
-            await self.client.post(
+            await self._post(
                 f"{self.api_base}/sendChatAction",
                 json={"chat_id": chat_id, "action": action},
             )
@@ -1171,21 +1512,26 @@ class TelegramChannel(ChannelAdapter):
         while self._running:
             cut_short: Optional[_Page] = None
             polled = False
+            lease = None
             try:
                 # H117: while pieces of a burst are held, poll without the long wait so
                 # the batch flushes when its window closes, not 25 s later.
                 # H116: while catching up after a start, poll without the long wait too,
                 # so the catch-up ends (an empty page) before any live update is read.
                 wait = self._batch.wait()
-                if self._catching_up:
+                if not self._catching_up and wait is not None and wait > 0:
+                    await asyncio.sleep(wait)
+                lease, gate_wait = self._poll_circuit.admit()
+                if lease is None:
+                    await _backoff_sleep(gate_wait)
+                    continue
+                if self._catching_up or wait is not None:
                     updates = await self._get_updates(timeout=0)
-                elif wait is None:
-                    updates = await self._get_updates()
                 else:
-                    if wait > 0:
-                        await asyncio.sleep(wait)
-                    updates = await self._get_updates(timeout=0)
+                    updates = await self._get_updates()
                 polled = True
+                self._poll_circuit.success(lease)
+                lease = None
                 self._poll_succeeded()
                 # H117: when this page came back, read once, before any update in it is
                 # handled; a claimed reply in it is stamped from this reading.
@@ -1216,10 +1562,18 @@ class TelegramChannel(ChannelAdapter):
                 cut_short = None
                 for key in self._batch.due():
                     await self._flush_turn(key)
+            except asyncio.CancelledError:
+                if lease is not None:
+                    self._poll_circuit.release(lease)
+                raise
             except Exception as e:
                 if not polled:
                     # H100: the Bot API did not answer; classify and climb the shared ladder.
-                    await self._poll_failed(e)
+                    try:
+                        await self._poll_failed(e, lease=lease)
+                    finally:
+                        if lease is not None:
+                            self._poll_circuit.release(lease)
                     continue
                 logger.warning("Telegram update handling error: %s", type(e).__name__)
                 if cut_short is not None:
@@ -1248,6 +1602,11 @@ class TelegramChannel(ChannelAdapter):
             backoff = self._backoff = Backoff()
         return backoff
 
+    def health_snapshot(self) -> dict:
+        row = super().health_snapshot()
+        row["circuit"] = self._poll_circuit.snapshot()
+        return row
+
     def _poll_succeeded(self) -> None:
         self._ladder().success()
         self.health.ok()
@@ -1268,7 +1627,7 @@ class TelegramChannel(ChannelAdapter):
         self._backfill = BackfillBudget()
         self.health.backfill = self._backfill.counts()
 
-    async def _poll_failed(self, exc: Exception) -> None:
+    async def _poll_failed(self, exc: Exception, *, lease=None) -> None:
         """H100 — one failed getUpdates. A fatal answer (the token is wrong or revoked) is
         shown on the status surface, the owner is told on another channel, and the channel
         looks again only every ``FATAL_REPROBE_S`` (so a fixed token heals by itself);
@@ -1280,6 +1639,8 @@ class TelegramChannel(ChannelAdapter):
         # H116: what queues up during the outage is a backlog too.
         self._enter_catch_up()
         if failure.fatal:
+            if lease is not None:
+                self._poll_circuit.release(lease)
             self.health.failed_fatally(failure.kind, reprobe_in=FATAL_REPROBE_S)
             # FP: logs the failure kind and the env-var name only; the token itself is never logged.
             # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
@@ -1291,6 +1652,9 @@ class TelegramChannel(ChannelAdapter):
         delay = self._ladder().failure()
         if failure.retry_after is not None:
             delay = max(delay, failure.retry_after)
+        if lease is not None:
+            delay = max(delay, self._poll_circuit.failure(
+                lease, retry_after=failure.retry_after or 0))
         self.health.retrying(failure.kind, delay)
         logger.warning("Telegram poll failed (%s); retrying in %.0f s", failure.kind, delay)
         await _backoff_sleep(delay)
@@ -1496,6 +1860,8 @@ class TelegramChannel(ChannelAdapter):
         msg = up.get("message") or up.get("edited_message")
         if not msg:
             return
+        msg = {**msg}
+        msg.pop("_command_seed", None)
         if (up.get("message") is None or any(msg.get(field) for field in (
                 "forward_origin", "forward_from", "forward_from_chat", "forward_sender_name"))):
             # This narrowing marker also follows the ordinary queued path; otherwise
@@ -1512,6 +1878,8 @@ class TelegramChannel(ChannelAdapter):
             return
         text = msg.get("text", "")
         chat_id = msg["chat"]["id"]
+        private_restart_phrase = (msg["chat"].get("type") == "private"
+                                  and plaintext_restart(text))
         # A photo, a voice note or a captioned image used to land
         # here and be dropped by `if not text`, with no reply and
         # nothing the sender could learn from. Recognise it first;
@@ -1519,6 +1887,9 @@ class TelegramChannel(ChannelAdapter):
         attachment = classify(msg)
         if not text and attachment is None:
             return
+        seed = self._restart_command_seed(up, msg, text, attachment)
+        if seed is not None:
+            msg["_command_seed"] = seed
         # A `/start <token>` deeplink pairs this sender and stops here:
         # the payload is a credential, so it must never be forwarded to
         # the orchestrator, echoed, or logged as message text.
@@ -1586,7 +1957,8 @@ class TelegramChannel(ChannelAdapter):
         # A delivered clarification may be awaited by this chat's current lane.
         # Only fresh, directly authored, group-authorized text may bypass that lane.
         if (callable(self.pending_reply_handler) and up.get("message") is not None
-                and not backfilled and text and attachment is None
+                and not backfilled and text and attachment is None and seed is None
+                and not private_restart_phrase
                 and not any(msg.get(field) for field in (
                     "forward_origin", "forward_from", "forward_from_chat", "forward_sender_name"))):
             chat = msg.get("chat") or {}
@@ -1623,6 +1995,7 @@ class TelegramChannel(ChannelAdapter):
         # forwarded, attachment and command messages retain their existing paths.
         if (self.on_decision_reason and up.get("message") is not None and text
                 and not backfilled and attachment is None and not is_command(text)
+                and not private_restart_phrase
                 and not any(msg.get(key) for key in ("forward_origin", "forward_from", "forward_from_chat", "forward_sender_name"))):
             reply_id = (msg.get("reply_to_message") or {}).get("message_id")
             if reply_id is not None and (self._reason_prompts_posting.get(chat_id)
@@ -1653,6 +2026,27 @@ class TelegramChannel(ChannelAdapter):
                 return
             # H117: any other reply is queued, merged and flushed as if the hook were not wired.
         await self._handle_message_content(msg, uid, chat_id, text, attachment)
+
+    def _restart_command_seed(self, up, msg, text, attachment):
+        """Admit provenance only for an original text command in this bot's owner DM."""
+        from ..command_source import TelegramCommandSeed
+
+        sender = msg.get("from") or {}
+        chat = msg.get("chat") or {}
+        ids = (self._bot_id, up.get("update_id"), msg.get("message_id"),
+               chat.get("id"), sender.get("id"))
+        if (up.get("message") is None or not restart_command_text(text)
+                or attachment is not None
+                or msg.get("_backfilled") is True or msg.get("_pending_input_ineligible") is True
+                or chat.get("type") != "private" or sender.get("is_bot") is not False
+                or any(msg.get(key) for key in (
+                    "forward_origin", "forward_from", "forward_from_chat", "forward_sender_name"))
+                or any(type(value) is not int or not 0 < value <= (1 << 63) - 1 for value in ids)
+                or ids[3] != ids[4] or not self._running
+                or not self._owner_once_generation
+                or self._verified_bot_generation != self._owner_once_generation):
+            return None
+        return TelegramCommandSeed(self, self._owner_once_generation, *ids, text)
 
     def _claims_reason(self, chat_id, uid, reply_id) -> bool:
         """Would the decision inbox take this reply as a rejection's reason right now? Asked
@@ -1766,8 +2160,8 @@ class TelegramChannel(ChannelAdapter):
         """Apply the message gate; an already queued reply stays in its lane."""
         chat = msg.get("chat") or {}
         session_meta = {}
-        if (callable(self.pending_reply_handler)
-                and (attachment is not None or msg.get("_pending_input_ineligible"))):
+        if (attachment is not None or msg.get("_pending_input_ineligible")
+                or (chat.get("type") == "private" and plaintext_restart(text))):
             session_meta["pending_input_eligible"] = False
         if chat.get("type", "private") != "private":
             session_meta["chat_type"] = chat.get("type")
@@ -1810,6 +2204,14 @@ class TelegramChannel(ChannelAdapter):
         if decision.action != ANSWER:
             logger.debug("Ignored group message (%s)", decision.reason)
             return
+        from ..command_source import TelegramCommandSeed
+
+        seed = msg.get("_command_seed")
+        if (type(seed) is TelegramCommandSeed and attachment is None
+                and decision.text == text == seed.text
+                and chat.get("type") == "private"):
+            session_meta["_command_seed"] = seed
+            session_meta["pending_input_eligible"] = False
         # Pending replies were intercepted in _handle_update. This admitted
         # message must signal before batching and the occupied chat lane.
         if callable(self.pre_turn_interrupt):
@@ -1818,7 +2220,8 @@ class TelegramChannel(ChannelAdapter):
                 message_thread_id=topic if type(topic) is int and topic > 0 else None,
                 text=decision.text, chat_type=chat.get("type", "private"))
         turn = decision.text
-        if attachment is not None:
+        if attachment is not None and not (attachment.kind in {KIND_DOCUMENT, KIND_STICKER}
+                                           and is_command(decision.text)):
             logger.info("Telegram inbound media: %s", attachment.to_dict())
             read, why = await self._read_attachment(
                 attachment, decision.text, chat_id, uid)
@@ -1848,7 +2251,9 @@ class TelegramChannel(ChannelAdapter):
         key = (chat_id, str(uid))
         if session_meta.get("message_thread_id") is not None:
             key += (session_meta["message_thread_id"],)
-        if is_command(turn):
+        if (is_command(turn) or
+                (session_meta.get("chat_type", "private") == "private"
+                 and plaintext_restart(turn))):
             # The command plane answers a turn that is the command alone: what was held
             # goes first, then the command on its own (merged, /stop would be chat).
             await self._flush_turn(key)
@@ -1943,10 +2348,29 @@ class TelegramChannel(ChannelAdapter):
             self, self._owner_once_generation or "", chat_id, uid, asyncio.current_task(),
         )
         owner_token = bind_owner_reply_source(owner_source)
+        seed = session_meta.pop("_command_seed", None)
         if spoken:
             self._voice_turns.add(chat_id)
         try:
-            await self.receive(turn, chat_id=chat_id, sender=str(uid), **session_meta)
+            from ..command_source import (TelegramCommandCandidate, TelegramCommandSeed,
+                                          bind_candidate, candidate_live)
+
+            candidate = None
+            if type(seed) is TelegramCommandSeed:
+                candidate = TelegramCommandCandidate(
+                    seed.adapter, seed.generation, seed.bot_id, seed.update_id,
+                    seed.message_id, seed.chat_id, seed.sender_id, seed.text,
+                    asyncio.current_task(),
+                )
+                if not candidate_live(candidate, adapter=self, text=turn,
+                                      sender=uid, chat_id=chat_id):
+                    candidate = None
+            if candidate is None:
+                await self.receive(turn, chat_id=chat_id, sender=str(uid), **session_meta)
+            else:
+                with bind_candidate(candidate):
+                    await self.receive(turn, chat_id=chat_id, sender=str(uid),
+                                       provider_id=candidate.provider_id, **session_meta)
         finally:
             # A turn the router answered with nothing must not leave
             # its voice mark behind for the next, typed, question.
@@ -2201,6 +2625,8 @@ class TelegramChannel(ChannelAdapter):
         """
         if not attachment.readable:
             return "", ""
+        if not self._media_sender_allowed(uid):
+            return "", "the sender is not paired"
         # Reading takes seconds; say so rather than leaving the chat silent.
         await self.send_action(chat_id, "typing")
         if attachment.kind == KIND_PHOTO:
@@ -2208,6 +2634,15 @@ class TelegramChannel(ChannelAdapter):
             logger.info("Telegram photo read: %s", description.to_dict())
             return ((image_turn_text(description, spoken), "") if description.ok
                     else ("", read_note(description)))
+        if attachment.kind == KIND_STICKER:
+            description = await self._read_sticker(attachment, uid)
+            logger.info("Telegram sticker read: %s", description.to_dict())
+            return ((sticker_turn_text(description, spoken), "") if description.ok
+                    else ("", sticker_note(description)))
+        if attachment.kind == KIND_DOCUMENT:
+            document = await self._read_document(attachment)
+            return ((document_turn_text(document, spoken), "") if document.ok
+                    else ("", document_note(document)))
         if attachment.kind == KIND_VOICE:
             transcript = await self._read_voice(attachment)
             logger.info("Telegram voice read: %s", transcript.to_dict())
@@ -2232,6 +2667,43 @@ class TelegramChannel(ChannelAdapter):
         # declaration half.
         logger.warning("Telegram: %s is readable but has no reader", attachment.kind)
         return "", ""
+
+    def _media_sender_allowed(self, uid) -> bool:
+        """Do not fetch sender bytes ahead of the Gateway's pairing admission."""
+        if type(uid) is not int or uid <= 0:
+            return False
+        if self.allowed_users and uid in self.allowed_users:
+            return True
+        if self._pairing is None:
+            from .pairing import pairing_enabled
+            return not pairing_enabled()
+        try:
+            return self._pairing.is_allowed("telegram", str(uid)) is True
+        except Exception:
+            return False
+
+    async def _read_document(self, attachment) -> InboundDocumentText:
+        if self._document_reader is None:
+            self._document_reader = InboundDocumentReader()
+        reader = self._document_reader
+        refused = reader.refusal(attachment.filename)
+        if refused is not None:
+            return refused
+        try:
+            data = await self._download_file(attachment.file_id, reader.max_bytes)
+        except Exception:
+            return InboundDocumentText(False, reason=DOCUMENT_REASON_DOWNLOAD)
+        if not data:
+            return InboundDocumentText(False, reason=DOCUMENT_REASON_DOWNLOAD)
+        return await reader(data, filename=attachment.filename)
+
+    async def _read_sticker(self, attachment, uid) -> Description:
+        if self._image_reader is None:
+            self._image_reader = InboundImageReader.from_env()
+        return await self._sticker_captioner.describe(
+            attachment, reader=self._image_reader, download=self._download_file,
+            allowed=lambda: self._media_sender_allowed(uid),
+        )
 
     async def _read_voice(self, attachment) -> Transcript:
         """Download and transcribe one voice note. Failures are Transcripts, not raises."""
@@ -2364,7 +2836,7 @@ class TelegramChannel(ChannelAdapter):
         resp = await self.client.get(
             f"{self.api_base}/getUpdates",
             params={"offset": self._offset, "timeout": timeout},
-            timeout=httpx.Timeout(15.0, read=30.0),
+            timeout=httpx.Timeout(15.0, connect=self._connect_timeout_seconds, read=30.0),
         )
         resp.raise_for_status()
         return resp.json().get("result", [])

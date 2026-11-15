@@ -419,7 +419,8 @@ def test_exit_78_means_a_refused_configuration_and_nothing_else():
         text = path.read_text(encoding="utf-8", errors="replace")
         if re.search(r"CONFIG_REFUSED_EXIT|SystemExit\(78\)|sys\.exit\(78\)|_exit\(78\)", text):
             users.append(path.relative_to(ROOT).as_posix())
-    assert users == ["agents/core/env_alias.py", "scripts/runtime_supervisor.py"]
+    # H089: boot_refusal decides when a refused start is permanent (78), nothing else.
+    assert users == ["agents/core/boot_refusal.py", "agents/core/env_alias.py", "scripts/runtime_supervisor.py"]
     main_block = (ROOT / "serve.py").read_text(encoding="utf-8").split('if __name__ == "__main__":')[-1]
     assert "except ConfigurationRefused" in main_block and "_leave_refused(refused)" in main_block
     for unit in ("deploy/systemd/jarvis-hub.service", "deploy/systemd/jarvis-runtime.service"):

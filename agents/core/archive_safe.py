@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import errno
 import gzip
+import hashlib
 import io
 import logging
 import os
@@ -59,6 +60,7 @@ import secrets
 import shutil
 import stat
 import tarfile
+import tempfile
 import zipfile
 import zlib
 from collections.abc import Callable, Collection, Iterator
@@ -465,6 +467,76 @@ def _prepare_dest(dest: Path) -> Path:
     dest = Path(dest)
     dest.mkdir(parents=True, exist_ok=True)
     return dest.resolve()
+
+
+@dataclass(frozen=True)
+class ArchiveSnapshot:
+    """Private bytes for one validation/use scope, never a durable identity token."""
+
+    path: Path
+    sha256: str
+    size: int
+
+
+@contextmanager
+def snapshot_archive(path: Path, *, max_bytes: int,
+                     expected_sha256: str | None = None) -> Iterator[ArchiveSnapshot]:
+    """Copy a bounded regular file into a private validation/use scope.
+
+    Validate and consume ``snapshot.path`` inside the context, never reopen the
+    original pathname. Changes to the original after copying cannot change these
+    bytes. If validation happened before this context (for example approval on a
+    prior boot), supply its trusted SHA-256; stat identity alone is insufficient.
+    Without that digest this captures bytes to validate now, not proof they were
+    unchanged since an earlier check. This creates no archive members or services.
+
+    The caller owns the process/user boundary: another process with the same UID
+    and arbitrary access to this process's private files is outside this contract.
+    """
+    if type(max_bytes) is not int or max_bytes < 0:
+        raise ValueError("invalid archive snapshot byte limit")
+    if (expected_sha256 is not None and (not isinstance(expected_sha256, str)
+            or re.fullmatch(r"[0-9a-f]{64}", expected_sha256) is None)):
+        raise ValueError("invalid archive snapshot digest")
+    source = Path(path)
+    before = source.lstat()
+    if not stat.S_ISREG(before.st_mode):
+        raise ArchiveRejected("archive snapshot source is not a regular file")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    descriptor = os.open(source, flags | getattr(os, "O_BINARY", 0))
+    try:
+        opened = os.fstat(descriptor)
+        if (not stat.S_ISREG(opened.st_mode)
+                or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)):
+            raise ArchiveRejected("archive snapshot source changed while opening")
+        if opened.st_size > max_bytes:
+            raise ArchiveRejected("archive snapshot exceeds the bytes cap")
+        with tempfile.TemporaryDirectory(prefix="nerva-archive-snapshot-") as temporary:
+            private = Path(temporary) / source.name
+            digest = hashlib.sha256()
+            size = 0
+            with private.open("xb") as output:
+                os.chmod(private, 0o600)
+                while True:
+                    block = os.read(descriptor, min(_CHUNK, max_bytes - size + 1))
+                    if not block:
+                        break
+                    size += len(block)
+                    if size > max_bytes:
+                        raise ArchiveRejected("archive snapshot exceeds the bytes cap")
+                    digest.update(block)
+                    output.write(block)
+            after = os.fstat(descriptor)
+            if ((opened.st_size, opened.st_mtime_ns, opened.st_ctime_ns)
+                    != (after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+                    or size != opened.st_size):
+                raise ArchiveRejected("archive snapshot source changed while copying")
+            identity = digest.hexdigest()
+            if expected_sha256 is not None and identity != expected_sha256:
+                raise ArchiveRejected("archive snapshot differs from expected digest")
+            yield ArchiveSnapshot(private, identity, size)
+    finally:
+        os.close(descriptor)
 
 
 # ── tar ────────────────────────────────────────────────────────────

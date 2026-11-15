@@ -111,7 +111,9 @@ def _channel(tmp_path, mode=OFF, *, reply=REPLY, statuses=None, synth_fail=False
             await ch.send(reply, chat_id=kwargs["chat_id"])
         return None if silent else reply
 
-    ch = TelegramChannel(token="t", handler=handler)
+    # The voice sender and the second chat are admitted owner-listed senders.
+    # Media bytes are now checked before the Gateway's later pairing gate.
+    ch = TelegramChannel(token="t", handler=handler, allowed_user_ids=[42, 43])
     ch._bot_id, ch._bot_username = 1, "nerva_bot"
     ch.client = client
     ch._voice_modes = VoiceModeStore(None)
@@ -622,13 +624,19 @@ async def test_a_job_an_ended_voice_turn_armed_never_takes_a_later_voice_turns_m
 
 
 @pytest.mark.asyncio
-async def test_a_streamed_reply_is_spoken_once_its_final_edit_landed(tmp_path):
+@pytest.mark.parametrize("opaque_redactor", [False, True])
+async def test_a_streamed_reply_is_spoken_once_its_final_edit_landed(tmp_path, monkeypatch, opaque_redactor):
+    from agents.core.channels import outbound_safety
+
+    monkeypatch.setattr(outbound_safety, "_known_redactor", (lambda text: text) if opaque_redactor else None)
     ch, client, synth = _channel(tmp_path, ALWAYS)
     draft = TelegramDraft(ch, 42, interval=0)
     await draft.push("Este ")
     await draft.push("ora 10.")
     assert await draft.finish("Este ora 10.") is True
-    assert client.methods()[-3:] == ["editMessageText", "sendChatAction", "sendVoice"]
+    final_transport = "sendMessage" if opaque_redactor else "editMessageText"
+    assert client.methods()[-3:] == [final_transport, "sendChatAction", "sendVoice"]
+    assert client.methods().count("sendVoice") == 1
     assert synth.seen == [("Este ora 10.", "ro")]
 
 

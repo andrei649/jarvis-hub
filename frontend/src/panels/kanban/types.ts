@@ -224,6 +224,104 @@ export interface KanbanProfile {
   description_auto: boolean
 }
 
+/** GET /assignees — on-disk profiles + task assignees with per-status counts. */
+export interface KanbanAssignee {
+  name: string
+  on_disk: boolean
+  counts: Record<string, number>
+}
+
+/** GET /stats — live SQLite board status/assignee rollup + oldest ready SLA age. */
+export interface KanbanStats {
+  by_status: Record<string, number>
+  by_assignee: Record<string, Record<string, number>>
+  oldest_ready_age_seconds: number | null
+  now: number
+}
+
+/** GET /workers/active — currently claimed running task workers. */
+export interface ActiveWorker {
+  run_id: number
+  task_id: string
+  task_title: string
+  task_status: string
+  task_assignee?: null | string
+  profile?: null | string
+  worker_pid?: null | number
+  started_at?: null | number
+  claim_lock?: null | string
+  claim_expires?: null | number
+  last_heartbeat_at?: null | number
+  max_runtime_seconds?: null | number
+}
+
+export interface ActiveWorkersResponse {
+  workers: ActiveWorker[]
+  count: number
+  checked_at: number
+}
+
+/** GET /diagnostics — board-wide distress signals grouped by task. */
+export interface BoardDiagnosticRow {
+  task_id: string
+  task_title?: null | string
+  task_status?: null | string
+  task_assignee?: null | string
+  diagnostics: Diagnostic[]
+}
+
+export interface BoardDiagnosticsResponse {
+  diagnostics: BoardDiagnosticRow[]
+  count: number
+}
+
+/** GET /runs/:run_id — full single-run SQLite row. */
+export interface KanbanRunDetail extends KanbanRun {
+  task_id?: string
+  claim_lock?: null | string
+  claim_expires?: null | number
+  last_heartbeat_at?: null | number
+  max_runtime_seconds?: null | number
+}
+
+/** GET /runs/:run_id/inspect — bound worker process inspection. */
+export interface RunProcessInspection {
+  run_id?: number
+  worker_pid?: null | number
+  alive?: boolean
+  state?: null | string
+  detail?: null | string
+}
+
+/** GET /config — scoped runtime dashboard configuration. */
+export type KanbanConfig = Record<string, unknown>
+
+/** GET /model-options — available provider/model override inventory. */
+export interface KanbanModelOption {
+  id: string
+  label?: string
+  provider?: string
+}
+
+export interface KanbanModelOptionsResponse {
+  models?: KanbanModelOption[]
+  providers?: string[]
+  reasoning_efforts?: string[]
+}
+
+/** GET /home-channels — notification channel targets and task subscriptions. */
+export interface HomeChannel {
+  platform: string
+  label?: string
+  configured?: boolean
+  subscribed?: boolean
+}
+
+export interface HomeChannelsResponse {
+  channels?: HomeChannel[]
+  subscribed?: string[]
+}
+
 /** Column presentation — codicon + tone only. Labels + help live in i18n
  *  (plugin bundles); see `columnLabel`/`columnHelp` in i18n.ts. Order follows
  *  the backend's BOARD_COLUMNS; anything the backend adds renders via the

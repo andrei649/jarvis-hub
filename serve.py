@@ -23,6 +23,28 @@ sys.path.insert(0, str(Path(__file__).parent / "agents"))
 SAFE_MODE_SWITCH = "--safe-mode"
 
 
+def _first_party_import_name(exc: ImportError) -> str | None:
+    """Return the missing first-party module, never a transitive third-party name."""
+    name = getattr(exc, "name", None)
+    if isinstance(name, str) and (name == "agents" or name.startswith("agents.")):
+        return name
+    return None
+
+
+def _report_first_party_import(exc: ImportError) -> None:
+    """Add context without hiding the original exception or claiming a definite cause."""
+    module = _first_party_import_name(exc)
+    if module is None:
+        return
+    print(
+        f"Nerva: first-party startup import failed: {module}: {exc}. This may indicate "
+        "a mismatched or incomplete install, or a code defect. Check that the checkout "
+        "and Python environment match; `nerva doctor` checks the environment and locks. "
+        "The traceback below contains the original error.",
+        file=sys.stderr,
+    )
+
+
 def apply_safe_mode_switch(argv=None) -> bool:
     """H275: ``python serve.py --safe-mode`` boots with every owner customization left
     out (agents/core/safe_mode.py). It sets ``JARVIS_SAFE_MODE=1`` here, before the
@@ -57,16 +79,34 @@ if importlib.util.find_spec("numpy") is None:
 
 # H010 review r2: an image a self-restart exec'd is still in systemd's reload state with the
 # watchdog armed; keep it fed from here (before the app's slow imports) until READY=1.
-from agents.core.sd_notify import continue_restart_keepalive  # noqa: E402
+try:
+    from agents.core.sd_notify import continue_restart_keepalive  # noqa: E402
+except ImportError as exc:
+    _report_first_party_import(exc)
+    raise
 
 continue_restart_keepalive()
 
 # H689: a refused JARVIS_PROFILE stops the start here, named, before the hub is imported
 # (its stores open under the data root at import, and data_root() refuses the name).
-from agents.core.paths import profile_error  # noqa: E402
+try:
+    from agents.core.paths import profile_error  # noqa: E402
+except ImportError as exc:
+    _report_first_party_import(exc)
+    raise
 
 if profile_error():
-    sys.exit(profile_error())
+    # H089: a refused profile name is a permanent configuration failure (78): the service
+    # units do not restart on it — no restart can rename the profile.
+    try:
+        from agents.core.boot_refusal import exit_status as _refusal_status  # noqa: E402
+        from agents.core.env_alias import ConfigurationRefused  # noqa: E402
+    except ImportError as exc:
+        _report_first_party_import(exc)
+        raise
+
+    print(profile_error(), file=sys.stderr)
+    sys.exit(_refusal_status(ConfigurationRefused(profile_error(), permanent=True)))
 
 
 #: H010 (Windows): the env var a hub sets for the successor it spawns — its own pid. The
@@ -108,7 +148,11 @@ def wait_for_predecessor(environ=None, *, alive=None, timeout=None, poll=0.2, sl
     return True
 
 
-wait_for_predecessor()
+try:
+    wait_for_predecessor()
+except ImportError as exc:
+    _report_first_party_import(exc)
+    raise
 
 
 def apply_staged_restore():
@@ -159,12 +203,15 @@ def apply_staged_restore():
 
 
 def _leave_refused(refused) -> None:
-    """RB-2: a refused configuration ends the start with the status the refusal carries —
-    78 for one variable under both spellings in the process environment (no restart can
-    cure it, and the service units do not restart on it), the ordinary failure status for
-    a refusal that comes from a .env file (the service manager tries again)."""
+    """RB-2/H089: a refused configuration ends the start with 78 when it is permanent — a
+    boot guard's refusal, one variable under both spellings in the process environment —
+    so the service units do not restart on it. A refusal that comes from a .env file is
+    retried once (the file may have been caught mid-save) and is permanent when the next
+    start is refused the same way (``agents.core.boot_refusal``)."""
+    from agents.core.boot_refusal import exit_status
+
     print(refused, file=sys.stderr)
-    raise SystemExit(refused.exit_status) from None
+    raise SystemExit(exit_status(refused)) from None
 
 
 def update_boot_guard() -> bool:
@@ -248,19 +295,27 @@ def _update_guard_fallback(exc: BaseException) -> bool:
 
 
 update_boot_guard()
-apply_staged_restore()
+try:
+    apply_staged_restore()
+except ImportError as exc:
+    _report_first_party_import(exc)
+    raise
 
 # O26-P0.6 (F6): the boot guards moved to agents/core/boot_guards.py so the
 # raw-uvicorn entry (`python -m uvicorn agents.web:app`) enforces the same
 # posture via the app lifespan. Re-exported here — serve.py stays the
 # canonical entry and existing imports keep working.
-from agents.core.boot_guards import (  # noqa: E402,F401
-    assert_hardened_posture,
-    assert_parseable_posture_flags,
-    assert_safe_bind,
-)
-from agents.core.env_config import env_int, env_str  # noqa: E402  (O26-P2.1: was a local _env_int)
-from agents.web import app
+try:
+    from agents.core.boot_guards import (  # noqa: E402,F401
+        assert_hardened_posture,
+        assert_parseable_posture_flags,
+        assert_safe_bind,
+    )
+    from agents.core.env_config import env_int, env_str  # noqa: E402  (O26-P2.1: was a local _env_int)
+    from agents.web import app
+except ImportError as exc:
+    _report_first_party_import(exc)
+    raise
 
 
 def server_config():
@@ -434,45 +489,52 @@ def probe_bind(host: str, port: int) -> None:
 
 
 def main():
-    from agents.core.env_provenance import load_hub_env
-
-    # H273: the .env files come first, so the server, the posture guards and the bind
-    # guard see a value there (a token in .env is one); the lifespan's load is then a no-op.
-    load_hub_env()
-    config = server_config()
-    assert_parseable_posture_flags()  # fail-closed on a mistyped posture flag (H23.30)
-    assert_safe_bind(config.host)   # fail-closed on an unauthenticated external bind
-    assert_hardened_posture()       # fail-closed on a mis-configured hardened profile (CDX-12)
-    # Posture guards run first (they must fail-closed even on a taken port); only
-    # then do we tell the owner *why* the bind is about to fail (H042).
-    probe_bind(config.host, config.port)
-    # H689: one hub per data root (per profile); a second one is told who holds it.
-    from agents.core import install_identity
-    from agents.core.paths import data_root
-
     try:
-        install_identity.acquire_hub_lock()
-    except install_identity.HubAlreadyRunning as exc:
-        raise SystemExit(f"Nerva is already running on this data root: {exc}") from None
-    print(f"Data root: {data_root()}  (install {install_identity.install_id() or 'id unavailable'})")
-    # Packaged installs: create + announce the owner's data folder up front so
-    # first-run users know exactly where their memory/config/skills live.
-    from agents.core.env_provenance import profile_env_file
-    from agents.core.paths import ensure_user_home
-    profile_env = profile_env_file()   # H689b: a profile's config is its own .env
-    if profile_env is not None:
-        print(f"Profile config: {profile_env}  (a profile reads only its own .env)")
-    home = ensure_user_home()
-    if home is not None:
-        print(f"Your data lives in: {home}" + ("" if profile_env is not None else f"  (config: {home / '.env'})"))
-    print(f"Nerva starting at http://{config.host}:{config.port}")
-    print("Features: multi-agent cabinet, skills system, memory store, cost analytics, CI/CD")
-    # uvicorn.Server installs SIGINT/SIGTERM handlers and triggers the lifespan
-    # shutdown (graceful channel stop + pooled-client close), bounded by
-    # timeout_graceful_shutdown above. H283: this subclass tells systemd READY once the
-    # port is bound and /readyz would say ready, and STOPPING before the drain.
-    from agents.core.routers.ops import readiness_snapshot
-    from agents.core.sd_notify import NotifyingServer
+        from agents.core.env_provenance import load_hub_env
+
+        # H273: the .env files come first, so the server, the posture guards and the bind
+        # guard see a value there (a token in .env is one); the lifespan's load is then a no-op.
+        load_hub_env()
+        config = server_config()
+        assert_parseable_posture_flags()  # fail-closed on a mistyped posture flag (H23.30)
+        assert_safe_bind(config.host)   # fail-closed on an unauthenticated external bind
+        assert_hardened_posture()       # fail-closed on a mis-configured hardened profile (CDX-12)
+        # Posture guards run first (they must fail-closed even on a taken port); only
+        # then do we tell the owner *why* the bind is about to fail (H042).
+        probe_bind(config.host, config.port)
+        # H689: one hub per data root (per profile); a second one is told who holds it.
+        from agents.core import install_identity
+        from agents.core.paths import data_root
+
+        try:
+            install_identity.acquire_hub_lock()
+        except install_identity.HubAlreadyRunning as exc:
+            raise SystemExit(f"Nerva is already running on this data root: {exc}") from None
+        from agents.core import boot_refusal
+
+        boot_refusal.clear()   # H089: the configuration was accepted; an earlier refusal is over
+        print(f"Data root: {data_root()}  (install {install_identity.install_id() or 'id unavailable'})")
+        # Packaged installs: create + announce the owner's data folder up front so
+        # first-run users know exactly where their memory/config/skills live.
+        from agents.core.env_provenance import profile_env_file
+        from agents.core.paths import ensure_user_home
+        profile_env = profile_env_file()   # H689b: a profile's config is its own .env
+        if profile_env is not None:
+            print(f"Profile config: {profile_env}  (a profile reads only its own .env)")
+        home = ensure_user_home()
+        if home is not None:
+            print(f"Your data lives in: {home}" + ("" if profile_env is not None else f"  (config: {home / '.env'})"))
+        print(f"Nerva starting at http://{config.host}:{config.port}")
+        print("Features: multi-agent cabinet, skills system, memory store, cost analytics, CI/CD")
+        # uvicorn.Server installs SIGINT/SIGTERM handlers and triggers the lifespan
+        # shutdown (graceful channel stop + pooled-client close), bounded by
+        # timeout_graceful_shutdown above. H283: this subclass tells systemd READY once the
+        # port is bound and /readyz would say ready, and STOPPING before the drain.
+        from agents.core.routers.ops import readiness_snapshot
+        from agents.core.sd_notify import NotifyingServer
+    except ImportError as exc:
+        _report_first_party_import(exc)
+        raise
 
     run_server(NotifyingServer(config, readiness_snapshot))
 
@@ -491,6 +553,9 @@ def main():
 #:   successor would run outside the service and race the wrapper's own relaunch): an
 #:   approved restore answers restart="manual" and says to restart the hub/service.
 RESTART_EXIT_CODE = 75
+#: H089: the app did not start for a reason that is not a configuration refusal (uvicorn's
+#: own STARTUP_FAILURE). A ``server.run()`` that returns before startup used to leave 0.
+STARTUP_FAILED_EXIT = 3
 SERVICE_WRAPPER_ENV = "NERVA_SERVICE_WRAPPER"
 _OS_NAME = os.name
 
@@ -593,6 +658,16 @@ def run_server(server) -> None:
     if path is not None:
         hub_restart.install(lambda: setattr(server, "should_exit", True))
     server.run()
+    if getattr(server, "started", True) is False:
+        # H089: the app refused to start. A boot guard in the lifespan refused the
+        # configuration (uvicorn caught it): leave with that refusal's status. Any other
+        # startup failure is uvicorn's own status 3, which a supervisor retries.
+        from agents.core.boot_guards import last_refusal
+
+        refused = last_refusal()
+        if refused is not None:
+            _leave_refused(refused)
+        raise SystemExit(STARTUP_FAILED_EXIT)
     reason = hub_restart.requested()
     hub_restart.reset()
     if reason is None or path is None:

@@ -1,0 +1,1352 @@
+[
+  {
+    "id": "H090",
+    "title": "Pluggable platform adapter contract (one descriptor per channel, one base class that owns the conversation runtime)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "beea832c45d0384c2abcf292badd42fe7d174731d9e912d9461f6825ec3596fc",
+    "contract": "`PlatformEntry` (gateway/platform_registry.py:63-230) is a ~25-field descriptor: adapter_factory, PASSIVE `check_fn` vs ACTIVE `ensure_deps_fn` (the split that fixed a desktop boot-loop and a Teams deadlock), is_connected, validate_config, allowed_users_env/allow_all_env, max_message_length, pii_safe, emoji, platform_hint, cron_deliver_env_var, standalone_sender_fn, parse_target_ref_fn/validate_target_ref_fn, send_message_handler, env_enablement_fn, apply_yaml_config_fn. `BasePlatformAdapter` (gateway/platforms/base.py:3031) owns session locking, interrupt/queue/debounce, typing heartbeats, media caching, `_send_with_retry`, and approval/clarify/picker rendering — the subclass supplies transport only. `MessageEvent` (base.py:2424) normalizes every inbound message; `SendResult` + `SEND_ERROR_KINDS` {too_long,bad_format,forbidden,not_found,rate_limited,transient,unknown} (base.py:2593-2744) give one failure vocabulary. platforms-b.contract-* (8 entries).",
+    "governance": "Privileged: outbound send. Today `ChannelManager.send`/`send_channel_reply` are the seam and they gate on hardcoded channel names; the descriptor must carry the kernel kind (`channel.reply`, and new kinds for media) so a newly registered adapter cannot be reachable without declaring one.",
+    "remaining_verbatim": "Descriptorul (agents/core/channels/descriptor.py:28) declară doar dialectul, plafonul de lungime și flagurile edit/media/threads/recognises/reads; nu numește kind-ul kernel emis de calea outbound a adaptorului, nici utilizatorii permiși/allow-all, pii_safe, ținta de livrare cron, parsarea/validarea țintei, separarea verificare pasivă vs instalare activă a dependențelor sau validarea configurației. Clasa de bază a canalelor are încă doar start/stop/send/receive cu `send` -> bool: nu deține blocarea sesiunii, typing heartbeat, retry, cache de media, și nu există un vocabular comun de eșec (SendResult cu too_long/forbidden/rate_limited/…). Probele live pe platforme sunt separate.",
+    "requirement_sections": [
+      "Descriptorul (agents/core/channels/descriptor.py:28) declară doar dialectul, plafonul de lungime și flagurile edit/media/threads/recognises/reads; nu numește kind-ul kernel emis de calea outbound a adaptorului, nici utilizatorii permiși/allow-all, pii_safe, ținta de livrare cron, parsarea/validarea țintei, separarea verificare pasivă vs instalare activă a dependențelor sau validarea configurației. Clasa de bază a canalelor are încă doar start/stop/send/receive cu `send` -> bool: nu deține blocarea sesiunii, typing heartbeat, retry, cache de media, și nu există un vocabular comun de eșec (SendResult cu too_long/forbidden/rate_limited/…). Probele live pe platforme sunt separate."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/slack.py",
+      "agents/core/channels/discord.py",
+      "agents/core/channels/descriptor.py"
+    ],
+    "existing_test_files": [
+      "tests/test_workspace_channel_replies.py",
+      "tests/test_slack_socket_mode.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H090",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H090"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H091",
+    "title": "Add a new messenger without touching core code (platform plugin packages)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "8fc4228265a0fe8c76cc251971d3fc74e0fc635c027873157ea7a755d8c6bf47",
+    "contract": "`plugins/platforms/<name>/{plugin.yaml,__init__.py,adapter.py}`; a manifest with `kind: platform` plus `register(ctx)` is all it takes — \"This requires zero changes to core Hermes code\" (gateway/platforms/ADDING_A_PLATFORM.md:5-12). Discovery registers a *deferred loader* (platform_registry.py:255-268) because eagerly importing ~20 adapters' SDKs (lark_oapi, discord.py, slack_bolt…) added seconds to every CLI invocation. Manifests declare `requires_env`/`optional_env` with prompts, urls and `password: true`, plus `provides_tools`. Registrations are scoped per HERMES_HOME so profiles don't share them. platforms-b.contract-layout, contract-register-platform, platforms-a.discord-manifest-env, platform-telegram.plugin-manifest, .lazy-deps (~6 entries).",
+    "governance": "Privileged: registration itself. A manifest that could register an adapter without naming its kernel kinds would be a way to smuggle an ungoverned egress path; manifest load must fail closed on an undeclared or unknown kind.",
+    "remaining_verbatim": "- Manifest-driven channel plugins (kind: platform + register) with discovery and no core edit\n- Deferred/lazy loading of adapter SDKs\n- requires_env/optional_env declarations with prompts, and provides_tools\n- Kernel-kind declarations and default-off flag for third-party manifests; per-profile scoping",
+    "requirement_sections": [
+      "- Manifest-driven channel plugins (kind: platform + register) with discovery and no core edit\n- Deferred/lazy loading of adapter SDKs\n- requires_env/optional_env declarations with prompts, and provides_tools\n- Kernel-kind declarations and default-off flag for third-party manifests; per-profile scoping"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the adapter descriptor row above",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/webhook_channels.py",
+      "agents/web.py"
+    ],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H091",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H091"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H092",
+    "title": "Telegram as a full-fidelity surface (rich text, media, threads, buttons, resilience)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "9bf81d81471c300dd371e48576eff9b0a8fcd51b9b9880db5d17aa170a1019f4",
+    "contract": "An 11,296-line adapter (plugins/platforms/telegram/adapter.py) covering MarkdownV2 conversion with table normalization, 4096-char chunking, streaming edits, native drafts (`sendMessageDraft`) and Bot API 10.1 Rich Messages, albums, voice bubbles, stickers-with-vision, forum topics, inline keyboards, an inline command picker (`@botname <query>`), a command menu via `setMyCommands`, and roughly 30 entries of connection self-healing. Registered with `max_message_length=4096`, `emoji=\"✈️\"`, `cron_deliver_env_var=\"TELEGRAM_HOME_CHANNEL\"` (platform-telegram.register). 182 raw entries.",
+    "governance": "Privileged: every outbound Telegram write. The existing `channel.reply` kernel kind covers text; media and edits need to extend that kind rather than reach Bot API directly the way telegram_bot.py does today.",
+    "remaining_verbatim": "Evidența pinată acoperă doar contractul comun (descriptor, randare, identitate inbox) și adaptoarele Slack/Discord, nu adaptorul Telegram; adâncimea Telegram cerută de rând rămâne de evaluat și închis pe `agents/core/channels/telegram.py`. La HEAD adaptorul nu conține drafturi native (`sendMessageDraft`)/Rich Messages, albume (`sendMediaGroup`), stickere, picker inline de comenzi (`inline_query`) sau meniul `setMyCommands`; topicurile de forum (adaptorul folosește `message_thread_id`) și auto-vindecarea conexiunii trebuie verificate față de cerință. Probele live sunt separate.",
+    "requirement_sections": [
+      "Evidența pinată acoperă doar contractul comun (descriptor, randare, identitate inbox) și adaptoarele Slack/Discord, nu adaptorul Telegram; adâncimea Telegram cerută de rând rămâne de evaluat și închis pe `agents/core/channels/telegram.py`. La HEAD adaptorul nu conține drafturi native (`sendMessageDraft`)/Rich Messages, albume (`sendMediaGroup`), stickere, picker inline de comenzi (`inline_query`) sau meniul `setMyCommands`; topicurile de forum (adaptorul folosește `message_thread_id`) și auto-vindecarea conexiunii trebuie verificate față de cerință. Probele live sunt separate."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "adapter descriptor; per-platform rendering row; media rows",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/slack.py",
+      "agents/core/channels/discord.py",
+      "agents/core/channels/descriptor.py"
+    ],
+    "existing_test_files": [
+      "tests/test_workspace_channel_replies.py",
+      "tests/test_slack_socket_mode.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H092",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H092"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H093",
+    "title": "Discord as a governed channel (server chat, threads, slash commands, roles)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "cdd0e2430e508e2d6e6182a69002f11b2b058694ec51f14848c9037cbef90079",
+    "contract": "Full adapter with native slash commands including `/skill` with autocomplete, admin-vs-user command tiers and an unauthorized-slash admin alert, auto-threading and `/thread`, role-based access control, per-channel prompts and channel→skill bindings, forum channels, history and missed-message backfill, a gateway-WebSocket liveness watchdog, processing reactions 👀/✅/❌, exec-approval and clarify buttons, plus agent-facing `discord` and `discord_admin` tools. platforms-a.discord-* (42 entries).",
+    "governance": "Privileged: outbound send, currently ungoverned. Must be routed through `ChannelManager.send` → `channel.reply`; inbound must thread `sender` so the pairing gate and the taint marking in gateway.py:159-166 both apply.",
+    "remaining_verbatim": "Discord are butoane native pentru prompturi și comenzi slash native, inclusiv `/skill` cu autocomplete privat pentru owner. Rămân alerta cross-platform către admin pentru slash neautorizat (nivelurile admin vs user, per DM/grup, există acum pe comenzile text Discord prin H058 — `commands.user_allowed_commands`, refuz auditat), auto-threading și `/thread`, controlul pe roluri, prompturi per canal și legarea canal->skill, canalele forum, istoricul și backfill-ul mesajelor ratate, watchdog-ul de liveness al gateway-ului, reacțiile de procesare și uneltele `discord`/`discord_admin`; descriptorul Discord nu declară `recognises_media`, deci inbound non-text e ignorat. Probele live sunt separate.",
+    "requirement_sections": [
+      "Discord are butoane native pentru prompturi și comenzi slash native, inclusiv `/skill` cu autocomplete privat pentru owner. Rămân alerta cross-platform către admin pentru slash neautorizat (nivelurile admin vs user, per DM/grup, există acum pe comenzile text Discord prin H058 — `commands.user_allowed_commands`, refuz auditat), auto-threading și `/thread`, controlul pe roluri, prompturi per canal și legarea canal->skill, canalele forum, istoricul și backfill-ul mesajelor ratate, watchdog-ul de liveness al gateway-ului, reacțiile de procesare și uneltele `discord`/`discord_admin`; descriptorul Discord nu declară `recognises_media`, deci inbound non-text e ignorat. Probele live sunt separate."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing (the wiring fix); adapter descriptor for the feature work",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/slack.py",
+      "agents/core/channels/discord.py",
+      "agents/core/channels/descriptor.py",
+      "agents/core/channels/discord_commands.py",
+      "agents/core/channels/skill_menu.py"
+    ],
+    "existing_test_files": [
+      "tests/test_workspace_channel_replies.py",
+      "tests/test_slack_socket_mode.py",
+      "tests/test_h057_discord_commands.py",
+      "tests/test_h079_discord_skill_menu.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H093",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H093"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H094",
+    "title": "Slack as a two-way channel (Socket Mode inbound, threads, workspace install)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "33b70ebf4939e1c5b4bd783ebc4526d1a45fe0062cdd1ef98645b3d811198565",
+    "contract": "Socket Mode connection with a watchdog and connect-time diagnostics, app-manifest generation (`hermes slack manifest`), documented OAuth scopes and event subscriptions, native slash commands plus a `!command` bang prefix inside threads, ephemeral replies, thread/reply behaviour with watermark rehydration, six composable mention/trigger options, reaction triggers, `group_sessions_per_user` isolation, multi-workspace support, file upload/download, and interactive-click authorization. platforms-a.slack-* (46 entries).",
+    "governance": "Privileged: outbound send (today bypasses nothing only because nothing triggers it). Inbound must thread `sender` (Slack user id) and `channel` through gateway.route so pairing + rate limit + injection detection apply.",
+    "remaining_verbatim": "Slack are inbound Socket Mode și, de la pin, butoane Block Kit pentru prompturile în așteptare cu autorizarea clickului pe pairing (agents/core/channels/slack.py:425); lipsesc generarea manifestului de aplicație și un flux OAuth automatizat (configurarea manuală este documentată), prefixul `!command` în thread-uri, răspunsurile efemere Slack (`chat.postEphemeral`; ștergerea după TTL nu e același lucru), opțiunile de mention/trigger și triggerele pe reacții, `group_sessions_per_user`, multi-workspace (adaptorul ține un singur team id), upload/download de fișiere, rehidratarea thread-urilor cu watermark și un watchdog cu diagnostic la conectare peste auto-reconnect-ul SDK. Probele live sunt separate.",
+    "requirement_sections": [
+      "Slack are inbound Socket Mode și, de la pin, butoane Block Kit pentru prompturile în așteptare cu autorizarea clickului pe pairing (agents/core/channels/slack.py:425); lipsesc generarea manifestului de aplicație și un flux OAuth automatizat (configurarea manuală este documentată), prefixul `!command` în thread-uri, răspunsurile efemere Slack (`chat.postEphemeral`; ștergerea după TTL nu e același lucru), opțiunile de mention/trigger și triggerele pe reacții, `group_sessions_per_user`, multi-workspace (adaptorul ține un singur team id), upload/download de fișiere, rehidratarea thread-urilor cu watermark și un watchdog cu diagnostic la conectare peste auto-reconnect-ul SDK. Probele live sunt separate."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "adapter descriptor",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/slack.py",
+      "agents/core/channels/discord.py",
+      "agents/core/channels/descriptor.py",
+      "docs/SLACK_SETUP.md"
+    ],
+    "existing_test_files": [
+      "tests/test_workspace_channel_replies.py",
+      "tests/test_slack_socket_mode.py",
+      "tests/test_h057_command_completion.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H094",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H094"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H095",
+    "title": "WhatsApp reach without account-ban risk",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "6f43876baf1a229a22f7158b5966604b2de5be7d18a60b30c084636fc3c94b2c",
+    "contract": "A Baileys Node bridge (unofficial WhatsApp Web protocol) with QR pairing, session persistence, bridge supervision, LID↔phone allowlist matching, broadcast/status suppression, native polls, clarify-as-poll, location pins, read receipts and owner-message forwarding. platforms-a.whatsapp-* (28 entries).",
+    "governance": "Read-only for this decision; the existing outbound path already goes through the egress-gated PluginHTTPClient (webhook_channels.py:113) and the opt-in send rate limiter.",
+    "remaining_verbatim": "- Native polls and clarify-as-poll for approvals/questions\n- Location pins, read receipts and inbound media handling\n- Owner-message forwarding and explicit status/broadcast suppression, with tests",
+    "requirement_sections": [
+      "- Native polls and clarify-as-poll for approvals/questions\n- Location pins, read receipts and inbound media handling\n- Owner-message forwarding and explicit status/broadcast suppression, with tests"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/webhook_channels.py",
+      "agents/core/channels/gateway.py"
+    ],
+    "existing_test_files": [
+      "tests/test_default_deny_front_door.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H095",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H095"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H096",
+    "title": "Email as a conversational channel (authenticated senders, threading, attachments)",
+    "area": "platforms",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "b4b9b4ec418c6dcb23a10341bb9dfcbbe51a1b5ece8857660a9fc8ae048947bd",
+    "contract": "IMAP polling with seen-UID tracking, **sender authentication via SPF/DKIM/DMARC**, automated-sender suppression (no-reply/bounce loops), allowlist access control, HTML stripping and body extraction, inbound attachment ingestion, RFC-correct reply threading (In-Reply-To/References), SMTP with IPv4 fallback, outbound attachments. platforms-a.email-* (14 entries).",
+    "governance": "Privileged: SMTP send, already correctly behind `channel.reply` (agents/core/channel_reply.py). Sender-auth results should be attached to the inbound metadata alongside the existing taint marking so the decision card can display them.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/email.py",
+      "agents/core/channels/manager.py",
+      "agents/core/channels/email_inbound.py",
+      "agents/core/channel_inbox.py",
+      "agents/core/channel_reply.py"
+    ],
+    "existing_test_files": [
+      "tests/test_email_inbox_transport.py",
+      "tests/test_h096_email_channel.py",
+      "tests/test_h096_fetch_checkpoint.py",
+      "tests/test_h096_cancellation_checkpoint.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H096",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H096"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H097",
+    "title": "Governed webhook-class channels (Signal, Matrix, Teams, Google Chat) as real adapters",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "b767d1154efefef134b68f52783883b95d73bc33d29a08866e31027bbee27b2e",
+    "contract": "Four full adapters: Matrix with E2EE modes, cross-signing, auto-join, room allowlists, `m.replace` edits, MSC3245 voice, bridge-loop protection and diagnostics; Teams with Adaptive Card approvals, Bot Framework token attachment download, and a service-URL allowlist + conversation-ID validation; Google Chat with Pub/Sub-pull and HTTP inbound, Card v2 clarify cards, per-user OAuth for native attachments, an attachment-download SSRF guard, retry/rate-limit handling and log redaction; Signal appears only via the WhatsApp-family bridges. platforms-a.matrix-*/teams-*/google-chat-* (~70 entries).",
+    "governance": "Privileged: outbound send (governed) and inbound ingestion (currently unauthenticated). Signature verification belongs in front of `/api/channels/{id}/inbound`, not inside each adapter.",
+    "remaining_verbatim": "- Matrix: E2EE, auto-join, room allowlists, m.replace edits, voice, bridge-loop protection\n- Teams: Adaptive Card approvals, Bot Framework token and attachment download, service-URL allowlist and conversation-ID validation\n- Google Chat: Pub/Sub or verified HTTP inbound, Card v2 clarify cards, attachments with an SSRF-guarded downloader, retry/rate-limit handling\n- Provider authentication of inbound payloads on /api/channels/{id}/inbound\n- Any media in/out on these channels",
+    "requirement_sections": [
+      "- Matrix: E2EE, auto-join, room allowlists, m.replace edits, voice, bridge-loop protection\n- Teams: Adaptive Card approvals, Bot Framework token and attachment download, service-URL allowlist and conversation-ID validation\n- Google Chat: Pub/Sub or verified HTTP inbound, Card v2 clarify cards, attachments with an SSRF-guarded downloader, retry/rate-limit handling\n- Provider authentication of inbound payloads on /api/channels/{id}/inbound\n- Any media in/out on these channels"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "webhook ingress authenticity row",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/webhook_channels.py",
+      "agents/core/routers/integrations.py"
+    ],
+    "existing_test_files": [
+      "tests/test_webhook_channels_h12_16.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H097",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H097"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H098",
+    "title": "SMS as a channel (Twilio REST out, signed webhook in)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "4d2838a7b8bd3c48d73092323013fdd3eabbea0c4171e69b50730b6e48a5dc32",
+    "contract": "`SmsAdapter` posts From/To/Body to the Twilio REST API and receives via a signed webhook with the full documented HMAC-SHA1 signature algorithm including a port-variant retry (`_validate_twilio_signature`, adapter.py:242-276), empty-TwiML responses, a 65,536-byte body cap enforced twice, echo-drop when From == TWILIO_PHONE_NUMBER, `redact_phone` in every log, `pii_safe=True`, `max_message_length=1600`, per-number multi-tenant sessions. Also: a reproducible defect — adapter.py never imports `re`, so `_strip_markdown_for_sms` (the only markdown path used by the cron/standalone sender) raises `NameError`, verified live. platforms-b.sms-* (4 entries).",
+    "governance": "Privileged: outbound SMS costs money and reaches a third party. Must cross the kernel — reuse `call.outbound`'s tier or add a sibling kind; irreversible-tier, so it lands in the approval queue rather than auto-sending.",
+    "remaining_verbatim": "- Every SMS reply needs the owner's approval; Hermes answers automatically. An unattended reply needs an owner decision on a spending cap\n- MMS media is not read (the turn is told how many pictures were attached)\n- No proactive outbound SMS (`nerva send`, scheduled notices) and no outbound to numbers that did not write first\n- Not yet exercised against the live Twilio API (hermetic tests only)",
+    "requirement_sections": [
+      "- Every SMS reply needs the owner's approval; Hermes answers automatically. An unattended reply needs an owner decision on a spending cap\n- MMS media is not read (the turn is told how many pictures were attached)\n- No proactive outbound SMS (`nerva send`, scheduled notices) and no outbound to numbers that did not write first\n- Not yet exercised against the live Twilio API (hermetic tests only)"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "adapter descriptor; webhook ingress authenticity",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/sms.py",
+      "agents/core/channels/delivery_ledger.py",
+      "agents/core/routers/channels_sms.py",
+      "agents/core/channel_reply.py",
+      "agents/core/channel_inbox.py",
+      "agents/core/channels/manager.py",
+      "agents/core/channels/pairing.py",
+      "agents/core/integrations_catalog.py",
+      "agents/core/plugin_gate.py"
+    ],
+    "existing_test_files": [
+      "tests/test_g16_channel_media_sms.py",
+      "tests/test_route_inhandler_guards.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H098",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H098"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H099",
+    "title": "Push notification to a phone without a bot or an account (ntfy)",
+    "area": "platforms",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "00de40ec393428ca550f8abcbebc5e6d94d56ca25d95ffa5a62bd84ebe53ae57",
+    "contract": "`NtfyAdapter` (plugins/platforms/ntfy/adapter.py:176) subscribes to a topic over a persistent HTTP stream (`/json?poll=false`, 90 s read timeout for ntfy's 55 s keepalive) and publishes replies with one POST; reconnect backoff [2,5,10,30,60] reset after 60 s of health; dedup by message id over a 300 s window; echo suppression via an `X-Tags: hermes-agent` header; explicit identity model — 'the topic name IS the user', and the publisher-controlled `title` is deliberately never used for authorization because 'it would let any publisher who knows the topic spoof an allowed user'. Self-hostable. platforms-b.ntfy-* (9 entries).",
+    "governance": "Privileged: outbound publish is egress to a (possibly third-party) server — route through `channel.reply` and the existing PluginHTTPClient egress gate. Inbound is untrusted: topic-as-identity means the pairing gate's sender is the topic, so the allowlist gates the whole channel.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "adapter descriptor",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/ntfy.py",
+      "agents/core/channels/gateway.py",
+      "agents/core/channels/manager.py",
+      "agents/core/channel_inbox.py",
+      "agents/core/channel_reply.py",
+      "agents/core/plugin_gate.py",
+      "docs/hermes/ntfy-inbound-plan-2026-10-05.md",
+      ".env.example",
+      "docs/ARCHITECTURE.md",
+      "docs/hermes/licenses/hermes-ntfy-MIT.txt",
+      "docs/hermes/evidence/2026-10-05-ntfy-inbound/report.json",
+      "docs/hermes/evidence/2026-10-05-direct-ports/report.json",
+      "docs/hermes/evidence/2026-10-05-direct-ports/ledger-impact-result.xml",
+      "docs/hermes/evidence/2026-10-05-direct-ports/final-corrections-result.xml",
+      "docs/hermes/evidence/2026-10-05-pending-input-completion/report.json",
+      "docs/hermes/evidence/2026-10-05-pending-input-completion/integration-result.xml",
+      "docs/hermes/evidence/2026-10-05-pending-input-completion/final-transport-result.xml",
+      "docs/hermes/evidence/2026-10-05-pending-input-completion/content/report.json",
+      "docs/hermes/evidence/2026-10-05-pending-input-completion/ntfy-report.json",
+      "docs/hermes/evidence/2026-10-05-pending-input-completion/web-report.json",
+      "docs/hermes/evidence/2026-10-05-pending-input-completion/http-poll-report.json",
+      "docs/hermes/evidence/2026-10-06-openai-codex-images/contract-review.json",
+      "agents/web.py"
+    ],
+    "existing_test_files": [
+      "tests/test_ntfy_inbound.py",
+      "tests/test_ntfy_approval_integration.py",
+      "tests/test_h27_capability_verification.py",
+      "tests/test_reality_harness.py",
+      "tests/_snapshots/capability_readiness.json"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H099",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H099"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H100",
+    "title": "Connection self-healing (stay connected without an operator watching)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "3c8b040d1f0d6fc77ea2846dbeb1cc64d7f63181c7f5efff1762076cc46cf15a",
+    "contract": "Roughly thirty entries of hard-won resilience on Telegram alone: `deleteWebhook` before polling, polling generations with a progress verifier, a polling heartbeat that detects CLOSE-WAIT sockets, a pending-update probe for a wedged consumer, a stall watchdog, a 409-Conflict recovery ladder, a network-error reconnect ladder, connection-pool drains, transport error classifiers, fatal-error surfacing with retryable/non-retryable codes, graceful disconnect, a held-inbound queue that redispatches after reconnect, send-time reconnect wait with adapter replacement, and a wall-clock deadline helper. Discord adds a gateway-WebSocket liveness watchdog; Slack a Socket Mode watchdog; Mattermost a WS reconnect loop; ntfy a backoff ladder reset on health; Photon a presence watchdog. (~35 entries)",
+    "governance": "Read-only — this is transport health, no privileged effect. But fatal-error state should surface on the existing status/heartbeat surface so a dead channel is visible rather than silent.",
+    "remaining_verbatim": "- Telegram: `deleteWebhook` before polling, polling generations with a progress verifier, a heartbeat that detects CLOSE-WAIT sockets, a probe for pending updates against a wedged consumer, a stall watchdog, a 409-Conflict recovery ladder (409 is retried on the shared ladder and labelled `conflict`, no takeover logic), connection-pool drains, a held-inbound queue redispatched after reconnect, send-time reconnect wait with adapter replacement, and a wall-clock deadline helper\n- Liveness watchdogs owned by Nerva for the Discord gateway WebSocket and Slack Socket Mode (their state is reported, the SDKs still own reconnection)\n- The health state on the adapter descriptor and in the HUD gateway chrome (it is on `/status` rows)",
+    "requirement_sections": [
+      "- Telegram: `deleteWebhook` before polling, polling generations with a progress verifier, a heartbeat that detects CLOSE-WAIT sockets, a probe for pending updates against a wedged consumer, a stall watchdog, a 409-Conflict recovery ladder (409 is retried on the shared ladder and labelled `conflict`, no takeover logic), connection-pool drains, a held-inbound queue redispatched after reconnect, send-time reconnect wait with adapter replacement, and a wall-clock deadline helper\n- Liveness watchdogs owned by Nerva for the Discord gateway WebSocket and Slack Socket Mode (their state is reported, the SDKs still own reconnection)\n- The health state on the adapter descriptor and in the HUD gateway chrome (it is on `/status` rows)"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "adapter descriptor (fatal-error state and health belong on the descriptor)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/reconnect.py",
+      "agents/core/channels/telegram.py",
+      "agents/core/channels/ntfy.py",
+      "agents/core/channels/email.py",
+      "agents/core/channels/manager.py",
+      "agents/core/channels/slack.py",
+      "agents/core/channels/discord.py",
+      "agents/core/routers/status.py"
+    ],
+    "existing_test_files": [
+      "tests/test_g15_channel_reliability.py",
+      "tests/test_ntfy_inbound.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H100",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H100"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H101",
+    "title": "Alternative inbound transports and network placement (webhook mode, proxy, custom API host)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "8366541328c8993bcbd1a5a75c491a226cd55ce6e3d6c3bd5259603b69ac804f",
+    "contract": "Telegram supports webhook mode as an alternative to long polling with a documented comparison table, a custom Bot API base URL for a self-hosted telegram-bot-api server, `local_mode` to read Telegram files straight off disk (bypassing download), HTTP client pool/timeout tuning, TCP keepalive, and a Telegram-specific proxy. Matrix, Discord and Feishu each carry their own proxy support; Feishu has a full webhook mode with signature, rate limit and anomaly tracking. platform-telegram.webhook-mode/.base-url/.local-mode/.http-tuning/.proxy/.tcp-keepalive, platforms-a.discord-proxy/.matrix-proxy, platforms-b.feishu-webhook (~10 entries).",
+    "governance": "Read-only (transport config), but a custom API base URL is an egress-host change — it must register with the existing `plugin_gate.register_dynamic_domain` path the webhook channels already use (webhook_channels.py:40-46), not bypass it.",
+    "remaining_verbatim": "- Telegram webhook mode (setWebhook + a verified secret-token inbound route) as an alternative to long polling\n- Configurable Bot API base URL for a self-hosted telegram-bot-api server, plus local_mode file reads\n- HTTP pool/timeout tuning and TCP keepalive settings for the Telegram client\n- An explicit, owner-chosen, documented and tested per-channel proxy setting (Telegram, Discord, Matrix)\n- Feishu webhook mode with signature, rate limit and anomaly tracking",
+    "requirement_sections": [
+      "- Telegram webhook mode (setWebhook + a verified secret-token inbound route) as an alternative to long polling\n- Configurable Bot API base URL for a self-hosted telegram-bot-api server, plus local_mode file reads\n- HTTP pool/timeout tuning and TCP keepalive settings for the Telegram client\n- An explicit, owner-chosen, documented and tested per-channel proxy setting (Telegram, Discord, Matrix)\n- Feishu webhook mode with signature, rate limit and anomaly tracking"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "adapter descriptor",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/telegram.py",
+      "agents/core/http_client.py",
+      "agents/core/routers/integrations.py"
+    ],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H101",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H101"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H102",
+    "title": "DNS-over-HTTPS fallback-IP transport (reach the platform through a hostile network)",
+    "area": "platforms",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "5919c81ff55075fb675398ace79a46c8577a5af148271daa4ad0a7f79ba269a5",
+    "contract": "`platform-telegram.fallback-ips` — direct-IP failover with DoH discovery when the platform's hostname is blocked or poisoned, one of the headline features in the plugin manifest's own description.",
+    "governance": "Would be an egress-gate escape — the reason to refuse it.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "n/a",
+    "historical_exclusion_reason": "This solves censorship circumvention, which is a different product from a governed house brain. It is also actively at odds with two Nerva invariants: the egress gate works on hostnames (agents/core/plugin_gate.py, webhook_channels.py:40-46), and connecting to a bare IP with a spoofed SNI is precisely the pattern that gate exists to refuse. Shipping it would mean building an exception to the egress allowlist for a scenario the owner is not in. Re-open if Nerva ever targets a market where the messenger host is blocked at the network level, and then as an explicit, separately-flagged transport that still registers its IPs with the egress gate.",
+    "source_files": [],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H102",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H102"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H103",
+    "title": "Per-platform outbound rendering (each channel gets text it can actually display)",
+    "area": "platforms",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "24fa9cbf2518b786bc6518e0b42478034475b51719f4c420f6a9ec061cdd1a56",
+    "contract": "One renderer per dialect: Telegram MarkdownV2 with escaping and markdown-table normalization plus 4096-char chunking (platform-telegram.format-message/.tables/.send); Slack mrkdwn with table alignment; Matrix markdown→HTML with a sanitizer; WhatsApp markdown mapping and outbound sanitization; Mattermost formatting; LINE `strip_markdown_preserving_urls` + a bubble splitter; IRC/SMS/ntfy plain-text strippers. `max_message_length` on the descriptor drives smart chunking centrally; `SendResult.error_kind == \"bad_format\"` tells the gateway a plain-text retry is the fix. The inventory's own rebuild note: 'a better version would share one markdown stripper across every plain-text platform (IRC, SMS, ntfy all reimplement it)'. (~14 entries)",
+    "governance": "Read-only transformation, but it sits inside the governed send path — the rendered form, not the raw form, is what should be hashed into the audit entry so the log matches what the user saw.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "adapter descriptor (max_message_length + dialect fields)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/render.py",
+      "agents/core/channels/descriptor.py"
+    ],
+    "existing_test_files": [
+      "tests/test_channel_render.py",
+      "tests/test_channel_render_slack_discord.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H103",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H103"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H104",
+    "title": "Live/streaming replies in chat",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "ede4bd2cc8a43a958ecddfd3cc7d46797aae89bba53c7ac4691382c860fbe50a",
+    "contract": "Three generations of it: edit-based streaming with saturated-preview dedup and oversized-edit splitting into continuation messages (platform-telegram.edit-message/.overflow-dedup/.overflow-split), native drafts (`sendMessageDraft`, Rich draft frames), and platform-native streaming APIs — Slack `chat.startStream`/`appendStream`/`stopStream` where the streamed message *is* the final message, with a one-shot capability latch and fallback to edit-based (platforms-a.slack-native-streaming); WeCom `msgtype: stream`; DingTalk AI Cards. Slack also renders live tool progress as native plan/task cards keyed by (team, channel, thread_ts) with per-tool rows. (~10 entries)",
+    "governance": "Privileged: each edit is an outbound write. An edit stream must be one `channel.reply` decision, not one per frame — otherwise streaming would flood the approval queue and the audit chain. That is a real design constraint the port has to respect.",
+    "remaining_verbatim": "Neither Slack nor Discord streams reply text: neither has `begin_stream` or a reply-text edit. The only edits they make are pending-prompt button updates (Slack `chat_update` of a pending prompt's blocks, Discord `message.edit` of a pending card's view); replies go out through `chat_postMessage` and Discord sends, although both descriptors declare `supports_edit=True`, so the edit-stream path is missing as well as the approval contract below. Slack and Discord replies are not streamed: both descriptors declare `supports_edit`, but `_begin_channel_draft` refuses them because the row's governance clause requires one edit stream to be a single `channel.reply` approval decision and no such contract exists yet; until it does, their replies arrive whole after approval. The Matrix adapter (`MatrixChannel`, a webhook channel), another edit-capable platform the rationale names, posts whole `m.room.message` events: its descriptor does not declare `supports_edit` and it has no edit (`m.replace`) or draft path.",
+    "requirement_sections": [
+      "Neither Slack nor Discord streams reply text: neither has `begin_stream` or a reply-text edit. The only edits they make are pending-prompt button updates (Slack `chat_update` of a pending prompt's blocks, Discord `message.edit` of a pending card's view); replies go out through `chat_postMessage` and Discord sends, although both descriptors declare `supports_edit=True`, so the edit-stream path is missing as well as the approval contract below. Slack and Discord replies are not streamed: both descriptors declare `supports_edit`, but `_begin_channel_draft` refuses them because the row's governance clause requires one edit stream to be a single `channel.reply` approval decision and no such contract exists yet; until it does, their replies arrive whole after approval. The Matrix adapter (`MatrixChannel`, a webhook channel), another edit-capable platform the rationale names, posts whole `m.room.message` events: its descriptor does not declare `supports_edit` and it has no edit (`m.replace`) or draft path."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "adapter descriptor (supports_edit capability); rendering row",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/slack.py",
+      "agents/core/channels/discord.py",
+      "agents/core/channels/telegram.py",
+      "agents/core/orchestrator.py",
+      "agents/core/channels/descriptor.py",
+      "agents/core/channels/webhook_channels.py"
+    ],
+    "existing_test_files": [
+      "tests/test_workspace_channel_replies.py",
+      "tests/test_slack_socket_mode.py",
+      "tests/test_telegram_streaming.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H104",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H104"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H105",
+    "title": "Working-state feedback (typing, status lines, lifecycle reactions, read receipts)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "684581b393f7ec3027243b328a9a49a601e88135e48ecc865775142742d74cca",
+    "contract": "Typing indicator with per-chat cooldown and a typing heartbeat that survives long turns (platform-telegram.typing); status bubbles edited in place (`send_or_update_status`); message reactions as processing feedback — Telegram reactions, Discord 👀/✅/❌, Slack `:eyes:`/`:white_check_mark:` plus reaction *triggers* (react to a message to make the agent act on it), Matrix lifecycle reactions, Feishu Typing/CrossMark, DingTalk 🤔Thinking→🥳Done; Google Chat's 'Hermes is thinking…' marker; Slack's `typing_status_text` and per-tool `display.live_status`; WhatsApp read receipts and typing; Matrix presence/typing/read receipts; Photon tapbacks. (~16 entries)",
+    "governance": "A reaction is an outbound write, but at read-only risk — it conveys state, it does not act. A reaction *trigger* is inbound and must go through the full gateway (sender, pairing, taint), not a shortcut path.",
+    "remaining_verbatim": "- Typing heartbeat that lasts through long text turns, with per-chat cooldown\n- Reactions as lifecycle feedback (seen / done / refused) mapped to kernel outcomes on Telegram, Slack, Discord\n- Reaction triggers (react to a message to ask the agent to act)\n- Typing/status indicators on Slack and Discord, read receipts where supported\n- A general send-or-update status bubble outside streaming replies",
+    "requirement_sections": [
+      "- Typing heartbeat that lasts through long text turns, with per-chat cooldown\n- Reactions as lifecycle feedback (seen / done / refused) mapped to kernel outcomes on Telegram, Slack, Discord\n- Reaction triggers (react to a message to ask the agent to act)\n- Typing/status indicators on Slack and Discord, read receipts where supported\n- A general send-or-update status bubble outside streaming replies"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "adapter descriptor",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/telegram.py"
+    ],
+    "existing_test_files": [
+      "tests/test_telegram_streaming.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H105",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H105"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H106",
+    "title": "In-chat approvals and interactive controls (approve, clarify, pick — from the phone)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "c3d7f00e00f2024b45e2ebed73da4afb6e56d12fa308558ba0fea9a0c51c3e65",
+    "contract": "A full interactive layer per platform: exec-approval prompts with `✅ Allow Once / ✅ Session / ✅ Always / ❌ Deny` and tap handling with per-user authorization (`_is_callback_user_authorized`), slash-command confirmation, clarify prompts with numbered buttons and an `✏️ Other` free-text capture plus an expired-clarify notice, an interactive model picker with provider folding, pagination and an expensive-model confirmation, a generic choice picker, and Gmail-triage action buttons. Rendered natively per platform: Telegram inline keyboards, Discord buttons with approval mentions, Slack Block Kit buttons, Teams Adaptive Cards, Feishu approval cards, Matrix **reaction-based** approval/model/choice pickers, WhatsApp clarify-as-poll, Google Chat Card v2, LINE postback buttons. (~30 entries)",
+    "governance": "This IS the governance surface. Every tap must resolve against the approval queue and the audit chain, and every renderer must verify the tapping identity against the owner binding (the SEC-B3 lesson). 'Always Allow' must mint a real entry in the permission ledger (`permission.grant`, a KERNEL kind), never a per-adapter cache.",
+    "remaining_verbatim": "- Kernel decision-card approvals (approve/edit/reject/defer) on Slack, Discord and other channels, with per-user authorization\n- Native renderers for Teams Adaptive Cards, Google Chat Card v2, Matrix reaction pickers, WhatsApp poll fallback\n- Interactive model picker with expensive-model confirmation\n- Session-scoped allow and Gmail-triage style action buttons",
+    "requirement_sections": [
+      "- Kernel decision-card approvals (approve/edit/reject/defer) on Slack, Discord and other channels, with per-user authorization\n- Native renderers for Teams Adaptive Cards, Google Chat Card v2, Matrix reaction pickers, WhatsApp poll fallback\n- Interactive model picker with expensive-model confirmation\n- Session-scoped allow and Gmail-triage style action buttons"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "adapter descriptor; per-platform button/reaction capability flags",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/pending_input_cards.py",
+      "agents/core/channels/slack.py",
+      "agents/core/channels/discord.py",
+      "agents/core/autonomy_coordinator.py"
+    ],
+    "existing_test_files": [
+      "tests/test_pending_input_cards.py",
+      "tests/test_pending_input_discord_transport.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H106",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H106"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H107",
+    "title": "Sending media out (photos, albums, documents, video, voice notes, GIFs)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "cea0f34a1f74600aae79b18ad470d873a4262fa7ff137d8d29a3617ecdda6d7a",
+    "contract": "A full outbound media surface per platform with fallbacks: `send_multiple_images` as native albums, `send_image_file` with document fallback, `send_document`, `send_video`, `send_image` from URL with upload fallback, `send_animation` for inline GIFs, `send_voice` as a native voice bubble with a duration probe, flood-control inline wait cap, a missing-media-path error with a Docker hint, and an inline `MEDIA:` tag protocol with a supported-extension list. Mattermost batches 5 images per post; LINE serves media from a tokenized endpoint; Discord/Slack upload files. (~20 entries)",
+    "governance": "Privileged and higher-risk than text: sending an image can exfiltrate a camera frame or a document. Needs its own kernel kind (a `channel.media` sibling to `channel.reply`) rather than riding the text kind, because the reviewer needs to see *what file* is leaving, and the existing `media.present` kind is about presentation, not egress.",
+    "remaining_verbatim": "- Media in the channel contract (ChannelAdapter) and the governed channel.send / channel.reply paths, not only scheduled jobs\n- Telegram native photos, albums (sendMediaGroup), video, animation, with document fallback\n- File/image upload on Slack and Discord and media on the webhook channels\n- Flood-control wait cap and a clear missing-media error",
+    "requirement_sections": [
+      "- Media in the channel contract (ChannelAdapter) and the governed channel.send / channel.reply paths, not only scheduled jobs\n- Telegram native photos, albums (sendMediaGroup), video, animation, with document fallback\n- File/image upload on Slack and Discord and media on the webhook channels\n- Flood-control wait cap and a clear missing-media error"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "adapter descriptor; kernel kind addition",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/telegram.py",
+      "agents/core/autonomy/jobs_media.py",
+      "agents/core/channels/base.py",
+      "agents/core/plugins/telegram_bot.py"
+    ],
+    "existing_test_files": [
+      "tests/test_jobs_media.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H107",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H107"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H108",
+    "title": "Receiving media in (photos, voice notes, documents, stickers, locations)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "772dbe6813680421be38906f32a7ebe5dd746817b070c5d4e4f7455046e285ba",
+    "contract": "Inbound handler covering photos, voice, audio, video and documents, cached into `~/.hermes/cache/{images,audio,video,documents}` as local paths the vision tools can open; photo-burst batching and media-group (album) debounce; sticker understanding via vision with a cache; location and venue pins; observed-group and replied-to media caching; a size guard and limits; download-failure surfacing; WhatsApp document-text injection; Discord arbitrary-attachment ingestion; Teams Bot-Framework-token attachment download; Google Chat per-user OAuth attachments with an SSRF guard; email attachment ingestion. (~20 entries)",
+    "governance": "Inbound media is untrusted input and a bigger injection surface than text (a document's contents, an image's rendered text). It must carry the same taint marking the gateway already applies (agents/core/channels/gateway.py:159-166) and the size guard must be enforced before download, not after.",
+    "remaining_verbatim": "Only photos and voice notes, only on Telegram. Not delivered: reading audio files, video, video notes, animations, documents and stickers (recognised, answered with 'reading … is not wired up yet'); a disk cache under a media directory so vision tools can open a local path (bytes stay in memory for one call); location and venue pins (recognised as `location`, deliberately not echoed, not read); caching of media from observed group messages and from replied-to messages; media ingestion on WhatsApp, Discord, Teams, Google Chat and email (those adapters pass text only). Documented limitation, not solved: taint cannot be tracked through the model; what travels is the coarse fact that the turn read untrusted material, and the channel's `inbound` origin is what keeps an action derived from a photo in approval. `mark_turn_recall_tainted()` is not called here because it would be a no-op (escalate-only over an already untrusted origin). UNVERIFIED on real services: the suite is hermetic; no real Telegram message received, no local VLM actually called, `getFile` and the download exercised only against a fake client.",
+    "requirement_sections": [
+      "Only photos and voice notes, only on Telegram. Not delivered: reading audio files, video, video notes, animations, documents and stickers (recognised, answered with 'reading … is not wired up yet'); a disk cache under a media directory so vision tools can open a local path (bytes stay in memory for one call); location and venue pins (recognised as `location`, deliberately not echoed, not read); caching of media from observed group messages and from replied-to messages; media ingestion on WhatsApp, Discord, Teams, Google Chat and email (those adapters pass text only). Documented limitation, not solved: taint cannot be tracked through the model; what travels is the coarse fact that the turn read untrusted material, and the channel's `inbound` origin is what keeps an action derived from a photo in approval. `mark_turn_recall_tainted()` is not called here because it would be a no-op (escalate-only over an already untrusted origin). UNVERIFIED on real services: the suite is hermetic; no real Telegram message received, no local VLM actually called, `getFile` and the download exercised only against a fake client."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "adapter descriptor; media cache paths",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/media_reader.py",
+      "agents/core/channels/inbound_voice.py",
+      "agents/core/channels/inbound_media.py",
+      "agents/core/channels/telegram.py",
+      "agents/core/channels/descriptor.py"
+    ],
+    "existing_test_files": [
+      "tests/test_inbound_media_read.py",
+      "tests/test_inbound_voice_read.py",
+      "tests/test_telegram_inbound_media.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H108",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H108"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H109",
+    "title": "Voice notes both ways on chat channels (speak to it, hear it back)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "274aa276ff51679b52ea966302663bafb906f13a4a93269ec13c3c57bbd1b4e3",
+    "contract": "Incoming voice → STT automatically on Telegram, Discord, Slack, WhatsApp and Matrix (native MSC3245 voice); outgoing TTS as a native voice bubble (Opus/OGG) with a duration probe; streaming TTS hooks on the base adapter; a per-platform auto-TTS set driven by `voice.auto_tts`. platform-telegram.stt-incoming/.tts-outgoing/.send-voice, platforms-a.discord-voice-messages/.slack-voice/.whatsapp-voice/.matrix-voice (~9 entries).",
+    "governance": "Outbound voice is a `channel.media`-class effect (see the media row). Inbound transcription is untrusted input — the transcript must inherit the inbound taint, which the decision card already knows how to display (agents/core/autonomy/inbox.py:56-60).",
+    "remaining_verbatim": "- Voice-note STT and voice replies on Discord, Slack, WhatsApp and Matrix\n- Streaming TTS hooks on the base adapter\n- Duration probe for outgoing voice bubbles\n- A per-platform auto-TTS set beyond the per-chat Telegram mode",
+    "requirement_sections": [
+      "- Voice-note STT and voice replies on Discord, Slack, WhatsApp and Matrix\n- Streaming TTS hooks on the base adapter\n- Duration probe for outgoing voice bubbles\n- A per-platform auto-TTS set beyond the per-chat Telegram mode"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "inbound/outbound media rows",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/inbound_voice.py",
+      "agents/core/channels/telegram.py",
+      "agents/core/channels/voice_mode.py"
+    ],
+    "existing_test_files": [
+      "tests/test_inbound_voice_read.py",
+      "tests/test_telegram_voice_reply.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H109",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H109"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H110",
+    "title": "Discord voice-channel presence (join a VC, listen, speak, ambient audio bed)",
+    "area": "platforms",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "d71e8f16cfb3aa4944e5d798809811dcbeb2421ca6bb6b83b882764779c5dc00",
+    "contract": "The bot joins a Discord voice channel, listens and speaks, with audio effects — an ambient bed and verbal acknowledgements. platforms-a.discord-voice-channel/.discord-voice-fx (2 entries).",
+    "governance": "Would be a continuous remote audio-capture path — the reason to refuse it, not a detail.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "n/a",
+    "historical_exclusion_reason": "A live agent sitting in a Discord voice channel is a community/streaming product, not a house brain — the room it should be listening in is the owner's, and Nerva already does that natively through the local voice pipeline and the ambient runtime. Adding it would also put a continuous audio capture path behind a remote server's session, which cuts against the local-first privacy posture harder than any other item in this cluster. Re-open only if Nerva ever targets team/community deployments, and then as an explicit, separately-consented capture surface.",
+    "source_files": [],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H110",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H110"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H111",
+    "title": "Inbound gating: who may talk to the agent, and when it should answer",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "59716f77fea9fe64293233d2799ea49a38ff5b93f2ed6ad14a9160ea0c9f7ff3",
+    "contract": "The deepest-layered part of the cluster. Per-platform allowlists (`*_ALLOWED_USERS` / `*_ALLOW_ALL_USERS` on the descriptor), plus a full group decision ladder: `require_mention`, entity-first bot-mention detection, `exclusive_bot_mentions` for deterministic multi-bot routing, `mention_patterns` regex wake words, `guest_mode`, `free_response_chats` / `free_response_topics`, `allowed_chats` / `group_allowed_chats` / `group_allow_from`, `allowed_topics`, `ignored_threads`, `observe_unmentioned_group_messages` (silent context with attribution), `ignore_root_dm`, own-message filter, trigger-text cleanup — all resolved by `_should_process_message()`. Mirrored per platform: Slack's six composable trigger options plus channel allowlist / ignored channels / `disable_dms` / `allow_bots`, Discord role-based access control, WhatsApp DM+group policy with LID↔number matching, Matrix room allowlists, Feishu 3-tier `group_rules`, WeCom dm_policy/group_policy, Photon mention gating. (~45 entries)",
+    "governance": "This is an authorization boundary, so it belongs beside the pairing gate in agents/core/channels/gateway.py:70-96 — one place, fail-closed, not per-adapter. Its decisions should be auditable: 'ignored because unmentioned' is a fact worth recording.",
+    "remaining_verbatim": "Rămâne echivalarea întregii scări de reguli și a opțiunilor specifice fiecărui canal.",
+    "requirement_sections": [
+      "Rămâne echivalarea întregii scări de reguli și a opțiunilor specifice fiecărui canal."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "adapter descriptor (per-channel policy storage)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/group_policy.py"
+    ],
+    "existing_test_files": [
+      "tests/test_telegram_group_gate.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H111",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H111"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H112",
+    "title": "Pairing an unknown sender (first contact without editing a config file)",
+    "area": "platforms",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "a6b6e9a95988e2488aa3e5e7a21e39c74c82b1e97c13773b29720a95cf4bd59d",
+    "contract": "Documented as a static allowlist workflow: find your numeric id via @userinfobot, paste it into `TELEGRAM_ALLOWED_USERS` in `~/.hermes/.env`, restart. The setup wizard warns '⚠️ Telegram has no user allowlist - anyone can use your bot!' and there is an unauthorized-DM pairing passthrough plus a DM-pairing flow that writes back into `TELEGRAM_ALLOWED_USERS`; SimpleX has its own DM pairing. Per the field research this is a static allowlist, not an approval flow (platform-telegram.pairing-allowlist/.pairing-passthrough, platforms-b.simplex-auth; ~5 entries).",
+    "governance": "Already the right shape — an inbound authorization gate that fails closed, feeding the same approval inbox as everything else. Extending it to Discord/Slack is part of those rows' wiring fixes.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "Discord/Slack wiring fixes for full coverage",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/telegram.py",
+      "agents/core/channels/pairing.py",
+      "agents/core/channels/gateway.py",
+      "agents/core/boot_guards.py"
+    ],
+    "existing_test_files": [
+      "tests/test_telegram_deeplink_pairing.py",
+      "tests/test_default_deny_front_door.py",
+      "tests/test_h12_19_pairing.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H112",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H112"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H113",
+    "title": "Threads, topics and per-conversation sessions",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "2c14fabc74e9b4fdc2016df1f59db0dfb79a598033fbedc2d95bd851a2e6502a",
+    "contract": "Telegram gets an entire forum-topic subsystem: operator-curated DM topics via `extra.dm_topics` with startup reconciliation, hot reload, creation/rename and `thread_id` write-back into config.yaml; a user-driven multi-session mode via `/topic` with a system topic that gets pinned, topic lanes and a root lobby with reminders, topic↔session bindings, lobby-shaped reply recovery, auto-rename from the session title, `/topic off`, and restore-a-session-into-a-topic. Elsewhere: Discord auto-threading and `/thread`, forum channels; Slack threading with watermark rehydration and `group_sessions_per_user` isolation; Google Chat per-thread sessions; Matrix `MATRIX_SESSION_SCOPE`; Mattermost thread reply mode with a broken-root fallback; SMS per-number sessions. (~30 entries)",
+    "governance": "Read-only for identity; but the delivery target is part of the `channel.reply` payload, so a thread id has to be validated (the contract at agents/core/channel_reply.py:32-44 already checks reply-target shape per channel) rather than passed through.",
+    "remaining_verbatim": "Thread-urile Slack au identitate de inbox și sesiune distincte (testate), iar Discord distinge acum thread/group/private; lipsesc subsistemul de topicuri de forum Telegram (topicuri DM curate de operator cu reconciliere la pornire și hot reload, `/topic` multi-sesiune cu lobby, legături topic<->sesiune, auto-redenumire, restaurarea unei sesiuni într-un topic), auto-threading și `/thread` pe Discord plus canalele forum, rehidratarea cu watermark și `group_sessions_per_user` pe Slack, și scopurile de sesiune per thread pentru Matrix, Mattermost, Google Chat și SMS. Evidența pinată nu include adaptorul Telegram. Probele live sunt separate.",
+    "requirement_sections": [
+      "Thread-urile Slack au identitate de inbox și sesiune distincte (testate), iar Discord distinge acum thread/group/private; lipsesc subsistemul de topicuri de forum Telegram (topicuri DM curate de operator cu reconciliere la pornire și hot reload, `/topic` multi-sesiune cu lobby, legături topic<->sesiune, auto-redenumire, restaurarea unei sesiuni într-un topic), auto-threading și `/thread` pe Discord plus canalele forum, rehidratarea cu watermark și `group_sessions_per_user` pe Slack, și scopurile de sesiune per thread pentru Matrix, Mattermost, Google Chat și SMS. Evidența pinată nu include adaptorul Telegram. Probele live sunt separate."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "adapter descriptor (supports_threads flag)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/slack.py",
+      "agents/core/channels/discord.py",
+      "agents/core/channels/descriptor.py"
+    ],
+    "existing_test_files": [
+      "tests/test_workspace_channel_replies.py",
+      "tests/test_slack_socket_mode.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H113",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H113"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H114",
+    "title": "Per-channel personality, skills and verbosity",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "d7077a4f80e75ee12be20c1d9795ef333c1610dec6e8a76db874d6fe116e39d1",
+    "contract": "`platform_hint` on the descriptor injects a system-prompt line per platform ('You are on IRC. Do not use markdown.'); per-channel and per-topic prompts on Telegram, Discord, Slack, Mattermost and Matrix; channel→skill bindings so a given channel auto-runs a skill (Discord, Slack, Telegram group topics); and four tiers of per-platform display defaults (`display.platforms.<name>.*`, gateway/display_config.py:120-192) controlling tool progress, reasoning display, streaming, interim messages and heartbeats — with in-source rationales (Buzz was moved to MEDIUM because every interim update became a permanent channel post; Photon is LOW because iMessage cannot edit messages). (~10 entries)",
+    "governance": "Read-only. One caveat: a per-channel prompt is prompt content, so it must be operator-set configuration and never settable from inbound message content.",
+    "remaining_verbatim": "The platform hint is a hand-maintained name map (cli, telegram, discord, slack, email), not a field derived from or declared on the ChannelDescriptor, so any other channel (ntfy, WhatsApp, webhook channels) gets no hint at all. Operator overrides are per platform only: there is no operator-set per-chat or per-topic prompt. There is no channel-to-skill binding that makes a given channel or topic auto-run a skill. There is no display-tier resolver derived from descriptor capabilities (can edit, permanent, length cap) that governs tool-progress, reasoning, interim and heartbeat messages per channel; the only per-channel display decision is the supports_edit gate (plus the named Slack/Discord/ntfy exclusion) on streaming.",
+    "requirement_sections": [
+      "The platform hint is a hand-maintained name map (cli, telegram, discord, slack, email), not a field derived from or declared on the ChannelDescriptor, so any other channel (ntfy, WhatsApp, webhook channels) gets no hint at all. Operator overrides are per platform only: there is no operator-set per-chat or per-topic prompt. There is no channel-to-skill binding that makes a given channel or topic auto-run a skill. There is no display-tier resolver derived from descriptor capabilities (can edit, permanent, length cap) that governs tool-progress, reasoning, interim and heartbeat messages per channel; the only per-channel display decision is the supports_edit gate (plus the named Slack/Discord/ntfy exclusion) on streaming."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "adapter descriptor",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/descriptor.py",
+      "agents/core/channels/render.py",
+      "agents/core/orchestrator.py",
+      "agents/core/operating_guidance.py"
+    ],
+    "existing_test_files": [
+      "tests/test_telegram_streaming.py",
+      "tests/test_channel_render.py",
+      "tests/test_h388_operating_guidance.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H114",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H114"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H115",
+    "title": "Proactive delivery: home channel, scheduled output, and sending when no adapter is running",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "9212bd614144634469bb7f417ac427e63a5d4df65183c7a3983bbcb098fa147a",
+    "contract": "Every platform declares `cron_deliver_env_var` (e.g. `TELEGRAM_HOME_CHANNEL`) making `deliver=<platform>` a valid cron target, with `/sethome` to set it from chat (Discord, Matrix, Yuanbao, Google Chat). Every platform also registers a `standalone_sender_fn` — an out-of-process async sender so a cron job can deliver without a live gateway; without one, 'a `deliver=<name>` cron job fires correctly but the actual send returns No live adapter'. Plus `parse_target_ref_fn`/`validate_target_ref_fn`/`send_message_handler` so an agent's `send_message` tool can address a chat on any platform. (~28 entries)",
+    "governance": "Privileged: proactive delivery is an outbound send with no user turn to attribute it to — arguably the case most needing an audit entry. Must go through `channel.reply` with the initiating task as the provenance, not a direct adapter call the way scheduler_service.py:576 does today.",
+    "remaining_verbatim": "No full home-channel/standalone sender or origin/thread/all/bot-chat target routing and fallbacks; outbound provenance requirements still need separate review.",
+    "requirement_sections": [
+      "No full home-channel/standalone sender or origin/thread/all/bot-chat target routing and fallbacks; outbound provenance requirements still need separate review."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "adapter descriptor",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/autonomy/jobs.py",
+      "agents/core/routers/jobs.py"
+    ],
+    "existing_test_files": [
+      "tests/test_owner_jobs.py",
+      "tests/test_jobs_routes.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H115",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H115"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H116",
+    "title": "Catching up on what was missed while offline",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "38fd61e4da029109c76e505e00c2562f1f7f8566b3205c8f075fe0b2242587a5",
+    "contract": "Discord history backfill and missed-message backfill on reconnect; Slack thread rehydration with per-thread watermarks; Matrix history fetch and serialization plus a startup grace filter for clock skew; Telegram's held-inbound queue that redispatches after a reconnect; the ntfy rebuild note calls out its own absence of a `since=` cursor as the fix. (~7 entries)",
+    "governance": "Backfilled messages are inbound and must re-enter through the full gateway path (taint, pairing, gating) — never a fast path that skips it because 'we already saw these'. Replay must not be able to re-trigger an action the owner already declined.",
+    "remaining_verbatim": "- Discord history and missed-message backfill on reconnect\n- Slack thread rehydration with per-thread watermarks\n- Matrix history fetch with a startup grace filter for clock skew (webhook channels have no cursor)\n- Telegram's held-inbound queue redispatched after a reconnect: inbound is at most once by design, so a turn still queued in a chat lane when the process dies is not re-run and leaves no trace (no received-but-unhandled record yet)\n- A backfilled plain-text reset trigger (`sessions.reset_triggers`, e.g. \"start over\") is still judged like a live one; only `/commands` are refused from a backfill",
+    "requirement_sections": [
+      "- Discord history and missed-message backfill on reconnect\n- Slack thread rehydration with per-thread watermarks\n- Matrix history fetch with a startup grace filter for clock skew (webhook channels have no cursor)\n- Telegram's held-inbound queue redispatched after a reconnect: inbound is at most once by design, so a turn still queued in a chat lane when the process dies is not re-run and leaves no trace (no received-but-unhandled record yet)\n- A backfilled plain-text reset trigger (`sessions.reset_triggers`, e.g. \"start over\") is still judged like a live one; only `/commands` are refused from a backfill"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "adapter descriptor; inbound gating (backfill must be gated identically)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/telegram.py",
+      "agents/core/channels/ntfy.py",
+      "agents/core/channels/backfill.py",
+      "agents/core/channels/gateway.py"
+    ],
+    "existing_test_files": [
+      "tests/test_g15_channel_reliability.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H116",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H116"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H117",
+    "title": "Message batching and debounce (treat a burst as one turn)",
+    "area": "platforms",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "a3a011966ab39e62fb477f52ee4f0c402fd368f63a6f63381b4efb7806aa6d17",
+    "contract": "Text batching for client-side splits (a long message Telegram broke into pieces becomes one turn), photo-burst batching, album/media-group debounce, Feishu burst batching with per-chat serialization, WhatsApp/Matrix/SimpleX/Discord text batching, WeCom's attachment+text merge window, and busy-text interrupt/debounce knobs on the base adapter (`_busy_text_debounce_seconds` 0.35, hard cap 1.0). (~10 entries)",
+    "governance": "Read-only. One care point: batching merges messages before the injection scan in gateway.py:159-166, so the scan must run on the merged text, not per fragment.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/batching.py",
+      "agents/core/channels/telegram.py",
+      "agents/core/channels/discord.py",
+      "agents/core/channels/slack.py",
+      "agents/core/channels/gateway.py",
+      "agents/core/channels/chat_lanes.py",
+      "docs/hermes/evidence/h487-telegram-collateral-review-2026-10-04.md",
+      "docs/hermes/evidence/h487-native-owner-denial-progress-2026-10-04.json"
+    ],
+    "existing_test_files": [
+      "tests/test_h117_message_batching.py",
+      "tests/test_h677_boot_and_shutdown.py",
+      "tests/test_h117_reason_replies.py",
+      "tests/test_h485_owner_once_telegram.py",
+      "tests/test_h487_telegram_consent_denial.py",
+      "tests/test_h487_telegram_owner_once_denial.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H117",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H117"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H118",
+    "title": "Guided setup for a channel (from 'I have nothing' to 'it replies')",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "78887e84a34135172f877e2615f74aedd0f0ff516d450a91b21e2aef14403f9a",
+    "contract": "A per-platform `setup_fn` wizard for every platform: Telegram offers automatic QR-based bot creation through a hosted onboarding service (scan → tap 'Create Bot' → token fetched once, `hermes_cli/telegram_managed_bot.py`) or manual BotFather, with token-format validation (`^\\d+:[A-Za-z0-9_-]{30,}$`), an allowlist prompt with the @userinfobot hint, and home-channel selection; Slack generates an app manifest and documents required scopes and event subscriptions; Google Chat walks GCP project/API/service-account/Pub-Sub/IAM setup; Teams registers a bot via the Teams CLI; Mattermost creates the bot account; Matrix handles login and cross-signing; DingTalk/Feishu/WeCom use QR scan-to-create. Plus troubleshooting matrices per platform. (~30 entries)",
+    "governance": "Privileged: the wizard writes a bot token, which is a credential — it must go into the existing secret store (agents/core/routers/vault.py, secrets.py), never into a plaintext .env, and enabling a channel should be an explicit operator action, not a side effect of pasting a token.",
+    "remaining_verbatim": "- A channel step in the setup wizard: paste a Telegram bot token, validate its format, confirm with getMe, show @username, then show the pairing deeplink as a QR\n- Setting channel tokens from the UI instead of env vars plus restart\n- Guided setup for Slack (manifest/scopes), Discord, Google Chat, Teams, Matrix\n- Per-platform troubleshooting guidance",
+    "requirement_sections": [
+      "- A channel step in the setup wizard: paste a Telegram bot token, validate its format, confirm with getMe, show @username, then show the pairing deeplink as a QR\n- Setting channel tokens from the UI instead of env vars plus restart\n- Guided setup for Slack (manifest/scopes), Discord, Google Chat, Teams, Matrix\n- Per-platform troubleshooting guidance"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "adapter descriptor (required_env/prompts come from the manifest)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/onboarding.py",
+      "agents/core/routers/pairing.py",
+      "agents/core/channels/pairing.py"
+    ],
+    "existing_test_files": [
+      "frontend/src/test/pairing-deeplink.test.tsx"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H118",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H118"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H119",
+    "title": "Authenticating inbound webhooks (proving the message came from the platform)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "9aae5cdb03a70a7fd60ee4dc84a33688095f36a92312535ecae25dbb7bc80963",
+    "contract": "Per-provider verification: Twilio's full HMAC-SHA1 signature algorithm with a port-variant retry and constant-time byte comparison, refusing to start without `SMS_WEBHOOK_URL` unless an explicitly-named insecure flag is set (which logs 'Any client that can reach port %d can inject messages'); Feishu webhook signature with rate limiting and anomaly tracking; Teams service-URL allowlist plus conversation-ID validation; Google Chat attachment-download SSRF guard; A2A HMAC signing with an SSRF guard on push callbacks; WeCom callback crypto (WXBizMsgCrypt). (~8 entries)",
+    "governance": "Directly load-bearing for the whole governance stack: the pairing gate, the approval-card owner binding and the audit trail all key off `sender`, and an unverified webhook lets a caller forge it.",
+    "remaining_verbatim": "- Per-provider inbound verification on /api/channels/{id}/inbound (Twilio HMAC-SHA1 with URL variants, WhatsApp/Meta X-Hub-Signature, Teams Bot Framework JWT + service-URL allowlist + conversation-ID check, Google Chat bearer verification)\n- Refuse to start an unverified provider ingress unless an explicitly named insecure flag is set\n- SSRF guard for attachment downloads and A2A push callbacks",
+    "requirement_sections": [
+      "- Per-provider inbound verification on /api/channels/{id}/inbound (Twilio HMAC-SHA1 with URL variants, WhatsApp/Meta X-Hub-Signature, Teams Bot Framework JWT + service-URL allowlist + conversation-ID check, Google Chat bearer verification)\n- Refuse to start an unverified provider ingress unless an explicitly named insecure flag is set\n- SSRF guard for attachment downloads and A2A push callbacks"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/webhooks.py",
+      "agents/core/a2a.py",
+      "agents/core/routers/integrations.py",
+      "agents/core/channels/webhook_channels.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h10_8_webhooks.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H119",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H119"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H120",
+    "title": "Not answering itself: echo, duplicate and loop guards",
+    "area": "platforms",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "fdde32c58130d4ce571e0fe37baec0a20e542da28d77d06ca0daf366f0e97ce0",
+    "contract": "Own-message filters on every adapter ('adapters must filter their own outbound echoes to prevent reply loops', ADDING_A_PLATFORM.md); ntfy's `X-Tags: hermes-agent` echo tag plus a 300 s/1000-entry dedup window; Feishu message and card-action dedup; SMS drops inbound whose From equals its own number; Matrix bridge/appservice loop protection; WhatsApp broadcast/status/channel suppression; Telegram's delayed-delivery drop guard; Slack `allow_bots` gating messages from other bots. (~10 entries)",
+    "governance": "A duplicate inbound can produce a duplicate approval request or a duplicate approved action — so dedup belongs upstream of the approval queue, and the queue should be idempotent on a message id regardless.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/slack.py",
+      "agents/core/channels/discord.py",
+      "agents/core/channels/descriptor.py",
+      "agents/core/channels/gateway.py",
+      "agents/core/channels/webhook_channels.py",
+      "agents/core/channels/backfill.py",
+      "agents/core/channels/telegram.py",
+      "agents/core/channel_inbox.py",
+      "agents/core/channel_reply.py",
+      "agents/core/channels/sms.py"
+    ],
+    "existing_test_files": [
+      "tests/test_workspace_channel_replies.py",
+      "tests/test_slack_socket_mode.py",
+      "tests/test_h120_echo_and_dedup.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H120",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H120"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H121",
+    "title": "Agent-to-agent as a channel (be callable by another agent; call peers)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "f08b82544b66ce623563db40c6cd54c8c565c7b8e1e539b9bb6094a0cbbdf501",
+    "contract": "A2A is a platform: an inbound adapter with an Agent Card advertising skills, a JSON-RPC task lifecycle with error codes, push notifications with HMAC-signed callbacks and an SSRF guard, authentication/trust/rate limiting, inbound prompt-injection framing and outbound redaction, plus five agent-facing tools (`a2a_discover`, `a2a_call`, `a2a_list`, `a2a_history`, `a2a_orchestrate`) gated per surface by `hermes tools enable a2a --platform <p>`, where enabling it for `--platform a2a` permits agent chaining. platforms-b.a2a-* (~13 entries).",
+    "governance": "Inbound already fails closed into the approval inbox. Outbound calls are egress plus delegation — must cross the kernel (`call.outbound` or a sibling), and peer responses must be marked tainted the way the gateway marks inbound channel text.",
+    "remaining_verbatim": "- Outbound A2A tools (discover/call/list/history/orchestrate) mediated by the kernel, with peer responses marked as tainted input and a per-surface enable gate\n- A path for an approved inbound task to actually run (today approval only flips a status)\n- JSON-RPC task lifecycle (status/cancel, error codes) and HMAC-signed push-notification callbacks with an SSRF guard\n- Rate limiting per peer",
+    "requirement_sections": [
+      "- Outbound A2A tools (discover/call/list/history/orchestrate) mediated by the kernel, with peer responses marked as tainted input and a per-surface enable gate\n- A path for an approved inbound task to actually run (today approval only flips a status)\n- JSON-RPC task lifecycle (status/cancel, error codes) and HMAC-signed push-notification callbacks with an SSRF guard\n- Rate limiting per peer"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/a2a.py",
+      "agents/core/routers/a2a.py"
+    ],
+    "existing_test_files": [
+      "tests/test_a2a_hf16_2.py",
+      "tests/test_r3_b3_a2a_escalation_contracts.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H121",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H121"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H122",
+    "title": "Home Assistant as a channel (the house talks to the agent)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "4c6a4798a6d176aefc9cf9cf94ebaa905fbfa6f6b26047356b90a0509ac1f7a3",
+    "contract": "A gateway adapter that turns Home Assistant into a messaging platform: event filtering with cooldown, state-change message formatting, a standalone cron sender for `deliver=homeassistant`, readiness probes, and `_TIER_MINIMAL` display defaults. Read/notify-shaped — HA state changes become agent messages. platforms-b.homeassistant-* (5 entries).",
+    "governance": "Already correct — actuation crosses `house.control`/`house.security_control`. An HA event that starts a turn is inbound untrusted input and must be taint-marked like any other channel ingress.",
+    "remaining_verbatim": "- Run a live event loop that turns filtered HA state changes (with cooldown) into agent turns or messages, tagged as tainted inbound input\n- Wire HestiaBridge (observe/propose) into a running loop; today it has no runtime caller\n- A deliver=homeassistant target (HA notify) for cron and automation output\n- A readiness probe for the HA channel in health/status",
+    "requirement_sections": [
+      "- Run a live event loop that turns filtered HA state changes (with cooldown) into agent turns or messages, tagged as tainted inbound input\n- Wire HestiaBridge (observe/propose) into a running loop; today it has no runtime caller\n- A deliver=homeassistant target (HA notify) for cron and automation output\n- A readiness probe for the HA channel in health/status"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/house/home_assistant.py",
+      "agents/core/house/actuation.py",
+      "agents/core/house/hestia_bridge.py",
+      "agents/core/routers/house.py",
+      "agents/core/observability/house_reality.py"
+    ],
+    "existing_test_files": [
+      "tests/test_hestia_bridge.py",
+      "tests/test_h30_house_adapter.py",
+      "tests/test_h30_house_actuation.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H122",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H122"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H123",
+    "title": "Regional and enterprise-chat breadth (DingTalk, Feishu/Lark, WeCom, WeCom Callback, Yuanbao)",
+    "area": "platforms",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "684b386efc8255726816269f8b0353fe4e1f6aa0edc72778eff34863071285b3",
+    "contract": "Five adapters, ~60 entries: DingTalk Stream Mode with AI Cards and emoji reactions; Feishu with a 3-tier group-rules admission policy, webhook mode with signature and anomaly tracking, interactive approval cards, **document-comment intelligent reply** with its own access-control CLI, meeting-invitation events, and six agent-facing doc/drive tools; WeCom with native `msgtype: stream`, a per-chat send queue with a token bucket, and a separate Callback adapter with WXBizMsgCrypt; Yuanbao with a reverse-engineered wire protocol, SignManager auth, COS media upload, stickers, and five agent tools.",
+    "governance": "Each would add a new egress domain family and a new inbound door — the surface-area cost is the argument, not the effort.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "n/a",
+    "historical_exclusion_reason": "Wrong audience for this product. These are corporate-suite chat platforms for a market Nerva does not serve, and each one is not a thin adapter but a vendor SDK plus a crypto/callback surface plus a tool family — Feishu alone is six agent-facing tools that read and write a document store. Bringing them in would roughly double the channel-layer surface area and the egress allowlist for capability the owner will never exercise, on a product whose thesis is a small, auditable, local-first system. The transferable ideas are already claimed by other rows: WeCom's per-chat token bucket belongs in the send limiter, Feishu's approval cards in the approvals row, DingTalk's reaction lifecycle in the feedback row. Re-open only on a signed design partner in that market, and then one platform at a time behind its own flag.",
+    "source_files": [],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H123",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H123"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H124",
+    "title": "Long-tail protocol adapters (IRC, LINE, SimpleX, Mattermost, Raft, Buzz)",
+    "area": "platforms",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "648e699fc6f2bfab69fe31a9535b47409e0bfa78e5552acea157e4d569d6f43b",
+    "contract": "Six more adapters, ~40 entries: IRC with a no-markdown platform hint; LINE with a Messaging API webhook, a bubble splitter, a tokenized media-serving endpoint and a slow-LLM postback button; SimpleX Chat with channel enumeration and DM pairing; Mattermost with a WebSocket loop, thread reply modes and 5-image batching; Raft as a wake-channel bridge with `POST /wake` and activity telemetry; Buzz on Nostr with NIP-42 signing and Blossom media URLs.",
+    "governance": "Read-only decision; no effect crosses the kernel because nothing is being built.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "n/a",
+    "historical_exclusion_reason": "Reach into audiences that overlap almost none of Nerva's — and the owner's own delta-port doc set the precedent for refusing breadth that does not serve the thesis. Each of these costs a permanent adapter, a dependency and an egress entry to serve a population of roughly zero for this product. Two named re-open paths rather than a blanket no: **SimpleX** is the one that is genuinely on-thesis (no identifiers at all, privacy-first, self-hosted) and should be reconsidered if Nerva ever markets on metadata privacy; **Raft's wake-channel shape** (`POST /wake` to rouse an idle agent) is a useful pattern for the always-on-box deployment and is cheaper to rebuild against Nerva's own scheduler than to port.",
+    "source_files": [],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H124",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H124"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H125",
+    "title": "iMessage reach (Photon/BlueBubbles sidecar)",
+    "area": "platforms",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "6738e4683822873ae121c0249a6ec282a051bebdc08166f57af966f6da7a3eff",
+    "contract": "A Node sidecar over a loopback protocol with `hermes photon setup/status/install-sidecar/telemetry` CLI commands, access auto-configuration, sidecar directory resolution for immutable installs, a presence watchdog with health monitoring, inbound attachments/voice/rich-links/polls, tapbacks and read receipts, group mention gating, and `_TIER_LOW` display defaults because iMessage messages are permanent and uneditable. platforms-b.photon-* (~13 entries).",
+    "governance": "Would place a privileged effect (sending as the owner's personal iMessage identity) behind a second process the kernel does not mediate — the structural objection, beyond the platform cost.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "n/a",
+    "historical_exclusion_reason": "The existing exclusion is well-reasoned and should stand. It requires a permanently-running macOS host with full-disk access to the Messages database and a Node sidecar — a second runtime, a second update path and a second trust boundary, for a channel that duplicates reach Nerva already has through Telegram and its own Expo mobile app. The gap matrix notes Nerva has 'no iMessage-class channel', and that is true, but the cost is a macOS dependency in a product that runs on a Linux box in a house. Re-open if the owner's household is Apple-only and Telegram is not acceptable — the honest version of that re-open is a host bridge exposing an HTTP surface the existing webhook-channel layer can speak to, not a port of the sidecar.",
+    "source_files": [],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H125",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H125"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H126",
+    "title": "Slack-native AI-app surfaces (Agent view, task cards, suggested prompts, thread titles, Block Kit)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "092fe5f5076ace9752e2fbdee30846b9f72cae24888e97bb004c59064b997809",
+    "contract": "Slack's own AI-app UI: `chat.startStream` live typing where the streamed message is the final message; native plan/task cards with per-tool running/complete/error rows keyed by (team, channel, thread_ts); up to four one-tap suggested prompts via `assistant.threads.setSuggestedPrompts`; automatic thread titles from the first user message; `app_context_changed` telling the agent which channel the user is looking at (as a label only — 'it does not read the viewed channel's history'); Block Kit `rich_blocks` rendering; feedback buttons. platforms-a.slack-native-streaming/.native-task-cards/.suggested-prompts/.thread-titles/.agent-context/.rich-blocks/.feedback-buttons (~7 entries).",
+    "governance": "Read-only display; the reason to skip is product focus, not risk.",
+    "remaining_verbatim": "- chat.startStream native streaming where the streamed message is the final message\n- native plan/task cards with per-tool running/complete/error rows keyed by (team, channel, thread_ts)\n- up to four suggested prompts via assistant.threads.setSuggestedPrompts\n- automatic thread titles from the first user message\n- app_context_changed handling (viewed channel as a label only)\n- Block Kit rich_blocks rendering for ordinary replies\n- feedback buttons\n- tests for each",
+    "requirement_sections": [
+      "- chat.startStream native streaming where the streamed message is the final message\n- native plan/task cards with per-tool running/complete/error rows keyed by (team, channel, thread_ts)\n- up to four suggested prompts via assistant.threads.setSuggestedPrompts\n- automatic thread titles from the first user message\n- app_context_changed handling (viewed channel as a label only)\n- Block Kit rich_blocks rendering for ordinary replies\n- feedback buttons\n- tests for each"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "n/a",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/slack.py"
+    ],
+    "existing_test_files": [
+      "tests/test_pending_input_slack_transport.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H126",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H126"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H127",
+    "title": "Transport-level end-to-end encryption (Matrix E2EE, cross-signing)",
+    "area": "platforms",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "0e62f1941945a2c6dab0c4041205fdc818ce7c3504d1b511ebba1adb22551887",
+    "contract": "Matrix E2EE modes, cross-signing verification via `MATRIX_RECOVERY_KEY`, and a proxy mode specifically to make E2EE work on macOS. platforms-a.matrix-e2ee/.matrix-cross-signing/.matrix-proxy-mode (3 entries).",
+    "governance": "Would introduce a key store outside the vault/secret path — a reason to do it deliberately or not at all.",
+    "remaining_verbatim": "- Olm/Megolm encryption and decryption: no backend is pinned (matrix-nio[e2e], python-olm or vodozemac would have to be added to the hash-pinned requirements); can_encrypt() stays False and encrypted rooms are refused or go through the owner's local proxy\n- device-key upload, one-time keys, to-device room-key sharing and the per-device send fan-out that consumes the verification state\n- server-side key backup and secret-storage recovery via MATRIX_RECOVERY_KEY (AES-CTR/HMAC SSSS), interactive SAS emoji verification\n- not verified against a live homeserver or a live pantalaimon",
+    "requirement_sections": [
+      "- Olm/Megolm encryption and decryption: no backend is pinned (matrix-nio[e2e], python-olm or vodozemac would have to be added to the hash-pinned requirements); can_encrypt() stays False and encrypted rooms are refused or go through the owner's local proxy\n- device-key upload, one-time keys, to-device room-key sharing and the per-device send fan-out that consumes the verification state\n- server-side key backup and secret-storage recovery via MATRIX_RECOVERY_KEY (AES-CTR/HMAC SSSS), interactive SAS emoji verification\n- not verified against a live homeserver or a live pantalaimon"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "n/a",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/matrix_e2ee.py",
+      "agents/core/channels/webhook_channels.py",
+      "docs/FLAGS.md"
+    ],
+    "existing_test_files": [
+      "tests/test_h127_matrix_e2ee.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H127",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H127"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H128",
+    "title": "Agent-facing platform administration tools (act on the platform, not just chat in it)",
+    "area": "platforms",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "1ee8f67c7e3d85162d99baf5ecf29d2b96a4ee7c0bd2feb8c4dc8ad51d10d7f4",
+    "contract": "Tools that let the model operate the platform itself: `discord` (server participation) and `discord_admin` (server management); `feishu_doc_read`, `feishu_drive_list_comments`/`list_comment_replies`/`reply_comment`/`add_comment` plus the `hermes-feishu` toolset; `yb_query_group_info`/`yb_query_group_members`/`yb_send_dm`/`yb_search_sticker`/`yb_send_sticker`; the Teams meeting pipeline with Graph subscription lifecycle and meeting-summary delivery. (~16 entries)",
+    "governance": "Each would need its own kernel kind at irreversible tier (kicking a member is not undoable). Adding them speculatively would grow the privileged surface with no demand behind it.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "n/a",
+    "historical_exclusion_reason": "Server administration is a different product from an assistant that talks to you — banning members, creating channels and managing a workspace are exactly the irreversible third-party effects the governance layer exists to be careful about, for a use case the owner has not asked for. The half that is genuinely useful, 'the agent can proactively send to a named channel', is already covered by the home-channel/delivery row and belongs there, behind `channel.reply`, rather than as a free-form platform tool. Re-open per-tool with a specific need; the kernel makes each one cheap to add safely once there is a reason.",
+    "source_files": [],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H128",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H128"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  }
+]

@@ -374,20 +374,16 @@ def test_editing_the_time_rearms_a_spent_one_shot(tmp_path):
 def test_the_fallback_ticker_fires_a_one_shot_in_its_minute_only(tmp_path):
     runner, store, sched = _runner(tmp_path)
     sched.running = False
-    fired = []
-
-    async def fire(job_id, **kwargs):
-        fired.append(job_id)
-        return SimpleNamespace(id=1)
 
     try:
-        job = runner.arm(name="once", schedule_text="in 90 minutes", action=REMIND)[0]
+        job = runner.arm(name="once", schedule_text="in 90 minutes", action=REMIND,
+                         options={"deliver": []})[0]
         when = run_at(job.cron)
-        runner.fire = fire
-        asyncio.run(runner.tick(when - timedelta(minutes=1)))
-        asyncio.run(runner.tick(when.replace(second=0) + timedelta(seconds=20)))
-        asyncio.run(runner.tick(when + timedelta(minutes=5)))
-        assert fired == [job.id]
+        assert asyncio.run(runner.tick(when - timedelta(minutes=1))) == []
+        due = asyncio.run(runner.tick(when.replace(second=0) + timedelta(seconds=20)))
+        assert len(due) == 1 and (due[0].job_id, due[0].status) == (job.id, "ok")
+        assert asyncio.run(runner.tick(when + timedelta(minutes=5))) == []
+        assert store.get(job.id).attempts == 1
     finally:
         store.close()
 

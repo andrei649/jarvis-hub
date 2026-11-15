@@ -219,44 +219,51 @@ def _channel(tmp_path, **kw):
                            seen_store=em.EmailSeenStore(tmp_path / "seen.json"), **kw)
 
 
+def _accept(ch, batch):
+    """Model the routing loop accepting one private fetch proposal."""
+    if batch.last_uid is not None:
+        ch._commit_fetch_batch(batch, batch.last_uid)
+    return batch.messages
+
+
 def test_first_contact_sets_the_watermark_and_answers_no_history(tmp_path):
     ch = _channel(tmp_path)
     imap = FakeIMAP({1: _raw(body="old1"), 2: _raw(body="old2")})
-    assert ch._fetch_new(imap) == []
+    assert _accept(ch, ch._fetch_new(imap)) == []
     assert imap.calls[0] == ("select", "INBOX", True)
     assert not any(c[:2] == ("uid", "FETCH") for c in imap.calls)
     imap.messages[3] = _raw(body="new")
-    got = ch._fetch_new(imap)
+    got = _accept(ch, ch._fetch_new(imap))
     assert [m["body"].strip() for m in got] == ["new"]
     # Nothing new: the "N:*" answer naming the newest UID again is not re-read.
-    assert ch._fetch_new(imap) == []
+    assert _accept(ch, ch._fetch_new(imap)) == []
     # The watermark survives a restart.
     again = _channel(tmp_path)
-    assert again._fetch_new(imap) == []
+    assert again._fetch_new(imap).messages == []
 
 
 def test_oversized_message_is_skipped_and_uidvalidity_change_restarts(tmp_path):
     ch = _channel(tmp_path)
     imap = FakeIMAP({1: _raw(body="a")})
-    ch._fetch_new(imap)
+    _accept(ch, ch._fetch_new(imap))
     imap.messages[2] = _raw(body="huge")
     imap.sizes[2] = em.MAX_MESSAGE_BYTES + 1
     imap.messages[3] = _raw(body="fine")
-    assert [m["body"].strip() for m in ch._fetch_new(imap)] == ["fine"]
+    assert [m["body"].strip() for m in _accept(ch, ch._fetch_new(imap))] == ["fine"]
     assert ch.suppressed.get("too_large") == 1
     imap.validity = 8
     imap.messages[4] = _raw(body="after-renumber")
-    assert ch._fetch_new(imap) == []          # renumbered mailbox: new watermark
+    assert _accept(ch, ch._fetch_new(imap)) == []  # renumbered mailbox: new watermark
 
 
 def test_poll_is_bounded(tmp_path):
     ch = _channel(tmp_path)
     imap = FakeIMAP({1: _raw(body="a")})
-    ch._fetch_new(imap)
+    _accept(ch, ch._fetch_new(imap))
     for uid in range(2, 2 + em.MAX_PER_POLL + 5):
         imap.messages[uid] = _raw(body=f"m{uid}")
-    assert len(ch._fetch_new(imap)) == em.MAX_PER_POLL
-    assert len(ch._fetch_new(imap)) == 5
+    assert len(_accept(ch, ch._fetch_new(imap))) == em.MAX_PER_POLL
+    assert len(_accept(ch, ch._fetch_new(imap))) == 5
 
 
 # ── routing decisions ───────────────────────────────────────────────────────
@@ -680,13 +687,13 @@ def test_messages_read_before_an_imap_error_are_not_lost(tmp_path):
                          seen_store=em.EmailSeenStore(tmp_path / "seen.json"),
                          trusted_authserv_ids=())
     imap = FlakyIMAP({1: _flaky_raw(1)})
-    ch._fetch_new(imap)                       # watermark at 1
+    _accept(ch, ch._fetch_new(imap))           # watermark at 1
     imap.messages.update({2: _flaky_raw(2), 3: _flaky_raw(3), 4: _flaky_raw(4)})
     imap.fail_on = 4
     with pytest.raises(imaplib.IMAP4.abort):
         ch._fetch_new(imap)                   # 2 and 3 were parsed, then the socket dropped
     imap.fail_on = None
-    again = [m["message_id"] for m in ch._fetch_new(imap)]
+    again = [m["message_id"] for m in ch._fetch_new(imap).messages]
     assert "<m2@example.com>" in again and "<m3@example.com>" in again, again
 
 
@@ -757,7 +764,7 @@ def test_names_lose_bidi_and_format_characters():
 def test_one_failing_route_does_not_drop_the_batch_and_is_retried(tmp_path):
     ch = _channel(tmp_path)
     imap = FakeIMAP({1: _raw(body="a")})
-    ch._fetch_new(imap)
+    _accept(ch, ch._fetch_new(imap))
     for uid in (2, 3, 4):
         imap.messages[uid] = _raw(body=f"m{uid}")
     calls = []
@@ -781,7 +788,7 @@ def test_document_budget_defers_instead_of_dropping(tmp_path, monkeypatch):
     monkeypatch.setattr(em, "POLL_DOCUMENT_BUDGET_S", 0.0)
     ch = _channel(tmp_path, pairing=_Pairing({"ana@example.com"}))
     imap = FakeIMAP({1: _raw(body="a")})
-    ch._fetch_new(imap)
+    _accept(ch, ch._fetch_new(imap))
     msg = EmailMessage()
     msg["From"] = "ana@example.com"
     msg["Message-ID"] = "<doc@example.com>"

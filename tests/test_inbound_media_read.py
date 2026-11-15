@@ -425,7 +425,7 @@ def _channel(reader=None):
         turns.append((text, current_action_origin()))
         return "ok"
 
-    ch = TelegramChannel(token="t", handler=handler)
+    ch = TelegramChannel(token="t", handler=handler, allowed_user_ids=[42])
     ch._bot_id, ch._bot_username = 1, "nerva_bot"
 
     async def fake_send(message, chat_id=None, **kwargs):
@@ -532,11 +532,11 @@ async def test_a_failed_download_says_so_instead_of_answering():
 
 @pytest.mark.asyncio
 async def test_a_document_is_untouched_by_the_image_path():
-    """Only a photo goes to the image reader; a kind with no reader says so."""
+    """Only a photo goes to the image reader; a document needs a supported type."""
     ch, turns, sent = _channel(_reader(spy=_Spy()))
     await _drain(ch, [_update(document={"file_id": "d", "file_size": 10})])
-    assert sent == ["I can see you sent a file, but reading files "
-                    "is not wired up yet."]
+    assert sent == ["I can see you sent a file, but reading that document type "
+                    "is not supported."]
 
 
 @pytest.mark.asyncio

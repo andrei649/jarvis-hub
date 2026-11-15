@@ -60,3 +60,26 @@ test('settled chat persistence allowlists text fields and drops image bytes or h
   expect(raw).not.toContain('opaque-handle');
   expect(JSON.parse(raw).messages).toEqual([{ id: 'm', role: 'user', text: 'Question' }]);
 });
+
+test('recovery prompt is bounded and scoped, while missing-session authority is never stored', async () => {
+  await saveConversation('scope-a', { sessionId: 'session', messages: [], recoveryPrompt: 'Unsent question',
+    missingSessionId: 'must-not-persist' } as any);
+  const raw = jest.mocked(AsyncStorage.setItem).mock.calls.at(-1)![1];
+  const stored = JSON.parse(raw);
+  expect(stored.recoveryPrompt).toBe('Unsent question');
+  expect(stored).not.toHaveProperty('missingSessionId');
+  jest.mocked(AsyncStorage.getItem).mockResolvedValueOnce(raw);
+  expect(await loadConversation('scope-a')).toEqual({ sessionId: 'session', messages: [],
+    recoveryPrompt: 'Unsent question' });
+  jest.mocked(AsyncStorage.getItem).mockResolvedValueOnce(raw);
+  expect(await loadConversation('scope-b')).toEqual({ sessionId: null, messages: [] });
+});
+
+test('invalid or oversized recovery prompts are omitted without changing the legacy record shape', async () => {
+  await saveConversation('scope', { sessionId: null, messages: [], recoveryPrompt: 'x'.repeat(4097) });
+  const oversize = JSON.parse(jest.mocked(AsyncStorage.setItem).mock.calls.at(-1)![1]);
+  expect(oversize).not.toHaveProperty('recoveryPrompt');
+  await saveConversation('scope', { sessionId: null, messages: [] });
+  const legacyShape = JSON.parse(jest.mocked(AsyncStorage.setItem).mock.calls.at(-1)![1]);
+  expect(legacyShape).not.toHaveProperty('recoveryPrompt');
+});

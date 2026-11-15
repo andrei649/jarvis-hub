@@ -90,8 +90,25 @@ def test_the_command_tree_is_discoverable_and_complete():
         "doctor", "extensions", "status", "config", "approvals", "kernel", "tools", "inspect", "logs", "estop", "jobs", "sessions", "chat", "acp", "send", "completion",
         "prompt-size", "desktop", "security", "todo", "skills", "company", "auth", "checkpoints", "kanban", "project", "secrets", "support",
         "uninstall", "backup", "pairing", "hooks", "webhook", "provider", "goal", "memory", "agents",
-        "journey", "learning", "memory-graph", "mcp", "curator", "lsp", "rooms", "update",
+        "journey", "learning", "memory-graph", "mcp", "moa", "curator", "lsp", "rooms", "sync", "pets", "skin", "import", "update", "service",
     }
+    # H040: cross-device E2E config & skills sync.
+    assert tree["sync"] == ["label", "now", "peer-add", "peer-rm", "pull", "push", "skill", "status"]
+    # H214 + H238 + H590 + H052: Petdex, Hatch-a-Pet, terminal sprite renderer, install/list/show/off & doctor.
+    assert tree["pets"] == [
+        "cancel", "cells", "disable", "doctor", "enable", "export", "gallery",
+        "generate", "hatch", "import", "info", "install", "list", "meta", "off",
+        "on", "remix", "remove", "rename", "render", "scale", "select", "show",
+        "status", "thumb",
+    ]
+    # H052 + H591: terminal colour skins & CLI chrome theming.
+    assert tree["skin"] == ["list", "render", "reset", "set", "show", "use", "validate"]
+    # H012: multi-source migration & post-migration cleanup CLI.
+    assert tree["import"] == ["apply", "cleanup", "plan", "sources"]
+    # H032: Mixture-of-Agents committee presets and parallel quorum synthesis.
+    assert tree["moa"] == ["activate", "delete", "list", "run", "set"]
+    # H089: the hub as a per-user service (systemd user unit / launchd agent).
+    assert tree["service"] == ["install", "show", "uninstall"]
     # H027: owner-governed skill curation. Reads (status, usage, ledger, lists) change nothing;
     # every other verb previews or requests an owner-approved, recoverable change.
     assert tree["curator"] == ["adopt", "archive", "backup", "ledger", "list-archived", "list-unmanaged",
@@ -108,9 +125,10 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert tree["journey"] == tree["learning"] == tree["memory-graph"] == ["delete", "edit", "list", "show"]
     # H039: the Hermes `hermes webhook` verbs; `test` is dry (a signed sample, nothing runs).
     assert tree["webhook"] == ["list", "remove", "subscribe", "test"]
-    # H658: remote room members — invite/accept/revoke over the admin room-peers routes.
-    assert tree["rooms"] == ["bundle", "call", "invite", "join", "leave", "policy", "renew",
-                             "revoke", "status", "task"]
+    # H658 + H657: remote room members + surviving-host room failover & fencing.
+    assert tree["rooms"] == ["bundle", "call", "demote", "invite", "join", "leave", "log-page",
+                             "policy", "promote", "renew", "replica-state", "replicate", "revoke",
+                             "status", "task"]
     # The owner-managed compatible endpoint is one explicit local CLI family.
     assert tree["provider"] == ["custom"]
     # G9 (H549, H550, H692): the MCP catalog, a confirmed install, and a loopback-relayed sign-in.

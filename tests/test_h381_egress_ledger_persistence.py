@@ -246,6 +246,7 @@ def test_a_directory_at_the_ledger_path_keeps_its_mode_and_contents_reachable(tm
 
     home = tmp_path / "board"
     home.mkdir(mode=0o755)
+    home.chmod(0o755)  # Establish the mode under test independently of the caller's umask.
     inner = home / "kanban.db"
     sqlite3.connect(inner).close()
     monkeypatch.setattr(paths, "data_path", lambda *parts: home)
@@ -265,6 +266,7 @@ def test_ensure_private_narrows_regular_files_only(tmp_path):
 
     directory = tmp_path / "a-directory"
     directory.mkdir(mode=0o755)
+    directory.chmod(0o755)
     ensure_private(directory)
     assert stat.S_IMODE(directory.stat().st_mode) == 0o755
 
@@ -273,6 +275,7 @@ def test_ensure_private_narrows_regular_files_only(tmp_path):
     loose.chmod(0o644)
     sidecar_dir = tmp_path / "loose.db-wal"
     sidecar_dir.mkdir(mode=0o755)
+    sidecar_dir.chmod(0o755)
     ensure_private(loose)
     assert stat.S_IMODE(loose.stat().st_mode) == PRIVATE_MODE
     assert stat.S_IMODE(sidecar_dir.stat().st_mode) == 0o755

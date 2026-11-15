@@ -84,7 +84,7 @@ LABELS = {
 # before it builds the server, the lifespan before its boot guards), so only what is read
 # while agents.web is imported comes first. Importing it freezes these into module
 # constants (the ASGI root path, the rate limit, CORS, CSP, the router's auto-deep switch,
-# the analytics cap, the graph's Neo4j defaults) or locates the hub's own files with them.
+# the graph's Neo4j defaults) or locates the hub's own files with them.
 # Log redaction is decided before the load on purpose: only the boot environment can lower
 # it. A .env value for any of them is recorded but not in effect: they belong in the
 # process environment. The list is measured, not remembered: the H273 review tests spy on
@@ -93,7 +93,7 @@ LABELS = {
 READ_BEFORE_LOAD = frozenset({
     "JARVIS_APP_ROOT", "JARVIS_HOME", "JARVIS_MEMORY_DIR", "JARVIS_PROFILE", "JARVIS_ROOT_PATH",
     "JARVIS_RATE_LIMIT", "JARVIS_CORS_ORIGINS", "JARVIS_CSP", "JARVIS_DISABLE_CSP",
-    "JARVIS_AUTO_DEEP", "JARVIS_ANALYTICS_MAX_EVENTS",
+    "JARVIS_AUTO_DEEP",
     "NEO4J_URL", "NEO4J_USER", "NEO4J_PASSWORD", "JARVIS_LOG_REDACTION",
     # G1 — where the administrator's managed layer is, and managed mode: fixed from the
     # process environment before any .env file is read (managed_scope.capture)

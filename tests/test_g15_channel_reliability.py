@@ -34,7 +34,7 @@ from agents.core.channels.gateway import Gateway
 from agents.core.channels.manager import ChannelManager
 from agents.core.channels.ntfy import NtfyChannel
 from agents.core.channels.pairing import SenderPairing
-from agents.core.channels.reconnect import Backoff, ChannelHealth, classify_status
+from agents.core.channels.reconnect import Backoff, ChannelHealth, PollingCircuit, classify_status
 from agents.core.channels.telegram import TelegramChannel
 
 OWNER = 7
@@ -185,8 +185,12 @@ async def test_restart_resumes_from_the_saved_offset_so_a_handled_update_never_r
     first = _telegram(server, gateway.route)
     await first.start()
     await _until(lambda: len(seen) == 1)
-    first._running = False                      # a crash: no orderly stop
-    first._poll_task.cancel()
+    # The cursor is durable before shutdown. A second adapter in this process
+    # must not impersonate a dead process while the first still owns its kernel
+    # polling lease; actual process-death release is covered by H083 claim tests.
+    await _until(lambda: first._cursor_store.cursor(first._cursor_name)
+                 == str(handled["update_id"] + 1))
+    await first.stop()
 
     server.queue.append(handled)                # unconfirmed on Telegram's side
     second = _telegram(server, gateway.route)
@@ -468,10 +472,14 @@ async def test_telegram_climbs_the_ladder_then_heals(tmp_path, quick_batches, mo
                             (429, {"ok": False, "parameters": {"retry_after": 7}})]
     waits, states = [], []
     channel = _telegram(server, _gated(tmp_path)[0].route)
+    now = [0.0]
+    channel._poll_circuit = PollingCircuit(clock=lambda: now[0])
 
     async def no_wait(delay):
         waits.append(delay)
         states.append(channel.health_snapshot()["state"])
+        # Advance the same clock that enforces the server's retry-after deadline.
+        now[0] += delay
 
     monkeypatch.setattr(tg, "_backoff_sleep", no_wait)
     channel._ladder().jitter = 0
@@ -761,12 +769,15 @@ async def test_a_fatal_channel_is_reported_on_another_channel(tmp_path):
         return await original(request)
 
     ntfy_channel.client = httpx.AsyncClient(transport=httpx.MockTransport(record))
-    telegram.health.failed_fatally("unauthorized")
-    telegram.health.failed_fatally("unauthorized")          # once per transition
-    await _until(lambda: posts)
-    await asyncio.sleep(0.05)
-    assert len(posts) == 1 and "telegram" in posts[0] and "unauthorized" in posts[0]
-    ntfy_channel._running = False
+    try:
+        telegram.health.failed_fatally("unauthorized")
+        telegram.health.failed_fatally("unauthorized")      # once per episode
+        await _until(lambda: posts)
+        await asyncio.sleep(0.05)
+        assert len(posts) == 1 and "telegram" in posts[0].lower()
+        assert "unavailable" in posts[0] and "unauthorized" not in posts[0]
+    finally:
+        await manager.stop_all()
 
 
 @pytest.mark.asyncio

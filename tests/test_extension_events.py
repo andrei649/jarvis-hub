@@ -198,9 +198,8 @@ async def test_a_runtime_whose_observer_lookup_raises_is_survived():
 async def test_a_wedged_observer_costs_a_counter_not_the_chat():
     made, runtime = bus(runtime=_Runtime(watching=("a", "b", "c"), hang=True), max_pending=2)
     report = made.emit("tool.completed", tool="file_read", status="ok")
-    assert len(report["delivered"]) == 3, "emit reports what it dispatched"
-    await asyncio.sleep(0)
-    assert made.dropped == 1, "the third delivery hit the cap on the loop thread"
+    assert report["delivered"] == ["a", "b"] and report["dropped"] == 1
+    assert made.dropped == 1, "the third delivery was refused before scheduling"
     runtime.released.set()
     await made.drain(timeout=1)
 

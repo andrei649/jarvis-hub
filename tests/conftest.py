@@ -129,6 +129,22 @@ def make_app(module_path: str, fallback_name: str, prefix: str = "",
 import pytest  # noqa: E402
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _ignore_the_test_hosts_credentials():
+    """H069 review: the outbound gate masks (and holds back in streamed frames) every
+    credential-named variable in the environment. The machine running the suite carries
+    its own (a CI token), which would make what a streaming test sees depend on the host;
+    those values, as they are at session start, are ignored. A test's own setenv counts."""
+    try:
+        from agents.core.channels import outbound_safety
+    except Exception:
+        yield
+        return
+    outbound_safety._IGNORE_ENV_VALUES = frozenset(value for _name, value in outbound_safety._env_credentials())
+    yield
+    outbound_safety._IGNORE_ENV_VALUES = frozenset()
+
+
 @pytest.fixture(autouse=True)
 def _disable_user_guard():
     """HF-1: user-facing routes are guarded by web._user_guard. Its behavior is

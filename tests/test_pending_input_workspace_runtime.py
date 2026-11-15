@@ -55,8 +55,14 @@ async def workspace_host(tmp_path, broker_host, channel, *, multi_select=False):
         adapter._client = SimpleNamespace(chat_postMessage=post, chat_update=edit, requests=requests)
         adapter._team_id, adapter._bot_user_id = "T1", "U9"
         adapter._loop = asyncio.get_running_loop()
-        adapter._socket_client = SimpleNamespace(send_socket_mode_response=lambda _r: None,
-                                                close=lambda: None)
+        # This card-only fake never starts SDK workers; expose their stopped state
+        # so shutdown proves settlement through the same predicate as production.
+        adapter._socket_client = SimpleNamespace(
+            send_socket_mode_response=lambda _r: None, close=lambda: None,
+            current_session_runner=SimpleNamespace(is_alive=lambda: False),
+            current_app_monitor=SimpleNamespace(is_alive=lambda: False),
+            message_processor=SimpleNamespace(is_alive=lambda: False),
+        )
         adapter._inbound_ready = asyncio.Event()
         metadata = {"sender": "T1:U2", "slack_channel": "C1", "thread_ts": "170.001"}
     else:

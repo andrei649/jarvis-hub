@@ -164,8 +164,8 @@ def test_a_grant_survives_a_reopen_and_the_write_is_atomic(tmp_path):
     ExtensionConsentStore(path).grant(descriptor())
     assert ExtensionConsentStore(path).check(descriptor()).allowed
     assert sorted(p.name for p in path.parent.iterdir()) == [
-        "consent.json", "manifest_catalog.json",
-    ], "both durable records exist with no temp file left behind"
+        "consent.json", "consent.json.lock", "manifest_catalog.json",
+    ], "durable records and persistent mutation lock exist with no temp file left behind"
 
 
 def test_owner_declaration_pins_are_visible_before_activation_and_survive_revoke(tmp_path):

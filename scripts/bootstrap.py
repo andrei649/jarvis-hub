@@ -34,6 +34,7 @@ Invariants (MOONSHOT §5, local-first by default):
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import platform
@@ -105,6 +106,44 @@ def venv_python(root: Path) -> Path:
     return root / VENV_DIR / "bin" / "python"
 
 
+def _preflight_venv(root: Path) -> None:
+    """Read the target tree with this interpreter before executing anything in it."""
+    helper = Path(__file__).resolve().with_name("venv_ownership.py")
+    try:
+        spec = importlib.util.spec_from_file_location("_nerva_bootstrap_venv_ownership", helper)
+        if spec is None or spec.loader is None:
+            raise ImportError("venv ownership helper unavailable")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        report = module.preflight_venv(root)
+    except (ImportError, OSError, ValueError) as exc:
+        raise BootstrapError("venv_ownership_check_failed", type(exc).__name__) from exc
+    if not isinstance(report, dict) or report.get("ok") is not True:
+        reason = report.get("reason") if isinstance(report, dict) else "invalid ownership result"
+        raise BootstrapError("venv_ownership_refused", str(reason))
+    if report.get("state") == "ownership_unchecked_windows":
+        print("[WARN] venv ownership unchecked on Windows: native ACL validation is unavailable.",
+              file=sys.stderr)
+
+
+def _anchor_macos_venv(venv_dir: Path, python: str = sys.executable) -> dict:
+    """Best-effort macOS TCC interpreter anchoring (H690). Stdlib-only and never raises."""
+    if sys.platform != "darwin":
+        return {"ok": True, "anchored": False, "reason": "not_macos"}
+    helper = Path(__file__).resolve().parent.parent / "agents" / "core" / "macos_tcc_anchor.py"
+    if not helper.is_file():
+        return {"ok": True, "anchored": False, "reason": "helper_missing"}
+    try:
+        spec = importlib.util.spec_from_file_location("_nerva_bootstrap_macos_tcc_anchor", helper)
+        if spec is None or spec.loader is None:
+            return {"ok": True, "anchored": False, "reason": "spec_unavailable"}
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module.anchor_venv_interpreter(venv_dir, python=python)
+    except Exception:
+        return {"ok": False, "anchored": False, "reason": "anchor_load_failed"}
+
+
 def ensure_venv(root: Path, python: str = sys.executable, run=subprocess.run) -> tuple:
     """Create ``<root>/.venv`` with *python* unless it already exists.
 
@@ -115,7 +154,10 @@ def ensure_venv(root: Path, python: str = sys.executable, run=subprocess.run) ->
     """
     root = Path(root)
     target = venv_python(root)
+    if os.path.lexists(root / VENV_DIR):
+        _preflight_venv(root / VENV_DIR)
     if target.exists():
+        _anchor_macos_venv(root / VENV_DIR, python=python)
         return target, False
     proc = run([python, "-m", "venv", str(root / VENV_DIR)], check=False)
     rc = getattr(proc, "returncode", 1)
@@ -123,6 +165,7 @@ def ensure_venv(root: Path, python: str = sys.executable, run=subprocess.run) ->
         raise BootstrapError("venv_create_failed", f"python -m venv exited {rc}")
     if not target.exists():
         raise BootstrapError("venv_create_failed", f"no interpreter at {target}")
+    _anchor_macos_venv(root / VENV_DIR, python=python)
     return target, True
 
 
@@ -137,6 +180,10 @@ def pip_install_locked(venv_py: Path, root: Path, *, unlocked: bool = False,
     report marks it so the choice is visible, never silent.
     """
     root = Path(root)
+    if os.path.abspath(venv_py) != os.path.abspath(venv_python(root)):
+        raise BootstrapError("venv_interpreter_mismatch", "interpreter is outside the bootstrap target")
+    venv_py = venv_python(root)  # Execute the checked path, never a caller-supplied alias.
+    _preflight_venv(root / VENV_DIR)
     lock = root / LOCK_FILE
     loose = root / LOOSE_REQUIREMENTS
     if unlocked:

@@ -1,0 +1,20 @@
+{
+  "excerpt_sha256": "2bda62647853d6404d0df50f5dc6f5c10cd0ad562c4af29140ca55b7d8998928",
+  "generated_counts": {
+    "backend": 36700,
+    "frontend": 3188,
+    "mobile": 420
+  },
+  "observed_actual": 36700,
+  "observed_previous_tracked": 36699,
+  "output_sha256": {
+    "GO_LIVE_PLAN.md": "7ca0b457213881b0355032553e6f110093b5b3756235638775bd98e2eb3a384d",
+    "NERVA.md": "bb40a0b4a958ce1c565ba69032cf3bfc9a5725dcd11a30ce46cbff659b018226",
+    "README.md": "375f93c3f77bf497a589b00218556cc04988633eee4e03906b198ff9efb16bea",
+    "STATUS.md": "a1f3a0703b37e884ff538c4da67c26b1f287bf29385bcb9c4a49dca4a12ced69",
+    "project-status.json": "06ac46baafd4d38809114d4be13710d1803e9e58ad678dc6c28bd9a24a9423fe"
+  },
+  "source_head": "e39d9b659cb740a5ec14a50ff607803c6927b102",
+  "source_kind": "actual canonical verifier stdout, not fabricated JUnit",
+  "source_url": "https://github.com/andrei649/jarvis-hub/actions/runs/43596686135/job/132452588220"
+}

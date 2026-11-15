@@ -98,6 +98,7 @@ RULES = [
     ),  # H23.20 first-run wizard + activation funnel (lands in the cockpit)
     ("/api/system/", "cockpit"),  # 0.62 System Profiles — usage-mode selector (system/home setting)
     ("/api/help/", "cockpit"),  # H165 in-app documentation — the console's Start group (DocsPanel)
+    ("/api/pets", "cockpit"),  # H214+H238+H590 Petdex, Hatch-a-Pet & reactive companion (PetsPanel + overlay)
     ("/api/trust/status", "topbar"),
     ("/api/auth/", "topbar"),  # H509 owner browser sign-in screen + corner sign-out (owner-sign-in.tsx)
     # memory & knowledge
@@ -153,6 +154,10 @@ RULES = [
     ("/skills", "build"),
     ("/sandbox", "build"),
     ("/api/llm/grammar", "build"),
+    ("/api/browser/broker/controller/", "NOT_IN_HUD"),  # H086: remote browser controller lease/poll/result wire
+    ("/api/browser/broker/artifacts/{artifact_id}/download-ticket", "build"),  # H086: BrowserBrokerPanel ticket mint
+    ("/api/browser/broker/artifacts/{artifact_id}/upload", "NOT_IN_HUD"),  # H086: remote browser one-shot HTTPS upload
+    ("/api/browser/broker/artifacts/{artifact_id}/download", "NOT_IN_HUD"),  # H086: caller/tool one-shot HTTPS fetch
     ("/api/browser", "build"),
     ("/api/toolrpc", "build"),  # governed Tool-RPC for sandboxed pipelines (H20.1)
     ("/api/codeintel/", "build"),  # 0.31 Code Intelligence — AST symbol index over the source
@@ -198,7 +203,8 @@ RULES = [
     ("/api/mcp", "interop"),
     ("/api/webhooks", "interop"),
     ("/api/integrations/", "interop"),
-    ("/api/sync", "interop"),  # E2E device sync (H12.13)
+    ("/api/sync/peer/mailbox", "NOT_IN_HUD"),  # H040: hub-to-hub ciphertext-only E2E manifest mailbox
+    ("/api/sync", "interop"),  # E2E device sync (H12.13 + H040 DeviceSyncPanel)
     ("/api/nodes", "interop"),  # governed node mesh (H12.17)
     # comms (rooms / notes / channel sender pairing / mic satellites)
     ("/api/rooms", "comms"),
@@ -218,7 +224,7 @@ RULES = [
     ("/api/room-peers", "admin"),  # H658: remote room members (Remote Members panel)
     ("/api/hooks", "admin"),  # G17 (H163/H021/H514/H408): owner event hooks (Hooks panel)
     ("/plugins", "admin"),
-    ("/api/plugins/extensions", "admin"),  # S1 inspection view pending below; CLI exists
+    ("/api/plugins/extensions", "build"),  # read-only Extensions panel; mutations remain host CLI
     ("/api/models", "admin"),
     ("/api/llm/", "admin"),
     ("/api/oauth", "admin"),
@@ -642,9 +648,13 @@ MACHINE_FACING: dict[str, str] = {
     "/api/satellites/{satellite_id}/dispatch":
         "mic satellite submits to the shared inference rail \u2014 the exact twin of "
         "/api/nodes/{node_id}/dispatch above; the HUD does pairing only",
-    "/api/sync": "device sync transport",
-    "/api/sync/pull": "device sync transport",
-    "/api/sync/push": "device sync transport",
+    "/api/sync/peer/mailbox": "H040: hub-to-hub ciphertext-only E2E manifest mailbox",
+    "/api/browser/broker/controller/{session_id}/heartbeat": "H086: remote browser controller lease heartbeat (X-Controller-Token)",
+    "/api/browser/broker/controller/{session_id}/poll": "H086: remote browser controller command pickup (X-Controller-Token)",
+    "/api/browser/broker/controller/{session_id}/commands/{command_id}/result": "H086: remote browser controller step completion report (X-Controller-Token)",
+    "/api/browser/broker/controller/{session_id}/detach": "H086: remote browser controller clean detach (X-Controller-Token)",
+    "/api/browser/broker/artifacts/{artifact_id}/upload": "H086: remote browser one-shot HTTPS artifact upload (X-Artifact-Ticket)",
+    "/api/browser/broker/artifacts/{artifact_id}/download": "H086: caller/tool one-shot HTTPS binary artifact fetch (X-Artifact-Ticket)",
     "/api/capture/ingest": "passive-capture agent ingest",
     "/api/capture/surfaces": "passive-capture agent",
     "/api/channels/webhook": "inbound channel webhook",
@@ -674,76 +684,9 @@ MACHINE_FACING: dict[str, str] = {
 # Today's uncalled user-facing routes. A punch-list, not an allowance: seeded from a real
 # measurement, and rule 2 above keeps it honest.
 UNCALLED_BACKLOG: frozenset[str] = frozenset([
-    # G18 (H401): a sub-agent's live transcript, its whole kept result and the exactly-once
-    # claim of finished results. The owner reaches them through /delegations in chat today;
-    # no HUD panel tails a transcript yet (ledger row H401, remaining).
-    "/api/subagents/{spawn_id}/transcript",
-    "/api/subagents/{spawn_id}/result",
-    "/api/subagents/completions/claim",
-    # H081 (G15 delivery receipts and dead targets): the owner reads them through the API;
-    # no HUD panel yet (ledger row H081, remaining).
-    "/api/channels/deliveries",
-    "/api/channels/dead-targets/clear",
-    # H562 (A2A outbound): peers get an address and token through the admin API; no HUD
-    # panel yet (ADOPT_LANE.md slice 4, remaining).
-    "/api/a2a/peers/{peer_id}/outbound",
-    # H553 (MCP elicitation): the card shows in the approval inbox, but there is no HUD form
-    # to type an answer yet (ledger row H553, remaining).
-    "/api/admin/mcp/elicitations/{card_id}/answer",
-    # H361: installation, credential and selection APIs have no HUD controls.
-    # Guarded physical sends do not establish graphical or native parity.
-    "/api/admin/llm/provider-credentials",
-    "/api/admin/llm/provider-selection",
-    "/api/llm/provider-packages/status",
-    "/api/llm/provider-packages/stage",
-    "/api/llm/provider-packages/{artifact_id}",
-    "/api/llm/provider-packages/{artifact_id}/propose",
-    "/api/llm/provider-packages/proposals/{proposal_id}/decision",
-    "/api/llm/provider-packages/proposals/{proposal_id}/promote",
-    "/api/llm/provider-packages/{provider_id}/revoke",
-    # H015: the owner CLI/API is live; dedicated web/mobile controls remain in
-    # HUD_V2_REMAINING.md and mobile/PARITY.md, not a completed UI claim.
-    "/api/jobs/incidents/{incident_id}/ack",
-    "/api/jobs/runs",
-    "/api/jobs/{job_id}/notepad/keys",
-    # H075/H581: ProjectsMode now consumes the core board, drawer, attachment,
-    # metadata and dispatch routes. Remaining advanced HUD/native controls follow.
-    # Each exact path is also recorded in docs/design/HUD_V2_REMAINING.md.
-    "/api/kanban/assignees",
-    "/api/kanban/boards/import",
-    "/api/kanban/boards/{slug}/export",
-    "/api/kanban/boards/{slug}/switch",
-    "/api/kanban/config",
-    "/api/kanban/diagnostics",
-    "/api/kanban/estimate",
-    "/api/kanban/home-channels",
-    "/api/kanban/links",
-    "/api/kanban/model-options",
-    "/api/kanban/profiles/{profile_name}",
-    "/api/kanban/profiles/{profile_name}/describe-auto",
-    "/api/kanban/runs/{run_id}",
-    "/api/kanban/runs/{run_id}/inspect",
-    "/api/kanban/runs/{run_id}/terminate",
-    "/api/kanban/stats",
-    "/api/kanban/tasks/{task_id}/decompose",
-    "/api/kanban/tasks/{task_id}/estimate",
-    "/api/kanban/tasks/{task_id}/home-subscribe/{platform}",
-    "/api/kanban/tasks/{task_id}/reassign",
-    "/api/kanban/tasks/{task_id}/reclaim",
-    "/api/kanban/tasks/{task_id}/specify",
-    "/api/kanban/workers/active",
     # H075/H581: approved backend dispatch exists; dedicated board/worker
     # controls remain in HUD_V2_REMAINING.md and native task H18.34.
     "/api/autonomy/kanban/dispatch",
-    # Nous account operations have a working owner CLI (agents/cli/nous_auth.py).
-    # HUD account controls remain unfinished, recorded in HUD_V2_REMAINING.md.
-    "/api/oauth/nous/login",
-    "/api/oauth/nous/logout",
-    "/api/oauth/nous/poll",
-    "/api/oauth/nous/status",
-    # HA-4i-S1: host CLI inspection exists; dedicated HUD/mobile views are pending.
-    # The existing acquisition panel does not show this extension projection.
-    "/api/plugins/extensions",
     # STAYS UNWIRED ON PURPOSE (verified 2026-09-01). Its docstring calls it a
     # "/model hot-swap", but models_llm.py:69-77 swaps nothing: it parses the command
     # string and returns `base` (a hardcoded module constant) plus `configured` (an
@@ -807,20 +750,43 @@ UNCALLED_BACKLOG: frozenset[str] = frozenset([
 # cannot discover them. Keep transport expressions and mounted consumers here so
 # a removed button/read or changed route cannot silently count as a HUD caller.
 KANBAN_HTTP_CONSUMERS: dict[str, tuple[str, str, str]] = {
+    "/api/kanban/assignees": ("scopedPath('/assignees', slug)", "fetchAssignees", "KanbanView.tsx"),
     "/api/kanban/attachments/{attachment_id}": ("scopedPath(`/attachments/${id}`, slug)", "downloadAttachment", "drawer.tsx"),
     "/api/kanban/board": ("root + '/board'", "fetchBoard", "KanbanView.tsx"),
     "/api/kanban/boards": ("root + '/boards'", "fetchBoards", "KanbanView.tsx"),
+    "/api/kanban/boards/import": ("root + '/boards/import'", "importBoard", "board-switcher.tsx"),
     "/api/kanban/boards/{slug}": ("`${root}/boards/${encodeURIComponent(slug)}`", "updateBoard", "board-switcher.tsx"),
+    "/api/kanban/boards/{slug}/export": ("`${root}/boards/${encodeURIComponent(slug)}/export`", "exportBoard", "board-switcher.tsx"),
+    "/api/kanban/boards/{slug}/switch": ("`${root}/boards/${encodeURIComponent(slug)}/switch`", "switchBoard", "board-switcher.tsx"),
+    "/api/kanban/config": ("root + '/config'", "fetchConfig", "KanbanView.tsx"),
+    "/api/kanban/diagnostics": ("root + '/diagnostics'", "fetchDiagnostics", "KanbanView.tsx"),
     "/api/kanban/dispatch": ("scopedPath('/dispatch', slug)", "dispatch", "KanbanView.tsx"),
+    "/api/kanban/estimate": ("root + '/estimate'", "estimateDraft", "board.tsx"),
+    "/api/kanban/home-channels": ("root + '/home-channels'", "fetchHomeChannels", "drawer.tsx"),
+    "/api/kanban/links": ("scopedPath('/links', slug)", "addLink", "drawer.tsx"),
+    "/api/kanban/model-options": ("root + '/model-options'", "fetchModelOptions", "KanbanView.tsx"),
     "/api/kanban/orchestration": ("root + '/orchestration'", "fetchOrchestration", "KanbanView.tsx"),
     "/api/kanban/profiles": ("root + '/profiles'", "fetchProfiles", "KanbanView.tsx"),
+    "/api/kanban/profiles/{profile_name}": ("`${root}/profiles/${encodeURIComponent(profileName)}`", "updateProfileDescription", "board.tsx"),
+    "/api/kanban/profiles/{profile_name}/describe-auto": ("`${root}/profiles/${encodeURIComponent(profileName)}/describe-auto`", "describeProfileAuto", "board.tsx"),
     "/api/kanban/projects": ("root + '/projects'", "fetchProjects", "KanbanView.tsx"),
+    "/api/kanban/runs/{run_id}": ("scopedPath(`/runs/${encodeURIComponent(String(runId))}`, slug)", "fetchRun", "drawer.tsx"),
+    "/api/kanban/runs/{run_id}/inspect": ("scopedPath(`/runs/${encodeURIComponent(String(runId))}/inspect`, slug)", "inspectRun", "drawer.tsx"),
+    "/api/kanban/runs/{run_id}/terminate": ("scopedPath(`/runs/${encodeURIComponent(String(runId))}/terminate`, slug)", "terminateRun", "drawer.tsx"),
+    "/api/kanban/stats": ("scopedPath('/stats', slug)", "fetchStats", "KanbanView.tsx"),
     "/api/kanban/tasks": ("scopedPath('/tasks', slug)", "createTask", "board.tsx"),
     "/api/kanban/tasks/bulk": ("scopedPath('/tasks/bulk', slug)", "bulkTasks", "KanbanView.tsx"),
     "/api/kanban/tasks/{task_id}": ("scopedPath(`/tasks/${encodeURIComponent(id)}`, slug)", "fetchTask", "drawer.tsx"),
     "/api/kanban/tasks/{task_id}/attachments": ("scopedPath(`/tasks/${encodeURIComponent(id)}/attachments`, slug)", "uploadAttachment", "drawer.tsx"),
     "/api/kanban/tasks/{task_id}/comments": ("scopedPath(`/tasks/${encodeURIComponent(id)}/comments`, slug)", "addComment", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/decompose": ("scopedPath(`/tasks/${encodeURIComponent(id)}/decompose`, slug)", "decomposeTask", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/estimate": ("scopedPath(`/tasks/${encodeURIComponent(id)}/estimate`, slug)", "estimateTask", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/home-subscribe/{platform}": ("scopedPath(`/tasks/${encodeURIComponent(id)}/home-subscribe/${encodeURIComponent(platform)}`, slug)", "subscribeTaskChannel", "drawer.tsx"),
     "/api/kanban/tasks/{task_id}/log": ("scopedPath(`/tasks/${encodeURIComponent(id)}/log`, slug)", "fetchLog", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/reassign": ("scopedPath(`/tasks/${encodeURIComponent(id)}/reassign`, slug)", "reassignTask", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/reclaim": ("scopedPath(`/tasks/${encodeURIComponent(id)}/reclaim`, slug)", "reclaimTask", "drawer.tsx"),
+    "/api/kanban/tasks/{task_id}/specify": ("scopedPath(`/tasks/${encodeURIComponent(id)}/specify`, slug)", "specifyTask", "drawer.tsx"),
+    "/api/kanban/workers/active": ("scopedPath('/workers/active', slug)", "fetchActiveWorkers", "KanbanView.tsx"),
 }
 
 
@@ -829,9 +795,12 @@ def test_mounted_kanban_composed_callers_are_accounted_for():
     transport = files["frontend/src/panels/kanban/api.ts"]
     host = files["frontend/src/gap.tsx"]
     view = files["frontend/src/panels/kanban/KanbanView.tsx"]
+    drawer = files["frontend/src/panels/kanban/drawer.tsx"]
     assert "<KanbanView />" in host and "createKanbanSocket(" in view
     assert "const root = '/api/kanban'" in transport
     assert "root + '/events'" in transport and "new WebSocket(kanbanEventsUrl" in transport
+    assert "unlinkPath(" in transport and re.search(r"\bremoveLink\(", drawer)
+    assert re.search(r"\bunsubscribeTaskChannel\(", drawer)
     routes = set(_snapshot_routes())
     blob = _client_blob()
     for path, (expression, function, consumer) in KANBAN_HTTP_CONSUMERS.items():
@@ -872,6 +841,52 @@ def test_mounted_custom_endpoint_composed_callers_are_accounted_for():
     for path, (request, label) in CUSTOM_ENDPOINT_HTTP_CONSUMERS.items():
         assert path in routes and path in COMPUTED_URL_CALLERS
         assert request in panel and label in panel
+
+
+def test_provider_packages_routes_have_a_live_admin_surface():
+    provider_routes = {
+        "/api/admin/llm/provider-credentials",
+        "/api/admin/llm/provider-selection",
+        "/api/llm/provider-packages/status",
+        "/api/llm/provider-packages/stage",
+        "/api/llm/provider-packages/{artifact_id}",
+        "/api/llm/provider-packages/{artifact_id}/propose",
+        "/api/llm/provider-packages/proposals/{proposal_id}/decision",
+        "/api/llm/provider-packages/proposals/{proposal_id}/promote",
+        "/api/llm/provider-packages/{provider_id}/revoke",
+    }
+    routes = set(_snapshot_routes())
+    blob = _client_blob()
+    assert provider_routes.issubset(routes)
+    assert {_classify(path) for path in provider_routes} == {"admin"}
+    assert provider_routes.isdisjoint(UNCALLED_BACKLOG)
+    assert all(_has_caller(path, blob) for path in provider_routes)
+
+    files = _client_files()
+    gap_source = files["frontend/src/gap.tsx"]
+    _assert_console_registration(gap_source, "Admin", "ProviderPackagesPanel")
+
+    panel = files["frontend/src/panels/provider-packages.tsx"]
+    expected_expressions = (
+        "apiGet<PackageStatus>('/api/llm/provider-packages/status', { admin: true })",
+        "apiPost<PackagePreview>('/api/llm/provider-packages/stage', stageBody, { admin: true })",
+        "apiGet<PackagePreview>(`/api/llm/provider-packages/${encodeURIComponent(targetArtifact)}`, { admin: true })",
+        "apiPost<ProposeResult>(`/api/llm/provider-packages/${encodeURIComponent(targetArtifact)}/propose`, {}, { admin: true })",
+        "apiPost<DecisionResult>(`/api/llm/provider-packages/proposals/${encodeURIComponent(targetProposal)}/decision`, decisionBody, { admin: true })",
+        "apiPost<PromoteResult>(`/api/llm/provider-packages/proposals/${encodeURIComponent(targetProposal)}/promote`, {}, { admin: true })",
+        "apiPost<RevokeResult>(`/api/llm/provider-packages/${encodeURIComponent(targetProvider)}/revoke`, {}, { admin: true })",
+        "apiGet<CredentialStatus>(`/api/admin/llm/provider-credentials?provider=${encodeURIComponent(provider)}&package_hash=${encodeURIComponent(hash)}`, { admin: true })",
+        "apiPut<CredentialStatus>('/api/admin/llm/provider-credentials', {",
+        "apiDeleteBody<CredentialStatus>('/api/admin/llm/provider-credentials', {",
+        "apiGet<SelectionStatus>('/api/admin/llm/provider-selection', { admin: true })",
+        "apiPut<SelectionStatus>('/api/admin/llm/provider-selection', selectionBody, { admin: true })",
+        "apiDeleteBody<{ status: string; revision: number }>('/api/admin/llm/provider-selection', {",
+    )
+    for expr in expected_expressions:
+        assert expr in panel, f"ProviderPackagesPanel missing caller expression: {expr}"
+    assert not re.search(r"\bfetch\s*\(", panel)
+    assert "@ts-nocheck" not in panel
+    assert 'type="password"' in panel and "permanentConsent" in panel
 
 
 # Routes whose client call is BUILT rather than written: the last segment comes from a

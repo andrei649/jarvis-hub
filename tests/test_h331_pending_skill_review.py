@@ -334,6 +334,11 @@ def test_bulk_preflight_and_approval_use_the_same_orchestrator_when_binding_chan
     from agents.core.routers import _component
     from agents.core.routers import skills as skills_router
 
+    # Both roots must expose the same skill name for the binding test. Generated
+    # names include wall-clock seconds, so do not depend on both writes finishing
+    # in the same second (fingerprints still cover their distinct real contents).
+    monkeypatch.setattr(SkillLoader, "_name_from_task",
+                        staticmethod(lambda _task: "organize_morning_inbox_binding"))
     first_folder, name = _gen(hub)
     first_fingerprint = hub.loader.pending_skill_fingerprint(name)
 

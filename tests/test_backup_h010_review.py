@@ -281,8 +281,7 @@ def test_an_approved_restore_leaves_an_audit_trace_the_restore_cannot_erase(root
     name = Path(bk.create_backup()["archive"]).name
     task = SimpleNamespace(id=17, payload=None, decided_by="admin")
     path = bk.resolve_backup(name)
-    st = path.stat()
-    task.payload = {"name": name, "bytes": st.st_size, "mtime": st.st_mtime}
+    task.payload = bk.restore_request(name)["payload"]
     assert asyncio.run(bk.apply_approved(task, None))["status"] == "ok"
     staged = bk.pending_restore(root)
     assert staged["task_id"] == 17 and staged["requested_by"] == "admin"

@@ -1,5 +1,7 @@
 import { Text } from '../components/ThemedText';
 import { TaskMediationCard } from '../components/TaskMediationCard';
+import { DeliveryReceipts } from '../components/DeliveryReceipts';
+import { ExtensionInspection } from '../components/ExtensionInspection';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import {
@@ -442,6 +444,8 @@ export function StatusScreen({ onGoToSettings }: { onGoToSettings: () => void })
         <Row label="Version" value={status?.version} />
         <Row label="URL" value={config.baseUrl} />
       </Card>
+      <DeliveryReceipts />
+      <ExtensionInspection />
     </ScrollView>
   );
 }

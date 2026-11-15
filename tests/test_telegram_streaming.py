@@ -3,12 +3,14 @@
 On a chat surface a long silence and a crash look the same. On a channel whose descriptor
 says it can edit a message, the orchestrator streams the turn into a draft: the first token
 sends the message, later tokens edit it under Telegram's edit budget, and the final text is
-rendered exactly as `send()` would render it. Every step is best effort and never raises
-into the turn; the words always arrive.
+rendered exactly as `send()` would render it. An uncertain response stops further sends
+to avoid duplicating words the recipient may already have received.
 """
 import os
 import sys
 from types import SimpleNamespace
+
+import httpx
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -23,6 +25,14 @@ from agents.core.channels.telegram import (  # noqa: E402
 from agents.core.orchestrator import Orchestrator  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _isolated_stream_redactor(monkeypatch):
+    """These transport tests exercise previews without an opaque secret broker."""
+    from agents.core.channels import outbound_safety
+
+    monkeypatch.setattr(outbound_safety, "_known_redactor", None)
+
+
 class _Resp:
     def __init__(self, status: int, message_id: int = 0) -> None:
         self.status_code = status
@@ -30,10 +40,13 @@ class _Resp:
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
-            raise RuntimeError(f"HTTP {self.status_code}")
+            request = httpx.Request("POST", "https://api.telegram.org/botfixture/sendMessage")
+            response = httpx.Response(self.status_code, request=request)
+            raise httpx.HTTPStatusError(f"HTTP {self.status_code}", request=request,
+                                        response=response)
 
     def json(self):
-        return {"ok": True, "result": {"message_id": self._message_id}}
+        return {"ok": self.status_code < 400, "result": {"message_id": self._message_id}}
 
 
 class _Client:
@@ -52,6 +65,8 @@ class _Client:
         if method == "sendMessage" and status < 400:
             self.next_id += 1
             return _Resp(status, self.next_id)
+        if method == "editMessageText" and status < 400:
+            return _Resp(status, json["message_id"])
         return _Resp(status)
 
     async def aclose(self) -> None:
@@ -86,26 +101,28 @@ async def test_first_token_sends_then_edits_are_throttled_and_deduplicated():
     channel = _channel()
     draft = TelegramDraft(channel, 7, interval=1.0, clock=_clock([0.0, 0.5, 1.5, 3.0, 3.1]))
     assert draft.started is False
-    await draft.push("Hel")
+    await draft.push("Hel")              # H069 review M2: an unfinished word is held back
+    assert draft.started is False and _sends(channel.client) == []
+    await draft.push("lo ")
     assert draft.started and _sends(channel.client) == [
-        {"chat_id": 7, "text": "Hel ▍", "parse_mode": "HTML"},
+        {"chat_id": 7, "text": "Hello ▍", "parse_mode": "HTML"},
     ]
-    await draft.push("lo")               # t=0.5: inside the budget, no edit
+    await draft.push("big")              # t=0.5: inside the budget, no edit
     assert _edits(channel.client) == []
-    await draft.push(" **world**")       # t=1.5: one edit, balanced markup rendered
+    await draft.push(" **world** ")      # t=1.5: one edit, balanced markup rendered
     assert _edits(channel.client) == [
-        {"chat_id": 7, "message_id": 101, "text": "Hello <b>world</b> ▍", "parse_mode": "HTML"},
+        {"chat_id": 7, "message_id": 101, "text": "Hello big <b>world</b> ▍", "parse_mode": "HTML"},
     ]
     await draft.push("")                 # t=3.0: nothing changed, no edit
     assert len(_edits(channel.client)) == 1
-    assert draft.text == "Hello **world**"
+    assert draft.text == "Hello big **world** "
 
 
 @pytest.mark.asyncio
 async def test_finish_settles_the_message_and_sends_the_overflow_as_new_messages():
     channel = _channel()
     draft = TelegramDraft(channel, 7, interval=0.0, clock=_clock([0.0, 1.0, 2.0, 3.0]))
-    await draft.push("first")
+    await draft.push("first ")
     long_tail = "\n\n".join("para " * 400 for _ in range(4))
     assert await draft.finish("**first**\n\n" + long_tail) is True
     edits = _edits(channel.client)
@@ -124,7 +141,7 @@ async def test_finish_settles_the_message_and_sends_the_overflow_as_new_messages
 async def test_markup_telegram_rejects_is_retried_as_plain_text():
     channel = _channel({"editMessageText": [400, 200]})
     draft = TelegramDraft(channel, 7, interval=0.0, clock=_clock([0.0, 1.0, 2.0]))
-    await draft.push("a")
+    await draft.push("a ")
     assert await draft.finish("`code` here") is True
     edits = _edits(channel.client)
     assert edits[0]["text"] == "<code>code</code> here" and edits[0]["parse_mode"] == "HTML"
@@ -132,14 +149,24 @@ async def test_markup_telegram_rejects_is_retried_as_plain_text():
 
 
 @pytest.mark.asyncio
-async def test_failures_never_raise_and_the_final_text_still_arrives():
+async def test_uncertain_edit_stops_the_draft_without_a_duplicate_send():
     channel = _channel({"editMessageText": [500, 500, 500, 500]})
     draft = TelegramDraft(channel, 7, interval=0.0, clock=_clock([0.0, 1.0, 2.0, 3.0]))
-    await draft.push("hello")
-    await draft.push(" there")           # the edit fails: a skipped frame, no exception
+    await draft.push("hello ")
+    await draft.push("there ")
+    assert await draft.finish("hello there") is False
+    assert len(_sends(channel.client)) == 1 and len(_edits(channel.client)) == 1
+
+
+@pytest.mark.asyncio
+async def test_definite_edit_rejection_keeps_the_final_fresh_send_fallback():
+    channel = _channel({"editMessageText": [400, 400, 400, 400]})
+    draft = TelegramDraft(channel, 7, interval=0.0, clock=_clock([0.0, 1.0, 2.0]))
+    await draft.push("hello ")
+    await draft.push("there ")
     assert await draft.finish("hello there") is True
-    sends = _sends(channel.client)
-    assert sends[-1] == {"chat_id": 7, "text": "hello there", "parse_mode": "HTML"}
+    assert _sends(channel.client)[-1] == {
+        "chat_id": 7, "text": "hello there", "parse_mode": "HTML"}
 
 
 @pytest.mark.asyncio

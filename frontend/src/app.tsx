@@ -26,6 +26,7 @@ import {
 } from './shortcuts';
 import { ShortcutsPanel } from './shortcuts-panel';
 import { PointerOverlay } from './pointer';
+import { PetCompanionOverlay, type AgentPetState } from './panels/pets';
 import { Conversation, CognitionStream, InputBar, buildTrace, traceFromCognition } from './cockpit';
 import { useVoice } from './voice';
 import { noticeMessages } from './turn-notices';
@@ -42,6 +43,7 @@ import { initAnalytics, trackPageview } from './analytics';
 import { useDemoMode } from './demo-mode';
 import { DesktopControls, notifyDesktopConversation, useDesktopConversation, useDesktopDecisionNotifications, useQuickEntryFocus } from './desktop';
 import { useListeningIndicator } from './listening';
+import { SessionRecovery } from './session-recovery';
 
 import { shouldShowFirstRun, FIRST_RUN_DISMISS_KEY } from './onboarding-state';
 import { useHudRoute, navigateHud, closeHudOverlay, parseHudRoute } from './hud-routing';
@@ -143,14 +145,29 @@ function App({ floating = false, shortcuts, onWorld }: {
   const [currentOutcome, setCurrentOutcome] = useState<TurnOutcome | null>(null);
   const sessionId = useRef<string | null>(savedChatSession());
   const [activeSessionId, setActiveSessionId] = useState<string | null>(() => sessionId.current);
+  const sessionGeneration = useRef(0);
   const selectedSessionId = useCallback(() => sessionId.current, []);
+  const sessionActivityGeneration = useCallback(() =>
+    `${sessionGeneration.current}:${turnEpoch.current}:${nextTextTurn.current}:${latestTextTurn.current}`, []);
   const selectSession = useCallback((id: string, turns?: any[]) => {
+    // Convert a supplied snapshot before touching the selected id or its storage.
+    // A malformed server response must not leave a half-applied recovery.
+    const mappedTurns = turns ? visibleTurns(turns) : undefined;
+    sessionGeneration.current++;
+    sessionRecovery.current?.allowExplicitSelection(id);
     if (id !== sessionId.current || turns) setCurrentOutcome(null);
     sessionId.current = id;
     setActiveSessionId(id);
     try { sessionStorage.setItem(CHAT_SESSION_KEY, id); } catch { /* storage unavailable */ }
-    if (turns) setMessages(visibleTurns(turns));
+    if (mappedTurns) setMessages(mappedTurns);
   }, []);
+  const sessionRecovery = useRef<SessionRecovery | null>(null);
+  if (!sessionRecovery.current) {
+    sessionRecovery.current = new SessionRecovery(
+      () => apiGet('/memory'),
+      (snapshot) => selectSession(snapshot.session, snapshot.turns),
+    );
+  }
   useEffect(() => {
     const selected = (event: Event) => {
       const detail = (event as CustomEvent).detail;
@@ -170,7 +187,8 @@ function App({ floating = false, shortcuts, onWorld }: {
     return () => window.removeEventListener('nerva:session-selected', selected);
   }, [selectSession]);
   const [thinking, setThinking] = useState(null);
-  useDesktopConversation(setMessages, !!thinking, demo, selectedSessionId);
+  useDesktopConversation(setMessages, !!thinking, demo, selectedSessionId,
+    sessionRecovery.current, sessionActivityGeneration);
   useQuickEntryFocus();
   useDesktopDecisionNotifications(!floating && !demo);
   const [trace, setTrace] = useState(null);
@@ -284,16 +302,27 @@ function App({ floating = false, shortcuts, onWorld }: {
   useEffect(() => {
     if (demo || _rehydrated.current) return;
     _rehydrated.current = true;
+    let active = true;
     const savedId = savedChatSession();
+    const expectedSessionGeneration = sessionGeneration.current;
+    const expectedTurnEpoch = turnEpoch.current;
+    const expectedNextTextTurn = nextTextTurn.current;
+    const expectedLatestTextTurn = latestTextTurn.current;
+    const isCurrent = () => active && sessionGeneration.current === expectedSessionGeneration &&
+      sessionId.current === savedId && turnEpoch.current === expectedTurnEpoch &&
+      nextTextTurn.current === expectedNextTextTurn &&
+      latestTextTurn.current === expectedLatestTextTurn &&
+      !turnBusy.current && textTurns.current.size === 0;
     const history = savedId
-      ? apiPost('/sessions/resume', { session_id: savedId }).catch(() => {
-          try { sessionStorage.removeItem(CHAT_SESSION_KEY); } catch { /* storage unavailable */ }
-          return apiGet('/memory');
+      ? apiPost('/sessions/resume', { session_id: savedId }).catch(async (error) => {
+          const healed = await sessionRecovery.current?.recover(savedId, error, isCurrent);
+          if (healed) return null;  // the shared recovery committed the current session + transcript
+          throw error;              // transient, protected or stale: preserve selection and messages
         })
       : apiGet('/memory');
     history
       .then((r: any) => {
-        if (sessionId.current && sessionId.current !== savedId) return;
+        if (!r || !isCurrent()) return;
         if (typeof r?.session === 'string') selectSession(r.session);
         const turns = (r && r.turns) || [];
         if (!turns.length) return;
@@ -301,6 +330,7 @@ function App({ floating = false, shortcuts, onWorld }: {
         setMessages((cur) => (cur.length ? cur : mapped));
       })
       .catch(() => {});
+    return () => { active = false; _rehydrated.current = false; };
   }, [demo, selectSession]);
 
   // hotkeys (H209): every shortcut is an action in shortcuts.ts, rebindable from the
@@ -465,7 +495,7 @@ function App({ floating = false, shortcuts, onWorld }: {
       } else if (evt.type === 'outcome_progress') {
         if (id === latestTextTurn.current) setCurrentOutcome(turnOutcome(evt.outcome));
       } else if (evt.type === 'end') {
-        const finalText = evt.text || streamed;
+        const finalText = typeof evt.text === 'string' ? evt.text : streamed;
         const changed = typeof evt.session_id === 'string' && evt.session_id !== sessionId.current;
         if (typeof evt.session_id === 'string') selectSession(evt.session_id);
         if(id===latestTextTurn.current) setCurrentOutcome(changed && ['/new', '/reset', '/undo'].includes(text.trim())
@@ -690,6 +720,23 @@ function App({ floating = false, shortcuts, onWorld }: {
   </div>;
   const questionPanel=question && <PendingQuestion key={question.id} question={question} onAnswer={answerQuestion} lang={lang}/>;
 
+  const petAgentState: AgentPetState = safeMode.enabled
+    ? 'failing'
+    : thinking
+      ? (String(thinking.label || '').toLowerCase().includes('tool') ? 'tool' : 'thinking')
+      : tasks.some((tk: any) => tk?.status === 'running')
+        ? 'tool'
+        : currentOutcome
+          ? 'finishing'
+          : 'idle';
+  const petStandalone = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('pet_overlay') === '1';
+
+  if (petStandalone) return (
+    <div {...rootAttrs} style={{ padding: 12, minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <PetCompanionOverlay enabled={!demo} agentState={petAgentState} standalone />
+    </div>
+  );
+
   if (floating) return <RouteBoundary routeKey={`floating:${demo}`}><div {...rootAttrs} className="hud-root desktop-floating">
     <DesktopControls floating />
     {appearanceNotice}
@@ -794,6 +841,7 @@ function App({ floating = false, shortcuts, onWorld }: {
       {consoleOpen && <RouteBoundary overlay routeKey={`${route.path}:${demo}`}><ConsoleOverlay panelId={route.panel} onClose={() => setConsoleOpen(false)} /></RouteBoundary>}
       {firstRun && <RouteBoundary overlay><FirstRunGate onClose={() => setFirstRun(false)} /></RouteBoundary>}
       {!floating && <PointerOverlay enabled={!demo} />}
+      {!floating && <PetCompanionOverlay enabled={!demo} agentState={petAgentState} />}
       <button className="tool-btn" data-anchor="console" onClick={() => setConsoleOpen(true)} title={`console (${displayChord(chordOf(shortcutOverrides, 'view.console'))})`}
         style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 50 }}>▦ CONSOLE</button>
       <Palette open={palette} onClose={() => setPalette(false)} onMode={setMode}

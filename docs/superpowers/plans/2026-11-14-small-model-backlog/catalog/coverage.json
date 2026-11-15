@@ -1,0 +1,79 @@
+{
+  "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+  "input_sha256": {
+    "BACKLOG.md": "cb1216da6e38f345951ab600606b0dbb48ea541ab7908372462f1e6c3781d3a5",
+    "docs/hermes/assessment.json": "e0069739cac4d8fa7d5405e19b1a895deb3e44c26dd5e2d393b72a9412ea6f34",
+    "docs/hermes/areas.json": "8c5e37656967ec34594f41e83ac85e5edf53133a754ccd67fe2a261729d57d7d",
+    "docs/research/2026-09-07-hermes-absorption-ledger.json": "84f7079a8381797f89299105fc86eb2686d67cb57f2196d159eedade36be4b07"
+  },
+  "hermes_total": 697,
+  "recorded_counts": {
+    "partial": 474,
+    "equivalent": 187,
+    "excluded": 36
+  },
+  "remaining_contracts": 510,
+  "review_overlay_ids": [
+    "H032",
+    "H040",
+    "H214",
+    "H238",
+    "H590",
+    "H657",
+    "H690"
+  ],
+  "checkbox_total": 299,
+  "checkbox_open": 39,
+  "table_total": 438,
+  "table_statuses": {
+    "open": 54,
+    "done": 384
+  },
+  "backlog_open_records": 93,
+  "duplicate_table_ids": {
+    "H7.1": [
+      9345,
+      9576
+    ],
+    "H7.2": [
+      9346,
+      9577
+    ],
+    "H7.3": [
+      9352,
+      9578
+    ],
+    "H7.4": [
+      9353,
+      9579
+    ],
+    "H7.5": [
+      9354,
+      9580
+    ]
+  },
+  "unclassified_tables": [
+    {
+      "section": "🔎 Fresh-eyes re-verification (2026-07-02 — code-verified backlog truth + July plan)",
+      "line": 9152,
+      "header": "Rank | Item | Size | Where tracked | Status",
+      "unclassified_rows": 6,
+      "sample_key": "K2",
+      "sample_number": "1",
+      "mentioned_ids": [
+        "K2",
+        "B1"
+      ],
+      "status_hints": [
+        4,
+        0,
+        0,
+        2
+      ],
+      "source_table": "| Rank | Item | Size | Where tracked | Status |\n|------|------|------|---------------|--------|\n| 1 | **K2 wave-4b** — capability-token *enforcement* (issued at boot, never read back; `kernel/__init__.py:61-64`) + fold WorldView HMAC → truly closes B1 | L | O24 Track K | ✅ done — enforcement landed 2026-07-02, and #594 adds the missing runtime WorldView MCP write caller with scoped HMAC capability minting behind plugin-gate + Action Kernel |\n| 2 | **K3** — unify InterruptBudget / mission / payment caps into `BudgetLedger` + handler token hooks | M | O24 Track K | ✅ done (2026-07-03) — M1.1 closed the named-dimension + handler-token hook tail |\n| 3 | **TASK-3** — taint marking at ingestion choke points | M | H23.6 | 🟢 **channel ingress tail merged in #590** — producers marked (2026-07-02), M1.2 threads `Action.origin` from inbound channels into brokers, and inbound channel messages are now marked at `Gateway.route()` with private taint metadata plus public inbox taint fields. Full PR CI green. |\n| 4 | **TASK-2 tail** — plugin-gated modes · OpenAPI types (AUD-16) | M | TASK-2 | 🟡 partial (2026-07-05) — `WatchlistPanel` ✅, per-panel LIVE/SEED chips ✅ (58/58 Console cards), OpenAPI typegen/diff gate ✅; plugin-gated mode base wiring ✅ (#505); P3.2 stale-doc guard ✅ (#507); local-control tail including self-hosted fonts ✅; Safe Comms channel inbox transport v0 shipped in #551 for telegram/web; remaining tail is owner live-data/plugin setup + non-v0 inbox channels |\n| 5 | **H23.17** — chat/voice E2E flows · nightly soak · browser matrix (harness exists, specs don't) | M–L | H23.17 | ✅ done (2026-07-03) — M2.1 + M2.2 closed chat/voice flow E2E, scheduled soak, and browser/mobile-emulation matrix |\n| 6 | V1 live contracts · V4 blocking eval gate | M–L | O24 Track V | 🟡 partial — V3 components/skills coverage ✅; M2.4 deterministic drift gate ✅; persistent eval baseline ✅ (#506); **live eval runner ✅ (2026-08-18, H23.4)** — fail-closed `--live-gate` owner-box lane on per-model live datasets + `companion-eval`/`live-eval-evidence` release-gate rows; remaining Track V work is live contracts |",
+      "planning_status": "classification_required"
+    }
+  ],
+  "excluded_tables": [],
+  "note": "Views overlap; counts must not be summed into a completion percentage. Source requirements are preserved, not independently reassessed. No generated contract is automatically a ready implementation packet."
+}

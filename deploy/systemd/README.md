@@ -29,6 +29,23 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now jarvis-hub
 ```
 
+## Per-user service (no root): `nerva service install`
+
+On a desktop or a single-user box the hub can run as a **systemd user unit** instead:
+
+```bash
+nerva service install --dry-run   # print the unit and the commands; write nothing
+nerva service install --now       # ~/.config/systemd/user/jarvis-hub.service, enabled and started
+loginctl enable-linger "$USER"    # keep it running after you log out
+nerva service show                # installed or not
+nerva service uninstall           # stop it and remove the file the install wrote
+```
+
+The unit runs this checkout's `serve.py` with the interpreter `nerva` runs under, as you,
+with your data root. It does not restart on exit 78 (a refused configuration). On macOS the
+same verbs write a launchd agent (`~/Library/LaunchAgents/ai.nerva.hub.plist`, logs in the
+data root's `logs/`). `install` never replaces a file it did not write unless `--force`.
+
 ## Operate
 
 ```bash

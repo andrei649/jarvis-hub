@@ -1,0 +1,16 @@
+{
+  "test_suite": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "693",
+    "time": "63.858",
+    "timestamp": "2026-11-13T20:16:05.187623+00:00",
+    "hostname": "1c2d743b51ac"
+  },
+  "source_mismatches": [],
+  "tree": "9deba0f24220f9f0f89fee585f2a923e549cecc1",
+  "actual_typegen": "../nerva-v81-typegen/final/REPORT.md",
+  "full_backend_production_reuse": "V80 full run34904passed108skipped; all production bytes unchanged; new tests covered here and CI required"
+}

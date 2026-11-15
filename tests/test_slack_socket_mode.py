@@ -107,7 +107,9 @@ def sdk(monkeypatch):
             self.connect_thread = None
             self.close_thread = None
             self.current_session_state = SimpleNamespace(terminated=False)
-            self.current_session_runner = SimpleNamespace(is_alive=lambda: False)
+            self.current_session_runner = SimpleNamespace(is_alive=lambda: self.connected)
+            self.current_app_monitor = SimpleNamespace(is_alive=lambda: self.connected)
+            self.message_processor = SimpleNamespace(is_alive=lambda: self.connected)
             sockets.append(self)
 
         def connect(self):
@@ -490,7 +492,15 @@ async def test_sdk_close_settles_late_reconnect_and_terminates_reader(sdk, monke
         assert not client.connected
         joined.append(True)
 
-    client.current_session_runner = SimpleNamespace(is_alive=lambda: True, shutdown=join_reader)
+    reader = SimpleNamespace(alive=True)
+
+    def shutdown_reader():
+        join_reader()
+        reader.alive = False
+
+    reader.is_alive = lambda: reader.alive
+    reader.shutdown = shutdown_reader
+    client.current_session_runner = reader
     await channel.stop()
     assert joined == [True]
     assert client.auto_reconnect_enabled is False and not client.connected

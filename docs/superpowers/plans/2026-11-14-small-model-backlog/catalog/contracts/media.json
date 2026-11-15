@@ -1,0 +1,1228 @@
+[
+  {
+    "id": "H515",
+    "title": "Generate an image from a prompt (and edit an existing image)",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "0f03a341bd1680592d6941cdb569d0aaf25425c0564a5b46f87fc24a8587e9cd",
+    "contract": "`image_generate` is one model-callable tool covering text-to-image and image-to-image editing; the router is simply the presence of `image_url`/`reference_image_urls` (media.tool-image-generate). Eight backends resolve behind it — FAL (a 21-model in-tree catalog driving payload construction, size translation and edit routing), OpenAI gpt-image-2 at three quality tiers, OpenAI-via-Codex-OAuth, Krea 2, OpenRouter's Dedicated Image API (up to 16 reference images), xAI Grok Imagine, DeepInfra (live-discovered catalog) and a managed Nous FAL gateway that bills a subscription instead of a personal key. A Clarity Upscaler chain gives a ~2x pass; provider resolution prints an actionable 'no backend' setup message rather than a bare error; `hermes tools` has an Image/Video Generation picker; `fal_common.py` keeps the SDK out of cold start.",
+    "governance": "Privileged — spends money and writes files. Today `media_gen._queue_cloud` calls the plain `q.enqueue` (agents/core/media_gen.py:132) with risk_tier=2, and `media.image`/`media.video` are **absent** from agents/core/kernel/registry.py, whose media entries are only `media.present` and `media.restore` (registry.py:78,81). So a wired cloud generation would be approval-queued but never kernel-mediated. Must cross a new kernel kind `media.generate` (external/money tier) via `enqueue_mediated` (agents/core/autonomy/queue.py:1031), plus `file.write` for the artifact and `plugin.egress` for the provider call.",
+    "remaining_verbatim": "The real ComfyUI path does not yet use the existing LLM unload/restore orchestrator. Frozen media.generate/file.write action-kind requirements need explicit architecture adjudication; current local tool.rpc and cloud plugin.egress mediation are verified but are not silently equated to that requirement. Local reference blending is pixel composition and upscale is bicubic resampling. The accepted adaptation requires one cloud seam, not eight-provider fan-out. Ambiguous provider attempts never retry automatically; catalog opt-out is respected. No live ComfyUI, billed provider or native-device validation is claimed. This acknowledgment foundation is not a VRAM swap: canonical aliases, production backend/controller identity, generation leases outside the two local Agent text paths, owner control coordination and authoritative hardware snapshots remain unresolved. Existing coarse headroom and no-victim overcommit behavior remain. ComfyUI unknown submissions need reconciliation before any future exclusive lease can safely release.\n\nIndependent #1233 remaining limits: Managed Nous FAL routing remains; a pinned-source/current-doc contract map is saved, without activation or an entitlement claim. Legacy Krea jobs missing private authority proof cannot be resumed and are never resubmitted automatically. Other dynamic donor catalogs, xAI storage controls and provider-specific/larger image outputs remain open. Krea Enhance supports 4K through private completion proof; OpenRouter 4K and output above 4K remain outside the current bounds. Historical Krea completions lacking retained provider URLs do not Enhance, expired source URLs may fail and Enhance cannot nest. Official xAI result host is admitted in its default-off manifest; undocumented provider/CDN hosts require owner admission. Product-managed Codex OAuth sign-in/refresh and live subscription endpoint acceptance remain. FAL local artifact uploads and Clarity remain. The real local ComfyUI path still lacks LLM unload/restore integration. Frozen media.generate/file.write authority kinds require explicit architecture adjudication; current tool.rpc/plugin.egress mediation does not silently equate contracts. Existing reference blending is pixel composition and local upscale is bicubic. Canonical aliases, backend/controller identity, atomic generation leases, owner coordination and authoritative hardware snapshots remain unresolved; coarse headroom/no-victim behavior is unchanged, and unknown ComfyUI submissions need reconciliation before lease release. Native-mobile controls and fresh live ComfyUI/provider acceptance remain open. Ambiguous submissions never retry automatically; catalog opt-out remains respected.",
+    "requirement_sections": [
+      "The real ComfyUI path does not yet use the existing LLM unload/restore orchestrator. Frozen media.generate/file.write action-kind requirements need explicit architecture adjudication; current local tool.rpc and cloud plugin.egress mediation are verified but are not silently equated to that requirement. Local reference blending is pixel composition and upscale is bicubic resampling. The accepted adaptation requires one cloud seam, not eight-provider fan-out. Ambiguous provider attempts never retry automatically; catalog opt-out is respected. No live ComfyUI, billed provider or native-device validation is claimed. This acknowledgment foundation is not a VRAM swap: canonical aliases, production backend/controller identity, generation leases outside the two local Agent text paths, owner control coordination and authoritative hardware snapshots remain unresolved. Existing coarse headroom and no-victim overcommit behavior remain. ComfyUI unknown submissions need reconciliation before any future exclusive lease can safely release.",
+      "Independent #1233 remaining limits: Managed Nous FAL routing remains; a pinned-source/current-doc contract map is saved, without activation or an entitlement claim. Legacy Krea jobs missing private authority proof cannot be resumed and are never resubmitted automatically. Other dynamic donor catalogs, xAI storage controls and provider-specific/larger image outputs remain open. Krea Enhance supports 4K through private completion proof; OpenRouter 4K and output above 4K remain outside the current bounds. Historical Krea completions lacking retained provider URLs do not Enhance, expired source URLs may fail and Enhance cannot nest. Official xAI result host is admitted in its default-off manifest; undocumented provider/CDN hosts require owner admission. Product-managed Codex OAuth sign-in/refresh and live subscription endpoint acceptance remain. FAL local artifact uploads and Clarity remain. The real local ComfyUI path still lacks LLM unload/restore integration. Frozen media.generate/file.write authority kinds require explicit architecture adjudication; current tool.rpc/plugin.egress mediation does not silently equate contracts. Existing reference blending is pixel composition and local upscale is bicubic. Canonical aliases, backend/controller identity, atomic generation leases, owner coordination and authoritative hardware snapshots remain unresolved; coarse headroom/no-victim behavior is unchanged, and unknown ComfyUI submissions need reconciliation before lease release. Native-mobile controls and fresh live ComfyUI/provider acceptance remain open. Ambiguous submissions never retry automatically; catalog opt-out remains respected."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing — the contract, queue and catalog rails already exist",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/media_backends/comfyui.py",
+      "agents/core/image_generation_runtime.py",
+      "agents/core/media_library.py",
+      "agents/core/routers/artifact_store.py",
+      "frontend/src/panels/images.tsx",
+      "frontend/src/gap.tsx",
+      "docs/hermes/h518-gallery-contract.md",
+      "agents/core/cloud_image_runtime.py",
+      "agents/core/media_backends/openai_image.py",
+      "agents/core/media_catalog.py",
+      "agents/core/routers/multimodal.py",
+      "docs/cloud-image-generation.md",
+      "frontend/src/api/images.ts",
+      "frontend/cloud-image-browser/server.py",
+      "frontend/cloud-image-browser/workflow.spec.ts",
+      "frontend/playwright.cloud-image.config.ts",
+      "docs/superpowers/plans/2026-09-15-cloud-image-hud.md",
+      "agents/core/image_tool_dispatcher.py",
+      "docs/superpowers/plans/2026-09-15-cloud-image-tool.md",
+      "agents/core/autonomy_coordinator.py",
+      "agents/core/orchestrator_bindings.py",
+      "agents/core/llm/model_manager.py",
+      "agents/core/media_backends/registry.py",
+      "agents/core/agent.py",
+      "docs/hermes/evidence/h487-telegram-collateral-review-2026-10-04.md",
+      "docs/hermes/evidence/h277-h487-provider-terminal-denial-regression-2026-10-04.json",
+      "docs/hermes/evidence/h011-owner-storage-integration-2026-10-04.json",
+      "agents/core/kanban/network.py",
+      "agents/core/plugin_gate.py",
+      "docs/hermes/kanban-network-cancel-plan-2026-10-04.md",
+      "docs/hermes/evidence/2026-10-05-kanban-child-hud-review.json",
+      "docs/hermes/evidence/2026-10-05-direct-ports/report.json",
+      "docs/hermes/evidence/2026-10-05-direct-ports/ledger-impact-result.xml",
+      "docs/hermes/evidence/2026-10-05-direct-ports/final-corrections-result.xml",
+      "docs/hermes/evidence/2026-10-05-pending-input-completion/content/report.json",
+      "agents/core/code_context.py",
+      "agents/core/code_env.py",
+      "docs/hermes/evidence/2026-10-05-code-context/report.json",
+      "agents/core/media_backends/fal_catalog.py",
+      "agents/core/media_backends/fal_image.py",
+      "docs/hermes/fal-image-guide.md",
+      "docs/hermes/evidence/2026-10-06-fal-images/report.json",
+      "docs/hermes/evidence/2026-10-06-fal-images/scoped-inputs.json",
+      "agents/core/media_backends/codex_image.py",
+      "docs/hermes/openai-codex-image-guide.md",
+      "docs/hermes/evidence/2026-10-06-openai-codex-images/integration-result.xml",
+      "docs/hermes/evidence/2026-10-06-openai-codex-images/producer-result.xml",
+      "docs/hermes/evidence/2026-10-06-openai-codex-images/frontend-result.json",
+      "docs/hermes/evidence/2026-10-06-openai-codex-images/scoped-inputs.json",
+      "docs/hermes/evidence/2026-10-06-openai-codex-images/contract-review.json",
+      "agents/core/media_backends/openrouter_image.py",
+      "agents/core/media_backends/krea_image.py",
+      "agents/core/media_backends/krea_jobs.py",
+      "docs/hermes/openrouter-krea-image-guide.md",
+      "docs/hermes/h515-openrouter-krea-plan-2026-10-06.md",
+      "docs/hermes/evidence/2026-10-06-openrouter-krea-images/scoped-inputs.json",
+      "docs/hermes/evidence/2026-10-06-openrouter-krea-images/contract-review.json",
+      "docs/hermes/evidence/2026-10-06-openrouter-krea-images/integration-final-result.xml",
+      "docs/hermes/evidence/2026-10-06-openrouter-krea-images/frontend-result.json",
+      "agents/core/image_generation_view.py",
+      "agents/core/media_backends/xai_image.py",
+      "agents/core/media_backends/deepinfra_image.py",
+      "frontend/src/api/schema.gen.ts",
+      "docs/hermes/h515-job-continuation-providers-plan-2026-10-06.md",
+      "mobile/PARITY.md",
+      "docs/design/HUD_V2_REMAINING.md",
+      "docs/hermes/evidence/2026-10-06-image-continuation-xai-deepinfra/scoped-inputs.json",
+      "docs/hermes/evidence/2026-10-06-image-continuation-xai-deepinfra/contract-review.json",
+      "docs/hermes/evidence/2026-10-06-image-continuation-xai-deepinfra/backend-result.xml",
+      "docs/hermes/evidence/2026-10-06-image-continuation-xai-deepinfra/frontend-result.json",
+      "agents/core/media_backends/krea_enhance.py",
+      "docs/hermes/evidence/2026-10-06-krea-enhance/backend-result.xml",
+      "docs/hermes/evidence/2026-10-06-krea-enhance/bandit-result.json",
+      "docs/hermes/evidence/2026-10-06-krea-enhance/contract-review.json",
+      "docs/hermes/evidence/2026-10-06-krea-enhance/frontend-result.json",
+      "docs/hermes/evidence/2026-10-06-krea-enhance/report.json",
+      "docs/hermes/evidence/2026-10-06-krea-enhance/scoped-inputs.json",
+      "docs/hermes/h515-krea-enhance-plan-2026-10-06.md",
+      "docs/hermes/h515-managed-nous-map-2026-10-06.md",
+      "docs/hermes/evidence/2026-10-06-krea-enhance/records-result.xml",
+      "docs/hermes/evidence/2026-10-06-krea-enhance/secret-scan-result.json",
+      "docs/hermes/evidence/2026-10-06-krea-enhance/publication-metadata-review.json",
+      "docs/hermes/evidence/2026-10-06-krea-enhance/publication-metadata-tests.xml",
+      "docs/hermes/evidence/2026-10-06-krea-enhance/publication-history-secret-scan.json",
+      "agents/web/v2/sw-v2.js",
+      "docs/hermes/evidence/2026-10-06-krea-enhance/frontend-before-main-result.json",
+      "docs/hermes/evidence/2026-10-06-krea-enhance/main-integration-review.json",
+      "docs/hermes/evidence/2026-10-06-krea-enhance/outgoing-snapshot-scan-result.json",
+      "docs/hermes/evidence/2026-10-06-krea-enhance/outgoing-snapshot-scan-review.json",
+      "docs/hermes/evidence/2026-10-06-runtime-operations/image-source-review.md",
+      "agents/core/routers/skills.py"
+    ],
+    "existing_test_files": [
+      "tests/test_image_options_extended.py",
+      "tests/test_media_library.py",
+      "tests/test_cloud_image.py",
+      "frontend/src/test/images-api.test.ts",
+      "frontend/src/test/images-panel.test.tsx",
+      "frontend/src/test/decision-inbox-panel.test.tsx",
+      "tests/test_cloud_image_tool.py",
+      "tests/test_model_manager_ack.py",
+      "tests/test_model_manager.py",
+      "tests/test_local_image_backend.py",
+      "tests/test_image_mediation_composition.py",
+      "tests/test_local_image_runtime.py",
+      "tests/test_agent_model_lease.py",
+      "tests/test_hermes_kanban_network.py",
+      "tests/test_hermes_kanban_network_wiring.py",
+      "tests/test_fal_image.py",
+      "tests/test_cloud_image_fal.py",
+      "tests/test_fal_image_tool.py",
+      "tests/test_cloud_image_codex.py",
+      "tests/test_gpt_image2.py",
+      "tests/test_openai_codex_image.py",
+      "frontend/src/test/images-provider-flow.test.tsx",
+      "tests/test_cloud_image_openrouter_krea.py",
+      "tests/test_openrouter_image.py",
+      "tests/test_krea_image.py",
+      "tests/test_krea_jobs.py",
+      "tests/test_cloud_image_krea_resume.py",
+      "tests/test_cloud_image_deepinfra.py",
+      "tests/test_cloud_image_xai.py",
+      "tests/test_xai_image.py",
+      "tests/test_deepinfra_image.py",
+      "tests/test_image_generation_view.py",
+      "tests/test_image_generation_api_flow.py",
+      "tests/test_cloud_image_enhance_gallery.py",
+      "tests/test_cloud_image_krea_enhance.py",
+      "tests/test_cloud_image_krea_enhance_guards.py",
+      "tests/test_krea_enhance.py"
+    ],
+    "prior_specs_to_revalidate": [
+      "docs/hermes/h515-job-continuation-providers-plan-2026-10-06.md",
+      "docs/hermes/h515-krea-enhance-plan-2026-10-06.md",
+      "docs/hermes/h515-managed-nous-map-2026-10-06.md",
+      "docs/hermes/h515-openai-codex-plan-2026-10-06.md",
+      "docs/hermes/h515-openrouter-krea-plan-2026-10-06.md",
+      "docs/hermes/h515-provider-reuse-plan-2026-10-05.md"
+    ],
+    "source_refs": [
+      "docs/hermes/assessment.json#H515",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H515"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H516",
+    "title": "Generate or animate a video from a prompt or a still image",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "33f8eaac9012ceb95e9a315cc6a78b7f358defebec39b735edbd95295418d2c9",
+    "contract": "`video_generate` mirrors the image tool: text-to-video, image-to-video, reference-guided, routed on the presence of `image_url` (media.tool-video-generate). A `VideoGenProvider` ABC + registry makes backends pluggable (media.video-provider-abc), with FAL (13 model families), xAI Grok Imagine Video (server-side storage yielding reusable public MP4 URLs) and DeepInfra shipped. Two provider-specific tools sit beside it because editing and extension are not portable: `xai_video_edit` and `xai_video_extend`.",
+    "governance": "Privileged — same class as image generation, but longer-running and more expensive, so it belongs at the same `media.generate` kernel kind with an explicit duration/cost bound. The terminal publish already has the right shape: creative/pipeline.py:release_action_payload stamps RiskTier.IRREVERSIBLE_OR_MONEY so the kernel QUEUEs a release — that pattern must extend backwards to the render step, which today is ungoverned only because it does nothing.",
+    "remaining_verbatim": "- xAI server-side storage (reusable public MP4 URLs) — off by design; decide whether to offer it\n- DeepInfra live video model catalog with prices (an approved catalog GET, like the image path)\n- Verified prices for the remaining FAL families (LTX per megapixel, Seedance 2.5, MiniMax H3 Max, Wan 3.0 Prime, Kling O3, Gemini Omni, Grok via FAL) and image-to-video prices where unverified\n- One live call per provider\n- Wire creative/video_pipeline.py's render step to video_generate\n- OpenRouter video (needs a Nerva key resolver instead of hermes_cli.runtime_provider)",
+    "requirement_sections": [
+      "- xAI server-side storage (reusable public MP4 URLs) — off by design; decide whether to offer it\n- DeepInfra live video model catalog with prices (an approved catalog GET, like the image path)\n- Verified prices for the remaining FAL families (LTX per megapixel, Seedance 2.5, MiniMax H3 Max, Wan 3.0 Prime, Kling O3, Gemini Omni, Grok via FAL) and image-to-video prices where unverified\n- One live call per provider\n- Wire creative/video_pipeline.py's render step to video_generate\n- OpenRouter video (needs a Nerva key resolver instead of hermes_cli.runtime_provider)"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the media-provider seam from the image-generation row",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/creative/video_generation.py",
+      "agents/core/creative/video_providers.py",
+      "agents/vendor/hermes/agent/video_gen_provider.py",
+      "agents/vendor/hermes/agent/video_gen_registry.py",
+      "agents/vendor/hermes/plugins/video_gen/fal/__init__.py",
+      "agents/vendor/hermes/plugins/video_gen/xai/__init__.py",
+      "agents/vendor/hermes/plugins/video_gen/deepinfra/__init__.py",
+      "agents/vendor/hermes_compat/video_shared.py",
+      "agents/vendor/hermes_compat/video_media.py",
+      "agents/vendor/hermes_compat/video_clock.py",
+      "agents/vendor/hermes_compat/video_openai.py",
+      "agents/core/routers/integrations_setup.py",
+      "agents/core/integrations_catalog.py",
+      "agents/vendor/hermes_compat/video_asyncio.py"
+    ],
+    "existing_test_files": [
+      "tests/test_hermes_video_generation.py"
+    ],
+    "prior_specs_to_revalidate": [
+      "docs/hermes/h516-video-design-checkpoint.md"
+    ],
+    "source_refs": [
+      "docs/hermes/assessment.json#H516",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H516"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H517",
+    "title": "Register a third-party media backend without touching core",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "a08109ff2835318670979802f060e77769e12f0e27baa7d7245625ea50b480ec",
+    "contract": "Every media subsystem is a registry lookup with no per-vendor conditionals: `BrowserProvider` (5 abstract methods, scope-aware registry with a generation counter used as a cache fingerprint, `get_setup_schema()` returning None to hide a provider from the picker), `VideoGenProvider`, `TranscriptionProvider`, `register_tts_provider`, `WebSearchProvider`, `TerminalEnvironmentProvider`. Shell-command providers (`tts.providers.<name>`, `stt.providers.<name>`) let any local CLI become a backend with zero Python. `hermes tools post-setup KEY` runs a backend's declared install hook non-interactively.",
+    "governance": "Read-only in itself (registration and availability probes must be cheap and must never make network calls, per Hermes's own hard rule). Every provider *call* it dispatches crosses `plugin.egress` for a remote backend, or `file.write` for a local one.",
+    "remaining_verbatim": "Integration across video, browser, web and terminal providers remains open, along with the wider supported adapter matrix, Python provider plugins, interactive setup hooks and separately governed shell providers. Image and named speech share a real registry, but this finite adapter set is not full Hermes provider parity. Live services, native mobile controls and native Windows image-directory durability remain separate acceptance work.",
+    "requirement_sections": [
+      "Integration across video, browser, web and terminal providers remains open, along with the wider supported adapter matrix, Python provider plugins, interactive setup hooks and separately governed shell providers. Image and named speech share a real registry, but this finite adapter set is not full Hermes provider parity. Live services, native mobile controls and native Windows image-directory durability remain separate acceptance work."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/image_generation_runtime.py",
+      "agents/core/media_backends/comfyui.py",
+      "agents/core/media_backends/local_openai_image.py",
+      "agents/core/media_backends/registry.py",
+      "docs/hermes/local-image-providers.md",
+      "frontend/src/api/images.ts",
+      "frontend/src/panels/images.tsx",
+      "agents/core/kernel/registry.py",
+      "agents/core/voice/local_providers.py",
+      "agents/core/voice/command_settings.py",
+      "agents/core/autonomy/irreversible.py",
+      "agents/core/capability_manifests.py",
+      "agents/core/media_providers.py",
+      "agents/core/voice/provider_store.py",
+      "agents/core/voice/provider_registry.py",
+      "docs/hermes/h517-named-provider-review.md",
+      "agents/core/routers/voice.py",
+      "agents/core/settings_db.py",
+      "agents/core/voice/tts.py",
+      "agents/core/voice/stt.py",
+      "frontend/src/panels/voice-commands.tsx",
+      "docs/hermes/evidence/2026-10-06-openai-codex-images/contract-review.json"
+    ],
+    "existing_test_files": [
+      "frontend/src/test/images-api.test.ts",
+      "frontend/src/test/images-panel.test.tsx",
+      "tests/test_h517_local_provider.py",
+      "tests/test_h517_provider_integration.py",
+      "tests/test_h517_voice_kernel.py",
+      "tests/test_h517_voice_revision.py",
+      "tests/test_h517_voice_authority_integration.py",
+      "tests/test_h517_named_provider_store.py",
+      "tests/test_h517_named_provider_approval.py",
+      "tests/test_h517_named_provider_dispatch.py",
+      "tests/test_h517_named_provider_integration.py",
+      "tests/test_h517_shared_provider_registry.py",
+      "frontend/src/test/named-voice-providers.test.tsx",
+      "tests/test_local_image_backend.py",
+      "tests/test_image_mediation_composition.py",
+      "tests/test_local_image_runtime.py"
+    ],
+    "prior_specs_to_revalidate": [
+      "docs/hermes/h517-local-provider-plan.md",
+      "docs/hermes/h517-local-provider-review.md",
+      "docs/hermes/h517-named-provider-next.md",
+      "docs/hermes/h517-named-provider-plan.md",
+      "docs/hermes/h517-named-provider-review.md",
+      "docs/hermes/h517-provider-registration-design.md",
+      "docs/hermes/h517-voice-authority-plan.md",
+      "docs/hermes/h517-voice-authority-review.md"
+    ],
+    "source_refs": [
+      "docs/hermes/assessment.json#H517",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H517"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H518",
+    "title": "Browse, search and export everything the assistant has generated",
+    "area": "media",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "60e5175fefe3e3282fef3b3974fa23fd952d6c16bd6978617e2b59fd8ea114d7",
+    "contract": "Weak and incidental: generated images land in `$HERMES_HOME/cache/images/`, browser screenshots under `~/.hermes/cache/screenshots/` with a garbage collector (media.browser-screenshots), and `hermes_cli/image_provenance.py` records metadata so a later turn can tell a generated asset from a user-supplied one (media.image-provenance). There is no library, no search, no timeline, no export bundle.",
+    "governance": "Read-only. The export bundler writes a zip, so bundle creation crosses `file.write`; `report.export` already exists in agents/core/kernel/registry.py:123 as the precedent for an export-class action.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "the cloud-generation write-back needs the image-generation row",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/media_backends/comfyui.py",
+      "agents/core/image_generation_runtime.py",
+      "agents/core/media_library.py",
+      "agents/core/routers/artifact_store.py",
+      "frontend/src/panels/images.tsx",
+      "frontend/src/media-gallery.ts",
+      "frontend/e2e/media-gallery.spec.ts",
+      "frontend/docs/h518-gallery-pagination.md",
+      "frontend/src/panels/binary-artifacts.tsx",
+      "frontend/docs/h12-attachment-preview-lifecycle.md",
+      "docs/hermes/h518-gallery-contract.md",
+      "agents/core/cloud_image_runtime.py",
+      "agents/core/media_backends/openai_image.py",
+      "agents/core/media_catalog.py",
+      "agents/core/routers/multimodal.py",
+      "docs/cloud-image-generation.md",
+      "docs/hermes/evidence/2026-10-05-kanban-child-milestone/report.json",
+      "docs/hermes/evidence/2026-10-05-pending-input-completion/content/report.json",
+      "docs/hermes/evidence/2026-10-06-openai-codex-images/contract-review.json"
+    ],
+    "existing_test_files": [
+      "tests/test_image_options_extended.py",
+      "tests/test_media_library.py",
+      "tests/test_media_gallery_pagination.py",
+      "frontend/src/test/media-gallery-panel.test.tsx",
+      "frontend/src/test/attachment-preview-lifecycle.test.tsx",
+      "tests/test_cloud_image.py",
+      "tests/test_cloud_image_enhance_gallery.py"
+    ],
+    "prior_specs_to_revalidate": [
+      "docs/hermes/h518-gallery-contract.md"
+    ],
+    "source_refs": [
+      "docs/hermes/assessment.json#H518",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H518"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H519",
+    "title": "Look at an image and answer questions about it, mid-conversation",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "49310057d9cd8d92e4cc160d085051adcbc83286f7d235a742e947580398ca79",
+    "contract": "`vision_analyze` is model-callable and framed as an instruction — 'call it any time the user references an image' (media.tool-vision-analyze). It takes a URL, a local path or a data: URL plus a question, and an optional `region` crop in **original-image pixel coordinates applied before any downscaling**, so the documented workflow is 'load the full image, then re-call with a region to zoom into small text'. Two execution paths: a native fast path attaching the image directly to the main model when the provider+model can carry media in a tool result, and an auxiliary-vision path that returns text otherwise (media.computer-use-vision-routing, media.vision-tool-result-support). `agent.image_input_mode` decides how user-attached images on the current turn reach the model, and inline image references are extracted from prose so they attach automatically.",
+    "governance": "Read-only against a loopback VLM. A cloud vision model crosses `plugin.egress`; keep the screen-reflex hard refusal for non-loopback as the model for any capture-derived image. Registration goes through agents/core/tool_rpc.py, whose kind prefix already routes tool calls through the kernel (`tool.rpc`, registry.py:55).",
+    "remaining_verbatim": "- A kernel-mediated `vision_analyze` tool (URL, local path or data URL plus a question) the model can call. H297's file_read image result covers only local files in the owner's roots, takes no question, and only reaches Claude.\n- A region crop in original-image pixels applied before downscaling.\n- Extract inline image references from prose and attach them automatically.",
+    "requirement_sections": [
+      "- A kernel-mediated `vision_analyze` tool (URL, local path or data URL plus a question) the model can call. H297's file_read image result covers only local files in the owner's roots, takes no question, and only reaches Claude.\n- A region crop in original-image pixels applied before downscaling.\n- Extract inline image references from prose and attach them automatically."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/composer_vision.py",
+      "agents/core/llm/vision_turn.py",
+      "agents/core/routers/multimodal.py",
+      "agents/core/file_tools.py",
+      "agents/core/agent_runtime.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h277_main_image_turn.py",
+      "tests/test_h277_vision_auto_consumer.py",
+      "tests/test_h297_production_images.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H519",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H519"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H520",
+    "title": "Accept an image safely before it enters conversation history",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "7db856be5f159def5ac230a1e638e5de460ad24f2f50ce23c0f0d01826b36a23",
+    "contract": "A layered ingest guard: SSRF checks, size caps and decode validation refuse unsafe/oversized/undecodable images *before* they reach immutable history (media.vision-ingest-guards); normalisation rasterises SVG and coerces to one of the four media types the major vision providers accept (media.vision-normalize); MIME sniffing decides the declared media_type from the bytes and transcodes to PNG when the real type is not universally supported (media.image-mime-transcode); embeds are downscaled proactively and again reactively after a provider size rejection (media.vision-sizing); a CPU-burst semaphore stops an 'analyze every frame' fan-out from starving the event loop (media.vision-cpu-cap); and under a non-local terminal backend, path-like source images reach the provider as data: URLs so a container path never leaks to a third party (media.image-source-confinement). `tools/image_source.py` is the one resolver every path shares.",
+    "governance": "Read-only, but it is the boundary that decides what enters immutable history and the audit log, so it is security-load-bearing. A remote fetch crosses `plugin.egress`.",
+    "remaining_verbatim": "- SVG rasterisation and coercion of other formats to a provider-accepted type (today they are refused)\n- MIME sniffing that corrects the declared type and transcodes to PNG instead of rejecting\n- Reactive shrink-and-retry after a provider size rejection (the retry scope only retries empty replies)\n- A CPU/concurrency cap on image decode/encode fan-out\n- One shared image-source resolver used by every image path (composer, camera, tools)",
+    "requirement_sections": [
+      "- SVG rasterisation and coercion of other formats to a provider-accepted type (today they are refused)\n- MIME sniffing that corrects the declared type and transcodes to PNG instead of rejecting\n- Reactive shrink-and-retry after a provider size rejection (the retry scope only retries empty replies)\n- A CPU/concurrency cap on image decode/encode fan-out\n- One shared image-source resolver used by every image path (composer, camera, tools)"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "shares the resolver with the in-conversation vision row",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/composer_vision.py",
+      "agents/core/llm/vlm.py",
+      "agents/core/security/ssrf.py",
+      "agents/core/cameras/vlm.py"
+    ],
+    "existing_test_files": [
+      "tests/test_composer_vision.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H520",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H520"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H521",
+    "title": "Understand a video (not just its audio)",
+    "area": "media",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "3df43a625058b1f097241a53516ff367bd6c22103afdaeafeab2f53d3bf8f65f",
+    "contract": "`video_analyze` sends a video from a URL or a local path to a video-capable model (Gemini-class) for understanding, explicitly distinguished from `vision_analyze` for stills (media.tool-video-analyze), sharing the `tools/image_source.py` resolver and its SSRF/size/path guards.",
+    "governance": "Read-only against a loopback VLM; a cloud video model crosses `plugin.egress`, and video is the largest payload the product would ever send off-box, so it warrants an explicit size and duration bound at the gate rather than a provider-side error.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "the in-conversation vision row and the ingest-guard row",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/autonomy_coordinator.py",
+      "agents/core/video_analysis.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h277_video_analysis.py",
+      "tests/test_h277_video_gemini.py",
+      "tests/test_h277_video_boundaries.py",
+      "tests/test_h277_video_native.py",
+      "tests/test_h277_video_provider_chain.py",
+      "tests/test_h277_video_failures.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H521",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H521"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H522",
+    "title": "Attach an image or file to a chat turn",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "da5ae36fece5fb98cad339be703603021e02f86fb8f6294208650b037f6fb12b",
+    "contract": "`POST /api/chat/image-upload` accepts an image the user drops into the chat; inline image reference extraction finds paths and URLs the user mentioned in prose so they attach automatically (media.image-ref-extraction); `agent.image_input_mode` decides whether attachments reach the model natively or as a pre-computed text description (media.image-input-mode).",
+    "governance": "Ingest is read-only, but the stored copy crosses `file.write` and must land under a bounded, allowlisted media root — never a caller-supplied path. Inbound size caps and a MIME allowlist belong at this boundary (Hermes's media.gateway-media-limits is the right precedent).",
+    "remaining_verbatim": "Selected-main image question and answer now persist as a text projection; no durable file attachment, inline path/URL extraction, native-vs-description image_input_mode, native mobile attachment control or live-provider acceptance. The transient browser path is limited to eight static raster images of 4 MiB each. Browser-selected image review requires WebCrypto in a secure browser context.",
+    "requirement_sections": [
+      "Selected-main image question and answer now persist as a text projection; no durable file attachment, inline path/URL extraction, native-vs-description image_input_mode, native mobile attachment control or live-provider acceptance. The transient browser path is limited to eight static raster images of 4 MiB each. Browser-selected image review requires WebCrypto in a secure browser context."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the ingest-guard row",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/composer_vision.py",
+      "frontend/src/composer-images.tsx",
+      "frontend/src/vision-turn.ts",
+      "frontend/src/app.tsx",
+      "frontend/e2e/composer-images.spec.ts",
+      "agents/core/llm/vision_ollama_wire.py",
+      "docs/hermes/evidence/h277-exact-image-review-mutations-2026-10-02.md",
+      "agents/core/llm/vision_responses_wire.py",
+      "agents/core/llm/vision_xai_wire.py",
+      "agents/core/memory/conversation.py",
+      "docs/hermes/evidence/2026-10-05-pending-input-completion/web-report.json"
+    ],
+    "existing_test_files": [
+      "tests/test_h277_selected_composer.py",
+      "tests/test_h277_ollama_vision.py",
+      "tests/test_h277_claude_vision.py",
+      "tests/test_h277_gemini_image.py",
+      "tests/test_h277_responses_image.py",
+      "frontend/src/test/composer-images.test.tsx",
+      "tests/test_h277_xai_image.py",
+      "tests/test_h277_main_image_turn.py",
+      "frontend/src/test/vision-turn-committed.test.ts",
+      "tests/test_h277_local_vision_metadata.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H522",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H522"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H523",
+    "title": "Serve a generated or cached media file back to a client",
+    "area": "media",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "a0fab30d78e84c7347418373ea736c26ee895f31fe9a9fbec2e274fab2b3dd62",
+    "contract": "`GET /api/media?path=…` serves a generated/cached media file to the browser, backed by a delivery allowlist restricting which host directories `MEDIA:` delivery may read from, plus an inbound attachment size cap and a bound on how long a cron job may spend sending media (media.api-media-serve, media.gateway-media-limits).",
+    "governance": "Read-only, but it is a file-read boundary reachable from a browser: id-addressed resolution plus a bounded media root, never a caller-supplied path. user_guard as on every other media route.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "the media catalog (already shipped)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/image_generation_runtime.py",
+      "agents/core/image_generation_view.py",
+      "agents/core/routers/multimodal.py",
+      "agents/core/media_catalog.py",
+      "agents/core/media_export.py",
+      "agents/core/media_backends/comfyui.py",
+      "agents/core/artifact_store.py",
+      "agents/core/media_library.py",
+      "agents/core/routers/artifact_store.py",
+      "agents/core/autonomy/jobs_media.py",
+      "agents/core/autonomy/jobs.py",
+      "agents/core/channels/telegram.py",
+      "agents/core/settings_db.py",
+      "frontend/src/panels/binary-artifacts.tsx",
+      "frontend/src/panels/jobs.tsx",
+      "frontend/src/panels/jobs.test.tsx",
+      "docs/hermes/h523-media-serving-contract.md",
+      "docs/hermes/evidence/2026-10-06-openai-codex-images/contract-review.json"
+    ],
+    "existing_test_files": [
+      "tests/test_image_mediation_composition.py",
+      "tests/test_image_generation_api_flow.py",
+      "tests/test_jobs_media.py",
+      "tests/test_binary_artifact_routes.py",
+      "tests/test_binary_artifact_store.py",
+      "tests/test_media_library.py",
+      "tests/test_media_gallery_pagination.py",
+      "tests/test_media_catalog.py",
+      "tests/test_media_export.py"
+    ],
+    "prior_specs_to_revalidate": [
+      "docs/hermes/h523-media-serving-contract.md"
+    ],
+    "source_refs": [
+      "docs/hermes/assessment.json#H523",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H523"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H524",
+    "title": "Speak a reply out loud with a chosen voice and backend",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "ed5df1d760c2002f8f52ed6b8692d82e423e56bdec4c2e465410c9943c7d0b49",
+    "contract": "`text_to_speech` is a model-callable tool returning a `MEDIA:` path the platform delivers as native audio. Eleven built-in backends with a documented resolution order: Edge TTS (default, free, 322 voices / 74 languages, no key), ElevenLabs (native Opus + streaming), OpenAI and any OpenAI-compatible server, MiniMax, Mistral Voxtral, Gemini TTS (30 voices, natural-language performance direction from a persona file, hidden audio tags), xAI (cloned voices, expressive tags), DeepInfra, and three local engines — NeuTTS (reference-audio cloning), KittenTTS (25-80 MB models) and Piper (CPU-only, 44 languages). Plus shell-command providers, a Python plugin ABC, response body limits, a `hermes setup tts` wizard section and a picker.",
+    "governance": "Local synthesis is read-only plus `file.write` for the audio file. A cloud TTS provider crosses `plugin.egress` — and it ships the assistant's reply text off-box, which is a disclosure the owner should see classified, not buried in a voice-name string.",
+    "remaining_verbatim": "- OpenAI / OpenAI-compatible TTS backend (plus Gemini, MiniMax, Mistral, xAI, DeepInfra, NeuTTS, KittenTTS)\n- A model-callable text_to_speech that returns an audio file a channel delivers natively (speak only targets room speakers and needs JARVIS_MEDIA_DIRECTOR)\n- A local default voice; edge-tts (network) is still the default\n- A third-party Python provider ABC (registry is in-tree only), response size limits on the cloud HTTP backends, and a setup wizard/picker for TTS",
+    "requirement_sections": [
+      "- OpenAI / OpenAI-compatible TTS backend (plus Gemini, MiniMax, Mistral, xAI, DeepInfra, NeuTTS, KittenTTS)\n- A model-callable text_to_speech that returns an audio file a channel delivers natively (speak only targets room speakers and needs JARVIS_MEDIA_DIRECTOR)\n- A local default voice; edge-tts (network) is still the default\n- A third-party Python provider ABC (registry is in-tree only), response size limits on the cloud HTTP backends, and a setup wizard/picker for TTS"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the media-provider seam row",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/voice/tts.py",
+      "agents/core/voice/local_providers.py",
+      "agents/core/voice/provider_registry.py",
+      "agents/core/voice/speak_tool.py"
+    ],
+    "existing_test_files": [
+      "tests/test_tts.py",
+      "tests/test_h613_piper_command_voice.py",
+      "tests/test_speak_tool.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H524",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H524"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H525",
+    "title": "Refuse to speak in a cloned or persona voice without recorded owner consent",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "1e88f7c328248e2104508bdf4f5e1aa299388ccbb7bcae78f3eca125103d4b8d",
+    "contract": "No equivalent. xAI custom (cloned) voices, NeuTTS reference-audio cloning and ElevenLabs voices are all selected by config with no consent record — the only related control is that voice and provider are user-configured rather than model-selected.",
+    "governance": "Read-only gate, fail-closed. It should arguably graduate to a `permission.grant` record (registry.py:110) rather than a settings key, so revoking consent is auditable like every other grant.",
+    "remaining_verbatim": "- The gate is a hardcoded substring list: H613 'command' and 'provider:' voices (agents/core/voice/tts.py:249) can run a cloning-capable engine without matching a marker and bypass consent\n- No test forces every cloning-capable backend into PERSONA_VOICE_MARKERS\n- Consent is a plain settings toggle, not an auditable permission.grant record with revocation history",
+    "requirement_sections": [
+      "- The gate is a hardcoded substring list: H613 'command' and 'provider:' voices (agents/core/voice/tts.py:249) can run a cloning-capable engine without matching a marker and bypass consent\n- No test forces every cloning-capable backend into PERSONA_VOICE_MARKERS\n- Consent is a plain settings toggle, not an auditable permission.grant record with revocation history"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "must be extended alongside the TTS provider row",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/voice/tts.py",
+      "agents/core/settings_db.py"
+    ],
+    "existing_test_files": [
+      "tests/test_q4_voice_consent.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H525",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H525"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H526",
+    "title": "Make a spoken reply sound like speech rather than read-out markdown",
+    "area": "media",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "c0ff1630bf0df6ff10e1d684eb77dbd04b6cbf400f94cc68abfdbf325e5aa4b2",
+    "contract": "TTS text normalisation turns a Markdown chat reply into speakable prose — strips formatting, emoji, `<think>` blocks and verifier footers, expands symbols, flattens newlines (media.tts-text-normalize).",
+    "governance": "Read-only, pure function.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/voice/speech_text.py",
+      "agents/core/voice/tts.py",
+      "agents/core/channels/spoken_reply.py",
+      "agents/core/routers/voice.py",
+      "agents/core/voice/pipeline.py",
+      "agents/core/channels/voice.py",
+      "frontend/src/speech-text.ts",
+      "frontend/src/voice.ts",
+      "mobile/src/api/client.ts",
+      "mobile/src/audio/tts.ts",
+      "mobile/src/api/__tests__/tts.test.ts",
+      "docs/hermes/evidence/h487-mobile-consent-progress-2026-10-04.json"
+    ],
+    "existing_test_files": [
+      "tests/test_h526_speech_text.py",
+      "frontend/src/test/speech-text.test.ts",
+      "frontend/src/test/voice-speech-text.test.tsx",
+      "frontend/src/test/speech-text-cases.json"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H526",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H526"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H527",
+    "title": "Start hearing the answer before it is finished, and interrupt by talking",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "bd958b35b5dba3de7bfe83c97fadc957ce57461bf534fd5668ec85eef9532e17",
+    "contract": "`stream_tts_to_speaker` speaks the assistant's reply as it is generated, sentence by sentence (media.tts-streaming). Barge-in lets you interrupt mid-sentence by talking, while refusing to be interrupted by Hermes' own voice bleeding into the microphone (media.voice-barge-in). Long-form text is split into ordered sentence-aware chunks and the encoded audio grouped under the destination platform's upload limit (media.tts-chunking-packing).",
+    "governance": "Read-only; the stream is bounded by the existing per-frame size accounting. Barge-in cancels an in-flight turn, so it must route through the existing interrupt path rather than a UI-side abort, or an interrupted action's audit record and its actual effect diverge.",
+    "remaining_verbatim": "- Self-voice suppression for barge-in that does not depend on browser echo cancellation (still marked experimental)\n- Streaming TTS as tokens are generated on the host/voice-pipeline path, on by default\n- Chunking long replies into ordered sentence groups packed under each platform's upload limit (today they are truncated)",
+    "requirement_sections": [
+      "- Self-voice suppression for barge-in that does not depend on browser echo cancellation (still marked experimental)\n- Streaming TTS as tokens are generated on the host/voice-pipeline path, on by default\n- Chunking long replies into ordered sentence groups packed under each platform's upload limit (today they are truncated)"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the TTS provider row",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/voice/sentence_stream.py",
+      "agents/core/routers/voice.py",
+      "frontend/src/voice.ts",
+      "frontend/src/cockpit.tsx",
+      "agents/core/channels/spoken_reply.py"
+    ],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H527",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H527"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H528",
+    "title": "Deliver audio as a native voice message on a chat platform",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "afdec9f1084e66a5c14f5c73aa933f5e308d28455ea11e6c2b5f0dff83392f16",
+    "contract": "The `MEDIA:` path returned by `text_to_speech` is delivered as native audio — a voice bubble on Telegram for compatible providers, a regular attachment elsewhere. `audio_container.py` sniffs the real container of a produced file so voice-bubble conversion and concatenation pick the right path; container repair fixes malformed Ogg, converts to Opus for voice bubbles, and concatenates multi-chunk output (media.tts-audio-container, media.audio-container). Platform packing groups chunks under each destination's upload limit; inbound size caps and a delivery allowlist bound the whole path.",
+    "governance": "Privileged — an outbound message to a third party. `channel.reply` already exists as a kernel kind (agents/core/kernel/registry.py:102); the audio attachment must ride that same mediated reply rather than opening a second send path, or a governed text reply and an ungoverned voice reply would coexist on the same channel.",
+    "remaining_verbatim": "- No concatenation of multi-chunk TTS output and no per-destination packing under upload limits (a long spoken reply is still cut to 1,500 characters)\n- No Ogg repair of a malformed stream beyond re-encoding it\n- No audio attachment path on Discord, Slack, email or SMS\n- The model-facing speak tool still plays on a room device, not into a chat",
+    "requirement_sections": [
+      "- No concatenation of multi-chunk TTS output and no per-destination packing under upload limits (a long spoken reply is still cut to 1,500 characters)\n- No Ogg repair of a malformed stream beyond re-encoding it\n- No audio attachment path on Discord, Slack, email or SMS\n- The model-facing speak tool still plays on a room device, not into a chat"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the TTS provider row and the media-serving row",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/audio_container.py",
+      "agents/core/channels/telegram.py",
+      "agents/core/channels/media_delivery.py",
+      "agents/core/channels/voice_mode.py",
+      "agents/core/channels/spoken_reply.py"
+    ],
+    "existing_test_files": [
+      "tests/test_g16_channel_media_sms.py",
+      "tests/test_telegram_voice_reply.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H528",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H528"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H529",
+    "title": "Transcribe a voice message or dictated speech",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "d8b3a157fa1921c60db345154a0baaa63258de260d6f375bbe48e4e4a59cb84b",
+    "contract": "`transcribe_audio` validates, preprocesses and dispatches to the active backend, returning `{success, transcript, provider, error?}` (media.stt-pipeline). Eight backends — local faster-whisper (CPU default, GPU when available), a `local_command` env-var escape hatch, Groq, OpenAI, Mistral Voxtral (13 languages, diarization, word timestamps), xAI, ElevenLabs Scribe (audio-event tagging), DeepInfra — plus shell-command providers, a `TranscriptionProvider` ABC, strict explicit selection with auto-detect only on a never-configured install, a whisper prompt-length cap, cloud silence trimming to cut upload bytes, a picker and `POST /api/audio/transcribe`.",
+    "governance": "Local transcription is read-only. Any cloud STT crosses `plugin.egress` and ships the owner's recorded speech off-box — the same disclosure class as cloud TTS, and it should be classified rather than a config default.",
+    "remaining_verbatim": "Un singur backend. Hermes are opt (faster-whisper local, `local_command`, Groq, OpenAI, Mistral Voxtral cu diarizare și timestamp-uri pe cuvânt, xAI, ElevenLabs Scribe, DeepInfra) plus provideri pe comandă de shell, un ABC `TranscriptionProvider`, selecție explicită strictă cu auto-detect doar la o instalare neconfigurată vreodată, un plafon pe lungimea promptului Whisper, trunchierea liniștii înainte de upload ca să scadă octeții trimiși, un picker și `POST /api/audio/transcribe`. Nimic din astea nu e livrat. Nu din lene: clauza de guvernanță a rândului spune că orice STT în cloud trece prin `plugin.egress` și trimite vorbirea înregistrată a owner-ului în afara cutiei — e aceeași clasă de dezvăluire ca TTS-ul în cloud și trebuie clasificat, nu pus ca implicit de config. Cache-ul motorului stă tot în `routers/voice.py`, care e casa greșită pentru el; canalul îl importă în loc să-l dubleze, iar mutarea lui e o schimbare separată. NEVERIFICAT pe servicii reale: niciun model Whisper încărcat cu adevărat.",
+    "requirement_sections": [
+      "Un singur backend. Hermes are opt (faster-whisper local, `local_command`, Groq, OpenAI, Mistral Voxtral cu diarizare și timestamp-uri pe cuvânt, xAI, ElevenLabs Scribe, DeepInfra) plus provideri pe comandă de shell, un ABC `TranscriptionProvider`, selecție explicită strictă cu auto-detect doar la o instalare neconfigurată vreodată, un plafon pe lungimea promptului Whisper, trunchierea liniștii înainte de upload ca să scadă octeții trimiși, un picker și `POST /api/audio/transcribe`. Nimic din astea nu e livrat. Nu din lene: clauza de guvernanță a rândului spune că orice STT în cloud trece prin `plugin.egress` și trimite vorbirea înregistrată a owner-ului în afara cutiei — e aceeași clasă de dezvăluire ca TTS-ul în cloud și trebuie clasificat, nu pus ca implicit de config. Cache-ul motorului stă tot în `routers/voice.py`, care e casa greșită pentru el; canalul îl importă în loc să-l dubleze, iar mutarea lui e o schimbare separată. NEVERIFICAT pe servicii reale: niciun model Whisper încărcat cu adevărat."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the media-provider seam row",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/voice/stt.py",
+      "agents/core/voice/hallucination.py",
+      "agents/core/channels/inbound_voice.py"
+    ],
+    "existing_test_files": [
+      "tests/test_inbound_voice_read.py",
+      "tests/test_voice_stt.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H529",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H529"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H530",
+    "title": "Not turn a silent recording into a message",
+    "area": "media",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "0aeafa1a692a7c7905c4db08374bd937e265e88fe44515aa588dba179910cbe8",
+    "contract": "A hallucination filter drops the canned phrases Whisper emits when it hears silence, so a quiet recording does not become a message (media.voice-hallucination-filter — a 26-phrase list per the v0.20.0 notes). Alongside it, silence-based auto-stop (VAD) ends the recording after continuous silence so the user need not press a key.",
+    "governance": "Read-only filter — but it sits directly upstream of an inbound-taint boundary, since a voice-originated turn is what escalates a mutating action into the approval queue. A hallucinated turn is an un-authored instruction entering a governed system, which makes this a safety control, not a polish item.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/voice/hallucination.py",
+      "agents/core/voice/stt.py",
+      "frontend/src/voice.ts"
+    ],
+    "existing_test_files": [
+      "tests/test_voice_hallucination.py",
+      "frontend/src/test/voice-vad.test.tsx"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H530",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H530"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H531",
+    "title": "Clean up dictated text into written prose",
+    "area": "media",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "ac3d5c66f894dc7f042a0aa87ef0ab6cf781e7e9f9923f15f7fdd0ecdea660a0",
+    "contract": "No equivalent. Hermes normalises text *for* speech (TTS direction) and filters Whisper hallucinations, but nothing converts a raw transcript into clean dictated text.",
+    "governance": "Read-only, pure function.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/voice/dictation.py",
+      "agents/core/routers/voice.py",
+      "agents/core/settings_db.py"
+    ],
+    "existing_test_files": [
+      "tests/test_dictation.py",
+      "tests/test_guide_gap_tails.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H531",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H531"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H532",
+    "title": "Hold a hands-free voice conversation",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "20eddc05f77e3f0c2c8b78a72a5982d35592c64f4e46c81ed8ac6805f6b0caed",
+    "contract": "Voice mode records the mic, transcribes with the configured STT backend, submits the result as your message and optionally speaks the reply (media.voice-mode). Around it: a push-to-talk key binding normalised so the same config string works in both CLI front ends; audio cues (start/stop tones and an ambient thinking blip); stop phrases that end the conversation when spoken alone; silence-based auto-stop; audio-environment detection that works out whether the host can record at all (PortAudio, PulseAudio, Termux) and prints a platform-correct fix; and `voice_client_config.py` publishing the record key, direct-capture flag, beeps and thresholds so client and backend agree without duplicating config parsing. Server side: `GET /api/audio/voice-config`, `POST /api/audio/speak` + a speak-stream WebSocket, and an ElevenLabs voice list for settings.",
+    "governance": "Read-only capture. The critical property is the existing one: a voice-initiated turn carries inbound taint, so anything above read-only lands in the decision inbox rather than executing. That must survive every ergonomics change here — a stop phrase or VAD must never become a path that submits a turn with a different origin classification.",
+    "remaining_verbatim": "- Stop phrases that end voice mode when spoken alone\n- Audio cues (start/stop tones, thinking blip)\n- A normalised push-to-talk key binding shared by all clients, with a published voice client config endpoint\n- Audio-environment detection (PortAudio/PulseAudio/Termux) with a platform-correct fix message\n- Host-side VAD auto-stop for the backend pipeline (silence detection exists only in the browser)",
+    "requirement_sections": [
+      "- Stop phrases that end voice mode when spoken alone\n- Audio cues (start/stop tones, thinking blip)\n- A normalised push-to-talk key binding shared by all clients, with a published voice client config endpoint\n- Audio-environment detection (PortAudio/PulseAudio/Termux) with a platform-correct fix message\n- Host-side VAD auto-stop for the backend pipeline (silence detection exists only in the browser)"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the STT and TTS rows",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "frontend/src/voice.ts",
+      "agents/core/routers/voice.py",
+      "agents/core/voice/mic.py"
+    ],
+    "existing_test_files": [
+      "tests/test_voice_mode.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H532",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H532"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H533",
+    "title": "Wake the assistant hands-free with a spoken phrase",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "ec9cea4fdd4cf73adf26c4fac1888f064baed0fb2222de6c1834013ba810244c",
+    "contract": "'Hey Hermes' is an always-on, fully on-device hotword listener that opens a fresh session and captures voice through the existing pipeline — no audio leaves the machine for detection (media.wake-word). Three engines: openWakeWord with the bundled 'hey hermes' ONNX/TFLite model shipped in-tree so it works out of the box; sherpa-onnx keyword spotting that detects **any typed phrase with no training** via a streaming zipformer; and Picovoice Porcupine for built-in keywords and custom .ppn files. Capture mode chooses whether PCM comes from PortAudio on the backend host or is streamed as int16 frames from the desktop/TUI client via `wake.feed`, and profile routing lets different profiles enroll different phrases.",
+    "governance": "Read-only and, critically, must stay fully on-device — detection audio never leaves the machine, matching the screen-reflex loopback rule. A wake-triggered session inherits the same inbound taint as any voice turn.",
+    "remaining_verbatim": "- Install or bundle a pinned openwakeword with its pretrained models (no download step exists)\n- Pass the configured wake_words setting to the detector (today fixed to jarvis/hub) and allow custom-trained models\n- Satellite / Wyoming wake: nothing starts WyomingServer and it advertises no wake engine\n- A test against the real package and models",
+    "requirement_sections": [
+      "- Install or bundle a pinned openwakeword with its pretrained models (no download step exists)\n- Pass the configured wake_words setting to the detector (today fixed to jarvis/hub) and allow custom-trained models\n- Satellite / Wyoming wake: nothing starts WyomingServer and it advertises no wake engine\n- A test against the real package and models"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the hands-free voice row",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/voice/wake_word.py",
+      "agents/core/settings_db.py",
+      "agents/core/channels/voice.py",
+      "agents/core/voice/mic.py",
+      "agents/core/voice/pipeline.py",
+      "requirements.txt"
+    ],
+    "existing_test_files": [
+      "tests/test_wake_word_detector.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H533",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H533"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H534",
+    "title": "Have the room you spoke in become the output device",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "6708c61918afbecd408458e9a2931b5fb69bb6bd1bb93b072e875dcbf82eade1",
+    "contract": "No equivalent. Hermes has voice mode and wake word but no notion of rooms, satellites or spatial output routing — audio comes back on the surface that asked.",
+    "governance": "Already correct — output routing lands on the kernel-mediated `media.present` kind and refuses rather than guessing when the room is ambiguous or the presence signal is stale.",
+    "remaining_verbatim": "- Start the room-aware Wyoming server in the product (boot wiring behind a setting) so a satellite request actually reaches the resolver\n- Route the spoken reply for a request to the originating room's device: today presence:auto uses one statically configured room (JARVIS_MEDIA_PRESENCE_ROOM), not the room the owner spoke in\n- Prove it end to end with a real (non-harness) path test",
+    "requirement_sections": [
+      "- Start the room-aware Wyoming server in the product (boot wiring behind a setting) so a satellite request actually reaches the resolver\n- Route the spoken reply for a request to the originating room's device: today presence:auto uses one statically configured room (JARVIS_MEDIA_PRESENCE_ROOM), not the room the owner spoke in\n- Prove it end to end with a real (non-harness) path test"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/media_director.py",
+      "agents/core/voice/wyoming.py",
+      "agents/core/routers/wyoming.py",
+      "agents/core/observability/house_reality.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h30_room_voice.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H534",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H534"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H535",
+    "title": "Play or show something on a real device with etiquette, verification and undo",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "f55a8542d22cee3bb753c97759cc2a88a1ec025634c23739c164163625087d82",
+    "contract": "No equivalent. The closest surfaces are the Electron `desktop_preview` pane and browser session recording — Hermes has no device registry, no room model, no playback fabric and no restore semantics.",
+    "governance": "Already the reference implementation for this repo — contract before enqueue, kernel-mediated present/restore, verified-not-asserted, snapshot-as-undo. Every media capability copied from Hermes should be held to this bar; media generation currently is not (see the image-generation row).",
+    "remaining_verbatim": "- Ship at least one driver that actually plays or shows on a real device (Chromecast, Spotify Connect, a browser tab or a Home Assistant media_player); today nothing reachable produces audio or video\n- Verify that driver's status()/restore against real hardware (owner lane)",
+    "requirement_sections": [
+      "- Ship at least one driver that actually plays or shows on a real device (Chromecast, Spotify Connect, a browser tab or a Home Assistant media_player); today nothing reachable produces audio or video\n- Verify that driver's status()/restore against real hardware (owner lane)"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing for the fabric; one real driver needs owner hardware",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/media_director.py",
+      "agents/core/routers/media_director.py",
+      "agents/core/kernel/registry.py"
+    ],
+    "existing_test_files": [
+      "tests/test_media_director.py",
+      "tests/test_media_director_routes.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H535",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H535"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H536",
+    "title": "Read a document (PDF, DOCX, slides) into the conversation",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "2ea7bd5bc4a3aa92cca40731407ea21863470fcb31a07f6ac9a0573b499cbe59",
+    "contract": "Document extraction backs `read_file`: three formats with the stdlib alone, widening to about a dozen more when the optional `firecrawl-anydoc` package is installed (media.document-extraction), with Office skills (docx/xlsx/pdf/pptx) bundled since v0.20.0. Scanned-PDF coverage detection notices that a PDF's pages carry little or no extractable text and tells the user **which page ranges are empty** so they know to run OCR rather than trusting a half-empty extraction (media.pdf-coverage).",
+    "governance": "Read-only file access, bounded by the existing agents/core/file_tools.py path allowlist rather than a new one. No new kernel kind.",
+    "remaining_verbatim": "Coverage and visual reporting are heuristics over the extracted text and the PDF resource dictionary: well-formed but wrong text (a bad font encoding onto real letters) is not caught as garbled, and images inline in a content stream, images nested in form XObjects and vector-drawn charts are not reported as visual content. Only the first 16 gap, garbled and image ranges are listed, and file_read has no OCR to act on the warning. Workspace now has a separate optional all-scanned-PDF OCR path, with real-engine/platform acceptance still open; it does not close these file_read gaps. file_read's formats stop at .pdf and .docx: slides (.pptx), spreadsheets (.xlsx) and the other converter formats are not read by it, and no Office skills are bundled. The Nerva Workspace upload reader (agents/core/workspace/extract.py) reads .xlsx, .csv, .txt and .md for workspace documents only; it is not wired into file_read, and it reads no .pptx either. The drop-a-file-in entry point belongs to the chat-attachment row.",
+    "requirement_sections": [
+      "Coverage and visual reporting are heuristics over the extracted text and the PDF resource dictionary: well-formed but wrong text (a bad font encoding onto real letters) is not caught as garbled, and images inline in a content stream, images nested in form XObjects and vector-drawn charts are not reported as visual content. Only the first 16 gap, garbled and image ranges are listed, and file_read has no OCR to act on the warning. Workspace now has a separate optional all-scanned-PDF OCR path, with real-engine/platform acceptance still open; it does not close these file_read gaps. file_read's formats stop at .pdf and .docx: slides (.pptx), spreadsheets (.xlsx) and the other converter formats are not read by it, and no Office skills are bundled. The Nerva Workspace upload reader (agents/core/workspace/extract.py) reads .xlsx, .csv, .txt and .md for workspace documents only; it is not wired into file_read, and it reads no .pptx either. The drop-a-file-in entry point belongs to the chat-attachment row."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the chat-attachment row for the 'drop a file in' entry point",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/file_tools.py",
+      "agents/core/local_docs.py",
+      "agents/core/workspace/extract.py",
+      "agents/core/workspace/documents.py",
+      "agents/core/workspace/extract_process.py",
+      "agents/core/workspace/win_job_process.py"
+    ],
+    "existing_test_files": [
+      "tests/test_file_search.py",
+      "tests/test_file_read_documents.py",
+      "tests/test_spill_paging.py",
+      "tests/test_file_pdf_coverage.py",
+      "tests/test_file_pdf_coverage_rpc.py",
+      "tests/test_file_read_h444_documents.py",
+      "tests/test_file_read_h444_docx_coverage.py",
+      "tests/test_workspace_ocr.py",
+      "tests/test_workspace_extraction_process.py",
+      "tests/support/workspace_ocr_page.py",
+      "tests/test_workspace_windows_ocr_job.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H536",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H536"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H537",
+    "title": "Search the web and pull clean page content",
+    "area": "media",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "9976e87725933ba1b38df57b2bce946bfb5f3f5226321a384b6f179e62157234",
+    "contract": "`web_search` and `web_extract` are two model-callable tools over independently-selectable backends. Eight in-tree providers behind one `WebSearchProvider` ABC — Firecrawl, Parallel.ai, Exa, SearXNG, Brave free tier, DDGS, Keenable, xAI. Resolution walks a legacy preference list, falls back to a keyless MCP ring that round-robins anonymous free tiers so a fresh install can search before configuring anything, and performs an automatic 'rescue' retry when the configured provider fails. A TTL result cache stops repeat lookups re-billing the provider; website policy and URL-safety guards block private/internal addresses and operator-disallowed sites, classifying a policy block separately from a provider failure so the rescue path never retries a deliberate refusal.",
+    "governance": "Privileged egress. `plugin.egress` already exists as a kernel kind (agents/core/kernel/registry.py:45) and the websearch plugin registers its dynamic domain through the SEC-5b path — the provider ABC must not create a second egress route around it.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "the media-provider seam row",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/plugins/web_providers.py",
+      "agents/core/plugins/websearch.py",
+      "agents/core/web_tools.py",
+      "docs/WEB_SEARCH.md",
+      "docs/FLAGS.md"
+    ],
+    "existing_test_files": [
+      "tests/test_h310_web_parity.py",
+      "tests/test_h310_web_parity_mutants.py",
+      "tests/test_websearch.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H537",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H537"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H538",
+    "title": "Drive a web page (browser automation)",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "0f2c2435929cd588ca97f82bb08a8806e0e118413ddbe30b2c9d54fc3b9642c6",
+    "contract": "Ten built-in text-first tools rendering pages as accessibility trees with @eN refs (navigate, snapshot, click, type, scroll, back, press, get_images, vision, console) plus `browser_exec` (model-written Python in a persistent Browser Use harness), `browser_cdp` raw protocol passthrough and `browser_dialog` for blocking native dialogs. Backends: Browser Use CLI 3.0 (default), local Chromium, Camofox (Firefox fingerprint spoofing), Lightpanda (Zig, ~16x lower memory), and cloud Browserbase / Browser Use / Firecrawl. Around them: a CDP supervisor holding one persistent socket for dialog and frame detection; hybrid routing that auto-spawns a local Chromium sidecar for private/LAN URLs so the cloud provider never sees them; consent-gated real-profile browsing; credential-scrubbed subprocess env; eval SSRF guards; output redaction; session recording; snapshot spill-to-disk; inactivity reaping and suspect-session recycling; and an extension-control broker at /v1/browser-control.",
+    "governance": "Already kernel-mediated via `browser.step`. Any ported piece must stay behind it: `browser_exec` in particular executes model-written code and must inherit the `terminal.exec` trust level, exactly as Hermes gates it behind the terminal toolset.",
+    "remaining_verbatim": "- Bounded browser_vision through a consented/local model. Console and get_images observations, including bounded uncaught page errors, are implemented as bounded owner-approved reads.\n- Exact-authority CDP passthrough, persistent native-dialog supervision, governed console JavaScript evaluation and mediated model-written browser_exec.\n- Browser Use, Camofox, Lightpanda and cloud backends, private/LAN sidecar routing, credential-scrubbed workers and extension-control broker.\n- Consented real profiles, session recording, bounded snapshot spill and suspect-session recycling beyond the delivered fresh-profile idle/restart cleanup.\n- Native/platform and authorized external/provider acceptance remain separate; the synthetic local page proves only its tested route.",
+    "requirement_sections": [
+      "- Bounded browser_vision through a consented/local model. Console and get_images observations, including bounded uncaught page errors, are implemented as bounded owner-approved reads.\n- Exact-authority CDP passthrough, persistent native-dialog supervision, governed console JavaScript evaluation and mediated model-written browser_exec.\n- Browser Use, Camofox, Lightpanda and cloud backends, private/LAN sidecar routing, credential-scrubbed workers and extension-control broker.\n- Consented real profiles, session recording, bounded snapshot spill and suspect-session recycling beyond the delivered fresh-profile idle/restart cleanup.\n- Native/platform and authorized external/provider acceptance remain separate; the synthetic local page proves only its tested route."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing in this cluster",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/browser_playwright.py",
+      "agents/core/browser_transport.py",
+      "agents/core/operator_router.py",
+      "agents/core/routers/browser.py",
+      "agents/core/routers/media_director.py",
+      "agents/core/observability/operator_reality.py",
+      "agents/core/browser_agent.py",
+      "agents/core/browser_runtime.py",
+      "agents/core/browser_kernel.py",
+      "agents/core/autonomy_coordinator.py",
+      "frontend/src/operator-panel.tsx",
+      "requirements-browser.txt",
+      "agents/core/browser_session.py",
+      "agents/core/security/website_policy.py",
+      "agents/core/http_client.py",
+      "agents/core/security/ssrf.py"
+    ],
+    "existing_test_files": [
+      "tests/test_browser_runtime.py",
+      "tests/test_browser_chromium_runtime.py",
+      "frontend/src/test/operator-panel.test.tsx",
+      "tests/test_browser_session.py",
+      "tests/test_h492_website_policy.py",
+      "tests/test_h492_egress.py",
+      "tests/test_h492_entrypoints.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H538",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H538"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H539",
+    "title": "Control the computer (desktop control)",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "b9fa895f6fb25dc7349101817deb97605e0056aa27a7607bf3b06940861180e9",
+    "contract": "The `computer_use` toolset drives macOS, Windows and Linux desktops — screenshots, mouse, keyboard, scroll, drag — background-first, without stealing the user's cursor, focus or Space, so agent and user co-work on one machine. One tool with 14 actions; approvals split always-allowed reads from gated mutations with a small hard-blocked set regardless of approval level; three permission modes map onto cua-driver's runtime modes including a private daemon with a reviewed capability manifest; binary resolution checks a runtime contract and nudges on updates; macOS refuses anything but a genuinely-signed CuaDriver.app; capture routes either to the main model as multimodal content or to an auxiliary vision model; upstream telemetry is disabled on every invocation; plus a driver-management CLI (install/status/doctor/permissions) and dashboard status/grant endpoints.",
+    "governance": "Already kernel-mediated via `desktop.step`, with mutating steps routed through tool_rpc rather than executed inline (multimodal.py:322-332). Nerva's split — observe inline, mutate to approval — is the same shape as Hermes's read/gated split and should not be loosened for capture routing.",
+    "remaining_verbatim": "- Windows driver; drag action; background-first operation that does not steal cursor/focus/Space\n- Capture routing: send screenshots to the main model as multimodal content or pre-analyse them with an auxiliary vision model\n- Signed-driver verification, upstream telemetry off, and a driver-management CLI (install/status/doctor/permissions)\n- Proof on real hardware (OWNER_TASKS still lists it)",
+    "requirement_sections": [
+      "- Windows driver; drag action; background-first operation that does not steal cursor/focus/Space\n- Capture routing: send screenshots to the main model as multimodal content or pre-analyse them with an auxiliary vision model\n- Signed-driver verification, upstream telemetry off, and a driver-management CLI (install/status/doctor/permissions)\n- Proof on real hardware (OWNER_TASKS still lists it)"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing in this cluster",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/desktop_drivers/base.py",
+      "agents/core/routers/multimodal.py",
+      "agents/core/desktop_operator.py"
+    ],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H539",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H539"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H540",
+    "title": "Run code or commands somewhere other than this host",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "3a4e97351ed61c45f012d51102905add479511bd5b82505bbd0c04fa47e97953",
+    "contract": "`execute_code` runs Python that calls Hermes tools programmatically, with only stdout reaching the model so intermediate results never enter the context window; a seven-tool sandbox allowlist, child-environment secret scrubbing, session kernels keeping one child process alive per (task, mode, interpreter, cwd, toolset) so variables survive across calls, remote kernels speaking a file protocol inside a container, and process-group kill on shutdown. Under it, eight terminal backends behind one `BaseEnvironment` spawn-per-call contract with a re-sourced session snapshot: local, docker (cap-drop, pids-limit, bind-mount persistence), singularity, ssh (ControlMaster + transactional sync), modal, managed_modal via the Nous gateway, daytona (stop/resume preserving the filesystem), vercel_sandbox — plus an mtime+size FileSyncManager, a `TerminalEnvironmentProvider` ABC, a setup wizard section and backend list/set endpoints with live health probes.",
+    "governance": "Already kernel-mediated via `terminal.exec` with a hash-chained target audit. Any ported backend must register as a target row and inherit that classification — a new transport that bypasses targets.py would be a regression even if it runs.",
+    "remaining_verbatim": "- Singularity/Apptainer, Modal, Daytona and Vercel sandbox backends, and remote kernels inside a container\n- A pluggable TerminalEnvironmentProvider ABC with an mtime+size file-sync manager\n- Backend list/set endpoints with live health probes and a setup wizard section\n- Path-like source images sent as data: URLs under non-local backends",
+    "requirement_sections": [
+      "- Singularity/Apptainer, Modal, Daytona and Vercel sandbox backends, and remote kernels inside a container\n- A pluggable TerminalEnvironmentProvider ABC with an mtime+size file-sync manager\n- Backend list/set endpoints with live health probes and a setup wizard section\n- Path-like source images sent as data: URLs under non-local backends"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing in this cluster",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/code_tools.py",
+      "agents/core/session_kernels.py",
+      "agents/core/environments/execution.py",
+      "agents/core/environments/targets.py"
+    ],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H540",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H540"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H541",
+    "title": "Drive the app's own preview pane, tours, tips and layouts",
+    "area": "media",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "39257b9ce45af606b320a813ee9124f096d6d9800f13c69b352218cb3c7c89ba",
+    "contract": "Thirteen desktop-only tools reaching the Electron renderer through a bridge that makes each report 'desktop only' elsewhere: `desktop_preview` (open a URL, localhost dev server or file beside the chat; read the rendered visible text, paged by char offsets), `drive_preview` (log in, fill forms, click through the page the user is looking at), `annotate_preview` (lasting marks that outlive drive_preview's fading ones), `focus_pane`, `apply_layout` (default/focus/terminal-deck/quad presets), `read_terminal` and `close_terminal` (pages the in-app scrollback; closing a tab does not kill the process), `read_window_below` (metadata only, never pixels), `tour` (dim, spotlight, titled popovers — over the app's own DOM *or* any web app in the preview), `tip` (one arrow bubble), `setup_mcp` (blocking inline consent card), `react_to_message` (emoji tapback written with author='agent'), and `desktop_project`.",
+    "governance": "Read-only in Hermes; the one exception, `drive_preview`, actuates a real logged-in browser session and would have to land on the existing `browser.step` kernel kind rather than a renderer bridge. That requirement alone makes the port larger than it looks.",
+    "remaining_verbatim": "- desktop_preview (open URL/dev server/file beside chat, read rendered text paged by offsets)\n- drive_preview (log in, fill forms, click in the previewed page)\n- annotate_preview (lasting marks)\n- Tours/tips over an arbitrary previewed web app, not only HUD anchors\n- focus_pane and apply_layout presets\n- read_terminal / close_terminal over in-app scrollback\n- read_window_below (metadata only)\n- setup_mcp blocking inline consent card\n- react_to_message (agent emoji tapback)\n- desktop_project",
+    "requirement_sections": [
+      "- desktop_preview (open URL/dev server/file beside chat, read rendered text paged by offsets)\n- drive_preview (log in, fill forms, click in the previewed page)\n- annotate_preview (lasting marks)\n- Tours/tips over an arbitrary previewed web app, not only HUD anchors\n- focus_pane and apply_layout presets\n- read_terminal / close_terminal over in-app scrollback\n- read_window_below (metadata only)\n- setup_mcp blocking inline consent card\n- react_to_message (agent emoji tapback)\n- desktop_project"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "a desktop shell that does not exist and is not planned",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/pointer_tool.py",
+      "agents/core/canvas.py",
+      "frontend/src/pointer.tsx"
+    ],
+    "existing_test_files": [
+      "tests/test_h309_pointer.py",
+      "tests/test_h12_18_canvas.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H541",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H541"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  }
+]

@@ -679,6 +679,13 @@ def test_every_reader_of_the_flag_only_leaves_something_out():
         "agents/core/autonomy/jobs.py",
         "agents/core/routers/jobs.py",
         "agents/core/channels/outbound.py",
+        # H083: resume is refused; H084 reload refuses activation in safe mode.
+        "agents/core/channels/manager.py",
+        "agents/core/maintenance_commands.py",
+        # H084: saved-config reconciliation refuses activation and rechecks after awaits.
+        "agents/core/mcp/client.py",
+        # Only renders the manager's safe-mode refusal code.
+        "agents/core/platform_commands.py",
         # H507: an owner's off for the code-pattern warnings reads as on in safe mode.
         "agents/core/code_guidance.py",
         "agents/core/heartbeat.py",

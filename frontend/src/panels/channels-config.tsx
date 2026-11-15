@@ -9,6 +9,7 @@
 import React, { useState } from 'react';
 import { apiDelete, apiPut } from '../api/client';
 import { Card, Tag, inpS, mono, refusalReason, useApi } from '../panel-kit';
+import { ChannelDeliveriesPanel } from './channel-deliveries';
 
 export const CHANNELS_CONFIG_PATH = '/api/admin/channels/config';
 
@@ -79,6 +80,7 @@ function FieldEditor({ channel, field, onChanged }: { channel: string; field: Fi
 export function ChannelsConfigPanel() {
   const { d, e, reload } = useApi(CHANNELS_CONFIG_PATH, true, true);
   const [open, setOpen] = useState<string | null>(null);
+  const [receiptsOpen, setReceiptsOpen] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const rows: ChannelRow[] = Array.isArray((d as any)?.channels) ? (d as any).channels : [];
   const waiting = rows.filter((r) => r.restart_required).map((r) => r.label);
@@ -115,6 +117,11 @@ export function ChannelsConfigPanel() {
           </li>
         ))}
       </ul>
+      <button className="tool-btn" aria-expanded={receiptsOpen} aria-controls="channel-delivery-receipts"
+        onClick={() => setReceiptsOpen((value) => !value)} style={{ marginTop: 9 }}>
+        {receiptsOpen ? 'hide delivery receipts' : 'delivery receipts'}
+      </button>
+      {receiptsOpen && <div id="channel-delivery-receipts"><ChannelDeliveriesPanel /></div>}
     </Card>
   );
 }

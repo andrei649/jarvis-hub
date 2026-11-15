@@ -974,6 +974,9 @@ def _hub(tmp_path, monkeypatch, *skills, window=32768):
     LEDGER.clear()
     monkeypatch.setattr(persistence, "MEMORY_DIR", tmp_path / "memory")
     orch = Orchestrator(JarvisConfig())
+    # Route state and its transcripts must share this test's lifetime. A route
+    # left by another test correctly refuses when its transcript is absent.
+    orch._session_lifecycle_path = tmp_path / "channel_routes.sqlite"
     orch.checkpoints = CheckpointManager(str(tmp_path / "cp.db"))
     orch.checkpoints.initialize()
     orch.memory.set_checkpoint_manager(orch.checkpoints)
@@ -1137,8 +1140,9 @@ async def test_a_command_keeps_its_name_and_bundle_reaches_the_bundle_that_share
     assert reply.startswith("Usage: /bundle <name> [instruction]")
     reply, _ = await _say(orch, "/bundles")
     assert "/morning-brief — Morning Brief: 1 skill" in reply and "/status — Status: 1 skill" in reply
-    reply, _ = await _say(orch, "/nothing-here")                         # not a bundle, not a command
-    assert _answered(reply) and "[The owner invoked" not in seen.sent[-1]
+    sent = len(seen.sent)
+    reply, _ = await _say(orch, "/nothing-here")                         # unknown slash command
+    assert reply.startswith("Unknown command /nothing-here.") and len(seen.sent) == sent
     orch.checkpoints.close()
 
 
@@ -1350,8 +1354,9 @@ async def test_an_unknown_word_says_bundles_are_unreadable_only_when_the_folder_
         return real_open(path, flags, *args, **kwargs)
 
     monkeypatch.setattr(os, "open", opener)
+    sent = len(seen.sent)
     reply, _ = await _say(orch, "/nothing-here")                          # one file unreadable: not the folder
-    assert _answered(reply) and "[The owner invoked" not in seen.sent[-1]
+    assert reply.startswith("Unknown command /nothing-here.") and len(seen.sent) == sent
     reply, notices = await _say(orch, "/morning")                       # the other bundles still load
     assert _answered(reply) and notices == ["Bundle Morning: loaded weather."]
     sent = len(seen.sent)

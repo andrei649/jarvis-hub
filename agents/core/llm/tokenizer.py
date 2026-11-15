@@ -1,6 +1,6 @@
 """
 tokenizer.py — Token estimator for hybrid routing decisions.
-Uses tiktoken cl100k_base when available, character-based fallback otherwise.
+Uses tiktoken cl100k_base when available, conservative Unicode fallback otherwise.
 """
 
 
@@ -22,7 +22,12 @@ IMAGE_TOKEN_COST = 1_600
 def estimate_tokens(text: str) -> int:
     if _ENCODING:
         return len(_ENCODING.encode(text))
-    return len(text) // 4 + 1
+    # ASCII prose keeps the historical estimate. Without a tokenizer, count
+    # each non-ASCII UTF-8 byte conservatively: rare Unicode can consume several
+    # tokens per character and must not bypass a known context-window limit.
+    ascii_chars = sum(char.isascii() for char in text)
+    non_ascii_bytes = len(text.encode("utf-8", errors="replace")) - ascii_chars
+    return ascii_chars // 4 + non_ascii_bytes + 1
 
 
 def estimate_messages(messages: list[dict]) -> int:

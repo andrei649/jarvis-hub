@@ -378,6 +378,8 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="security",key="scan_output",      value=True,                  label="Scan LLM output",    kind="toggle"),
     # H507: warn-only; code the agent writes is checked for known-dangerous patterns.
     dict(category="security",key="code_guidance",    value=True,                  label="Warn when code the agent writes has a known-dangerous pattern", kind="toggle"),
+    # H508: pre-command content scanner availability policy (default True = fail-open; False = fail-closed with synthesized HIGH finding).
+    dict(category="security",key="command_scanner_fail_open", value=True,         label="Fail open when the pre-command content scanner hits an internal error (off = fail closed with a synthesized HIGH finding)", kind="toggle"),
     dict(category="security",key="sandbox_timeout",  value=30,                    label="Sandbox timeout (s)",kind="number"),
     dict(category="security",key="sandbox_memory",   value=256,                   label="Sandbox max memory (MB)",kind="number"),
     dict(category="security",key="sandbox_temp_dir", value="",                    label="Sandbox work directory root (absolute path; JARVIS_EXEC_TEMP_DIR overrides this field; empty = TMPDIR, TMP, TEMP, then the managed cache under the data root; only the managed cache is pruned after the age below; a directory chosen here or through the environment is yours and never pruned; to keep a pruned cache on a bigger disk, move the data root (JARVIS_HOME) or bind-mount cache/exec, since a linked cache is not pruned; restart to apply)", kind="text"),
@@ -478,6 +480,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="jobs", key="run_timeout_seconds", value=900, label="Scheduled job run deadline, delivery included (0 = unbounded, 1–86400 seconds)", kind="number"),
     # channels
     dict(category="channels",key="rate_limit",       value=10,                    label="Gateway rate limit (msg/min)", kind="number"),
+    dict(category="channels", key="max_inbound_media_bytes", value=8 * 1024 * 1024, label="Maximum incoming attachment bytes (1–20971520)", kind="number"),
     dict(category="channels",key="web_enabled",      value=True,                  label="Web channel",        kind="toggle"),
     dict(category="channels",key="streaming_replies", value=True,                 label="Write chat replies in place as they are produced (channels that can edit a message)", kind="toggle"),
     dict(category="channels",key="pending_inputs_enabled", value=False, label="Chat clarification preview (restart to apply)", kind="toggle"),
@@ -577,6 +580,7 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="system",  key="log_backups",      value=5,                     label="Rotated log backups", kind="number"),
     # H182: on battery below this percent, the heavy background jobs skip their run (0 = never, 100 = always).
     dict(category="system",  key="battery_defer_percent", value=50,               label="On battery below this %, defer heavy background jobs (0 = never)", kind="number"),
+    dict(category="system",  key="channel_connect_timeout_seconds", value=15, label="Telegram, Discord, ntfy, IMAP and Slack opening timeout in seconds (1–25; applies on next hub start)", kind="number"),
     dict(category="system",  key="startup_warmup_timeout_seconds", value=20,      label="At start, wait up to this many seconds for the local model to warm up before accepting messages (0 = don't wait)", kind="number"),
     # H448 — Hermes `context.memory_trim`: after a turn and on the minute housekeeping tick
     # (the scheduler's memory-trim job), at most every cooldown_seconds, collect reference
@@ -672,6 +676,14 @@ DEFAULTS: list[dict[str, Any]] = [
     dict(category="retention", key="min_interval_hours",   value=24,    label="Run the data lifecycle sweep at most every (hours, 1-720)", kind="number"),
     dict(category="retention", key="vacuum_after_prune",   value=True,  label="Compact a database (VACUUM) after a prune deleted rows from it", kind="toggle"),
     dict(category="retention", key="min_vacuum_interval_days", value=30, label="Compact the databases at most every (days, 0-365; 0 = after every deleting sweep)", kind="number"),
+    # pets — H214 / H238 / H590 companion mascot, Hatch-a-Pet generator, and desktop/HUD overlay.
+    dict(category="pets", key="enabled", value=True, label="Enable Nerva Petdex companion", kind="toggle"),
+    dict(category="pets", key="active_id", value="spark-owl", label="Active companion species ID", kind="text"),
+    dict(category="pets", key="scale", value=1.0, label="Companion sprite scale (0.5–3.0)", kind="number"),
+    dict(category="pets", key="roam", value=False, label="Allow floating companion to roam across the viewport", kind="toggle"),
+    dict(category="pets", key="overlay_enabled", value=False, label="Show always-on-top floating companion overlay", kind="toggle"),
+    dict(category="pets", key="image_backend", value="procedural-pixel", label="Hatch-a-Pet candidate image backend", kind="select",
+         opts=["procedural-pixel", "svg-synth", "local-vlm"]),
 ]
 
 # ── lazy init — called on first use, not at import time ───────────
@@ -1635,6 +1647,10 @@ def validate_category(cat: str, data: dict[str, Any], *, references: bool = True
         err = _validate_value(key, value, spec.get("kind", "text"), spec.get("opts", []) or [])
         if err is None and cat == "sessions":
             err = _session_setting_problem(key, value)
+        if err is None and (cat, key) == ("channels", "max_inbound_media_bytes"):
+            from .channels.media_limits import configuration_problem
+
+            err = configuration_problem(value)
         if err is None and (cat, key) == ("autonomy", "agent_modes"):
             from .autonomy.mode import overrides_problem
 

@@ -196,6 +196,89 @@ function SignIn({ name, oauth, onChanged }: { name: string; oauth: any; onChange
   );
 }
 
+function ElicitationForm({ card, onAnswered }: { card: any; onAnswered: (msg: string) => void }) {
+  const fields: any[] = Array.isArray(card.fields) ? card.fields : [];
+  const required = new Set<string>(Array.isArray(card.required) ? card.required : []);
+  const [vals, setVals] = useState<Record<string, any>>({});
+  const [rawJson, setRawJson] = useState('{}');
+  const [busy, setBusy] = useState(false);
+  const [errMsg, setErrMsg] = useState<string | null>(null);
+
+  const submit = () => {
+    setErrMsg(null);
+    let content: Record<string, any> = {};
+    if (fields.length > 0) {
+      for (const f of fields) {
+        const raw = vals[f.name];
+        if (f.type === 'boolean') {
+          if (raw !== undefined) content[f.name] = Boolean(raw);
+          else if (required.has(f.name)) content[f.name] = false;
+        } else if (f.type === 'integer') {
+          if (raw !== undefined && String(raw).trim() !== '') content[f.name] = Number.parseInt(String(raw), 10);
+        } else if (f.type === 'number') {
+          if (raw !== undefined && String(raw).trim() !== '') content[f.name] = Number(raw);
+        } else if (raw !== undefined && (String(raw) !== '' || required.has(f.name))) {
+          content[f.name] = String(raw);
+        }
+      }
+    } else {
+      try {
+        const parsed = JSON.parse(rawJson);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          setErrMsg('answer must be a JSON object');
+          return;
+        }
+        content = parsed;
+      } catch {
+        setErrMsg('invalid JSON object');
+        return;
+      }
+    }
+    setBusy(true);
+    apiPost(`/api/admin/mcp/elicitations/${encodeURIComponent(String(card.id))}/answer`, { content }, { admin: true })
+      .then(() => onAnswered(`answered elicitation ${card.id} for ${card.server || 'MCP'}`))
+      .catch((err: any) => setErrMsg(`not accepted · ${fail(err)}`))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div style={{ margin: '6px 0', padding: 8, border: '1px solid var(--amber)', borderRadius: 4, background: 'var(--surface)' }}>
+      <div style={{ ...mono, fontSize: 10.5, color: 'var(--amber)', marginBottom: 4 }}>
+        MCP elicitation <span style={mono}>{card.id}</span> · server <b>{card.server || 'mcp'}</b> (untrusted request for input)
+      </div>
+      {fields.length > 0 ? fields.map((f) => {
+        const fid = `elic-${card.id}-${f.name}`;
+        const label = `${f.name}${required.has(f.name) ? ' *' : ''}${f.description ? ` — ${f.description}` : ''}`;
+        return (
+          <div key={f.name} style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
+            <label htmlFor={fid} style={{ fontSize: 10.5 }}>{label}</label>
+            {Array.isArray(f.enum) && f.enum.length > 0 ? (
+              <select id={fid} value={vals[f.name] ?? ''} onChange={(ev) => setVals({ ...vals, [f.name]: ev.target.value })} style={inpS}>
+                <option value="">choose…</option>
+                {f.enum.map((opt: string) => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+            ) : f.type === 'boolean' ? (
+              <input id={fid} type="checkbox" checked={Boolean(vals[f.name])} onChange={(ev) => setVals({ ...vals, [f.name]: ev.target.checked })} />
+            ) : (
+              <input id={fid} type={f.type === 'integer' || f.type === 'number' ? 'number' : 'text'} value={vals[f.name] ?? ''}
+                onChange={(ev) => setVals({ ...vals, [f.name]: ev.target.value })} style={{ ...inpS, minWidth: 180 }} />
+            )}
+          </div>
+        );
+      }) : (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
+          <label htmlFor={`elic-json-${card.id}`} style={{ fontSize: 10.5 }}>Answer JSON</label>
+          <input id={`elic-json-${card.id}`} value={rawJson} onChange={(ev) => setRawJson(ev.target.value)} style={{ ...inpS, minWidth: 220, ...mono }} />
+        </div>
+      )}
+      {errMsg && <div role="status" style={{ fontSize: 10.5, marginTop: 4, color: 'var(--amber)' }}>{errMsg}</div>}
+      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+        <button className="tool-btn" disabled={busy} onClick={submit}>send elicitation answer</button>
+      </div>
+    </div>
+  );
+}
+
 export function McpPanel() {
   const servers = useApi(MCP_PATH, true, true);
   const [q, setQ] = useState('');
@@ -205,6 +288,12 @@ export function McpPanel() {
   const [note, setNote] = useState<string | null>(null);
   const rows: any[] = Array.isArray((servers.d as any)?.servers) ? (servers.d as any).servers : [];
   const entries: any[] = Array.isArray((catalog.d as any)?.entries) ? (catalog.d as any).entries : [];
+  const elicitationCards: any[] = useMemo(() => {
+    const cards = Array.isArray((servers.d as any)?.elicitation_cards) ? (servers.d as any).elicitation_cards : [];
+    if (cards.length > 0) return cards;
+    const ids = Array.isArray((servers.d as any)?.pending_elicitations) ? (servers.d as any).pending_elicitations : [];
+    return ids.map((id: string) => ({ id, server: 'mcp', fields: [], required: [] }));
+  }, [servers.d]);
   const reloadAll = () => { servers.reload(); catalog.reload(); };
   const act = (p: Promise<any>, done: string) => p.then((r) => { setNote(r?.message || done); reloadAll(); })
     .catch((err: any) => setNote(`not done · ${fail(err)}`));
@@ -215,6 +304,13 @@ export function McpPanel() {
       sub={servers.d ? `${rows.length} configured · catalog ${(catalog.d as any)?.total ?? '…'}${commit ? ` @${commit}` : ''}` : null}>
       {servers.e && <div role="status" style={{ color: 'var(--amber)', fontSize: 11 }}>not loaded · {String(servers.e)}</div>}
       {note && <div role="status" style={{ fontSize: 10.5, color: 'var(--ink-2)' }}>{note}</div>}
+      {elicitationCards.length > 0 && (
+        <section aria-label="Pending MCP elicitations">
+          {elicitationCards.map((c) => (
+            <ElicitationForm key={c.id} card={c} onAnswered={(m) => { setNote(m); reloadAll(); }} />
+          ))}
+        </section>
+      )}
       {installing && <InstallCard request={installing} onCancel={() => setInstalling(null)}
         onDone={(m) => { setInstalling(null); setNote(m); reloadAll(); }} />}
       <ul aria-label="your MCP servers" style={{ listStyle: 'none', margin: 0, padding: 0 }}>

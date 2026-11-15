@@ -60,6 +60,7 @@ from agents.core.autonomy.mediation import (
 from agents.core.env_config import env_str
 from agents.core.paths import data_path
 
+from . import restart_records as _restart
 from .consent_ledger import ConsentCategory, ConsentLedger, _valid_context
 from .consent_types import (
     ConsentClaim,
@@ -257,6 +258,18 @@ class TaskQueueError(Exception):
     """Raised on an illegal state transition."""
 
 
+class HubUpdateActive(TaskQueueError):
+    """A still-executable hub.update task already occupies this shared queue."""
+
+
+class HubRestartActive(TaskQueueError):
+    """A restart card or armed physical attempt already occupies this queue."""
+
+
+class HubRestartReplay(TaskQueueError):
+    """The original Telegram restart message already produced a card."""
+
+
 class MediationStateUnavailable(TaskQueueError):
     """The mediated-execution state could not be read or checked — the database, the
     head anchor or the receipt signer raised (review round 6, item 2). Machinery, not a
@@ -385,6 +398,8 @@ class TaskQueue:
         self._consent_resolver: Callable[[Task, dict], ConsentDescriptor | None] | None = None
         self._consent_queue_key = object()
         self._consent_claims: dict[int, ConsentClaim] = {}
+        self._restart_epoch = uuid.uuid4().hex
+        self._restart_boot_id: str | None = None
 
     # ── lifecycle ─────────────────────────────────────────────────
     def initialize(self) -> "TaskQueue":
@@ -582,6 +597,19 @@ class TaskQueue:
         self._conn.execute('''CREATE TABLE IF NOT EXISTS task_consent_proofs (
             task_id INTEGER PRIMARY KEY, payload BLOB NOT NULL, signature TEXT NOT NULL,
             claim_payload BLOB, claim_signature TEXT, state TEXT NOT NULL
+        )''')
+        self._conn.execute('''CREATE TABLE IF NOT EXISTS task_restart_sources (
+            task_id INTEGER PRIMARY KEY, nonce_sha256 TEXT NOT NULL UNIQUE,
+            provider_sha256 TEXT NOT NULL UNIQUE, ticket_sha256 TEXT NOT NULL,
+            queue_epoch TEXT NOT NULL
+        )''')
+        self._conn.execute('''CREATE TABLE IF NOT EXISTS task_restart_intents (
+            task_id INTEGER PRIMARY KEY, boot_id TEXT NOT NULL,
+            arm_body BLOB NOT NULL, arm_signature TEXT NOT NULL,
+            intent_digest TEXT NOT NULL UNIQUE, completion_body BLOB,
+            completion_signature TEXT, physical_state TEXT NOT NULL DEFAULT 'unclaimed',
+            physical_claim TEXT, notice_state TEXT NOT NULL DEFAULT 'unclaimed',
+            notice_claim TEXT
         )''')
         if self._consent_head_anchor is not None:
             self._consent_ledger = ConsentLedger(
@@ -1495,6 +1523,86 @@ class TaskQueue:
         )
 
     # ── writes ────────────────────────────────────────────────────
+    def _refuse_active_hub_update_locked(self, kind: str) -> None:
+        """Serialize this exact kind across connections before inserting a card.
+
+        Both enqueue paths call this inside their existing BEGIN IMMEDIATE.
+        Unknown statuses stay active; deferred tasks can return to the inbox.
+        Never return an old ID for a newly signed or newly planned payload.
+        """
+        if kind != "hub.update":
+            return
+        active = self._conn.execute(
+            """SELECT 1 FROM tasks WHERE kind='hub.update'
+               AND status NOT IN ('done','failed','rejected','quarantined','expired')
+               LIMIT 1"""
+        ).fetchone()
+        if active is not None:
+            raise HubUpdateActive("hub.update already active")
+
+    def _refuse_active_hub_restart_locked(self, kind: str) -> None:
+        if kind != _restart.KIND:
+            return
+        active = self._conn.execute(
+            """SELECT 1 FROM tasks WHERE kind='hub.restart'
+               AND status NOT IN ('done','failed','rejected','quarantined','expired') LIMIT 1"""
+        ).fetchone()
+        armed = self._conn.execute(
+            """SELECT 1 FROM task_restart_intents i JOIN tasks t ON t.id=i.task_id
+               WHERE t.kind='hub.restart' AND t.status='done'
+                 AND i.physical_state IN ('unclaimed','attempting','requested','unknown')
+                 AND (? IS NULL OR i.boot_id=?) LIMIT 1""",
+            (self._restart_boot_id, self._restart_boot_id),
+        ).fetchone()
+        if active is not None or armed is not None:
+            raise HubRestartActive("hub.restart already active")
+
+    def issue_restart_source(self, *, orch, principal, source, title=_restart.TITLE,
+                             request_payload: dict):
+        return _restart.issue_source(self, orch=orch, principal=principal, source=source,
+                                     title=title, request_payload=request_payload)
+
+    def _restart_ticket(self, payload: dict, *, title: str, agent: str, current: bool):
+        return _restart.ticket_for_payload(self, payload, title=title, agent=agent,
+                                           current=current)
+
+    def _restart_source_insert_locked(self, task_id: int, ticket) -> None:
+        _restart.source_insert_locked(self, task_id, ticket)
+
+    def arm_restart(self, task: Task, boot_id: str):
+        return _restart.arm(self, task, boot_id)
+
+    def complete_restart(self, task: Task, result: dict):
+        return _restart.complete(self, task, result)
+
+    def validate_restart_completion(self, task_id: int, intent_digest: str, *,
+                                    for_notification: bool = False):
+        return _restart.validate_completion(self, task_id, intent_digest,
+                                            for_notification=for_notification)
+
+    def claim_restart_physical(self, task_id: int, intent_digest: str, boot_id: str):
+        return _restart.claim_physical(self, task_id, intent_digest, boot_id)
+
+    def refuse_restart_physical(self, task_id: int, intent_digest: str, boot_id: str) -> bool:
+        return _restart.refuse_physical(self, task_id, intent_digest, boot_id)
+
+    def finish_restart_physical(self, claim, outcome: str) -> bool:
+        return _restart.finish_physical(self, claim, outcome)
+
+    def list_restart_notices(self, new_boot_id: str, limit: int = 32):
+        return _restart.list_notices(self, new_boot_id, limit)
+
+    def claim_restart_notice(self, task_id: int, intent_digest: str, new_boot_id: str,
+                             *, live_check):
+        return _restart.claim_notice(self, task_id, intent_digest, new_boot_id,
+                                     live_check=live_check)
+
+    def finish_restart_notice(self, claim, outcome: str) -> bool:
+        return _restart.finish_notice(self, claim, outcome)
+
+    def recover_restart_attempts(self, new_boot_id: str) -> dict[str, int]:
+        return _restart.recover(self, new_boot_id)
+
     def enqueue(
         self,
         agent: str,
@@ -1509,6 +1617,8 @@ class TaskQueue:
         *, approval_deadline_at: str | None = None,
     ) -> int:
         approval_deadline_at = normalize_approval_deadline(approval_deadline_at)
+        if kind == _restart.KIND:
+            raise TaskQueueError("hub.restart requires original signed source and mediation")
         payload = dict(payload or {})
         # Legacy payload metadata is caller-controlled and has no authority.
         payload.pop("kernel_mediation", None)
@@ -1529,6 +1639,7 @@ class TaskQueue:
         with self._lock:
             self._conn.execute("BEGIN IMMEDIATE")
             try:
+                self._refuse_active_hub_update_locked(kind)
                 cur = self._conn.execute(
                     """INSERT INTO tasks (agent, kind, title, payload, risk_tier, status,
                            autonomy_level, attention_mode, origin, attempts, pushed,
@@ -1637,6 +1748,8 @@ class TaskQueue:
         """Insert exact task bytes, receipt, and authorization event atomically."""
 
         approval_deadline_at = normalize_approval_deadline(approval_deadline_at)
+        if kind == _restart.KIND and self.mediation_mode != "enforce":
+            raise TaskQueueError("hub.restart requires enforced mediation")
         if self.mediation_mode == "hold":
             raise TaskQueueError("mediation hold refuses classified enqueue")
         if self._classification(kind) is not True:
@@ -1654,6 +1767,10 @@ class TaskQueue:
             # retains and mutates its input dict cannot race the receipt check versus
             # the later SQLite serialization.
             body = json.loads(canonical_json(payload or {}).decode("utf-8"))
+            source_ticket = (self._restart_ticket(body, title=title, agent=agent,
+                                                  current=True) if kind == _restart.KIND else None)
+            if kind == _restart.KIND and source_ticket is None:
+                raise TaskQueueError("hub.restart source unavailable")
             authority_scope = self._mediation_scope if scope is None else str(scope)
             if not self._scope_allowed(authority_scope):
                 raise TaskQueueError("invalid mediation receipt")
@@ -1712,6 +1829,23 @@ class TaskQueue:
                 ).fetchone()
                 if duplicate:
                     raise TaskQueueError("invalid mediation receipt: enqueue replay")
+                if kind == _restart.KIND:
+                    # Issuance may have expired or this queue generation may have
+                    # changed while the caller prepared the mediated receipt.
+                    if self._restart_ticket(body, title=title, agent=agent,
+                                            current=True) is None:
+                        raise TaskQueueError("hub.restart source unavailable")
+                    if not verify_receipt(self._mediation_signer, sealed,
+                                          expected=expectation, now_ms=self._clock_ms()):
+                        raise TaskQueueError("invalid mediation receipt")
+                    provider_sha = hashlib.sha256(
+                        source_ticket.body["requester"]["provider_key"].encode()).hexdigest()
+                    if self._conn.execute(
+                            "SELECT 1 FROM task_restart_sources WHERE provider_sha256=?",
+                            (provider_sha,)).fetchone() is not None:
+                        raise HubRestartReplay("restart source already recorded")
+                self._refuse_active_hub_update_locked(kind)
+                self._refuse_active_hub_restart_locked(kind)
                 cur = self._conn.execute(
                     """INSERT INTO tasks
                            (agent, kind, title, payload, risk_tier, status,
@@ -1746,6 +1880,8 @@ class TaskQueue:
                     ),
                 )
                 task_id = int(cur.lastrowid)
+                if kind == _restart.KIND:
+                    self._restart_source_insert_locked(task_id, source_ticket)
                 self._associate_chat_approval_locked(task_id, now)
                 self._append_mediation_event_locked(
                     outcome="authorized_enqueue",

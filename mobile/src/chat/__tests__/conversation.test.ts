@@ -236,6 +236,111 @@ test('a synchronous transport error does not leave the conversation busy', async
   expect(chat.state.messages.at(-1)).toMatchObject({ error: true, pending: false });
 });
 
+test('exact missing-session failure retains prompt and blocks normal sends until explicit recovery', async () => {
+  const chat = await opened();
+  chat.resume('gone', turns);
+  chat.send('Keep this draft', 'jarvis');
+  const failed = handlers;
+  failed.onError('Server returned HTTP 404', { kind: 'session_missing', sessionId: 'gone' });
+
+  expect(chat.state.sessionId).toBe('gone');
+  expect(chat.state.missingSessionId).toBe('gone');
+  expect(chat.state.recoveryPrompt).toBe('Keep this draft');
+  expect(chat.state.sending).toBe(false);
+  expect(saveConversation).toHaveBeenLastCalledWith('connection-1', expect.objectContaining({
+    sessionId: 'gone', recoveryPrompt: 'Keep this draft',
+  }));
+  expect(chat.send('Another doomed request', 'jarvis')).toBe(false);
+  expect(streamChat).toHaveBeenCalledTimes(1);
+});
+
+test('explicit recovery omits the missing ID and preserves transcript/prompt until distinct ID confirms', async () => {
+  const chat = await opened();
+  chat.resume('gone', turns);
+  chat.send('Retain this question', 'jarvis');
+  handlers.onError('Server returned HTTP 404', { kind: 'session_missing', sessionId: 'gone' });
+  const oldTranscript = chat.state.messages.map(message => message.text);
+
+  expect(chat.recoverWithNewSession('jarvis')).toBe(true);
+  expect(streamChat).toHaveBeenLastCalledWith(config, '/new', 'jarvis', expect.any(Object), null);
+  expect(chat.state.sessionId).toBe('gone');
+  expect(chat.state.messages.map(message => message.text).slice(0, oldTranscript.length)).toEqual(oldTranscript);
+  expect(chat.state.messages.slice(oldTranscript.length).map(message => message.text)).toEqual(['/new', '']);
+  handlers.onDone('No new session', 'gone');
+  expect(chat.state.sessionId).toBe('gone');
+  expect(chat.state.missingSessionId).toBe('gone');
+  expect(chat.state.recoveryPrompt).toBe('Retain this question');
+  expect(chat.state.messages[0].text).toBe('Earlier question');
+  expect(chat.recoverWithNewSession('jarvis')).toBe(true);
+  handlers.onDone('New chat ready', 'new-session', undefined,
+    { command: 'new', sessionId: 'new-session' });
+
+  expect(chat.state.sessionId).toBe('new-session');
+  expect(chat.state.missingSessionId).toBeNull();
+  expect(chat.state.recoveryPrompt).toBe('Retain this question');
+  expect(chat.state.messages.map(message => message.text)).toEqual(['New chat ready']);
+  expect(saveConversation).toHaveBeenLastCalledWith('connection-1', expect.objectContaining({
+    sessionId: 'new-session', recoveryPrompt: 'Retain this question',
+  }));
+  expect(streamChat).toHaveBeenCalledTimes(3); // failed turn and two explicit /new attempts; no prompt replay.
+});
+
+test('a different default ID without explicit session transition cannot recover or replace history', async () => {
+  const chat = await opened();
+  chat.resume('gone', turns);
+  chat.send('Keep prompt', 'jarvis');
+  handlers.onError('Server returned HTTP 404', { kind: 'session_missing', sessionId: 'gone' });
+  const before = chat.state.messages.map(message => message.text);
+  expect(chat.recoverWithNewSession('jarvis')).toBe(true);
+  handlers.onDone('Unbound command result', 'default-session');
+
+  expect(chat.state.sessionId).toBe('gone');
+  expect(chat.state.missingSessionId).toBe('gone');
+  expect(chat.state.recoveryPrompt).toBe('Keep prompt');
+  expect(chat.state.messages.map(message => message.text).slice(0, before.length)).toEqual(before);
+  expect(chat.state.messages.at(-1)?.text).toContain('did not confirm a new conversation');
+  expect(chat.state.messages.at(-1)?.text).toContain('update the hub');
+  expect(chat.send('Blocked until confirmed recovery', 'jarvis')).toBe(false);
+});
+
+test('dismissing the retained prompt does not revoke explicit missing-session recovery', async () => {
+  const chat = await opened();
+  chat.resume('gone', turns);
+  chat.send('Save as draft', 'jarvis');
+  handlers.onError('Server returned HTTP 404', { kind: 'session_missing', sessionId: 'gone' });
+  chat.dismissRecoveryPrompt();
+  expect(chat.state.recoveryPrompt).toBeNull();
+  expect(chat.state.missingSessionId).toBe('gone');
+
+  expect(chat.recoverWithNewSession('jarvis')).toBe(true);
+  expect(streamChat).toHaveBeenLastCalledWith(config, '/new', 'jarvis', expect.any(Object), null);
+});
+
+test('stale missing-session callback cannot mark a newly resumed selection', async () => {
+  const chat = await opened();
+  chat.resume('gone', turns);
+  chat.send('Old question', 'jarvis');
+  const stale = handlers;
+  chat.resume('selected', turns);
+  stale.onError('Server returned HTTP 404', { kind: 'session_missing', sessionId: 'gone' });
+
+  expect(chat.state.sessionId).toBe('selected');
+  expect(chat.state.missingSessionId).toBeNull();
+  expect(chat.state.recoveryPrompt).toBeNull();
+});
+
+test('same-scope history selection clears missing authority but retains the unsent prompt', async () => {
+  const chat = await opened();
+  chat.resume('gone', turns);
+  chat.send('Save this draft', 'jarvis');
+  handlers.onError('Server returned HTTP 404', { kind: 'session_missing', sessionId: 'gone' });
+  chat.resume('history-selection', turns);
+
+  expect(chat.state.sessionId).toBe('history-selection');
+  expect(chat.state.missingSessionId).toBeNull();
+  expect(chat.state.recoveryPrompt).toBe('Save this draft');
+});
+
 test('selected image turn takes the same gate as streaming text and commits only scoped text', async () => {
   const chat = await opened();
   chat.resume('selected', turns);
@@ -263,4 +368,20 @@ test('stop or history selection revokes a selected image callback and aborts its
   expect(second.commit('Question', 'jarvis', 1, 'llava', 'Too late')).toBe(false);
   expect(chat.state.sessionId).toBe('two');
   expect(chat.state.messages).toHaveLength(2);
+});
+
+test('a retained unsent prompt must be used or dismissed before another text send can replace it', async () => {
+  const chat = await opened();
+  chat.resume('gone', turns);
+  chat.send('Original unsent message', 'jarvis');
+  handlers.onError('missing', { kind: 'session_missing', sessionId: 'gone' });
+  chat.resume('second', turns);
+  const calls = jest.mocked(streamChat).mock.calls.length;
+  expect(chat.send('Second unsent message', 'jarvis')).toBe(false);
+  expect(jest.mocked(streamChat).mock.calls).toHaveLength(calls);
+  expect(chat.state.recoveryPrompt).toBe('Original unsent message');
+  chat.dismissRecoveryPrompt();
+  expect(chat.send('Second unsent message', 'jarvis')).toBe(true);
+  handlers.onError('missing', { kind: 'session_missing', sessionId: 'second' });
+  expect(chat.state.recoveryPrompt).toBe('Second unsent message');
 });

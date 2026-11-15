@@ -101,10 +101,54 @@ describe('streamChat session continuity', () => {
     }
   });
 
+  it('classifies only the exact missing-session 404 for the valid requested ID', () => {
+    const { xhr, handlers } = start('thread_123');
+    xhr.status = 404;
+    xhr.responseText = JSON.stringify({ error: 'session_not_found' });
+    xhr.readyState = 4;
+    xhr.onreadystatechange?.();
+    expect(handlers.onError).toHaveBeenCalledWith('Server returned HTTP 404', {
+      kind: 'session_missing', sessionId: 'thread_123',
+    });
+  });
+
+  it('keeps other errors and malformed/nonexact 404 bodies message-only', () => {
+    const cases: Array<[number, string, string | undefined]> = [
+      [404, '{"detail":"session_not_found"}', 'thread_123'],
+      [404, '{"error":"Session_not_found"}', 'thread_123'],
+      [404, '{"error":"session_not_found"}', undefined],
+      [403, '{"error":"session_not_found"}', 'thread_123'],
+      [503, '{"error":"session_not_found"}', 'thread_123'],
+      [404, 'session_not_found', 'thread_123'],
+    ];
+    for (const [status, body, sessionId] of cases) {
+      const { xhr, handlers } = start(sessionId);
+      xhr.status = status;
+      xhr.responseText = body;
+      xhr.readyState = 4;
+      xhr.onreadystatechange?.();
+      expect(handlers.onError).toHaveBeenCalledTimes(1);
+      expect(handlers.onError.mock.calls[0]).toHaveLength(1);
+    }
+  });
+
   it('passes the end frame session ID to onDone', () => {
     const { xhr, handlers } = start();
     xhr.emit({ type: 'end', text: 'reply', session_id: 'new_thread' });
     expect(handlers.onDone).toHaveBeenCalledWith('reply', 'new_thread');
+  });
+
+  it('forwards only an exact session transition matching the successful end ID', () => {
+    const valid = start('missing');
+    valid.xhr.emit({ type: 'end', text: 'New chat ready', session_id: 'fresh',
+      session_transition: { command: 'new', session_id: 'fresh' } });
+    expect(valid.handlers.onDone).toHaveBeenCalledWith('New chat ready', 'fresh', undefined,
+      { command: 'new', sessionId: 'fresh' });
+
+    const invalid = start('missing');
+    invalid.xhr.emit({ type: 'end', text: 'No transition', session_id: 'fresh',
+      session_transition: { command: 'new', session_id: 'other' } });
+    expect(invalid.handlers.onDone).toHaveBeenCalledWith('No transition', 'fresh');
   });
 
   it('passes only a validated current-turn duration from an explicit end', () => {

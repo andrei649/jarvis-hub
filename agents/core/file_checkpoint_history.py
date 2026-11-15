@@ -256,6 +256,20 @@ class FileCheckpointHistory:
         self.scope = scope
         self._db = snapshots.directory / "history.sqlite3"
 
+    def session_diff(self, root: Path, *, stat_only: bool = False,
+                     max_bytes: int = 65536,
+                     paths: tuple[str, ...] | None = None) -> dict:
+        """Compare the oldest retained full-scope preimage to today's bounded tree.
+
+        This is an approximate project history, not a per-chat attribution. Its
+        reader never enters the write-capable history connection or lock.
+        None compares all verified rows; an empty tuple compares zero rows.
+        """
+        from .checkpoint_session_diff import session_diff
+
+        return session_diff(self, root, stat_only=stat_only, max_bytes=max_bytes,
+                            paths=paths)
+
     @contextlib.contextmanager
     def _connection(self):
         directory = self.snapshots.directory

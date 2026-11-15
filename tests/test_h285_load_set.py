@@ -577,3 +577,77 @@ def test_a_discovery_that_raises_leaves_no_stale_lists():
     _declare(skills_disabled=victim)
     loader._load_skill(path)
     assert victim not in loader.skills
+
+
+def test_mcp_reload_keeps_boot_load_set_after_settings_change(monkeypatch):
+    web, orch = _web(monkeypatch)
+    _declare(mcp_disabled="git")
+    web._load_mcp_config()
+    snapshot = orch.mcp.saved_reload_load_set
+    _declare(mcp_disabled="web", mcp_only="new")
+    assert snapshot == {"disabled": ("git",), "only": ()}
+    assert orch.mcp.saved_reload_load_set is snapshot
+
+
+def test_mcp_reload_held_commit_is_bound_to_serving_manager(monkeypatch):
+    web, orch = _web(monkeypatch)
+    _declare(mcp_disabled="git")
+    web._load_mcp_config()
+    old = orch.mcp
+    callback = old.saved_reload_commit_held
+    from agents.core.mcp.client import MCPManager
+
+    orch.mcp = MCPManager()
+    with pytest.raises(RuntimeError, match="manager_changed"):
+        callback([])
+    assert web.mcp_held_names() == {"git"}
+
+
+def test_mcp_reload_held_commit_copies_saved_rows_without_writing_settings(monkeypatch):
+    web, orch = _web(monkeypatch)
+    _declare(mcp_disabled="git")
+    web._load_mcp_config()
+    before = _saved()
+    updated = {"name": "git", "command": "npx updated", "trust": "full"}
+    orch.mcp.saved_reload_commit_held([updated])
+    updated["command"] = "changed later"
+    assert _saved() == before
+    web._save_mcp_config()
+    assert next(row for row in _saved() if row["name"] == "git")["command"] == "npx updated"
+
+
+async def test_confirmed_mcp_reread_uses_real_saved_settings_and_boot_filter(monkeypatch):
+    import re
+    from types import SimpleNamespace
+
+    from agents.core.commands import Principal
+    from agents.core.maintenance_commands import reload_mcp
+    from agents.core.mcp.client import MCPServer
+
+    web, orch = _web(monkeypatch)
+    _declare(mcp_disabled="git,ghost")
+    web._load_mcp_config()
+    settings_db.put_category("mcp", {"servers": [*SAVED, {
+        "name": "new", "command": "npx new", "transport": "stdio", "trust": "read-only"},
+        {"name": "ghost", "command": "npx ghost", "trust": "read-only"}]})
+    # A next-start load-set edit cannot activate the held server during this reload.
+    _declare(mcp_disabled="", mcp_only="git")
+    saved = _saved()
+
+    async def forbidden_connect(*_args, **_kwargs):
+        pytest.fail("saved config reread must not start a new or owner-stopped server")
+
+    monkeypatch.setattr(MCPServer, "connect", forbidden_connect)
+    ctx = SimpleNamespace(orch=orch, principal=Principal(channel="web", admin=True), args="")
+    preview = await reload_mcp(ctx)
+    match = re.search(r"/reload_mcp confirm ([A-Za-z0-9_-]+)", preview)
+    assert match, preview
+    assert set(orch.mcp.servers) == {"fs", "web"}
+    ctx.args = "confirm " + match.group(1)
+    result = await reload_mcp(ctx)
+    assert "applied" in result.lower(), result
+    assert set(orch.mcp.servers) == {"fs", "web", "new"}
+    assert all(not server.wanted for server in orch.mcp.servers.values())
+    assert web.mcp_held_names() == {"git", "ghost"}
+    assert load_set.status("mcp")["unknown"] == []
+    assert _saved() == saved

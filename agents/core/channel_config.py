@@ -95,6 +95,53 @@ class EnvOwned(Exception):
     """The environment (process or ``.env``) sets this name: it is edited there."""
 
 
+class FrontDoorRefused(Exception):
+    """H088: the write would leave an inbound channel answering any sender — the next start
+    would refuse it (``boot_guards.front_door_problem``, the one predicate both ask)."""
+
+
+def port_value(raw: object) -> int | None:
+    """H088 — THE channel port rule: a decimal port 1-65535, or None. The panel's
+    validation (:func:`normalise`) and the start's read of ``SMTP_PORT`` / ``IMAP_PORT``
+    (``agents/web.py``) both use it, so neither accepts a port the other would not."""
+    text = str(raw if raw is not None else "").strip()
+    if not text.isascii() or not text.isdigit() or len(text) > 5:
+        return None
+    value = int(text)
+    return value if 1 <= value <= 65535 else None
+
+
+def env_port(name: str, default: int) -> int:
+    """The port the start uses for *name*: :func:`port_value` of its environment value,
+    else *default* (a value the panel would refuse is not used)."""
+    from agents.core.env_config import env_str
+
+    value = port_value(env_str(name))
+    return default if value is None else value
+
+
+def front_door_check(changes: dict[str, str | None], environ=None) -> None:
+    """Refuse (:class:`FrontDoorRefused`) a write that opens an unguarded front door the
+    boot guard would refuse: the boot's own predicate (``boot_guards.front_door_problems``)
+    over the running process's environment, before and after *changes* (``None`` removes a
+    name). A write is refused when it adds a door to that list — a first one, or a second
+    one beside a door already refused; a write that adds none is not refused here. What
+    this cannot see: a ``.env`` edited by hand since the hub started."""
+    from agents.core.boot_guards import front_door_problems
+
+    env = dict(os.environ if environ is None else environ)
+    before = set(front_door_problems(env))
+    after_env = dict(env)
+    for name, value in changes.items():
+        for spelling in _spellings(name):
+            after_env.pop(spelling, None)
+        if value is not None:
+            after_env[name] = value
+    added = [problem for problem in front_door_problems(after_env) if problem not in before]
+    if added:
+        raise FrontDoorRefused(added[0].replace("Refusing to start: ", "Not saved: the next start would refuse it — ", 1))
+
+
 class InvalidValue(ValueError):
     """A value its field's kind does not accept; ``reason`` names the field, never the value."""
 
@@ -219,9 +266,10 @@ def normalise(field: Field, value: Any) -> str:
             raise InvalidValue(field.name)
         return text
     if field.kind == "port":
-        if not text.isdigit() or not 1 <= int(text) <= 65535:
+        port = port_value(text)
+        if port is None:
             raise InvalidValue(field.name)
-        return str(int(text))
+        return str(port)
     if field.kind == "secure_url":
         parts = urlsplit(text)
         host = (parts.hostname or "").lower()
@@ -429,6 +477,7 @@ def set_plain(channel_id: str, values: dict[str, Any]) -> dict:
         _check_managed(name)
         if plain_env_owned(name):
             raise EnvOwned(name)
+    front_door_check(planned)
     from agents.core import integration_keys
 
     to_clear: list[str] = []
@@ -477,6 +526,7 @@ def set_secret(channel_id: str, name: str, value: str) -> dict:
     field = ch.field(name) if ch is not None else None
     if field is None or not field.secret:
         raise KeyError(name)
+    front_door_check({name: str(value)} if isinstance(value, str) and value.strip() else {name: None})
     try:
         integration_keys.set_key(name, value, allowed=secret_names(), owner=f"channel.{channel_id}")
     except integration_keys.EnvManaged:
@@ -496,6 +546,7 @@ def clear_secret(channel_id: str, name: str) -> dict:
     field = ch.field(name) if ch is not None else None
     if field is None or not field.secret:
         raise KeyError(name)
+    front_door_check({name: None})
     try:
         integration_keys.clear_key(name, allowed=secret_names())
     except integration_keys.EnvManaged:

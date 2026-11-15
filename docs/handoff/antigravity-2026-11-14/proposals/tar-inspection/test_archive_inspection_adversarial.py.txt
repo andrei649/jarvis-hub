@@ -1,0 +1,62 @@
+"""Independent adversarial checks beyond the recovered 22-case contract."""
+import io
+import tarfile
+from pathlib import Path
+
+import pytest
+
+from agents.core import archive_safe as safe
+
+
+def make(path: Path, *, name='file', body=b'x', kind=tarfile.REGTYPE, pax=None):
+    with tarfile.open(path, 'w', format=tarfile.PAX_FORMAT) as tar:
+        member = tarfile.TarInfo(name)
+        member.size = len(body)
+        member.type = kind
+        member.pax_headers = pax or {}
+        tar.addfile(member, io.BytesIO(body))
+
+
+def test_pax_extended_name_uses_inspection_byte_cap(tmp_path):
+    path = tmp_path / 'pax.tar'
+    make(path, name='x' * 4097)
+    with pytest.raises(safe.ArchiveRejected, match='name'):
+        safe.inspect_tar_path(path)
+
+
+def test_pax_sparse_is_rejected_by_shared_guard(tmp_path):
+    path = tmp_path / 'sparse.tar'
+    make(path, pax={'GNU.sparse.major': '1', 'GNU.sparse.minor': '0',
+                    'GNU.sparse.name': 'holes', 'GNU.sparse.realsize': '1000'})
+    with pytest.raises(safe.ArchiveRejected, match='sparse'):
+        safe.inspect_tar_path(path)
+
+
+def test_raw_negative_declared_size_is_refused(tmp_path):
+    path = tmp_path / 'negative.tar'
+    info = tarfile.TarInfo('negative')
+    info.size = -1
+    path.write_bytes(info.tobuf(format=tarfile.GNU_FORMAT) + b'\0' * 1024)
+    with pytest.raises(safe.ArchiveRejected):
+        safe.inspect_tar_path(path)
+
+
+def test_zero_trailing_padding_is_bounded(tmp_path, monkeypatch):
+    path = tmp_path / 'padding.tar'
+    make(path)
+    monkeypatch.setattr(safe, '_MAX_TRAILING_PADDING', 512)
+    with pytest.raises(safe.ArchiveRejected, match='end-of-archive'):
+        safe.inspect_tar_path(path)
+
+
+def test_selection_uses_normalized_name_not_raw_spelling(tmp_path):
+    path = tmp_path / 'normalized.tar'
+    make(path, name='./folder/file')
+    assert safe.inspect_tar_path(path, read_members=['folder/file'])['folder/file']['data'] == b'x'
+    assert safe.inspect_tar_path(path, read_members=['./folder/file'])['folder/file']['data'] is None
+
+
+def test_missing_archive_surfaces_oserror_without_creating_destination(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        safe.inspect_tar_path(tmp_path / 'absent')
+    assert list(tmp_path.iterdir()) == []

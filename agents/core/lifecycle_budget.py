@@ -30,6 +30,9 @@ DEFAULT_WARMUP_TIMEOUT = 20.0
 MAX_WARMUP_TIMEOUT = 300.0
 #: Per-channel stop, per cancelled background task, per plugin/backend close step.
 CHANNEL_STOP_BUDGET = 3.0
+# A platform resume may need one remote handshake; never hold its chat command
+# indefinitely. A late SDK worker is fenced and cleaned up by ChannelManager.
+CHANNEL_START_BUDGET = 30.0
 TASK_CANCEL_BUDGET = 2.0
 CLOSE_STEP_BUDGET = 3.0
 
@@ -161,6 +164,6 @@ async def wait_task(task: asyncio.Future, budget: float, what: str) -> bool:
 
 
 __all__ = [
-    "CHANNEL_STOP_BUDGET", "CLOSE_STEP_BUDGET", "DEFAULT_WARMUP_TIMEOUT", "TASK_CANCEL_BUDGET", "WARMUP",
+    "CHANNEL_START_BUDGET", "CHANNEL_STOP_BUDGET", "CLOSE_STEP_BUDGET", "DEFAULT_WARMUP_TIMEOUT", "TASK_CANCEL_BUDGET", "WARMUP",
     "WARMUP_SETTING", "WarmupState", "bounded", "gate_warmup", "wait_task", "warmup_timeout",
 ]

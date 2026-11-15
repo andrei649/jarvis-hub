@@ -178,18 +178,18 @@ def test_the_sentence_sent_back_never_carries_the_handle_or_the_caption():
 
 
 def test_only_kinds_with_a_reading_path_report_readable():
-    """Photos and voice notes read; nothing else does, and nothing else may claim to.
+    """Photos, voice notes, documents and static stickers have guarded readers.
 
     This is the honesty invariant, not a snapshot of today's set: a kind belongs
     in READABLE_KINDS only once code exists that turns it into model input. Voice
-    needs a local speech engine, documents need extraction that is not built.
+    needs a local speech engine; documents need matching bytes and stickers WebP.
     """
-    assert set(READABLE_KINDS) == {"photo", "voice"}
+    assert set(READABLE_KINDS) == {"photo", "voice", "document", "sticker"}
     for kind in RECOGNISED_KINDS:
         att = classify({kind: {"file_id": "x"} if kind not in ("photo",)
                         else [{"file_id": "x"}]})
         assert att is not None
-        assert att.readable is (kind in ("photo", "voice")), kind
+        assert att.readable is (kind in ("photo", "voice", "document", "sticker")), kind
 
 
 def test_a_photo_says_it_was_received_rather_than_that_nothing_can_read_it():
@@ -197,7 +197,7 @@ def test_a_photo_says_it_was_received_rather_than_that_nothing_can_read_it():
 
 
 def test_a_kind_with_no_reading_path_still_says_so():
-    assert "not wired up yet" in describe(classify({"document": {"file_id": "d"}}))
+    assert "not wired up yet" in describe(classify({"video": {"file_id": "d"}}))
 
 
 def test_a_read_failure_beats_the_pipeline_answer(monkeypatch):
@@ -300,7 +300,8 @@ def _channel(policy=None):
         turns.append((text, kwargs))
         return "ok"
 
-    ch = TelegramChannel(token="t", handler=handler, group_policy=policy)
+    ch = TelegramChannel(token="t", handler=handler, group_policy=policy,
+                         allowed_user_ids=[42])
     ch._bot_id, ch._bot_username = BOT_ID, BOT
 
     async def fake_send(message, chat_id=None, **kwargs):
@@ -411,9 +412,9 @@ def test_the_channel_declares_what_it_now_recognises():
 
 def test_the_descriptor_separates_recognising_from_reading():
     d = TelegramChannel.descriptor
-    assert d.reads_media == ("photo", "voice")
+    assert d.reads_media == ("document", "photo", "sticker", "voice")
     assert set(d.reads_media) < set(d.recognises_media)
-    assert "document" in d.recognises_media and "document" not in d.reads_media
+    assert "video" in d.recognises_media and "video" not in d.reads_media
 
 
 def test_a_descriptor_cannot_claim_to_read_what_it_never_recognised():

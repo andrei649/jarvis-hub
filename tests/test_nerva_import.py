@@ -166,6 +166,18 @@ def home(tmp_path):
     )
     (claude / "skills" / "brief").mkdir(parents=True)
     (claude / "skills" / "brief" / "SKILL.md").write_text("---\nname: brief\ndescription: Morning brief.\n---\n# Brief\n", encoding="utf-8")
+
+    codex = tmp_path / ".codex"
+    (codex / "skills" / "codex-review").mkdir(parents=True)
+    (codex / "skills" / "codex-review" / "SKILL.md").write_text(
+        "---\nname: codex-review\ndescription: Codex review helper.\n---\n# Codex Review\n", encoding="utf-8"
+    )
+    (codex / "AGENTS.md").write_text("# Codex Instructions\nPrefer deterministic tests.\n", encoding="utf-8")
+    (codex / "memory.md").write_text("- Prefers pytest -q\n", encoding="utf-8")
+    (codex / "config.toml").write_text(
+        'model = "gpt-5"\napi_key = "sk-codex-1"\n[env]\nOPENAI_API_KEY = "sk-codex-env-1"\n',
+        encoding="utf-8",
+    )
     return tmp_path
 
 

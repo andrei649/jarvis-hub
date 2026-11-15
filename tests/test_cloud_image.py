@@ -954,7 +954,7 @@ async def test_a_mediation_store_that_breaks_at_dispatch_fails_the_task_before_t
     fails the task before any handler runs (as a refused validation always did), names
     the store, and records nothing for the capability — the handler never ran."""
     # Serial and parallel ticks share this exact pre-handler validation seam.
-    hits = _break_mediation_store_inside(cloud.queue, "_run_runnable")
+    hits = _break_mediation_store_inside(cloud.queue, "_run_runnable_admitted")
     task = await finish(cloud)
     assert hits and not cloud.requests
     assert task.status == "failed"

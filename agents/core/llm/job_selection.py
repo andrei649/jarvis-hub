@@ -147,6 +147,23 @@ def apply_selection(router, agent_id, backend, model, route):
     selection = current_selection()
     if selection is None:
         return backend, model, route
+    if selection.model and selection.model.startswith('moa:'):
+        if selection.provider is not None:
+            raise SelectionError('moa preset pins define their own member providers; omit provider')
+        from .moa import MoAConfigError
+        try:
+            backend, model, route = router.resolve_moa_preset(agent_id, selection.model)
+        except MoAConfigError as exc:
+            raise SelectionError(str(exc)) from exc
+        probe = getattr(backend, 'context_window', None)
+        window = probe(model) if callable(probe) else 32768
+        if type(window) is not int or window < 2048:
+            raise SelectionError('pinned context window is too small for the job runtime')
+        resolved = selection.lifetime.resolved
+        if resolved is not None and (resolved[0] is not backend or resolved[1:] != (model, window)):
+            raise SelectionError('job provider/model/window changed during execution')
+        selection.lifetime.resolved = (backend, model, window)
+        return scoped_backend(backend, model), model, route
     if route.startswith(('local', 'ollama')):
         provider = 'ollama' if backend is getattr(router, '_ollama_backend', None) else router._backend_name
     elif route == 'claude':

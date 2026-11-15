@@ -25,7 +25,8 @@ import { useThemeStyles, type Theme } from '../theme';
 import { waitForMicrophoneIdle, type DictationState } from '../voice/pushToTalk';
 import { BriefingWall } from './BriefingWall';
 
-const EMPTY_CONVERSATION: ConversationState = { sessionId: null, messages: [], ready: false, sending: false, turnOutcome: null };
+const EMPTY_CONVERSATION: ConversationState = { sessionId: null, messages: [], ready: false, sending: false,
+  turnOutcome: null, missingSessionId: null, recoveryPrompt: null };
 
 /** Flatten Markdown to plain text so TTS doesn't read syntax characters aloud. */
 function toPlain(md: string): string {
@@ -47,7 +48,16 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   const state = snapshot.scope === chatScope && snapshot.connectionEpoch === connectionEpoch
     ? snapshot.state : EMPTY_CONVERSATION;
   const { messages, sending } = state;
+  const missingCurrentSession = Boolean(state.missingSessionId && state.missingSessionId === state.sessionId);
+  const pendingRecoveryPrompt = Boolean(state.recoveryPrompt);
   const [input, setInput] = useState('');
+  const blockedBySavedPrompt = pendingRecoveryPrompt && !['/new', '/reset', '/undo'].includes(input.trim());
+  const inputValue = useRef('');
+  const updateInput = (value: string | ((previous: string) => string)) => {
+    const next = typeof value === 'function' ? value(inputValue.current) : value;
+    inputValue.current = next;
+    setInput(next);
+  };
   const draftVersion = useRef(0);
   const commandsOpenVersion = useRef(0);
   const commandsOpenContext = useRef('');
@@ -98,7 +108,7 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   const onTranscript = useCallback((text: string) => {
     if (currentDictationContext.current !== dictationContext || !canAcceptDictation.current || !text.trim()) return;
     ++draftVersion.current;
-    setInput(previous => previous ? `${previous}\n${text}` : text);
+    updateInput(previous => previous ? `${previous}\n${text}` : text);
     setDictatedLine({ context: dictationContext, text });
   }, [dictationContext]);
   const listRef = useRef<FlatList<ChatMessage>>(null);
@@ -205,13 +215,13 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
     // A user can still edit the composer while a modal is open. Keep that newer draft.
     if (commandContext === commandsOpenContext.current && draftVersion.current === commandsOpenVersion.current) {
       ++draftVersion.current;
-      setInput(command);
+      updateInput(command);
     }
   }, [commandContext]);
 
   const send = useCallback(() => {
     if (!configured || conversation.current?.scope !== chatScope) return;
-    if (conversation.current.chat.send(input, agent)) { ++draftVersion.current; setInput(''); }
+    if (conversation.current.chat.send(input, agent)) { ++draftVersion.current; updateInput(''); }
   }, [agent, configured, input, chatScope]);
 
   const stop = useCallback(() => {
@@ -219,7 +229,9 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
   }, [chatScope]);
 
   const newChat = useCallback(() => {
-    if (!configured || conversation.current?.scope !== chatScope) return;
+    const owner = conversation.current;
+    if (!configured || owner?.scope !== chatScope || owner.connectionEpoch !== connectionEpoch
+      || owner.chat.state.sessionId !== state.sessionId) return;
     revokeDictation();
     commandsOpenContext.current = '';
     speechGeneration.current++;
@@ -227,9 +239,37 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
     setSpeakingId(null);
     setCommandsOpen(false);
     setSelectedOpen(false);
+    // A deleted selected session must be escaped with an unbound /new request.
+    // The failed message remains a recoverable draft and is never resent here.
+    if (state.missingSessionId === state.sessionId && state.missingSessionId) {
+      if (owner.chat.state.missingSessionId !== state.missingSessionId) return;
+      owner.chat.recoverWithNewSession(agent);
+      return;
+    }
     // Only a successful governed /new response changes the transcript and session.
-    conversation.current.chat.send('/new', agent);
-  }, [agent, configured, chatScope, revokeDictation]);
+    owner.chat.send('/new', agent);
+  }, [agent, configured, chatScope, connectionEpoch, revokeDictation, state.missingSessionId, state.sessionId]);
+
+  const addRecoveryPromptToDraft = useCallback(() => {
+    const owner = conversation.current;
+    const prompt = state.recoveryPrompt;
+    if (!configured || !prompt?.trim() || !owner || owner.scope !== chatScope
+      || owner.connectionEpoch !== connectionEpoch || owner.chat.state.recoveryPrompt !== prompt
+      || snapshot.scope !== chatScope || snapshot.connectionEpoch !== connectionEpoch) return;
+    // The functional update appends to the latest composer value, preserving any
+    // newer typed or dictated draft. This action never invokes send().
+    ++draftVersion.current;
+    const latestDraft = inputValue.current;
+    updateInput(latestDraft.trim() ? `${latestDraft}\n${prompt}` : prompt);
+    owner.chat.dismissRecoveryPrompt();
+  }, [configured, chatScope, connectionEpoch, snapshot.connectionEpoch, snapshot.scope, state.recoveryPrompt]);
+
+  const dismissRecoveryPrompt = useCallback(() => {
+    const owner = conversation.current;
+    if (!owner || owner.scope !== chatScope || owner.connectionEpoch !== connectionEpoch
+      || owner.chat.state.recoveryPrompt !== state.recoveryPrompt) return;
+    owner.chat.dismissRecoveryPrompt();
+  }, [chatScope, connectionEpoch, state.recoveryPrompt]);
 
   const handleSpeak = useCallback(
     (m: ChatMessage) => {
@@ -347,6 +387,43 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
         </View>
       </View>
 
+      {missingCurrentSession || state.recoveryPrompt ? (
+        <View style={styles.recoveryCard} accessibilityLabel="Unsent message recovery">
+          <Text style={styles.recoveryTitle}>
+            {state.missingSessionId === state.sessionId && state.missingSessionId
+              ? 'This chat session is unavailable.' : 'Your unsent message is saved.'}
+          </Text>
+          <Text style={styles.recoveryBody}>
+            {state.missingSessionId === state.sessionId && state.missingSessionId
+              ? 'Start a new chat, then add this message to your draft when you are ready. It will not be sent automatically.'
+              : 'Add this message to your draft when you are ready. It will not be sent automatically.'}
+          </Text>
+          {state.recoveryPrompt ? (
+            <Text style={styles.recoveryPrompt} numberOfLines={4} ellipsizeMode="tail">
+              {state.recoveryPrompt}
+            </Text>
+          ) : null}
+          {state.missingSessionId === state.sessionId && state.missingSessionId ? (
+            <Pressable style={styles.recoveryAction} onPress={newChat} disabled={sending || !state.ready}
+              accessibilityRole="button" accessibilityLabel="Start new chat">
+              <Text style={styles.recoveryActionText}>Start new chat</Text>
+            </Pressable>
+          ) : null}
+          {state.recoveryPrompt ? (
+            <View style={styles.recoveryActions}>
+              <Pressable style={styles.recoveryAction} onPress={addRecoveryPromptToDraft}
+                accessibilityRole="button" accessibilityLabel="Add unsent message to draft">
+                <Text style={styles.recoveryActionText}>Add to draft</Text>
+              </Pressable>
+              <Pressable style={styles.recoveryDismiss} onPress={dismissRecoveryPrompt}
+                accessibilityRole="button" accessibilityLabel="Dismiss saved message">
+                <Text style={styles.recoveryDismissText}>Dismiss</Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+
       <FlatList
         ref={listRef}
         data={messages}
@@ -372,6 +449,16 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
         </Text>
       ) : null}
 
+      {missingCurrentSession ? (
+        <Text style={styles.recoverySendNote} accessibilityLabel="Choose recovery before sending">
+          Start a new chat or choose a saved conversation before sending.
+        </Text>
+      ) : pendingRecoveryPrompt ? (
+        <Text style={styles.recoverySendNote} accessibilityLabel="Review saved message before sending">
+          Add or dismiss your saved message before sending another message.
+        </Text>
+      ) : null}
+
       {selectedOpen && conversation.current?.scope === chatScope ? <SelectedImages
         key={`${chatScope}:${connectionEpoch}:${state.sessionId ?? 'none'}:${agent}`}
         config={config} scope={chatScope} connectionEpoch={connectionEpoch} sessionId={state.sessionId}
@@ -382,7 +469,7 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
         <TextInput
           style={styles.input}
           value={input}
-          onChangeText={text => { ++draftVersion.current; setInput(text); }}
+          onChangeText={text => { ++draftVersion.current; updateInput(text); }}
           placeholder={state.ready ? 'Message Jarvis…' : 'Restoring conversation…'}
           placeholderTextColor={theme.textDim}
           multiline
@@ -396,9 +483,9 @@ export function ChatScreen({ onGoToSettings }: { onGoToSettings: () => void }) {
           </Pressable>
         ) : (
           <Pressable
-            style={[styles.sendBtn, (!input.trim() || !state.ready) && styles.sendBtnDisabled]}
+            style={[styles.sendBtn, (!input.trim() || !state.ready || missingCurrentSession || blockedBySavedPrompt) && styles.sendBtnDisabled]}
             onPress={send}
-            disabled={!input.trim() || !state.ready}
+            disabled={!input.trim() || !state.ready || missingCurrentSession || blockedBySavedPrompt}
           >
             <Text style={styles.sendText}>Send</Text>
           </Pressable>
@@ -442,7 +529,32 @@ const makeStyles = (theme: Theme) => StyleSheet.create({
   speechTitle: { color: theme.text, fontSize: 13, fontWeight: '600' },
   speechNote: { color: theme.textDim, fontSize: 12, marginTop: 4 },
   listContent: { padding: 12, paddingBottom: 16 },
+  recoveryCard: {
+    marginHorizontal: 12,
+    marginTop: 8,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: theme.surfaceAlt,
+    gap: 8,
+  },
+  recoveryTitle: { color: theme.text, fontSize: 14, fontWeight: '700' },
+  recoveryBody: { color: theme.textDim, fontSize: 13, lineHeight: 18 },
+  recoveryPrompt: { color: theme.text, fontSize: 14, lineHeight: 19 },
+  recoveryActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  recoveryAction: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
+    backgroundColor: theme.accent,
+  },
+  recoveryActionText: { color: '#02121b', fontSize: 13, fontWeight: '700' },
+  recoveryDismiss: { paddingHorizontal: 10, paddingVertical: 7 },
+  recoveryDismissText: { color: theme.textDim, fontSize: 13, fontWeight: '600' },
   turnDuration: { color: theme.textDim, fontSize: 12, paddingHorizontal: 12, paddingVertical: 6 },
+  recoverySendNote: { color: theme.textDim, fontSize: 12, paddingHorizontal: 12, paddingBottom: 4 },
   hint: { alignItems: 'center', marginTop: 48 },
   hintText: { color: theme.textDim, fontSize: 14 },
   inputBar: {

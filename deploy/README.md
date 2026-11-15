@@ -20,8 +20,12 @@ pinned variable under that same spelling — in `jarvis.env`, or with the PowerS
 script's parameters. `NERVA_HOST` beside the unit's `JARVIS_HOST` is one variable set
 twice with two values: the hub refuses to start and names it. That is exit status 78
 from the hub and from the runtime supervisor, and neither unit (nor the NSSM service:
-`AppExit 78 Exit`) restarts on it. (A refusal that comes from a `.env` file exits 1 and
-is retried as usual: the file may have been caught mid-save.) Every variable the launcher
+`AppExit 78 Exit`) restarts on it. Every boot guard's refusal is 78 too (H089): a
+non-loopback bind without a token, an inbound channel nothing guards, a mistyped posture
+flag, a hardened profile without its audit key, a refused profile name. A refusal that
+comes from a `.env` file exits 1 and is retried (the file may have been caught mid-save,
+or you are still editing it); it becomes 78 once the same refusal has persisted for 60 s
+or three starts in a row. Every variable the launcher
 does not pin can be written either way. The full list is in
 [`docs/FLAGS.md`](../docs/FLAGS.md#variable-names--nerva_x-and-jarvis_x-are-one-variable-rb-2).
 

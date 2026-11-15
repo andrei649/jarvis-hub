@@ -81,7 +81,11 @@ export function JobsPanel() {
   const blueprints: any[] = arr(bp.d, 'blueprints');
 
   const [diagnostic,setDiagnostic] = useState('');
+  const [incidentRows, setIncidentRows] = useState<any[] | null>(null);
+  const [recentRuns, setRecentRuns] = useState<any[] | null>(null);
   const [notes,setNotes] = useState<Record<string,string>>({});
+  const [kvEntries, setKvEntries] = useState<Record<string, { key: string; value: string }[] | null>>({});
+  const [kvDraft, setKvDraft] = useState<Record<string, { key: string; value: string }>>({});
   const [custom,setCustom] = useState(false);
   const [typed,setTyped] = useState<Record<string, string | number>>({});
   const [options,setOptions] = useState<JobOptions>({});
@@ -222,12 +226,35 @@ export function JobsPanel() {
   return (
     <Card title="SCHEDULED JOBS" live={asLive(d)} sub={jobs.length} onReload={reload}>
       <State e={e} loading={loading} n={jobs.length} />
-      <div style={{display:'flex',gap:6}}>
-        <button className="tool-btn" onClick={()=>apiGet('/api/jobs/doctor',{admin:true}).then(r=>setDiagnostic(JSON.stringify(r,null,2))).catch(e=>setDiagnostic(refusalReason(e)))}>doctor</button>
-        <button className="tool-btn" onClick={()=>apiGet('/api/jobs/incidents',{admin:true}).then(r=>setDiagnostic(JSON.stringify(r,null,2))).catch(e=>setDiagnostic(refusalReason(e)))}>incidents</button>
+      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+        <button className="tool-btn" onClick={()=>apiGet('/api/jobs/doctor',{admin:true}).then(r=>{setIncidentRows(null);setDiagnostic(JSON.stringify(r,null,2));}).catch(e=>setDiagnostic(refusalReason(e)))}>doctor</button>
+        <button className="tool-btn" onClick={()=>apiGet('/api/jobs/incidents',{admin:true}).then((r:any)=>{const rows=arr(r,'incidents');setIncidentRows(rows);setDiagnostic(rows.length?'':'no open or recorded incidents');}).catch(e=>setDiagnostic(refusalReason(e)))}>incidents</button>
+        <button className="tool-btn" onClick={()=>recentRuns?setRecentRuns(null):apiGet('/api/jobs/runs?limit=20',{admin:true}).then((r:any)=>setRecentRuns(arr(r,'runs'))).catch(e=>setDiagnostic(refusalReason(e)))}>recent runs</button>
         {alive===false && <button className="tool-btn" onClick={()=>actA('/api/jobs/tick',{},r=>{setDiagnostic(JSON.stringify(r,null,2));reload();},e=>setDiagnostic(refusalReason(e)))}>tick due jobs ({scheduler?.timezone || 'hub time'})</button>}
       </div>
       {diagnostic && <pre style={{fontSize:10,whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{diagnostic}</pre>}
+      {incidentRows && incidentRows.length > 0 && (
+        <div aria-label="job incidents" style={{ padding: '4px 0' }}>
+          {incidentRows.map((inc: any) => (
+            <Row key={String(inc.id)}>
+              <span style={mono}>#{inc.id}</span>
+              <span style={{ fontSize: 10 }}>{inc.job_id} · {inc.state || 'detected'} · {String(inc.summary || inc.reason || inc.kind || '').slice(0, 120)}</span>
+              {inc.state !== 'closed' && (
+                <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={() => actA(`/api/jobs/incidents/${encodeURIComponent(String(inc.id))}/ack`, {}, (r: any) => { setIncidentRows((prev) => (prev || []).map((x) => (x.id === inc.id ? (r?.incident || { ...x, state: 'closed' }) : x))); setDiagnostic(`acknowledged incident #${inc.id}`); }, (err: any) => setDiagnostic(`refused · ${refusalReason(err)}`))}>ack incident #{inc.id}</button>
+              )}
+            </Row>
+          ))}
+        </div>
+      )}
+      {recentRuns && (
+        <div aria-label="cross-job recent runs" style={{ padding: '4px 0' }}>
+          {recentRuns.length === 0 ? <Note>no cross-job runs recorded yet</Note> : recentRuns.map((r: any, i: number) => (
+            <Note key={`${r.job_id || 'job'}-${i}`}>
+              <span style={mono}>{r.job_id}</span> · <span style={{ color: STATUS_COLOR[r.status] || 'var(--ink-2)' }}>{r.status}</span> · {r.started_at} · {String(r.summary || r.error || '').slice(0, 140)}
+            </Note>
+          ))}
+        </div>
+      )}
       {scheduler && alive === false && (
         <Note c="var(--amber)">scheduler not running — nothing will fire until the hub restarts its heartbeat scheduler</Note>
       )}
@@ -266,7 +293,26 @@ export function JobsPanel() {
                 <ScheduleBuilder onChange={when=>setEditing(m=>({...m,[id]:{...m[id]!,when}}))}/>
                 <label>Action JSON<textarea aria-label={`action for ${id}`} value={editing[id]!.action} style={{...inpS,width:'100%'}} onChange={ev=>setEditing(m=>({...m,[id]:{...m[id]!,action:ev.target.value}}))}/></label>
                 <label>Notes<textarea aria-label={`notepad for ${id}`} maxLength={4096} style={{...inpS,width:'100%'}} value={notes[id] || ''} onChange={e=>setNotes(m=>({...m,[id]:e.target.value}))}/></label>
-                <button className="tool-btn" onClick={()=>apiPut(`/api/jobs/${encodeURIComponent(id)}/notepad`,{text:notes[id] || ''},{admin:true}).then(()=>{setRunNote(m=>({...m,[id]:'notes saved'}));reload();}).catch(e=>setRunNote(m=>({...m,[id]:refusalReason(e)})))}>save notes</button>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <button className="tool-btn" onClick={()=>apiPut(`/api/jobs/${encodeURIComponent(id)}/notepad`,{text:notes[id] || ''},{admin:true}).then(()=>{setRunNote(m=>({...m,[id]:'notes saved'}));reload();}).catch(e=>setRunNote(m=>({...m,[id]:refusalReason(e)})))}>save notes</button>
+                  <button className="tool-btn" onClick={()=>kvEntries[id]?setKvEntries(m=>({...m,[id]:null})):apiGet(`/api/jobs/${encodeURIComponent(id)}/notepad/keys`,{admin:true}).then((r:any)=>setKvEntries(m=>({...m,[id]:arr(r,'entries')}))).catch(e=>setRunNote(m=>({...m,[id]:`refused · ${refusalReason(e)}`})))}>notepad keys</button>
+                </div>
+                {kvEntries[id] !== undefined && kvEntries[id] !== null && (
+                  <div aria-label={`notepad keys for ${id}`} style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 6px', border: '1px solid var(--panel-line)', borderRadius: 4 }}>
+                    {kvEntries[id]!.map((kv) => (
+                      <Row key={kv.key}>
+                        <span style={mono}>{kv.key}</span>
+                        <span style={{ fontSize: 10, color: 'var(--ink-2)' }}>{kv.value}</span>
+                        <button className="tool-btn" style={{ marginLeft: 'auto' }} onClick={() => apiDelete(`/api/jobs/${encodeURIComponent(id)}/notepad/keys?key=${encodeURIComponent(kv.key)}`, { admin: true }).then(() => { setKvEntries((m) => ({ ...m, [id]: (m[id] || []).filter((x) => x.key !== kv.key) })); setRunNote((m) => ({ ...m, [id]: `deleted key ${kv.key}` })); }).catch((err) => setRunNote((m) => ({ ...m, [id]: `refused · ${refusalReason(err)}` })))}>delete key {kv.key}</button>
+                      </Row>
+                    ))}
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      <input aria-label={`notepad key name for ${id}`} placeholder="key" value={kvDraft[id]?.key || ''} onChange={(ev) => setKvDraft((m) => ({ ...m, [id]: { key: ev.target.value, value: m[id]?.value || '' } }))} style={{ ...inpS, width: 120 }} />
+                      <input aria-label={`notepad key value for ${id}`} placeholder="value" value={kvDraft[id]?.value || ''} onChange={(ev) => setKvDraft((m) => ({ ...m, [id]: { key: m[id]?.key || '', value: ev.target.value } }))} style={{ ...inpS, flex: 1, minWidth: 140 }} />
+                      <button className="tool-btn" onClick={() => { const k = (kvDraft[id]?.key || '').trim(); const v = kvDraft[id]?.value || ''; if (!k) return; apiPut(`/api/jobs/${encodeURIComponent(id)}/notepad/keys`, { key: k, value: v }, { admin: true }).then(() => { setKvEntries((m) => ({ ...m, [id]: [...(m[id] || []).filter((x) => x.key !== k), { key: k, value: v }] })); setKvDraft((m) => ({ ...m, [id]: { key: '', value: '' } })); setRunNote((m) => ({ ...m, [id]: `saved key ${k}` })); }).catch((err) => setRunNote((m) => ({ ...m, [id]: `refused · ${refusalReason(err)}` }))); }}>set key</button>
+                    </div>
+                  </div>
+                )}
                 <OptionsEditor toolsets={arr(toolCatalog.d, 'toolsets')} value={editing[id]!.options} onChange={options=>setEditing(m=>({...m,[id]:{...m[id]!,options}}))}/>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button className="tool-btn" onClick={() => saveEdit(id)}>save</button>

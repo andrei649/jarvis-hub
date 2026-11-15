@@ -358,7 +358,15 @@ async def test_navigation_with_a_transport_still_honours_the_allowlist():
     assert driver.calls == []
 
 
-async def test_an_allowlisted_navigation_reaches_the_driver_once_a_transport_exists():
+async def test_an_allowlisted_navigation_reaches_the_driver_once_a_transport_exists(monkeypatch):
+    import socket
+
+    # Supply only DNS; the actual SSRF check and egress allowlist still decide.
+    def resolve(host, port, *args, **kwargs):
+        assert host == "example.com"
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port or 443))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
     driver = NullBrowserDriver()
     browser = GovernedBrowser(
         driver=driver, policy=BrowserPolicy(["example.com"]), transport=object()

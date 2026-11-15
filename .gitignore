@@ -8,6 +8,7 @@ __pycache__/
 .env
 memory_logs/
 memory_logs-profiles/
+.memory_logs-channel-claims/
 /logs/
 skills/imported/
 *.egg-info/

@@ -1724,10 +1724,18 @@ class AutonomyCoordinator:
             trust=self._session_trust_check(),
         )
 
+        previous_acquisition = getattr(self._orch, "acquisition", None)
+        retire_routes = getattr(previous_acquisition, "retire_extension_command_routes", None)
+        if callable(retire_routes):
+            retire_routes()
         acquisition = AcquisitionRuntime(
-            enabled=lambda: _get_setting("acquisition.enabled", False) is True,
+            enabled=lambda: (getattr(self._orch, "acquisition", None) is acquisition
+                             and _get_setting("acquisition.enabled", False) is True),
+            commands=getattr(self._orch, "commands", None),
         )
         bind_external_orchestrator_attribute(self._orch, "acquisition", acquisition)
+        # Read routing metadata only; no promotion or sandbox runs during startup.
+        acquisition.restore_extension_commands()
 
         # Hermes absorption 3b — least privilege at the moment of offering: the profile
         # (agent × surface × principal) decides which registered tools this turn's model
@@ -1819,11 +1827,31 @@ class AutonomyCoordinator:
         # is a state the status route has to be able to report honestly.
         bind_external_orchestrator_attribute(self._orch, "session_kernels", kernels)
 
+        def _execute_code_usable() -> bool:
+            # H295 — hide execute_code from the turn's offer when no isolated Docker/WASM
+            # sandbox backend is reachable, instead of offering it and refusing at call time
+            # with sandbox_not_isolated. Cached (~30 s TTL + ~60 s last-known-good grace).
+            box = getattr(self._orch, "sandbox", None)
+            probe = getattr(box, "is_isolated", None)
+            if not callable(probe):
+                return False
+            return bool(probe())
+
+        def _browser_session_bound() -> bool:
+            session_id = str(getattr(self._orch, "session_id", "") or "")
+            broker = getattr(self._orch, "browser_broker", None)
+            has_session = getattr(broker, "has_bound_session", None)
+            if callable(has_session) and session_id:
+                return bool(has_session(session_id))
+            return False
+
         tool_profile = self._tool_profile = ToolProfileResolver(
             settings=_get_setting,
             agent_patterns=_agent_tool_patterns,
             principal=_turn_principal,
             shared_session=_on_shared_session,
+            check_fns={"execute_code": _execute_code_usable},
+            bypass_check_cache=_browser_session_bound,
         )
         # H315 — the model keeps a checklist of the turn's work and re-reads it on every
         # call. Ungated: it writes the session's own list, which the owner reads next to
@@ -2240,8 +2268,11 @@ class AutonomyCoordinator:
                 _task_budget, _reaper_ttl,
             )
         _budget_ledger = getattr(self._orch, "budget_ledger", None)
+        from .restart_runtime import runtime_for
+
         executor = TaskExecutor(
             fallback=_llm,
+            restart_runtime=runtime_for(self._orch),
             max_wall_seconds=_task_budget,
             budget_ledger=_budget_ledger,
             execution_guard=getattr(self._orch.autonomy, "execution_allowed", None),
@@ -2383,6 +2414,8 @@ class AutonomyCoordinator:
                 audit=getattr(self._orch, "audit", None),
                 kernel=_broker_kernel,
                 task_reader=getattr(getattr(self._orch, "autonomy_queue", None), "get", None),
+                discord_media_owner=lambda sender, channel_id: self._orch._channel_principal(
+                    "discord", sender, channel_id, "private").admin is True,
             ),
         )
         executor.register("channel.reply", self._orch.channel_replies.execute)
@@ -2668,6 +2701,7 @@ class AutonomyCoordinator:
                 worktree_provider=self._subagent_worktree,
                 read_only_probe=self._tool_is_read_only,
                 stall_seconds=lambda: self._orch.get_setting("autonomy.subagent_stall_seconds", 120),
+                admission_runtime=runtime_for(self._orch),
             ),
         )
         self._g18_kernel = _action_kernel

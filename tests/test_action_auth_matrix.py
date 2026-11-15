@@ -1141,6 +1141,56 @@ def _exercise(kind, spy, tmp_path, monkeypatch=None):
             assert code == (503 if enabled and spy._verdict is Verdict.DENY else 202)
         finally:
             rig.q.close()
+    elif kind == "hub.restart":
+        import asyncio
+        from types import SimpleNamespace
+
+        from agents.core import hub_restart_apply
+        from agents.core.command_source import bind_source
+        from agents.core.kernel import kernel_enabled
+        from agents.core.kernel.binding import MediationKernelBridge
+        from tests.test_h084_restart_authority import _source
+        from tests.test_h084_update_kernel import _rig
+
+        enabled = kernel_enabled()
+        rig = _rig(tmp_path, monkeypatch)
+        rig.worker._mediation_kernel = MediationKernelBridge(spy)
+        rig.orch.sender_pairing = SimpleNamespace(is_allowed=lambda *_: True)
+        if not enabled:
+            monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+        monkeypatch.setattr(hub_restart_apply.backup, "boot_restore_due", lambda: False)
+        monkeypatch.setattr(hub_restart_apply.backup, "restore_in_progress", lambda: False)
+        monkeypatch.setattr(hub_restart_apply.hub_update_apply, "current", lambda: None)
+
+        async def original_command():
+            source, principal = _source(rig)
+            with bind_source(source):
+                return await hub_restart_apply.request_restart(
+                    rig.orch, principal=principal, source=source)
+
+        try:
+            result = asyncio.run(original_command())
+            assert ("pending" in result) == (enabled and spy._verdict is Verdict.GRANT)
+        finally:
+            rig.queue.close()
+    elif kind == "hub.update":
+        from agents.core import hub_update_apply
+        from agents.core.kernel import kernel_enabled
+        from tests.test_h084_update_command import _admissible_plan
+        from tests.test_h517_voice_kernel import make_rig
+
+        enabled = kernel_enabled()
+        rig = make_rig(tmp_path, monkeypatch, mode="off", kernel=spy)
+        if not enabled:
+            monkeypatch.delenv("JARVIS_ACTION_KERNEL", raising=False)
+        monkeypatch.setattr(hub_update_apply, "state_dir", lambda: tmp_path / "update")
+        monkeypatch.setattr(hub_update_apply, "plan", lambda *_a, **_kw: _admissible_plan())
+        monkeypatch.setattr(hub_update_apply, "_audit", lambda *_a, **_kw: None)
+        try:
+            with suppress(hub_update_apply.UpdateRefused):
+                hub_update_apply.request_apply(rig.orch)
+        finally:
+            rig.q.close()
     elif kind == "hook.exec":
         # G17: every run of an owner-approved hook asks the kernel before a process exists.
         import asyncio

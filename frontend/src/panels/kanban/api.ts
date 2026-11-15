@@ -1,7 +1,28 @@
 /** Local Kanban transport. All ordinary mutations pass through the HUD failure sink. */
 import { apiGet, apiPost, apiPatch, apiDelete, getAdminToken, getToken } from '../../api/client';
 import { appUrl } from '../../base-path';
-import type { BoardMeta, BoardsResponse, KanbanBoard, KanbanProfile, KanbanProject, KanbanTask, KanbanTaskDetail, OrchestrationSettings } from './types';
+import type {
+  ActiveWorkersResponse,
+  BoardDiagnosticsResponse,
+  BoardExportResult,
+  BoardImportResult,
+  BoardMeta,
+  BoardsResponse,
+  HomeChannelsResponse,
+  KanbanAssignee,
+  KanbanBoard,
+  KanbanConfig,
+  KanbanModelOptionsResponse,
+  KanbanProfile,
+  KanbanProject,
+  KanbanRunDetail,
+  KanbanStats,
+  KanbanTask,
+  KanbanTaskDetail,
+  OrchestrationSettings,
+  RunProcessInspection,
+  TaskEstimate,
+} from './types';
 
 const root = '/api/kanban';
 export function scopedPath(path: string, slug: string): string {
@@ -15,21 +36,63 @@ export const boardPath = (slug: string, archived = false) => {
   if (archived) query.set('include_archived', 'true');
   return root + '/board' + (query.size ? '?' + query : '');
 };
+export const diagnosticsPath = (slug: string, severity?: string) => {
+  const query = new URLSearchParams();
+  if (slug) query.set('board', slug);
+  if (severity) query.set('severity', severity);
+  return root + '/diagnostics' + (query.size ? '?' + query : '');
+};
+export const homeChannelsPath = (slug: string, taskId?: string) => {
+  const query = new URLSearchParams();
+  if (slug) query.set('board', slug);
+  if (taskId) query.set('task_id', taskId);
+  return root + '/home-channels' + (query.size ? '?' + query : '');
+};
+export const unlinkPath = (slug: string, parent_id: string, child_id: string) => {
+  const query = new URLSearchParams({ parent_id, child_id });
+  if (slug) query.set('board', slug);
+  return root + '/links?' + query;
+};
 export const fetchBoard = (slug: string, archived = false) => apiGet<KanbanBoard>(boardPath(slug, archived), { admin: true });
 export const fetchBoards = () => apiGet<BoardsResponse>(root + '/boards', { admin: true });
 export const fetchTask = (slug: string, id: string) => apiGet<KanbanTaskDetail>(scopedPath(`/tasks/${encodeURIComponent(id)}`, slug), { admin: true });
 export const fetchProjects = () => apiGet<{projects: KanbanProject[]}>(root + '/projects', { admin: true });
 export const fetchProfiles = () => apiGet<{profiles: KanbanProfile[]}>(root + '/profiles', { admin: true });
 export const fetchOrchestration = () => apiGet<OrchestrationSettings>(root + '/orchestration', { admin: true });
+export const fetchConfig = () => apiGet<KanbanConfig>(root + '/config', { admin: true });
+export const fetchModelOptions = () => apiGet<KanbanModelOptionsResponse>(root + '/model-options', { admin: true });
+export const fetchAssignees = (slug: string) => apiGet<{assignees: KanbanAssignee[]}>(scopedPath('/assignees', slug), { admin: true });
+export const fetchStats = (slug: string) => apiGet<KanbanStats>(scopedPath('/stats', slug), { admin: true });
+export const fetchActiveWorkers = (slug: string) => apiGet<ActiveWorkersResponse>(scopedPath('/workers/active', slug), { admin: true });
+export const fetchDiagnostics = (slug: string, severity?: string) => apiGet<BoardDiagnosticsResponse>(diagnosticsPath(slug, severity), { admin: true });
+export const fetchHomeChannels = (slug: string, taskId?: string) => apiGet<HomeChannelsResponse>(homeChannelsPath(slug, taskId), { admin: true });
+export const fetchRun = (slug: string, runId: number | string) => apiGet<{run: KanbanRunDetail}>(scopedPath(`/runs/${encodeURIComponent(String(runId))}`, slug), { admin: true });
+export const inspectRun = (slug: string, runId: number | string) => apiGet<RunProcessInspection>(scopedPath(`/runs/${encodeURIComponent(String(runId))}/inspect`, slug), { admin: true });
+export const terminateRun = (slug: string, runId: number | string, reason?: string) => apiPost<{ok?: boolean}>(scopedPath(`/runs/${encodeURIComponent(String(runId))}/terminate`, slug), reason ? { reason } : {}, { admin: true });
 export const fetchLog = (slug: string, id: string) => apiGet<{exists: boolean; content: string}>(scopedPath(`/tasks/${encodeURIComponent(id)}/log`, slug), { admin: true });
 export const createTask = (slug: string, body: Record<string, unknown>) => apiPost<{task: KanbanTask; warning?: string}>(scopedPath('/tasks', slug), body, { admin: true });
 export const patchTask = (slug: string, id: string, body: Record<string, unknown>) => apiPatch(scopedPath(`/tasks/${encodeURIComponent(id)}`, slug), body, { admin: true });
 export const bulkTasks = (slug: string, ids: string[], body: Record<string, unknown>) => apiPost<{results: Array<{id: string; ok: boolean; error?: string}>}>(scopedPath('/tasks/bulk', slug), { ids, ...body }, { admin: true });
 export const deleteTask = (slug: string, id: string) => apiDelete(scopedPath(`/tasks/${encodeURIComponent(id)}`, slug), { admin: true });
 export const addComment = (slug: string, id: string, body: string) => apiPost(scopedPath(`/tasks/${encodeURIComponent(id)}/comments`, slug), { body }, { admin: true });
+export const addLink = (slug: string, parent_id: string, child_id: string) => apiPost<{ok: boolean; gated: boolean}>(scopedPath('/links', slug), { parent_id, child_id }, { admin: true });
+export const removeLink = (slug: string, parent_id: string, child_id: string) => apiDelete<{ok: boolean}>(unlinkPath(slug, parent_id, child_id), { admin: true });
+export const reassignTask = (slug: string, id: string, body: { profile?: string | null; reclaim_first?: boolean; reason?: string | null }) => apiPost<{ok: boolean; task_id: string; assignee: string | null}>(scopedPath(`/tasks/${encodeURIComponent(id)}/reassign`, slug), body, { admin: true });
+export const reclaimTask = (slug: string, id: string, reason?: string) => apiPost<{ok?: boolean}>(scopedPath(`/tasks/${encodeURIComponent(id)}/reclaim`, slug), reason ? { reason } : {}, { admin: true });
+export const specifyTask = (slug: string, id: string) => apiPost<{ok?: boolean}>(scopedPath(`/tasks/${encodeURIComponent(id)}/specify`, slug), {}, { admin: true });
+export const decomposeTask = (slug: string, id: string) => apiPost<{ok?: boolean; children?: string[]}>(scopedPath(`/tasks/${encodeURIComponent(id)}/decompose`, slug), {}, { admin: true });
+export const estimateDraft = (title: string, body?: string) => apiPost<TaskEstimate>(root + '/estimate', { title, ...(body ? { body } : {}) }, { admin: true });
+export const estimateTask = (slug: string, id: string) => apiPost<TaskEstimate>(scopedPath(`/tasks/${encodeURIComponent(id)}/estimate`, slug), undefined, { admin: true });
+export const subscribeTaskChannel = (slug: string, id: string, platform: string) => apiPost<{ok?: boolean}>(scopedPath(`/tasks/${encodeURIComponent(id)}/home-subscribe/${encodeURIComponent(platform)}`, slug), undefined, { admin: true });
+export const unsubscribeTaskChannel = (slug: string, id: string, platform: string) => apiDelete<{ok?: boolean}>(scopedPath(`/tasks/${encodeURIComponent(id)}/home-subscribe/${encodeURIComponent(platform)}`, slug), { admin: true });
 export const createBoard = (slug: string, name: string, project_id?: string) => apiPost<{board: BoardMeta}>(root + '/boards', { slug, name, ...(project_id ? {project_id} : {}) }, { admin: true });
 export const updateBoard = (slug: string, body: Record<string, unknown>) => apiPatch<{board: BoardMeta}>(`${root}/boards/${encodeURIComponent(slug)}`, body, { admin: true });
 export const deleteBoard = (slug: string) => apiDelete(`${root}/boards/${encodeURIComponent(slug)}`, { admin: true });
+export const switchBoard = (slug: string) => apiPost<{ok: boolean; current: string}>(`${root}/boards/${encodeURIComponent(slug)}/switch`, undefined, { admin: true });
+export const exportBoard = (slug: string, body: { output?: string; attachments?: boolean; logs?: boolean } = {}) => apiPost<BoardExportResult>(`${root}/boards/${encodeURIComponent(slug)}/export`, body, { admin: true });
+export const importBoard = (body: { archive: string; slug?: string; switch?: boolean }) => apiPost<BoardImportResult>(root + '/boards/import', body, { admin: true });
+export const updateProfileDescription = (profileName: string, description: string | null) => apiPatch<{ok?: boolean}>(`${root}/profiles/${encodeURIComponent(profileName)}`, { description }, { admin: true });
+export const describeProfileAuto = (profileName: string, overwrite = false) => apiPost<{ok?: boolean; description?: string}>(`${root}/profiles/${encodeURIComponent(profileName)}/describe-auto`, { overwrite }, { admin: true });
 export interface DispatchResult {
   ok: boolean;
   status: string;

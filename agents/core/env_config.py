@@ -183,6 +183,21 @@ def pin_environment(mapping) -> None:
     _PINNED.update(pinned)
 
 
+def credential_values(is_credential, *, min_length: int = 12) -> list[tuple[str, str]]:
+    """``(name, value)`` for every variable in the process environment (and the pinned
+    layer) whose *name* the caller's predicate calls a credential and whose value is at
+    least *min_length* non-padding characters (H069: the outbound transport masks
+    these values wherever they appear). Never log the result. A short or blank value is
+    left out: masking every ``1`` or ``true`` in a reply would mask ordinary words."""
+    found: dict[str, str] = {}
+    for source in (os.environ, _PINNED):
+        for name, value in list(source.items()):
+            if (isinstance(name, str) and isinstance(value, str) and len(value.strip()) >= min_length
+                    and is_credential(name)):
+                found.setdefault(value, name)
+    return [(name, value) for value, name in found.items()]
+
+
 def pinned_environment() -> dict[str, str]:
     """A copy of the pinned environment (names and values; never log it)."""
     return dict(_PINNED)
@@ -370,19 +385,19 @@ HUB_ENV_SUFFIXES = frozenset({
     "AUX_COMPRESSION_MODEL", "AUX_ONESHOT_MODEL", "AUX_QUERY_REWRITE_MODEL", "AUX_REVIEW_MODEL",
     "AUX_SESSION_TITLE_MODEL", "AUX_SOUL_DESCRIPTION_MODEL", "BACKUP_KEY", "BACKUP_MAX_BYTES",
     "BACKUP_MAX_MEMBERS", "BACKUP_QUICK_KEEP", "BINARY_ARTIFACTS", "BROWSER_ALLOWED_DOMAINS",
-    "BROWSER_ALLOW_PRIVATE_URLS", "BUDGET_MAX_DEPTH", "BUDGET_MAX_TOKENS",
+    "BROWSER_ALLOW_PRIVATE_URLS", "BROWSER_BROKER_ALLOW_LOOPBACK_HTTP", "BUDGET_MAX_DEPTH", "BUDGET_MAX_TOKENS",
     "BUDGET_MAX_WALL_SECONDS", "CALL_CONFIG", "CALL_LIVE", "CA_BUNDLE",
     "CHANNEL_BACKFILL_MAX", "CHANNEL_BACKFILL_WINDOW_S", "CHANNEL_LATE_DELIVERY_S", "CHANNEL_OPEN",
     "CHANNEL_PAIRING", "CHANNEL_SEND_RATE", "CHANNEL_SEND_RATES", "CHAT_HISTORY", "COMFYUI_CHECKPOINT",
     "COMFYUI_CHECKPOINTS", "COMFYUI_URL", "COMPANY_MODE", "CONTAINER", "CORS_ORIGINS", "CSP",
-    "DEEP_MODEL", "DESKTOP_HOST", "DESKTOP_ISOLATED", "DEVICE_ID", "DISABLE_CSP", "DRIVE_AI_DEST",
+    "DEEP_MODEL", "DESKTOP_HOST", "DESKTOP_ISOLATED", "DEVICE_ID", "DEVICE_LABEL", "DISABLE_CSP", "DRIVE_AI_DEST",
     "DRIVE_AI_FLAGS", "DRIVE_AI_INDEX", "DRIVE_AI_MODE", "DRIVE_AI_REMOTE", "DRIVE_AI_SYNC",
-    "E2E_SYNC", "E2E_SYNC_KEY", "EMAIL_REPLY_MAX_PER_HOUR", "ENV", "ENVIRONMENT_HINT", "EVAL_LIVE",
+    "E2E_SYNC", "E2E_SYNC_DIR", "E2E_SYNC_KEY", "EMAIL_REPLY_MAX_PER_HOUR", "ENV", "ENVIRONMENT_HINT", "EVAL_LIVE",
     "EVAL_LIVE_MIN_SCORE", "EVAL_LIVE_MODEL", "EVAL_LIVE_URL", "EVAL_STORE", "EXEC_TEMP_DIR",
     "FAULT_INJECT", "FILE_MAX_BYTES", "FILE_ROOTS", "FILE_TOOLS", "FORGET_ARCHIVE_DIR",
     "FORGET_ARCHIVE_KEEP", "H30_HA_LIVE", "H30_HA_TOKEN", "H31_FRIGATE_CAMERA_ID",
     "H31_FRIGATE_LIVE", "H31_FRIGATE_ORIGIN", "H31_FRIGATE_TOKEN", "HARDENED", "HA_ALLOWED_HOSTS",
-    "HA_TOKEN_REF", "HA_URL", "HERMES_BRIDGE_TOKEN", "HERMES_BRIDGE_URL", "HERMES_ENABLED",
+    "HA_TOKEN_REF", "HA_URL", "HOST_ID", "HERMES_BRIDGE_TOKEN", "HERMES_BRIDGE_URL", "HERMES_ENABLED",
     "HERMES_GENERATION", "HESTIA_BRIDGE", "HOME", "HOME_ASSISTANT", "HOST", "HOUSE_BRAIN",
     "HOUSE_PRESENCE", "HUD", "INBOUND_BATCH_MAX_MS", "INBOUND_BATCH_MS", "KEEP_AWAKE", "KEY_DIR",
     "LATEST_CI_COMMIT", "LLM_WARMUP", "LMSTUDIO_CHAT_CONTROL", "LMSTUDIO_CONTROL", "LM_STUDIO_URL",
@@ -400,7 +415,7 @@ HUB_ENV_SUFFIXES = frozenset({
     "PLUGIN_LEAST_PRIVILEGE", "PORT", "PROFILE", "PROVENANCE", "PROVIDER_PLUGINS", "RATE_LIMIT",
     "REALITY_HARNESS", "REQUIRE_REVIEWED_SKILLS", "REQUIRE_SIGNED_SKILLS",
     "RESTART_PREDECESSOR_WAIT_SECONDS", "RESTORE_RUNTIME_WAIT_SECONDS", "RESTORE_STAGE_TTL_HOURS",
-    "ROOM_AWARE_VOICE", "ROOT_PATH", "RUNTIME_CYCLE_SECONDS", "RUNTIME_FAKE_LLM", "RUNTIME_LOG",
+    "ROOM_AWARE_VOICE", "ROOM_FENCING_SECRET", "ROOT_PATH", "RUNTIME_CYCLE_SECONDS", "RUNTIME_FAKE_LLM", "RUNTIME_LOG",
     "RUNTIME_RESPAWN_DELAY", "RUNTIME_RESTORE_GRACE_SECONDS", "RUNTIME_RESTORE_POLL",
     "RUNTIME_STATE", "SAFE_MODE", "SCANNER_EXTRA_PATTERNS", "SECRET_KEY", "SELF_RESTART",
     "SESSION_BACKUP_KEEP", "SHUTDOWN_TIMEOUT", "SIGNAL_LAYER", "SIGNAL_LAYER_MODE", "SIGNAL_GOVERNANCE", "SKILL_ENVIRONMENTS",

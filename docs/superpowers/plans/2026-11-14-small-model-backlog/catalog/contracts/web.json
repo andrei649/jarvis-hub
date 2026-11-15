@@ -1,0 +1,1611 @@
+[
+  {
+    "id": "H129",
+    "title": "Deep-link / bookmark a UI surface (URL routing)",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "3039b07bc8e85331b1baf5a2651a97bbc2bd6ea8f52a8c9cd5f1b6c2b7e42c50",
+    "contract": "A 20-path route table (`App.tsx:156-176`), lazy route chunks with a `RouteFallback`, a plugin-aware unknown-route redirect, profile-keyed route remount and a 6-step page-title resolver. Every page is a URL you can bookmark, share, refresh into and use browser back/forward on (web-shell.route-table, .route-lazy, .unknown-route, .profile-keyed-routes, .page-title).",
+    "governance": "read-only",
+    "remaining_verbatim": "Nerva has no global multi-profile switch or plugin route registry; profile-keyed remount and plugin-aware route extension from the full Hermes contract remain unsupported. Current route/demo-context remount does not claim multi-profile equivalence. Browser tests validate navigation with a stubbed backend, not production-host services.",
+    "requirement_sections": [
+      "Nerva has no global multi-profile switch or plugin route registry; profile-keyed remount and plugin-aware route extension from the full Hermes contract remain unsupported. Current route/demo-context remount does not claim multi-profile equivalence. Browser tests validate navigation with a stubbed backend, not production-host services."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "frontend/src/hud-routing.ts",
+      "frontend/src/console-routes.ts",
+      "frontend/src/app.tsx",
+      "frontend/src/world_app.tsx",
+      "frontend/src/gap.tsx",
+      "frontend/src/route-boundary.tsx",
+      "frontend/e2e/routing.spec.ts",
+      "frontend/src/styles.css",
+      "docs/superpowers/plans/2026-09-15-hud-grid-width.md",
+      "docs/hermes/evidence/2026-10-05-pending-input-completion/web-report.json",
+      "frontend/src/panels/custom-endpoints.tsx"
+    ],
+    "existing_test_files": [
+      "frontend/src/test/hud-routing.test.tsx",
+      "frontend/src/test/app-routing.test.tsx",
+      "frontend/src/test/console-routing.test.tsx",
+      "frontend/src/test/route-boundary.test.tsx"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H129",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H129"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H130",
+    "title": "Serve the UI under a reverse-proxy sub-path",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "12b92ce935449c13d67af9de6f1db53cf3be9b9cbe4c6e250a444388a96ddbbc",
+    "contract": "`window.__HERMES_BASE_PATH__` injected server-side, consumed by the router basename, the asset base and the WebSocket URL builder, so the whole SPA works at `https://host/hermes/` (web-shell.base-path, .index-injection, .mount-spa).",
+    "governance": "read-only",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "URL routing (row 1)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/web_base_path.py",
+      "agents/web.py",
+      "agents/core/routers/swarm.py",
+      "agents/core/routers/system_map.py",
+      "agents/web/mission_control.html",
+      "agents/web/system_map.html",
+      "frontend/src/base-path.ts",
+      "frontend/src/hud-routing.ts",
+      "frontend/src/app.tsx",
+      "frontend/src/world_app.tsx",
+      "frontend/src/api/client.ts",
+      "frontend/vite.config.ts",
+      "frontend/public/sw-v2.js",
+      "frontend/e2e/base-path.spec.ts",
+      "frontend/e2e/support/base_path_server.py",
+      "frontend/docs/h130-base-path.md",
+      "docs/plans/2026-10-10-hermes-closure-04.md"
+    ],
+    "existing_test_files": [
+      "frontend/src/test/base-path.test.ts",
+      "frontend/src/test/service-worker-base.test.ts",
+      "frontend/src/test/app-routing.test.tsx",
+      "tests/test_web_base_path.py",
+      "tests/test_web_asset_manifest_integrity.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H130",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H130"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H131",
+    "title": "Keyboard-first navigation and a command palette",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "8eb03f32ed5bff9b7cc04bdf768f046114c04cffa4f8efbd5d9404fd866868bd",
+    "contract": "None. The inventory has a dedicated entry documenting the *absence*: \"the keyboard surface of the shell (and the absence of a command palette)\" — navigation is mouse-driven, with only per-page shortcuts inside the xterm pane (web-shell.keyboard-surface).",
+    "governance": "read-only",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "frontend/src/shell.tsx",
+      "frontend/src/shortcuts.ts",
+      "frontend/src/app.tsx"
+    ],
+    "existing_test_files": [
+      "frontend/src/test/palette-tweaks.test.tsx",
+      "frontend/src/test/shortcuts.test.tsx",
+      "frontend/src/test/app-routing.test.tsx"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H131",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H131"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H132",
+    "title": "Persistent navigation chrome (rail, mobile drawer, page-header slots)",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "b855bbc3346979e9eb6a5732dce0d49e2b50c498757c17f44b7b9207556d3edf",
+    "contract": "Sidebar with collapse rail + tooltips, mobile top bar + drawer + backdrop, a `PageHeaderProvider` giving each page `afterTitle` / `end` toolbar slots cleared on navigation, plus a system block and a footer version badge (web-shell.sidebar, .sidebar-collapse, .mobile-drawer, .page-header, .sidebar-footer, .nav-item-anatomy).",
+    "governance": "read-only",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "frontend/src/shell.tsx",
+      "frontend/src/styles.css",
+      "agents/core/routers/status.py",
+      "frontend/src/page-header.tsx",
+      "frontend/src/app.tsx"
+    ],
+    "existing_test_files": [
+      "frontend/src/test/status-chrome.test.tsx",
+      "frontend/src/test/rail-navigation.test.tsx"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H132",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H132"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H133",
+    "title": "Live status chrome (gateway state, sessions, model, data provenance)",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "75a2bc8622c41032c0b53ffbb3ac79b255d9fba800777d66ce7987275615330a",
+    "contract": "Sidebar status strip (`Gateway Status: Off` / `Active Sessions: 0`), a shared 10s `/api/status` poll feeding every widget, a collapsed-rail gateway dot, and a version badge (web-shell.status-strip, .sidebar-status-poll, .gateway-dot, .sidebar-footer).",
+    "governance": "read-only",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/status.py",
+      "agents/core/checkpoint.py",
+      "frontend/src/api/status-chrome.ts",
+      "frontend/src/api/loaders.ts",
+      "frontend/src/app.tsx",
+      "frontend/src/shell.tsx",
+      "frontend/src/styles.css",
+      "frontend/src/LiveSourceChip.tsx",
+      "frontend/e2e/status-chrome-layout.spec.ts"
+    ],
+    "existing_test_files": [
+      "tests/test_status_router.py",
+      "frontend/src/test/status-chrome.test.tsx",
+      "frontend/src/test/live-source-chip.test.tsx"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H133",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H133"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H134",
+    "title": "Operator-authored reskin (themes, fonts, custom CSS, layout variants)",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "ff5e2714cd24e2c337e56fe31cb899f97973b07279bbc7c1b78ded09585305e0",
+    "contract": "8 built-in themes plus unlimited user themes from `~/.hermes/dashboard-themes/*.yaml` — palette layers with alpha, 19 colorOverrides, typography, radius/density, 6 named assets + custom asset keys, per-component style buckets, 32 KiB of unsanitised custom CSS, three layout variants, a font catalog with 3 categories, and server-rendered bootstrap CSS to kill the theme flash (web-shell.theme-switcher, .font-picker, .font-catalog, .theme-engine, .builtin-themes, .user-themes, .theme-bootstrap-css, .themes-vs-skins).",
+    "governance": "read-only",
+    "remaining_verbatim": "- user theme files loaded from a themes directory (palette with alpha, color overrides, typography, radius/density)\n- named and custom asset keys and per-component style buckets\n- custom CSS (sanitised or constrained) per theme\n- layout variants\n- font catalog with categories\n- more built-in themes (Hermes ships 8)\n- server-rendered bootstrap CSS to avoid theme flash\n- tests for theme loading and application",
+    "requirement_sections": [
+      "- user theme files loaded from a themes directory (palette with alpha, color overrides, typography, radius/density)\n- named and custom asset keys and per-component style buckets\n- custom CSS (sanitised or constrained) per theme\n- layout variants\n- font catalog with categories\n- more built-in themes (Hermes ships 8)\n- server-rendered bootstrap CSS to avoid theme flash\n- tests for theme loading and application"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "frontend/src/appearance.ts",
+      "agents/core/routers/preferences.py"
+    ],
+    "existing_test_files": [
+      "tests/test_appearance_preferences.py",
+      "frontend/src/test/appearance-sync.test.tsx",
+      "frontend/src/test/appearance-state.test.tsx"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H134",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H134"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H135",
+    "title": "Appearance preference follows the owner across devices",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "551ba50343a1a968b4154e83dccbc8b2d24ab8f2881f4a55db282bcf7c84adfc",
+    "contract": "`GET /api/dashboard/themes`, `PUT /api/dashboard/theme`, `GET|PUT /api/dashboard/font` persist the choice into `config.yaml` alongside localStorage, and coerce rather than 400 on unknown values so a stale client cannot wedge the picker (web-shell.theme-api).",
+    "governance": "read-only",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/appearance.py",
+      "agents/core/routers/preferences.py",
+      "agents/core/settings_db.py",
+      "agents/web.py",
+      "frontend/src/appearance.ts",
+      "frontend/src/app.tsx",
+      "frontend/src/shell.tsx",
+      "frontend/src/api/client.ts",
+      "frontend/e2e/appearance.spec.ts",
+      "frontend/docs/h135-appearance-sync.md",
+      "frontend/src/styles.css",
+      "frontend/e2e/appearance-fonts.spec.ts",
+      "frontend/docs/h135-font-preferences.md",
+      "frontend/native-tests/appearance.test.tsx",
+      "frontend/native-tests/consumers.test.tsx",
+      "frontend/native-tests/support/audio.ts",
+      "frontend/native-tests/support/expo.tsx",
+      "frontend/native-tests/support/files.ts",
+      "frontend/native-tests/support/native.tsx",
+      "frontend/native-tests/support/storage.ts",
+      "frontend/native-tests/transport.test.tsx",
+      "frontend/vitest.config.ts",
+      "frontend/vitest.native.config.ts",
+      "mobile/App.tsx",
+      "mobile/docs/h135-native-appearance.md",
+      "mobile/src/api/appearance.ts",
+      "mobile/src/appearance.ts",
+      "mobile/src/components/AgentPicker.tsx",
+      "mobile/src/components/MessageBubble.tsx",
+      "mobile/src/components/SessionsModal.tsx",
+      "mobile/src/components/ThemedText.tsx",
+      "mobile/src/context/AppearanceContext.tsx",
+      "mobile/src/context/ServerContext.tsx",
+      "mobile/src/markdown/Markdown.tsx",
+      "mobile/src/screens/AcquisitionScreen.tsx",
+      "mobile/src/screens/AmbientScreen.tsx",
+      "mobile/src/screens/ApprovalsScreen.tsx",
+      "mobile/src/screens/CameraScreen.tsx",
+      "mobile/src/screens/CaptureScreen.tsx",
+      "mobile/src/screens/ChatScreen.tsx",
+      "mobile/src/screens/CommsScreen.tsx",
+      "mobile/src/screens/HouseScreen.tsx",
+      "mobile/src/screens/MediaScreen.tsx",
+      "mobile/src/screens/MemoryScreen.tsx",
+      "mobile/src/screens/SettingsScreen.tsx",
+      "mobile/src/screens/SkillsScreen.tsx",
+      "mobile/src/screens/StatusScreen.tsx",
+      "mobile/src/screens/TasksScreen.tsx",
+      "mobile/src/storage/settings.ts",
+      "mobile/src/theme.ts",
+      "docs/plans/2026-10-10-hermes-closure-04.md"
+    ],
+    "existing_test_files": [
+      "frontend/src/test/appearance-sync.test.tsx",
+      "frontend/src/test/appearance-state.test.tsx",
+      "tests/test_appearance_preferences.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H135",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H135"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H136",
+    "title": "Localized UI",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "3abf98e6bdb222b1e960dc9bc4aa91fa5c08ad8d6a22e55d5bafb71a3008374a",
+    "contract": "714 English keys across 18 namespaces, a locale registry with `defineLocale` partial-merge so a translation can ship half-done without blanking the UI, an RTL switch, and a sidebar language picker showing endonyms (web-shell.i18n-provider, .i18n-define-locale, .i18n-rtl, .language-switcher, plus 18 per-namespace entries).",
+    "governance": "read-only",
+    "remaining_verbatim": "- One namespaced catalog (or a registry) covering all panels, with the completeness gate extended to every catalog\n- Translation coverage for the console panels\n- Partial-locale merge with English fallback",
+    "requirement_sections": [
+      "- One namespaced catalog (or a registry) covering all panels, with the completeness gate extended to every catalog\n- Translation coverage for the console panels\n- Partial-locale merge with English fallback"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "frontend/src/data.ts",
+      "frontend/src/app.tsx",
+      "frontend/src/artifacts.tsx",
+      "frontend/src/panels/kanban/i18n.ts",
+      "frontend/src/appearance.ts",
+      "frontend/src/shell.tsx"
+    ],
+    "existing_test_files": [
+      "frontend/src/test/i18n-completeness.test.ts",
+      "frontend/src/test/language-menu.test.tsx"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H136",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H136"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H137",
+    "title": "Talk to the agent in the browser",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "c5dfd9292712e603556c444351ca1b8f7d9ef24da150f96f93c6aad547e777a7",
+    "contract": "`/chat` mounts xterm.js over a PTY WebSocket and mirrors the ANSI output of a `hermes --tui` child process. Everything — prompts, tool output, approvals — is terminal text. Hermes' own rebuild note says: \"A better version would render a native structured chat (messages, tool cards) from the JSON-RPC gateway instead of mirroring ANSI\" (web-a.chat.page, .terminal, .pty-websocket, .tui-inside-terminal).",
+    "governance": "read-only",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "frontend/src/cockpit.tsx",
+      "frontend/src/app.tsx",
+      "frontend/src/shell.tsx",
+      "agents/web.py",
+      "frontend/src/turn-tools.tsx"
+    ],
+    "existing_test_files": [
+      "frontend/src/test/composer-vision-turn.test.tsx",
+      "frontend/src/test/turn-tools.test.tsx",
+      "tests/test_g11_acp.py",
+      "frontend/src/test/decision-inbox-panel.test.tsx"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H137",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H137"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H138",
+    "title": "A real shell in the browser",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "991e12aa91c0ac9329361cc1c15cdff4c525a3925169cd90fec671a8ad727a04",
+    "contract": "The PTY endpoint spawns a process with a full env, streams bytes both ways, handles resize via an in-band escape, and keeps up to 16 processes alive for 30 minutes across disconnects (web-a.chat.pty-websocket, .keepalive-attach, .close-codes-banners).",
+    "governance": "Privileged. `terminal.exec` (KERNEL, irreversible → approval QUEUE floor). Must go through the existing GovernedTargetRunner — never a raw subprocess behind a new route.",
+    "remaining_verbatim": "- An owner-facing terminal surface in the HUD (command box with streamed output at minimum)\n- Streaming output both ways over WebSocket/SSE, resize handling\n- Session keepalive/reattach for running processes\n- Close-code banners",
+    "requirement_sections": [
+      "- An owner-facing terminal surface in the HUD (command box with streamed output at minimum)\n- Streaming output both ways over WebSocket/SSE, resize handling\n- Session keepalive/reattach for running processes\n- Close-code banners"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "a route for agents/core/environments/execution.py (none exists today)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/autonomy_coordinator.py",
+      "agents/core/environments/execution.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h011_terminal_queue_integration.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H138",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H138"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H139",
+    "title": "Attach an image or paste a screenshot into the conversation",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "470c26545cfe165fd6e78168c4071f6d8c5392af462069ec03c9277071e079c0",
+    "contract": "Paste and drag-drop into the terminal upload to `POST /api/chat/image-upload` and inject an `/image <path>` command; a `?learn=<text>` query seeds a `/learn` command (web-a.chat.image-paste-drop, .image-upload-api, .learn-seed).",
+    "governance": "read-only for describe; if the pasted image is stored it lands under the existing capture/media path, not a new writer",
+    "remaining_verbatim": "No durable image artifact, no composer (user-supplied) image in the context of ordinary agent turns (since H297 only a tool-produced image, a file_read of an image in the owner's roots, reaches an ordinary turn, as an image block in a Claude tool result), no native mobile composer and no ?learn seed; the selected-main follow-up can only re-send explicitly chosen process-local earlier images, which are cleared on rewind or session change. Standalone and auxiliary vision still use a separate client-only turn; selected-main image answers now persist as text projection, without live provider proof. Static images only, at most eight 4 MiB images, 8192 pixels per edge and 16 MP each before downscaling. Destination status stores inert revision metadata in the existing owner Settings DB; this does not provide per-account preferences. Browser-selected image review requires WebCrypto in a secure browser context.\nImages are still not part of the ordinary persisted agent multimodal context: bytes, data URIs and digests never enter persisted chat history, and standalone/auxiliary descriptions stay in a transient separate vision turn. The learn-seed (?learn=) path from the Hermes contract is not implemented.",
+    "requirement_sections": [
+      "No durable image artifact, no composer (user-supplied) image in the context of ordinary agent turns (since H297 only a tool-produced image, a file_read of an image in the owner's roots, reaches an ordinary turn, as an image block in a Claude tool result), no native mobile composer and no ?learn seed; the selected-main follow-up can only re-send explicitly chosen process-local earlier images, which are cleared on rewind or session change. Standalone and auxiliary vision still use a separate client-only turn; selected-main image answers now persist as text projection, without live provider proof. Static images only, at most eight 4 MiB images, 8192 pixels per edge and 16 MP each before downscaling. Destination status stores inert revision metadata in the existing owner Settings DB; this does not provide per-account preferences. Browser-selected image review requires WebCrypto in a secure browser context.\nImages are still not part of the ordinary persisted agent multimodal context: bytes, data URIs and digests never enter persisted chat history, and standalone/auxiliary descriptions stay in a transient separate vision turn. The learn-seed (?learn=) path from the Hermes contract is not implemented."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/composer_vision.py",
+      "agents/core/llm/vlm.py",
+      "agents/web.py",
+      "frontend/src/composer-images.tsx",
+      "frontend/src/vision-turn.ts",
+      "frontend/src/app.tsx",
+      "frontend/src/cockpit.tsx",
+      "frontend/src/api/schema.gen.ts",
+      "frontend/e2e/composer-images.spec.ts",
+      "frontend/docs/h139-composer-images.md",
+      "agents/core/llm/vision_review.py",
+      "agents/core/llm/vision_turn.py",
+      "agents/core/llm/vision_capability.py",
+      "agents/core/llm/vision_ollama_wire.py",
+      "docs/hermes/evidence/h277-exact-image-review-mutations-2026-10-02.md",
+      "agents/core/llm/vision_responses_wire.py",
+      "agents/core/llm/vision_xai_wire.py",
+      "agents/core/memory/conversation.py",
+      "agents/core/memory/manager.py",
+      "docs/hermes/evidence/2026-10-05-pending-input-completion/web-report.json",
+      "agents/core/file_tools.py"
+    ],
+    "existing_test_files": [
+      "tests/test_composer_vision.py",
+      "frontend/src/test/composer-images.test.tsx",
+      "frontend/src/test/composer-vision-turn.test.tsx",
+      "tests/test_h277_vision_auto_consumer.py",
+      "tests/test_h277_vision_review.py",
+      "tests/test_h277_selected_image_turn.py",
+      "tests/test_h277_selected_composer.py",
+      "tests/test_h277_ollama_vision.py",
+      "tests/test_h277_claude_vision.py",
+      "tests/test_h277_gemini_image.py",
+      "tests/test_h277_responses_image.py",
+      "tests/test_h277_xai_image.py",
+      "tests/test_h277_main_image_turn.py",
+      "tests/test_h277_image_turn_memory.py",
+      "frontend/src/test/vision-turn-committed.test.ts",
+      "tests/test_h277_local_vision_metadata.py",
+      "tests/test_h297_production_images.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H139",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H139"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H140",
+    "title": "Survive a dropped connection mid-run",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "585369f5f936dd4639190bb787b0d4313308138f7e7f4caed8fa4a3af2778184",
+    "contract": "A localStorage attach token keys a server-side session registry (16 slots, 30-min TTL, 1 MiB ring buffer replayed on reattach, Ctrl-L forced redraw), automatic reconnect with a \"Reconnect now\" overlay, a distinct banner per close code, and a \"Session ended / Start new session\" state (web-a.chat.keepalive-attach, .reconnect, .close-codes-banners, .session-ended).",
+    "governance": "read-only",
+    "remaining_verbatim": "- Detect a dropped chat stream and say so (distinct from 'backend unreachable')\n- Reattach to an in-flight turn after a disconnect, with a replay buffer of missed tokens\n- Automatic reconnect with a 'Reconnect now' overlay\n- Distinct banners per close reason and a 'session ended / start new' state",
+    "requirement_sections": [
+      "- Detect a dropped chat stream and say so (distinct from 'backend unreachable')\n- Reattach to an in-flight turn after a disconnect, with a replay buffer of missed tokens\n- Automatic reconnect with a 'Reconnect now' overlay\n- Distinct banners per close reason and a 'session ended / start new' state"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/sessions.py",
+      "frontend/src/app.tsx"
+    ],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H140",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H140"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H141",
+    "title": "Browse, search, rename, export and prune conversation history",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "8dfb39f7a05dc49901e5444262d4ba74824546762b6088ebf30d115fcc1d0807",
+    "contract": "A Sessions page with a stats strip, Chats/Automation/All category filter, source filter, full-text search, compact + full pagination, bulk select-and-delete, \"Delete empty (N)\", JSON/JSONL import, per-row resume/rename/export/delete, an expandable markdown transcript, a prune dialog and a 5s cross-process refresh poll (web-a.sessions.* — 25 entries).",
+    "governance": "Deleting/pruning sessions destroys owner data — route the delete/prune half through the kernel's irreversible tier rather than a bare DELETE, matching how BackupPanel already gates `forget`.",
+    "remaining_verbatim": "- Full-text and server-wide search/filtering plus source/category filters (loaded agent/date filters delivered locally in V66)\n- Stats strip (owner web pagination beyond20 is implemented locally in V62; owner mobile pagination follows in local V63; guest pagination remains separate)\n- Full-archive transcript preview/export and external mobile file sharing (owner web retained-text preview/export V64; mobile preview/app-folder JSON save V65 implemented locally)\n- Bulk select-and-delete, 'delete empty', prune dialog\n- JSON/JSONL import from the UI\n- Periodic refresh",
+    "requirement_sections": [
+      "- Full-text and server-wide search/filtering plus source/category filters (loaded agent/date filters delivered locally in V66)\n- Stats strip (owner web pagination beyond20 is implemented locally in V62; owner mobile pagination follows in local V63; guest pagination remains separate)\n- Full-archive transcript preview/export and external mobile file sharing (owner web retained-text preview/export V64; mobile preview/app-folder JSON save V65 implemented locally)\n- Bulk select-and-delete, 'delete empty', prune dialog\n- JSON/JSONL import from the UI\n- Periodic refresh"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "search/pagination on the sessions store",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/sessions.py",
+      "frontend/src/panels/sessions.tsx",
+      "mobile/src/components/SessionsModal.tsx",
+      "frontend/native-tests/session-search.test.tsx",
+      "frontend/native-tests/session-pagination.test.tsx"
+    ],
+    "existing_test_files": [
+      "frontend/src/test/sessions-archive.test.tsx",
+      "frontend/src/test/sessions-pin.test.tsx",
+      "frontend/src/test/sessions-search.test.tsx",
+      "tests/test_session_pagination.py",
+      "frontend/src/test/sessions-pagination.test.tsx"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H141",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H141"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H142",
+    "title": "Browse, upload and download files on the host",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "aa88835ad68fc3a149b9e905c188e642651e1a6723f6b39169b260fdaf0bf8c0",
+    "contract": "A single-column file manager: path bar with server-canonicalised paths, upload button + drop zone + chunked multipart upload, mkdir, download, delete, `..` navigation, a locked-vs-browsable root policy, and a credential denylist that hides `.env`, `auth.json`, `credentials`, `config.yaml`, `mcp-tokens/`, `pairing/` from listing and read (web-a.files.* — 22 entries, plus gapfill-web-a-r0).",
+    "governance": "Privileged on write. List/read/download are read-only but MUST carry the credential denylist; mkdir/upload/delete cross `file.write` (KERNEL) so the snapshot/rollback contract applies. Never add an unguarded DELETE.",
+    "remaining_verbatim": "- The upload is one streamed raw-body PUT per file, not Hermes's chunked/resumable multipart upload\n- The applied rename/delete is not mediated as the `file.write` kernel kind and takes no snapshot, so a delete has no rollback (it is an irreversible-tier card instead); under `JARVIS_TASK_MEDIATION=enforce` the unregistered `files.*` kinds are refused at intake\n- No overwrite of an existing file (refused as `exists`) and no move across folders",
+    "requirement_sections": [
+      "- The upload is one streamed raw-body PUT per file, not Hermes's chunked/resumable multipart upload\n- The applied rename/delete is not mediated as the `file.write` kernel kind and takes no snapshot, so a delete has no rollback (it is an irreversible-tier card instead); under `JARVIS_TASK_MEDIATION=enforce` the unregistered `files.*` kinds are refused at intake\n- No overwrite of an existing file (refused as `exists`) and no move across folders"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/file_browser.py",
+      "agents/core/routers/files.py",
+      "frontend/src/panels/files.tsx"
+    ],
+    "existing_test_files": [
+      "tests/test_g21_ops_surfaces.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H142",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H142"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H143",
+    "title": "Token, cost and usage analytics",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "ac83d7530b02a1ad3db48351401707c36108668cd8aca77d6feca4b35f53f2ee",
+    "contract": "A 7/30/90-day period switch, a totals card, a stacked daily bar chart, and sortable Daily / Per-Model / Top-Skills tables, all gated off by default behind `dashboard.show_token_analytics` with an explanation card saying why the numbers are unreliable (web-a.analytics.* — 12 entries).",
+    "governance": "read-only",
+    "remaining_verbatim": "- 7/30/90-day period switch over daily cost/usage\n- Daily stacked chart and sortable daily, per-model and top-skills tables; the new UsagePanel is read-only totals, locality, agent and model rows\n- A fuller reliability explanation for period/day values and data gaps beyond the new estimate/unpriced/legacy notices\n- Default-off dashboard.show_token_analytics gate for the full period/day analytics surface; the current Usage/Billing APM snapshot is a separate read-only owner view.",
+    "requirement_sections": [
+      "- 7/30/90-day period switch over daily cost/usage\n- Daily stacked chart and sortable daily, per-model and top-skills tables; the new UsagePanel is read-only totals, locality, agent and model rows\n- A fuller reliability explanation for period/day values and data gaps beyond the new estimate/unpriced/legacy notices\n- Default-off dashboard.show_token_analytics gate for the full period/day analytics surface; the current Usage/Billing APM snapshot is a separate read-only owner view."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/analytics.py",
+      "frontend/src/modes2.tsx",
+      "frontend/src/gap.tsx",
+      "frontend/src/panels/usage.tsx",
+      "frontend/src/panels/usage.test.tsx",
+      "frontend/src/panel-kit.tsx"
+    ],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H143",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H143"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H144",
+    "title": "Model control panel (main model, per-task models, ensembles, per-model usage)",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "791fdc021bca6758633f4a3d978f1d2ff34b8a27d0416d7aca560e3f337d5c20",
+    "contract": "Main-model picker with an expensive-model warning, 11 named auxiliary task slots each pinnable to its own provider/model, a Mixture-of-Agents preset editor (reference models + aggregator), per-model cards with tokens/cost/capability chips and a \"Use as\" assignment menu, and a focus-refresh because the CLI can change assignments behind the page's back (web-a.models.* — 25 entries).",
+    "governance": "Privileged. Model lifecycle already crosses `host.control` and `model.pull` (KERNEL). Assignment writes are config, but a pin that redirects work to a cloud provider changes the egress posture and must be visible in the EGRESS badge.",
+    "remaining_verbatim": "- Assign a provider/model per task slot from the UI (with a write route), including cheap slots for titles, summaries, compression\n- Expensive-model warning on the main picker\n- Mixture-of-Agents preset editor (reference models + aggregator)\n- Per-model cards with tokens/cost and a 'use as' menu",
+    "requirement_sections": [
+      "- Assign a provider/model per task slot from the UI (with a write route), including cheap slots for titles, summaries, compression\n- Expensive-model warning on the main picker\n- Mixture-of-Agents preset editor (reference models + aggregator)\n- Per-model cards with tokens/cost and a 'use as' menu"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/llm/model_roles.py",
+      "agents/core/routers/models_llm.py",
+      "frontend/src/gap.tsx",
+      "frontend/src/panels/model-setup.tsx"
+    ],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H144",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H144"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H145",
+    "title": "Read the system logs from the UI",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "000a519d6ba8013734b744608eaedde379cdf69ab9c439ac8a97f344c4be7884",
+    "contract": "A log tail page over 6 named files with File / Level / Component / Lines segmented filters, client-side regex level colouring, a 5s auto-refresh switch with a Live badge, and a bounded reverse-read backend (`GET /api/logs`, capped at 500 lines) (web-b.logs-page, .logs-api, .logs-classify-lib).",
+    "governance": "read-only, admin-guarded. The tail must be redacted the same way `/api/admin/env` masks secrets — a stack trace can carry a token.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/log_tail.py",
+      "agents/core/log.py",
+      "agents/core/routers/admin.py",
+      "frontend/src/panels/logs.tsx",
+      "frontend/src/console-routes.ts",
+      "frontend/src/panel-kit.tsx",
+      "docs/test-manual/05-console-panels-b.md"
+    ],
+    "existing_test_files": [
+      "tests/test_log_tail.py",
+      "tests/test_h145b_log_review.py",
+      "frontend/src/test/logs-panel.test.tsx"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H145",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H145"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H146",
+    "title": "Create and manage your own scheduled jobs",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "f1cc3aa8592c7be410655a48f1492a0f3e4d360dde7211d755a7bd0364fdcb14",
+    "contract": "A Cron page listing jobs across all profiles with pause/resume/trigger-now/edit/delete, a create modal with basic + advanced fields, a schedule builder, per-job delivery targets, run history, and a gallery of 16 typed Automation Blueprints (morning brief, important-mail monitor, price watch, competitor watch, weekly review…) that produce a working job from a form with no cron syntax (web-b.cron-* — 15 entries plus the full blueprint catalog).",
+    "governance": "Privileged. The job store itself is config, but every firing enqueues work whose effects cross the kernel; a job must carry an autonomy tier, and `ask`-tier jobs land in the Decision Inbox rather than executing. The kill switch and the ≤4/day interrupt budget must both apply to scheduled firings.",
+    "remaining_verbatim": "Open against the frozen Hermes contract:\n(1) per-job isolated model workdir/skills/project-instruction context (only the script-only no_agent workdir is supported);\n(2) a Cron page aggregating jobs across all profiles (cross-profile);\n(3) schedule.create, the model-callable scheduling grant with its governance policy that the original requires (a protected root outside this scope);\n(4) native mobile job surfaces and authoring;\n(5) delegation and dynamic plugin tool groups in the scheduled enabled_toolsets catalog (only basic/files/terminal and the curated execute_code group exist, with nested file/web RPC restricted by the same scheduled bound), and their transitive restriction contracts.\nOptions without a runtime are refused, not saved inert. There is no live proof for the scheduler, channels or native mobile authoring; monitors depend on the configured sources and do not install integrations. Cloud pins must match existing policy routing; changed local models require loaded context metadata, and LM Studio currently cannot resolve a changed model. Pinned jobs use deterministic compression and omit auxiliary embedding recall.",
+    "requirement_sections": [
+      "Open against the frozen Hermes contract:\n(1) per-job isolated model workdir/skills/project-instruction context (only the script-only no_agent workdir is supported);\n(2) a Cron page aggregating jobs across all profiles (cross-profile);\n(3) schedule.create, the model-callable scheduling grant with its governance policy that the original requires (a protected root outside this scope);\n(4) native mobile job surfaces and authoring;\n(5) delegation and dynamic plugin tool groups in the scheduled enabled_toolsets catalog (only basic/files/terminal and the curated execute_code group exist, with nested file/web RPC restricted by the same scheduled bound), and their transitive restriction contracts.\nOptions without a runtime are refused, not saved inert. There is no live proof for the scheduler, channels or native mobile authoring; monitors depend on the configured sources and do not install integrations. Cloud pins must match existing policy routing; changed local models require loaded context metadata, and LM Studio currently cannot resolve a changed model. Pinned jobs use deterministic compression and omit auxiliary embedding recall."
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "a product decision on unattended tiers (BACKLOG DRA-08); the Decision Inbox and autonomy policy already exist",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/autonomy/jobs.py",
+      "agents/core/autonomy/jobs_blueprints.py",
+      "agents/core/routers/jobs.py",
+      "agents/cli/nerva.py",
+      "frontend/src/panels/jobs.tsx",
+      "frontend/src/panels/job-builder.tsx",
+      "frontend/src/panels/jobs.test.tsx",
+      "frontend/src/panels/job-create-dialog.tsx",
+      "frontend/src/app.tsx",
+      "frontend/src/shell.tsx",
+      "frontend/src/api/schema.gen.ts",
+      "agents/core/autonomy/jobs_scripts.py",
+      "docs/automations-scripts.md",
+      "agents/core/autonomy/jobs_dispatch.py",
+      "docs/automations-dispatch.md",
+      "agents/core/llm/job_selection.py",
+      "agents/core/llm/hybrid_router.py",
+      "agents/core/agent.py",
+      "agents/core/agent_runtime.py",
+      "agents/core/orchestrator.py",
+      "docs/superpowers/plans/2026-09-15-job-model-pins.md",
+      "agents/core/autonomy/jobs_media.py",
+      "agents/core/channels/telegram.py",
+      "docs/hermes/h523-media-serving-contract.md",
+      "agents/core/autonomy/jobs_workdir.py",
+      "docs/superpowers/plans/2026-09-15-job-workdir.md",
+      "agents/core/job_toolsets.py",
+      "agents/core/tool_profiles.py",
+      "agents/core/tool_rpc.py",
+      "agents/core/autonomy/jobs_health.py",
+      "frontend/src/panels/job-toolsets.test.tsx",
+      "docs/superpowers/plans/2026-09-15-job-toolsets.md",
+      "docs/hermes/evidence/2026-10-05-pending-input-completion/web-report.json"
+    ],
+    "existing_test_files": [
+      "tests/test_jobs_advanced.py",
+      "tests/test_jobs_routes.py",
+      "tests/test_nerva_cli.py",
+      "frontend/src/test/jobs-entry.test.tsx",
+      "tests/test_openapi_ts_typegen_gate.py",
+      "tests/test_job_scripts.py",
+      "tests/test_job_dispatch.py",
+      "tests/test_job_model_pins.py",
+      "tests/test_tool_loop_result_spill.py",
+      "tests/test_jobs_media.py",
+      "tests/test_job_workdir.py",
+      "tests/test_job_toolsets.py",
+      "tests/test_h456_code_policy.py",
+      "tests/test_h456_job_policy.py",
+      "tests/test_h456_job_policy_api.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H146",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H146"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H147",
+    "title": "Enable/disable skills, author them, configure tool backends, browse a hub",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "0640b9de8c278e6c0a823f202514e0c194841235e594cc6c5b0f2b548786ca0a",
+    "contract": "A Skills page with categories, search, per-skill on/off toggles, a new-skill editor, a SKILL.md editor, a \"learn a skill\" dialog, a 27-entry Toolsets grid with a per-toolset provider-configuration drawer, and a hub browser with preview, security scan, install, update-all and uninstall (web-b.skills-* + toolset-* — 20 entries).",
+    "governance": "Privileged. `skill.install` already crosses the kernel with a permanent owner floor — keep it. A disable toggle is a de-escalation and can be user-tier, but it must be audited.",
+    "remaining_verbatim": "- A form-based in-UI new-skill and SKILL.md editor that opens a skill's current SKILL.md, through the existing proposal/approval path (today only the raw JSON operations batch editor exists)\n- Search over installed skills\n- Toolsets grid with per-toolset provider configuration\n- Hub browser with preview, security scan and update-all",
+    "requirement_sections": [
+      "- A form-based in-UI new-skill and SKILL.md editor that opens a skill's current SKILL.md, through the existing proposal/approval path (today only the raw JSON operations batch editor exists)\n- Search over installed skills\n- Toolsets grid with per-toolset provider configuration\n- Hub browser with preview, security scan and update-all"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/skills.py",
+      "frontend/src/panels/skill-switches.tsx",
+      "frontend/src/panels/skill-changes.tsx",
+      "frontend/src/panels/skill-batches.tsx",
+      "frontend/src/gap.tsx"
+    ],
+    "existing_test_files": [
+      "tests/test_skill_batch.py",
+      "frontend/src/test/skill-batches.test.tsx",
+      "tests/test_h331_pending_skill_review.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H147",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H147"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H148",
+    "title": "Install a plugin from an arbitrary Git URL",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "a8bf57c18d70a10be2e9ec6822bbe2442c823ecd2a0e7927320e44e5958652e0",
+    "contract": "A text field on the Plugins page taking a GitHub or Git URL, cloning and installing it into the running agent, plus an installed-plugins list with row actions and an \"orphans\" section for dashboard-only extensions (web-b.plugins-install, .plugins-installed-list, .plugins-orphans).",
+    "governance": "Would be privileged (`plugin.egress`, `skill.install`); the point of the skip is that the safe version is the marketplace path that already exists.",
+    "remaining_verbatim": "- Plugins-page field that takes a GitHub/Git URL, clones it and installs the plugin into the running hub (with signature/review/sandbox gates)\n- row actions beyond enable/disable (update, uninstall)\n- orphans section for dashboard-only extensions\n- tests for the install flow",
+    "requirement_sections": [
+      "- Plugins-page field that takes a GitHub/Git URL, clones it and installs the plugin into the running hub (with signature/review/sandbox gates)\n- row actions beyond enable/disable (update, uninstall)\n- orphans section for dashboard-only extensions\n- tests for the install flow"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/plugins.py",
+      "agents/core/routers/skills.py",
+      "frontend/src/modes3.tsx",
+      "frontend/src/panels/skills-import.tsx",
+      "frontend/src/panels/skills-import.test.tsx"
+    ],
+    "existing_test_files": [
+      "tests/test_extension_activation_routes.py",
+      "tests/test_h27_capability_verification.py",
+      "tests/test_webresearch.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H148",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H148"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H149",
+    "title": "Swap the memory provider / context engine from the UI",
+    "area": "web",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "6ef5d21de5fafd1282f1f6716480c2daa0c1da42971bcc02c877d4649f8c83f2",
+    "contract": "Runtime provider-plugin cards on the Plugins page with eight live field schemas for the memory provider (plus dependency setup hints) and a context-engine selector (web-b.plugins-memory-provider, -fields, -setup, -context-engine, .plugins-memory-provider-schemas).",
+    "governance": "Would be privileged (`kg.write` mediation assumes the first-party graph); skipping keeps that assumption true.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": "Memory is the pillar Nerva is measurably ahead on, and it is ahead precisely because it is one integrated system — data spaces, ACT-R decay, a knowledge graph with as-of history, and `kg.write` mediated by the kernel with a mandatory capability token. Making it a swappable provider slot would mean every one of those guarantees becomes 'depends which provider you picked'. Re-open path: an embedding-backend selector (a narrow, testable seam) rather than a whole-provider swap.",
+    "source_files": [],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H149",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H149"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H150",
+    "title": "Manage MCP servers from the UI (add, test, connect, OAuth, catalog install)",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "dfcab30bc7e4b3b599a93fdb2254b9c79f11e2e20df702f46daebdac80410672",
+    "contract": "An MCP page with an add-server modal, per-server cards with connect/disconnect/remove, a connection test, an OAuth authentication flow driven by a dashboard-side client, a catalog of installable entries with a credentials modal, and a replace-whole-map API (web-b.mcp-* — 9 entries).",
+    "governance": "Privileged. `mcp.mutating` is already KERNEL (a DENY blocks the write after the per-identity gate). Adding/removing a server is an admin escalation and must stay admin-guarded and audited; credentials go to the secret broker, never into a config file in cleartext.",
+    "remaining_verbatim": "- A connection test before saving: probe a server config that is not yet added and report its discovered tools (today the tools are reported by connect, after the server is saved)\n- The legacy HTTP+SSE transport (only stdio and Streamable HTTP are spoken; an sse config is refused)\n- A replace-whole-config API (servers are added and removed one at a time)",
+    "requirement_sections": [
+      "- A connection test before saving: probe a server config that is not yet added and report its discovered tools (today the tools are reported by connect, after the server is saved)\n- The legacy HTTP+SSE transport (only stdio and Streamable HTTP are spoken; an sse config is refused)\n- A replace-whole-config API (servers are added and removed one at a time)"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/web.py",
+      "agents/web/static/admin.js",
+      "agents/core/routers/mcp.py",
+      "frontend/src/panels/mcp.tsx"
+    ],
+    "existing_test_files": [
+      "tests/test_mcp_admin.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H150",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H150"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H151",
+    "title": "Configure a messaging channel from the UI (credentials, enable, test, QR onboarding)",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "59b6e3661bb0ed03a39b992fbca9274903c473eea7d5e2070866b0375bfac66a",
+    "contract": "One card per platform with a live state badge, an enable switch, a Test probe and a CONFIGURE modal that validates fields client-side and writes credentials into `.env`, plus inline Telegram and WhatsApp QR onboarding panes and restart banners (web-c.channels.page, .card, .config-modal, .field-validation, .telegram-panel, .telegram-qr, .whatsapp-panel, .restart-banner, .state-badges, .summary).",
+    "governance": "Privileged. Credentials must land in the vault / secret broker (`/api/secrets/broker`), not a plaintext `.env` write as Hermes does — that is the adaptation. Enabling a channel opens an inbound and outbound path, so the toggle is admin-tier and audited; replies already cross `channel.reply` (KERNEL).",
+    "remaining_verbatim": "- An enable switch per channel (only SMS has one; the others start when their token is set and stop only when it is removed)\n- A Test probe per channel (a bot-token check, an SMTP/IMAP login, an ntfy publish)\n- Client-side field validation in the CONFIGURE form (validation is server-side only)\n- A rendered QR for the Telegram pairing deeplink (still a text link) and WhatsApp QR onboarding\n- Changes to Telegram/Discord/Slack/email/ntfy apply only after a restart (the panel says so; no hot re-wiring)",
+    "requirement_sections": [
+      "- An enable switch per channel (only SMS has one; the others start when their token is set and stop only when it is removed)\n- A Test probe per channel (a bot-token check, an SMTP/IMAP login, an ntfy publish)\n- Client-side field validation in the CONFIGURE form (validation is server-side only)\n- A rendered QR for the Telegram pairing deeplink (still a text link) and WhatsApp QR onboarding\n- Changes to Telegram/Discord/Slack/email/ntfy apply only after a restart (the panel says so; no hot re-wiring)"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the secret broker (exists); a restart/reload action (row below)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channel_config.py",
+      "agents/core/routers/channel_config.py",
+      "frontend/src/panels/channels-config.tsx",
+      "agents/core/routers/pairing.py"
+    ],
+    "existing_test_files": [
+      "tests/test_g21_ops_surfaces.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H151",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H151"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H152",
+    "title": "Breadth of supported messaging platforms",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "a3eef0693ddeb1206357c7fdfabd537b8c47d32fe965ddb3c4141ca5640069c6",
+    "contract": "33 platform cards in v2026.8.31 — Telegram, Discord, Slack, Mattermost, Matrix, WhatsApp (+ Cloud API), Signal, BlueBubbles/iMessage, Photon, Home Assistant, Email, SMS/Twilio, DingTalk, Feishu, Google Chat, WeCom (bot + app), Weixin, QQ, Yuanbao, IRC, LINE, MS Graph, Teams, ntfy, Raft, Relay, SimpleX, A2A, Buzz, API server, Webhooks (web-c.channels.* — ~30 card entries).",
+    "governance": "Every added channel is an egress + inbound surface; `channel.reply` (KERNEL) must cover it, and untrusted inbound content must taint downstream actions.",
+    "remaining_verbatim": "- Mattermost, BlueBubbles/iMessage, Photon, DingTalk, Feishu, WeCom (bot + app), Weixin, QQ, Yuanbao, IRC, LINE, MS Graph, Raft, Relay, SimpleX and Buzz adapters\n- two-way SMS/Twilio channel\n- WhatsApp Cloud API variant\n- per-platform channel cards in the HUD",
+    "requirement_sections": [
+      "- Mattermost, BlueBubbles/iMessage, Photon, DingTalk, Feishu, WeCom (bot + app), Weixin, QQ, Yuanbao, IRC, LINE, MS Graph, Raft, Relay, SimpleX and Buzz adapters\n- two-way SMS/Twilio channel\n- WhatsApp Cloud API variant\n- per-platform channel cards in the HUD"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the channel configuration UI (row above)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/web.py",
+      "agents/core/channels/webhook_channels.py",
+      "agents/core/routers/a2a.py",
+      "agents/core/routers/webhooks.py",
+      "agents/core/routers/house.py",
+      "agents/core/plugins/sms_alerts.py"
+    ],
+    "existing_test_files": [
+      "tests/test_webhook_channels_h12_16.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H152",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H152"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H153",
+    "title": "Webhook subscriptions (create, enable, HMAC secret, delete)",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "4cf373559835467b03603fea55b6ed2f0a4f3cb840b0dbc4a0fb9db3b73bc510",
+    "contract": "A Webhooks page with a receiver enable card, a New-subscription modal (name, events, deliver/deliver-only, prompt, skills, secret), a subscriptions list with per-route enable/disable and delete, and restart banners distinguishing the platform-level toggle from hot-reloading route CRUD (web-c.webhooks.* — 6 entries).",
+    "governance": "Privileged. An inbound webhook is an untrusted origin — payloads must be treated as tainted so a triggered action escalates GRANT→QUEUE (the kernel already does this); creating a route is admin-tier and audited.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/webhooks.py",
+      "agents/core/webhooks.py",
+      "agents/core/routers/admin.py",
+      "agents/core/channels/outbound.py",
+      "agents/core/channels/telegram.py",
+      "agents/core/channels/ntfy.py",
+      "agents/core/channels/render.py",
+      "agents/core/autonomy/jobs.py",
+      "frontend/src/panels/webhooks.tsx",
+      "frontend/src/panel-kit.tsx",
+      "frontend/src/api/client.ts",
+      "agents/web/static/tools.js",
+      "agents/core/action_origin.py",
+      "agents/core/routers/workflows.py",
+      "docs/hermes/evidence/h487-telegram-collateral-review-2026-10-04.md",
+      "agents/core/channels/manager.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h153_webhook_subscriptions.py",
+      "tests/test_h153b_webhook_delivery.py",
+      "tests/test_h153c_webhook_sends.py",
+      "tests/test_h153d_webhook_review.py",
+      "tests/test_h10_8_webhooks.py",
+      "frontend/src/test/webhooks-panel.test.tsx",
+      "frontend/src/test/use-api-sequence.test.tsx",
+      "frontend/src/test/interop-live-honesty.test.tsx",
+      "tests/frontend/tools.test.js",
+      "tests/test_h153e_webhook_review.py",
+      "frontend/src/test/panel-state.test.tsx",
+      "tests/test_h485_owner_once_telegram.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H153",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H153"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H154",
+    "title": "Approve or revoke who may talk to the agent (pairing)",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "b03db426ca40109650d9d70f491623f06d254c757fd3ab02eddf867eb66f45fd",
+    "contract": "A Pairing page with pending requests, approved users, per-row approve and revoke, a \"Clear pending\" bulk action, and a composite `platform:user_id` key so IDs containing colons survive (web-c.pairing.* — 4 entries).",
+    "governance": "Approving a pairing widens who may reach the agent — already admin-tier and audited.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/channels/pairing.py",
+      "agents/core/routers/pairing.py",
+      "frontend/src/gap.tsx",
+      "agents/cli/nerva.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h12_19_pairing.py",
+      "tests/test_nerva_cli_pairing.py",
+      "frontend/src/test/pairing-deeplink.test.tsx",
+      "frontend/src/test/gap-panels.test.tsx"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H154",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H154"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H155",
+    "title": "Isolated workspaces (profiles): separate config, keys, memory, sessions, skills and cron per persona",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "7434221b7c90b5e0fbed31df76d4361ab61663d0159af1824b1ab211caecd09f",
+    "contract": "A Profiles page listing every isolated `HERMES_HOME`, a global `?profile=` switcher that re-scopes every page and remounts the route tree, a managing-profile banner, per-profile activate/rename/delete/copy-CLI-command, and a 5-step Profile Builder wizard (identity → model → skills → MCPs → review) that creates the whole thing in one atomic POST (web-c.profiles.*, web-c.builder.*, web-shell.profile-switcher, .profile-provider, .profile-scope-banner, .profile-keyed-routes, .profile-routing — ~25 entries).",
+    "governance": "Would fork every kernel guarantee per profile — that is the reason for the skip, not the effort.",
+    "remaining_verbatim": "- A web Profiles page: list the profiles under <install root>-profiles with each one's state (hub running or not), create, rename, copy and delete (delete behind the irreversible tier), and a profile-builder wizard\n- A HUD profile switcher (Hermes ?profile=) and a scope banner naming the profile a page acts on; today a profile is chosen only at process start (JARVIS_PROFILE, or `nerva -p NAME` for the CLI) and one hub serves one profile\n- Per-profile cron/jobs, skills and sessions listed across profiles from one page (each profile's hub keeps its own, and nothing aggregates them)",
+    "requirement_sections": [
+      "- A web Profiles page: list the profiles under <install root>-profiles with each one's state (hub running or not), create, rename, copy and delete (delete behind the irreversible tier), and a profile-builder wizard\n- A HUD profile switcher (Hermes ?profile=) and a scope banner naming the profile a page acts on; today a profile is chosen only at process start (JARVIS_PROFILE, or `nerva -p NAME` for the CLI) and one hub serves one profile\n- Per-profile cron/jobs, skills and sessions listed across profiles from one page (each profile's hub keeps its own, and nothing aggregates them)"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "a multi-user product decision that does not exist",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/paths.py",
+      "agents/core/estop.py",
+      "agents/core/routers/system_profiles.py"
+    ],
+    "existing_test_files": [
+      "tests/test_h689b_profile_env.py",
+      "tests/test_h689_install_identity.py",
+      "tests/test_estop.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H155",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H155"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H156",
+    "title": "Edit an agent's persona and description from the UI",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "eb2ba54183f6a6ec85a8aad0651bf8a100fde466e4849249556bf579a2bd7d37",
+    "contract": "Per-profile \"Edit SOUL.md\" and \"Edit description\" editors, plus an Auto-generate button that has a model write the description (web-c.profiles.soul-editor, .description-editor, .model-editor, .rename).",
+    "governance": "A SOUL edit changes what the agent will do unprompted — it belongs in the audit log and should reuse the existing commit/rollback path, not a blind overwrite.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "the prompt versioning store (exists)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/soul_edit.py",
+      "agents/core/routers/agents_api.py",
+      "agents/core/routers/admin.py",
+      "frontend/src/soul-edit.tsx",
+      "frontend/src/modes.tsx",
+      "docs/hermes/evidence/2026-10-05-kanban-child-milestone/report.json",
+      "docs/hermes/evidence/2026-10-05-pending-input-completion/content/report.json",
+      "docs/hermes/evidence/2026-10-06-openai-codex-images/contract-review.json"
+    ],
+    "existing_test_files": [
+      "tests/test_soul_edit_route.py",
+      "frontend/src/test/soul-edit.test.tsx",
+      "tests/test_h277_soul_description_auxiliary.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H156",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H156"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H157",
+    "title": "Edit every configuration key from the UI",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "7bbe9cbeb4202b13b9682d10e5489933218f6982252a1146751e2275a36e596a",
+    "contract": "A Config page with a category rail, schema-typed field widgets, a cross-key search results card, a Form/YAML mode toggle with a raw editor, export config as JSON, import config from JSON, and reset-scope-to-defaults (web-c.config.* — 13 entries).",
+    "governance": "Privileged. Already admin-guarded and audited. Import-from-JSON must validate every key through the same `validate_category` path — a bulk import is the obvious way to sneak a posture flag past the schema.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/settings_db.py",
+      "agents/core/routers/admin.py",
+      "frontend/src/panels/settings-tools.tsx",
+      "frontend/src/gap.tsx",
+      "docs/test-manual/05-console-panels-b.md",
+      "agents/web/static/admin.js",
+      "agents/core/mcp/client.py",
+      "docs/hermes/h277-vision-selection-consent-plan-2026-10-02.md",
+      "docs/hermes/h277-nous-auth-plan-2026-10-02.md",
+      "docs/hermes/evidence/h487-telegram-collateral-review-2026-10-04.md"
+    ],
+    "existing_test_files": [
+      "tests/test_settings_transfer.py",
+      "frontend/src/test/settings-tools.test.tsx",
+      "tests/test_h157b_settings_review.py",
+      "tests/test_h277_vision_selection_cli.py",
+      "tests/test_h277_nous_auth_surface.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H157",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H157"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H158",
+    "title": "Set provider API keys and connect OAuth providers from the UI",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "b9af0b4796c14ee0385f253288d5acaa8ec5250a1960c973d9879cb333dff818",
+    "contract": "A Keys page with an advanced toggle, section jump-nav, a Provider Logins (OAuth) card with a login modal and per-provider docs links, an LLM Providers card grouping keys by provider in accordions, per-key set/clear with a clear confirmation, and KEYS / GATEWAY / CONFIG / CUSTOM KEYS category cards (web-c.env.* — 15 entries, plus gapfill-web-c-r0).",
+    "governance": "Privileged. Writes go to the broker/vault (already admin-guarded); the audit row must record the key name only, matching the settings-change rule. A newly set cloud key changes the EGRESS posture and the top-bar badge must reflect it.",
+    "remaining_verbatim": "- Unified built-in per-LLM-provider key set/clear from the UI (via the broker), grouped by provider with docs links; the separate named custom-endpoint secret control is already present\n- Clear confirmation and category cards (keys / gateway / config / custom)\n- Provider-login (OAuth) modal per provider\n- Advanced toggle and section navigation",
+    "requirement_sections": [
+      "- Unified built-in per-LLM-provider key set/clear from the UI (via the broker), grouped by provider with docs links; the separate named custom-endpoint secret control is already present\n- Clear confirmation and category cards (keys / gateway / config / custom)\n- Provider-login (OAuth) modal per provider\n- Advanced toggle and section navigation"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the secret broker (exists)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/admin.py",
+      "agents/core/routers/secrets.py",
+      "frontend/src/gap.tsx",
+      "agents/core/settings_db.py",
+      "frontend/src/panels/provider-check.tsx",
+      "frontend/src/panels/custom-endpoints.tsx",
+      "agents/core/routers/custom_endpoints.py"
+    ],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H158",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H158"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H159",
+    "title": "Sign in to the web UI from another device",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "319d51c9849aa46b8bff058bab8696660610dd5998a17a230167ef7ff07ea208",
+    "contract": "A server-rendered `/login` page, an OAuth round trip (`/auth/login` → IDP → `/auth/callback`), a bundled username/password provider, sign-out, a providers list, an identity probe (`/api/auth/me`), single-use WebSocket upgrade tickets, a loopback session-token mode, a host-header/DNS-rebinding guard, a public-API allow-list, a bearer token seam for service callers, and an RFC 8252 native/desktop OAuth broker (web-shell.auth-*, .login-page, .host-header-guard, .public-api-paths, web-c.login.* — ~20 entries).",
+    "governance": "Privileged. Authentication is the outermost gate; a login session must not widen scope (a user session stays user-tier, admin still requires the admin credential). The public-path allow-list must be explicit and snapshot-tested the way the route-auth matrix already is.",
+    "remaining_verbatim": "- Auth providers list and an OAuth/IdP login round trip for the HUD (only the owner secret signs in; the Workspace has password login and a trusted-proxy SSO header, no OAuth round trip)\n- Single-use WebSocket upgrade tickets\n- Native/desktop OAuth (RFC 8252) broker",
+    "requirement_sections": [
+      "- Auth providers list and an OAuth/IdP login round trip for the HUD (only the owner secret signs in; the Workspace has password login and a trusted-proxy SSO header, no OAuth round trip)\n- Single-use WebSocket upgrade tickets\n- Native/desktop OAuth (RFC 8252) broker"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/web.py",
+      "agents/core/host_policy.py",
+      "frontend/src/api/client.ts",
+      "agents/core/routers/workspace_auth.py",
+      "agents/core/workspace/auth.py",
+      "agents/core/workspace/config.py",
+      "frontend/src/workspace/pages/auth/LoginPage.tsx",
+      "frontend/src/owner-sign-in.tsx",
+      "agents/core/routers/browser_auth.py"
+    ],
+    "existing_test_files": [
+      "tests/test_host_header_guard.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H159",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H159"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H160",
+    "title": "Restart or update the running system from the UI, with a streaming action log",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "f466074e7447e0ae89f99e26083d9fe1ed7c1cba00d1f2e8099a166a7dea3b43",
+    "contract": "Sidebar \"Restart Gateway\" and \"Update Hermes\" buttons with confirmations, a system-action runner that POSTs then polls `/api/actions/<id>/status?lines=200` every 1.5s, toasts, and a dismissible streaming log panel rendered on the Sessions and System pages; the Update button is gated on a `can_update_hermes` status flag (web-shell.restart-gateway, .update-hermes, .system-actions-provider, .system-action-button, web-a.sessions.system-action-log, web-c.system.update).",
+    "governance": "Privileged. `host.control` is already KERNEL. A restart is reversible-ish and can be a GRANT-able action; an update is irreversible and must sit at the approval QUEUE floor with a backup taken first (BackupPanel already has create + verify). The streaming log is read-only.",
+    "remaining_verbatim": "- The restart does not cross the Action Kernel as `host.control` (it is admin-only, same-origin and confirmed)\n- The log is polled, not streamed; there is no log panel on the Sessions page and no `can_update` toast",
+    "requirement_sections": [
+      "- The restart does not cross the Action Kernel as `host.control` (it is admin-only, same-origin and confirmed)\n- The log is polled, not streamed; there is no log panel on the Sessions page and no `can_update` toast"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the kernel binding in web.py (exists); backup create/verify (exists)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/ops.py",
+      "agents/core/hub_update.py",
+      "agents/core/hub_restart.py",
+      "frontend/src/panels/system-update.tsx",
+      "agents/core/hub_update_apply.py"
+    ],
+    "existing_test_files": [
+      "tests/test_g21_ops_surfaces.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H160",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H160"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H161",
+    "title": "Warn when the box is running out of memory or disk",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "cba246e73094c29eaedfeffdcb991f13b3ab54162a1d9af6291893d87116112f",
+    "contract": "A ranked, dismissible banner covering five conditions — disk critical, memory critical, suspected OOM restart since last boot, disk elevated, memory elevated — showing only the worst undismissed one, keying dismissals by boot id so a restart re-arms them, and clearing only on confirmed recovery (web-shell.memory-pressure-banner; it carries a 438-line dedicated test file).",
+    "governance": "read-only",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/resource_pressure.py",
+      "agents/core/routers/pressure.py",
+      "agents/core/scheduler_service.py",
+      "frontend/src/pressure-banner.tsx"
+    ],
+    "existing_test_files": [
+      "frontend/src/test/pressure-banner.test.tsx",
+      "tests/test_h161_resource_pressure.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H161",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H161"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H162",
+    "title": "Full backup: create, download, restore, and checkpoints",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "1d62b7b8fc6ff0b2f39063038fecd535f706e4a1ed7a204cf7fe5d2ae40d0413",
+    "contract": "A System page section that creates and downloads a full backup, restores from an uploaded file or from a backups path behind a confirmation dialog, and lists checkpoints (web-c.system.backup, .restore-upload, .restore-path, .restore-confirm, .checkpoints).",
+    "governance": "Privileged and irreversible: a restore overwrites live memory, sessions and config. It must cross the kernel at the irreversible tier with an explicit typed confirmation, the way `forget` already does, and it should snapshot first.",
+    "remaining_verbatim": "- Uploads are capped at 512 MiB and the drill decrypts the whole archive in memory (the Fernet archive format cannot be decrypted in a stream); a chunked, authenticated archive format would lift the cap and the memory use\n- A browser that uses a header token and has no File System Access API cannot download from the HUD (refused rather than buffered); the owner session or the backups folder works",
+    "requirement_sections": [
+      "- Uploads are capped at 512 MiB and the drill decrypts the whole archive in memory (the Fernet archive format cannot be decrypted in a stream); a chunked, authenticated archive format would lift the cap and the memory use\n- A browser that uses a header token and has no File System Access API cannot download from the HUD (refused rather than buffered); the owner session or the backups folder works"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "the backup store (exists)",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/backup.py",
+      "frontend/src/gap.tsx",
+      "agents/core/backup.py",
+      "agents/cli/nerva.py",
+      "frontend/src/panels/backup-transfer.tsx",
+      "agents/core/checkpoint_commands.py",
+      "agents/core/archive_safe.py",
+      "frontend/src/api/client.ts"
+    ],
+    "existing_test_files": [
+      "tests/test_backup.py",
+      "tests/test_backup_inplace_restore.py",
+      "tests/test_h162_backup_transfer.py",
+      "frontend/src/test/backup-transfer.test.tsx"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H162",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H162"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H163",
+    "title": "Event-triggered shell hooks",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "2fb3cbf6f3f457c3d09157d2255b367eb4f500b11b7d04c1bb7ca6af03d0176e",
+    "contract": "A \"Shell hooks\" section on the System page with a New-hook modal, letting the operator attach a shell command to a system event (web-c.system.hooks, .new-hook).",
+    "governance": "Would be privileged host execution bypassing `terminal.exec` (KERNEL, irreversible tier). That bypass is the reason to skip.",
+    "remaining_verbatim": "- With the Action Kernel off (the default) a hook run does not cross the kernel: the durable approval, admin credential, kill switch and safe mode are checked directly, so the `terminal.exec`-class kernel mediation the row's governance clause asks for applies only when JARVIS_ACTION_KERNEL is on",
+    "requirement_sections": [
+      "- With the Action Kernel off (the default) a hook run does not cross the kernel: the durable approval, admin credential, kill switch and safe mode are checked directly, so the `terminal.exec`-class kernel mediation the row's governance clause asks for applies only when JARVIS_ACTION_KERNEL is on"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/hooks/store.py",
+      "agents/core/hooks/runner.py",
+      "agents/core/routers/hooks.py",
+      "frontend/src/panels/hooks.tsx",
+      "frontend/src/panels/hooks.test.tsx"
+    ],
+    "existing_test_files": [
+      "tests/test_g17_hooks.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H163",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H163"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H164",
+    "title": "Share a diagnostic report for support",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "45e37dfa35568c73ed3345f38da85308fc1806470a8198e02a13c91bfc1120b5",
+    "contract": "A \"Share debug report\" action on the System page and an \"Open console\" modal for live inspection (web-c.system.debug-share, .console, web-shell.cmp-hermes-console).",
+    "governance": "read-only, admin-guarded, allow-list constrained",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/cli/nerva.py",
+      "agents/core/routers/support.py",
+      "agents/core/support_bundle.py",
+      "frontend/src/api/schema.gen.ts",
+      "frontend/src/gap.tsx",
+      "frontend/src/panels/support-voice.test.tsx",
+      "frontend/src/panels/support-voice.tsx"
+    ],
+    "existing_test_files": [
+      "tests/test_support_bundle.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H164",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H164"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H165",
+    "title": "In-app documentation",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "f9bb205821aee3031dc9b6dc132cb52ba62db38d813906794cbf41bbb0aa590e",
+    "contract": "A Documentation page inside the dashboard with an \"Open documentation in a new tab\" affordance (web-c.docs.page, .open-external, .docs-plugin-slots).",
+    "governance": "read-only",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/help_docs.py",
+      "frontend/src/markdown.tsx",
+      "frontend/src/panels/docs.tsx",
+      "frontend/src/console-routes.ts",
+      "frontend/src/gap.tsx",
+      "desktop/src-tauri/hud-routes.json"
+    ],
+    "existing_test_files": [
+      "tests/test_help_docs_route.py",
+      "frontend/src/test/markdown.test.tsx",
+      "frontend/src/test/docs-panel.test.tsx"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H165",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H165"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H166",
+    "title": "Third-party dashboard extensions (plugin manifests, slots, SDK, route override)",
+    "area": "web",
+    "recorded_status": "excluded",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "931fe0e6d8f432ebba789904296a745d73d16d8431dcd09995d43b8b674386a5",
+    "contract": "A full dashboard plugin system: manifest schema, discovery search order, a loader with a 2s safety timeout, a component registry, a `PluginPage` renderer, 30 named slots across every page, a plugin SDK exposed on `window` before first render, nav positioning and built-in route override (a plugin can replace `/chat`), asset serving from `/dashboard-plugins/<name>/<file>`, an API runtime gate, and a sidebar visibility toggle — plus two shipped plugin pages, Kanban and Achievements (web-shell.plugin-* — 13 entries, plus web-shell.plugin-kanban and .plugin-achievements, plus per-page plugin-slot entries on all 10 pages).",
+    "governance": "Would sit *beside* the kernel rather than behind it — a spoofable approval surface. That is the disqualifying reason.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": "Third-party JavaScript running same-origin inside the cockpit can read every governed surface, forge an approval dialog and issue authenticated calls with the owner's token — it sits entirely outside the Action Kernel, which mediates backend effects and knows nothing about a script that lies about what the owner clicked. Hermes can afford it because its dashboard makes no trust claim; Nerva's whole proposition is that what you see on the approval screen is what will happen. Re-open path: a slot registry that renders server-validated declarative panel descriptors (data, not code), behind a default-off flag — which gets most of the extensibility without the same-origin script.",
+    "source_files": [],
+    "existing_test_files": [],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H166",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H166"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H167",
+    "title": "Task board for planned work",
+    "area": "web",
+    "recorded_status": "partial",
+    "planning_status": "needs_design",
+    "spec_state": "needs_design",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "aef4219041d0fd4e639fcd1f8f11fdaaee911614411f9c1701a373ae698019d7",
+    "contract": "The Kanban plugin page (168 i18n keys — columns, triage specifier, decomposer, card detail) shipped as a dashboard plugin, plus an Achievements page (67 keys) gamifying usage (web-shell.plugin-kanban, .plugin-achievements, .i18n-ns-kanban, .i18n-ns-achievements).",
+    "governance": "Mission steps that act cross the kernel through the normal task path.",
+    "remaining_verbatim": "- Implement the triage specifier and decomposer (auxiliary model through the kernel) behind /tasks/{id}/specify and /decompose\n- Implement the estimator and the scoped orchestration config (auto-decompose, default assignee) the board shows as disabled\n- Decide on default enablement or a HUD path to enable llm.kanban",
+    "requirement_sections": [
+      "- Implement the triage specifier and decomposer (auxiliary model through the kernel) behind /tasks/{id}/specify and /decompose\n- Implement the estimator and the scoped orchestration config (auto-decompose, default assignee) the board shows as disabled\n- Decide on default enablement or a HUD path to enable llm.kanban"
+    ],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "agents/core/routers/kanban.py",
+      "agents/core/kanban/dashboard_api.py",
+      "frontend/src/gap.tsx",
+      "frontend/src/panels/kanban/KanbanView.tsx",
+      "frontend/src/kanban-board.test.tsx"
+    ],
+    "existing_test_files": [
+      "tests/test_hermes_kanban_dashboard.py"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H167",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H167"
+    ],
+    "next_action": "Select ONE residual requirement, inspect its actual caller and cited test, and produce a reviewed packet using PACKET-TEMPLATE.md. Check related ready packets first; no whole-contract implementation assignment.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  },
+  {
+    "id": "H168",
+    "title": "Shared UI primitives the pages lean on (markdown, destructive-action confirmation, schema-driven fields)",
+    "area": "web",
+    "recorded_status": "equivalent",
+    "planning_status": "retain_and_verify",
+    "spec_state": "evidence_only",
+    "source_sha": "c235250071b49b24e0b92e7f78c5d952fa0e2095",
+    "source_row_sha256": "a2ce34a44a342668aa72ff16dd543e217698db9ed9ff8b700b776270a80ddd06",
+    "contract": "A `Markdown` component used by chat and session transcripts, `ConfirmDialog` / `DeleteConfirmDialog` / `ModelReloadConfirm` as one destructive-action primitive, `AutoField` for schema-driven config inputs, `ModelPickerDialog`, `SlashPopover`, `ScheduleBuilder`, `ToolsetConfigDrawer`, plus modal-shell classes, a `useModalBehavior` hook, z-index bands and a toast host (web-shell.cmp-* and .modal-shell, .use-modal-behavior, .z-bands, .toasts — ~20 entries).",
+    "governance": "The markdown renderer must never introduce innerHTML/iframe/script paths — agent output is untrusted content, and artifacts.tsx already sets the correct posture. The confirm primitive's severity should mirror the kernel's tiers so the UI and the queue tell the same story.",
+    "remaining_verbatim": "",
+    "requirement_sections": [],
+    "review_overlay": null,
+    "original_dependency_note": "nothing",
+    "historical_exclusion_reason": null,
+    "source_files": [
+      "frontend/src/confirm.tsx",
+      "frontend/src/markdown.tsx",
+      "frontend/src/cockpit.tsx",
+      "frontend/src/shell.tsx",
+      "frontend/src/artifacts.tsx",
+      "frontend/src/gap.tsx",
+      "frontend/src/panels/trust-ops.tsx",
+      "frontend/src/panels/marketplace-admin.tsx",
+      "frontend/src/panels/webhooks.tsx",
+      "frontend/src/modes3.tsx",
+      "agents/core/autonomy/policy.py",
+      "docs/hermes/evidence/2026-10-05-kanban-child-milestone/report.json",
+      "docs/hermes/evidence/2026-10-05-pending-input-completion/content/report.json",
+      "docs/hermes/evidence/2026-10-06-openai-codex-images/contract-review.json"
+    ],
+    "existing_test_files": [
+      "tests/test_confirm_tiers.py",
+      "frontend/src/test/confirm.test.tsx",
+      "frontend/src/test/markdown-adoption.test.tsx"
+    ],
+    "prior_specs_to_revalidate": [],
+    "source_refs": [
+      "docs/hermes/assessment.json#H168",
+      "docs/research/2026-09-07-hermes-absorption-ledger.json#H168"
+    ],
+    "next_action": "Preserve existing behavior. Reevaluate if an affected area suite fails; do not treat this recorded status as fresh certification.",
+    "completion_contract": "All accepted clauses, real caller, refusal/recovery behavior and applicable platform evidence; mocks alone do not certify live acceptance. Never shrink the 697-row inventory."
+  }
+]

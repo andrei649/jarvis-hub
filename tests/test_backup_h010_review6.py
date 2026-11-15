@@ -168,9 +168,8 @@ def test_a_hub_that_appears_between_the_hold_and_the_apply_stops_the_stage(
 
     _as_runtime(monkeypatch)
     name = Path(bk.create_backup()["archive"]).name
-    st = bk.resolve_backup(name).stat()
     task = SimpleNamespace(id=9, kind="backup.restore", decided_by="admin", decision="accept",
-                           payload={"name": name, "bytes": st.st_size, "mtime": st.st_mtime})
+                           payload=bk.restore_request(name)["payload"])
     assert irreversible.held_here(task) == "hub_applies_restore"
     assert asyncio.run(irreversible.execute(task, orch=None)) == {
         "status": "refused", "reason": "hub_applies_restore"}
@@ -199,9 +198,8 @@ def test_the_manual_stage_is_born_manual(root, monkeypatch):
         return real(path, data)
 
     monkeypatch.setattr(bk, "_write_json", spy)
-    st = bk.resolve_backup(name).stat()
     task = SimpleNamespace(id=4, decided_by="admin",
-                           payload={"name": name, "bytes": st.st_size, "mtime": st.st_mtime})
+                           payload=bk.restore_request(name)["payload"])
     result = asyncio.run(bk.apply_approved(task, None))
     assert result["restart"] == "manual"
     assert seen and all(row.get("restart") == "manual" for row in seen)

@@ -49,6 +49,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Path, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from agents.core.channels.outbound_stream import OutboundStream, final_text
 from agents.core.workspace import assistant, audit, auth, db, documents, llm
 from agents.core.workspace.assistant import AnswerPlan
 from agents.core.workspace.auth import WsAdmin, WsUser
@@ -162,7 +163,8 @@ def message_json(row: sqlite3.Row, openable: set[int] | None = None) -> dict:
                      if isinstance(citation, dict) else citation for citation in citations]
     return {
         "id": int(row["id"]), "conversation_id": int(row["conversation_id"]),
-        "role": row["role"], "content": row["content"],
+        "role": row["role"],
+        "content": final_text(row["content"]) if row["role"] == "assistant" else row["content"],
         "citations": citations, "status": status,
         "error_code": error_code, "model": row["model"], "locality": row["locality"],
         "latency_ms": row["latency_ms"], "feedback": row["feedback"],
@@ -458,6 +460,7 @@ def _transient_message(turn: Turn, *, status: str, content: str = "",
                        citations: list | None = None, error_code: str | None = None,
                        meta: dict | None = None) -> dict:
     """The outcome in the message shape when there is no stored row to show for it."""
+    content = final_text(content)
     meta = meta or {}
     return {"id": turn.assistant_id, "conversation_id": turn.conversation_id,
             "role": "assistant", "content": content, "citations": citations or [],
@@ -475,6 +478,7 @@ def _store_outcome(turn: Turn, *, status: str, content: str = "", citations: lis
     conversation was deleted cannot reach — or read back — the row that inherited its
     id. Then nothing is written and the outcome is answered as it would have been.
     """
+    content = final_text(content)
     meta = meta or {}
     identity = (turn.assistant_id, turn.conversation_id, turn.stamp)
     conn = db.connect()
@@ -556,7 +560,7 @@ async def produce_answer(turn: Turn, plan: AnswerPlan, policy: str,
                              turn.conversation_id)
             error = WorkspaceError("internal_error", "the answer could not be produced", 500)
             return await offload(_stored, turn, error, status="error", error_code=error.code)
-        content = result.text.strip()
+        content = final_text(result.text.strip())
         return await offload(
             _stored, turn, None, status="complete", content=content,
             citations=assistant.filter_citations(content, plan.citations),
@@ -601,6 +605,7 @@ async def _stop(task: asyncio.Task) -> None:
 async def _event_stream(turn: Turn, plan: AnswerPlan, queue: asyncio.Queue,
                         task: asyncio.Task) -> AsyncIterator[str]:
     """The SSE body: drains the runner's queue, pinging while the model is quiet."""
+    outbound = OutboundStream()
     try:
         yield sse("start", {"user_message": turn.user_message,
                             "assistant_message_id": turn.assistant_id,
@@ -613,8 +618,13 @@ async def _event_stream(turn: Turn, plan: AnswerPlan, queue: asyncio.Queue,
                 yield PING_FRAME
                 continue
             if kind == "token":
-                yield sse("token", {"t": data})
+                delta = outbound.push(data)
+                if delta:
+                    yield sse("token", {"t": delta})
             elif kind == "done":
+                delta, _clean = outbound.finish(data["content"])
+                if delta:
+                    yield sse("token", {"t": delta})
                 yield sse("done", {"assistant_message": data})
                 return
             else:

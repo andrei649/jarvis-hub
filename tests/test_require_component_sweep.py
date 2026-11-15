@@ -45,7 +45,11 @@ ROUTERS = repo_root / "agents" / "core" / "routers"
 #                  `require_component` call collapses both into the second body.
 #   oauth.*      — guards on truthiness (`if not bridge`), not `is None`, and
 #                  answers with a different body shape ({"ok": False, "error": …}).
+#   commands.*   — requires a CommandRegistry instance (not merely non-None),
+#                  and preserves the no-cache {ok, reason, commands} refusal.
+#                  tests/test_commands_catalog.py pins both differences.
 DELIBERATELY_UNCONVERTED = {
+    ("commands.py", "command_catalog"),
     ("analytics.py", "metrics_north_star"),
     ("analytics.py", "get_trace"),
     ("analytics.py", "clear_traces"),

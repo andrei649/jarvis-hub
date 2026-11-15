@@ -43,7 +43,10 @@ async def test_sse_cancels_model_turn_on_client_disconnect():
     assert cancelled.is_set()
 
 
-async def test_sse_normal_completion_emits_start_tokens_end():
+async def test_sse_normal_completion_emits_start_tokens_end(monkeypatch):
+    from agents.core.channels import outbound_safety
+
+    monkeypatch.setattr(outbound_safety, "_known_redactor", lambda text: text)
     class FakeOrch:
         session_id = "aud7_session"
 
@@ -54,7 +57,8 @@ async def test_sse_normal_completion_emits_start_tokens_end():
 
     events = [_payload(c) async for c in web._chat_event_stream(FakeOrch(), "hi", "friday", "friday")]
     assert events[0] == {"type": "start", "agent": "friday"}
-    assert [e["text"] for e in events if e["type"] == "token"] == ["hel", "lo"]
+    # Neither fragment is a safe whole word; the final checked reply is emitted.
+    assert [e["text"] for e in events if e["type"] == "token"] == ["hello"]
     # `pending_approvals` rides on every end event (empty when the turn queued
     # nothing), so a client never has to branch on whether the key is there; so
     # do H677's `warming` (false once the boot warm-up is over) and H674's

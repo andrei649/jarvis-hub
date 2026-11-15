@@ -61,6 +61,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Optional
 
+from .security.rag_guard import (
+    COMPRESSION_CONTEXT_MAX_CHARS,
+    COMPRESSION_TURN_MAX_CHARS,
+    sanitize_compression_context,
+)
+
 logger = logging.getLogger("jarvis.context_compaction")
 
 # Hermes's structured carry-over template (background: agent/context_compressor.py
@@ -311,6 +317,7 @@ class ContextCompressor:
                  checkpoint: Optional[Callable[["list[dict]", "list[dict]"], Awaitable[Any]]] = None,
                  gate: Optional[Callable[[Callable[[], Awaitable[str]], int], Awaitable[Optional[str]]]] = None,
                  untrusted_history: bool = False,
+                 max_context_chars: int = COMPRESSION_CONTEXT_MAX_CHARS,
                  ) -> None:
         self._summarize = summarizer
         self.max_tokens = max_tokens
@@ -318,6 +325,7 @@ class ContextCompressor:
         self.keep_first = max(0, int(keep_first))
         self.structured = structured
         self.untrusted_history = untrusted_history
+        self.max_context_chars = max(1, int(max_context_chars))
         # H427: awaited with exactly the turns about to be summarised away (and the whole
         # transcript) before the summary replaces them; CheckpointAborted keeps them.
         self._checkpoint = checkpoint
@@ -342,14 +350,23 @@ class ContextCompressor:
             score += 0.1
         return score
 
+    def _sanitize_turn_text(self, text: Any) -> str:
+        raw = str(text or "")
+        return sanitize_compression_context(
+            raw,
+            max_chars=min(COMPRESSION_TURN_MAX_CHARS, self.max_context_chars),
+        )
+
     def _fallback_digest(self, older: "list[dict]") -> str:
         """Deterministic digest: the most important older turns, first sentence each."""
         ranked = sorted(older, key=self._importance, reverse=True)[:5]
         lines = []
         for t in ranked:
-            first = re.split(r"(?<=[.!?])\s", (t.get("content", "") or "").strip())[0]
+            cleaned = self._sanitize_turn_text(t.get("content", ""))
+            first = re.split(r"(?<=[.!?])\s", cleaned.strip())[0]
             lines.append(f"- {t.get('role', '')}: {first[:160]}")
-        return "[summary of earlier conversation]\n" + "\n".join(lines)
+        digest = "[summary of earlier conversation]\n" + "\n".join(lines)
+        return sanitize_compression_context(digest, max_chars=self.max_context_chars)
 
     def micro_summary(self, covered: "list[dict]", *, prior: str,
                       new_turns: "list[dict]", defrag_threshold_tokens: int) -> str:
@@ -358,33 +375,49 @@ class ContextCompressor:
                      and defrag_threshold_tokens >= 1 else 2000)
         if not prior:
             return self._fallback_digest(new_turns)
-        lines = [f"- {row.get('role', '')}: {str(row.get('content', ''))[:160]}"
-                 for row in new_turns]
-        candidate = prior.rstrip() + "\n" + "\n".join(lines)
+        clean_prior = sanitize_compression_context(prior, max_chars=self.max_context_chars)
+        lines = [
+            f"- {row.get('role', '')}: {self._sanitize_turn_text(row.get('content', ''))[:160]}"
+            for row in new_turns
+        ]
+        candidate = clean_prior.rstrip() + "\n" + "\n".join(lines)
         if self.estimate_tokens(candidate) >= threshold or len(candidate.encode("utf-8")) > 8192:
             return self._fallback_digest(covered)
-        return candidate
+        return sanitize_compression_context(candidate, max_chars=self.max_context_chars)
 
     def _block(self, turns: "list[dict]") -> str:
         if self.untrusted_history:
             from .foreign_history import render_turn
-            return "\n".join(render_turn(turn, tainted=True) for turn in turns)
-        return "\n".join(f"{t.get('role', '')}: {t.get('content', '')}" for t in turns)
+            rendered = "\n".join(
+                render_turn({**turn, "content": self._sanitize_turn_text(turn.get("content", ""))}, tainted=True)
+                for turn in turns
+            )
+            return sanitize_compression_context(rendered, max_chars=self.max_context_chars)
+        rendered = "\n".join(
+            f"{t.get('role', '')}: {self._sanitize_turn_text(t.get('content', ''))}"
+            for t in turns
+        )
+        return sanitize_compression_context(rendered, max_chars=self.max_context_chars)
 
     def _summarizer_input(self, new_older: "list[dict]", prior_summary: str) -> str:
         block = self._block(new_older)
+        clean_prior = (
+            sanitize_compression_context(prior_summary, max_chars=self.max_context_chars)
+            if prior_summary
+            else ""
+        )
         if self.structured:
-            if prior_summary and self.untrusted_history:
+            if clean_prior and self.untrusted_history:
                 from .foreign_history import render_summary
-                prior_summary = render_summary(prior_summary, tainted=True)
+                clean_prior = render_summary(clean_prior, tainted=True)
             prior_block = (f"Previous summary (fold it in, do not repeat verbatim):\n"
-                           f"{prior_summary}\n" if prior_summary else "")
+                           f"{clean_prior}\n" if clean_prior else "")
             return SUMMARY_PROMPT.format(prior_block=prior_block, block=block)
-        if prior_summary:
+        if clean_prior:
             if self.untrusted_history:
                 from .foreign_history import render_summary
-                prior_summary = render_summary(prior_summary, tainted=True)
-            return f"[previous summary]\n{prior_summary}\n{block}"
+                clean_prior = render_summary(clean_prior, tainted=True)
+            return f"[previous summary]\n{clean_prior}\n{block}"
         return block
 
     def _cost(self, turn: Mapping[str, Any]) -> int:
@@ -615,26 +648,41 @@ class ContextCompressor:
                         "checkpoint_aborted": str(exc)}
 
         summary = ""
+        raw_summary_tokens = 0
         deferred = False
         if self._summarize is not None:
             request = self._summarizer_input(new_older, prior_summary)
+
+            async def _run_sanitized_summary() -> str:
+                nonlocal raw_summary_tokens
+                raw_text = str(await self._summarize(request) or "")
+                raw_summary_tokens = self.estimate_tokens(raw_text) if raw_text else 0
+                return sanitize_compression_context(
+                    raw_text, max_chars=self.max_context_chars
+                )
+
             try:
                 if self._gate is None:
-                    summary = await self._summarize(request)
+                    summary = await _run_sanitized_summary()
                 else:
-                    held = await self._gate(lambda: self._summarize(request), len(older))
+                    held = await self._gate(_run_sanitized_summary, len(older))
                     deferred = held is None
                     summary = held or ""
             except Exception:
                 summary = ""
+                raw_summary_tokens = 0
         if not summary:
             # Fallback covers ALL older turns: the prior (possibly LLM-written)
             # summary can't be merged deterministically, so recompute from scratch.
             summary = self._fallback_digest(older)
+            raw_summary_tokens = self.estimate_tokens(summary)
+        summary_tokens_for_salvage = max(self.estimate_tokens(summary), raw_summary_tokens)
         kept_tokens = (sum(self._turn_tokens(t) for t in first)
                        + sum(self._turn_tokens(t) for t in recent)
                        + self.estimate_tokens(summary))
-        if kept_tokens >= total:
+        if (sum(self._turn_tokens(t) for t in first)
+                + sum(self._turn_tokens(t) for t in recent)
+                + summary_tokens_for_salvage) >= total:
             # Salvage (hermes-agent salvage_grown_transcript, v2026.8.27): a
             # "compression" that grew the transcript — e.g. a rambling summary
             # over few/short evicted turns — must never replace the original.

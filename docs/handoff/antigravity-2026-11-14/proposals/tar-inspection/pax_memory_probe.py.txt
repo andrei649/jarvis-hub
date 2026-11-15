@@ -1,0 +1,20 @@
+import io,json,tarfile,tempfile,tracemalloc
+from pathlib import Path
+from agents.core import archive_safe
+
+with tempfile.TemporaryDirectory() as temporary:
+    root=Path(temporary)
+    outcomes=[]
+    for files in (50,500):
+        p=root/f'{files}.tar'
+        pax={f'vendor.key{i}':'x' for i in range(2000)}
+        with tarfile.open(p,'w',format=tarfile.PAX_FORMAT,pax_headers=pax) as tar:
+            for i in range(files):
+                member=tarfile.TarInfo(f'file{i}');member.size=0
+                tar.addfile(member,io.BytesIO())
+        tracemalloc.start()
+        result=archive_safe.inspect_tar_path(p)
+        current,peak=tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+        outcomes.append({'files':files,'global_pax_keys':len(pax),'archive_bytes':p.stat().st_size,'result_members':len(result),'peak_bytes':peak,'retained_bytes':current})
+    print(json.dumps(outcomes,indent=2))
