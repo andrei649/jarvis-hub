@@ -908,7 +908,7 @@ def _run_staging_preservation_permutations(sandbox: Path, shared_key: str) -> di
         target = skills / "shared-ops" / "SKILL.md"
         target.parent.mkdir(parents=True)
         before = "# Local ops\nOwner keeps this local playbook.\n"
-        target.write_text(before)
+        target.write_text(before, encoding="utf-8")
         kwargs = {"key": shared_key, "device_id": "dev-dest", "state_path": sandbox / f"stage_{index}.json",
                   "skills_dir": skills}
         dest = E2ESync(**kwargs)
@@ -929,10 +929,10 @@ def _run_staging_preservation_permutations(sandbox: Path, shared_key: str) -> di
         candidate_sets.add(tuple(sorted(received)))
         if clean and len(received) == 6:
             metadata_ignored += 1
-        initial_preserved = settings_db.get_value("sessions", "idle_minutes") == 1440 and target.read_text() == before
+        initial_preserved = settings_db.get_value("sessions", "idle_minutes") == 1440 and target.read_text(encoding="utf-8") == before
         settings_db.put_category("sessions", {"idle_minutes": 2880})
         after = "# Local ops\nAnother owner edit after receiving candidates.\n"
-        target.write_text(after)
+        target.write_text(after, encoding="utf-8")
         restarted = E2ESync(**kwargs)
         replay_fingerprints = set()
         replay_clean = True
@@ -941,7 +941,7 @@ def _run_staging_preservation_permutations(sandbox: Path, shared_key: str) -> di
             pending = result["config_pending_import"] + result["skills_pending_install"]
             replay_fingerprints.update(row["fingerprint"] for row in pending)
             replay_clean = replay_clean and result["ok"] and all(row["status"] == "already_staged" for row in pending)
-        local_preserved = settings_db.get_value("sessions", "idle_minutes") == 2880 and target.read_text() == after
+        local_preserved = settings_db.get_value("sessions", "idle_minutes") == 2880 and target.read_text(encoding="utf-8") == after
         if initial_preserved and local_preserved:
             preserved += 1
         if replay_clean and replay_fingerprints == received and len(received) == 6:
