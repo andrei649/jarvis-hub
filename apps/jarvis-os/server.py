@@ -822,7 +822,21 @@ def capture_inbox_note(cfg: dict, title: str, content: str, links: list[str] | N
     if not clean_title:
         clean_title = f"Nota JARVIS {dt.datetime.now().strftime('%Y-%m-%d %H-%M')}"
 
-    target_file = inbox_dir / f"{clean_title}.md"
+    # Never overwrite an existing note: on a name collision take the next free
+    # "<title> (n)" and create the file exclusively, so two captures cannot race
+    # onto one path either.
+    base_title = clean_title
+    attempt = 1
+    while True:
+        target_file = inbox_dir / f"{clean_title}.md"
+        try:
+            handle = open(target_file, "x", encoding="utf-8")  # noqa: SIM115 - closed below
+            break
+        except FileExistsError:
+            attempt += 1
+            if attempt > 999:
+                raise
+            clean_title = f"{base_title} ({attempt})"
     now_iso = dt.datetime.now().astimezone().isoformat(timespec="seconds")
     link_str = " · ".join(f"[[{link.strip('[]')}]]" for link in (links or ["Acasa"]) if link.strip())
 
@@ -838,7 +852,8 @@ def capture_inbox_note(cfg: dict, title: str, content: str, links: list[str] | N
         f"{(content or '').strip()}\n\n"
         f"{link_str}\n"
     )
-    target_file.write_text(md, encoding="utf-8")
+    with handle:
+        handle.write(md)
     invalidate_brain_cache()
     graph = build_real_brain_graph(cfg)
     created_node = next((n for n in graph.get("nodes", []) if n.get("title") == clean_title), None)
@@ -1237,14 +1252,44 @@ class JarvisRequestHandler(SimpleHTTPRequestHandler):
         sys.stdout.flush()
 
     def end_headers(self):
+        # No CORS headers on purpose: this API serves personal notes and writes
+        # settings, and only the page this server itself serves may call it.
         self.send_header("Cache-Control", "no-store, max-age=0")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         super().end_headers()
 
+    def _local_authorities(self) -> set:
+        port = self.server.server_address[1]
+        return {f"{host}:{port}" for host in ("localhost", "127.0.0.1", "[::1]")}
+
+    def _request_is_same_origin(self) -> bool:
+        """True only for requests from the page this server serves.
+
+        Binding to loopback does not authenticate the browser: any website can make
+        the owner's browser call 127.0.0.1. Two checks close that:
+        - `Host` must name this loopback server, which defeats DNS rebinding (a
+          foreign hostname resolved to 127.0.0.1 still sends its own name);
+        - `Origin`, which browsers attach to every cross-origin request and to every
+          POST, must be this server's own origin when present. Non-browser clients
+          (curl, scripts) send none and are allowed.
+        """
+        allowed = self._local_authorities()
+        if (self.headers.get("Host") or "").strip().lower() not in allowed:
+            return False
+        origin = (self.headers.get("Origin") or "").strip().lower()
+        if not origin:
+            return True
+        return origin in {f"http://{authority}" for authority in allowed}
+
+    def _refuse_cross_origin(self) -> bool:
+        if self._request_is_same_origin():
+            return False
+        self._send_json({"ok": False, "error": "cross-origin request refused"}, status=403)
+        return True
+
     def do_OPTIONS(self):
-        self.send_response(204)
+        # A CORS preflight is only ever sent for a cross-origin call; none is allowed.
+        self.send_response(204 if self._request_is_same_origin() else 403)
+        self.send_header("Content-Length", "0")
         self.end_headers()
 
     def _send_json(self, payload: dict, status: int = 200):
@@ -1327,6 +1372,9 @@ class JarvisRequestHandler(SimpleHTTPRequestHandler):
         path = parsed.path
         qs = urllib.parse.parse_qs(parsed.query)
 
+        if path.startswith("/api/") and self._refuse_cross_origin():
+            return
+
         if path == "/api/status":
             force = qs.get("refresh", ["0"])[0] == "1"
             self._send_json(self._build_status_payload(force_checks=force))
@@ -1349,14 +1397,14 @@ class JarvisRequestHandler(SimpleHTTPRequestHandler):
             nerva_dir = Path(cfg.get("nervaPath") or DEFAULT_NERVA_PATH).resolve()
             try:
                 if rel.startswith("Nerva/jarvis-hub/"):
-                    sub = rel.split("Nerva/jarvis-hub/", 1)[1]
-                    target = (nerva_dir / sub).resolve()
-                    if not str(target).startswith(str(nerva_dir)):
-                        raise ValueError("Invalid path")
+                    base_dir, sub = nerva_dir, rel.split("Nerva/jarvis-hub/", 1)[1]
                 else:
-                    target = (vault_dir / rel).resolve()
-                    if not str(target).startswith(str(vault_dir)):
-                        raise ValueError("Invalid path")
+                    base_dir, sub = vault_dir, rel
+                target = (base_dir / sub).resolve()
+                # Compare path components, not string prefixes: "/x/Vault-private"
+                # starts with "/x/Vault" but is not inside it.
+                if not sub or base_dir not in target.parents or not target.is_file():
+                    raise ValueError("Invalid path")
 
                 raw = target.read_text(encoding="utf-8", errors="replace")
                 title, tags, body, wls = _parse_markdown_content(raw, target.stem)
@@ -1369,6 +1417,9 @@ class JarvisRequestHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self):
+        if self._refuse_cross_origin():
+            return
+
         if self.path == "/api/config":
             try:
                 body = self._read_json()

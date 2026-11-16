@@ -45,12 +45,52 @@ function authHeaders() {
   return token ? { "X-User-Token": token } : {};
 }
 
-function postJson(url, body) {
-  return fetch(url, {
+// An owner signed in through the hub's browser session (cookie, no stored token) must echo
+// the session's CSRF token on every write; the hub refuses cookie-authenticated POSTs without it.
+let csrfToken = null;
+
+async function loadCsrfToken(force = false) {
+  if (csrfToken !== null && !force) return csrfToken;
+  csrfToken = "";
+  try {
+    const res = await fetch(`${HUB_ROOT}/api/auth/session`, {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+    });
+    if (res.ok) {
+      const session = await res.json();
+      csrfToken = session && session.signed_in ? session.csrf || "" : "";
+    }
+  } catch (_) {
+    /* no session to read: a localhost hub needs none */
+  }
+  return csrfToken;
+}
+
+async function postJson(url, body, retried = false) {
+  const headers = { "Content-Type": "application/json", ...authHeaders() };
+  // Sent only when no header credential rides along, as the hub's own client does.
+  if (HUB && !headers["X-User-Token"]) {
+    const csrf = await loadCsrfToken();
+    if (csrf) headers["X-CSRF-Token"] = csrf;
+  }
+  const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
+    credentials: "same-origin",
+    headers,
     body: JSON.stringify(body ?? {}),
   });
+  // A stale token (the session was re-opened in another tab) is re-read once.
+  if (HUB && res.status === 403 && !retried && headers["X-CSRF-Token"]) {
+    let detail = "";
+    try {
+      detail = String((await res.clone().json()).detail || "");
+    } catch (_) {
+      /* not a JSON refusal */
+    }
+    if (detail.startsWith("csrf") && (await loadCsrfToken(true))) return postJson(url, body, true);
+  }
+  return res;
 }
 
 /** GET a vault/status route, e.g. `apiGet("/brain?reindex=1")`. */

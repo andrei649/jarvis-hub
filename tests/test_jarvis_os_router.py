@@ -183,3 +183,97 @@ def test_vault_routes_are_refused_from_the_network(vault, monkeypatch):
         assert remote.get(path).status_code in (401, 403), path
     assert remote.post("/api/os/brain/capture", json={"title": "x", "content": "y"}).status_code in (401, 403)
     assert not (vault / "08 Inbox").exists()
+
+
+def test_capture_never_overwrites_an_existing_note(client, vault):
+    first = client.post("/api/os/brain/capture", json={"title": "Idee", "content": "prima"}).json()
+    second = client.post("/api/os/brain/capture", json={"title": "Idee", "content": "a doua"}).json()
+    one, two = Path(first["path"]), Path(second["path"])
+    assert one != two and two.name == "Idee (2).md"
+    assert "prima" in one.read_text(encoding="utf-8")
+    assert "a doua" in two.read_text(encoding="utf-8")
+    assert second["node"]["title"] == "Idee (2)"
+
+
+# ── the standalone server (apps/jarvis-os/server.py) ─────────────
+
+@pytest.fixture
+def standalone(vault, monkeypatch):
+    """The real standalone server on a free loopback port, pointed at the temp vault."""
+    import http.client
+    import threading
+
+    engine = jarvis_os._engine()
+    cfg = {"vaultMode": "andrei_os", "vaultPath": str(vault), "nervaPath": str(repo_root)}
+    monkeypatch.setattr(engine, "load_config", lambda: dict(cfg))
+    monkeypatch.setattr(engine, "save_config", lambda updates: pytest.fail("config was written"))
+    server = engine.ReusableThreadingHTTPServer(("127.0.0.1", 0), engine.JarvisRequestHandler)
+    port = server.server_address[1]
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    def call(method, path, *, origin=None, host=None, body=None):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        headers = {"Host": host or f"127.0.0.1:{port}"}
+        if origin:
+            headers["Origin"] = origin
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+        conn.request(method, path, body=body, headers=headers)
+        response = conn.getresponse()
+        payload = response.read().decode("utf-8", "replace")
+        conn.close()
+        return response, payload
+
+    call.port = port
+    yield call
+    server.shutdown()
+    server.server_close()
+
+
+def test_standalone_serves_its_own_page_and_api(standalone):
+    response, body = standalone("GET", "/api/brain/note?relPath=00%20Acasa/Acasa.md",
+                                origin=f"http://localhost:{standalone.port}",
+                                host=f"localhost:{standalone.port}")
+    assert response.status == 200 and "Indexul principal" in body
+    assert response.getheader("Access-Control-Allow-Origin") is None
+    assert standalone("GET", "/api/brain")[0].status == 200          # no Origin: a script or curl
+    assert standalone("GET", "/")[0].status == 200
+
+
+@pytest.mark.parametrize("method,path,body", [
+    ("GET", "/api/brain", None),
+    ("GET", "/api/brain/note?relPath=00%20Acasa/Acasa.md", None),
+    ("GET", "/api/status", None),
+    ("POST", "/api/config", '{"vaultPath": "/"}'),
+    ("POST", "/api/brain/capture", '{"title": "x", "content": "y"}'),
+    ("OPTIONS", "/api/config", None),
+])
+def test_standalone_refuses_another_sites_requests(standalone, vault, method, path, body):
+    response, payload = standalone(method, path, origin="https://evil.example", body=body)
+    assert response.status == 403
+    assert response.getheader("Access-Control-Allow-Origin") is None
+    assert "Indexul principal" not in payload
+    assert not (vault / "08 Inbox").exists()
+
+
+def test_standalone_refuses_a_rebound_hostname(standalone):
+    response, payload = standalone("GET", "/api/brain/note?relPath=00%20Acasa/Acasa.md",
+                                   host=f"evil.example:{standalone.port}")
+    assert response.status == 403 and "Indexul principal" not in payload
+
+
+def test_standalone_note_cannot_read_a_sibling_folder(standalone, vault):
+    sibling = vault.parent / (vault.name + "-private")
+    sibling.mkdir()
+    (sibling / "secret.txt").write_text("do not read", encoding="utf-8")
+    for rel in (f"../{sibling.name}/secret.txt", "../outside.md"):
+        response, payload = standalone("GET", "/api/brain/note?relPath=" + rel.replace(" ", "%20"))
+        assert response.status == 400, rel
+        assert "do not read" not in payload and "not part of the vault" not in payload
+
+
+def test_hub_posts_carry_the_session_csrf_token():
+    """The page's one API module reads the owner session and echoes its CSRF token."""
+    source = (PUBLIC / "js" / "api.js").read_text(encoding="utf-8")
+    assert "/api/auth/session" in source and '"X-CSRF-Token"' in source
+    assert 'credentials: "same-origin"' in source
