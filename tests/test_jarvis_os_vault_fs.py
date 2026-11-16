@@ -271,6 +271,100 @@ def test_note_rereads_through_the_safe_layer(tree, repo_like):
         engine.read_indexed_note(cfg, "02 Proiecte/Plan.md")
 
 
+# ── the trust domain and the cache are bound to what was indexed ─
+
+def test_a_vault_note_under_the_repo_prefix_keeps_the_vault_policy(tree, repo_like):
+    """`Nerva/jarvis-hub/...` inside the vault is vault content, not trusted repo content."""
+    vault, outside = tree
+    inside = vault / "Nerva" / "jarvis-hub"
+    inside.mkdir(parents=True)
+    (inside / "Plan.md").write_text("# Plan\n\nVault note with a repo-looking path.\n", encoding="utf-8")
+    for nerva in (None, repo_like):                      # with and without the repo indexed
+        cfg = cfg_for(vault, nerva)
+        assert "repo-looking path" in engine.read_indexed_note(cfg, "Nerva/jarvis-hub/Plan.md")[2]
+        (inside / "Plan.md").unlink()
+        os.link(outside / "secret.md", inside / "Plan.md")
+        with pytest.raises(OSError):                     # hard link, links not allowed
+            engine.read_indexed_note(cfg, "Nerva/jarvis-hub/Plan.md")
+        engine.invalidate_brain_cache()                  # and after a re-index it is not indexed
+        assert SECRET not in graph_text(cfg)
+        with pytest.raises((OSError, ValueError)):
+            engine.read_indexed_note(cfg, "Nerva/jarvis-hub/Plan.md")
+        (inside / "Plan.md").unlink()
+        (inside / "Plan.md").write_text("# Plan\n\nVault note with a repo-looking path.\n", encoding="utf-8")
+
+
+def test_a_vault_note_colliding_with_a_repo_doc_is_served_as_vault_content(tree, repo_like):
+    vault, outside = tree
+    inside = vault / "Nerva" / "jarvis-hub"
+    inside.mkdir(parents=True)
+    (inside / "README.md").write_text("# Mine\n\nThe vault's own file.\n", encoding="utf-8")
+    cfg = cfg_for(vault, repo_like)
+    assert "The vault's own file." in engine.read_indexed_note(cfg, "Nerva/jarvis-hub/README.md")[2]
+    (inside / "README.md").unlink()
+    os.link(outside / "secret.md", inside / "README.md")
+    with pytest.raises(OSError):
+        engine.read_indexed_note(cfg, "Nerva/jarvis-hub/README.md")
+    # A real repo doc with no vault twin is still readable, with the repo's policy.
+    assert "Template." in engine.read_indexed_note(cfg, "Nerva/jarvis-hub/agents/jarvis/SOUL.md")[2]
+
+
+def test_switching_to_a_missing_vault_leaves_nothing_readable(tree, tmp_path):
+    vault, _outside = tree
+    first = cfg_for(vault)
+    assert "In the vault." in engine.read_indexed_note(first, "02 Proiecte/Plan.md")[2]
+    missing = {**first, "vaultPath": str(tmp_path / "gone")}       # no cache reset in between
+    assert engine.build_real_brain_graph(missing)["mode"] == "demo_550"
+    with pytest.raises(ValueError):
+        engine.read_indexed_note(missing, "02 Proiecte/Plan.md")
+    _context, nodes = engine.retrieve_vault_context("plan vault", missing, 6)
+    assert nodes == []
+
+
+def test_switching_vaults_never_serves_the_previous_vaults_file(tree, tmp_path):
+    """Same relPath in both vaults, and B nested inside A: each config reads its own file."""
+    vault, _outside = tree
+    other = vault / "02 Proiecte" / "Nested"
+    (other / "02 Proiecte").mkdir(parents=True)
+    (other / "02 Proiecte" / "Plan.md").write_text("# Plan\n\nThe nested vault.\n", encoding="utf-8")
+    first = cfg_for(vault)
+    second = {**first, "vaultPath": str(other)}
+    assert "In the vault." in engine.read_indexed_note(first, "02 Proiecte/Plan.md")[2]
+    assert "The nested vault." in engine.read_indexed_note(second, "02 Proiecte/Plan.md")[2]
+    assert "In the vault." in engine.read_indexed_note(first, "02 Proiecte/Plan.md")[2]
+    with pytest.raises(ValueError):                      # only A has this one
+        engine.read_indexed_note(second, "00 Acasa/Acasa.md")
+
+
+def test_a_repointed_vault_path_is_a_different_source(tree, tmp_path):
+    """The same path string now resolving to another folder is not the cached vault."""
+    vault, _outside = tree
+    alias = tmp_path / "alias"
+    link_dir(alias, vault)
+    cfg = cfg_for(alias)
+    assert "In the vault." in engine.read_indexed_note(cfg, "02 Proiecte/Plan.md")[2]
+    other = tmp_path / "Other"
+    (other / "02 Proiecte").mkdir(parents=True)
+    (other / "02 Proiecte" / "Plan.md").write_text("# Plan\n\nAnother vault.\n", encoding="utf-8")
+    if sys.platform == "win32":
+        os.rmdir(alias)
+    else:
+        os.unlink(alias)
+    link_dir(alias, other)
+    assert "Another vault." in engine.read_indexed_note(cfg, "02 Proiecte/Plan.md")[2]
+
+
+def test_changing_the_hard_link_policy_rebuilds_the_index(tree):
+    vault, outside = tree
+    os.link(outside / "secret.md", vault / "02 Proiecte" / "Hard.md")
+    allowed = cfg_for(vault, allowHardLinks=True)
+    assert SECRET in engine.read_indexed_note(allowed, "02 Proiecte/Hard.md")[2]
+    refused = {**allowed, "allowHardLinks": False}       # no cache reset in between
+    with pytest.raises(ValueError):
+        engine.read_indexed_note(refused, "02 Proiecte/Hard.md")
+    assert SECRET not in "\n".join(str(n.get("body")) for n in engine.build_real_brain_graph(refused)["nodes"])
+
+
 # ── capture ──────────────────────────────────────────────────────
 
 def test_capture_refuses_a_linked_inbox_and_writes_nothing_outside(tree):

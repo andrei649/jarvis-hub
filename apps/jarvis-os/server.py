@@ -571,19 +571,45 @@ def _nerva_documents(nerva_dir: Path) -> list:
     return docs
 
 
-def build_real_brain_graph(cfg: dict) -> dict:
+#: Where an indexed file came from. Decides which root it is read from and which link
+#: policy applies. Recorded by the indexer; never derived from a request's path.
+SOURCE_VAULT = "vault"
+SOURCE_REPO = "repo"
+
+
+def _source_roots(cfg: dict) -> tuple[str, Path, Path]:
     vault_mode = cfg.get("vaultMode", "andrei_plus_nerva")
     vault_dir = Path(cfg.get("vaultPath") or DEFAULT_VAULT_PATH)
     nerva_dir = Path(cfg.get("nervaPath") or DEFAULT_NERVA_PATH)
+    return vault_mode, vault_dir, nerva_dir
+
+
+def _cache_key(cfg: dict) -> str:
+    """Identity of the exact sources and policy a graph was built from.
+
+    The configured paths and what they resolve to right now, plus the hard-link policy:
+    a graph (and its file index) built for one vault, one repo or one policy is never
+    reused for another, including when a path string is re-pointed at a different folder.
+    """
+    vault_mode, vault_dir, nerva_dir = _source_roots(cfg)
+    return "|".join((vault_mode, str(vault_dir), os.path.realpath(vault_dir), str(nerva_dir),
+                     os.path.realpath(nerva_dir), "links" if _allow_hardlinks(cfg) else "nolinks"))
+
+
+def build_real_brain_graph(cfg: dict) -> dict:
+    vault_mode, vault_dir, nerva_dir = _source_roots(cfg)
     include_nerva = vault_mode == "andrei_plus_nerva" and nerva_dir.exists()
 
-    cache_key = f"{vault_mode}|{vault_dir}|{nerva_dir}"
+    cache_key = _cache_key(cfg)
     now = time.time()
     with _BRAIN_LOCK:
         if _BRAIN_CACHE["key"] == cache_key and _BRAIN_CACHE["data"] and (now - _BRAIN_CACHE["ts"] < 15.0):
             return _BRAIN_CACHE["data"]
 
     if not vault_dir.exists():
+        # No graph for this configuration: drop whatever an earlier one left behind, so
+        # nothing indexed for another vault stays readable.
+        invalidate_brain_cache()
         return {"mode": "demo_550", "reason": f"Vault directory not found: {vault_dir}"}
 
     nodes: list[dict] = []
@@ -651,9 +677,11 @@ def build_real_brain_graph(cfg: dict) -> dict:
     try:
         vault_handle = vault_fs.VaultFs(vault_dir, allow_hardlinks=_allow_hardlinks(cfg))
     except OSError as exc:
+        invalidate_brain_cache()
         return {"mode": "demo_550", "reason": f"Vault cannot be opened: {exc.strerror or exc}"}
-    # relPath -> (source root, on-disk path components): the only files the note route serves.
-    indexed_files: dict[str, tuple[str, tuple[str, ...]]] = {}
+    # relPath -> (source, root, on-disk path components): the only files the note route
+    # serves. The source is recorded here, by the indexer that opened the file.
+    indexed_files: dict[str, tuple[str, str, tuple[str, ...]]] = {}
     with vault_handle as vault_files:
         for parts, entry, data in vault_files.walk(want=_vault_wants, cap=_vault_read_cap):
             fn = parts[-1]
@@ -716,7 +744,7 @@ def build_real_brain_graph(cfg: dict) -> dict:
                 "wikilinks": wikilinks,
             }
             nodes.append(node_obj)
-            indexed_files[rel_str] = (str(vault_dir), parts)
+            indexed_files[rel_str] = (SOURCE_VAULT, str(vault_dir), parts)
             register_lookup(stem, idx)
             register_lookup(title, idx)
         skipped_files = list(vault_files.skipped)
@@ -770,7 +798,9 @@ def build_real_brain_graph(cfg: dict) -> dict:
                 "wikilinks": wls + ["Nerva si Jarvis Hub", "Hermes personal OS"],
             })
             register_lookup(label, idx)
-            indexed_files[f"Nerva/jarvis-hub/{rel_n}"] = (str(nerva_dir), doc_parts)
+            # A vault note may sit at this very relPath ("Nerva/jarvis-hub/..." inside the
+            # vault). It was indexed first and keeps the entry, with the vault's policy.
+            indexed_files.setdefault(f"Nerva/jarvis-hub/{rel_n}", (SOURCE_REPO, str(nerva_dir), doc_parts))
 
     # 3. Build Real Edges (Core <-> Hubs, Note <-> Parent Hub, Authentic [[WikiLinks]], Semantic Entity Mentions)
     edge_set: set[str] = set()
@@ -980,14 +1010,27 @@ def read_indexed_note(cfg: dict, rel_path: str) -> tuple[str, list[str], str, li
     components recorded at index time. Raises `ValueError` for anything else.
     """
     rel = nfc(rel_path or "").replace("\\", "/")
+    cache_key = _cache_key(cfg)
     build_real_brain_graph(cfg)
     with _BRAIN_LOCK:
-        found = _BRAIN_CACHE["files"].get(rel)
+        # Only the index built for exactly this configuration. If the graph could not be
+        # built (missing vault) or belongs to other sources, nothing is readable.
+        found = _BRAIN_CACHE["files"].get(rel) if _BRAIN_CACHE["key"] == cache_key else None
     if found is None or not rel.lower().endswith(".md"):
         raise ValueError("not an indexed note")
-    base_dir, parts = found
-    in_repo = rel.startswith("Nerva/jarvis-hub/")
-    with vault_fs.VaultFs(base_dir, allow_hardlinks=in_repo or _allow_hardlinks(cfg)) as files:
+    source, base_dir, parts = found
+    _mode, vault_dir, nerva_dir = _source_roots(cfg)
+    # The trust domain is what the indexer recorded for this file, never the shape of the
+    # requested path: a vault note stored under "Nerva/jarvis-hub/" is still a vault note.
+    if source == SOURCE_REPO:
+        expected_root, allow_links = nerva_dir, True
+    elif source == SOURCE_VAULT:
+        expected_root, allow_links = vault_dir, _allow_hardlinks(cfg)
+    else:
+        raise ValueError("not an indexed note")
+    if base_dir != str(expected_root):
+        raise ValueError("not an indexed note")
+    with vault_fs.VaultFs(expected_root, allow_hardlinks=allow_links) as files:
         entry, data = files.read_file(parts, _NOTE_READ_CAP)
     if entry.dataless:
         raise ValueError("note is not downloaded")
