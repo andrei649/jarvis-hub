@@ -238,6 +238,8 @@ def test_standalone_serves_its_own_page_and_api(standalone):
     assert response.getheader("Access-Control-Allow-Origin") is None
     assert standalone("GET", "/api/brain")[0].status == 200          # no Origin: a script or curl
     assert standalone("GET", "/")[0].status == 200
+    script, _body = standalone("GET", "/js/main.js")
+    assert script.status == 200 and script.getheader("Content-Type").startswith("text/javascript")
 
 
 @pytest.mark.parametrize("method,path,body", [
@@ -277,3 +279,21 @@ def test_hub_posts_carry_the_session_csrf_token():
     source = (PUBLIC / "js" / "api.js").read_text(encoding="utf-8")
     assert "/api/auth/session" in source and '"X-CSRF-Token"' in source
     assert 'credentials: "same-origin"' in source
+
+
+def test_loading_the_standalone_app_leaves_the_hubs_mime_types_alone(client):
+    """The hub imports apps/jarvis-os/server.py; that must not re-register `.js` for the
+    whole process, or the hub's own bundles change content type."""
+    import importlib.util
+    import mimetypes
+
+    names = ("bundle.js", "module.mjs", "style.css", "icon.svg", "data.json")
+    before = [mimetypes.guess_type(name) for name in names]
+    source = repo_root / "apps" / "jarvis-os" / "server.py"
+    spec = importlib.util.spec_from_file_location("jarvis_os_fresh_load", source)
+    fresh = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fresh)
+    assert [mimetypes.guess_type(name) for name in names] == before
+    handler = jarvis_os._engine().JarvisRequestHandler
+    assert handler.extensions_map[".js"] == "text/javascript"
+    assert client.get("/os/js/main.js").headers["content-type"].startswith("text/javascript")

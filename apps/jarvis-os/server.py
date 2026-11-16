@@ -21,7 +21,6 @@ import hashlib
 import importlib.util
 import json
 import math
-import mimetypes
 import os
 import re
 import shutil
@@ -113,11 +112,16 @@ def _detect_default_nerva_path() -> str:
 DEFAULT_VAULT_PATH = _detect_default_vault_path()
 DEFAULT_NERVA_PATH = _detect_default_nerva_path()
 
-mimetypes.add_type("application/javascript", ".js")
-mimetypes.add_type("application/javascript", ".mjs")
-mimetypes.add_type("text/css", ".css")
-mimetypes.add_type("image/svg+xml", ".svg")
-mimetypes.add_type("application/json", ".json")
+# Content types for the static files this server serves. Kept on the handler, not
+# registered with `mimetypes`: the hub loads this module too, and a process-wide
+# registration would change the types the hub serves for its own assets.
+STATIC_TYPES = {
+    ".js": "text/javascript",
+    ".mjs": "text/javascript",
+    ".css": "text/css",
+    ".svg": "image/svg+xml",
+    ".json": "application/json",
+}
 
 _extra_bins = [
     str(Path.home() / ".local" / "bin"),
@@ -1374,6 +1378,8 @@ def call_llm(prompt: str, brain: str, context: dict, cfg: dict) -> dict:
 # HTTP REQUEST HANDLER
 # ==============================================================================
 class JarvisRequestHandler(SimpleHTTPRequestHandler):
+    extensions_map = {**SimpleHTTPRequestHandler.extensions_map, **STATIC_TYPES}
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(PUBLIC_DIR), **kwargs)
 
