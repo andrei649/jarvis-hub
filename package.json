@@ -5,7 +5,8 @@
   "scripts": {
     "test": "vitest run tests/frontend",
     "test:watch": "vitest tests/frontend",
-    "test:coverage": "node tests/frontend/coverage.mjs"
+    "test:coverage": "node tests/frontend/coverage.mjs",
+    "jarvis-os": "uv run --no-project --python 3.12 python apps/jarvis-os/server.py"
   },
   "devDependencies": {
     "istanbul-lib-instrument": "^6.0.3",

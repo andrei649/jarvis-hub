@@ -45,6 +45,11 @@ RULES = [
     # below reads frontend/src/workspace like any other client.
     ("/api/workspace", "workspace"),
     ("/workspace", "workspace"),
+    # ANDREI OS — the imported 3D-galaxy interface, served at /os from apps/jarvis-os/public
+    # (not a v2 mode). Its page calls every /api/os route through public/js/api.js, which the
+    # caller gate below reads like any other client.
+    ("/api/os", "jarvis-os"),
+    ("/os", "jarvis-os"),
     # machine-facing — intentionally not a HUD surface
     ("/.well-known/", "NOT_IN_HUD"),
     ("/healthz", "NOT_IN_HUD"),  # H23.11 liveness probe (LB / systemd / Docker HEALTHCHECK)
@@ -530,6 +535,8 @@ _CLIENT_GLOBS = (
     # is not a gap, and listing it as one sends the next reader to build a duplicate panel.
     "agents/web/*.html",
     "desktop/**/*.ts", "desktop/**/*.tsx",
+    # The ANDREI OS interface the hub serves at /os (its own files; vendor/ is third-party).
+    "apps/jarvis-os/public/js/*.js",
 )
 
 # Routes with no UI caller BY DESIGN — something other than our own client calls them.
@@ -676,6 +683,9 @@ MACHINE_FACING: dict[str, str] = {
     "/workspace": "redirect to the Workspace SPA, navigated to rather than fetched",
     "/workspace/": "Workspace SPA shell, navigated to rather than fetched",
     "/workspace/{path:path}": "Workspace SPA catch-all \u2014 serves the client, is not called by it",
+    # "/os" is short enough to match unrelated URLs (/osint) by substring; declared instead.
+    "/os": "redirect to the ANDREI OS interface, navigated to rather than fetched",
+    "/os/{path:path}": "ANDREI OS shell and its static assets — serves the client, is not called by it",
     "/mission-control": "server-rendered page, navigated to rather than fetched",
     "/map": "server-rendered page, navigated to rather than fetched",
     "/api/status": "alias probe"
