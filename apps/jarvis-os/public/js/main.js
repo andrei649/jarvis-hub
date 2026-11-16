@@ -6,6 +6,7 @@ import { HouseWorkshop } from "./workshop-house.js";
 import { ComputerUseController } from "./computer-use.js";
 import { AgentEngine } from "./agent-engine.js";
 import { HUB, apiGet, apiPost, applyBackendMode } from "./api.js";
+import { escapeHtml, filterRowsHtml, hubRowsHtml, modelOptionsHtml, sourceCardsHtml } from "./templates.js";
 
 class JarvisOSApp {
   constructor() {
@@ -67,6 +68,14 @@ class JarvisOSApp {
         this.galaxy.setDataset(this.dataset);
         this._populateSidebarHubsAndFilters();
         this._renderDiscoveredSources(data.discoveredSources || []);
+        const skipped = data.skipped && data.skipped.count ? data.skipped : null;
+        const vaultMsg = document.getElementById("vault-status-msg");
+        if (skipped && vaultMsg) {
+          const why = Object.entries(skipped.reasons || {})
+            .map(([reason, count]) => `${count} ${reason}`)
+            .join(", ");
+          vaultMsg.textContent = `${skipped.count} vault entries were left out because they are links (${why}).`;
+        }
       }
     } catch (_) {
       this._populateSidebarHubsAndFilters();
@@ -83,23 +92,7 @@ class JarvisOSApp {
     // Top Hubs
     const hubsEl = document.getElementById("top-hubs-list");
     const hubs = this.dataset.topHubs || [];
-    hubsEl.innerHTML = hubs
-      .map((h) => {
-        const nodeIdx =
-          h.nodeIndex !== undefined
-            ? h.nodeIndex
-            : this.dataset.nodes.findIndex((n) => n.title === h.title);
-        return `
-        <div class="hub-row" data-node-idx="${nodeIdx}">
-          <div class="hub-left">
-            <span class="hub-dot" style="background:${h.color}; box-shadow:0 0 6px ${h.color};"></span>
-            <span>${h.title}</span>
-          </div>
-          <span class="hub-count">${h.displayCount}</span>
-        </div>
-      `;
-      })
-      .join("");
+    hubsEl.innerHTML = hubRowsHtml(hubs, this.dataset.nodes);
 
     hubsEl.querySelectorAll(".hub-row").forEach((row) => {
       row.addEventListener("click", () => {
@@ -113,19 +106,7 @@ class JarvisOSApp {
     // Right Filter Legend
     const filterEl = document.getElementById("filter-list");
     const cats = this.dataset.categories || [];
-    filterEl.innerHTML = cats
-      .map(
-        (c) => `
-      <div class="filter-row" data-cat="${c.id}">
-        <div class="hub-left">
-          <span class="hub-dot" style="background:${c.color}"></span>
-          <span>${c.id}</span>
-        </div>
-        <span class="hub-count">${c.count}</span>
-      </div>
-    `
-      )
-      .join("");
+    filterEl.innerHTML = filterRowsHtml(cats);
 
     filterEl.querySelectorAll(".filter-row").forEach((row) => {
       row.addEventListener("click", () => {
@@ -149,28 +130,11 @@ class JarvisOSApp {
       el.innerHTML = `<div class="source-item-card"><div class="source-item-detail">Switch to Andrei OS mode to inspect local vaults.</div></div>`;
       return;
     }
-    el.innerHTML = sources
-      .map((s) => {
-        const isConn = s.status === "connected";
-        return `
-        <div class="source-item-card">
-          <div class="source-item-top">
-            <span>${s.name}</span>
-            <span class="conn-pill ${isConn ? "connected" : ""}">${s.status}</span>
-          </div>
-          <div class="source-item-path">${s.path}</div>
-          <div class="source-item-detail">${s.detail}</div>
-        </div>
-      `;
-      })
-      .join("");
+    el.innerHTML = sourceCardsHtml(sources);
   }
 
   _escapeHtml(str) {
-    return String(str || "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
+    return escapeHtml(str);
   }
 
   _renderInspectorDefault() {
@@ -201,7 +165,7 @@ class JarvisOSApp {
       <div class="inspector-node-body" id="inspector-body-content">${this._escapeHtml(cleanBody)}</div>
       <div class="inspector-neighbors">
         ${topNeighbors
-          .map((nb) => `<button class="neighbor-chip" data-idx="${nb.index}">${this._escapeHtml(nb.title)}</button>`)
+          .map((nb) => `<button class="neighbor-chip" data-idx="${Number(nb.index)}">${this._escapeHtml(nb.title)}</button>`)
           .join("")}
       </div>
     `;
@@ -241,7 +205,7 @@ class JarvisOSApp {
         ${pathNodes
           .map(
             (n, i) =>
-              `<button class="neighbor-chip" data-idx="${n.index}">${i + 1}. ${this._escapeHtml(n.title)}</button>`
+              `<button class="neighbor-chip" data-idx="${Number(n.index)}">${i + 1}. ${this._escapeHtml(n.title)}</button>`
           )
           .join("")}
       </div>
@@ -338,9 +302,7 @@ class JarvisOSApp {
         oBadge.textContent = `● Online (${(oll.models || []).length} models)`;
         oBadge.className = "conn-pill connected";
         if (Array.isArray(oll.models) && oll.models.length > 0) {
-          oSelect.innerHTML = oll.models
-            .map((m) => `<option value="${m}">${m} (Local)</option>`)
-            .join("");
+          oSelect.innerHTML = modelOptionsHtml(oll.models);
           if (oll.models.includes(st.ollamaModel)) {
             oSelect.value = st.ollamaModel;
           }

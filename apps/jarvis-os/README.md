@@ -40,7 +40,30 @@ Open **http://localhost:4719** in Chrome, Edge, or Safari.
   the `*.zip` bundles `export_for_windows.py` produces. Copy `config.example.json` to `config.json`
   only if you want to pre-seed settings; leave `vaultPath` / `nervaPath` empty for auto-detection.
 
+## What the app will and will not touch
+
+- **No link is followed.** Every read and every create under the vault goes through
+  `vault_fs.py`: each path component is opened relative to its parent's handle (`openat` with
+  `O_NOFOLLOW` on macOS/Linux, `NtCreateFile` with a `RootDirectory` handle on Windows). A
+  symlink, a junction, or a folder swapped mid-request is refused, never followed. There is no
+  path-based fallback on any platform.
+- **Hard links are skipped by default.** A file with more than one hard link may be a second
+  name for something outside the vault. Skipped entries are counted in `/api/brain` (`skipped`)
+  and shown in Settings, so a thinner graph is explained. Google Drive hard-links a file while
+  it uploads it; if your vault lives in a Drive-synced folder and notes go missing, set
+  `JARVIS_OS_ALLOW_HARDLINKS=1` (or `"allowHardLinks": true` in `config.json`).
+- **Reparse points are refused on Windows**, which includes OneDrive online-only placeholders.
+- **The note route is an allowlist.** `/api/brain/note` serves only Markdown that the graph
+  itself indexed: never `config.json`, `.env`, or a `*.local.md`.
+- **Capture never overwrites and never leaves the inbox.** A duplicate title becomes
+  `<title> (2).md`; an `08 Inbox` that is a link is refused before anything is written.
+- **Only this page may call the API.** The standalone server sends no CORS headers and refuses
+  requests whose `Origin` or `Host` is not its own.
+
 ## Frontend notes
+
+- `public/js/templates.js` builds every piece of HTML that contains text the page does not own
+  (note titles, paths, model names, a model's action parameters) and escapes all of it.
 
 - `public/js/api.js` is the only file that calls a backend. It picks the hub or the standalone
   routes from the `<meta name="jarvis-os-hub">` tag the hub adds to the page.

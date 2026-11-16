@@ -20,6 +20,7 @@ OUT_ZIP = ROOT / "Andrei-OS-JARVIS-Windows-Bundle.zip"
 
 APP_FILES = [
     "server.py",
+    "vault_fs.py",
     "START.bat",
     "GEMINI.md",
     "README.md",

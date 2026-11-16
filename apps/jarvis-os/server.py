@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import importlib.util
 import json
 import math
 import mimetypes
@@ -39,7 +40,30 @@ ROOT_DIR = Path(__file__).resolve().parent
 PUBLIC_DIR = ROOT_DIR / "public"
 CONFIG_PATH = ROOT_DIR / "config.json"
 DEFAULT_PORT = int(os.environ.get("JARVIS_PORT", "4719"))
-SF_DATALESS = 0x40000000
+
+
+def _load_sibling(name: str):
+    """Import a module that sits next to this file, without touching `sys.path`.
+
+    The hub loads this file by path too, so a plain `import vault_fs` would depend on
+    who started the process.
+    """
+    qualified = f"jarvis_os_{name}"
+    if qualified in sys.modules:
+        return sys.modules[qualified]
+    spec = importlib.util.spec_from_file_location(qualified, ROOT_DIR / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[qualified] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(qualified, None)
+        raise
+    return module
+
+
+# Every read and create under a vault goes through this: handle-relative, no link followed.
+vault_fs = _load_sibling("vault_fs")
 
 
 def _detect_default_vault_path() -> str:
@@ -277,7 +301,7 @@ def check_ollama_status(ollama_url: str, force: bool = False) -> dict:
 # ==============================================================================
 # REAL SECOND BRAIN VAULT INDEXER (ANDREI OS OBSIDIAN + NERVA JARVIS HUB)
 # ==============================================================================
-_BRAIN_CACHE = {"key": None, "data": None, "ts": 0.0}
+_BRAIN_CACHE = {"key": None, "data": None, "ts": 0.0, "files": {}}
 _BRAIN_LOCK = threading.Lock()
 
 
@@ -285,6 +309,7 @@ def invalidate_brain_cache():
     with _BRAIN_LOCK:
         _BRAIN_CACHE["key"] = None
         _BRAIN_CACHE["data"] = None
+        _BRAIN_CACHE["files"] = {}
 
 
 HUB_DEFINITIONS = [
@@ -468,6 +493,80 @@ def _det_offset(seed_key: str, min_r: float = 6.5, max_r: float = 21.0) -> tuple
     return [ox, oy, oz], theta
 
 
+_VAULT_EXTENSIONS = (".md", ".canvas", ".html", ".csv", ".json", ".txt")
+_VAULT_MANIFESTS = ("vault-manifest.json", "nas-import-manifest.json", "validation.json")
+_NOTE_READ_CAP = 350_000
+_NERVA_READ_CAP = 220_000
+
+
+def _vault_wants(name: str) -> bool:
+    return name not in _VAULT_MANIFESTS and Path(name).suffix.lower() in _VAULT_EXTENSIONS
+
+
+def _vault_read_cap(name: str) -> int:
+    # Only Markdown is read into the graph; every other type is listed by name and size.
+    return _NOTE_READ_CAP if name.lower().endswith(".md") else 0
+
+
+def _allow_hardlinks(cfg: dict) -> bool:
+    """Whether vault files with more than one hard link are indexed. Off unless asked.
+
+    A hard link inside the vault can be a second name for a file outside it, so they are
+    skipped by default and counted in the graph's `skipped`. Folders synced by a client
+    that hard-links files while uploading them (Google Drive) need this on.
+    """
+    if str(cfg.get("allowHardLinks", "")).strip().lower() in ("1", "true", "yes", "on"):
+        return True
+    for name in ("NERVA_OS_ALLOW_HARDLINKS", "JARVIS_OS_ALLOW_HARDLINKS"):
+        if os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on"):
+            return True
+    return False
+
+
+def _is_public_doc(name: str) -> bool:
+    """A repo document fit for the graph. `*.local.md` are owner-specific (gitignored
+    personal souls and identities) and never leave the disk through this app."""
+    low = name.lower()
+    return low.endswith(".md") and not low.startswith(".") and not low.endswith(".local.md")
+
+
+def _nerva_documents(nerva_dir: Path) -> list:
+    """`(parts, entry, data)` for the hub repo's root docs and the first agent docs.
+
+    Read through `vault_fs`, so a symlinked doc or folder is skipped, not followed. Hard
+    links are allowed here: this is the checkout the app itself runs from, and whoever can
+    link files into it can already change its code.
+    """
+    docs: list = []
+    try:
+        repo = vault_fs.VaultFs(nerva_dir, allow_hardlinks=True)
+    except OSError:
+        return docs
+    with repo:
+        wanted = [(name,) for name in repo.list_names() if _is_public_doc(name)]
+        agent_docs = []
+        try:
+            agent_dirs = repo.list_names(("agents",))
+        except OSError:
+            agent_dirs = []
+        for sub in agent_dirs:
+            if sub.startswith("."):
+                continue
+            try:
+                names = repo.list_names(("agents", sub))
+            except OSError:
+                continue  # a file, a link, or unreadable
+            agent_docs.extend(("agents", sub, name) for name in names if _is_public_doc(name))
+        wanted.extend(agent_docs[:20])
+        for parts in wanted:
+            try:
+                entry, data = repo.read_file(parts, _NERVA_READ_CAP)
+            except OSError:
+                continue
+            docs.append((parts, entry, data))
+    return docs
+
+
 def build_real_brain_graph(cfg: dict) -> dict:
     vault_mode = cfg.get("vaultMode", "andrei_plus_nerva")
     vault_dir = Path(cfg.get("vaultPath") or DEFAULT_VAULT_PATH)
@@ -542,43 +641,45 @@ def build_real_brain_graph(cfg: dict) -> dict:
             title_to_idx.setdefault(clean, idx)
 
     # 1. Walk Andrei OS Obsidian
-    for root, dirs, files in os.walk(vault_dir):
-        dirs[:] = sorted([d for d in dirs if not d.startswith(".")])
-        for fn in sorted(files):
-            if fn.startswith(".") or fn in ("vault-manifest.json", "nas-import-manifest.json", "validation.json"):
-                continue
+    # Through vault_fs: a symlink, junction or hard-linked file inside the vault is
+    # skipped rather than followed, so nothing outside the vault can enter the graph
+    # (and from there the model's grounding).
+    try:
+        vault_handle = vault_fs.VaultFs(vault_dir, allow_hardlinks=_allow_hardlinks(cfg))
+    except OSError as exc:
+        return {"mode": "demo_550", "reason": f"Vault cannot be opened: {exc.strerror or exc}"}
+    # relPath -> (source root, on-disk path components): the only files the note route serves.
+    indexed_files: dict[str, tuple[str, tuple[str, ...]]] = {}
+    with vault_handle as vault_files:
+        for parts, entry, data in vault_files.walk(want=_vault_wants, cap=_vault_read_cap):
+            fn = parts[-1]
             ext = Path(fn).suffix.lower()
-            if ext not in (".md", ".canvas", ".html", ".csv", ".json", ".txt"):
-                continue
-
-            full_path = Path(root) / fn
-            rel_path = full_path.relative_to(vault_dir)
-            rel_str = nfc(str(rel_path))
-            stem = nfc(full_path.stem)
-            hub_key = _classify_vault_hub(rel_path.parts)
+            rel_str = nfc("/".join(parts))
+            stem = nfc(Path(fn).stem)
+            hub_key = _classify_vault_hub(parts)
             if ext == ".canvas" and hub_key != "90 Atasamente":
                 # Keep .canvas visual maps in their semantic hub with slightly larger radius
                 pass
             parent_idx = hub_index_by_key.get(hub_key, 1)
             parent_hub = nodes[parent_idx]
 
-            st = os.stat(full_path, follow_symlinks=False)
-            is_dataless = bool(getattr(st, "st_flags", 0) & SF_DATALESS)
+            is_dataless = entry.dataless
+            size = entry.size
 
             title = stem
             tags: list[str] = []
             wikilinks: list[str] = []
-            if ext == ".md" and not is_dataless and st.st_size < 350_000:
+            if ext == ".md" and not is_dataless and size < 350_000:
                 try:
-                    raw = full_path.read_text(encoding="utf-8", errors="replace")
+                    raw = data.decode("utf-8", errors="replace")
                     title, tags, body, wikilinks = _parse_markdown_content(raw, stem)
                 except Exception:
-                    body = f"Notă din `{rel_str}` ({st.st_size} bytes)."
-            elif ext == ".canvas" and not is_dataless and st.st_size < 200_000:
-                body = f"Hartă vizuală Obsidian Canvas (`{rel_str}`, {st.st_size} bytes)."
+                    body = f"Notă din `{rel_str}` ({size} bytes)."
+            elif ext == ".canvas" and not is_dataless and size < 200_000:
+                body = f"Hartă vizuală Obsidian Canvas (`{rel_str}`, {size} bytes)."
                 tags = ["canvas"]
             else:
-                status_note = "stocată în iCloud Drive (click pentru hidratare live)" if is_dataless else f"atașament local ({st.st_size:,} bytes)"
+                status_note = "stocată în iCloud Drive (click pentru hidratare live)" if is_dataless else f"atașament local ({size:,} bytes)"
                 body = f"Fișier indexat din `{rel_str}` — {status_note}."
 
             offset3d, theta = _det_offset(rel_str)
@@ -611,38 +712,29 @@ def build_real_brain_graph(cfg: dict) -> dict:
                 "wikilinks": wikilinks,
             }
             nodes.append(node_obj)
+            indexed_files[rel_str] = (str(vault_dir), parts)
             register_lookup(stem, idx)
             register_lookup(title, idx)
+        skipped_files = list(vault_files.skipped)
 
     # 2. Optional: Merge Nerva / Jarvis Hub local architecture docs
     if include_nerva and "Nerva Jarvis Hub" in hub_index_by_key:
         nerva_hub_idx = hub_index_by_key["Nerva Jarvis Hub"]
         nerva_hub = nodes[nerva_hub_idx]
-        nerva_candidates = sorted(nerva_dir.glob("*.md"))
-        agents_dir = nerva_dir / "agents"
-        if agents_dir.exists():
-            for sub in sorted(agents_dir.glob("*/*.md"))[:20]:
-                nerva_candidates.append(sub)
+        for doc_parts, doc_entry, doc_data in _nerva_documents(nerva_dir):
+            is_dl = doc_entry.dataless
+            rel_n = nfc("/".join(doc_parts))
+            doc_stem = Path(doc_parts[-1]).stem
+            label = f"Nerva · {doc_stem}" if len(doc_parts) == 1 else f"Agent · {doc_parts[-2]} ({doc_stem})"
 
-        for mp in nerva_candidates:
-            if mp.name.startswith("."):
-                continue
-            try:
-                st = os.stat(mp, follow_symlinks=False)
-            except OSError:
-                continue
-            is_dl = bool(getattr(st, "st_flags", 0) & SF_DATALESS)
-            rel_n = nfc(str(mp.relative_to(nerva_dir)))
-            label = f"Nerva · {mp.stem}" if mp.parent == nerva_dir else f"Agent · {mp.parent.name} ({mp.stem})"
-
-            if not is_dl and st.st_size < 220_000:
+            if not is_dl and doc_entry.size < _NERVA_READ_CAP:
                 try:
-                    raw = mp.read_text(encoding="utf-8", errors="replace")
+                    raw = doc_data.decode("utf-8", errors="replace")
                     _, tags, body, wls = _parse_markdown_content(raw, label)
                 except Exception:
                     tags, body, wls = ["nerva"], f"Document Nerva `{rel_n}`", []
             else:
-                tags, body, wls = ["nerva"], f"Document Nerva `{rel_n}` ({st.st_size:,} bytes).", []
+                tags, body, wls = ["nerva"], f"Document Nerva `{rel_n}` ({doc_entry.size:,} bytes).", []
 
             offset3d, theta = _det_offset(f"nerva:{rel_n}", 6.0, 18.0)
             dist2d = math.hypot(offset3d[0], offset3d[2]) * 1.15
@@ -665,7 +757,7 @@ def build_real_brain_graph(cfg: dict) -> dict:
                     round(nerva_hub["base2d"][0] + math.cos(theta) * dist2d, 2),
                     round(nerva_hub["base2d"][1] + math.sin(theta) * dist2d, 2),
                 ],
-                "radius": 1.05 if mp.name in ("README.md", "NERVA_VISION.md", "HERMES_STATUS.md", "SOUL.md") else 0.82,
+                "radius": 1.05 if doc_parts[-1] in ("README.md", "NERVA_VISION.md", "HERMES_STATUS.md", "SOUL.md") else 0.82,
                 "relPath": f"Nerva/jarvis-hub/{rel_n}",
                 "sourceVault": "Nerva Jarvis Hub",
                 "cloudEvicted": is_dl,
@@ -674,6 +766,7 @@ def build_real_brain_graph(cfg: dict) -> dict:
                 "wikilinks": wls + ["Nerva si Jarvis Hub", "Hermes personal OS"],
             })
             register_lookup(label, idx)
+            indexed_files[f"Nerva/jarvis-hub/{rel_n}"] = (str(nerva_dir), doc_parts)
 
     # 3. Build Real Edges (Core <-> Hubs, Note <-> Parent Hub, Authentic [[WikiLinks]], Semantic Entity Mentions)
     edge_set: set[str] = set()
@@ -774,6 +867,13 @@ def build_real_brain_graph(cfg: dict) -> dict:
         "vaultLabel": "Andrei OS Obsidian + Nerva Hub" if include_nerva else "Andrei OS Obsidian",
         "vaultPath": str(vault_dir),
         "nervaPath": str(nerva_dir),
+        # Vault entries left out because they are links (never followed): a count and the
+        # reasons, so an incomplete graph is explained rather than silent.
+        "skipped": {
+            "count": len(skipped_files),
+            "reasons": {reason: sum(1 for _p, r in skipped_files if r == reason)
+                        for reason in sorted({r for _p, r in skipped_files})},
+        },
         "nodes": public_nodes,
         "edges": edges,
         "categories": categories,
@@ -809,55 +909,85 @@ def build_real_brain_graph(cfg: dict) -> dict:
     with _BRAIN_LOCK:
         _BRAIN_CACHE["key"] = cache_key
         _BRAIN_CACHE["data"] = result
+        _BRAIN_CACHE["files"] = indexed_files
         _BRAIN_CACHE["ts"] = now
     return result
 
 
+INBOX_FOLDER = "08 Inbox"
+
+
 def capture_inbox_note(cfg: dict, title: str, content: str, links: list[str] | None = None) -> dict:
+    """Create a new note in the vault's inbox. Never overwrites, never leaves the vault.
+
+    The note is created through `vault_fs`: relative to the handle of the verified inbox
+    folder, exclusively. An inbox (or vault ancestor) that is a symlink or junction is
+    refused with `vault_fs.UnsafePath` before anything is written, and there is no
+    path-based fallback. On a name collision the next free "<title> (n)" is taken.
+    """
     vault_dir = Path(cfg.get("vaultPath") or DEFAULT_VAULT_PATH)
-    inbox_dir = vault_dir / "08 Inbox"
-    inbox_dir.mkdir(parents=True, exist_ok=True)
 
-    clean_title = re.sub(r'[\\/:*?"<>|]+', "-", (title or "").strip()).strip("-")
-    if not clean_title:
-        clean_title = f"Nota JARVIS {dt.datetime.now().strftime('%Y-%m-%d %H-%M')}"
+    base_title = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "-", (title or "").strip()).strip("-. ")
+    if not base_title:
+        base_title = f"Nota JARVIS {dt.datetime.now().strftime('%Y-%m-%d %H-%M')}"
+    base_title = base_title[:120].rstrip(". ")
 
-    # Never overwrite an existing note: on a name collision take the next free
-    # "<title> (n)" and create the file exclusively, so two captures cannot race
-    # onto one path either.
-    base_title = clean_title
-    attempt = 1
-    while True:
-        target_file = inbox_dir / f"{clean_title}.md"
-        try:
-            handle = open(target_file, "x", encoding="utf-8")  # noqa: SIM115 - closed below
-            break
-        except FileExistsError:
-            attempt += 1
-            if attempt > 999:
-                raise
-            clean_title = f"{base_title} ({attempt})"
     now_iso = dt.datetime.now().astimezone().isoformat(timespec="seconds")
     link_str = " · ".join(f"[[{link.strip('[]')}]]" for link in (links or ["Acasa"]) if link.strip())
 
-    md = (
-        f"---\n"
-        f'title: "{clean_title}"\n'
-        f'created: "{now_iso}"\n'
-        f'status: "inbox"\n'
-        f'source: "JARVIS AI Workshop OS"\n'
-        f"tags: [andrei-os, inbox]\n"
-        f"---\n\n"
-        f"# {clean_title}\n\n"
-        f"{(content or '').strip()}\n\n"
-        f"{link_str}\n"
-    )
-    with handle:
-        handle.write(md)
+    with vault_fs.VaultFs(vault_dir) as vault_files:
+        attempt = 1
+        while True:
+            clean_title = base_title if attempt == 1 else f"{base_title} ({attempt})"
+            md = (
+                f"---\n"
+                f'title: "{clean_title}"\n'
+                f'created: "{now_iso}"\n'
+                f'status: "inbox"\n'
+                f'source: "JARVIS AI Workshop OS"\n'
+                f"tags: [andrei-os, inbox]\n"
+                f"---\n\n"
+                f"# {clean_title}\n\n"
+                f"{(content or '').strip()}\n\n"
+                f"{link_str}\n"
+            )
+            try:
+                vault_files.create_exclusive((INBOX_FOLDER,), f"{clean_title}.md", md.encode("utf-8"))
+                break
+            except FileExistsError:
+                attempt += 1
+                if attempt > 999:
+                    raise
+
+    target_file = vault_dir / INBOX_FOLDER / f"{clean_title}.md"
     invalidate_brain_cache()
     graph = build_real_brain_graph(cfg)
     created_node = next((n for n in graph.get("nodes", []) if n.get("title") == clean_title), None)
     return {"ok": True, "path": str(target_file), "node": created_node, "brain": graph}
+
+
+def read_indexed_note(cfg: dict, rel_path: str) -> tuple[str, list[str], str, list[str]]:
+    """`(title, tags, body, wikilinks)` of a Markdown note the graph itself indexed.
+
+    The lookup is an allowlist, not a path check: only a `relPath` that the current graph
+    produced is served, and only Markdown. So a request can name nothing the indexer did
+    not already choose to show: not `config.json`, not `.env`, not a `*.local.md`, not a
+    file reached through a link. The file is then read through `vault_fs` from the on-disk
+    components recorded at index time. Raises `ValueError` for anything else.
+    """
+    rel = nfc(rel_path or "").replace("\\", "/")
+    build_real_brain_graph(cfg)
+    with _BRAIN_LOCK:
+        found = _BRAIN_CACHE["files"].get(rel)
+    if found is None or not rel.lower().endswith(".md"):
+        raise ValueError("not an indexed note")
+    base_dir, parts = found
+    in_repo = rel.startswith("Nerva/jarvis-hub/")
+    with vault_fs.VaultFs(base_dir, allow_hardlinks=in_repo or _allow_hardlinks(cfg)) as files:
+        entry, data = files.read_file(parts, _NOTE_READ_CAP)
+    if entry.dataless:
+        raise ValueError("note is not downloaded")
+    return _parse_markdown_content(data.decode("utf-8", errors="replace"), Path(parts[-1]).stem)
 
 
 # ==============================================================================
@@ -1393,25 +1523,13 @@ class JarvisRequestHandler(SimpleHTTPRequestHandler):
         if path == "/api/brain/note":
             cfg = load_config()
             rel = qs.get("relPath", [""])[0]
-            vault_dir = Path(cfg.get("vaultPath") or DEFAULT_VAULT_PATH).resolve()
-            nerva_dir = Path(cfg.get("nervaPath") or DEFAULT_NERVA_PATH).resolve()
             try:
-                if rel.startswith("Nerva/jarvis-hub/"):
-                    base_dir, sub = nerva_dir, rel.split("Nerva/jarvis-hub/", 1)[1]
-                else:
-                    base_dir, sub = vault_dir, rel
-                target = (base_dir / sub).resolve()
-                # Compare path components, not string prefixes: "/x/Vault-private"
-                # starts with "/x/Vault" but is not inside it.
-                if not sub or base_dir not in target.parents or not target.is_file():
-                    raise ValueError("Invalid path")
-
-                raw = target.read_text(encoding="utf-8", errors="replace")
-                title, tags, body, wls = _parse_markdown_content(raw, target.stem)
-                invalidate_brain_cache()
-                self._send_json({"ok": True, "title": title, "tags": tags, "body": body[:6000], "wikilinks": wls})
-            except Exception as exc:
-                self._send_json({"ok": False, "error": str(exc)}, status=400)
+                title, tags, body, wls = read_indexed_note(cfg, rel)
+            except (OSError, ValueError):
+                # A static message: the reason can carry filesystem paths.
+                self._send_json({"ok": False, "error": "note not found"}, status=404)
+                return
+            self._send_json({"ok": True, "title": title, "tags": tags, "body": body[:6000], "wikilinks": wls})
             return
 
         super().do_GET()

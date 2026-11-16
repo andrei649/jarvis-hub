@@ -33,7 +33,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-from agents.core.env_config import env_str
+from agents.core.env_config import env_flag, env_str
 from agents.core.paths import app_root
 from agents.core.routers._deps import user_guard
 from agents.core.web_base_path import normalize_root_path
@@ -45,6 +45,8 @@ router = APIRouter(tags=["jarvis-os"])
 
 #: Where a deployment can point the galaxy at a vault other than the auto-detected one.
 VAULT_ENV = "JARVIS_OS_VAULT_PATH"
+#: Index vault files that have more than one hard link (off by default; see vault_fs).
+HARDLINKS_ENV = "JARVIS_OS_ALLOW_HARDLINKS"
 #: How much vault text one chat turn may carry as attachments.
 _ATTACHMENT_CHARS = 1500
 _ATTACHMENT_COUNT = 4
@@ -90,26 +92,12 @@ def _config(engine: ModuleType) -> dict:
         "vaultMode": "andrei_plus_nerva",
         "vaultPath": str(Path(vault).expanduser()),
         "nervaPath": str(app_root()),
+        "allowHardLinks": env_flag(HARDLINKS_ENV),
     }
 
 
 def _vault_available(cfg: dict) -> bool:
     return Path(cfg["vaultPath"]).is_dir()
-
-
-def _resolve_note(cfg: dict, rel_path: str) -> Path:
-    """Map a graph node's `relPath` to a file strictly inside the vault or the repo."""
-    prefix = "Nerva/jarvis-hub/"
-    if rel_path.startswith(prefix):
-        base, rel = Path(cfg["nervaPath"]).resolve(), rel_path[len(prefix):]
-    else:
-        base, rel = Path(cfg["vaultPath"]).resolve(), rel_path
-    target = (base / rel).resolve()
-    if not rel or not target.is_relative_to(base) or not target.is_file():
-        raise ValueError("note is outside the indexed sources")
-    if target.suffix.lower() not in (".md", ".canvas", ".txt", ".csv", ".json", ".html"):
-        raise ValueError("not a note")
-    return target
 
 
 # ── page shell + static assets ───────────────────────────────────
@@ -193,12 +181,13 @@ async def os_brain_note(relPath: str = ""):  # noqa: N803 — the page's query n
     engine = _engine()
     if engine is None:
         return _unavailable()
+    # An allowlist, not a path check: only Markdown the graph itself indexed is served
+    # (never config.json, .env or a *.local.md), read without following any link.
     try:
-        target = _resolve_note(_config(engine), relPath)
-        raw = await asyncio.to_thread(target.read_text, encoding="utf-8", errors="replace")
+        title, tags, body, wikilinks = await asyncio.to_thread(
+            engine.read_indexed_note, _config(engine), relPath)
     except (OSError, ValueError) as exc:
         return error_json(exc, 404, "note not found", extra={"ok": False})
-    title, tags, body, wikilinks = engine._parse_markdown_content(raw, target.stem)
     return nocache_json({"ok": True, "title": title, "tags": tags, "body": body[:6000], "wikilinks": wikilinks})
 
 
@@ -245,6 +234,11 @@ async def os_brain_capture(body: CaptureBody):
         return nocache_json({"ok": False, "error": "a title or content is required"}, status_code=422)
     try:
         result = await asyncio.to_thread(engine.capture_inbox_note, cfg, body.title, body.content, body.links)
+    except engine.vault_fs.UnsafePath as exc:
+        # The inbox (or a folder above it) is a link out of the vault, or this platform
+        # has no handle-relative create. Refused; nothing was written anywhere.
+        return error_json(exc, 409, "the vault inbox is not a plain folder inside the vault; "
+                                    "capture is refused", extra={"ok": False})
     except OSError as exc:
         return error_json(exc, 500, "could not write the note", extra={"ok": False})
     return nocache_json(result)

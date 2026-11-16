@@ -268,7 +268,7 @@ def test_standalone_note_cannot_read_a_sibling_folder(standalone, vault):
     (sibling / "secret.txt").write_text("do not read", encoding="utf-8")
     for rel in (f"../{sibling.name}/secret.txt", "../outside.md"):
         response, payload = standalone("GET", "/api/brain/note?relPath=" + rel.replace(" ", "%20"))
-        assert response.status == 400, rel
+        assert response.status == 404, rel
         assert "do not read" not in payload and "not part of the vault" not in payload
 
 

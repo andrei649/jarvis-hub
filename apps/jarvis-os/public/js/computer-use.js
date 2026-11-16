@@ -2,6 +2,8 @@
  * JARVIS Computer Use: Meta Ads Autonomous Campaign Driver + Live Browser Tab Screen-Share
  */
 
+import { campaignRowsHtml } from "./templates.js";
+
 const INITIAL_CAMPAIGNS = [
   {
     on: false,
@@ -56,22 +58,7 @@ export class ComputerUseController {
   }
 
   _renderTable() {
-    this.tbody.innerHTML = this.campaigns
-      .map(
-        (c, i) => `
-      <tr class="${c.isDraft ? "draft-row" : ""}">
-        <td><input type="checkbox" ${c.on ? "checked" : ""} data-idx="${i}" /></td>
-        <td><strong>${c.name}</strong> ${c.isDraft ? '<span style="color:#059669;font-size:11px;font-weight:700;">[DRAFT READY]</span>' : ""}</td>
-        <td>● ${c.delivery}</td>
-        <td>${c.objective}</td>
-        <td>${c.budget}/day</td>
-        <td>${c.results}</td>
-        <td>${c.reach}</td>
-        <td>${c.cpr}</td>
-      </tr>
-    `
-      )
-      .join("");
+    this.tbody.innerHTML = campaignRowsHtml(this.campaigns);
 
     const drafts = this.campaigns.filter((c) => c.isDraft).length;
     this.publishBtn.textContent = `Review and publish (${drafts})`;
@@ -156,12 +143,15 @@ export class ComputerUseController {
   }
 
   _insertDraft(name, budget, objective) {
+    // These can be a model's action parameters: coerce the types here, and the table
+    // builder escapes the text (templates.js).
+    const amount = Number(budget);
     this.campaigns.unshift({
       on: true,
-      name,
+      name: String(name ?? ""),
       delivery: "In Draft",
-      objective,
-      budget: `$${budget.toFixed(2)}`,
+      objective: String(objective ?? ""),
+      budget: `$${(Number.isFinite(amount) ? amount : 0).toFixed(2)}`,
       results: "Advantage+ Ready",
       reach: "Est. 8.4K–21K",
       cpr: "—",
@@ -255,7 +245,7 @@ export class ComputerUseController {
     this.driverLog.textContent = "Draft staged — awaiting human approval to publish";
 
     this.hud.speak(
-      `Your new ${objective.toLowerCase()} campaign "${campaignName}" is staged at ${dailyBudget} dollars a day, sir. Ready whenever you wish to press publish.`
+      `Your new ${String(objective).toLowerCase()} campaign "${campaignName}" is staged at ${dailyBudget} dollars a day, sir. Ready whenever you wish to press publish.`
     );
     setTimeout(() => {
       this.cursor.classList.add("hidden");
