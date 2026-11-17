@@ -77,7 +77,11 @@ def test_tool_progress_payload_is_bounded():
     assert protocol.tool_progress({"event": "tool_heartbeat", "tool": "t" * 500, "call_id": "c" * 500,
                                    "status": "s" * 500}) == {
         "object": "nerva.tool.progress", "tool": "t" * 128, "stage": "running", "call_id": "c" * 128,
-        "status": "s" * 64}
+        "status": "running"}
+    # H560 review: a failed call's status is its free-text reason; the frame carries a fixed word.
+    failed = protocol.tool_progress({"event": "tool_failed", "tool": "file_read", "call_id": "c",
+                                     "status": "permission denied: /home/owner/secret.txt"})
+    assert failed["status"] == "failed" and "secret" not in json.dumps(failed)
     assert protocol.tool_progress({"event": "todo_updated", "tool": "todo"}) is None
     assert protocol.tool_progress({"event": "tool_result"}) is None
     assert protocol.tool_progress("nope") is None

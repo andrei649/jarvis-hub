@@ -113,24 +113,27 @@ async def a2a_receive_task(request: Request):
         return refusal
     peer_id = request.headers.get("x-a2a-peer", "")
     signature = request.headers.get("x-signature-256", "")
+    # H563 review m4: a peer that sends both signs "<timestamp>.<nonce>." + body.
+    stamp = request.headers.get("x-a2a-timestamp")
+    nonce = request.headers.get("x-a2a-nonce")
     raw = await request.body()
     registry = _get_a2a_registry()
     # H659: a peer's retry of a task it already sent returns the first receipt, and no
     # second inbox row. The key is reserved only for an authenticated peer, in its scope.
     started = idempotency.Begin()
-    if registry.verify_peer(peer_id, raw, signature):
+    if registry.verify_peer(peer_id, raw, signature, timestamp=stamp, nonce=nonce):
         started = await asyncio.to_thread(idempotency.begin, request, f"a2a:{peer_id}", raw)
         if started.refusal is not None:
             return started.refusal
         if started.replay is not None:
             return idempotency.replayed(started.replay.ref or {})
     try:
-        receipt = registry.receive_task(peer_id, raw, signature)
+        receipt = registry.receive_task(peer_id, raw, signature, timestamp=stamp, nonce=nonce)
     except PermissionError as exc:
         if started.claim is not None:
             started.claim.release()
         status = getattr(exc, "status", None)
-        if status in (403, 429):
+        if status in (403, 409, 429):
             # An authenticated peer refused by the owner's policy (H563 A2ARefused): it
             # may know why, and the refusal is audited.
             reason = str(getattr(exc, "reason", "refused"))
@@ -220,8 +223,10 @@ async def a2a_set_card(body: A2ACardBody):
 
 
 @router.get("/api/a2a/inbox", dependencies=[Depends(admin_guard)])
-async def a2a_inbox(status: Optional[str] = None):
-    return nocache_json({"inbox": _get_a2a_registry().list_inbox(status)})
+async def a2a_inbox(status: Optional[str] = None, raw: bool = False):
+    """The inbox with each task's cleaned, framed ``view``; the peer's raw ``task`` only
+    with ``?raw=true`` (H563 review m6)."""
+    return nocache_json({"inbox": _get_a2a_registry().list_inbox(status, raw=raw)})
 
 
 @router.post("/api/a2a/inbox/{task_id}/decide", dependencies=[Depends(admin_guard)])

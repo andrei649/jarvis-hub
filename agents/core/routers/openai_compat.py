@@ -38,6 +38,7 @@ import asyncio
 import copy
 import json
 import logging
+import threading
 import time
 from typing import Any
 
@@ -395,12 +396,14 @@ async def _chat_stream(orch, key: ApiKey, slot: _Slot, text: str, *, session_id:
 
     loop = asyncio.get_running_loop()
     progress_sent = {"n": 0}
+    progress_lock = threading.Lock()   # tool events can arrive from several worker threads
 
     def on_tool(row: dict) -> None:
         # Called on the loop or from a tool's worker thread; never blocks.
-        if progress_sent["n"] >= MAX_TOOL_PROGRESS_EVENTS:
-            return
-        progress_sent["n"] += 1
+        with progress_lock:
+            if progress_sent["n"] >= MAX_TOOL_PROGRESS_EVENTS:
+                return
+            progress_sent["n"] += 1
         try:
             if asyncio.get_running_loop() is loop:
                 queue.put_nowait(("tool", row))

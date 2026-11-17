@@ -354,6 +354,8 @@ def sse_data(payload: dict | str) -> str:
 
 #: H560 — the typed frame a chat-completions stream carries a tool event in, when asked.
 TOOL_PROGRESS_EVENT = "nerva.tool.progress"
+_PROGRESS_STATUS = {"requested": "requested", "started": "running", "running": "running",
+                    "completed": "ok", "failed": "failed"}
 _PROGRESS_EVENTS = {"tool_requested": "requested", "tool_started": "started", "tool_heartbeat": "running",
                     "tool_result": "completed", "tool_failed": "failed"}
 
@@ -371,8 +373,9 @@ def tool_progress(row: Any) -> dict | None:
     payload = {"object": "nerva.tool.progress", "tool": tool[:128], "stage": stage}
     if isinstance(call_id, str) and call_id:
         payload["call_id"] = call_id[:128]
-    if isinstance(row.get("status"), str):
-        payload["status"] = row["status"][:64]
+    # A fixed word per stage, never the row's own status: a failed call's status is its
+    # failure reason, free text that does not belong in a client's stream (H560 review).
+    payload["status"] = _PROGRESS_STATUS[stage]
     return payload
 
 
