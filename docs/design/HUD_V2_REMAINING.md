@@ -1,5 +1,20 @@
 # HUD v2 — Remaining work (next PR)
 
+## ANDREI OS (post-merge review, 2026-11-17)
+
+The separate browser page `/os/` is available, but HUD V2 has no navigation entry
+or native graph/note/retrieval/capture controls. Its existing `/api/os/status`,
+`/api/os/brain`, `/api/os/brain/note`, `/api/os/brain/retrieve` and
+`POST /api/os/brain/capture` callers in `apps/jarvis-os/public/js/api.js` prove the
+separate page has a client; they do not close HUD V2 parity. The gate now labels
+these routes `HUD_GAP:jarvis-os`. Add a discoverable HUD entry and review appropriate
+native controls before claiming closure. Mobile also lacks these surfaces
+(BACKLOG H18.38). No native client is delivered by this repair.
+
+Standalone AI Connections and its default-off cloud chat consent are confined to
+the standalone server. Hub `/os` hides those settings and uses the hub's separate
+`/chat` policy; no hub bypass is demonstrated by the standalone finding.
+
 Local gateway continuation, 2026-11-12: native Slack slash commands and the
 `/nerva` fallback use the existing command access, inbox and approval surfaces.
 This is host/Slack-specific behavior; it adds no HUD endpoint or screen. Workspace

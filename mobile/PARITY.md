@@ -20,6 +20,18 @@ This file is the single source of truth for that gap. Backlog tasks for closing 
 
 Legend — **mobile**: ✅ shipped · 🟡 partial · ⬜ not started · ➖ not applicable on mobile.
 
+### ANDREI OS gaps (2026-11-17, post-merge #1370 review)
+
+| Surface | API | Separate browser `/os/` | Native HUD V2 | Native mobile | Task |
+|---|---|---|---|---|---|
+| ANDREI OS vault status, graph, note inspection, retrieval and inbox capture | `GET /api/os/status`, `GET /api/os/brain`, `GET /api/os/brain/note`, `GET /api/os/brain/retrieve`, `POST /api/os/brain/capture` | ✅ own page and client | ⬜ no navigation entry or native controls | ⬜ no client or screen | H18.38 |
+| Standalone provider keys, cloud chat consent and local vault paths | Standalone `/api/config`, `/api/status`, `/api/chat` | ✅ standalone Settings; hub hides AI Connections | ➖ standalone-only settings | ➖ standalone-only settings | Intentional standalone-only scope |
+
+The `/os/` page calling hub routes is browser integration evidence, not HUD V2 or
+native mobile parity. Hub chat uses its separate `/chat`; the standalone consent
+repair neither changes nor demonstrates a bypass of that policy. H18.38 remains
+open; no physical device or native client acceptance is claimed.
+
 SEC-B6 local source candidate (2026-11-03): twelve owner-content reads now require
 user credentials: `GET /api/oracle/status`, `GET /agents`, the three
 `GET /api/eval/datasets` list/runs/compare routes, `GET /learning/stats`,

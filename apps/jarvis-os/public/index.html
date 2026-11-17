@@ -535,14 +535,21 @@
             </div>
           </div>
           <select id="cfg-preferred-provider" class="settings-select">
-            <option value="auto">Auto (Anthropic Sub → Cloud APIs → Local Ollama)</option>
+            <option value="ollama">Local Ollama + offline vault fallback (default)</option>
+            <option value="auto">Auto (Local Ollama → consented cloud providers)</option>
             <option value="claude_subscription">Anthropic Subscription (Claude CLI Only + Local Fallback)</option>
-            <option value="ollama">Local Ollama Only (100% On-Device Private)</option>
             <option value="anthropic">Anthropic Console API Key</option>
             <option value="openai">OpenAI / ChatGPT API Key</option>
             <option value="gemini">Google Gemini API Key</option>
             <option value="openrouter">OpenRouter / Bonobo LM Studio Endpoint</option>
           </select>
+        </div>
+        <div class="provider-desc">
+          <input type="checkbox" id="cfg-cloud-consent" />
+          <label for="cfg-cloud-consent">Allow cloud chat to send my prompts, UI context and retrieved vault notes
+            to the selected provider and its cloud fallbacks (including Claude CLI and custom or remote endpoints).</label>
+          <p>Off by default, including existing configurations. Keys, sign-in and provider selection do not grant
+            consent. Without it, chat uses loopback Ollama or the offline vault fallback. Save to apply.</p>
         </div>
 
         <!-- Featured Demo Card: Anthropic Subscription -->
@@ -554,7 +561,7 @@
                 <span id="claude-sub-badge" class="conn-pill pending">Checking...</span>
               </div>
               <p class="provider-desc">
-                Recommended for demo & daily use — routes JARVIS chat & RAG through your existing Anthropic subscription (`claude -p --model fable|sonnet`) with zero per-token API charges.
+                Uses your existing Anthropic subscription for chat and retrieved notes. Requires cloud chat consent above; signing in alone does not enable it.
               </p>
             </div>
             <div class="provider-actions-col">
@@ -648,7 +655,7 @@
         </div>
 
         <div class="api-save-row">
-          <span id="cfg-status-msg">Changes save locally to your private workspace config.</span>
+          <span id="cfg-status-msg">Changes save locally. Blank or masked keys keep the saved value.</span>
           <button id="cfg-save-btn" class="cu-action-btn primary">Save AI Connections</button>
         </div>
       </div>

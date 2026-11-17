@@ -265,7 +265,8 @@ class JarvisOSApp {
       document.getElementById("settings-active-engine").textContent = engineLabel;
       document.getElementById("hud-engine-pill").textContent = `AI: ${engineLabel}`;
 
-      document.getElementById("cfg-preferred-provider").value = st.preferredProvider || "auto";
+      document.getElementById("cfg-preferred-provider").value = st.preferredProvider || "ollama";
+      document.getElementById("cfg-cloud-consent").checked = st.cloudConsent === true;
       document.getElementById("cfg-vault-mode").value = st.vaultMode || "andrei_plus_nerva";
       document.getElementById("cfg-vault-path").value = st.vaultPath || "";
       document.getElementById("cfg-nerva-path").value = st.nervaPath || "";
@@ -316,6 +317,7 @@ class JarvisOSApp {
       const setKeyBadge = (badgeId, inputId, hasKey, defaultLabel = "Optional") => {
         const b = document.getElementById(badgeId);
         const inp = document.getElementById(inputId);
+        if (!b || !inp) return;
         if (hasKey) {
           b.textContent = "● Key Saved";
           b.className = "conn-pill connected";
@@ -330,7 +332,7 @@ class JarvisOSApp {
       setKeyBadge("badge-anthropic", "cfg-anthropic", p.anthropic);
       setKeyBadge("badge-openai", "cfg-openai", p.openai);
       setKeyBadge("badge-gemini", "cfg-gemini", p.gemini);
-      setKeyBadge("badge-openrouter", "cfg-openrouter", p.openrouter);
+      setKeyBadge("badge-openrouter", "cfg-openrouter-key", p.openrouter);
       if (p.elevenlabs) {
         setKeyBadge("badge-elevenlabs", "cfg-elevenlabs", true);
       } else {
@@ -896,6 +898,7 @@ class JarvisOSApp {
     const saveAllSettings = async (statusElId) => {
       const payload = {
         preferredProvider: document.getElementById("cfg-preferred-provider").value,
+        cloudConsent: document.getElementById("cfg-cloud-consent").checked,
         vaultMode: document.getElementById("cfg-vault-mode").value,
         vaultPath: document.getElementById("cfg-vault-path").value,
         nervaPath: document.getElementById("cfg-nerva-path").value,
@@ -911,7 +914,18 @@ class JarvisOSApp {
         elevenlabsVoiceId: document.getElementById("cfg-elevenlabs-voice").value,
       };
       // On the hub, providers, keys and paths are the hub's own: only re-index.
-      const data = HUB ? { activeEngine: "nerva hub" } : await (await apiPost("/config", payload)).json();
+      let data = { activeEngine: "nerva hub" };
+      try {
+        if (!HUB) {
+          const response = await apiPost("/config", payload);
+          data = await response.json();
+          if (!response.ok || data.ok !== true) throw new Error("Settings were not saved");
+        }
+      } catch (_) {
+        const msgEl = document.getElementById(statusElId);
+        if (msgEl) msgEl.textContent = "Could not save or confirm settings. Refresh status before relying on this change, or retry.";
+        return;
+      }
       await this.refreshAIStatus(true);
       await this.loadServerBrain(true);
       const msgEl = document.getElementById(statusElId);

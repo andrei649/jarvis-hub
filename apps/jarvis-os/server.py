@@ -4,6 +4,8 @@ ANDREI OS / AI WORKSHOP OS — J.A.R.V.I.S. Local Server (http://localhost:4719)
 - Indexes Andrei's real Second Brain (`~/Documents/Andrei OS Obsidian` + the enclosing `jarvis-hub` repo)
   into a 3D Knowledge Galaxy with authentic [[wiki-link]] edges and RAG retrieval.
 - Unified Multi-Platform AI Hub:
+  Standalone chat defaults to local Ollama and offline vault synthesis. Cloud
+  dispatch (including CLI subscriptions and remote models) requires explicit consent.
   1. Anthropic Subscription via official Claude Code CLI (`claude -p`)
   2. Anthropic Console API
   3. Google Gemini API
@@ -19,6 +21,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import importlib.util
+import ipaddress
 import json
 import math
 import os
@@ -164,6 +167,8 @@ def find_claude_bin() -> str:
 # ==============================================================================
 CONFIG_KEYS = (
     "preferredProvider",
+    "cloudConsent",
+    "allowHardLinks",
     "vaultMode",
     "vaultPath",
     "nervaPath",
@@ -179,10 +184,98 @@ CONFIG_KEYS = (
     "elevenlabsVoiceId",
 )
 
+PROVIDERS = {"auto", "ollama", "claude_subscription", "anthropic", "gemini", "openai", "openrouter"}
+SECRET_KEYS = {"anthropicKey", "geminiKey", "openaiKey", "openrouterKey", "elevenlabsKey"}
+BOOLEAN_KEYS = {"cloudConsent", "allowHardLinks"}
+
+
+def _normalize_routing(cfg: dict) -> dict:
+    """Legacy selection/credentials never constitute consent; malformed values fail closed."""
+    cfg = dict(cfg)
+    pref = cfg.get("preferredProvider")
+    cfg["preferredProvider"] = pref if isinstance(pref, str) and pref in PROVIDERS else "ollama"
+    cfg["cloudConsent"] = cfg.get("cloudConsent") is True
+    return cfg
+
+
+def _is_loopback_url(url) -> bool:
+    """Parse the authority, never trust a loopback-looking substring of a remote URL."""
+    if not isinstance(url, str):
+        return False
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        if parsed.scheme not in {"http", "https"} or parsed.username or parsed.password:
+            return False
+        if parsed.query or parsed.fragment or not parsed.port and parsed.netloc.endswith(":"):
+            return False
+        host = parsed.hostname
+        return host == "localhost" or ipaddress.ip_address(host).is_loopback
+    except (ValueError, TypeError):
+        return False
+
+
+def _provider_chain(cfg: dict) -> list[str]:
+    cfg = _normalize_routing(cfg)
+    pref = cfg["preferredProvider"]
+    if pref == "auto":
+        chain = ["ollama", "claude_subscription", "anthropic", "gemini", "openai", "openrouter"]
+    elif pref == "anthropic":
+        chain = ["anthropic", "claude_subscription", "ollama"]
+    elif pref == "ollama":
+        chain = ["ollama"]
+    else:
+        chain = [pref, "ollama"]
+    # Also used by status so the advertised engine respects the dispatch policy.
+    return [step for step in chain if _dispatch_allowed(step, cfg)] or []
+
+
+def _dispatch_allowed(provider: str, cfg: dict) -> bool:
+    if cfg.get("cloudConsent") is True:
+        return True
+    return provider == "ollama" and _is_loopback_url(cfg.get("ollamaUrl", "http://127.0.0.1:11434"))
+
+
+def _live_dispatch_allowed(provider: str, cfg: dict) -> bool:
+    if provider == "ollama" and _is_loopback_url(cfg.get("ollamaUrl", "http://127.0.0.1:11434")):
+        return True
+    # Revocation stops subsequent fallback dispatches in an already-running turn.
+    # New consent never upgrades a request that started without it.
+    return cfg.get("cloudConsent") is True and load_config()["cloudConsent"] is True
+
+
+def _model_opener():
+    """Model requests never inherit proxies or follow redirects to another authority."""
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+
+
+def _local_ollama_model(model: dict) -> bool:
+    """Positive local artifact metadata; loopback alone does not mean local inference."""
+    if not isinstance(model, dict):
+        return False
+    name, details = model.get("name"), model.get("details")
+    return bool(
+        isinstance(name, str) and name and "cloud" not in name.lower()
+        and model.get("remote_host", "") in ("", None) and model.get("remote_model", "") in ("", None)
+        and type(model.get("size")) is int and model["size"] > 0
+        and isinstance(details, dict) and isinstance(details.get("format"), str) and details["format"]
+    )
+
+
+def _select_ollama_model(info: dict, cfg: dict) -> str | None:
+    available = info.get("models", []) if _live_dispatch_allowed("ollama_cloud", cfg) else info.get("localModels", [])
+    desired = cfg.get("ollamaModel") or "qwen3.5:4b"
+    return desired if desired in available else next(iter(available), None)
+
 
 def load_config() -> dict:
     cfg = {
-        "preferredProvider": "auto",  # auto | claude_subscription | ollama | anthropic | gemini | openai | openrouter
+        "preferredProvider": "ollama",
+        "cloudConsent": False,
+        "allowHardLinks": False,
         "vaultMode": "andrei_plus_nerva",  # andrei_plus_nerva | andrei_os | demo_550
         "vaultPath": DEFAULT_VAULT_PATH,
         "nervaPath": DEFAULT_NERVA_PATH,
@@ -200,8 +293,12 @@ def load_config() -> dict:
     if CONFIG_PATH.exists():
         try:
             disk = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+            if not isinstance(disk, dict):
+                disk = {}
             for k in CONFIG_KEYS:
-                if k in disk and disk[k] is not None and disk[k] != "":
+                if k in BOOLEAN_KEYS:
+                    cfg[k] = disk.get(k) is True
+                elif k in disk and isinstance(disk[k], str) and disk[k] != "":
                     cfg[k] = disk[k]
         except Exception:
             pass
@@ -210,16 +307,31 @@ def load_config() -> dict:
         cfg["vaultPath"] = DEFAULT_VAULT_PATH
     if cfg.get("nervaPath") and not Path(cfg["nervaPath"]).exists() and Path(DEFAULT_NERVA_PATH).exists():
         cfg["nervaPath"] = DEFAULT_NERVA_PATH
-    return cfg
+    return _normalize_routing(cfg)
 
 
 def save_config(updates: dict) -> dict:
+    if not isinstance(updates, dict):
+        raise ValueError("Settings must be a JSON object")
+    for key in BOOLEAN_KEYS:
+        if key in updates and type(updates[key]) is not bool:
+            raise ValueError(f"{key} must be a JSON boolean")
+    if "preferredProvider" in updates and (
+        not isinstance(updates["preferredProvider"], str) or updates["preferredProvider"] not in PROVIDERS
+    ):
+        raise ValueError("Unknown preferredProvider")
     current = load_config()
-    secret_keys = {"anthropicKey", "geminiKey", "openaiKey", "openrouterKey", "elevenlabsKey"}
     for key in CONFIG_KEYS:
         if key in updates and updates[key] is not None:
+            if key in BOOLEAN_KEYS:
+                current[key] = updates[key]
+                continue
+            if not isinstance(updates[key], str):
+                raise ValueError(f"{key} must be a string")
             val = str(updates[key]).strip()
-            if key in secret_keys and val == "***":
+            # Empty inputs can result from incomplete status hydration. Clearing a key
+            # requires editing the private config; ordinary settings saves retain it.
+            if key in SECRET_KEYS and val in {"", "***"}:
                 continue
             current[key] = val
     CONFIG_PATH.write_text(json.dumps(current, indent=2), encoding="utf-8")
@@ -290,10 +402,12 @@ def check_ollama_status(ollama_url: str, force: bool = False) -> dict:
     base = (ollama_url or "http://127.0.0.1:11434").rstrip("/")
     try:
         req = urllib.request.Request(f"{base}/api/tags", method="GET")
-        with urllib.request.urlopen(req, timeout=1.5) as resp:
+        with _model_opener().open(req, timeout=1.5) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-            models = [m.get("name", "") for m in data.get("models", []) if m.get("name")]
-            info = {"online": True, "url": base, "models": models}
+            entries = data.get("models", [])
+            models = [m["name"] for m in entries if isinstance(m, dict) and isinstance(m.get("name"), str) and m["name"]]
+            local = [m["name"] for m in entries if _local_ollama_model(m)]
+            info = {"online": True, "url": base, "models": models, "localModels": local}
     except Exception:
         info = {"online": False, "url": base, "models": []}
 
@@ -1175,7 +1289,7 @@ def _extract_json(text: str) -> dict:
     return {"reply": cleaned or "Right away, sir.", "action": {"type": "none", "params": {}}}
 
 
-def _call_claude_subscription(user_payload: str, brain: str) -> dict:
+def _call_claude_subscription(user_payload: str, brain: str, cfg: dict) -> dict:
     claude_info = check_claude_subscription()
     if not claude_info.get("loggedIn") or not claude_info.get("bin"):
         raise RuntimeError("Claude subscription CLI is not signed in yet")
@@ -1198,6 +1312,8 @@ def _call_claude_subscription(user_payload: str, brain: str) -> dict:
         user_payload,
     ]
     use_shell = os.name == "nt" and claude_info["bin"].lower().endswith((".cmd", ".bat"))
+    if not _live_dispatch_allowed("claude_subscription", cfg):
+        raise RuntimeError("Cloud chat consent was revoked")
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=28, env=env, shell=use_shell)
     if proc.returncode != 0:
         raise RuntimeError((proc.stderr or proc.stdout or "claude CLI error").strip())
@@ -1270,17 +1386,25 @@ def _call_openai_compatible(user_payload: str, url: str, api_key: str, model: st
 
 
 def _call_ollama(user_payload: str, cfg: dict) -> dict:
+    if not _live_dispatch_allowed("ollama", cfg):
+        raise RuntimeError("Remote Ollama requires cloud consent in Settings")
     base = (cfg.get("ollamaUrl") or "http://127.0.0.1:11434").rstrip("/")
-    ollama_info = check_ollama_status(base)
+    # Refresh before sending a private prompt: cached names can have become cloud aliases.
+    ollama_info = check_ollama_status(base, force=True)
     if not ollama_info.get("online") or not ollama_info.get("models"):
         raise RuntimeError("Local Ollama is not reachable")
 
-    desired = cfg.get("ollamaModel") or "qwen3.5:4b"
-    available = ollama_info["models"]
-    model = desired if desired in available else available[0]
+    model = _select_ollama_model(ollama_info, cfg)
+    if not model:
+        raise RuntimeError("No verified local Ollama model; cloud models require consent")
+    cloud_allowed = _live_dispatch_allowed("ollama_cloud", cfg)
+    # Supported Ollama versions resolve this selector atomically and refuse remote
+    # aliases. Older servers may reject it; never retry with an unrestricted name.
+    tagged_model = model if ":" in model.rsplit("/", 1)[-1] else f"{model}:latest"
+    wire_model = model if cloud_allowed else f"{tagged_model}:local"
 
     req_body = json.dumps({
-        "model": model,
+        "model": wire_model,
         "stream": False,
         "think": False,
         "format": "json",
@@ -1296,11 +1420,16 @@ def _call_ollama(user_payload: str, cfg: dict) -> dict:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=25) as resp:
+    if not _live_dispatch_allowed("ollama", cfg) or (
+        cloud_allowed and not _live_dispatch_allowed("ollama_cloud", cfg)
+    ):
+        raise RuntimeError("Cloud chat consent was revoked")
+    with _model_opener().open(req, timeout=25) as resp:
         data = json.loads(resp.read().decode("utf-8"))
         content = data.get("message", {}).get("content", "").strip()
         res = _extract_json(content)
-        res["provider"] = f"ollama ({model})"
+        label = "ollama" if model in ollama_info.get("localModels", []) else "ollama_cloud"
+        res["provider"] = f"{label} ({model})"
         return res
 
 
@@ -1315,7 +1444,7 @@ def _synthesize_grounded_fallback(prompt: str, matched_nodes: list[dict]) -> dic
             "provider": "vault_rag",
         }
     return {
-        "reply": "Your Andrei OS Second Brain is online, sir. Sign into your Anthropic subscription in Settings or ask about any note, project, or 3D studio scene.",
+        "reply": "Your Second Brain is online. Start local Ollama or ask about a note. Cloud chat requires explicit consent in Settings.",
         "action": {"type": "none", "params": {}},
         "provider": "vault_rag",
     }
@@ -1333,6 +1462,7 @@ def _detect_prompt_language(prompt: str) -> str:
 
 
 def call_llm(prompt: str, brain: str, context: dict, cfg: dict) -> dict:
+    cfg = _normalize_routing(cfg)
     rag_text, matched_nodes = retrieve_vault_context(prompt, cfg, top_k=6)
     target_lang = _detect_prompt_language(prompt)
     user_payload = (
@@ -1344,31 +1474,15 @@ def call_llm(prompt: str, brain: str, context: dict, cfg: dict) -> dict:
         f"User Request: {prompt}"
     )
 
-    pref = cfg.get("preferredProvider", "auto")
     errors = []
-
-    # Build ordered provider execution chain
-    chain = []
-    if pref == "claude_subscription":
-        chain = ["claude_subscription", "ollama"]
-    elif pref == "ollama":
-        chain = ["ollama"]
-    elif pref == "anthropic":
-        chain = ["anthropic", "claude_subscription", "ollama"]
-    elif pref == "gemini":
-        chain = ["gemini", "ollama"]
-    elif pref == "openai":
-        chain = ["openai", "ollama"]
-    elif pref == "openrouter":
-        chain = ["openrouter", "ollama"]
-    else:
-        # "auto": Anthropic Subscription first (user's demo choice!), then Cloud APIs, then Local Ollama
-        chain = ["claude_subscription", "anthropic", "gemini", "openai", "openrouter", "ollama"]
-
-    for step in chain:
+    for step in _provider_chain(cfg):
+        # Check at every dispatch, including fallback. A key, login or legacy
+        # provider selection is availability evidence only, never permission.
+        if not _live_dispatch_allowed(step, cfg):
+            continue
         try:
             if step == "claude_subscription":
-                res = _call_claude_subscription(user_payload, brain)
+                res = _call_claude_subscription(user_payload, brain, cfg)
             elif step == "anthropic" and cfg.get("anthropicKey"):
                 res = _call_anthropic_api(user_payload, brain, cfg["anthropicKey"])
             elif step == "gemini" and cfg.get("geminiKey"):
@@ -1377,7 +1491,7 @@ def call_llm(prompt: str, brain: str, context: dict, cfg: dict) -> dict:
                 res = _call_openai_compatible(
                     user_payload, "https://api.openai.com/v1/chat/completions", cfg["openaiKey"], "gpt-4o", "openai_api"
                 )
-            elif step == "openrouter" and (cfg.get("openrouterKey") or "127.0.0.1" in cfg.get("openrouterUrl", "") or "localhost" in cfg.get("openrouterUrl", "")):
+            elif step == "openrouter" and (cfg.get("openrouterKey") or _is_loopback_url(cfg.get("openrouterUrl"))):
                 res = _call_openai_compatible(
                     user_payload,
                     cfg.get("openrouterUrl", "https://openrouter.ai/api/v1/chat/completions"),
@@ -1487,43 +1601,33 @@ class JarvisRequestHandler(SimpleHTTPRequestHandler):
         return json.loads(raw.decode("utf-8"))
 
     def _build_status_payload(self, force_checks: bool = False) -> dict:
-        cfg = load_config()
+        cfg = _normalize_routing(load_config())
         claude_sub = check_claude_subscription(force=force_checks)
-        ollama_st = check_ollama_status(cfg.get("ollamaUrl", "http://127.0.0.1:11434"), force=force_checks)
+        ollama_st = (check_ollama_status(cfg.get("ollamaUrl", "http://127.0.0.1:11434"), force=force_checks)
+                     if _dispatch_allowed("ollama", cfg) else {"online": False, "models": []})
 
-        # Determine active effective provider
-        pref = cfg.get("preferredProvider", "auto")
-        active_engine = "vault_rag"
-        if pref == "claude_subscription" and claude_sub.get("loggedIn"):
-            active_engine = "claude_subscription"
-        elif pref == "ollama" and ollama_st.get("online"):
-            active_engine = f"ollama ({cfg.get('ollamaModel')})"
-        elif pref == "anthropic" and cfg.get("anthropicKey"):
-            active_engine = "anthropic_api"
-        elif pref == "gemini" and cfg.get("geminiKey"):
-            active_engine = "gemini_api"
-        elif pref == "openai" and cfg.get("openaiKey"):
-            active_engine = "openai_api"
-        elif pref == "openrouter" and cfg.get("openrouterKey"):
-            active_engine = "openrouter"
-        else:
-            if claude_sub.get("loggedIn"):
-                active_engine = "claude_subscription"
-            elif cfg.get("anthropicKey"):
-                active_engine = "anthropic_api"
-            elif cfg.get("geminiKey"):
-                active_engine = "gemini_api"
-            elif cfg.get("openaiKey"):
-                active_engine = "openai_api"
-            elif cfg.get("openrouterKey"):
-                active_engine = "openrouter"
-            elif ollama_st.get("online"):
-                active_engine = f"ollama ({cfg.get('ollamaModel')})"
+        # Advertise only engines this configuration is allowed to dispatch to.
+        pref = cfg["preferredProvider"]
+        available = {
+            "claude_subscription": bool(claude_sub.get("loggedIn")),
+            "ollama": bool(ollama_st.get("online") and _select_ollama_model(ollama_st, cfg)),
+            "anthropic": bool(cfg.get("anthropicKey")),
+            "gemini": bool(cfg.get("geminiKey")),
+            "openai": bool(cfg.get("openaiKey")),
+            "openrouter": bool(cfg.get("openrouterKey") or _is_loopback_url(cfg.get("openrouterUrl"))),
+        }
+        model = _select_ollama_model(ollama_st, cfg)
+        ollama_label = "ollama" if model in ollama_st.get("localModels", []) else "ollama_cloud"
+        labels = {"ollama": f"{ollama_label} ({model})",
+                  "anthropic": "anthropic_api", "gemini": "gemini_api", "openai": "openai_api"}
+        active_engine = next((labels.get(step, step) for step in _provider_chain(cfg)
+                              if available.get(step)), "vault_rag")
 
         return {
             "ok": True,
             "port": DEFAULT_PORT,
             "preferredProvider": pref,
+            "cloudConsent": cfg["cloudConsent"],
             "activeEngine": active_engine,
             "vaultMode": cfg.get("vaultMode", "andrei_plus_nerva"),
             "vaultPath": cfg.get("vaultPath", DEFAULT_VAULT_PATH),
