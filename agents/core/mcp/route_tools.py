@@ -409,8 +409,9 @@ def normalize_result(result: Any) -> Any:
 #
 # ⚠️  RESIDUAL GAP  ⚠️
 # The identity is a bearer credential threaded from the MCP transport into the
-# tool call — there is no per-request HTTP context, no rate-limiting, and no
-# proxy-origin (HF-7) reasoning on this path. So a leaked ``JARVIS_USER_TOKEN``
+# tool call — there is no per-request HTTP context and no proxy-origin (HF-7)
+# reasoning on this path. (Rate limiting now exists: ``JarvisMCPServer.write_quota``,
+# agents/core/mcp/write_quota.py, bounds writes per client and hub-wide — H558.) So a leaked ``JARVIS_USER_TOKEN``
 # is sufficient to drive the write surface, and in the unset-token posture the
 # in-process call is trusted unconditionally (correct ONLY when the MCP transport
 # itself is bound localhost/LAN). Keep ``JARVIS_MCP_MUTATING_TOOLS`` OFF on

@@ -97,6 +97,13 @@ def _caller_key(identity: object | None) -> str:
     return hashlib.sha256(raw.encode("utf-8", "replace")).hexdigest()[:16]
 
 
+def _rate_limited(wait: float) -> str:
+    import math
+
+    return (f"rate limited: too many MCP writes from this client; nothing was written. "
+            f"Retry in {max(1, math.ceil(wait))} s")
+
+
 def _tool_name(agent_id: str) -> str:
     return f"ask_{agent_id}"
 
@@ -158,6 +165,10 @@ class JarvisMCPServer:
             raise ValueError(
                 f"route tool name(s) in both read-only and mutating sets: {sorted(_collision)}")
         self.inbox_tools = inbox_tools
+        #: H558 — per-client rate limits on every write this server exposes.
+        from agents.core.mcp.write_quota import WriteQuota
+
+        self.write_quota = WriteQuota()
         if inbox_tools is not None:
             from agents.core.mcp.inbox_tools import INBOX_TOOL_NAMES
 
@@ -224,8 +235,14 @@ class JarvisMCPServer:
         """
         arguments = arguments or {}
         if self.inbox_tools is not None and self.inbox_tools.handles(name):
-            from agents.core.mcp.inbox_tools import current_transport_owner
+            from agents.core.mcp.inbox_tools import APPROVAL_RESPOND, current_transport_owner
 
+            if name == APPROVAL_RESPOND:
+                caller = _caller_key(identity)
+                wait = self.write_quota.admit(caller)
+                if wait is not None:
+                    self.inbox_tools._refused(caller, name, "refused-rate")
+                    return self._tool_error(_rate_limited(wait))
             return await self._call_inbox_tool(
                 name, arguments, owner=owner is True or current_transport_owner(),
                 caller=_caller_key(identity))
@@ -290,6 +307,11 @@ class JarvisMCPServer:
 
         mt = self.mutating_route_tools.get(name)
         if mt is not None:
+            wait = self.write_quota.admit(_caller_key(identity))
+            if wait is not None:
+                # H558: nothing is written; the refusal is audited like the others.
+                mt._audit(arguments, outcome="refused-rate")
+                return self._tool_error(_rate_limited(wait))
             try:
                 # Per-identity gate runs inside call(); audits the refusal too.
                 raw = await mt.call(arguments, token=identity)
