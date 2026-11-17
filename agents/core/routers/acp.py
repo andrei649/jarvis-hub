@@ -206,6 +206,13 @@ async def acp_add_session_mcp(session_id: str, body: AcpMcpBody):
         return JSONResponse({"error": "command_refused",
                              "message": "the command holds shell metacharacters or does not parse"},
                             status_code=400)
+    refused = server.config_findings()
+    if refused:
+        # H555: the editor's server meets the same launch validator as a saved one, here
+        # and again before it spawns.
+        return JSONResponse({"error": "config_refused", "findings": refused,
+                             "message": "this server configuration matches a refused shape"},
+                            status_code=400)
     try:
         acp_sessions.add_server(session_id, name)
     except (KeyError, OverflowError):

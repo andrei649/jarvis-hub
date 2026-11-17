@@ -67,43 +67,47 @@ from agents.core.security.quarantine import detect_injection_normalized, strip_f
 # ── config validator ────────────────────────────────────────────────────────
 
 _SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh", "mksh", "fish", "csh", "tcsh",
-                     "ash", "busybox", "cmd"})
+                     "ash", "cmd", "rbash", "yash", "elvish", "nu", "xonsh"})
 _PY = re.compile(r"^(python|pypy)[0-9.]*w?$")
+#: Inline-code flags per interpreter, matched on the flag's name (``--eval=CODE`` is split
+#: at ``=``; ``-eCODE`` is read as ``-e`` followed by the code).
 _INTERPRETER_FLAGS: dict[str, re.Pattern] = {
     # bash -c / -lc / -ic …; python -c / -Ic …
-    "shell": re.compile(r"^-[A-Za-z]*c[A-Za-z]*$|^/c$", re.IGNORECASE),
+    "shell": re.compile(r"^-[A-Za-z]*c[A-Za-z]*$|^/c$|^/k$|^--command$", re.IGNORECASE),
     "python": re.compile(r"^-[A-Za-z]*c$"),
-    "node": re.compile(r"^(-e|--eval|-p|--print|-pe)$"),
+    "node": re.compile(r"^(-e|--eval|-p|--print|-pe|-ep)$"),
     "deno": re.compile(r"^eval$"),
     "bun": re.compile(r"^(-e|--eval|-p|--print)$"),
     "perl": re.compile(r"^-[A-Za-z]*[eE]$"),
     "ruby": re.compile(r"^-[A-Za-z]*e$"),
-    "php": re.compile(r"^-r$"),
+    "php": re.compile(r"^(-r|--run)$"),
     "lua": re.compile(r"^-e$"),
-    "rscript": re.compile(r"^-e$", re.IGNORECASE),
+    "rscript": re.compile(r"^(-e|--expr)$", re.IGNORECASE),
     "osascript": re.compile(r"^-e$"),
-    "powershell": re.compile(r"^[-/](c|co|com|comm|comma|comman|command|e|ec|en|enc|enco|encod|"
-                             r"encode|encoded|encodedc\w*|encodedcommand)$", re.IGNORECASE),
+    "tcl": re.compile(r"^-c$"),
 }
+#: Short flags whose code may be glued on (``-e'code'``, ``-cprint(1)``).
+_GLUED = {"python": "-c", "node": "-e", "perl": "-e", "ruby": "-e", "php": "-r", "lua": "-e"}
 _INTERPRETER_OF = {
     "node": "node", "nodejs": "node", "deno": "deno", "bun": "bun",
     "perl": "perl", "ruby": "ruby", "php": "php", "lua": "lua", "luajit": "lua",
-    "rscript": "rscript", "osascript": "osascript",
-    "pwsh": "powershell", "powershell": "powershell",
+    "rscript": "rscript", "osascript": "osascript", "tclsh": "tcl", "wish": "tcl",
+    "pwsh": "powershell", "powershell": "powershell", "powershell_ise": "powershell",
 }
-_ENCODED_PS = re.compile(r"^[-/]e(n|nc|nco|ncod|ncode|ncoded\w*)?$", re.IGNORECASE)
 _EGRESS = re.compile(
     r"\b(curl|wget|aria2c|netcat|ncat|socat|telnet|tftp)\b|\bnc\s+-?[a-z]|/dev/(tcp|udp)/"
     r"|\b(https?|ftp|wss?)://|\burllib\b|\burlopen\b|\brequests\.(get|post|put)\b"
     r"|\bhttp\.client\b|\bsocket\b|\bfetch\s*\(|\bnet\.connect\b|\bhttps?\.get\b"
+    r"|\brequire\s*\(\s*['\"](https?|net|dgram|tls|child_process)['\"]"
     r"|invoke-(webrequest|restmethod)|\biwr\b|\birm\b|downloadstring|downloadfile"
-    r"|net\.webclient|xmlhttp|bitsadmin|certutil\s+-urlcache",
+    r"|net\.webclient|xmlhttp|bitsadmin|certutil\s+-urlcache|IO::Socket|Net::HTTP|open-uri",
     re.IGNORECASE,
 )
 _DECODE = re.compile(r"base64\s+(-d|--decode|-D)|\bb64decode\b|\batob\s*\(|frombase64string"
                      r"|\bbase64\.decode|codecs\.decode\([^)]*base64", re.IGNORECASE)
 _NETWORK_TOOLS = frozenset({"curl", "wget", "nc", "ncat", "netcat", "socat", "telnet", "tftp",
-                            "aria2c"})
+                            "aria2c", "ftp"})
+_PRIVILEGE = frozenset({"sudo", "doas", "pkexec", "su", "runuser", "runas"})
 _PERSISTENCE = re.compile(
     r"authorized_keys2?\b|/etc/cron|\bcrontab\b|/var/spool/cron|/etc/anacrontab"
     r"|(^|[/\\~])\.(bashrc|bash_profile|bash_login|profile|zshrc|zprofile|zshenv|zlogin"
@@ -115,22 +119,31 @@ _PERSISTENCE = re.compile(
     r"|\\CurrentVersion\\Run\b|schtasks\b",
     re.IGNORECASE,
 )
-_LOADER_ENV = frozenset({"LD_PRELOAD", "LD_AUDIT", "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH",
-                         "DYLD_FRAMEWORK_PATH", "BASH_ENV", "ENV", "PROMPT_COMMAND", "PERL5OPT",
-                         "PERL5DB", "RUBYOPT", "PYTHONSTARTUP", "PYTHONINSPECT",
-                         "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "GIT_SSH_COMMAND"})
-_NODE_LOADER = re.compile(r"(^|\s)(--require|-r|--import|--loader|--experimental-loader)\b")
+#: Code-loading variables beyond the catalog's refused list (``catalog._env_refused``, which
+#: the guard applies too: PATH, HOME, PYTHONPATH, PYTHONHOME, PYTHONSTARTUP, LD_*, DYLD_*,
+#: NODE_OPTIONS, NODE_PATH, PERL5OPT, PERL5LIB, RUBYOPT, RUBYLIB, GCONV_PATH, BASH_ENV, ENV,
+#: JAVA_TOOL_OPTIONS, GIT_SSH*, npm/pip/uv registries …).
+_LOADER_ENV = frozenset({"PROMPT_COMMAND", "PERL5DB", "PYTHONINSPECT", "PYTHONUSERBASE",
+                         "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS", "CLASSPATH", "LUA_PATH",
+                         "LUA_CPATH", "TCLLIBPATH", "PSMODULEPATH", "ZDOTDIR", "SHELLOPTS",
+                         "BASHOPTS", "PS4", "IFS", "MALLOC_CONF", "SSL_CERT_FILE",
+                         "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE",
+                         "NODE_EXTRA_CA_CERTS"})
 _SSH_KEY = re.compile(r"\b(ssh-(rsa|ed25519|dss)|ecdsa-sha2-nistp\d+|sk-ssh-ed25519@openssh\.com)"
                       r"\s+AAAA[0-9A-Za-z+/]{20,}")
 
 #: Every finding :func:`config_findings` can return.
 CONFIG_FINDINGS = ("shell_egress", "encoded_command", "network_tool_command",
-                   "persistence_path", "loader_injection_env", "embedded_ssh_key")
+                   "privilege_escalation", "persistence_path", "loader_injection_env",
+                   "embedded_ssh_key", "unparsed_wrapper")
 
 
 def _base(argv0: str) -> str:
     name = re.split(r"[\\/]", argv0.strip())[-1].lower()
-    return name[:-4] if name.endswith(".exe") else name
+    for ext in (".exe", ".cmd", ".bat", ".com"):
+        if name.endswith(ext):
+            return name[: -len(ext)]
+    return name
 
 
 def _interpreter(argv0: str) -> str | None:
@@ -140,6 +153,191 @@ def _interpreter(argv0: str) -> str | None:
     if _PY.match(base):
         return "python"
     return _INTERPRETER_OF.get(base)
+
+
+def _ps_name(token: str) -> str | None:
+    """A PowerShell parameter's name without its ``-``/``--``/``/`` and ``:value``."""
+    match = re.match(r"^(--|-|/)([A-Za-z]+)(:.*)?$", token)
+    return match.group(2).lower() if match else None
+
+
+def _encoded_ps(token: str) -> bool:
+    """``-EncodedCommand`` / ``-EncodedArguments`` in any spelling PowerShell accepts:
+    ``-ec``, ``-ea``, ``-e`` and every prefix of the full names."""
+    name = _ps_name(token)
+    return bool(name) and (name in ("e", "ec", "ea") or (len(name) >= 2 and (
+        "encodedcommand".startswith(name) or "encodedarguments".startswith(name))))
+
+
+def _ps_inline(token: str) -> bool:
+    name = _ps_name(token)
+    return bool(name) and "command".startswith(name)
+
+
+# ── wrappers: commands that run another command ─────────────────────────────
+
+#: Options that take a value, per wrapper (the value is skipped with the option).
+_WRAPPER_VALUE_OPTS: dict[str, frozenset[str]] = {
+    "env": frozenset({"-u", "--unset", "-C", "--chdir", "-a", "--argv0"}),
+    "timeout": frozenset({"-s", "--signal", "-k", "--kill-after"}),
+    "nice": frozenset({"-n", "--adjustment"}),
+    "ionice": frozenset({"-c", "--class", "-n", "--classdata", "-p", "-P", "-u"}),
+    "stdbuf": frozenset({"-i", "-o", "-e", "--input", "--output", "--error"}),
+    "chrt": frozenset(),
+    "taskset": frozenset(),
+    "setsid": frozenset(),
+    "nohup": frozenset(),
+    "time": frozenset({"-f", "--format", "-o", "--output"}),
+    "exec": frozenset({"-a"}),
+    "command": frozenset(),
+    "xvfb-run": frozenset({"-n", "-s", "-f", "-e", "-p", "--server-num", "--server-args"}),
+    "uvx": frozenset({"--with", "--with-requirements", "--python", "-p", "--from", "--index",
+                      "--index-url", "--extra-index-url", "-w"}),
+    "npx": frozenset({"-p", "--package", "-c", "--call", "--node-options", "--userconfig"}),
+    "bunx": frozenset({"-p", "--package"}),
+}
+#: Wrappers whose first non-option operand is not the command (``timeout DURATION cmd``,
+#: ``taskset MASK cmd``, ``chrt PRIORITY cmd``).
+_WRAPPER_OPERAND = {"timeout": 1, "taskset": 1, "chrt": 1}
+#: ``uv run``, ``poetry run``, ``pipx run``, ``pnpm dlx/exec``, ``npm exec`` …: the value
+#: options of each, and the subcommands that run a command.
+_SUBCOMMAND_WRAPPERS: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
+    "uv": (("run",), frozenset({"--with", "--with-requirements", "--with-editable", "--python",
+                                "-p", "--project", "--directory", "--package", "--extra",
+                                "--group", "--env-file", "--index", "--index-url",
+                                "--extra-index-url", "--from", "-w"})),
+    "poetry": (("run",), frozenset({"-C", "--directory", "-P", "--project"})),
+    "pipx": (("run",), frozenset({"--spec", "--python", "--index-url", "--pip-args"})),
+    "pnpm": (("dlx", "exec"), frozenset({"-C", "--dir", "--filter"})),
+    "yarn": (("dlx", "exec"), frozenset({"--cwd"})),
+    "npm": (("exec", "x"), frozenset({"-p", "--package", "-c", "--call"})),
+    "bun": (("x", "run"), frozenset({"--cwd"})),
+    "conda": (("run",), frozenset({"-n", "--name", "-p", "--prefix"})),
+    "pdm": (("run",), frozenset()),
+    "hatch": (("run",), frozenset()),
+    "rye": (("run",), frozenset()),
+}
+_ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+MAX_UNWRAP = 8
+
+
+def _skip_options(rest: list[str], value_opts: frozenset[str], operands: int) -> list[str]:
+    out = list(rest)
+    while out and out[0].startswith("-") and out[0] != "-":
+        tok = out.pop(0)
+        if tok == "--":
+            break
+        if tok in value_opts and out:
+            out.pop(0)
+    for _ in range(operands):
+        if out:
+            out.pop(0)
+    return out
+
+
+def _env_operands(rest: list[str], env: dict) -> list[str] | None:
+    """``env``'s command after its options, ``-S`` strings split and ``NAME=VALUE``
+    assignments moved into *env*; None when a ``-S`` string does not split."""
+    import shlex
+
+    tail = list(rest)
+    out: list[str] = []
+    while tail:
+        tok = tail.pop(0)
+        if tok == "--":
+            out.extend(tail)
+            break
+        if tok in ("-S", "--split-string") or tok.startswith(("-S", "--split-string=")):
+            if tok.startswith("--split-string="):
+                raw = tok.split("=", 1)[1]
+            elif tok.startswith("-S") and len(tok) > 2:
+                raw = tok[2:]
+            else:
+                raw = tail.pop(0) if tail else ""
+            try:
+                tail = shlex.split(raw) + tail
+            except ValueError:
+                return None
+            continue
+        if _ASSIGN.match(tok):
+            name, _, value = tok.partition("=")
+            env[name] = value
+            continue
+        if tok.startswith("-"):
+            if tok in _WRAPPER_VALUE_OPTS["env"] and tail:
+                tail.pop(0)
+            continue
+        out.append(tok)
+        out.extend(tail)
+        break
+    return out
+
+
+def _unwrap(argv: list[str], env: dict) -> tuple[list[list[str]], bool]:
+    """Every command *argv* runs through its wrappers, outermost first, and whether a
+    wrapper could not be read (a ``-S`` string that does not split, too many layers).
+    ``env NAME=VALUE`` assignments are added to *env* so they are checked too."""
+    layers = [argv]
+    current = argv
+    for _ in range(MAX_UNWRAP):
+        base = _base(current[0])
+        rest = current[1:]
+        if base in ("busybox", "toybox"):
+            nxt = rest
+        elif base in _SUBCOMMAND_WRAPPERS:
+            subs, opts = _SUBCOMMAND_WRAPPERS[base]
+            idx = next((i for i, a in enumerate(rest) if not a.startswith("-")), None)
+            if idx is not None and base == "uv" and rest[idx] == "tool" \
+                    and idx + 1 < len(rest) and rest[idx + 1] == "run":
+                idx += 1                                   # ``uv tool run`` (``uvx``)
+            elif idx is None or rest[idx] not in subs:
+                return layers, False
+            nxt = _skip_options(rest[idx + 1:], opts, 0)
+        elif base == "env":
+            nxt = _env_operands(rest, env)
+            if nxt is None:
+                return layers, True
+        elif base in _WRAPPER_VALUE_OPTS:
+            nxt = _skip_options(rest, _WRAPPER_VALUE_OPTS[base], _WRAPPER_OPERAND.get(base, 0))
+        else:
+            return layers, False
+        if not nxt:
+            return layers, False
+        layers.append(nxt)
+        current = nxt
+    return layers, True
+
+
+def _inline_code(kind: str, args: list[str]) -> str | None:
+    """The inline code an interpreter call carries, or None."""
+    if kind == "powershell":
+        for i, tok in enumerate(args):
+            if _ps_inline(tok):
+                glued = tok.split(":", 1)[1] if ":" in tok else ""
+                return " ".join([glued, *args[i + 1:]]).strip()
+        return None
+    flag = _INTERPRETER_FLAGS[kind]
+    glue = _GLUED.get(kind)
+    for i, tok in enumerate(args):
+        if tok.startswith("--") and "=" in tok:
+            name, _, value = tok.partition("=")
+            if flag.match(name):
+                return " ".join([value, *args[i + 1:]])
+            continue
+        if flag.match(tok):
+            return " ".join(args[i + 1:])
+        if glue and tok.startswith(glue) and len(tok) > len(glue):
+            return " ".join([tok[len(glue):], *args[i + 1:]])
+        if kind in ("python", "perl", "ruby", "node", "php", "lua") and not tok.startswith("-"):
+            return None          # a script path: what follows is the script's own arguments
+    return None
+
+
+def _env_refused(name: str) -> bool:
+    from agents.core.mcp.catalog import _env_refused as catalog_refused
+
+    upper = str(name).upper()
+    return catalog_refused(upper) or upper in _LOADER_ENV or upper.startswith("BASH_FUNC_")
 
 
 def _strings(value: Any) -> Iterable[str]:
@@ -158,8 +356,11 @@ def config_findings(argv: list[str] | None, *, env: dict | None = None, cwd: str
                     headers: dict | None = None) -> list[str]:
     """The shapes in one server's launch configuration that refuse it (empty = clean).
 
-    *argv* is the already-split command (``None`` for an HTTP server). Ordered, without
-    duplicates; never raises on odd input.
+    *argv* is the already-split command (``None`` for an HTTP server). Wrappers that run
+    another command (``env``, ``timeout``, ``nice``, ``nohup``, ``stdbuf``, ``setsid``,
+    ``uv run``, ``uvx``, ``npx``, ``busybox`` applets …) are unwrapped first and every
+    layer is classified; ``env NAME=VALUE`` assignments are checked like the server's own
+    environment. Ordered, without duplicates; never raises on odd input.
     """
     found: list[str] = []
 
@@ -168,31 +369,33 @@ def config_findings(argv: list[str] | None, *, env: dict | None = None, cwd: str
             found.append(code)
 
     args = [str(a) for a in (argv or []) if isinstance(a, (str, int, float))]
-    env = env if isinstance(env, dict) else {}
+    env = dict(env) if isinstance(env, dict) else {}
     headers = headers if isinstance(headers, dict) else {}
-    if args:
-        kind = _interpreter(args[0])
-        if kind is not None:
-            flag = _INTERPRETER_FLAGS[kind]
-            inline_at = next((i for i, a in enumerate(args[1:], 1) if flag.match(a)), None)
-            if kind == "powershell" and any(_ENCODED_PS.match(a) for a in args[1:]):
-                add("encoded_command")
-            if inline_at is not None:
-                code = " ".join(args[inline_at + 1:])
-                if _EGRESS.search(code):
-                    add("shell_egress")
-                if _DECODE.search(code):
-                    add("encoded_command")
-        if _base(args[0]) in _NETWORK_TOOLS:
+    layers, unreadable = _unwrap(args, env) if args else ([], False)
+    if unreadable:
+        add("unparsed_wrapper")
+    for layer in layers:
+        base = _base(layer[0])
+        if base in _PRIVILEGE:
+            add("privilege_escalation")
+        if base in _NETWORK_TOOLS:
             add("network_tool_command")
+        kind = _interpreter(layer[0])
+        if kind is None:
+            continue
+        if kind == "powershell" and any(_encoded_ps(a) for a in layer[1:]):
+            add("encoded_command")
+        code = _inline_code(kind, layer[1:])
+        if code is not None:
+            if _EGRESS.search(code):
+                add("shell_egress")
+            if _DECODE.search(code):
+                add("encoded_command")
     texts = list(args) + [str(v) for v in env.values()] + ([str(cwd)] if cwd else [])
     if any(_PERSISTENCE.search(t) for t in texts):
         add("persistence_path")
-    for name, value in env.items():
-        upper = str(name).upper()
-        loader = upper in _LOADER_ENV or upper.startswith(("DYLD_", "LD_PRELOAD"))
-        if loader or (upper == "NODE_OPTIONS" and _NODE_LOADER.search(str(value))):
-            add("loader_injection_env")
+    if any(_env_refused(name) for name in env):
+        add("loader_injection_env")
     if any(_SSH_KEY.search(t) for t in texts + list(_strings(headers))):
         add("embedded_ssh_key")
     return found
