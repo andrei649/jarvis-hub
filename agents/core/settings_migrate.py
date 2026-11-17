@@ -158,11 +158,15 @@ def plan(path=None, table: tuple[RetiredModel, ...] | None = None) -> list[Chang
                                   "(H329: a missing one is reported, see `nerva skills list`)"))
             continue
         changes.append(Change(".".join(name), "seed", None, spec["value"], "new in this build"))
+    ladder = _ladder_plan(values, applied)
+    if any(c.kind == "refused" for c in ladder):
+        # review M5: a store the ladder refuses gets no value migration at all
+        return [*changes, *ladder]
     for marker, category, key, old, new in settings_db._CHANGED_DEFAULTS:
         if marker in applied or values.get((category, key), _MISSING) != old:
             continue
         changes.append(Change(f"{category}.{key}", "default", old, new, "the shipped default changed"))
-    changes.extend(_ladder_plan(values, applied))
+    changes.extend(ladder)
     for category, key in MODEL_SETTINGS:
         current = values.get((category, key))
         if not isinstance(current, str):
@@ -202,6 +206,8 @@ def apply(changes: list[Change]) -> list[Change]:
     from agents.core import settings_db
     from agents.core.llm.providers.selection_gates import exclusive
 
+    if any(c.kind == "refused" for c in changes):
+        return []           # review M5: a refused store is not written at all
     touches_pair = any(c.setting == 'llm.compatible_model' and c.kind != 'kept'
                        for c in changes)
     with exclusive(settings_db.DB_PATH) if touches_pair else nullcontext():
@@ -220,6 +226,10 @@ def _apply_fenced(changes: list[Change]) -> list[Change]:
     try:
         with conn:
             conn.executescript(settings_db.SCHEMA)       # an old store may lack settings_migrations
+            from agents.core import settings_ladder
+
+            if settings_ladder.store_verdict(conn)[1] is not None:
+                changes = []     # review M5: refused since the plan was read — nothing is written
             for change in changes:
                 category, _, key = change.setting.partition(".")
                 if change.kind == "seed":

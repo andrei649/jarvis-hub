@@ -131,6 +131,14 @@ def verdict(version: int, *, current: int | None = None, floor: int | None = Non
     return None
 
 
+def store_verdict(conn: sqlite3.Connection, *, current: int | None = None,
+                  floor: int | None = None) -> tuple[int, str | None]:
+    """``(stamped version, why it is not migrated or None)`` — read before any value
+    migration, so a refused store is left exactly as it is (review M5)."""
+    version = stamped_version(conn)
+    return version, verdict(version, current=current, floor=floor)
+
+
 def pending(version: int, steps: Iterable[Step] | None = None, *, current: int | None = None) -> list[Step]:
     """The steps a store at *version* still needs, in order."""
     current = STORE_VERSION if current is None else current
@@ -148,24 +156,64 @@ def refusal_text(version: int, why: str, *, current: int | None = None, floor: i
             "build ran on it, so no migration step runs and the stamp is kept")
 
 
-def _retire(conn: sqlite3.Connection, category: str, key: str, raw: str, kind: str, step: Step, why: str) -> None:
+def _sdb():
+    from agents.core import settings_db
+
+    return settings_db
+
+
+def _retired_value(raw: str, secret: bool) -> str:
+    """What ``settings_retired`` keeps: the row as stored, and a secret always encrypted
+    (an encrypted value as it is; a plaintext one encrypted whole) — review M3."""
+    if not secret:
+        return raw
+    try:
+        if isinstance(json.loads(raw), str) and json.loads(raw).startswith(_ENC_PREFIX):
+            return raw
+    except ValueError:
+        pass
+    return json.dumps(_ENC_PREFIX + _sdb()._get_field_cipher().encrypt_value(raw))
+
+
+def _retire(conn: sqlite3.Connection, category: str, key: str, raw: str, kind: str, step: Step, why: str,
+            *, secret: bool = False) -> None:
     conn.execute("INSERT INTO settings_retired (category, key, value, kind, step, why, retired_at) "
-                 "VALUES (?,?,?,?,?,?,?)", (category, key, raw, kind, step.name, why, time.time()))
+                 "VALUES (?,?,?,?,?,?,?)",
+                 (category, key, _retired_value(raw, secret), kind, step.name, why, time.time()))
+
+
+def _is_secret_value(category: str, key: str, kind: str, plain: Any) -> bool:
+    sdb = _sdb()
+    return sdb.secret_for_view(category, key, kind) or sdb._looks_like_credential(plain)
 
 
 def _apply(conn: sqlite3.Connection, step: Step, spec: Mapping[tuple[str, str], Mapping[str, Any]],
            validate: Callable[[str, dict], list[str]]) -> dict[str, Any] | None:
     """Apply one step; the report line (names only), or None when the store has nothing
-    the step reads."""
+    the step reads.
+
+    Review M3: a value counts as encrypted only when its source is an encrypted-at-rest
+    key AND it decrypts; the carried value is always judged by the target's declaration;
+    it is stored through ``_encrypt_if_secret`` for the target key, and a secret kept
+    aside in ``settings_retired`` stays encrypted."""
+    sdb = _sdb()
     category, key = step.setting
     row = conn.execute("SELECT value, kind FROM settings WHERE category=? AND key=?", (category, key)).fetchone()
     if row is None:
         return None
     raw, stored_kind = str(row[0]), str(row[1])
     line: dict[str, Any] = {"step": step.name, "kind": step.kind, "setting": f"{category}.{key}", "why": step.why}
-    encrypted = raw.startswith(json.dumps(_ENC_PREFIX)[:-1])
+    try:
+        old = json.loads(raw)
+    except ValueError:
+        old = None
+    plain, undecryptable = old, False
+    if key in sdb.SECRET_KEYS and isinstance(old, str) and old.startswith(_ENC_PREFIX):
+        plain = sdb._decrypt_if_secret(old)
+        undecryptable = plain == ""
+    secret = _is_secret_value(category, key, stored_kind, plain)
     if step.kind == "retire":
-        _retire(conn, category, key, raw, stored_kind, step, step.why)
+        _retire(conn, category, key, raw, stored_kind, step, step.why, secret=secret)
         conn.execute("DELETE FROM settings WHERE category=? AND key=?", (category, key))
         line["kept_in"] = "settings_retired"
         return line
@@ -176,11 +224,8 @@ def _apply(conn: sqlite3.Connection, step: Step, spec: Mapping[tuple[str, str], 
     line["to"] = ".".join(target)
     if step.kind == "reshape" and stored_kind == declared.get("kind"):
         return None                                     # already in the new shape
-    try:
-        old = json.loads(raw)
-    except ValueError:
-        old = None
-    if step.has_old_default and not encrypted and old == step.old_default:
+    secret = secret or _is_secret_value(target[0], target[1], str(declared.get("kind", "")), plain)
+    if step.has_old_default and not undecryptable and plain == step.old_default:
         if step.kind == "rename":
             conn.execute("DELETE FROM settings WHERE category=? AND key=?", (category, key))
         else:
@@ -190,26 +235,34 @@ def _apply(conn: sqlite3.Connection, step: Step, spec: Mapping[tuple[str, str], 
         line["carried"] = False
         line["problem"] = "it held the old shipped default: the new default applies"
         return line
-    if step.transform is not None and encrypted:
+    if undecryptable:
+        new, problems = None, ["the stored secret could not be decrypted (a lost key)"]
+    elif step.transform is not None and secret:
         new, problems = None, ["a secret is never converted"]
     elif step.transform is not None:
         try:
-            new = step.transform(old)
+            new = step.transform(plain)
             problems = validate(target[0], {target[1]: new})
         except Exception as exc:  # noqa: BLE001 — a conversion that fails keeps the old value
             new, problems = None, [type(exc).__name__]
     else:
-        new = old
-        problems = [] if encrypted else validate(target[0], {target[1]: new})
+        new = plain
+        try:
+            problems = validate(target[0], {target[1]: new})
+        except Exception as exc:  # noqa: BLE001
+            problems = [type(exc).__name__]
     if step.kind == "rename":
         dst = conn.execute("SELECT value FROM settings WHERE category=? AND key=?", target).fetchone()
         if dst is not None and not _is_default(str(dst[0]), declared):
             problems = problems or ["the new setting already holds the owner's value"]
     if problems:
-        _retire(conn, category, key, raw, stored_kind, step, "; ".join(problems))
+        # the problem text of a secret may quote it: then only that it was refused is said
+        reason = ("not carried: the new declaration refused it, or it could not be read" if secret
+                  else "; ".join(str(p)[:120] for p in problems))
+        _retire(conn, category, key, raw, stored_kind, step, reason, secret=secret)
         line["carried"] = False
         line["kept_in"] = "settings_retired"
-        line["problem"] = "; ".join(str(p)[:120] for p in problems)
+        line["problem"] = reason
         if step.kind == "rename":
             conn.execute("DELETE FROM settings WHERE category=? AND key=?", (category, key))
         else:   # reshape: the row takes the new shape with its declared default
@@ -217,7 +270,7 @@ def _apply(conn: sqlite3.Connection, step: Step, spec: Mapping[tuple[str, str], 
                          (json.dumps(declared.get("value")), declared.get("kind", "text"),
                           json.dumps(declared.get("opts", [])), category, key))
         return line
-    stored = raw if (encrypted and step.transform is None) else json.dumps(new)
+    stored = json.dumps(sdb._encrypt_if_secret(target[1], new))
     if step.kind == "rename":
         conn.execute("INSERT OR REPLACE INTO settings (category, key, value, label, kind, opts) VALUES (?,?,?,?,?,?)",
                      (target[0], target[1], stored, declared.get("label", ""), declared.get("kind", "text"),
@@ -272,9 +325,11 @@ def run(conn: sqlite3.Connection, *, spec: Mapping[tuple[str, str], Mapping[str,
         report["new_settings"] = sorted(seeded)
         if previous is not None:
             try:
-                known = set(json.loads(previous))
-            except ValueError:
-                known = set()
+                parsed = json.loads(previous)
+            except (ValueError, TypeError):
+                parsed = None
+            # review M4: a corrupt row (null, 5, a list of lists) is "nothing recorded"
+            known = ({n for n in parsed if isinstance(n, str)} if isinstance(parsed, list) else set())
             report["new_env"] = [name for name in env_names if known and name not in known]
     _set_meta(conn, "env_names", json.dumps(env_names))
     if not fresh and (report["steps"] or report["new_settings"] or report["new_env"] or "refused" in report):
@@ -300,14 +355,39 @@ def read_report(conn: sqlite3.Connection) -> tuple[int, dict[str, Any] | None]:
 
 
 def retired(conn: sqlite3.Connection, limit: int = 100) -> list[dict[str, Any]]:
-    """The values a step could not carry (names, step and why — never the value)."""
+    """The values a step could not carry: id, name, step, why and the value masked (an
+    encrypted one whole, otherwise every credential-shaped leaf)."""
+    sdb = _sdb()
     try:
-        rows = conn.execute("SELECT category, key, step, why, retired_at FROM settings_retired "
-                            "ORDER BY id DESC LIMIT ?", (int(limit),)).fetchall()
+        rows = conn.execute("SELECT id, category, key, value, step, why, retired_at FROM settings_retired "
+                            "ORDER BY id DESC LIMIT ?", (max(1, min(int(limit), 1000)),)).fetchall()
     except sqlite3.OperationalError:
         return []
-    return [{"setting": f"{r[0]}.{r[1]}", "step": r[2], "why": r[3], "at": r[4]} for r in rows]
+    out = []
+    for r in rows:
+        try:
+            value = json.loads(r[3])
+        except (ValueError, TypeError):
+            value = None
+        if isinstance(value, str) and value.startswith(_ENC_PREFIX):
+            shown: Any = sdb.MASK
+        else:
+            shown = sdb.masked_leaves(value)
+        out.append({"id": r[0], "setting": f"{r[1]}.{r[2]}", "value": shown, "step": r[4], "why": r[5],
+                    "at": r[6]})
+    return out
+
+
+def purge_retired(conn: sqlite3.Connection, ids: Iterable[int] | None = None) -> int:
+    """Delete kept-aside values (every one when *ids* is None); how many went."""
+    try:
+        if ids is None:
+            return conn.execute("DELETE FROM settings_retired").rowcount
+        return sum(conn.execute("DELETE FROM settings_retired WHERE id=?", (int(i),)).rowcount for i in ids)
+    except sqlite3.OperationalError:
+        return 0
 
 
 __all__ = ["KINDS", "STEPS", "STORE_VERSION", "SUPPORT_FLOOR", "Step", "ensure_schema", "pending",
-           "read_report", "refusal_text", "retired", "run", "stamped_version", "verdict"]
+           "purge_retired", "read_report", "refusal_text", "retired", "run",
+           "store_verdict", "stamped_version", "verdict"]

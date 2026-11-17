@@ -153,3 +153,20 @@ def test_the_doctor_warns_about_an_unread_dotenv_name(tmp_path):
     assert check.status == doctor.WARN
     assert "unread_env_names:1" in check.reason and "NERVA_STRICT_EGRESS" in check.reason
     assert check.data["unread"] == [{"name": "NERVA_STRICT_EGRES", "did_you_mean": "NERVA_STRICT_EGRESS"}]
+
+
+# ── review m7: the .env reads behind these views are bounded and never follow a link ──────
+
+
+def test_a_symlinked_or_oversized_dotenv_is_not_read(tmp_path):
+    from agents.core import env_provenance as ep
+
+    real = tmp_path / "real.env"
+    real.write_text("NERVA_RATE_LIMIT=1\n", encoding="utf-8")
+    link = tmp_path / "link.env"
+    link.symlink_to(real)
+    assert ep.env_file_keys(real) == ["NERVA_RATE_LIMIT"]
+    assert ep.env_file_keys(link) == []
+    big = tmp_path / "big.env"
+    big.write_text("NERVA_RATE_LIMIT=1\n" + "#" * (ep.MAX_ENV_FILE_BYTES + 10) + "\n", encoding="utf-8")
+    assert ep.env_file_keys(big) == []

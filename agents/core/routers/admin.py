@@ -181,6 +181,10 @@ def _selection_write_refusal(exc: Exception) -> JSONResponse:
     if (isinstance(exc, sqlite3.OperationalError)
             and getattr(exc, 'sqlite_errorcode', None) in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}):
         return nocache_json({'error': 'settings_busy'}, status_code=409)
+    from agents.core.settings_lock import SettingsLockBusy
+
+    if isinstance(exc, SettingsLockBusy):      # another process (the CLI) holds the write lock
+        return nocache_json({'error': 'settings_busy'}, status_code=409)
     raise exc
 
 

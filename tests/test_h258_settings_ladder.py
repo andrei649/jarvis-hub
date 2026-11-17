@@ -180,7 +180,7 @@ def test_rename_never_overwrites_a_value_the_owner_set_on_the_new_key(store, mon
         listed = settings_ladder.retired(conn)
     finally:
         conn.close()
-    assert listed[0]["setting"] == "legacy.old_key" and "value" not in listed[0]
+    assert listed[0]["setting"] == "legacy.old_key" and listed[0]["value"] == 12   # not a secret: shown
 
 
 def test_rename_leaves_an_untouched_old_default_behind(store, monkeypatch):
@@ -268,3 +268,119 @@ def test_every_shipped_step_targets_a_declared_setting_and_never_converts_a_secr
             assert step.setting[1] not in settings_db.SECRET_KEYS
     versions = [s.version for s in settings_ladder.STEPS]
     assert versions == sorted(versions)
+
+
+# ── review of 1bb285d0: M3 (secrets and the enc:: prefix), M4, M5, m1, m6 ─────────────────
+
+
+def _row(conn, category, key):
+    row = conn.execute("SELECT value FROM settings WHERE category=? AND key=?", (category, key)).fetchone()
+    return None if row is None else row[0]
+
+
+def test_rename_into_an_encrypted_setting_stores_ciphertext_not_plaintext(store):
+    # review r1a
+    settings_db.init_db()
+    conn = settings_db.get_conn()
+    try:
+        conn.execute("INSERT OR REPLACE INTO settings (category, key, value, label, kind, opts) "
+                     "VALUES ('plugins','old_twilio_token',?,'old','text','[]')",
+                     (json.dumps("tw-plaintext-secret-0123456789"),))
+        conn.execute("UPDATE settings SET value=? WHERE category='plugins' AND key='twilio_auth_token'",
+                     (json.dumps(""),))
+        step = Step(version=2, kind="rename", setting=("plugins", "old_twilio_token"),
+                    to=("plugins", "twilio_auth_token"), why="renamed")
+        report = settings_ladder.run(conn, spec=settings_db._SPEC, validate=settings_db._ladder_validate,
+                                     steps=[step], current=2, floor=0, env_names=[])
+        conn.commit()
+        raw = _row(conn, "plugins", "twilio_auth_token")
+    finally:
+        conn.close()
+    assert raw is not None and "tw-plaintext-secret" not in raw
+    assert report["steps"][0]["carried"] is True
+    assert settings_db.get_value("plugins", "twilio_auth_token") == "tw-plaintext-secret-0123456789"
+
+
+def test_a_plaintext_enc_prefix_does_not_skip_the_new_declarations_validation(store):
+    # review r1b
+    settings_db.init_db()
+    target = next((c, k) for (c, k), spec in settings_db._SPEC.items()
+                  if spec.get("kind") == "select" and spec.get("opts") and k not in settings_db.SECRET_KEYS)
+    conn = settings_db.get_conn()
+    try:
+        conn.execute("INSERT OR REPLACE INTO settings (category, key, value, label, kind, opts) "
+                     "VALUES (?, 'legacy_choice', ?, 'old', 'text', '[]')",
+                     (target[0], json.dumps("enc::v1::not-a-ciphertext-just-text")))
+        step = Step(version=2, kind="rename", setting=(target[0], "legacy_choice"), to=target, why="renamed")
+        report = settings_ladder.run(conn, spec=settings_db._SPEC, validate=settings_db._ladder_validate,
+                                     steps=[step], current=2, floor=0, env_names=[])
+        conn.commit()
+        raw = _row(conn, *target)
+    finally:
+        conn.close()
+    assert "not-a-ciphertext" not in (raw or "")
+    assert report["steps"][0]["carried"] is False
+
+
+def test_a_secret_kept_aside_stays_encrypted_and_is_listed_masked(store, monkeypatch):
+    settings_db.ensure_initialized()
+    secret_key = sorted(settings_db.SECRET_KEYS)[0]
+    category = next(c for (c, k) in settings_db._SPEC if k == secret_key)
+    settings_db.put_category(category, {secret_key: "sk-h258-kept-aside-0123456789"})
+    _ladder(monkeypatch, Step(2, "retire", (category, secret_key), "gone"))
+    _reinit(monkeypatch)
+    kept = _sql("SELECT value FROM settings_retired")
+    assert kept and "sk-h258-kept-aside" not in kept[0][0]
+    code, out, _ = _cli(["config", "retired"])
+    assert code == EXIT_OK and f"{category}.{secret_key}" in out and "sk-h258" not in out
+    code, out, _ = _cli(["config", "retired", "--purge"])
+    assert code != EXIT_OK and _sql("SELECT COUNT(*) FROM settings_retired")[0][0] == 1
+    code, out, _ = _cli(["config", "retired", "--purge", "--yes"])
+    assert code == EXIT_OK and _sql("SELECT COUNT(*) FROM settings_retired")[0][0] == 0
+
+
+def test_a_plaintext_credential_kept_aside_is_encrypted(store, monkeypatch):
+    settings_db.ensure_initialized()
+    _put_raw("legacy", "old_note", "use sk-live-abcdefghijklmnopqrstuvwxyz0123456789 here", "text")
+    _ladder(monkeypatch, Step(2, "retire", ("legacy", "old_note"), "gone"))
+    _reinit(monkeypatch)
+    kept = _sql("SELECT value FROM settings_retired")[0][0]
+    assert "sk-live" not in kept and json.loads(kept).startswith("enc::v1::")
+
+
+def test_boot_on_a_refused_store_leaves_its_values_untouched(store, monkeypatch):
+    # review r2
+    settings_db.init_db()
+    _sql("UPDATE settings SET value=? WHERE category='llm' AND key='guest_tools'", (json.dumps(["echo", "time"]),))
+    _sql("DELETE FROM settings_migrations")
+    _sql("INSERT OR REPLACE INTO settings_meta (key, value) VALUES ('schema_version', '-1')")
+    _reinit(monkeypatch)
+    assert _report().get("refused") == "too_old"
+    assert json.loads(_raw("llm", "guest_tools")[0]) == ["echo", "time"]
+    code, out, err = _cli(["config", "migrate"])
+    assert code == EXIT_FAILED and "not migrated" in err
+    assert json.loads(_raw("llm", "guest_tools")[0]) == ["echo", "time"]
+
+
+@pytest.mark.parametrize("raw", ["null", "5", "true", '[["NERVA_X"]]'])
+def test_init_survives_a_corrupt_env_names_row(store, monkeypatch, raw):
+    # review r7
+    settings_db.init_db()
+    _sql("INSERT OR REPLACE INTO settings_meta (key, value) VALUES ('env_names', ?)", (raw,))
+    _reinit(monkeypatch)
+    assert settings_db.get_value("llm", "tool_loop_max_iterations") is not None
+
+
+@pytest.mark.parametrize("report", [
+    {"at": 1e300, "from_version": 0, "to_version": 1, "steps": [], "new_settings": ["a.b"]},
+    {"at": "yesterday", "from_version": 0, "to_version": 1, "steps": [], "new_settings": ["a.b"]},
+    {"at": 0, "steps": [{"kind": "rename", "setting": "a.b", "to": 5}]},
+    {"at": 0, "new_env": [["NERVA_X"]]},
+    {"at": 0, "steps": "not a list", "new_settings": {"a": 1}, "refused": "too_old", "detail": ["x"]},
+])
+def test_config_check_survives_a_corrupt_report(store, report):
+    # review r6
+    settings_db.init_db()
+    _sql("INSERT OR REPLACE INTO settings_meta (key, value) VALUES ('last_report', ?)", (json.dumps(report),))
+    code, out, _ = _cli(["config", "check"])          # must not raise
+    assert code in (EXIT_OK, EXIT_FAILED) and "since the previous version" in out

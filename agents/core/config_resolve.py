@@ -28,7 +28,12 @@ AGENT_FIELDS = ("model", "status", "tier", "llm_policy", "channel", "approved_mo
 
 
 def _masked(value: Any, secret: bool) -> Any:
-    return MASK if secret and value not in (None, "", [], {}) else value
+    """A whole secret masked; otherwise every credential-shaped leaf (review M2)."""
+    from agents.core import settings_db
+
+    if secret:
+        return MASK if value not in (None, "", [], {}) else value
+    return settings_db.masked_leaves(value)
 
 
 def _stored_raw(category: str, key: str) -> tuple[bool, Any]:
@@ -58,7 +63,7 @@ def explain_setting(category: str, key: str) -> dict[str, Any] | None:
     row = next((r for r in settings_db.get_category(category) if r["key"] == key), None)
     if spec is None and row is None:
         return None
-    secret = key in settings_db.SECRET_KEYS or settings_db.is_secret_setting(category, key)
+    secret = settings_db.secret_for_view(category, key, (row or spec or {}).get("kind", ""))
     found, stored = _stored_raw(category, key)
     layers: list[dict[str, Any]] = []
     if spec is not None:
@@ -69,11 +74,13 @@ def explain_setting(category: str, key: str) -> dict[str, Any] | None:
         layers.append({"plane": "store", "source": str(settings_db.DB_PATH),
                        "value": _masked(stored, secret), "overrides": differs})
     refs = (row or {}).get("env_refs") or []
+    expands = any(r.get("set") and not r.get("refused") for r in refs)
     if refs:
+        # review m3: the names a value refers to and whether each is set — never what a
+        # variable holds (settings_db.interpolated's contract: a view never expands)
         layers.append({"plane": "environment reference", "source": "${env:…} in the stored value",
                        "names": [{"name": r.get("name"), "set": bool(r.get("set")),
                                   **({"refused": r["refused"]} if r.get("refused") else {})} for r in refs]})
-    used = settings_db.get_value(category, key, spec.get("value") if spec else None)
     managed = (row or {}).get("managed")
     if isinstance(managed, Mapping):
         layers.append({"plane": "managed", "source": managed.get("source"),
@@ -87,14 +94,19 @@ def explain_setting(category: str, key: str) -> dict[str, Any] | None:
     # which plane supplied what a reader gets
     if isinstance(managed, Mapping) and not managed.get("invalid"):
         supplied = "managed"
-    elif refs and any(r.get("set") and not r.get("refused") for r in refs) and used != stored:
+    elif expands:
         supplied = "environment reference"
     elif found and (spec is None or not settings_db._same_value(stored, spec.get("value"))):
         supplied = "store"
     else:
         supplied = "default"
-    result = {"name": f"{category}.{key}", "kind": "setting", "value": _masked(used, secret),
+    # the value as a view shows it: the pin applied, references as written (readers get
+    # them expanded; ``expands`` says so)
+    shown = row.get("value") if row is not None else (spec or {}).get("value")
+    result = {"name": f"{category}.{key}", "kind": "setting", "value": _masked(shown, secret),
               "supplied_by": supplied, "layers": layers, "secret": secret}
+    if expands:
+        result["expands"] = True
     if overlay:
         result["runtime"] = {"value": _masked(row.get("in_effect"), secret), "supplied_by": "posture"}
     return result
@@ -126,7 +138,7 @@ def explain_env(name: str, environ: Mapping[str, str]) -> dict[str, Any] | None:
         layers.append({"plane": ep.LABELS.get(ep.MANAGED, ep.MANAGED), "set": True, "applies": True})
     supplied = (ep.LABELS.get(ep.MANAGED) if pinned else
                 ep.LABELS.get(hit["layer"], hit["layer"]) if hit else ("default" if layers else "unset"))
-    return {"name": canonical or name, "kind": "environment", "set": bool(hit) or pinned,
+    return {"name": canonical or _plain(name), "kind": "environment", "set": bool(hit) or pinned,
             "supplied_by": supplied, "layers": layers, "type": entry.get("type"),
             "purpose": entry.get("purpose") or "", "known": canonical is not None}
 
@@ -157,19 +169,20 @@ def env_surface(environ: Mapping[str, str]) -> tuple[dict, list[str]]:
 
 
 def _managed_env_keys(environ: Mapping[str, str]) -> set[str]:
-    from agents.core import env_alias, managed_scope
-    from agents.core import env_provenance as ep
+    """The names the administrator's managed .env pins, read through ``managed_scope`` and
+    its owner/permission checks (review m4); nothing when that layer cannot be trusted."""
+    from agents.core import managed_scope
 
     try:
-        root = managed_scope.managed_dir(environ)[0]
+        return set(managed_scope.scope(environ).env)
     except Exception:  # noqa: BLE001 — an unreadable managed scope pins nothing here
         return set()
-    if root is None:
-        return set()
-    path = root / managed_scope.ENV_FILE
-    if not ep.is_file_or_fifo(path) or ep.is_fifo(path):
-        return set()
-    return {env_alias.canonical(k) for k in ep.env_file_keys(path)}
+
+
+def _plain(name: str, width: int = 128) -> str:
+    """A user-typed name made safe to print (no control characters, bounded)."""
+    text = "".join(ch if ch.isprintable() else "?" for ch in str(name))
+    return text if len(text) <= width else text[:width] + "…"
 
 
 def explain_agent(agent_id: str, field: str) -> dict[str, Any] | None:
@@ -199,6 +212,13 @@ def explain(name: str, environ: Mapping[str, str] | None = None) -> dict[str, An
     if not isinstance(name, str) or not name or len(name) > 512:
         return None
     if name.startswith("agents."):
+        # review m2: a declared or stored setting of the `agents` category comes first
+        from agents.core import settings_db
+
+        category, _, key = name.partition(".")
+        if (category, key) in settings_db._SPEC or any(
+                r["key"] == key for r in settings_db.get_category(category)):
+            return explain_setting(category, key)
         parts = name.split(".")
         return explain_agent(parts[1], parts[2]) if len(parts) == 3 else None
     if "." not in name and (env_registry.canonical(name) is not None

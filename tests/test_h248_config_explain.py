@@ -52,7 +52,9 @@ def test_an_environment_reference_is_the_supplying_plane_and_shows_no_value(stor
     monkeypatch.setenv("H248_URL", "http://lms.local:1234")
     settings_db.put_category("llm", {"lm_studio_url": "${env:H248_URL}"})
     view = config_resolve.explain("llm.lm_studio_url")
-    assert view["value"] == "http://lms.local:1234" and view["supplied_by"] == "environment reference"
+    # review m3: the view shows the reference as written, never what the variable holds
+    assert view["value"] == "${env:H248_URL}" and view["supplied_by"] == "environment reference"
+    assert "lms.local" not in repr(view) and view["expands"] is True
     ref = next(layer for layer in view["layers"] if layer["plane"] == "environment reference")
     assert ref["names"] == [{"name": "H248_URL", "set": True}]
     store_layer = next(layer for layer in view["layers"] if layer["plane"] == "store")
@@ -131,3 +133,68 @@ def test_an_unknown_setting_fails_with_a_suggestion(store):
     code, _, err = _run(["config", "get", "llm.tool_loop_max_iteration", "--explain"])
     assert code == EXIT_FAILED and "did you mean llm.tool_loop_max_iterations" in err
     assert config_resolve.explain("x" * 600) is None
+
+
+# ── review of 93047542: M2, m2, m3, m4 and the nits ─────────────────────────────────────
+
+TOKEN = "sk-live-abcdefghijklmnopqrstuvwxyz0123456789"
+
+
+def test_config_get_explain_masks_a_credential_leaf(store):
+    # review r3
+    settings_db.put_category("mcp", {"servers": [{"name": "remote", "url": "https://mcp.example/sse",
+                                                  "headers": {"Authorization": f"Bearer {TOKEN}"}}]})
+    code, out, err = _run(["config", "get", "mcp.servers", "--explain"])
+    assert code == EXIT_OK, err
+    assert TOKEN not in out and "remote" in out
+    assert TOKEN not in json.dumps(config_resolve.explain("mcp.servers"))
+
+
+def test_a_declared_agents_category_setting_can_be_explained(store):
+    # review r4a
+    assert ("agents", "agent_timeout_seconds") in settings_db._SPEC
+    code, out, err = _run(["config", "get", "agents.agent_timeout_seconds", "--explain"])
+    assert code == EXIT_OK, err
+    assert config_resolve.explain("agents.agent_timeout_seconds")["kind"] == "setting"
+
+
+def test_explain_never_carries_an_environment_variables_value(store, monkeypatch):
+    # review r4b / m3
+    monkeypatch.setenv("H248R_PRIVATE_HOST", "lms.internal-only.example")
+    settings_db.put_category("llm", {"lm_studio_url": "http://${env:H248R_PRIVATE_HOST}:1234"})
+    view = config_resolve.explain("llm.lm_studio_url")
+    assert "internal-only" not in repr(view)
+    assert view["value"] == "http://${env:H248R_PRIVATE_HOST}:1234" and view["expands"] is True
+    code, out, _ = _run(["config", "get", "llm.lm_studio_url", "--explain"])
+    assert "internal-only" not in out and "expanded" in out
+
+
+def test_managed_env_pins_are_read_through_the_trust_checks(store, monkeypatch):
+    # review m4: an untrusted managed directory pins nothing in the view
+    directory = store / "etc-nerva"
+    directory.mkdir()
+    (directory / ".env").write_text("NERVA_RATE_LIMIT=1\n", encoding="utf-8")
+    environ = {"NERVA_MANAGED_DIR": str(directory)}
+    seen = []
+    real = managed_scope.scope
+
+    def spy(env=None):
+        seen.append(env)
+        return real(env)
+
+    monkeypatch.setattr(managed_scope, "scope", spy)
+    config_resolve.explain("NERVA_RATE_LIMIT", environ)
+    assert seen and seen[0] == environ
+
+
+def test_a_typed_name_is_printed_plain(store):
+    view = config_resolve.explain("NERVA_\x1b[31mX", {})
+    assert "\x1b" not in view["name"]
+
+
+def test_the_cli_and_explain_share_one_secret_rule():
+    from agents.cli import nerva
+
+    for (category, key), spec in list(settings_db._SPEC.items())[:200]:
+        row = {"category": category, "key": key, "kind": spec.get("kind", "")}
+        assert nerva._is_secret(row) == settings_db.secret_for_view(category, key, spec.get("kind", ""))

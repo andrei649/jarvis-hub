@@ -317,6 +317,13 @@ def build_parser() -> argparse.ArgumentParser:
         "env", help="every environment variable the hub reads: set or unset, where from, what it is for")
     config_env.add_argument("--set", action="store_true", help="only the variables that are set")
     config_env.add_argument("--json", action="store_true")
+    # H258 review m6 — the values a migration step could not carry, kept aside (masked).
+    config_retired = config_verbs.add_parser(
+        "retired", help="values a settings migration kept aside (masked); --purge deletes them")
+    config_retired.add_argument("ids", nargs="*", type=int, help="with --purge: only these ids")
+    config_retired.add_argument("--purge", action="store_true", help="delete the kept-aside values")
+    config_retired.add_argument("--yes", action="store_true", help="confirm --purge")
+    config_retired.add_argument("--json", action="store_true")
     # G1 (H249/H267/H629) — what an administrator pinned, and whether writes are refused.
     config_managed = config_verbs.add_parser(
         "managed", help="the settings and environment values your administrator pinned (names, never a value)")
@@ -1879,23 +1886,21 @@ def _settings():
 
 
 def _is_secret(row: Mapping[str, Any]) -> bool:
-    key = str(row.get("key", "")).lower()
-    kind = str(row.get("kind", ""))
-    # A key the store encrypts is a credential whatever its name (review-H465d nit 5: the
-    # GA4 service-account JSON, a private key, printed in the clear).
-    if kind in _SECRET_KINDS or key in _settings().SECRET_KEYS:
-        return True
-    # H006: the store's own rule (export, reset and preview use it) as well as the hint list,
-    # so `config list`, `get` and `edit` agree — it adds the `client_id` suffix.
-    return kind not in _PLAIN_KINDS and (
-        any(hint in key for hint in _SECRET_HINTS)
-        or _settings().is_secret_setting(str(row.get("category", "")), str(row.get("key", ""))))
+    # A key the store encrypts is a credential whatever its name (review-H465d nit 5); H006:
+    # the store's own rule as well as the hint list. One rule for every view
+    # (``settings_db.secret_for_view``: `config list|get|edit` and `--explain` agree).
+    return _settings().secret_for_view(str(row.get("category", "")), str(row.get("key", "")),
+                                       str(row.get("kind", "")))
 
 
 def _shown(row: Mapping[str, Any], *, reveal: bool) -> Any:
-    if _is_secret(row) and not reveal and row.get("value") not in (None, "", [], {}):
+    if reveal:
+        return row.get("value")
+    if _is_secret(row) and row.get("value") not in (None, "", [], {}):
         return "••••••"
-    return row.get("value")
+    # H257 review M2: a credential inside a json value (an MCP server's headers) is
+    # masked leaf by leaf, as the export leaves such a setting out.
+    return _settings().masked_leaves(row.get("value"))
 
 
 def _resolve_name(settings: Any, name: str, *, stored: bool = False) -> tuple[str, str, list[Any]] | None:
@@ -2072,6 +2077,8 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
         return _config_managed(ns, ctx)
     if ns.action == "env":
         return _config_env(ns, ctx)
+    if ns.action == "retired":
+        return _config_retired(ns, ctx, settings)
     if ns.action == "check":
         problems: list[str] = []
         for cat, rows in settings.get_all().items():
@@ -2138,6 +2145,8 @@ def _config_explain(ns: argparse.Namespace, ctx: Context, settings: Any) -> int:
         if layer.get("invalid"):
             bits.append("(invalid, not applied)")
         ctx.say("  ".join(bits))
+    if view.get("expands"):
+        ctx.say("  readers get its environment references expanded (the value is not shown here)")
     if view.get("runtime"):
         ctx.say(f"  in the hub's runtime settings: {json.dumps(view['runtime']['value'], ensure_ascii=False)} "
                 f"(the selected posture forces it)")
@@ -2187,6 +2196,21 @@ def _stamped(category: str, key: str, value: Any) -> Any:
 
 def _write_setting(settings: Any, name: str, category: str, key: str, value: Any,
                    ns: argparse.Namespace) -> list[str]:
+    """H257 review M1 — the whole read-check-write runs under the settings-write lock,
+    which is held across processes (``settings_lock``): the hub's writers and sync wait
+    for it, and nothing it checked can change before the write."""
+    from agents.core.autonomy import mode
+    from agents.core.settings_lock import SettingsLockBusy
+
+    try:
+        with mode._write_lock:
+            return _write_setting_locked(settings, name, category, key, value, ns)
+    except SettingsLockBusy as exc:
+        return [f"{name}: not changed — {exc}"]
+
+
+def _write_setting_locked(settings: Any, name: str, category: str, key: str, value: Any,
+                          ns: argparse.Namespace) -> list[str]:
     """The guarded write ``config set``, ``unset`` and ``edit`` share once a value has
     passed its schema: the retention approval (H262), the selection guards (H378), the
     write, and the approval lowering a narrowing implies. Returns the lines that explain
@@ -2239,8 +2263,8 @@ def _write_setting(settings: Any, name: str, category: str, key: str, value: Any
             return [f"{name}: {exc}"]
     approval_key = category == "autonomy" and key in ("mode", "agent_modes")
     before = settings.get_value(category, key) if approval_key else None
-    # H257 — the write runs under the same settings-write lock as the route's
-    # (``autonomy.mode.locked_settings_write``; there is no live policy here to sync).
+    # H257 — the write itself goes through ``locked_settings_write`` as the route's does
+    # (re-entering the lock the caller holds; there is no live policy here to sync).
     from agents.core.autonomy.mode import locked_settings_write
 
     try:
@@ -2356,6 +2380,71 @@ def _config_env(ns: argparse.Namespace, ctx: Context) -> int:
     return EXIT_OK
 
 
+def _config_retired(ns: argparse.Namespace, ctx: Context, settings: Any) -> int:
+    """``nerva config retired [--json]`` lists what a migration step kept aside, every
+    value masked (an encrypted one whole); ``--purge --yes [ID…]`` deletes them, audited."""
+    from agents.core import managed_scope, settings_audit, settings_ladder
+
+    store = Path(settings.DB_PATH)
+    if not store.exists():
+        ctx.say("nothing kept aside: there is no settings store yet")
+        return EXIT_OK
+    if ns.purge:
+        if not ns.yes:
+            ctx.err.write("config retired --purge deletes kept-aside values for good; add --yes to confirm\n")
+            return EXIT_USAGE
+        try:
+            managed_scope.check_writable()
+        except managed_scope.ManagedRefused as exc:
+            ctx.err.write(f"config retired: {exc}\n")
+            return EXIT_FAILED
+        conn = sqlite3.connect(str(store), timeout=5)
+        try:
+            with conn:
+                gone = settings_ladder.purge_retired(conn, ns.ids or None)
+        except sqlite3.Error as exc:
+            ctx.err.write(f"{store}: {_busy(exc)}\n")
+            return EXIT_FAILED
+        finally:
+            conn.close()
+        settings_audit.record(_audit_log(), f"settings: {gone} kept-aside value(s) purged "
+                                            f"({'ids ' + str(sorted(ns.ids)) if ns.ids else 'all'}) (via cli)",
+                              "settings_retired_purge")
+        ctx.say(f"{gone} kept-aside value(s) deleted")
+        return EXIT_OK
+    try:
+        conn = sqlite3.connect(store.resolve().as_uri() + "?mode=ro", uri=True, timeout=5)
+        try:
+            rows = settings_ladder.retired(conn)
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        ctx.err.write(f"{store}: {exc}\n")
+        return EXIT_FAILED
+    if ns.json:
+        ctx.dump({"retired": rows})
+        return EXIT_OK
+    if not rows:
+        ctx.say("nothing kept aside")
+        return EXIT_OK
+    for row in rows:
+        ctx.say(f"  #{row['id']} {_plain(row['setting'], 80)} = {_plain(json.dumps(row['value'], ensure_ascii=False), 120)}"
+                f"  ({_plain(row['step'], 60)}: {_plain(row['why'], 160)})")
+    return EXIT_OK
+
+
+def _audit_migration(done: list[Any]) -> None:
+    """Review m5 — `nerva config migrate`'s writes are on the audit log, as the HTTP reseed
+    is: how many, of which kinds, and the setting names (never a value)."""
+    from agents.core import settings_audit
+
+    names = sorted({str(c.setting) for c in done})
+    kinds = sorted({str(c.kind) for c in done})
+    shown = names[:40] + ([f"… and {len(names) - 40} more"] if len(names) > 40 else [])
+    settings_audit.record(_audit_log(), f"settings migrated: {len(done)} change(s) ({', '.join(kinds)}): "
+                                        f"{shown} (via cli)", "settings_migrate")
+
+
 def _store_report(settings: Any) -> tuple[int, dict[str, Any] | None]:
     """H258 — ``(the store's stamped schema version, its last post-migration report)``,
     read-only; ``(0, None)`` when there is no store or it cannot be read."""
@@ -2374,32 +2463,63 @@ def _store_report(settings: Any) -> tuple[int, dict[str, Any] | None]:
         return 0, None
 
 
+def _report_text(value: Any, width: int = 120) -> str:
+    """A stored report field, as printable text (review m1: the row may be corrupt)."""
+    return _plain(value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str), width)
+
+
+def _report_when(at: Any) -> str:
+    if isinstance(at, bool) or not isinstance(at, (int, float)):
+        return "at an unknown time"
+    try:
+        return time.strftime("%Y-%m-%d %H:%M", time.localtime(float(at)))
+    except (OverflowError, OSError, ValueError):
+        return "at an unknown time"
+
+
 def _migration_report_lines(settings: Any) -> list[str]:
     """H258 — the last post-migration report: the steps that ran, the settings and the
-    environment variables new since the previous version (names only)."""
+    environment variables new since the previous version (names only). Review m1: every
+    field is type-checked and each line built on its own, so a corrupt or hostile report
+    row is named, never a traceback."""
     from agents.core import env_registry
 
     _version, report = _store_report(settings)
-    if not report:
+    if not isinstance(report, dict):
         return []
-    lines = []
-    when = time.strftime("%Y-%m-%d %H:%M", time.localtime(float(report.get("at") or 0)))
-    lines.append(f"since the previous version (upgraded {when}, store schema {report.get('from_version')} → "
-                 f"{report.get('to_version')}):")
-    for step in report.get("steps") or []:
-        carried = "" if step.get("carried", True) else f" — not carried ({step.get('problem', '')}), kept aside"
-        lines.append(f"  {step.get('kind')} {step.get('setting')}{' → ' + step['to'] if step.get('to') else ''}"
-                     f"{carried}")
-    news = report.get("new_settings") or []
+    lines = [f"since the previous version (upgraded {_report_when(report.get('at'))}, store schema "
+             f"{_report_text(report.get('from_version'), 12)} → {_report_text(report.get('to_version'), 12)}):"]
+    damaged = 0
+    steps = report.get("steps")
+    for step in (steps if isinstance(steps, list) else [])[:100]:
+        try:
+            if not isinstance(step, dict):
+                raise TypeError
+            to = step.get("to")
+            arrow = f" → {_report_text(to, 80)}" if isinstance(to, str) and to else ""
+            carried = ("" if step.get("carried", True) is not False else
+                       f" — not carried ({_report_text(step.get('problem', ''))}), kept aside")
+            lines.append(f"  {_report_text(step.get('kind'), 12)} {_report_text(step.get('setting'), 80)}"
+                         f"{arrow}{carried}")
+        except (TypeError, ValueError):
+            damaged += 1
+    news = report.get("new_settings")
+    news = [n for n in news if isinstance(n, str)] if isinstance(news, list) else []
     if news:
-        shown = ", ".join(news[:20]) + (f" … and {len(news) - 20} more" if len(news) > 20 else "")
+        shown = ", ".join(_plain(n, 80) for n in news[:20]) + (f" … and {len(news) - 20} more" if len(news) > 20 else "")
         lines.append(f"  {len(news)} new setting(s): {shown} (`nerva config list` shows them)")
     entries = env_registry.entries()
-    for name in (report.get("new_env") or [])[:40]:
+    new_env = report.get("new_env")
+    for name in (new_env if isinstance(new_env, list) else [])[:40]:
+        if not isinstance(name, str):
+            damaged += 1
+            continue
         purpose = (entries.get(name) or {}).get("purpose") or ""
-        lines.append(f"  new environment variable {name}" + (f" → {_plain(purpose, 120)}" if purpose else ""))
+        lines.append(f"  new environment variable {_plain(name, 128)}" + (f" → {_plain(purpose, 120)}" if purpose else ""))
     if report.get("refused"):
-        lines.append(f"  ✗ {report.get('detail') or report['refused']}")
+        lines.append(f"  ✗ {_report_text(report.get('detail') or report['refused'], 300)}")
+    if damaged:
+        lines.append(f"  ⚠ {damaged} entr{'y' if damaged == 1 else 'ies'} of the stored report could not be read")
     return lines
 
 
@@ -2826,7 +2946,10 @@ def _config_migrate_run(ns: argparse.Namespace, ctx: Context, settings: Any, set
     kept = [c for c in changes if c.kind == "kept"]
     refused = [c for c in changes if c.kind == "refused"]
     planned = [c for c in changes if c.kind not in ("kept", "refused")]
-    done = planned if ns.dry_run else settings_migrate.apply(changes)
+    # review M5: a refused store is never written, not even its seeds
+    done = planned if ns.dry_run or refused else settings_migrate.apply(changes)
+    if done and not ns.dry_run:
+        _audit_migration(done)
     if ns.json:
         doc: dict[str, Any] = {"dry_run": bool(ns.dry_run), "changes": [c.to_dict() for c in done],
                                "store": str(store)}

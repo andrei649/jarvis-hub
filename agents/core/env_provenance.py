@@ -310,8 +310,10 @@ def _parse_cached(path: str, mtime_ns: int, size: int, inode: int, ctime_ns: int
     """One parse per file content: its keys (python-dotenv's, else the stdlib port's)
     and its raw bindings (``None`` without python-dotenv, which alone knows values)."""
     try:
-        text = Path(path).read_text(encoding="utf-8")
+        text = _bounded_text(path)
     except (OSError, UnicodeDecodeError):
+        return None
+    if text is None:
         return None
     try:
         raw = _bindings(text)
@@ -320,13 +322,38 @@ def _parse_cached(path: str, mtime_ns: int, size: int, inode: int, ctime_ns: int
     return tuple(_set_keys(raw)), raw
 
 
+#: The largest .env file a view parses (review m7): a real one is a few kilobytes.
+MAX_ENV_FILE_BYTES = 1 << 20
+
+
+def _bounded_text(path: str) -> str | None:
+    """The file's text, read without following a link and only up to the bound; None
+    when it is larger, a link, or not a regular file."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(path, flags)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_ENV_FILE_BYTES:
+            return None
+        with os.fdopen(os.dup(fd), "rb") as handle:
+            data = handle.read(MAX_ENV_FILE_BYTES + 1)
+    finally:
+        os.close(fd)
+    if len(data) > MAX_ENV_FILE_BYTES:
+        return None
+    return data.decode("utf-8")
+
+
 def _file_bindings(path):
     """``(keys, raw bindings or None)`` for a regular file, parsed once while it is
-    unchanged; ``None`` for anything else (a named pipe is never read here)."""
-    if path is None or not os.path.isfile(path):
+    unchanged; ``None`` for anything else (a named pipe is never read here). Review m7: a
+    symbolic link and a file over :data:`MAX_ENV_FILE_BYTES` are not read either."""
+    if path is None or os.path.islink(path) or not os.path.isfile(path):
         return None
     try:
-        info = os.stat(path)
+        info = os.stat(path, follow_symlinks=False)
+        if info.st_size > MAX_ENV_FILE_BYTES:
+            return None
         real = os.path.realpath(path)
     except (OSError, ValueError, TypeError):
         return None

@@ -163,3 +163,102 @@ def test_the_route_and_the_cli_share_one_wording():
 
     values = {"tool_loop_max_iterations": 3}
     assert admin._audited_values("llm", values) == settings_audit.audited_values("llm", values)
+
+
+# ── review of 1bb285d0: M1 (a cross-process lock), M2 (credential leaves), m5 ─────────────
+
+_PROBE = ("import sys\nfrom pathlib import Path\nfrom agents.core import settings_db\n"
+          "settings_db.DB_PATH = Path(sys.argv[1])\nfrom agents.core.autonomy import mode\n"
+          "sys.exit(0 if mode._write_lock.acquire(blocking=False) else 3)")
+
+
+def test_another_process_cannot_take_the_settings_write_lock_during_a_cli_write(temp_settings, monkeypatch):
+    # review r5: the lock the CLI holds over its read-check-write is held across processes
+    import subprocess
+    import sys
+
+    monkeypatch.setattr(nerva, "_audit_log", lambda: None)
+    seen: list[int] = []
+    real = settings_db.put_category
+
+    def put_and_probe(*args, **kwargs):
+        # what a hub process would do at this instant: take the settings-write lock
+        seen.append(subprocess.run([sys.executable, "-c", _PROBE, str(settings_db.DB_PATH)],
+                                   timeout=60).returncode)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(settings_db, "put_category", put_and_probe)
+    code, _, err = _run(["config", "set", "llm.tool_loop_max_iterations", "12"])
+    assert code == EXIT_OK, err
+    assert seen == [3], "another process took the settings-write lock while the CLI held it"
+
+
+def test_the_checks_run_inside_the_lock(temp_settings, audit, monkeypatch):
+    from agents.core import retention
+    from agents.core.autonomy import mode
+
+    held = []
+    real = retention.needs_approval
+
+    def spy(*args, **kwargs):
+        held.append(getattr(mode._write_lock._local, "depth", 0))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(retention, "needs_approval", spy)
+    code, _, err = _run(["config", "set", "llm.tool_loop_max_iterations", "7"])
+    assert code == EXIT_OK, err
+    assert held and held[0] >= 1
+
+
+def test_a_busy_lock_writes_nothing_and_says_so(temp_settings, audit, monkeypatch):
+    from agents.core import settings_lock
+
+    def busy(*args, **kwargs):
+        raise settings_lock.SettingsLockBusy("another process holds the settings-write lock")
+
+    monkeypatch.setattr(settings_lock, "_flock", busy)
+    code, _, err = _run(["config", "set", "llm.tool_loop_max_iterations", "6"])
+    assert code == EXIT_FAILED and "not changed" in err
+    assert settings_db.get_value("llm", "tool_loop_max_iterations") != 6
+
+
+TOKEN = "sk-live-abcdefghijklmnopqrstuvwxyz0123456789"
+
+
+def test_config_set_masks_a_credential_leaf_in_its_echo(temp_settings, audit):
+    # review r3
+    settings_db.put_category("mcp", {"servers": [{"name": "remote", "url": "https://mcp.example/sse",
+                                                  "headers": {"Authorization": "Bearer x"}}]})
+    code, out, err = _run(["config", "set", "mcp.servers.0.headers.Authorization", f"Bearer {TOKEN}"])
+    assert code == EXIT_OK, err
+    assert TOKEN not in out + err
+    assert all(TOKEN not in row for _a, row in audit.rows)
+    code, out, _ = _run(["config", "get", "mcp.servers"])
+    assert code == EXIT_OK and TOKEN not in out and "remote" in out
+    code, out, _ = _run(["config", "get", "mcp.servers", "--reveal"])
+    assert TOKEN in out                                  # the owner asked for it
+
+
+def test_masked_leaves_masks_by_name_container_and_shape():
+    value = {"name": "x", "env": {"PLAIN": "1"}, "api_key": "abc", "nested": [{"token": "t"}],
+             "note": f"key {TOKEN}", "count": 3, "on": True}
+    shown = settings_db.masked_leaves(value)
+    assert shown["name"] == "x" and shown["count"] == 3 and shown["on"] is True
+    assert shown["env"]["PLAIN"] == settings_db.MASK and shown["api_key"] == settings_db.MASK
+    assert shown["nested"][0]["token"] == settings_db.MASK and shown["note"] == settings_db.MASK
+    assert value["api_key"] == "abc"                     # a copy
+
+
+def test_config_migrate_writes_are_audited(temp_settings, audit):
+    # review m5
+    settings_db.ensure_initialized()
+    conn = settings_db.get_conn()
+    try:
+        conn.execute("DELETE FROM settings WHERE category='llm' AND key='tool_loop_max_iterations'")
+        conn.commit()
+    finally:
+        conn.close()
+    code, _, err = _run(["config", "migrate"])
+    assert code == EXIT_OK, err
+    rows = [p for action, p in audit.rows if action == "settings_migrate"]
+    assert rows and "llm.tool_loop_max_iterations" in rows[0] and "via cli" in rows[0]

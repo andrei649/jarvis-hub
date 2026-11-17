@@ -18,6 +18,11 @@
   your saved setting, an environment variable it names, an administrator's pin or the
   selected posture, with the one in effect marked. It works for environment variables
   (which file or the shell sets it, never its value) and agents (`agents.jarvis.model`).
+- Fixed before release: a `nerva config` change and the running hub can no longer write
+  settings at the same moment; tokens inside a setting (an MCP server's headers) are hidden
+  when a value is shown; `--explain` never shows what an environment variable holds; a
+  settings store too old to migrate is left exactly as it is. `nerva config retired` lists
+  (hidden) and, with `--purge --yes`, deletes values a migration had to keep aside.
 - After an upgrade, `nerva config check` tells you which settings and environment variables
   are new since your previous version. The settings store now records its schema version;
   a future rename or removal of a setting carries your value across, or keeps it aside and
