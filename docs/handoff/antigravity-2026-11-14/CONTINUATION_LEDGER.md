@@ -228,3 +228,27 @@ pass), leaving two baseline-reproduced G17 process-group assertions. Full backen
 is not declared green; see detailed evidence for names and snapshot limits.
 See [repair evidence](../../reviews/2026-11-17-jarvis-os-consent.md) for exact scope,
 commands/outcomes and unexecuted acceptance. Next: commit/push and open **draft only**. No ready, merge, deploy or workflow changes.
+
+
+## 2026-11-17 — PR #1372 JUnit-compatible count correction
+
+Base/head investigated: `3f47f602ffb21bf00e062d3e2599642a4792b02d`. Hosted
+Linux attempt 2 passed backend Test and Hermes23/23, failing only count37071 vs
+tracked37070. No hosted XML artifact was uploaded. Local collection evidence
+shows37070 items plus one JUnit collection-skip report for the missing Discord
+module. The previous generator omitted that report.
+
+The generator now predicts the exact-JUnit outcome total from one collect-only
+invocation and its private validated collection XML; runtime skips are not doubled,
+collection/report failures refuse to update, and the nested-project guard stays.
+CI parser/comparison/verification functions remain unchanged. XML support is lazy
+so bare-Python backlog/help still works; eight regressions cover the behavior.
+Actual regeneration yields37079 reported outcomes, not a hand-set count.
+
+Final focused integration70 passed; repository Ruff, targeted Bandit, live count
+and generated-status checks pass. Read-only review found the eager import issue,
+which received a red/green compatibility regression and fix. New-head hosted CI
+remains pending after the follow-up push. No workflow/security settings, merge,
+ready promotion, deploy, credentials or real-data activation changed. See
+[exact count evidence](../../reviews/2026-11-17-jarvis-os-count.md). Rollback is a
+revert of this count follow-up commit.

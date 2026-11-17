@@ -1,5 +1,10 @@
 # ANDREI OS post-merge repair evidence
 
+Later hosted follow-up: attempt 2 on `3f47f602` passed backend Test and Hermes
+23/23, then exposed the generator's one-report count mismatch. See
+[count evidence and repair](2026-11-17-jarvis-os-count.md). Earlier local results
+below retain their original snapshot and are not relabeled as passing.
+
 Goal: address #1370 review findings r4595577240, r4595577246, r4595577250 and
 r4595577257. Base: `3a482575ec9d3f59d6baa47d70cf4455d5f84572`.
 Branch: `fix/jarvis-os-cloud-consent`. Generated 2026-11-17 UTC.
