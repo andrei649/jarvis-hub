@@ -13261,6 +13261,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/plugins/extensions/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Extension Install
+         * @description Verify an authored extension in the sandbox and queue the owner's install card.
+         *
+         *     Nothing is installed here: a person must accept the ``extensions.install`` card, and
+         *     the installed package still needs consent and activation before anything is callable.
+         */
+        post: operations["extension_install_api_plugins_extensions_install_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/plugins/extensions/activate": {
         parameters: {
             query?: never;
@@ -18400,6 +18423,27 @@ export interface components {
              * @default false
              */
             preview: boolean;
+        };
+        /**
+         * ExtensionInstallBody
+         * @description H566: a third-party author's extension, read by the owner's CLI and sent as text.
+         *
+         *     The hub never reads a path from a request: the descriptor and the two files arrive
+         *     in the body, bounded, and go through the acquisition pipeline to an approval card.
+         */
+        ExtensionInstallBody: {
+            /** Manifest */
+            manifest: {
+                [key: string]: unknown;
+            };
+            /** Source */
+            source: string;
+            /** Test */
+            test: string;
+            /** Provenance */
+            provenance?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** FeedbackBody */
         FeedbackBody: {
@@ -41376,6 +41420,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ExtensionConsentBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    extension_install_api_plugins_extensions_install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExtensionInstallBody"];
             };
         };
         responses: {

@@ -746,6 +746,7 @@
   "POST /api/pets/{pet_id}/rename": "pets_rename_api_pets__pet_id__rename_post",
   "POST /api/plugins/extensions/activate": "extension_activate_api_plugins_extensions_activate_post",
   "POST /api/plugins/extensions/consent": "extension_consent_api_plugins_extensions_consent_post",
+  "POST /api/plugins/extensions/install": "extension_install_api_plugins_extensions_install_post",
   "POST /api/presence/owner": "set_owner_presence_api_presence_owner_post",
   "POST /api/quality/threshold": "quality_set_threshold_api_quality_threshold_post",
   "POST /api/quickbar/resolve": "quickbar_resolve_api_quickbar_resolve_post",

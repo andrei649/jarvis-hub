@@ -634,6 +634,7 @@ MACHINE_FACING: dict[str, str] = {
     # posts the validated document. A HUD form would be typing JSON into a textarea.
     "/api/plugins/extensions/consent": "owner consent to a local descriptor, via `nerva extensions consent`",
     "/api/plugins/extensions/activate": "owner activation of a local descriptor, via `nerva extensions activate`",
+    "/api/plugins/extensions/install": "owner submission of a local author folder or pack, via `nerva extensions install|pack install`",
     "/api/oauth/auth-url": "OAuth dance, driven by the provider/browser",
     "/api/oauth/callback": "OAuth redirect target",
     "/api/oauth/mcp/callback": "MCP sign-in redirect target: the browser returns here from the server's "

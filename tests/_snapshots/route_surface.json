@@ -748,6 +748,7 @@
   "POST /api/pets/{pet_id}/rename",
   "POST /api/plugins/extensions/activate",
   "POST /api/plugins/extensions/consent",
+  "POST /api/plugins/extensions/install",
   "POST /api/presence/owner",
   "POST /api/quality/threshold",
   "POST /api/quickbar/resolve",

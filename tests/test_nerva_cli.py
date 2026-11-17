@@ -138,7 +138,7 @@ def test_the_command_tree_is_discoverable_and_complete():
     assert tree["backup"] == ["cancel", "create", "list", "restore", "verify"]
     # S2 added the two owner acts an extension needs: agree to what a descriptor
     # declares, and prove it in the sandbox. `doctor` and `list` stay read-only.
-    assert tree["extensions"] == ["activate", "consent", "doctor", "list"]
+    assert tree["extensions"] == ["activate", "consent", "doctor", "install", "list", "pack"]
     # H022: the audit is the only security act so far; it reads and reports, never mutates.
     assert tree["security"] == ["audit"]
     # H006: edit opens $VISUAL/$EDITOR on the declared settings; path / env-path name the

@@ -14,7 +14,7 @@ import time
 
 from core.log_safe import log_safe
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from agents.core.app_state import get_orch
 from agents.core.plugins.honesty import degradation_info as _plugin_degradation
@@ -190,6 +190,27 @@ class ExtensionConsentBody(BaseModel):
     preview: bool = False
 
 
+class ExtensionInstallBody(BaseModel):
+    """H566: a third-party author's extension, read by the owner's CLI and sent as text.
+
+    The hub never reads a path from a request: the descriptor and the two files arrive
+    in the body, bounded, and go through the acquisition pipeline to an approval card.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    manifest: dict
+    source: str = Field(..., max_length=64 * 1024)
+    test: str = Field(..., max_length=64 * 1024)
+    provenance: dict | None = None
+
+
+def _extension_sandbox_runner():
+    """Sandbox command runner override — ``None`` selects the real Docker runner
+    (module-level so hermetic tests inject one, as the acquisition drive route does)."""
+    return None
+
+
 class ExtensionActivateBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -283,6 +304,31 @@ async def extension_consent(body: ExtensionConsentBody):
     except ValueError as exc:
         return nocache_json({"ok": False, "reason": str(exc)}, status_code=422)
     return nocache_json({"ok": True, "revoked": False, **decision.as_dict()})
+
+
+@router.post("/api/plugins/extensions/install", dependencies=[Depends(admin_guard)])
+async def extension_install(body: ExtensionInstallBody):
+    """Verify an authored extension in the sandbox and queue the owner's install card.
+
+    Nothing is installed here: a person must accept the ``extensions.install`` card, and
+    the installed package still needs consent and activation before anything is callable.
+    """
+    from agents.core.extensions.submission import SubmissionError, from_parts, submit
+
+    try:
+        authored = from_parts(body.manifest, body.source, body.test, body.provenance)
+    except SubmissionError as exc:
+        return nocache_json({"ok": False, "reason": exc.reason, "detail": exc.detail[:200]}, status_code=422)
+    orch, acquisition, error = require_component("acquisition", "extension acquisition not available")
+    if error is not None:
+        return error
+    try:
+        result = await submit(acquisition, authored, orch=orch, runner=_extension_sandbox_runner())
+    except SubmissionError as exc:
+        unavailable = {"acquisition_unavailable", "approval_queue_unavailable", "install_requests_unavailable"}
+        return nocache_json({"ok": False, "reason": exc.reason, "detail": exc.detail[:200]},
+                            status_code=503 if exc.reason in unavailable else 422)
+    return nocache_json({"ok": True, **result})
 
 
 @router.post("/api/plugins/extensions/activate", dependencies=[Depends(admin_guard)])

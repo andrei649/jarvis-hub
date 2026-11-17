@@ -752,6 +752,7 @@
   "POST /api/pets/{pet_id}/rename": "admin",
   "POST /api/plugins/extensions/activate": "admin",
   "POST /api/plugins/extensions/consent": "admin",
+  "POST /api/plugins/extensions/install": "admin",
   "POST /api/presence/owner": "admin",
   "POST /api/quality/threshold": "admin",
   "POST /api/quickbar/resolve": "user",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -16,12 +17,24 @@ from pathlib import Path
 from agents.core.paths import data_path
 from agents.core.secrets import SecretStore, SecretStoreError
 
+from .generator import OWNER_SUBMITTED_ROUTE, authored_goal
 from .models import RequestStatus
 from .package_store import PackageStoreError
 from .quarantine import QuarantineError, QuarantinePackageRejected
 from .receipt import VerificationReceipt, receipt_is_current, receipt_matches_package
 
 logger = logging.getLogger("jarvis.acquisition.promotion")
+
+
+def _version_bound(package, version: str) -> bool:
+    """Generated packages install as 0.1.0; an owner-submitted extension only as the
+    version its package hash binds (its goal hash is ``authored_goal(name, version)``)."""
+    if not isinstance(version, str):
+        return False
+    if package.model_route == OWNER_SUBMITTED_ROUTE:
+        expected = hashlib.sha256(authored_goal(package.name, version).encode("utf-8")).hexdigest()
+        return package.goal_hash == expected
+    return version == "0.1.0"
 
 
 class PromotionError(RuntimeError):
@@ -151,6 +164,10 @@ class PromotionProposal:
     created_at: float
     decided_at: float | None = None
     decided_by: str | None = None
+    # H566: the version the package installs as. Generated packages always install as
+    # 0.1.0; an owner-submitted extension installs as its manifest's version, which its
+    # package hash binds (generator.authored_goal).
+    version: str = "0.1.0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,7 +265,7 @@ class PromotionStore(_EncryptedRows):
                 raise PromotionError("promotion proposal capacity reached")
         return self._rows
 
-    def create(self, *, package, receipt: VerificationReceipt) -> PromotionProposal:
+    def create(self, *, package, receipt: VerificationReceipt, version: str = "0.1.0") -> PromotionProposal:
         with self._lock:
             rows = self._load()
             existing = next(
@@ -277,6 +294,7 @@ class PromotionStore(_EncryptedRows):
                 approval_mode="permanent",
                 status="pending",
                 created_at=float(self.clock()),
+                version=version,
             )
             self._commit([*rows, proposal])
             self._emit(
@@ -450,7 +468,7 @@ class PromotionBroker:
         self.failpoint = failpoint
         self._event_sink = event_sink
 
-    def propose(self, artifact_id: str, *, contract) -> PromotionProposal:
+    def propose(self, artifact_id: str, *, contract, version: str = "0.1.0") -> PromotionProposal:
         self._require_enabled()
         try:
             record = self.quarantine.get_record(artifact_id)
@@ -464,6 +482,8 @@ class PromotionBroker:
             raise PromotionError("verification receipt is invalid") from exc
         if not receipt_is_current(receipt, record.package, contract, self.profile):
             raise PromotionError("verification receipt or package integrity is tampered")
+        if not _version_bound(record.package, version):
+            raise PromotionError("install version is not bound to the package")
         payload = {
             "kind": "skill.install",
             "name": record.package.name,
@@ -480,7 +500,7 @@ class PromotionBroker:
         if decision == "deny":
             raise PromotionError("skill.install denied by action kernel")
         # Even an accidental kernel GRANT cannot bypass this permanent approval floor.
-        proposal = self.proposals.create(package=record.package, receipt=receipt)
+        proposal = self.proposals.create(package=record.package, receipt=receipt, version=version)
         request = self.requests.get(record.package.request_id)
         if request is not None and request.status == RequestStatus.QUARANTINED:
             self.requests.transition(
@@ -534,6 +554,7 @@ class PromotionBroker:
             or not receipt_matches_package(receipt, record.package)
             or receipt.runtime_image != self.profile.image
             or receipt.runtime_config_hash != self.profile.config_hash
+            or not _version_bound(record.package, proposal.version)
         ):
             raise PromotionError("approval receipt recheck detected tamper")
 
@@ -551,7 +572,7 @@ class PromotionBroker:
                 installed = self.packages.install(
                     package=record.package,
                     receipt=receipt,
-                    version="0.1.0",
+                    version=proposal.version,
                 )
             except PackageStoreError as exc:
                 raise PromotionError(str(exc)) from exc
@@ -673,6 +694,12 @@ class PromotionBroker:
 
     def _register(self, name: str) -> None:
         if self.tool_rpc.allows(name):
+            return
+        current = self.packages.get(name)
+        if current is not None and current.manifest.get("model_route") == OWNER_SUBMITTED_ROUTE:
+            # H566: an owner-submitted extension is never a generic acquired tool. Its tools
+            # reach the surface only through consent and isolated activation
+            # (agents.core.extensions.runtime), exactly as declared.
             return
         from agents.core.capability_manifests import RollbackContract
 

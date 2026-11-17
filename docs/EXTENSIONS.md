@@ -234,6 +234,68 @@ refused (exit 97, reported as `tool_not_declared`) even if the host's view were 
 Anything the extension prints is swallowed; only the result envelope is read, so an
 extension cannot forge a result by printing one.
 
+## Install an author's extension (H566)
+
+An author ships a folder with three files — `extension.json` (the descriptor),
+`main.py` (`register()` plus `call`, `command` and/or `on_event` for what it declares)
+and `test_extension.py` (a unittest module that calls a handler and asserts). Or a
+Python distribution ships the same three files beside the descriptor it declares under
+`nerva.extensions`, listed in its `RECORD`.
+
+```console
+nerva extensions install ./boats            # or: nerva extensions install --installed boats
+nerva approvals accept 42                   # the card the install printed
+nerva extensions consent boats/extension.json
+nerva extensions activate boats/extension.json
+```
+
+`install` reads the files locally and sends them as text (`POST
+/api/plugins/extensions/install`, admin; the hub never reads a path from a request).
+The hub then runs the acquisition pipeline, unchanged, refusing at the first step that
+fails:
+
+1. **static checks** — the generator's own rules: stdlib allowlist, no file, process,
+   network, dynamic import or `__` introspection, no secret or personal data, a real
+   `register` and one handler per declared capability, a test that asserts;
+2. **quarantine** — an encrypted record whose package hash binds the source, the tests,
+   the descriptor and the version the package will install as;
+3. **sandbox verification** — in the acquisition profile's sealed container: the
+   author's tests, then a system-owned contract that `register()` returns exactly the
+   declared surface, then the same contract with `register` replaced, which must fail;
+4. **proposal** — the verified receipt crosses the `skill.install` kernel gate;
+5. **the card** — an `extensions.install` card at the irreversible tier showing each
+   capability's risk sentence, the tools/commands/events, the sha256 of `main.py` and of
+   the tests, the provenance and any package it replaces.
+
+Nothing is installed until a person accepts that exact card: a machine decider, an
+edited card, a payload that moved, a replayed card and a card for an unknown proposal
+are refused. Acceptance records the permanent owner decision and runs the existing
+install (receipt re-check, signing, rollback archive). The package installs as the
+descriptor's version and with provenance `owner-submitted`, which is never registered
+as a generic acquired tool: **installing grants nothing**, and the extension's surface
+appears only after `consent` and `activate`.
+
+## Reproduce a set of extensions: packs (H571)
+
+```console
+nerva extensions pack export nerva-pack.json ./boats ./tides
+nerva extensions pack install nerva-pack.json
+```
+
+A pack (`pack_version` 1, at most 1 MiB and 64 entries) pins each extension to its
+exact version and the sha256 of its `main.py`, its tests and its declared surface. A
+pin is 64 lowercase hex characters; there are no ranges, tags or "latest". Each entry
+names a folder beside the pack (relative, no `..`, not a symlink) or an installed
+distribution. A pack carries nothing but pins: `consent`, `granted_capabilities`,
+`capabilities_consent` and config seeds are refused by name — extensions have no host
+configuration, and an agreement cannot travel in a file.
+
+`pack install` verifies every entry against its pins first; any mismatch refuses the
+whole pack before anything is sent. It then submits each extension separately, in
+dependency order (`requires.extensions`), so a pack of N extensions is N install
+cards, each accepted on its own and each still needing its own consent. Nerva fetches
+no remote code: a pack reproduces a set across machines from the bytes it is given.
+
 ## Isolation, and what is not proven here
 
 The container is the acquisition profile's, unchanged: `--network none`,

@@ -270,6 +270,22 @@ def build_parser() -> argparse.ArgumentParser:
     extension_activate = extension_verbs.add_parser("activate", help="prove a consented descriptor in the sandbox and expose its tools and commands (owner)")
     extension_activate.add_argument("path", metavar="MANIFEST")
     extension_activate.add_argument("--json", action="store_true")
+    extension_install = extension_verbs.add_parser(
+        "install", help="verify an author's extension in the sandbox and queue its install card (owner)")
+    extension_install.add_argument("directory", nargs="?", metavar="DIR",
+                                   help="a folder with extension.json, main.py and test_extension.py")
+    extension_install.add_argument("--installed", metavar="ID",
+                                   help="an extension an installed Python distribution declares (never imported)")
+    extension_install.add_argument("--json", action="store_true")
+    extension_pack = extension_verbs.add_parser("pack", help="pin a set of extensions, or install a pinned set one card each")
+    pack_verbs = extension_pack.add_subparsers(dest="pack_action", required=True, metavar="action")
+    pack_export = pack_verbs.add_parser("export", help="write a pack pinning these author folders (offline)")
+    pack_export.add_argument("pack", metavar="PACK")
+    pack_export.add_argument("directories", nargs="+", metavar="DIR")
+    pack_export.add_argument("--json", action="store_true")
+    pack_install = pack_verbs.add_parser("install", help="verify every pin, then queue one install card per extension (owner)")
+    pack_install.add_argument("pack", metavar="PACK")
+    pack_install.add_argument("--json", action="store_true")
 
     status = verbs.add_parser("status", help="what the hub is doing right now")
     status.add_argument("--json", action="store_true")
@@ -1482,7 +1498,85 @@ def _restart_restore_warning(action: str, present: bool, state: str | None) -> s
     return None
 
 
+def _install_body(authored) -> dict:
+    from agents.core.extensions.submission import canonical_descriptor
+
+    return {"manifest": canonical_descriptor(authored.manifest), "source": authored.code,
+            "test": authored.test_code, "provenance": dict(authored.provenance)}
+
+
+_INSTALL_REASON = re.compile(r"[a-z_]{1,64}")
+
+
+def _say_install(ctx: Context, report: Any) -> bool:
+    """One install reply: the card to accept, or the named refusal. True on a queued card."""
+    if not isinstance(report, dict):
+        ctx.err.write("extension install returned a malformed response\n")
+        return False
+    if report.get("ok") is not True:
+        reason = report.get("reason")
+        ctx.say(f"Refused: {reason if isinstance(reason, str) and _INSTALL_REASON.fullmatch(reason) else 'unknown'}")
+        return False
+    task, ident, version = report.get("pending"), report.get("extension"), report.get("version")
+    if (not isinstance(task, int) or not isinstance(ident, str) or re.fullmatch(r"[a-z][a-z0-9_]{0,63}", ident) is None
+            or not isinstance(version, str) or re.fullmatch(r"[0-9A-Za-z.+-]{1,64}", version) is None):
+        ctx.err.write("extension install returned a malformed response\n")
+        return False
+    ctx.say(f"Verified {ident} {version} in the sandbox; install card #{task} is waiting for you.")
+    ctx.say(f"  Accept it in the HUD or with `nerva approvals accept {task}`; then consent and activate it.")
+    return True
+
+
+def cmd_extension_install(ns: argparse.Namespace, ctx: Context) -> int:
+    """H566 / H571: the author's path in, one approval card per extension."""
+    from agents.core.extensions.packs import PackError, export_pack, load_pack
+    from agents.core.extensions.submission import SubmissionError, read_directory, read_installed
+
+    if ns.action == "pack" and ns.pack_action == "export":
+        try:
+            pack = export_pack(ns.directories, ns.pack)
+        except PackError as exc:
+            ctx.err.write(f"{exc.reason}\n")
+            return EXIT_FAILED
+        if ns.json:
+            ctx.dump(pack)
+        else:
+            ctx.say(f"Pinned {len(pack['extensions'])} extension(s) in {ns.pack}.")
+        return EXIT_OK
+    try:
+        if ns.action == "pack":
+            authored = load_pack(ns.pack)
+        elif bool(ns.directory) == bool(ns.installed):
+            ctx.err.write("name a folder or pass --installed ID (not both)\n")
+            return EXIT_FAILED
+        else:
+            authored = [read_installed(ns.installed) if ns.installed else read_directory(ns.directory)]
+    except PackError as exc:
+        where = f" (entry {exc.index})" if exc.index is not None else ""
+        ctx.err.write(f"{exc.reason}{where}\n")
+        return EXIT_FAILED
+    except SubmissionError as exc:
+        ctx.err.write(f"{exc.reason}\n")
+        return EXIT_FAILED
+    reports, success = [], True
+    for item in authored:
+        # One request and one card per extension: a pack never collapses to one consent.
+        report = ctx.client().post("/api/plugins/extensions/install", _install_body(item))
+        reports.append(report)
+        if not ns.json:
+            success = _say_install(ctx, report) and success
+        else:
+            success = isinstance(report, dict) and report.get("ok") is True and success
+        if not success:
+            break
+    if ns.json:
+        ctx.dump(reports if ns.action == "pack" else reports[0])
+    return EXIT_OK if success else EXIT_FAILED
+
+
 def cmd_extensions(ns: argparse.Namespace, ctx: Context) -> int:
+    if ns.action in {"install", "pack"}:
+        return cmd_extension_install(ns, ctx)
     if ns.action == "doctor":
         from agents.core.extensions.doctor import doctor_installed, doctor_paths
 
