@@ -22,13 +22,13 @@ ollama>=0.6.3
 # tests/_route_introspect.iter_effective_routes. starlette is pinned below the 2.x
 # major (untested with this fastapi). Background:
 # docs/research/2026-06-19-fastapi-0.137-include-router-regression.md
-fastapi>=0.162.2,<0.163
+fastapi>=0.163.0,<0.164
 starlette>=1.10.0,<2.0
 uvicorn>=0.54.0
 psutil>=7.2.2
 # Nerva Workspace: PDF text extraction for uploaded documents, and IANA zones for
 # zoneinfo on hosts without a system zone database (report schedules).
-pypdf>=7.0.0,<8
+pypdf>=7.1.0,<8
 # python-docx: Word (.docx) text extraction for file_read (H444); without it a .docx
 # read returns parser_missing.
 python-docx>=1.2.0,<2
@@ -73,7 +73,7 @@ beautifulsoup4>=4.15.0
 
 # === Development ===
 pytest>=9.2.0
-pytest-asyncio>=1.4.1.post1
+pytest-asyncio>=1.5.0
 pytest-timeout>=2.4.0
 pytest-xdist>=3.8.0
 # AUD-10 (F37): fail fast on a stray real network call in a test instead of
