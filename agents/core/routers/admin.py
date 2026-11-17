@@ -117,35 +117,12 @@ class AdminPutBody(BaseModel):
     acknowledge_training: StrictBool = False
 
 
-#: Setting kinds whose value is a choice, never a secret: a switch, a pick from a list,
-#: a number. The audit row says what such a key became (H153 review: "when was the
-#: webhook receiver off?" had no answer in a row that named only the key). A model id is
-#: typed, not picked (``model-select`` takes any string), so it is free text: a pasted
-#: key would land in the row.
-_VALUE_AUDITED_KINDS = frozenset({"toggle", "select", "number", "slider"})
-
-
 def _audited_values(category: str, values: dict) -> str:
-    """``key=value`` for the keys whose declared kind is a choice; never a secret key,
-    never free text (a URL, a note or a typed model id can carry a credential)."""
-    from agents.core import settings_db
+    """AUD-8 — ``key=value`` for the choice-kind keys (``settings_audit.audited_values``,
+    the wording the offline CLI writes too)."""
+    from agents.core import settings_audit
 
-    kinds = {(row["category"], row["key"]): row.get("kind") for row in settings_db.DEFAULTS}
-    parts = []
-    for key in sorted(values):
-        if (category, key) == ("autonomy", "agent_modes"):
-            # H484: a validated map of agent id → mode; the row says what the write made it.
-            from agents.core.autonomy.mode import _map_text
-
-            parts.append(f"agent_modes={_map_text(values[key])}")
-            continue
-        if key in settings_db.SECRET_KEYS or kinds.get((category, key)) not in _VALUE_AUDITED_KINDS:
-            continue
-        try:
-            parts.append(f"{key}={json.dumps(values[key], ensure_ascii=False)[:64]}")
-        except (TypeError, ValueError):
-            continue
-    return " ".join(parts)
+    return settings_audit.audited_values(category, values)
 
 
 async def _audit_row(preview: str, action: str, category: str) -> None:
@@ -170,11 +147,9 @@ async def _audit_settings_change(category: str, keys: list, values: dict | None 
     """AUD-8: record a settings write in the audit log — the changed KEY NAMES, and the
     new value only for a key whose kind is a choice (a switch, a list pick, a number),
     never a secret or free text, so the row can't leak a secret that was just set."""
-    preview = f"settings.{category} updated: {sorted(keys)}"
-    shown = _audited_values(category, {key: (values or {}).get(key) for key in keys if key in (values or {})})
-    if shown:
-        preview = f"{preview} · {shown}"
-    await _audit_row(preview, "settings_update", category)
+    from agents.core import settings_audit
+
+    await _audit_row(settings_audit.change_preview(category, keys, values), settings_audit.ACTION, category)
 
 
 async def _managed_refusal(exc: Exception, category: str) -> JSONResponse:

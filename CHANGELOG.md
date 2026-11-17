@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### What changed for you — 2026-11-17
+
+**Configuration from the terminal, with fewer surprises**
+- `nerva config set` no longer replaces a whole group of settings with a single value by
+  accident: it asks you to add `--force` when you really mean it.
+- A mistyped setting name gets a suggestion: "did you mean llm.tool_loop_max_iterations?".
+- A change made with `nerva config set`, `unset` or `edit` is now on the audit log, worded
+  as a change made from the HUD is (secrets are never written there).
+- `nerva config env` lists every environment variable Nerva reads, whether it is set and
+  where from (never its value), its default and what it is for. A `.env` line Nerva does not
+  read (a typo, or a line from an older version) is flagged, with the name you probably
+  meant; `nerva doctor` flags it too.
+- After an upgrade, `nerva config check` tells you which settings and environment variables
+  are new since your previous version. The settings store now records its schema version;
+  a future rename or removal of a setting carries your value across, or keeps it aside and
+  says so, instead of silently losing it.
+
 ### What changed for you — 2026-11-12
 
 **Jobs missed while Nerva was off run once when it comes back**

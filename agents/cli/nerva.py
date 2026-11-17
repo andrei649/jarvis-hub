@@ -283,6 +283,8 @@ def build_parser() -> argparse.ArgumentParser:
     config_set = config_verbs.add_parser("set", help="change one setting: category.key[.path] value")
     config_set.add_argument("name", help=path_help)
     config_set.add_argument("value")
+    config_set.add_argument("--force", action="store_true",
+                            help="replace a whole section (an object) with a value that is not one")
     _selection_flags(config_set)
     config_unset = config_verbs.add_parser(
         "unset", help="put a setting back to its declared value, or remove one key inside a json setting")
@@ -304,6 +306,12 @@ def build_parser() -> argparse.ArgumentParser:
         "migrate", help="write this build's new defaults and retired-model replacements into an existing store")
     config_migrate.add_argument("--dry-run", action="store_true", help="print what would change; change nothing")
     config_migrate.add_argument("--json", action="store_true")
+    # H264 — the declared environment surface: set or unset per variable, what each is for,
+    # and the .env names nothing reads. Names and layers only, never a value.
+    config_env = config_verbs.add_parser(
+        "env", help="every environment variable the hub reads: set or unset, where from, what it is for")
+    config_env.add_argument("--set", action="store_true", help="only the variables that are set")
+    config_env.add_argument("--json", action="store_true")
     # G1 (H249/H267/H629) — what an administrator pinned, and whether writes are refused.
     config_managed = config_verbs.add_parser(
         "managed", help="the settings and environment values your administrator pinned (names, never a value)")
@@ -1966,7 +1974,7 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
             category, key, path = resolved
             row = next((r for r in settings.get_category(category) if r["key"] == key), None)
         if row is None:
-            ctx.err.write(f"no setting {ns.name}\n")
+            ctx.err.write(f"no setting {ns.name}{_did_you_mean(settings, ns.name)}\n")
             return EXIT_FAILED
         try:
             # A secret stays masked whole, wherever inside it the name points.
@@ -1982,7 +1990,8 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
         resolved = _resolve_name(settings, ns.name)
         spec = settings._SPEC.get(resolved[:2]) if resolved is not None else None
         if resolved is None or spec is None:
-            ctx.err.write(f"{ns.name} is not a declared setting (see `nerva config list`)\n")
+            ctx.err.write(f"{ns.name} is not a declared setting{_did_you_mean(settings, ns.name)} "
+                          "(see `nerva config list`)\n")
             return EXIT_FAILED
         category, key, path = resolved
         if (category, key) in settings.ROUTE_ONLY:
@@ -2012,6 +2021,15 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
                 value = copy.deepcopy(spec.get("value"))
             else:
                 value = _coerce(ns.value, kind)
+            if ns.action == "set" and not getattr(ns, "force", False):
+                # H257 — Hermes's `config set` guard: a whole section (an object) is not
+                # replaced by a value that is not one unless the owner says --force.
+                section = _section_replaced(settings.get_value(category, key, spec.get("value")), path, value)
+                if section is not None:
+                    ctx.err.write(f"{ns.name}: not changed — it holds a section of {section} key(s) and "
+                                  "the new value is not an object; rerun with --force to replace the "
+                                  "whole section\n")
+                    return EXIT_FAILED
         except ValueError as exc:  # settings_path.PathError is a ValueError
             ctx.err.write(f"{ns.name}: {exc}\n")
             return EXIT_FAILED
@@ -2045,6 +2063,8 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
         return _config_migrate(ns, ctx, settings)
     if ns.action == "managed":
         return _config_managed(ns, ctx)
+    if ns.action == "env":
+        return _config_env(ns, ctx)
     if ns.action == "check":
         problems: list[str] = []
         for cat, rows in settings.get_all().items():
@@ -2055,10 +2075,43 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
             for problem in problems:
                 ctx.say(f"  ✗ {problem}")
             ctx.say(f"{len(problems)} setting(s) do not match their declared schema")
-            return EXIT_FAILED
-        ctx.say("every stored setting matches its declared schema")
-        return EXIT_OK
+        else:
+            ctx.say("every stored setting matches its declared schema")
+        refused = _check_schema_version(ctx, settings)
+        _check_environment(ctx)
+        return EXIT_FAILED if problems or refused else EXIT_OK
     return EXIT_USAGE
+
+
+def _did_you_mean(settings: Any, name: str, limit: int = 3) -> str:
+    """H257 — `` — did you mean a.b, c.d?`` for a name no declared setting matches
+    (difflib over the declared ``category.key`` names), or ``""`` when nothing is close."""
+    import difflib
+
+    names = sorted(f"{category}.{key}" for category, key in settings._SPEC)
+    head = name if len(name) <= 200 else name[:200]
+    close = difflib.get_close_matches(head, names, n=limit, cutoff=0.6)
+    if not close:
+        # a dotted path below a key: suggest by the category.key part alone
+        stem = ".".join(head.split(".")[:2])
+        close = difflib.get_close_matches(stem, names, n=limit, cutoff=0.6) if stem != head else []
+    return f" — did you mean {', '.join(close)}?" if close else ""
+
+
+def _section_replaced(current: Any, path: list[Any], new: Any) -> int | None:
+    """H257 — how many keys the object a ``config set`` would replace holds, when it is an
+    object (a section) and *new* — the whole new value at the same place — is not one;
+    None when the write replaces no section."""
+    from agents.core import settings_path
+
+    try:
+        before = settings_path.get_in(current, path) if path else current
+    except settings_path.PathError:
+        return None                   # a new key: nothing is replaced
+    after = settings_path.get_in(new, path) if path else new
+    if isinstance(before, Mapping) and before and not isinstance(after, Mapping):
+        return len(before)
+    return None
 
 
 def _stamped(category: str, key: str, value: Any) -> Any:
@@ -2123,12 +2176,16 @@ def _write_setting(settings: Any, name: str, category: str, key: str, value: Any
             return [f"{name}: {exc}"]
     approval_key = category == "autonomy" and key in ("mode", "agent_modes")
     before = settings.get_value(category, key) if approval_key else None
+    # H257 — the write runs under the same settings-write lock as the route's
+    # (``autonomy.mode.locked_settings_write``; there is no live policy here to sync).
+    from agents.core.autonomy.mode import locked_settings_write
+
     try:
         if pair_state is not None:
-            settings.put_category(category, {key: value},
+            locked_settings_write(None, settings.put_category, category, {key: value},
                                   expected_pair_revision=pair_state[0])
         else:
-            settings.put_category(category, {key: value})
+            locked_settings_write(None, settings.put_category, category, {key: value})
     except (SelectionConflict, SelectionBusy, SelectionUnavailable):
         return [f'{name}: compatible provider/model changed or busy — not changed, retry']
     except ManagedRefused as exc:           # G1: the managed layer moved under this write
@@ -2140,6 +2197,13 @@ def _write_setting(settings: Any, name: str, category: str, key: str, value: Any
         from agents.core.autonomy.mode import audit_offline_write
 
         audit_offline_write(_audit_log(), key, before, value, actor="owner", surface="cli")
+    else:
+        # H257 — every other write is on the audit log in the route's own words (AUD-8):
+        # the key name, and the value only for a choice-kind key, never a secret.
+        from agents.core import settings_audit
+
+        settings_audit.record(_audit_log(), settings_audit.change_preview(category, [key], {key: value},
+                                                                          surface="cli"))
     if f"{category}.{key}" in retention.RETENTION_KEYS:
         # H262 review — a narrowing is a human decision too: the approval is lowered to it,
         # so deepening again later needs a new approval (never raised here).
@@ -2172,6 +2236,157 @@ def _managed_refusal(name: str, category: str, key: str, value: Any = None) -> s
                "settings_managed_refused")
         return f"{name}: {exc}"
     return ""
+
+
+def _env_surface(environ: Mapping[str, str]) -> tuple[dict, list[str]]:
+    """H264 — ``(the provenance table, every name the .env files and the environment set)``
+    for *environ*, as the hub's load would see them (a profile reads its own .env only).
+    Names only: no value is read into the result."""
+    from agents.core import env_provenance as ep
+    from agents.core.paths import user_home
+
+    profile_env = ep.profile_env_file(environ)
+    if profile_env is not None:
+        files = [profile_env]
+        table = ep.derive(None, profile_env, environ)
+    else:
+        def home_env(merged):
+            home = user_home(merged)
+            return home / ".env" if home is not None else None
+
+        files = [ep.REPO_ENV_FILE, home_env(ep.after_repo_layer(ep.REPO_ENV_FILE, environ))]
+        table = ep.derive(ep.REPO_ENV_FILE, home_env, environ)
+    names = list(environ)
+    for path in files:
+        if path is not None and ep.is_file_or_fifo(path) and not ep.is_fifo(path):
+            names += ep.env_file_keys(path)
+    return table, names
+
+
+def _unread_lines(names: list[str]) -> list[str]:
+    from agents.core import env_registry
+
+    lines = []
+    for item in env_registry.unread(names):
+        hint = f" — did you mean {item['did_you_mean']}?" if item["did_you_mean"] else ""
+        lines.append(f"  ⚠ {_plain(item['name'], 128)} is set but nothing reads it{hint}")
+    return lines
+
+
+def _config_env(ns: argparse.Namespace, ctx: Context) -> int:
+    """``nerva config env`` — Hermes's ``config check`` environment half: every variable the
+    registry declares, ✓ set (and the layer that supplies it) or ○ unset, with what it is
+    for; then the names that look like Nerva configuration but that nothing reads."""
+    from agents.core import env_provenance as ep
+    from agents.core import env_registry
+
+    try:
+        table, names = _env_surface(ctx.environ)
+    except RuntimeError as exc:         # a refused JARVIS_PROFILE
+        ctx.err.write(f"{exc}\n")
+        return EXIT_USAGE
+    every = env_registry.status(table)
+    rows = [row for row in every if row["set"]] if ns.set else every
+    if ns.json:
+        ctx.dump({"variables": rows, "unread": env_registry.unread(names),
+                  "documented": list(env_registry.documented_share())})
+        return EXIT_OK
+    for row in rows:
+        if row["set"]:
+            line = f"  ✓ {row['name']}  ({ep.LABELS.get(row['layer'], row['layer'])})"
+        else:
+            line = f"  ○ {row['name']}"
+            if row.get("default") == "(computed)":
+                line += "  (default computed at run time)"
+            elif "default" in row:
+                line += f"  (default {_plain(json.dumps(row['default'], ensure_ascii=False), 60)})"
+        if row["purpose"]:
+            line += f" → {_plain(row['purpose'], 160)}"
+        if row["required_when"] and not row["set"]:
+            line += f"  [{_plain(row['required_when'], 80)}]"
+        ctx.say(line)
+    ctx.say(f"{sum(1 for row in every if row['set'])} of {len(every)} declared variables set")
+    for line in _unread_lines(names):
+        ctx.say(line)
+    return EXIT_OK
+
+
+def _store_report(settings: Any) -> tuple[int, dict[str, Any] | None]:
+    """H258 — ``(the store's stamped schema version, its last post-migration report)``,
+    read-only; ``(0, None)`` when there is no store or it cannot be read."""
+    from agents.core import settings_ladder
+
+    store = Path(settings.DB_PATH)
+    if not store.exists():
+        return 0, None
+    try:
+        conn = sqlite3.connect(store.resolve().as_uri() + "?mode=ro", uri=True, timeout=5)
+        try:
+            return settings_ladder.read_report(conn)
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return 0, None
+
+
+def _migration_report_lines(settings: Any) -> list[str]:
+    """H258 — the last post-migration report: the steps that ran, the settings and the
+    environment variables new since the previous version (names only)."""
+    from agents.core import env_registry
+
+    _version, report = _store_report(settings)
+    if not report:
+        return []
+    lines = []
+    when = time.strftime("%Y-%m-%d %H:%M", time.localtime(float(report.get("at") or 0)))
+    lines.append(f"since the previous version (upgraded {when}, store schema {report.get('from_version')} → "
+                 f"{report.get('to_version')}):")
+    for step in report.get("steps") or []:
+        carried = "" if step.get("carried", True) else f" — not carried ({step.get('problem', '')}), kept aside"
+        lines.append(f"  {step.get('kind')} {step.get('setting')}{' → ' + step['to'] if step.get('to') else ''}"
+                     f"{carried}")
+    news = report.get("new_settings") or []
+    if news:
+        shown = ", ".join(news[:20]) + (f" … and {len(news) - 20} more" if len(news) > 20 else "")
+        lines.append(f"  {len(news)} new setting(s): {shown} (`nerva config list` shows them)")
+    entries = env_registry.entries()
+    for name in (report.get("new_env") or [])[:40]:
+        purpose = (entries.get(name) or {}).get("purpose") or ""
+        lines.append(f"  new environment variable {name}" + (f" → {_plain(purpose, 120)}" if purpose else ""))
+    if report.get("refused"):
+        lines.append(f"  ✗ {report.get('detail') or report['refused']}")
+    return lines
+
+
+def _check_schema_version(ctx: Context, settings: Any) -> bool:
+    """H258 — ``config check``'s schema line (and the last report); True when the store is
+    stamped below the support floor (``config check`` then fails)."""
+    from agents.core import settings_ladder
+
+    version, _report = _store_report(settings)
+    why = settings_ladder.verdict(version)
+    line = f"settings store schema: version {version} (this build {settings_ladder.STORE_VERSION})"
+    ctx.say(line + (f" — {settings_ladder.refusal_text(version, why)}" if why else ""))
+    for text in _migration_report_lines(settings):
+        ctx.say(text)
+    return why == "too_old"
+
+
+def _check_environment(ctx: Context) -> None:
+    """H264 — ``config check``'s environment lines: how many declared variables are set and
+    the names nothing reads (a warning: a stale line is not a schema problem)."""
+    from agents.core import env_registry
+
+    try:
+        table, names = _env_surface(ctx.environ)
+    except RuntimeError as exc:
+        ctx.say(f"environment: not checked — {exc}")
+        return
+    rows = env_registry.status(table)
+    ctx.say(f"environment: {sum(1 for row in rows if row['set'])} of {len(rows)} declared variables set "
+            "(`nerva config env` lists them)")
+    for line in _unread_lines(names):
+        ctx.say(line)
 
 
 def _config_managed(ns: argparse.Namespace, ctx: Context) -> int:
@@ -2512,6 +2727,10 @@ def _describe_change(change: Any, settings: Any) -> str:
         return f"seed     {change.setting} = {after}   ({change.why})"
     if change.kind == "kept":
         return f"kept     {change.setting}   ({change.why})"
+    if change.kind in ("rename", "reshape", "retire"):     # H258: names only, never a value
+        return f"{change.kind:<8} {change.setting}   ({change.why})"
+    if change.kind == "refused":
+        return f"refused  {change.why}"
     before = json.dumps(_shown({"key": key, "kind": kind, "value": change.before}, reveal=False), ensure_ascii=False)
     return f"{change.kind:<8} {change.setting}: {before} → {after}   ({change.why})"
 
@@ -2560,17 +2779,26 @@ def _config_migrate_run(ns: argparse.Namespace, ctx: Context, settings: Any, set
             ctx.say(f"created {store} with {count} declared settings")
         return EXIT_OK
     kept = [c for c in changes if c.kind == "kept"]
-    planned = [c for c in changes if c.kind != "kept"]
+    refused = [c for c in changes if c.kind == "refused"]
+    planned = [c for c in changes if c.kind not in ("kept", "refused")]
     done = planned if ns.dry_run else settings_migrate.apply(changes)
     if ns.json:
         doc: dict[str, Any] = {"dry_run": bool(ns.dry_run), "changes": [c.to_dict() for c in done],
                                "store": str(store)}
         if kept:
             doc["kept"] = [c.to_dict() for c in kept]
+        if refused:
+            doc["refused"] = refused[0].why
         ctx.dump(doc)
-        return EXIT_OK
-    for change in [*done, *kept]:
+        return EXIT_FAILED if refused else EXIT_OK
+    for change in [*done, *kept, *refused]:
         ctx.say("  " + _describe_change(change, settings))
+    if refused:
+        ctx.err.write("config migrate: the settings store was not migrated (see above)\n")
+        return EXIT_FAILED
+    if not ns.dry_run:
+        for line in _migration_report_lines(settings):
+            ctx.say(line)
     if not done:
         ctx.say(f"nothing to migrate: {store} holds every setting of this build")
     elif ns.dry_run:

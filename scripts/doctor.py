@@ -1018,6 +1018,15 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
         reason += (f"; {deprecated} key{'s' if deprecated != 1 else ''} use the deprecated JARVIS_ spelling "
                    f"(still honoured; NERVA_<X> is the preferred spelling of every JARVIS_<X>)")
     status = OK
+    stale = _unread_file_names(rows, ep)
+    if stale:
+        # H264: a .env line with Nerva's prefix that nothing reads — a typo or a line an
+        # older build read. The hub ignores it; the owner is told which variable was meant.
+        status = WARN
+        named = ", ".join(item["name"] + (f" (did you mean {item['did_you_mean']}?)" if item["did_you_mean"] else "")
+                          for item in stale)
+        reason = (f"unread_env_names:{len(stale)} — {named}: set in a .env file but nothing reads "
+                  f"{'it' if len(stale) == 1 else 'them'} (`nerva config env` lists every variable). " + reason)
     if unreadable:
         status = WARN
         reason = f"env_not_utf8:{','.join(unreadable)} — the hub's load fails on it. " + reason
@@ -1061,6 +1070,8 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
     data = {"sources": rows, "labels": dict(ep.LABELS)}
     if old_spelling:
         data["deprecated_spellings"] = old_spelling      # {the name set: the name to use}
+    if stale:
+        data["unread"] = stale                           # H264: [{name, did_you_mean}]
     if conflicts:
         data["spelling_conflicts"] = {layer: list(names) for layer, names in sorted(conflicts.items())}
     if refused:
@@ -1068,6 +1079,20 @@ def _config_sources(root: Path, env, opener, readyz) -> Check:
     if roots:
         data["root_paths"] = {layer: list(names) for layer, names in sorted(roots.items())}
     return Check("config_sources", status, reason, f"{where}; {detail}", data=data)
+
+
+def _unread_file_names(rows, ep) -> list:
+    """H264 — the rows a .env file supplies whose name carries Nerva's prefix and that the
+    declared registry does not know (``agents.core.env_registry.unread``). Never raises."""
+    try:
+        from agents.core import env_registry
+    except Exception:  # noqa: BLE001 — a broken install still gets the rest of the row
+        return []
+    names = [row["key"] for row in rows if row["layer"] in (ep.REPO_ENV, ep.USER_ENV)]
+    try:
+        return env_registry.unread(names)
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def _layers(value) -> list:

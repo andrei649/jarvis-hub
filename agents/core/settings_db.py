@@ -822,6 +822,7 @@ def init_db(force: bool = False):
 
 def _init_db_fenced(force: bool = False):
     _require_readable_store()
+    fresh = force or not DB_PATH.exists()
     conn = get_conn()
     # Replacing the old pair triggers and creating the shared choice epoch is a
     # single schema migration. A crash must never expose a store without the
@@ -839,6 +840,7 @@ def _init_db_fenced(force: bool = False):
     
     # Run INSERT OR IGNORE for all default settings to guarantee new updates are seeded dynamically
     inserted = 0
+    seeded: list[str] = []
     for row in DEFAULTS:
         if (preserve_skill_switches and row["category"] == "skills"
                 and row["key"] in {"disabled", "channel_disabled"}):
@@ -849,18 +851,30 @@ def _init_db_fenced(force: bool = False):
         )
         if cursor.rowcount > 0:
             inserted += 1
+            seeded.append(f"{row['category']}.{row['key']}")
             
     if inserted > 0:
         logger.info(f"Seeded {inserted} new default settings (total {len(DEFAULTS)})")
 
     _migrate_retired_claude_default(conn)
     _migrate_changed_defaults(conn)
+    # H258 — the version stamp, the rename/reshape/retire ladder and the post-migration
+    # report (new settings, new environment variables), in the same transaction.
+    from agents.core import settings_ladder
+
+    settings_ladder.run(conn, spec=_SPEC, validate=_ladder_validate, seeded=seeded, fresh=fresh)
     _refresh_labels(conn)
     conn.commit()
     conn.close()
     _require_readable_store()
     if force:
         _changed(None, None)
+
+
+def _ladder_validate(cat: str, data: dict[str, Any]) -> list[str]:
+    """H258 — a ladder step's carried value judged as a write of it would be (no
+    environment references expanded: the value is the owner's as stored)."""
+    return validate_category(cat, data, references=False)
 
 
 def _refresh_labels(conn: sqlite3.Connection) -> int:
