@@ -21,8 +21,14 @@
 - Remote (HTTP) servers can now ask for a completion or for your input, under the same
   per-server settings, approval cards and daily budget as local ones; the budget is kept
   across restarts.
-- Other apps writing through Nerva's MCP server are rate limited per client; a refused
-  call writes nothing and is on the audit log. Refused MCP calls tell the model not to retry.
+- Other apps writing through Nerva's MCP server are rate limited per client, and so are their
+  requests to Nerva's agents; a refused call writes nothing and is on the audit log. Refused
+  MCP calls tell the model not to retry.
+- Fixed before release (security review): the MCP write limit is now really enforced across
+  requests; launch commands hidden behind `env`, `timeout`, `uv run`, `npx`, `busybox` and
+  similar wrappers are checked too; instructions hidden in a tool's option lists, defaults or
+  look-alike letters are caught; a server process that ignores a stop request is killed with
+  its launcher; a private client key others can read is refused.
 
 **Configuration from the terminal, with fewer surprises**
 - `nerva config set` no longer replaces a whole group of settings with a single value by
