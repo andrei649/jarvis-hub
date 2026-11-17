@@ -131,17 +131,92 @@ def _one_shot(store, when, *, created):
     return store.get(job.id)
 
 
-@pytest.mark.parametrize("late, action", [(timedelta(minutes=2), None), (timedelta(hours=1), "queued"),
-                                          (timedelta(hours=7), "missed")])
-def test_one_shot_missed_while_down(env, late, action):
+class _Running:
+    running = True
+
+    def add_job(self, *args, **kwargs):
+        pass
+
+    def get_jobs(self):
+        return []
+
+    def remove_job(self, *args):
+        pass
+
+
+@pytest.mark.parametrize("late, action, live", [
+    (timedelta(minutes=2), None, True),        # the running scheduler's misfire window runs it
+    (timedelta(minutes=3), "queued", False),   # review r6(c): no scheduler, nothing else would
+    (timedelta(hours=1), "queued", True),
+    (timedelta(hours=7), "missed", True)])
+def test_one_shot_missed_while_down(env, late, action, live):
     store, runner, _prompts = env
+    if live:
+        runner._scheduler = lambda: _Running()
     when = DAY0 + timedelta(hours=9)
     job = _one_shot(store, when, created=DAY0)
     outcomes = runner.fire_overdue_jobs(now=when + late)
-    # Inside the scheduler's own misfire window the in-process trigger still runs it.
     assert [o["action"] for o in outcomes] == ([] if action is None else [action])
     if action:
         assert outcomes[0]["job_id"] == job.id
+
+
+# Review repro r6(a): a forward clock at boot must not raise the fallback ticker's
+# high-water mark and so starve the real slots.
+@pytest.mark.asyncio
+async def test_forward_clock_at_boot_does_not_block_real_slots(env):
+    store, runner, prompts = env
+    job = _job(store, "0 9 * * *", at=DAY0 + timedelta(hours=8))
+    runner.fire_overdue_jobs(now=DAY0 + timedelta(days=30, hours=10))   # RTC/NTP glitch
+    await runner.drain_manual()
+    before = len(prompts)
+    await runner.tick(now=DAY0 + timedelta(days=1, hours=9))           # real 09:00 next day
+    assert len(prompts) == before + 1, store.runs(job.id, limit=5)
+
+
+def test_a_clock_ahead_of_the_wall_clock_catches_nothing_up(env):
+    store, runner, _prompts = env
+    _job(store, "0 9 * * *", at=DAY0)
+    future = datetime.now(UTC) + timedelta(days=2)
+    assert runner.fire_overdue_jobs(now=future) == []
+    assert store.dispatch.outstanding() == []
+
+
+# Review repro r6(b): an enqueue refusal must not consume the slot.
+def test_enqueue_refusal_does_not_consume_the_slot(env, monkeypatch):
+    store, runner, _ = env
+    _job(store, "0 9 * * *", at=DAY0 + timedelta(hours=8))
+    now = DAY0 + timedelta(hours=10)
+    real = store.dispatch.enqueue
+
+    def full(*a, **k):
+        raise ValueError("manual request capacity reached; wait for queued work")
+
+    monkeypatch.setattr(store.dispatch, "enqueue", full)
+    assert runner.fire_overdue_jobs(now=now) == []
+    monkeypatch.setattr(store.dispatch, "enqueue", real)
+    assert [o["action"] for o in runner.fire_overdue_jobs(now=now)] == ["queued"]
+
+
+def test_catch_up_is_capped_per_boot(env, monkeypatch):
+    from agents.core.autonomy import jobs as jobs_module
+
+    store, runner, _ = env
+    monkeypatch.setattr(jobs_module, "CATCH_UP_MAX_PER_BOOT", 2)
+    for _ in range(3):
+        _job(store, "0 9 * * *", at=DAY0 + timedelta(hours=8))
+    actions = sorted(o["action"] for o in runner.fire_overdue_jobs(now=DAY0 + timedelta(hours=10)))
+    assert actions == ["missed", "queued", "queued"]
+
+
+def test_window_follows_the_crons_own_period_not_the_weekend_gap(env):
+    store, runner, _ = env
+    friday = datetime(2026, 11, 13, tzinfo=UTC)
+    _job(store, "0 9 * * 1-5", at=friday)                # weekdays at 09:00
+    # Friday 09:00 missed, now Friday 17:00: 8 h late. The daily period gives a 6 h window
+    # (the 3-day gap to Monday would have allowed it).
+    outcomes = runner.fire_overdue_jobs(now=friday + timedelta(hours=17))
+    assert [o["action"] for o in outcomes] == ["missed"]
 
 
 @pytest.mark.asyncio

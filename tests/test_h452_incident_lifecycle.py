@@ -84,7 +84,7 @@ def test_incident_carries_its_type_and_alerts_once(store):
 
 
 @pytest.mark.asyncio
-async def test_a_paused_job_alerts_once_per_signature(store, alerts):
+async def test_a_paused_job_alerts_once_per_pause_episode(store, alerts):
     job = store.create(name="daily", schedule_text="every day at 9",
                        action={"type": "remind", "message": "stand up", "channel": "nowhere"})
     runner = JobRunner(store, orch=SimpleNamespace(channels={}), scheduler=lambda: None, quiet=lambda: False)
@@ -95,16 +95,23 @@ async def test_a_paused_job_alerts_once_per_signature(store, alerts):
     assert incident["state"] == "alerted"
     assert alerts[0].meta["incident_id"] == incident["id"]
     assert alerts[0].meta["failure_type"] == incident["failure_type"] == "delivery"
-    # Resumed, it fails the same way again: it pauses itself again, but does not re-alert.
-    runner.resume(job.id)
-    for _ in range(MAX_FAILURES):
-        await runner.fire(job.id)
-    assert store.get(job.id).paused_reason and len(alerts) == 1
-    # Acknowledged (closed) stays closed: still no new alert.
+    # Further firings of the paused job are skipped: no second alert while it stays paused.
+    await runner.fire(job.id)
+    assert len(alerts) == 1
+    # The owner acknowledges and resumes: a new episode, so the same signature may alert again.
     store.incidents.ack(incident["id"])
     runner.resume(job.id)
+    assert store.incidents.list(job_id=job.id)[0]["state"] == "detected"
     for _ in range(MAX_FAILURES):
         await runner.fire(job.id)
+    assert len(alerts) == 2
+
+
+def test_alerted_signature_does_not_alert_again_without_a_resume(store, alerts):
+    job = _job(store)
+    runner = _runner(store)
+    for _ in range(MAX_FAILURES + 2):              # the job is forced on after it paused
+        runner._failed(store.get(job.id), utc_now(), RuntimeError("model backend down"))
     assert len(alerts) == 1
 
 
@@ -119,12 +126,15 @@ def test_a_new_error_is_a_new_incident_that_may_alert(store, alerts):
         runner._failed(store.get(job.id), utc_now(), RuntimeError("401 Unauthorized"))
     assert len(alerts) == 2
     kinds = {row["failure_type"]: row["state"] for row in store.incidents.list(job_id=job.id)}
-    assert kinds == {"agent": "alerted", "auth": "alerted"}
+    assert kinds == {"agent": "detected", "auth": "alerted"}
 
 
-def test_an_alert_that_cannot_be_persisted_is_released(store, monkeypatch):
+@pytest.mark.parametrize("failure", ["raises", "reports"])
+def test_an_alert_that_cannot_be_persisted_is_released(store, monkeypatch, failure):
     def broken(log):
-        raise OSError("disk full")
+        if failure == "raises":
+            raise OSError("disk full")
+        return False
 
     monkeypatch.setattr(error_logger, "persist_problem", broken)
     job = _job(store)
@@ -133,6 +143,39 @@ def test_an_alert_that_cannot_be_persisted_is_released(store, monkeypatch):
         runner._failed(store.get(job.id), utc_now(), RuntimeError("model backend down"))
     (incident,) = store.incidents.list(job_id=job.id)
     assert incident["state"] == "detected" and incident["alerted_at"] is None
+
+
+# Review repro r5: the real problem log cannot be written (persist_problem used to swallow
+# the OSError, so the claim was never released).
+@pytest.mark.asyncio
+async def test_unwritable_problem_log_releases_the_alert_claim(tmp_path, monkeypatch):
+    from agents.core import settings_db
+
+    monkeypatch.setenv("JARVIS_HOME", str(tmp_path))
+    monkeypatch.setattr(settings_db, "DB_PATH", tmp_path / "settings.db")
+    settings_db.init_db(force=True)
+    (tmp_path / "problems.jsonl").mkdir()          # open(..., "a") -> IsADirectoryError
+    local = JobStore(tmp_path / "jobs.db")
+
+    async def boom(prompt, **kwargs):
+        raise RuntimeError("provider exploded")
+
+    try:
+        job = local.create(name="j", schedule_text="every day at 9",
+                           action={"type": "ask", "prompt": "x", "deliver": False})
+        runner = JobRunner(local, orch=SimpleNamespace(process_detailed=boom),
+                           scheduler=lambda: None, quiet=lambda: False)
+        for _ in range(MAX_FAILURES):
+            await runner.fire(job.id, force=True)
+        incidents = local.incidents.list(job_id=job.id)
+        assert incidents and incidents[0]["state"] == "detected", incidents
+    finally:
+        local.close()
+
+
+def test_credential_override_is_classified_config_not_auth():
+    assert classify_failure("JobGuardBlocked", "job carries an endpoint/credential override (base_url); "
+                            "refusing to run a job that could send a stored key elsewhere") == "config"
 
 
 def test_an_existing_store_gains_the_columns(tmp_path):

@@ -28,23 +28,30 @@ def safe_diagnostic(value: object, *, broker=None) -> str:
 
 
 # H452 — the eight failure types, checked in this order over the error code and the
-# redacted diagnostic (Hermes cron/incidents.py keyword classes, word-bounded here).
+# redacted diagnostic (Hermes cron/incidents.py keyword classes). Keywords are word-bound;
+# ``(?<=[a-z])`` also lets a CamelCase error name (JobRunTimeout) count as a word.
 FAILURE_TYPES = ("rate_limit", "timeout", "auth", "delivery", "config", "script", "agent", "unknown")
+_W = r"(?:\b|(?<=[a-z]))"
 _FAILURE_RULES = (
-    ("rate_limit", re.compile(r"\b429\b|rate[ _-]?limit|usage limit|quota", re.IGNORECASE)),
-    ("timeout", re.compile(r"timeout|timed out|deadline", re.IGNORECASE)),
-    ("auth", re.compile(r"\b40[13]\b|unauthori[sz]ed|authenticat|\bauth\b|forbidden|credential|api key",
-                        re.IGNORECASE)),
-    ("delivery", re.compile(r"\bdeliver(?:y|ed|ing)?\b|channel", re.IGNORECASE)),
-    ("config", re.compile(r"config|validation|invalid|unsupported|must be|required|guard|blocked|refus|settings",
-                          re.IGNORECASE)),
-    ("script", re.compile(r"script|no_agent|terminal|stdout", re.IGNORECASE)),
-    ("agent", re.compile(r"\bagent\b|model|provider|inference|backend|llm", re.IGNORECASE)),
+    ("rate_limit", re.compile(r"\b429\b|\brate[ _-]?limit|\busage limit\b|\bquota\b", re.IGNORECASE)),
+    ("timeout", re.compile(_W + r"time(?:out|d out)\b|\bdeadline\b", re.IGNORECASE)),
+    ("auth", re.compile(r"\b40[13]\b|\bunauthori[sz]ed\b|\bauthenticat\w*|\bauth\b|\bforbidden\b|"
+                        r"\bcredentials?\b|\bapi key\b", re.IGNORECASE)),
+    ("delivery", re.compile(r"\bdeliver(?:y|ed|ing)?\b|\bchannel\b", re.IGNORECASE)),
+    ("config", re.compile(r"\bconfig(?:uration)?\b|\bvalidation\b|\binvalid\b|\bunsupported\b|\bmust be\b|"
+                          r"\brequired\b|\bguard\b|\bblocked\b|\brefus\w*|\bsettings", re.IGNORECASE)),
+    ("script", re.compile(_W + r"[Ss]cripts?(?:\b|(?=[A-Z]))|\bno_agent\b|\bterminal\b|\bstdout\b")),
+    ("agent", re.compile(r"\bagents?\b|\bmodels?\b|\bproviders?\b|\binference\b|\bbackends?\b|\bllm\b",
+                         re.IGNORECASE)),
 )
+# A guard refusal is the job's configuration being refused, whatever words it quotes.
+_CONFIG_CODES = frozenset({"JobGuardBlocked", "SelectionError", "SettingsUnreadable"})
 
 
 def classify_failure(error_code: object, error: object) -> str:
     """One of :data:`FAILURE_TYPES` for a failure's code and redacted diagnostic."""
+    if str(error_code) in _CONFIG_CODES:
+        return "config"
     text = f"{error_code} {error}"[:2 * MAX_ERROR]
     for name, rule in _FAILURE_RULES:
         if rule.search(text):
@@ -151,6 +158,15 @@ class JobIncidents:
             self.store._conn.execute("UPDATE job_incidents SET state='detected', alerted_at=NULL "
                                      "WHERE id=? AND state='alerted'", (int(incident_id),))
             self.store._conn.commit()
+
+    def rearm(self, job_id: str) -> int:
+        """alerted/closed -> detected for one job's incidents (the owner resumed it)."""
+        with self.store._lock:
+            cursor = self.store._conn.execute(
+                "UPDATE job_incidents SET state='detected', alerted_at=NULL "
+                "WHERE job_id=? AND state IN ('alerted','closed')", (str(job_id),))
+            self.store._conn.commit()
+        return cursor.rowcount
 
     def ack(self, incident_id: int) -> dict | None:
         if type(incident_id) is not int or incident_id <= 0:

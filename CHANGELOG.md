@@ -10,26 +10,41 @@
   half the job's interval, between 5 minutes and 6 hours (6 hours for a one-time job).
   Older misses are listed in the job's history as "missed while the hub was down" instead
   of all running at once. Paused jobs, the emergency stop and quiet hours still apply,
-  and jobs that run every 15 minutes or more often just wait for their next time.
+  and jobs that run every 15 minutes or more often just wait for their next time. At most
+  20 jobs are caught up at one start, and a clock that is set wrong (ahead) catches
+  nothing up.
 
 **A scheduled job cannot be turned against you or against Nerva itself**
 - A job whose prompt hides instructions ("ignore previous instructions"), invisible
   characters, or commands that leak secrets (sending an API key with `curl`, reading
-  `~/.env`, adding an SSH key) is refused when you create or edit it, and again when it
-  runs, even if it was written straight into the job database.
+  `~/.env`, appending to `authorized_keys`) is refused when you create or edit it. Prose
+  that only mentions these things ("summarize the IAM credentials report") is fine.
+- If an existing job is refused when it runs (for example after this update, or because
+  it was written straight into the job database), it is paused with the reason and you
+  get one notice; it does not count as a failure.
 - Text a job pulls in when it runs (its last output, another job's output, a script's
-  output, a watched page) is cleaned of invisible characters; if it contains an outright
-  "ignore your instructions" line, that run stops before the model sees it and the job's
-  history says why. Quoted commands in that text (a bug report that mentions `rm -rf /`)
-  are fine.
+  output, a watched page) is cleaned of invisible characters. If it contains an
+  "ignore your instructions" line, the model is told it is quoted data, and the job keeps
+  running: a page someone else controls cannot stop your job.
 - A job that would stop, restart, update or uninstall Nerva (`systemctl restart
-  jarvis-hub`, killing the hub process, `nerva update apply`, the uninstall script, the
-  restart route), in its prompt, its script or any script that script runs, is refused.
-  A job's own model turn cannot run such a command either. Restarting other things
-  ("restart the router") is not affected.
+  jarvis-hub`, killing the hub process, `nerva update apply`, `nerva service uninstall`,
+  the uninstall script, the restart route), in its prompt or its script, is refused, and so
+  is a job whose command Nerva cannot read (a program piped into a shell, a script written
+  and then run, a service named by a variable). A scheduled script may not run other script
+  files: put everything it needs in the one file. A job's own model turn cannot run such a
+  command, type it on the desktop, or rewrite Nerva's `.env` or service files either.
+  Restarting other things ("restart the router") is not affected.
 - A job can no longer be pointed at another server with your stored model key: an
   endpoint or key written into its settings stops the run, and a pinned provider is
   checked against your signed provider choice every time it fires.
+
+**Job failures say what kind they are, and alert you once per pause**
+- Each job incident now carries a type — rate limit, timeout, sign-in, delivery,
+  configuration, script, model or unknown — in `nerva jobs incidents` and the incidents API.
+- When a job pauses itself after repeated failures you are alerted once; the same failure
+  while it stays paused does not alert again. Resuming the job starts afresh, so it can
+  alert you again if it fails the same way. If the alert cannot be written, it is retried
+  the next time instead of being lost.
 
 **Nerva does not answer itself or the same message twice**
 - When WhatsApp, Signal, Matrix, Teams or Google Chat send the same message again (a retry),

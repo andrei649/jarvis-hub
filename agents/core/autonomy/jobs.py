@@ -597,6 +597,10 @@ CATCH_UP_LOOKBACK_S = 31 * 86400
 CATCH_UP_MAX_STEPS = 5000
 # APScheduler's misfire grace for the in-process triggers (a one-shot inside it still runs).
 ONE_SHOT_MISFIRE_S = 300
+# At most this many catch-up runs are queued per boot; the rest are recorded as missed.
+CATCH_UP_MAX_PER_BOOT = 20
+# A boot clock this far ahead of the wall clock is not trusted to decide what was missed.
+CATCH_UP_CLOCK_SKEW_S = 300
 
 
 def catch_up_grace(slot_gap: float | None) -> float:
@@ -630,16 +634,21 @@ def last_missed_slot(job, now: datetime, timezone, anchor: datetime) -> tuple[da
     slot = trigger.get_next_fire_time(None, start)
     if slot is not None and slot <= start:
         slot = trigger.get_next_fire_time(slot, start + timedelta(seconds=1))
-    last = None
+    last = prior = None
     for _ in range(CATCH_UP_MAX_STEPS):
         if slot is None or slot > now:
             break
-        last = slot
+        prior, last = last, slot
         slot = trigger.get_next_fire_time(slot, slot + timedelta(seconds=1))
     if last is None:
         return None, None
     following = trigger.get_next_fire_time(last, last + timedelta(seconds=1))
-    return last, (None if following is None else (following - last).total_seconds())
+    # The cron's own period around that slot: the shorter gap on either side, so a
+    # weekday job's Friday slot is judged by its daily period, not the weekend gap.
+    gaps = [(following - last).total_seconds()] if following is not None else []
+    if prior is not None:
+        gaps.append((last - prior).total_seconds())
+    return last, (min(gaps) if gaps else None)
 
 
 def first_run_margin(slot_gap: float | None) -> float:
@@ -1074,6 +1083,26 @@ class JobStore:
         if all(value is None for value in (name, schedule_text, action, options, continuity, context_from)):
             raise ValueError("an edit needs a name, a schedule or an action")
 
+        # H457: the unattended-lane guards may read referenced scripts, so they run on the
+        # proposed job before the store lock is taken; the transaction then checks that the
+        # job it edits is the one that was guarded.
+        guarded = None
+        if action is not None or options is not None or continuity is not None or context_from is not None:
+            before = self.get(job_id)
+            if before is None:
+                raise KeyError(job_id)
+            proposed = options
+            if continuity is not None or context_from is not None:
+                proposed = dict(before.options)
+                if continuity is not None:
+                    proposed["continuity"] = continuity
+                if context_from is not None:
+                    proposed["context_from"] = context_from
+            if proposed is None:
+                proposed = before.options
+            from .jobs_guard import guard_job, guard_key
+            guard_job(dict(action) if action is not None else before.action, proposed)
+            guarded = guard_key(dict(action) if action is not None else before.action, proposed)
         with self._lock:
             conn = self._conn
             conn.execute("BEGIN IMMEDIATE")
@@ -1107,8 +1136,11 @@ class JobStore:
                         raise ValueError("; ".join(errors))
                     if action is not None:
                         fields["action"] = dict(action)
-                    from .jobs_guard import guard_job
-                    guard_job(fields.get("action", current.action), fields.get("options", current.options))
+                    from .jobs_guard import guard_key
+                    effective = guard_key(fields.get("action", current.action), fields.get("options", current.options))
+                    if effective != guarded:
+                        # Changed between the unlocked guard pass and this transaction.
+                        raise ValueError("the job changed while it was being edited; try again")
                 if schedule_text is not None:
                     text = str(schedule_text).strip()
                     if not text:
@@ -1146,6 +1178,28 @@ class JobStore:
         zone = getattr(self, "schedule_zone", None)
         return zone() if callable(zone) else app_schedule_timezone()
 
+    def ensure_catch_up_claims(self) -> None:
+        with self._lock:
+            self._conn.execute("CREATE TABLE IF NOT EXISTS job_catch_ups (job_id TEXT NOT NULL, "
+                               "slot TEXT NOT NULL, claimed_at TEXT NOT NULL, PRIMARY KEY(job_id, slot))")
+            self._conn.commit()
+
+    def claim_catch_up(self, job_id: str, slot: str) -> bool:
+        """Claim one missed slot for catch-up, once across boots and processes (H459)."""
+        with self._lock:
+            cursor = self._conn.execute("INSERT OR IGNORE INTO job_catch_ups(job_id, slot, claimed_at) "
+                                        "VALUES (?, ?, ?)", (job_id, slot, utc_now()))
+            # Bounded: only a job's newest claims can matter (slots are newest-first).
+            self._conn.execute("DELETE FROM job_catch_ups WHERE job_id=? AND slot NOT IN (SELECT slot FROM "
+                               "job_catch_ups WHERE job_id=? ORDER BY slot DESC LIMIT 32)", (job_id, job_id))
+            self._conn.commit()
+            return cursor.rowcount == 1
+
+    def release_catch_up(self, job_id: str, slot: str) -> None:
+        with self._lock:
+            self._conn.execute("DELETE FROM job_catch_ups WHERE job_id=? AND slot=?", (job_id, slot))
+            self._conn.commit()
+
     def claim_tick(self, job_id: str, slot: str) -> bool:
         with self._lock:
             cursor = self._conn.execute(
@@ -1175,6 +1229,9 @@ class JobStore:
                 self._conn.execute("DELETE FROM job_notepad_kv WHERE job_id = ?", (str(job_id),))
                 self._conn.execute("DELETE FROM job_held WHERE job_id = ?", (str(job_id),))
                 self._conn.execute("DELETE FROM job_ticks WHERE job_id = ?", (str(job_id),))
+                self._conn.execute("CREATE TABLE IF NOT EXISTS job_catch_ups (job_id TEXT NOT NULL, "
+                                   "slot TEXT NOT NULL, claimed_at TEXT NOT NULL, PRIMARY KEY(job_id, slot))")
+                self._conn.execute("DELETE FROM job_catch_ups WHERE job_id = ?", (str(job_id),))
                 self._prune_run_history_locked(self._conn, str(job_id))
                 self._conn.commit()
             except BaseException:
@@ -1355,7 +1412,11 @@ class JobStore:
         return self.update(job_id, paused_reason=str(reason or "paused")[:MAX_TEXT])
 
     def resume(self, job_id: str) -> Job:
-        return self.update(job_id, paused_reason=None, consecutive_failures=0, enabled=True)
+        job = self.update(job_id, paused_reason=None, consecutive_failures=0, enabled=True)
+        # H452 — the owner resuming a job starts a new episode: an acknowledged or
+        # already-alerted signature may alert again if the job pauses itself again.
+        self.incidents.rearm(job_id)
+        return job
 
     def record_run(
         self,
@@ -1698,15 +1759,27 @@ class JobRunner:
         slot. Within :func:`catch_up_grace` it is queued once as a ``catch_up`` request,
         drained under the shared job gate like any slot (emergency stop, pause,
         validation, the unattended guards, repeat limits and quiet hours all apply);
-        older, it is recorded as a skipped run. Each slot is claimed in ``job_ticks``,
-        so a second boot or a second process never runs it twice. Safe mode catches
-        nothing up.
+        older (or over :data:`CATCH_UP_MAX_PER_BOOT`), it is recorded as a skipped run.
+        Each slot is claimed in ``job_catch_ups`` — not the fallback ticker's
+        ``job_ticks`` high-water mark — so a second boot or process never runs it twice;
+        a claim whose enqueue fails is released. A clock ahead of the wall clock catches
+        nothing up; without a running scheduler a one-shot inside the 300 s misfire
+        window is caught up here too. Safe mode catches nothing up.
         """
         if self._held():
             return []
         timezone = self.scheduler_timezone()
-        now = (now or datetime.now(UTC)).astimezone(timezone)
+        wall = datetime.now(UTC)
+        now = (now or wall).astimezone(timezone)
+        if (now - wall).total_seconds() > CATCH_UP_CLOCK_SKEW_S:
+            # Never catch up a slot that has not happened on the wall clock.
+            logger.warning("missed-slot catch-up skipped: the clock given (%s) is ahead of the wall clock",
+                           now.isoformat())
+            return []
+        self.store.ensure_catch_up_claims()
+        live_scheduler = self.scheduler_alive()
         outcomes: list[dict] = []
+        queued = 0
         for job in self.store.list():
             if not job.runnable:
                 continue
@@ -1725,24 +1798,33 @@ class JobRunner:
             if slot is None or (gap is not None and gap <= CATCH_UP_MIN_GAP_S):
                 continue
             late = (now - slot).total_seconds()
-            if gap is None and late <= ONE_SHOT_MISFIRE_S:
-                continue   # the scheduler's own misfire window still runs this one-shot
-            if not self.store.claim_tick(job.id, slot.astimezone(UTC).isoformat()):
+            if gap is None and late <= ONE_SHOT_MISFIRE_S and live_scheduler:
+                continue   # the running scheduler's own misfire window still runs this one-shot
+            slot_key = slot.astimezone(UTC).isoformat()
+            # Claimed in its own table (one row per job and slot), never in job_ticks: a
+            # catch-up must not raise the fallback ticker's high-water mark.
+            if not self.store.claim_catch_up(job.id, slot_key):
                 continue
-            outcome = {"job_id": job.id, "slot": slot.astimezone(UTC).isoformat(), "late_s": int(late)}
-            if late <= catch_up_grace(gap):
+            outcome = {"job_id": job.id, "slot": slot_key, "late_s": int(late)}
+            within = late <= catch_up_grace(gap)
+            if within and queued < CATCH_UP_MAX_PER_BOOT:
                 try:
                     receipt = self.store.dispatch.enqueue(job.id, origin="catch_up")
                 except (ValueError, sqlite3.Error) as exc:
+                    # Not queued, so not consumed: a later boot may try this slot again.
                     logger.warning("job %s: catch-up not queued: %s", job.id, exc)
+                    self.store.release_catch_up(job.id, slot_key)
                     continue
+                queued += 1
                 outcomes.append({**outcome, "action": "queued", "request": receipt})
             else:
+                why = (f"is past its {int(catch_up_grace(gap))}s catch-up window" if not within
+                       else f"is over this boot's cap of {CATCH_UP_MAX_PER_BOOT} catch-up runs")
                 stamp = utc_now()
                 self.store.record_run(
                     job.id, started_at=stamp, finished_at=stamp, status=STATUS_SKIPPED,
-                    summary=(f"missed while the hub was down: the {outcome['slot']} slot is past its "
-                             f"{int(catch_up_grace(gap))}s catch-up window; the next slot runs as scheduled"),
+                    summary=(f"missed while the hub was down: the {slot_key} slot {why}; "
+                             "the next slot runs as scheduled"),
                 )
                 outcomes.append({**outcome, "action": "missed"})
         if any(item["action"] == "queued" for item in outcomes):
@@ -1960,6 +2042,7 @@ class JobRunner:
                 job_id, started_at=started, finished_at=utc_now(), status=STATUS_SKIPPED,
                 summary="emergency stop engaged",
             )
+        from .jobs_guard import JobGuardBlocked
         try:
             from .jobs_guard import check_credential_pair, guard_job
             # H457 — use-time backstops for records written outside the validating API:
@@ -1970,6 +2053,8 @@ class JobRunner:
             if errors:
                 raise ValueError('; '.join(errors))
             guard_job(job.action, job.options, read_scripts=False)
+        except JobGuardBlocked as exc:
+            return self._guard_blocked(job, started, exc)
         except ValueError as exc:
             return self._failed(job, started, exc)
         script_job = bool(job.options.get('script') or job.options.get('monitor_script')
@@ -2052,13 +2137,43 @@ class JobRunner:
         logger.warning("job %s failed (%d consecutive): %s", job.id, failures, run.error)
         return run
 
+    def _guard_blocked(self, job: Job, started: str, exc: Exception) -> JobRun:
+        """An unattended-lane guard refused the job as it now stands (H457).
+
+        Not a failure: it does not count toward the three-failure pause and opens no
+        incident. The job is paused with the guard's reason and the owner gets one
+        E_JOB_BLOCKED notice, so a job that an upgrade's guards refuse is never paused
+        silently. Editing the job (or resuming it once fixed) is the way back.
+        """
+        from .jobs_incidents import safe_diagnostic
+
+        reason = safe_diagnostic(f"blocked by the unattended-lane guard: {exc}")[:MAX_TEXT]
+        with contextlib.suppress(KeyError):
+            self.store.update(job.id, paused_reason=reason)
+        self.unregister(job.id)
+        try:
+            from agents.core.autonomy.error_logger import persist_problem
+            from agents.core.errors import ErrorCategory, ErrorLog, ErrorSeverity
+
+            persist_problem(ErrorLog(
+                code="E_JOB_BLOCKED", message=f"job '{job.name}' was paused: {reason}",
+                category=ErrorCategory.INTERNAL, severity=ErrorSeverity.WARNING,
+                component=f"job:{job.id}", timestamp=self._now(), meta={"job_id": job.id},
+            ))
+        except Exception:
+            logger.warning("job guard notice could not be persisted", exc_info=True)
+        logger.warning("job %s paused by the unattended-lane guard: %s", job.id, reason)
+        return self.store.record_run(job.id, started_at=started, finished_at=utc_now(),
+                                     status=STATUS_SKIPPED, summary=reason)
+
     def _incident(self, job: Job, error: str, failures: int) -> None:
         """One acknowledgeable incident when a job pauses itself — not one ping per failure.
 
         H452: the alert is claimed on the incident first (detected -> alerted), so one
         signature alerts the owner once; a signature already alerted or acknowledged
         (closed is terminal) pauses the job with its recorded reason but alerts no more.
-        An alert that cannot be persisted releases the claim for a later attempt.
+        An alert that cannot be persisted (the write reports failure or raises) releases
+        the claim for a later attempt. Resuming a job rearms its signatures (H452 m8).
         """
         incident = None
         try:
@@ -2070,7 +2185,7 @@ class JobRunner:
                 from agents.core.autonomy.error_logger import persist_problem
                 from agents.core.errors import ErrorCategory, ErrorLog, ErrorSeverity
 
-                persist_problem(
+                written = persist_problem(
                     ErrorLog(
                         code="E_JOB_PAUSED",
                         message=(f"job '{job.name}' paused itself after {failures} consecutive "
@@ -2083,6 +2198,8 @@ class JobRunner:
                               "failure_type": incident["failure_type"]},
                     )
                 )
+                if written is False:
+                    raise OSError("the problem log could not be written")
             except Exception:
                 logger.warning("job incident could not be persisted", exc_info=True)
                 with contextlib.suppress(Exception):

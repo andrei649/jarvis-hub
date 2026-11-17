@@ -41,7 +41,7 @@ Fiecare rând aparține unui singur domeniu din [areas.json](docs/hermes/areas.j
 | [providers](docs/HERMES_CAPABILITIES.md#area-providers) — Model providers, routing and fallback | adopt/own | 27 | 6 | 17 | 0 | 4 | 0 | 83 | seed din dovezi |
 | [agent-core](docs/HERMES_CAPABILITIES.md#area-agent-core) — Agent loop, context and sessions | own | 36 | 11 | 25 | 0 | 0 | 0 | 113 | seed din dovezi |
 | [memory](docs/HERMES_CAPABILITIES.md#area-memory) — Memory and recall | own | 27 | 10 | 17 | 0 | 0 | 0 | 70 | seed din dovezi |
-| [automation](docs/HERMES_CAPABILITIES.md#area-automation) — Automation: schedules, goals, delegation, kanban | own | 32 | 6 | 26 | 0 | 0 | 0 | 98 | seed din dovezi |
+| [automation](docs/HERMES_CAPABILITIES.md#area-automation) — Automation: schedules, goals, delegation, kanban | own | 32 | 6 | 26 | 0 | 0 | 0 | 101 | seed din dovezi |
 | [security](docs/HERMES_CAPABILITIES.md#area-security) — Security: approvals, sandbox, secrets, egress | own | 34 | 9 | 24 | 0 | 1 | 0 | 217 | seed din dovezi |
 | [media](docs/HERMES_CAPABILITIES.md#area-media) — Media: images, video, voice, vision | adopt/own | 27 | 7 | 20 | 0 | 0 | 0 | 101 | seed din dovezi |
 | [editor-acp](docs/HERMES_CAPABILITIES.md#area-editor-acp) — Editor agent over ACP | own/adopt | 6 | 0 | 5 | 0 | 1 | 0 | 4 | **subțire**, seed din dovezi |
