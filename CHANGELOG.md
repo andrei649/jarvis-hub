@@ -12,14 +12,24 @@
   translated and then kept inside the session folder as before.
 - The editor is told how many tokens each answer used, when Nerva measured it.
 - `nerva acp --version`.
+- Fixed before release (security review): a continued thread is an editor thread for good (it
+  can be renewed, closed and given MCP servers, and reloading it keeps its history); the HUD
+  cannot continue an editor thread outside its folder; an editor whose thread lapsed and was
+  reopened elsewhere can no longer renew or close it; an unreadable thread list is set aside,
+  never overwritten; a `\\wsl$` path is used only for the distro Nerva runs in.
 
 **Other agents: a runaway or hostile peer is held back**
 - You can suspend an agent peer without deleting its key (HUD, Mesh peers). A peer may send
-  60 tasks a minute and at most 5 in one conversation (you can allow up to 20), so two agents
-  cannot ping-pong forever.
-- Tasks in the A2A inbox are shown with hidden instructions neutralised and labelled as coming
-  from a remote agent. Every task, refusal and decision is a line on the audit log, without
-  the task's text.
+  60 tasks a minute and at most 5 in one conversation (you can allow up to 20; tasks that name
+  no conversation count as one, until you decide them), so two agents cannot ping-pong
+  forever. A peer may keep at most 100 tasks waiting, and never pushes another peer's waiting
+  tasks out of the inbox.
+- A captured task cannot be sent again: each signed request is accepted once, and a peer can
+  sign a timestamp and a one-time value so a request older than five minutes is refused.
+- Tasks in the A2A inbox are shown with hidden instructions and invisible characters
+  neutralised, labelled as coming from a remote agent and closed by a marker the peer cannot
+  fake; the raw task is shown only on request. Every task, refusal and decision is a line on
+  the audit log, without the task's text.
 - Apps using Nerva's OpenAI-compatible API can ask to see tool progress while an answer is
   streamed (`stream_options.include_tool_progress`).
 

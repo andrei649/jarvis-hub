@@ -1276,7 +1276,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** A2A Inbox */
+        /**
+         * A2A Inbox
+         * @description The inbox with each task's cleaned, framed ``view``; the peer's raw ``task`` only
+         *     with ``?raw=true`` (H563 review m6).
+         */
         get: operations["a2a_inbox_api_a2a_inbox_get"];
         put?: never;
         post?: never;
@@ -11798,6 +11802,7 @@ export interface paths {
          * Acp Renew Session
          * @description `nerva acp` renews its sessions' lease while the editor is connected; a session
          *     whose lease runs out is reaped (its MCP servers removed) and refused from then on.
+         *     Only the editor holding the binding renews it (``X-ACP-Holder``).
          */
         post: operations["acp_renew_session_api_acp_sessions__session_id__lease_post"];
         delete?: never;
@@ -11817,7 +11822,8 @@ export interface paths {
         put?: never;
         /**
          * Acp Add Session Mcp
-         * @description Register an editor-supplied MCP server for this conversation only (H545).
+         * @description Register an editor-supplied MCP server for this conversation only (H545), for the
+         *     editor holding the binding (``X-ACP-Holder``).
          */
         post: operations["acp_add_session_mcp_api_acp_sessions__session_id__mcp_post"];
         delete?: never;
@@ -11838,7 +11844,9 @@ export interface paths {
         post?: never;
         /**
          * Acp Close Session
-         * @description The editor closed the session: remove its MCP servers, forget its folder.
+         * @description The editor closed the session: remove its MCP servers, forget its folder. Only the
+         *     editor holding the binding closes it (``X-ACP-Holder``); a session no longer held is a
+         *     no-op.
          */
         delete: operations["acp_close_session_api_acp_sessions__session_id__delete"];
         options?: never;
@@ -23154,6 +23162,7 @@ export interface operations {
         parameters: {
             query?: {
                 status?: string | null;
+                raw?: boolean;
             };
             header?: never;
             path?: never;
@@ -39347,7 +39356,9 @@ export interface operations {
     acp_renew_session_api_acp_sessions__session_id__lease_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-ACP-Holder"?: string | null;
+            };
             path: {
                 session_id: string;
             };
@@ -39378,7 +39389,9 @@ export interface operations {
     acp_add_session_mcp_api_acp_sessions__session_id__mcp_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-ACP-Holder"?: string | null;
+            };
             path: {
                 session_id: string;
             };
@@ -39413,7 +39426,9 @@ export interface operations {
     acp_close_session_api_acp_sessions__session_id__delete: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "X-ACP-Holder"?: string | null;
+            };
             path: {
                 session_id: string;
             };

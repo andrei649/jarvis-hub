@@ -38,6 +38,24 @@ describe('MeshPeersPanel — the A2A mesh peer registry is live', () => {
     ).toBe(true));
   });
 
+  it('H563: suspends a peer without revoking it, and allows a suspended one again', async () => {
+    const fn = mockFetch({ peers: [
+      { peer_id: 'desk-1', name: 'Desk', secret_hint: 'aaaa…', added_at: 3, allowed: true },
+      { peer_id: 'old-2', name: 'Old', secret_hint: 'bbbb…', added_at: 4, allowed: false },
+    ] });
+    render(<MeshPeersPanel />);
+    await waitFor(() => expect(screen.getByText('Desk')).toBeTruthy());
+    fireEvent.click(screen.getByText('suspend'));
+    fireEvent.click(screen.getByText('allow'));
+    await waitFor(() => {
+      const posts = fn.mock.calls.filter((c) => c[1]?.method === 'POST' && String(c[0]).includes('/policy'));
+      expect(posts.some((c) => String(c[0]).includes('/api/a2a/peers/desk-1/policy')
+        && JSON.parse(c[1].body).allowed === false)).toBe(true);
+      expect(posts.some((c) => String(c[0]).includes('/api/a2a/peers/old-2/policy')
+        && JSON.parse(c[1].body).allowed === true)).toBe(true);
+    });
+  });
+
   it('POSTs a new peer (and only when a peer_id is given)', async () => {
     const fn = mockFetch({ peers: [] });
     render(<MeshPeersPanel />);
