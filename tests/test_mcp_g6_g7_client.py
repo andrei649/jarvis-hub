@@ -487,7 +487,8 @@ def test_model_preferences_map_onto_nerva_roles_not_server_model_names():
     assert map_model_preferences({"intelligencePriority": 1.0}, narrow) == ROLE_FAST
     pinned = SamplingConfig.from_config({"mode": "auto", "role": "capable"})
     assert map_model_preferences({"speedPriority": 1.0}, pinned) == ROLE_CAPABLE
-    assert SamplingConfig.from_config({"mode": "auto", "max_tokens_cap": 99999}).max_tokens_cap == 1024
+    assert SamplingConfig.from_config({"mode": "auto", "max_tokens_cap": 99999}).max_tokens_cap == 4096
+    assert SamplingConfig.from_config({"mode": "auto"}).max_tokens_cap == 1024
 
 
 # ── H553: elicitation ───────────────────────────────────────────────────────

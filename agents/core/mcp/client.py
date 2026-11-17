@@ -892,10 +892,16 @@ class MCPServer:
                 return False
         try:
             self._http = self._http_factory(self.url, headers, name=self.name, **extra)
-            result = await self._http.initialize()
+            # H553 — a request the server sends inside a call's response stream (sampling,
+            # elicitation, ping) is answered by the same host as on stdio, so the same
+            # capabilities are declared: only what the owner's settings can answer.
+            caps = self.client_capabilities()
+            if hasattr(self._http, "on_server_request"):
+                self._http.on_server_request = self._http_server_request
+            else:
+                caps = {}
+            result = await (self._http.initialize(caps) if caps else self._http.initialize())
             if result:
-                # No server-to-client channel is read on this transport, so nothing is
-                # declared for sampling or elicitation; resources and prompts still work.
                 self._record_capabilities(result)
                 await self._list_tools()
                 self._refresh_utilities()
@@ -1335,6 +1341,21 @@ class MCPServer:
                 # Back to the idle limit: an idle server can park at most ~2 MiB here.
                 if self._proc is not None:
                     _set_line_limit(self._proc.stdout, STDIO_IDLE_LINE_LIMIT)
+
+    async def _http_server_request(self, req: dict) -> dict:
+        """H553 — answer a request a Streamable HTTP server sent inside a response stream;
+        the transport POSTs the answer and bounds how many it serves per call."""
+        method = str(req.get("method") or "")
+        if self.host is None:
+            return {"error": {"code": -32601, "message": "method not supported by this client"}}
+        self._cancel_reply = None
+        try:
+            return await self.host.handle(self, method, req.get("params"))
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning("MCP %s: answering %s failed", self.name, method[:60], exc_info=True)
+            return {"error": {"code": -32603, "message": "internal error"}}
 
     async def _answer_server_request(self, req: dict, *, refuse: bool = False) -> None:
         method = str(req.get("method") or "")

@@ -36,6 +36,7 @@ Action Kernel gates stay in ``client.py`` / the orchestrator.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -267,6 +268,57 @@ def parse_sse_events(text: str, *, max_events: int = MAX_SSE_EVENTS) -> list[Any
     return events
 
 
+#: H553 — requests a server may send inside one call's response stream before the rest are
+#: refused at once (the stdio path's ``MAX_HOST_REQUESTS_PER_CALL``).
+MAX_SERVER_REQUESTS_PER_CALL = 2
+
+
+def _is_server_request(msg: Any) -> bool:
+    """A JSON-RPC request *from* the server: a method and an id, no result or error."""
+    return (isinstance(msg, dict) and isinstance(msg.get("method"), str)
+            and msg.get("id") is not None and "result" not in msg and "error" not in msg)
+
+
+class _Deadline:
+    """A call's deadline that the time spent answering the server's own requests extends
+    (the owner deciding an approval card does not count against the call)."""
+
+    def __init__(self, seconds: float) -> None:
+        self._loop = asyncio.get_running_loop()
+        self.at = self._loop.time() + float(seconds)
+        self._paused_at: float | None = None
+
+    def pause(self) -> None:
+        if self._paused_at is None:
+            self._paused_at = self._loop.time()
+
+    def resume(self) -> None:
+        if self._paused_at is not None:
+            self.at += max(0.0, self._loop.time() - self._paused_at)
+            self._paused_at = None
+
+    async def run(self, coro):
+        task = asyncio.ensure_future(coro)
+        try:
+            while True:
+                if self._paused_at is not None:
+                    # Answering the server's request: the owner's (or the model's) time is
+                    # not the call's. The host bounds that wait on its own.
+                    done, _pending = await asyncio.wait({task}, timeout=0.25)
+                else:
+                    remaining = self.at - self._loop.time()
+                    if remaining <= 0:
+                        raise TimeoutError
+                    done, _pending = await asyncio.wait({task}, timeout=remaining)
+                if done:
+                    return task.result()
+        finally:
+            if not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await task
+
+
 def _match_response(messages: Any, req_id: int) -> dict | None:
     """First JSON-RPC message (of a dict, list, or nested list) whose id is *req_id*."""
     if isinstance(messages, dict):
@@ -314,6 +366,10 @@ class StreamableHttpTransport:
         self.last_status: int | None = None
         self._next_id = 0
         self._lock = asyncio.Lock()
+        #: H553 — answers a request the server sends inside a response stream (sampling,
+        #: elicitation, ping): ``async (message) -> {"result": …} | {"error": …}``. Set by
+        #: ``MCPServer``; None → such a request is refused as unsupported.
+        self.on_server_request: Callable | None = None
         self._client = http_client or _MCPHTTPClient(
             f"mcp:{name}",
             timeouts=PluginTimeouts(connect=5.0, read=self.timeout, total=self.timeout + 5.0),
@@ -338,11 +394,13 @@ class StreamableHttpTransport:
 
     # ── JSON-RPC ─────────────────────────────────────────────────────────────
 
-    async def initialize(self) -> dict:
-        """``initialize`` + ``notifications/initialized``; returns the server result ({} on failure)."""
+    async def initialize(self, capabilities: dict | None = None) -> dict:
+        """``initialize`` + ``notifications/initialized``; returns the server result ({} on failure).
+        *capabilities* is what the client declares (H553: sampling / elicitation only when
+        the owner's settings and :attr:`on_server_request` can answer them)."""
         resp = await self.request("initialize", {
             "protocolVersion": CLIENT_PROTOCOL_VERSION,
-            "capabilities": {},
+            "capabilities": dict(capabilities or {}),
             "clientInfo": dict(CLIENT_INFO),
         })
         result = resp.get("result") if isinstance(resp, dict) else None
@@ -365,9 +423,10 @@ class StreamableHttpTransport:
             self._next_id += 1
             req_id = self._next_id
             body = {"jsonrpc": "2.0", "id": req_id, "method": method, "params": params or {}}
+            deadline = _Deadline(self.timeout)
             try:
-                return await asyncio.wait_for(self._post(body, req_id, max_bytes=max_bytes),
-                                              timeout=self.timeout)
+                return await deadline.run(self._post(body, req_id, max_bytes=max_bytes,
+                                                     deadline=deadline))
             except MCPTransportError:
                 raise
             except PluginEgressError as exc:
@@ -397,7 +456,8 @@ class StreamableHttpTransport:
             except Exception as exc:
                 logger.debug("MCP HTTP notification dropped (type=%s)", type(exc).__name__)
 
-    async def _post(self, body: dict, req_id: int | None, *, max_bytes: int | None = None) -> dict:
+    async def _post(self, body: dict, req_id: int | None, *, max_bytes: int | None = None,
+                    deadline: _Deadline | None = None) -> dict:
         payload = json.dumps(body, separators=(",", ":")).encode("utf-8")
         sent = self._request_headers()
         async with self._client.stream(
@@ -425,7 +485,8 @@ class StreamableHttpTransport:
                 return {}
             ctype = (response.headers.get("content-type") or "").split(";")[0].strip().lower()
             if ctype == "text/event-stream":
-                return await self._read_sse(response, req_id, max_bytes=max_bytes)
+                return await self._read_sse(response, req_id, max_bytes=max_bytes,
+                                            deadline=deadline)
             raw = await self._read_capped(response, max_bytes=max_bytes)
             try:
                 messages = json.loads(raw.decode("utf-8"))
@@ -446,13 +507,50 @@ class StreamableHttpTransport:
             chunks.append(chunk)
         return b"".join(chunks)
 
-    @staticmethod
-    async def _read_sse(response, req_id: int, *, max_bytes: int | None = None) -> dict:
-        """Consume an SSE stream until the response with our id arrives (or caps hit)."""
+    async def _answer(self, message: dict, served: int, deadline: _Deadline | None) -> None:
+        """H553 — answer one request the server sent inside our response stream, by POSTing
+        the JSON-RPC response to the endpoint. The time the owner (or the model) takes is
+        added to the call's deadline; at most :data:`MAX_SERVER_REQUESTS_PER_CALL` are served
+        per call, later ones are refused at once."""
+        if deadline is not None:
+            deadline.pause()
+        method = str(message.get("method") or "")
+        if self.on_server_request is None:
+            out = {"error": {"code": -32601, "message": "method not supported by this client"}}
+        elif served > MAX_SERVER_REQUESTS_PER_CALL and method != "ping":
+            out = {"error": {"code": -32001, "message": "too many requests in one call"}}
+        else:
+            try:
+                out = await self.on_server_request(message)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.warning("MCP HTTP %s: answering %s failed", self.name, method[:60], exc_info=True)
+                out = {"error": {"code": -32603, "message": "internal error"}}
+        if deadline is not None:
+            deadline.resume()
+        reply = {"jsonrpc": "2.0", "id": message.get("id"),
+                 **({"result": out["result"]} if "result" in out else
+                    {"error": out.get("error") or {"code": -32603, "message": "internal error"}})}
+        payload = json.dumps(reply, separators=(",", ":")).encode("utf-8")
+        try:
+            async with self._client.stream("POST", self.url, headers=self._request_headers(),
+                                           content=payload) as response:
+                if int(response.status_code) not in _ACCEPTED_STATUSES:
+                    logger.warning("MCP HTTP %s refused our answer to %s (status %s)",
+                                   self.name, method[:60], response.status_code)
+        except PluginEgressError as exc:
+            raise MCPTransportError("egress_blocked", str(exc)) from exc
+
+    async def _read_sse(self, response, req_id: int, *, max_bytes: int | None = None,
+                        deadline: _Deadline | None = None) -> dict:
+        """Consume an SSE stream until the response with our id arrives (or caps hit).
+        A request the server sends on the stream (H553) is answered on the way."""
         cap = int(max_bytes or MAX_REPLY_BYTES)
         data_lines: list[str] = []
         events = 0
         size = 0
+        served = 0
         async for raw_line in response.aiter_lines():
             size += len(raw_line)
             if size > cap:
@@ -475,6 +573,12 @@ class StreamableHttpTransport:
             try:
                 message = json.loads(payload)
             except json.JSONDecodeError:
+                continue
+            if _is_server_request(message):
+                served += 1
+                await self._answer(message, served, deadline)
+                if events >= MAX_SSE_EVENTS:
+                    break
                 continue
             found = _match_response(message, req_id)
             if found is not None:
