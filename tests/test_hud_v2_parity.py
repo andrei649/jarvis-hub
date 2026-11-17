@@ -45,11 +45,10 @@ RULES = [
     # below reads frontend/src/workspace like any other client.
     ("/api/workspace", "workspace"),
     ("/workspace", "workspace"),
-    # ANDREI OS — the imported 3D-galaxy interface, served at /os from apps/jarvis-os/public
-    # (not a v2 mode). Its page calls every /api/os route through public/js/api.js, which the
-    # caller gate below reads like any other client.
-    ("/api/os", "jarvis-os"),
-    ("/os", "jarvis-os"),
+    # Separate /os client exists, but HUD V2 has no native entry/control. Explicit
+    # gap, not parity coverage: docs/design/HUD_V2_REMAINING.md and mobile/PARITY.md.
+    ("/api/os/", "HUD_GAP:jarvis-os"),
+    ("/os", "HUD_GAP:jarvis-os"),
     # machine-facing — intentionally not a HUD surface
     ("/.well-known/", "NOT_IN_HUD"),
     ("/healthz", "NOT_IN_HUD"),  # H23.11 liveness probe (LB / systemd / Docker HEALTHCHECK)
@@ -314,6 +313,18 @@ def test_core_surfaces_each_cover_a_route():
     covered = {_classify(p) for p in _routes()}
     missing = [s for s in CORE_SURFACES if s not in covered]
     assert not missing, f"v2 surfaces with no mapped route (IA regression?): {missing}"
+
+
+def test_jarvis_os_is_an_explicit_native_hud_and_mobile_gap():
+    """A separate browser page is a caller; it does not prove native client parity."""
+    routes = {p for p in _routes() if p.startswith("/api/os/") or p in {"/os", "/os/{path:path}"}}
+    assert len(routes) >= 7
+    assert {_classify(p) for p in routes} == {"HUD_GAP:jarvis-os"}
+    for file in ("docs/design/HUD_V2_REMAINING.md", "mobile/PARITY.md"):
+        doc = (REPO / file).read_text(encoding="utf-8")
+        assert "ANDREI OS" in doc and "H18.38" in doc
+        for route in ("/api/os/status", "/api/os/brain/note", "/api/os/brain/retrieve", "/api/os/brain/capture"):
+            assert route in doc
 
 
 def _assert_console_registration(source: str, group: str, component: str):

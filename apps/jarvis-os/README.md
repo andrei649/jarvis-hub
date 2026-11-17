@@ -29,6 +29,38 @@ is only the Microsoft Store stub. Set `JARVIS_PORT` to use a port other than `47
 
 Open **http://localhost:4719** in Chrome, Edge, or Safari.
 
+## Standalone chat privacy and migration
+
+Chat defaults to **local Ollama, then an offline vault answer**. The separate
+**Allow cloud chat** checkbox in Settings is off by default, including for old
+`auto` configurations. API keys, a signed-in Claude CLI, or selecting a provider
+do not grant consent. Set `"cloudConsent": true` as a JSON boolean or check the
+box and save to permit sending prompts, UI context and retrieved vault notes to
+cloud providers. Strings such as `"true"` and unknown providers fail safely.
+
+`auto` now tries Ollama first, then the cloud chain only with consent. A selected
+cloud provider also requires consent; otherwise chat falls back locally. Remote
+Ollama URLs require consent too; local model POSTs bypass inherited HTTP proxies
+and refuse redirects. Custom OpenAI-compatible endpoints use the cloud gate even
+when configured on loopback. Select `ollama` to avoid fallbacks to other providers. Ollama cloud models also
+require consent, even when its daemon runs on loopback. Disable consent and save to stop future cloud chat dispatches.
+Consent is rechecked before later cloud fallbacks in an in-progress request;
+already dispatched requests are not recalled.
+
+Without consent, Ollama candidates require local artifact metadata, refreshed
+before each prompt. Cloud aliases and unknown metadata are skipped. Requests pin
+an explicit `:local` source selector (Ollama 0.18+), which refuses a model that
+has become a remote alias. Older daemons may reject this selector and use the
+offline fallback; the app never retries without it. A loopback daemon remains a
+trusted local service. See [Ollama cloud authentication](https://github.com/ollama/ollama/blob/main/docs/api/authentication.mdx)
+and its [local-source refusal](https://github.com/ollama/ollama/blob/v0.18.0/server/routes.go#L1992).
+
+Blank or `***` key fields preserve saved secrets on settings saves. To remove a
+key, remove it from the private `config.json` and its corresponding environment
+variable. This chat consent setting does not govern the separate ElevenLabs speech
+action. Hub `/os` uses the hub's `/chat` and its own policy; these standalone
+settings do not apply there.
+
 ## Paths, secrets and the vault
 
 - **Vault** — auto-detected in this order: `apps/jarvis-os/vault/Andrei OS Obsidian`,
@@ -94,7 +126,7 @@ Standalone routes. In the hub the vault routes are `/api/os/status`, `/api/os/br
    - Switch anytime in **⚙️ Settings → Second Brain Vaults** between `Andrei OS + Nerva`, `Andrei OS Only`, and the `550-node Video Showcase Demo`.
 
 2. **Unified Multi-Platform AI Hub (`⚙️ Settings → AI Connections`)**
-   - **Anthropic Subscription (Claude Code CLI `claude -p`)**: Primary zero-extra-billing demo connector (`Opus 5.5` → Sonnet/Opus, `Fable 5.2` → Fable/Opus). Click **Sign in with Claude Subscription** in Settings to authenticate via browser OAuth.
+   - **Anthropic Subscription (Claude Code CLI `claude -p`)**: Optional cloud connector requiring explicit cloud chat consent. Click **Sign in with Claude Subscription** in Settings to authenticate via browser OAuth; sign-in alone does not enable chat dispatch.
    - **Local Ollama Runtime**: Auto-detects local models (`qwen3.5:4b`, `qwen3.5:0.8b`) at `http://127.0.0.1:11434` for immediate on-device private chat + RAG.
    - **Cloud & Custom Connectors**: Ready for Anthropic Console API, OpenAI/ChatGPT, Google Gemini, OpenRouter / Bonobo RTX 5090 LM Studio, and ElevenLabs TTS.
 
