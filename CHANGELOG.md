@@ -4,6 +4,25 @@
 
 ### What changed for you — 2026-11-17
 
+**Nerva in your editor: earlier threads come back**
+- An editor can list the Nerva threads it opened, open one again with its earlier messages
+  shown (or without them), or continue one in a new thread. A thread stays with the folder it
+  was made for, and two editors can never hold the same one.
+- Windows editors talking to Nerva inside WSL can use their own paths (`C:\…`); they are
+  translated and then kept inside the session folder as before.
+- The editor is told how many tokens each answer used, when Nerva measured it.
+- `nerva acp --version`.
+
+**Other agents: a runaway or hostile peer is held back**
+- You can suspend an agent peer without deleting its key (HUD, Mesh peers). A peer may send
+  60 tasks a minute and at most 5 in one conversation (you can allow up to 20), so two agents
+  cannot ping-pong forever.
+- Tasks in the A2A inbox are shown with hidden instructions neutralised and labelled as coming
+  from a remote agent. Every task, refusal and decision is a line on the audit log, without
+  the task's text.
+- Apps using Nerva's OpenAI-compatible API can ask to see tool progress while an answer is
+  streamed (`stream_options.include_tool_progress`).
+
 **MCP servers: safer to add, steadier to run**
 - A server whose launch command downloads and runs code, writes a login or startup file
   (SSH keys, cron, shell profiles, systemd, launch agents) or injects a library is refused
