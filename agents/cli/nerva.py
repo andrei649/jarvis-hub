@@ -278,8 +278,13 @@ def build_parser() -> argparse.ArgumentParser:
     # inside one key (agents/core/settings_path.py has the grammar).
     path_help = 'category.key[.path] — escape a dot inside a key as \\. or quote the key: "a.b"'
     config_get = config_verbs.add_parser("get", help="print one setting: category.key[.path]")
-    config_get.add_argument("name", help=path_help)
+    config_get.add_argument("name", help=path_help + "; also NERVA_X (an environment variable) or "
+                            "agents.<id>.<field> with --explain")
     config_get.add_argument("--reveal", action="store_true")
+    config_get.add_argument("--explain", action="store_true",
+                            help="H248: the value in effect and every plane that has a say (default, store, "
+                                 "environment, posture, managed pin), the one in effect marked")
+    config_get.add_argument("--json", action="store_true", help="with --explain: the view as JSON")
     config_set = config_verbs.add_parser("set", help="change one setting: category.key[.path] value")
     config_set.add_argument("name", help=path_help)
     config_set.add_argument("value")
@@ -1965,6 +1970,8 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
                 managed = _managed_note(row)
                 ctx.say(f"{cat}.{row['key']} = {shown}  ({row.get('kind', '?')}{source}{overlay}{managed})")
         return EXIT_OK
+    if ns.action == "get" and getattr(ns, "explain", False):
+        return _config_explain(ns, ctx, settings)
     if ns.action == "get":
         from agents.core import settings_path
 
@@ -2081,6 +2088,62 @@ def cmd_config(ns: argparse.Namespace, ctx: Context) -> int:
         _check_environment(ctx)
         return EXIT_FAILED if problems or refused else EXIT_OK
     return EXIT_USAGE
+
+
+def _config_explain(ns: argparse.Namespace, ctx: Context, settings: Any) -> int:
+    """H248 — ``nerva config get NAME --explain``: the value in effect and the plane that
+    supplied it, then every plane that has a say. Secrets stay masked (``--reveal`` does not
+    apply here); an environment variable is reported set/unset per layer, never a value."""
+    from agents.core import config_resolve
+
+    name = ns.name
+    if not name.startswith(("agents.", "NERVA_", "JARVIS_")) and "." in name:
+        resolved = _resolve_name(settings, name, stored=True)
+        if resolved is None:
+            ctx.err.write(f"no setting {name}{_did_you_mean(settings, name)}\n")
+            return EXIT_FAILED
+        name = f"{resolved[0]}.{resolved[1]}"
+    try:
+        view = config_resolve.explain(name, ctx.environ)
+    except RuntimeError as exc:          # a refused JARVIS_PROFILE
+        ctx.err.write(f"{exc}\n")
+        return EXIT_USAGE
+    if view is None:
+        ctx.err.write(f"nothing is known about {_plain(name, 128)}{_did_you_mean(settings, name)}\n")
+        return EXIT_FAILED
+    if getattr(ns, "json", False):
+        ctx.dump(view)
+        return EXIT_OK
+    if view["kind"] == "environment":
+        state = "set" if view["set"] else "unset"
+        ctx.say(f"{view['name']}: {state}  (supplied by: {view['supplied_by']})"
+                + ("" if view["known"] else "  — nothing in this build reads it"))
+        if view.get("purpose"):
+            ctx.say(f"  → {_plain(view['purpose'], 200)}")
+    else:
+        ctx.say(f"{view['name']} = {json.dumps(view['value'], ensure_ascii=False)}  "
+                f"(supplied by: {view['supplied_by']})")
+    for layer in view["layers"]:
+        marker = "←" if layer["plane"] == view["supplied_by"] else " "
+        bits = [f"  {marker} {layer['plane']:<22}"]
+        if "value" in layer:
+            bits.append(_plain(json.dumps(layer["value"], ensure_ascii=False), 120))
+        if "names" in layer:
+            bits.append(", ".join(f"{n['name']} ({'set' if n['set'] else 'unset'}"
+                                  f"{'; refused: ' + n['refused'] if n.get('refused') else ''})" for n in layer["names"]))
+        if layer.get("source"):
+            bits.append(f"[{_plain(layer['source'], 120)}]")
+        if layer.get("leaves"):
+            bits.append("pinned at " + ", ".join(str(leaf) for leaf in layer["leaves"]))
+        if layer.get("invalid"):
+            bits.append("(invalid, not applied)")
+        ctx.say("  ".join(bits))
+    if view.get("runtime"):
+        ctx.say(f"  in the hub's runtime settings: {json.dumps(view['runtime']['value'], ensure_ascii=False)} "
+                f"(the selected posture forces it)")
+    if view.get("note"):
+        ctx.say(f"  note: {view['note']}")
+    return EXIT_OK
 
 
 def _did_you_mean(settings: Any, name: str, limit: int = 3) -> str:
@@ -2239,28 +2302,10 @@ def _managed_refusal(name: str, category: str, key: str, value: Any = None) -> s
 
 
 def _env_surface(environ: Mapping[str, str]) -> tuple[dict, list[str]]:
-    """H264 — ``(the provenance table, every name the .env files and the environment set)``
-    for *environ*, as the hub's load would see them (a profile reads its own .env only).
-    Names only: no value is read into the result."""
-    from agents.core import env_provenance as ep
-    from agents.core.paths import user_home
+    """H264 — the environment as the hub's load would see it (``config_resolve.env_surface``)."""
+    from agents.core.config_resolve import env_surface
 
-    profile_env = ep.profile_env_file(environ)
-    if profile_env is not None:
-        files = [profile_env]
-        table = ep.derive(None, profile_env, environ)
-    else:
-        def home_env(merged):
-            home = user_home(merged)
-            return home / ".env" if home is not None else None
-
-        files = [ep.REPO_ENV_FILE, home_env(ep.after_repo_layer(ep.REPO_ENV_FILE, environ))]
-        table = ep.derive(ep.REPO_ENV_FILE, home_env, environ)
-    names = list(environ)
-    for path in files:
-        if path is not None and ep.is_file_or_fifo(path) and not ep.is_fifo(path):
-            names += ep.env_file_keys(path)
-    return table, names
+    return env_surface(environ)
 
 
 def _unread_lines(names: list[str]) -> list[str]:

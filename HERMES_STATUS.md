@@ -34,7 +34,7 @@ Fiecare rând aparține unui singur domeniu din [areas.json](docs/hermes/areas.j
 | [web](docs/HERMES_CAPABILITIES.md#area-web) — Web dashboard and HUD | own/run | 40 | 15 | 23 | 0 | 2 | 0 | 71 | seed din dovezi |
 | [desktop](docs/HERMES_CAPABILITIES.md#area-desktop) — Desktop app: jobs done in the HUD and Tauri shell | own | 54 | 6 | 46 | 0 | 2 | 0 | 54 | seed din dovezi |
 | [tui](docs/HERMES_CAPABILITIES.md#area-tui) — Terminal UI: jobs done in the HUD and nerva CLI | own | 25 | 4 | 19 | 0 | 2 | 0 | 30 | seed din dovezi |
-| [config](docs/HERMES_CAPABILITIES.md#area-config) — Configuration and settings | own | 18 | 11 | 7 | 0 | 0 | 0 | 33 | seed din dovezi |
+| [config](docs/HERMES_CAPABILITIES.md#area-config) — Configuration and settings | own | 18 | 11 | 7 | 0 | 0 | 0 | 34 | seed din dovezi |
 | [env](docs/HERMES_CAPABILITIES.md#area-env) — Environment, install and execution targets | own | 28 | 6 | 21 | 0 | 1 | 0 | 157 | seed din dovezi |
 | [tools](docs/HERMES_CAPABILITIES.md#area-tools) — Agent-callable tools and toolsets | adopt/own | 32 | 11 | 20 | 0 | 1 | 0 | 82 | seed din dovezi |
 | [skills](docs/HERMES_CAPABILITIES.md#area-skills) — Skills: authoring, catalogue and curation | adopt/own | 33 | 14 | 18 | 0 | 1 | 0 | 80 | seed din dovezi |

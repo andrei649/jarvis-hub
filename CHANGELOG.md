@@ -14,6 +14,10 @@
   where from (never its value), its default and what it is for. A `.env` line Nerva does not
   read (a typo, or a line from an older version) is flagged, with the name you probably
   meant; `nerva doctor` flags it too.
+- `nerva config get NAME --explain` shows where a value comes from: the shipped default,
+  your saved setting, an environment variable it names, an administrator's pin or the
+  selected posture, with the one in effect marked. It works for environment variables
+  (which file or the shell sets it, never its value) and agents (`agents.jarvis.model`).
 - After an upgrade, `nerva config check` tells you which settings and environment variables
   are new since your previous version. The settings store now records its schema version;
   a future rename or removal of a setting carries your value across, or keeps it aside and

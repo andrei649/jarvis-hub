@@ -936,6 +936,7 @@
         "tests/test_g1_managed_scope.py",
         "tests/test_h157b_settings_review.py",
         "tests/test_h15_4_secret_broker.py",
+        "tests/test_h248_config_explain.py",
         "tests/test_h255_settings_env_interpolation.py",
         "tests/test_h256_consent_writes.py",
         "tests/test_h257_config_cli_guards.py",
