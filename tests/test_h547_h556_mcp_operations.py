@@ -12,8 +12,11 @@ pid is never touched.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime
+import json
 import os
+import signal
 import ssl
 import subprocess
 import sys
@@ -175,6 +178,7 @@ def _self_signed(tmp_path: Path) -> tuple[Path, Path]:
     key_path.write_bytes(key.private_bytes(serialization.Encoding.PEM,
                                            serialization.PrivateFormat.PKCS8,
                                            serialization.NoEncryption()))
+    key_path.chmod(0o600)
     return cert_path, key_path
 
 
@@ -189,6 +193,15 @@ def test_tls_context_adds_a_ca_and_a_client_certificate_and_still_verifies(tmp_p
     with pytest.raises(MCPTransportError) as bad:
         tls_context(None, [str(key)])          # a key is not a certificate
     assert bad.value.detail == "client_cert_unreadable"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file modes")
+def test_a_client_key_others_can_read_is_refused(tmp_path):
+    cert, key = _self_signed(tmp_path)
+    key.chmod(0o644)
+    with pytest.raises(MCPTransportError) as exc:
+        tls_context(None, [str(cert), str(key)])
+    assert exc.value.detail == "client_key_permissions"
 
 
 async def test_http_connect_passes_timeout_and_tls_and_refuses_bad_material(tmp_path, monkeypatch):
@@ -396,3 +409,74 @@ async def test_discovery_lock_is_exclusive_and_bounded(tmp_path):
             assert second is False                   # same-process second holder times out
     async with process_guard.discovery_lock(root=tmp_path, wait=0.3) as again:
         assert again is True
+
+
+# ── review m2 (repro r5): a member that ignores SIGTERM is killed; the record waits ──
+
+_STUBBORN = "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)"
+_LAUNCHER = (f"import subprocess,sys,time; p=subprocess.Popen([sys.executable,'-c',{_STUBBORN!r}]); "
+             "print(p.pid, flush=True); time.sleep(60)")
+
+
+@pytest.mark.skipif(not LINUX, reason="process groups are read from /proc")
+async def test_group_member_ignoring_sigterm_is_killed(tmp_path):
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable, "-c", _LAUNCHER, stdout=asyncio.subprocess.PIPE,
+        **process_guard.spawn_kwargs())
+    proc._mcp_group = True
+    proc._mcp_start = process_guard.record(proc.pid, "stubborn", root=tmp_path)
+    child = int((await proc.stdout.readline()).decode().strip())
+    try:
+        await asyncio.sleep(0.3)
+        await process_guard.terminate_group(proc, grace=0.5, root=tmp_path)
+        deadline = time.monotonic() + 3
+        while _alive(child) and time.monotonic() < deadline:
+            await asyncio.sleep(0.05)
+        assert not _alive(child), "a group member that ignores SIGTERM outlived terminate_group"
+        assert json.loads((tmp_path / process_guard.REGISTRY_NAME).read_text()) == {}
+    finally:
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(child, signal.SIGKILL)
+
+
+@pytest.mark.skipif(not LINUX, reason="process groups are read from /proc")
+def test_reaper_stops_a_leaderless_group_and_drops_malformed_rows(tmp_path):
+    launcher = subprocess.Popen([sys.executable, "-c", _LAUNCHER], stdout=subprocess.PIPE,  # noqa: S603
+                                start_new_session=True)
+    child = int(launcher.stdout.readline().decode().strip())
+    try:
+        process_guard.record(launcher.pid, "left-behind", root=tmp_path)
+        launcher.kill()
+        launcher.wait()                                 # leader gone, member left in the group
+        assert _alive(child) and process_guard.group_members(launcher.pid) == [child]
+        rows = json.loads((tmp_path / process_guard.REGISTRY_NAME).read_text())
+        dead_hub = subprocess.Popen(["true"])  # noqa: S603,S607 - a pid that is gone
+        dead_hub.wait()
+        rows[str(launcher.pid)]["hub_pid"] = dead_hub.pid
+        rows["1"] = {"server": "init", "hub_pid": dead_hub.pid, "start": 0}          # never pid 1
+        rows[str(os.getpid())] = {"server": "me", "hub_pid": dead_hub.pid, "start": 0}
+        rows["x"] = {"server": "junk", "hub_pid": "nope"}
+        (tmp_path / process_guard.REGISTRY_NAME).write_text(json.dumps(rows))
+        process_guard.GRACE_SECONDS, old = 1.0, process_guard.GRACE_SECONDS
+        try:
+            assert process_guard.reap_orphans(root=tmp_path) == [launcher.pid]
+        finally:
+            process_guard.GRACE_SECONDS = old
+        deadline = time.monotonic() + 3
+        while _alive(child) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert not _alive(child)
+        assert json.loads((tmp_path / process_guard.REGISTRY_NAME).read_text()) == {}
+    finally:
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(child, signal.SIGKILL)
+
+
+def test_registry_never_writes_through_a_planted_link(tmp_path):
+    target = tmp_path / "elsewhere.json"
+    target.write_text('{"keep": "me"}')
+    (tmp_path / process_guard.REGISTRY_NAME).symlink_to(target)
+    process_guard.record(4242424, "x", root=tmp_path)
+    assert target.read_text() == '{"keep": "me"}'          # the link's target is untouched
+    assert not (tmp_path / process_guard.REGISTRY_NAME).is_symlink()
+    assert [p.name for p in tmp_path.iterdir() if p.name.endswith(".tmp")] == []

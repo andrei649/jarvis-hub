@@ -825,7 +825,7 @@ class MCPServer:
             # the group running into the next start (process_guard.reap_orphans).
             self._proc._mcp_group = bool(group)
             if group and isinstance(getattr(self._proc, "pid", None), int):
-                process_guard.record(self._proc.pid, self.name)
+                self._proc._mcp_start = process_guard.record(self._proc.pid, self.name)
             self._spawned_at = self._last_io = time.time()
             self._start_stderr_drain()
             await self._initialize()

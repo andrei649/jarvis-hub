@@ -185,6 +185,16 @@ def tls_context(ca_path: str | None = None, cert_chain: list[str] | None = None)
     if cert_chain:
         cert = os.path.expanduser(cert_chain[0])
         key = os.path.expanduser(cert_chain[1]) if len(cert_chain) > 1 else None
+        # The private key must be the owner's alone: a key file the group or everyone can
+        # read is refused (as ssh refuses one), not loaded with a warning.
+        try:
+            mode = os.stat(key or cert).st_mode
+        except FileNotFoundError as exc:
+            raise MCPTransportError("tls_config", "client_cert_missing") from exc
+        except OSError as exc:
+            raise MCPTransportError("tls_config", "client_cert_unreadable") from exc
+        if os.name == "posix" and mode & 0o077:
+            raise MCPTransportError("tls_config", "client_key_permissions")
         try:
             ctx.load_cert_chain(certfile=cert, keyfile=key, password=lambda: b"")
         except FileNotFoundError as exc:

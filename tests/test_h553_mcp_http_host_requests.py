@@ -215,3 +215,27 @@ async def test_http_elicitation_is_declared_only_with_an_approval_queue():
             assert hub.init_params["capabilities"] == declared
         finally:
             await mgr.close_all()
+
+
+def test_two_processes_sharing_the_budget_file_add_up(tmp_path):
+    """Review m5: each save merges what another process booked since its last write."""
+    path = tmp_path / "mcp_sampling_budget.json"
+    clock = lambda: 1_800_000_000.0  # noqa: E731 - a fixed day
+    a = SamplingBudget(daily_tokens=1000, clock=clock, persist_path=path)
+    b = SamplingBudget(daily_tokens=1000, clock=clock, persist_path=path)
+    assert a.reserve(300) is None
+    assert b.reserve(200) is None
+    assert json.loads(path.read_text())["used"] == 500
+    assert a.reserve(100) is None
+    assert json.loads(path.read_text())["used"] == 600
+    assert SamplingBudget(daily_tokens=1000, clock=clock, persist_path=path).status()["used"] == 600
+
+
+def test_the_budget_file_is_never_written_through_a_link(tmp_path):
+    target = tmp_path / "elsewhere"
+    target.write_text("keep")
+    path = tmp_path / "mcp_sampling_budget.json"
+    path.symlink_to(target)
+    budget = SamplingBudget(daily_tokens=1000, persist_path=path)
+    assert budget.reserve(1) == "budget_exceeded"          # an unreadable file starts spent
+    assert target.read_text() == "keep"

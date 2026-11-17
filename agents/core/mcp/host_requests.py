@@ -217,50 +217,92 @@ class SamplingBudget:
         self._roll()
         self._load()
 
+    def _read_file(self) -> tuple[str, float] | None | bool:
+        """``(day, used)`` from the file; None when there is none; False when unreadable."""
+        import json
+        import os
+
+        try:
+            fd = os.open(str(self._path), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        except FileNotFoundError:
+            return None
+        except OSError:
+            return False
+        try:
+            with os.fdopen(fd, "r", encoding="utf-8") as handle:
+                data = json.loads(handle.read(4096))
+            used = float(data["used"])
+            if not (used >= 0) or not isinstance(data.get("day"), str):
+                raise ValueError("bad row")
+        except (OSError, ValueError, KeyError, TypeError):
+            return False
+        return data["day"], used
+
     def _load(self) -> None:
         if self._path is None:
             return
+        dim = self.ledger.dimensions[BUDGET_DIMENSION]
+        row = self._read_file()
+        if row is None:
+            self._synced = 0.0
+            return
+        if row is False:
+            logger.warning("MCP sampling budget file unreadable; today's allowance starts spent")
+            dim.used = float(dim.limit or 0.0)
+            self._synced = dim.used
+            return
+        day, used = row
+        if day == self._day:
+            dim.used = used
+        self._synced = dim.used
+
+    def _save(self) -> None:
+        """Write the day's usage, merged with what another process sharing the data
+        directory booked since our last write: under an ``flock``, the file's value plus
+        our own change since then. The temporary file is created exclusively and never
+        through a link. Small and synchronous (a few hundred bytes)."""
+        if self._path is None:
+            return
+        import contextlib
         import json
+        import os
+        import secrets
         from pathlib import Path
 
         path = Path(self._path)
         dim = self.ledger.dimensions[BUDGET_DIMENSION]
-        try:
-            raw = path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return
-        except OSError:
-            raw = ""
-        try:
-            data = json.loads(raw)
-            used = float(data["used"])
-            if not (used >= 0) or not isinstance(data.get("day"), str):
-                raise ValueError("bad row")
-        except (ValueError, KeyError, TypeError):
-            logger.warning("MCP sampling budget file unreadable; today's allowance starts spent")
-            dim.used = float(dim.limit or 0.0)
-            return
-        if data["day"] == self._day:
-            dim.used = used
-
-    def _save(self) -> None:
-        if self._path is None:
-            return
-        import json
-        import os
-        from pathlib import Path
-
-        path = Path(self._path)
+        nofollow = getattr(os, "O_NOFOLLOW", 0)
+        lock_fd = None
         try:
             path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-            fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                json.dump({"day": self._day,
-                           "used": self.ledger.dimensions[BUDGET_DIMENSION].used}, handle)
-            os.replace(tmp, path)
+            try:
+                import fcntl
+
+                lock_fd = os.open(str(path.with_name(path.name + ".lock")),
+                                  os.O_RDWR | os.O_CREAT | nofollow, 0o600)
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            except ImportError:  # pragma: no cover - not POSIX
+                lock_fd = None
+            row = self._read_file()
+            ours = dim.used - getattr(self, "_synced", 0.0)
+            if isinstance(row, tuple) and row[0] == self._day:
+                dim.used = max(0.0, row[1] + ours)
+            tmp = path.with_name(f".{path.name}.{os.getpid()}.{secrets.token_hex(6)}.tmp")
+            fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL | nofollow, 0o600)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    json.dump({"day": self._day, "used": dim.used}, handle)
+                os.replace(tmp, path)
+            except BaseException:
+                with contextlib.suppress(OSError):
+                    tmp.unlink()
+                raise
+            self._synced = dim.used
         except OSError:
             logger.warning("MCP sampling budget not saved", exc_info=True)
+        finally:
+            if lock_fd is not None:
+                os.close(lock_fd)
 
     def limit(self) -> int:
         if self._fixed is not None:
@@ -275,6 +317,8 @@ class SamplingBudget:
         day = datetime.fromtimestamp(self._clock(), UTC).strftime("%Y-%m-%d")
         dim = self.ledger.dimensions.get(BUDGET_DIMENSION)
         used = 0.0 if (day != self._day or dim is None) else dim.used
+        if day != self._day:
+            self._synced = 0.0           # a new day: nothing of ours is in the file yet
         self._day = day
         self.ledger.set_dimension_usage(BUDGET_DIMENSION, used, limit=float(self.limit()),
                                         unit="tokens", metadata={"day": day, "scope": "mcp sampling"})
