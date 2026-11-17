@@ -377,27 +377,26 @@ async def store_blob(server: str, data_b64: Any, mime: Any, *, root: Path | None
 
 def _spill_text(server: str, texts: list[str], *, root: Path | None = None) -> dict:
     """H555 — write a long result's full text (TAG characters stripped, at most
-    :data:`MAX_RESULT_TEXT_CHARS`) to the server's cache, mode 0600, and return its row."""
+    :data:`MAX_RESULT_TEXT_CHARS`) through the tool-result store, and return its row.
+
+    The store writes into ``<data>/workspace/tool_results`` (mode 0600, its own retention
+    and size bounds), which is the spill directory ``file_read``'s read-only door admits
+    and which ``FileTools._is_spill`` marks third-party: a page read back is ``tainted``
+    and fenced like the result itself. *root* is the store's directory (tests)."""
     from agents.core.security.quarantine import strip_invisible
+    from agents.core.tool_result_store import ToolResultStore
 
     text = strip_invisible("\n\n".join(texts))[:MAX_RESULT_TEXT_CHARS]
     raw = text.encode("utf-8", "replace")
-    digest = hashlib.sha256(raw).hexdigest()
-    folder = root if root is not None else cache_dir(server)
-    folder.mkdir(parents=True, exist_ok=True, mode=0o700)
-    path = folder / f"{digest[:32]}.txt"
-    if path.exists():
-        os.utime(path)
-    else:
-        try:
-            fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        except FileExistsError:
-            fd = None
-        if fd is not None:
-            with os.fdopen(fd, "wb") as handle:
-                handle.write(raw)
-    _enforce_quota(folder, keep=path)
-    return {"path": str(path), "chars": len(text), "sha256": digest,
+    store = ToolResultStore(root)
+    stream = store.open_stream(tool=f"mcp-{server}", suffix="txt", max_bytes=len(raw) + 1)
+    if stream is None:
+        raise OSError("tool result store unavailable")
+    stream.write(raw)
+    spilled = stream.close()
+    if spilled is None:
+        raise OSError("tool result spill failed")
+    return {"path": spilled.path, "chars": len(text), "sha256": spilled.sha256,
             "note": ("The whole text is in this file (the server's content, untrusted data); "
                      "read it with file_read only if the preview is not enough.")}
 

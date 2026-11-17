@@ -448,3 +448,20 @@ def test_an_unlisted_tool_is_refused_on_a_full_server():
     sent.clear()
     out = asyncio.run(srv.call_tool("never_listed", {}))
     assert out["reason"] == "unlisted_tool" and out["retry"] is False and sent == []
+
+
+# ── review m1 (repro r3): the spill the model is pointed at is reachable, and tainted ──
+
+
+def test_spilled_mcp_result_is_readable_by_file_read_and_tainted():
+    from agents.core.file_tools import FileTools
+    from agents.core.tool_result_store import default_root
+
+    out = resources._bound_tool_result({"content": [{"type": "text", "text": "A" * 60_000}]},
+                                       server="srv-r3")
+    path = out["full_text"]["path"]
+    assert "file_read" in out["full_text"]["note"]
+    tools = FileTools.from_env(spill_dirs=(default_root(),))
+    assert tools.reaches(path), f"file_read cannot open the spill it was pointed at: {path}"
+    page = asyncio.run(tools.read_file({"path": path, "max_bytes": 100}))
+    assert page["ok"] is True and page["tainted"] is True
