@@ -255,21 +255,29 @@ The hub then runs the acquisition pipeline, unchanged, refusing at the first ste
 fails:
 
 1. **static checks** — the generator's own rules: stdlib allowlist, no file, process,
-   network, dynamic import or `__` introspection, no secret or personal data, a real
-   `register` and one handler per declared capability, a test that asserts;
+   network, dynamic import or `__` introspection, no `SystemExit`/`exit`/`quit`, no secret
+   or personal data, a real `register` and one handler per declared capability, a test
+   that asserts; and an id that is not a name the hub owns (any registered tool that is
+   not an acquired package's, the tool-search bridge names, the core commands — read from
+   the live registries, checked again when the card is applied);
 2. **quarantine** — an encrypted record whose package hash binds the source, the tests,
    the descriptor and the version the package will install as;
 3. **sandbox verification** — in the acquisition profile's sealed container: the
    author's tests, then a system-owned contract that `register()` returns exactly the
-   declared surface, then the same contract with `register` replaced, which must fail;
+   declared surface (it must exit 0 *and* print a marker with a nonce chosen for that
+   run), then the same contract with `register` replaced, which must fail;
 4. **proposal** — the verified receipt crosses the `skill.install` kernel gate;
 5. **the card** — an `extensions.install` card at the irreversible tier showing each
    capability's risk sentence, the tools/commands/events, the sha256 of `main.py` and of
-   the tests, the provenance and any package it replaces.
+   the tests, the owner-asserted provenance, and everything the install removes (the
+   package it replaces and any generic acquired tool of that name).
 
 Nothing is installed until a person accepts that exact card: a machine decider, an
 edited card, a payload that moved, a replayed card and a card for an unknown proposal
-are refused. Acceptance records the permanent owner decision and runs the existing
+are refused. A newer card for the same extension supersedes older waiting ones, a card
+is refused if the installed package changed since it was computed (no silent
+downgrade), and a card that is no longer waiting expires with its proposal. Acceptance
+records the permanent owner decision and runs the existing
 install (receipt re-check, signing, rollback archive). The package installs as the
 descriptor's version and with provenance `owner-submitted`, which is never registered
 as a generic acquired tool: **installing grants nothing**, and the extension's surface
@@ -283,7 +291,8 @@ nerva extensions pack install nerva-pack.json
 ```
 
 A pack (`pack_version` 1, at most 1 MiB and 64 entries) pins each extension to its
-exact version and the sha256 of its `main.py`, its tests and its declared surface. A
+exact version and the sha256 of its `main.py`, its tests, its canonical descriptor
+(`version` and `requires` included) and its declared surface. A
 pin is 64 lowercase hex characters; there are no ranges, tags or "latest". Each entry
 names a folder beside the pack (relative, no `..`, not a symlink) or an installed
 distribution. A pack carries nothing but pins: `consent`, `granted_capabilities`,

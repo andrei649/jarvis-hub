@@ -10,13 +10,16 @@ flow on install (never bulk-granted) and are capped at 1 MiB
     {"pack_version": 1,
      "extensions": [
        {"id": "boats", "version": "1.0.0", "directory": "boats",
-        "declared_digest": "<sha256>", "source_sha256": "<sha256>", "test_sha256": "<sha256>"},
+        "declared_digest": "<sha256>", "descriptor_sha256": "<sha256>",
+        "source_sha256": "<sha256>", "test_sha256": "<sha256>"},
        {"id": "tides", "version": "2.1.0", "distribution": "nerva-tides",
-        "declared_digest": "<sha256>", "source_sha256": "<sha256>", "test_sha256": "<sha256>"}
+        "declared_digest": "<sha256>", "descriptor_sha256": "<sha256>",
+        "source_sha256": "<sha256>", "test_sha256": "<sha256>"}
      ]}
 
 * **Exact pins only.** Each entry names one exact version and the sha256 of its
-  ``main.py``, its ``test_extension.py`` and its declared surface (the consent digest).
+  ``main.py``, its ``test_extension.py``, its canonical descriptor (``version`` and
+  ``requires`` included) and its declared surface (the consent digest).
   There is no range, tag or "latest": a pin is 64 lowercase hex characters or the pack
   is refused. Nerva fetches no remote code, so an entry's bytes come from a directory
   beside the pack or an installed distribution, and they must hash to the pins.
@@ -44,7 +47,7 @@ PACK_VERSION = 1
 MAX_PACK_BYTES = 1024 * 1024
 MAX_PACK_EXTENSIONS = 64
 _PIN = re.compile(r"[0-9a-f]{64}")
-_PIN_FIELDS = ("declared_digest", "source_sha256", "test_sha256")
+_PIN_FIELDS = ("declared_digest", "descriptor_sha256", "source_sha256", "test_sha256")
 _REFUSED_KEYS = frozenset({"consent", "granted_capabilities", "capabilities_consent", "config", "config_seed",
                            "config_seeds", "settings", "secrets", "env"})
 _ENTRY_KEYS = frozenset({"id", "version", "directory", "distribution", *_PIN_FIELDS})
@@ -58,11 +61,23 @@ class PackError(ValueError):
         self.index = index
 
 
+def descriptor_sha256(authored: AuthoredExtension) -> str:
+    """SHA-256 of the canonical descriptor — what the card and the package hash bind,
+    including ``version`` and ``requires``, which the consent digest leaves out."""
+    import hashlib
+
+    from .submission import canonical_descriptor
+
+    canonical = json.dumps(canonical_descriptor(authored.manifest), sort_keys=True, separators=(",", ":"),
+                           ensure_ascii=False)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def _pins(authored: AuthoredExtension) -> dict:
     from .consent import declared_digest
 
-    return {"declared_digest": declared_digest(authored.manifest), "source_sha256": authored.source_sha256,
-            "test_sha256": authored.test_sha256}
+    return {"declared_digest": declared_digest(authored.manifest), "descriptor_sha256": descriptor_sha256(authored),
+            "source_sha256": authored.source_sha256, "test_sha256": authored.test_sha256}
 
 
 def parse_pack(raw: bytes) -> list[dict]:

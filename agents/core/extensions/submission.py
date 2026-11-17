@@ -71,6 +71,14 @@ TEST_FILE = "test_extension.py"
 MAX_SOURCE_BYTES = 64 * 1024
 MAX_REQUESTS = 256
 HANDLERS = {"tools": "call", "commands": "command", "events.observe": "on_event"}
+#: Names submitted code may not use: leaving the interpreter early would end a sandbox
+#: run with status 0 before its checks ran (review m1).
+_EXIT_NAMES = frozenset({"SystemExit", "exit", "quit"})
+#: A pending card younger than this is never expired while its row is reconciled, unless
+#: the request store is full (an accepted card may be about to apply).
+PENDING_GRACE_S = 15 * 60
+#: An install that stayed "installing" this long crashed mid-way and is recovered.
+INSTALLING_STALE_S = 60 * 60
 _PROVENANCE_KINDS = frozenset({"directory", "distribution", "pack"})
 
 
@@ -242,6 +250,11 @@ def check_source(authored: AuthoredExtension) -> None:
     except (RecursionError, ValueError, MemoryError):
         # Pathological nesting or a NUL byte: refused, never a 500.
         raise SubmissionError("source_rejected", "source cannot be parsed") from None
+    for tree in (code_tree, test_tree):
+        for node in ast.walk(tree):
+            if ((isinstance(node, ast.Name) and node.id in _EXIT_NAMES)
+                    or (isinstance(node, ast.Attribute) and node.attr in _EXIT_NAMES | {"_exit"})):
+                raise SubmissionError("source_rejected", "the source may not exit the interpreter")
     candidates = ("register", *(HANDLERS[name] for name in authored.manifest.capabilities))
     for name in candidates:
         try:
@@ -254,6 +267,65 @@ def check_source(authored: AuthoredExtension) -> None:
     if not any(isinstance(node, ast.FunctionDef) and node.name.startswith("test")
                for node in ast.walk(test_tree)):
         raise SubmissionError("test_rejected", "no test function")
+
+
+def reserved_names(tool_rpc) -> frozenset[str]:
+    """Names an extension id may never take: every tool the hub registered that is not an
+    acquired package's generic tool, the tool-search bridge names and the core commands.
+    Read from the live registries, not a hand list."""
+    from agents.core.acquisition.promotion import ACQUIRED_CAPABILITY_PREFIX
+    from agents.core.tool_search import BRIDGE_TOOL_NAMES
+
+    from .manifest import core_commands
+
+    names = set(BRIDGE_TOOL_NAMES) | set(core_commands())
+    reader = getattr(tool_rpc, "registered_capabilities", None)
+    if callable(reader):
+        names |= {name for name, capability in reader().items()
+                  if not (isinstance(capability, str) and capability.startswith(ACQUIRED_CAPABILITY_PREFIX))}
+    return frozenset(name.lower() for name in names)
+
+
+def _require_free_name(manifest: ExtensionManifest, tool_rpc) -> None:
+    try:
+        reserved = reserved_names(tool_rpc)
+    except Exception:  # noqa: BLE001 - cannot tell what the hub owns: refuse
+        raise SubmissionError("extension_id_unverifiable") from None
+    if manifest.id.lower() in reserved:
+        raise SubmissionError("extension_id_reserved", "the id is a core tool or command name")
+
+
+def _removals(broker, name: str) -> tuple[str, list[str]]:
+    """What installing *name* takes away: the package it replaces and the generic acquired
+    tool it unregisters. Returns (the replaced package's hash or "", card lines)."""
+    from agents.core.acquisition.promotion import is_acquired_tool
+
+    lines, replaced_hash = [], ""
+    current = broker.packages.get(name)
+    if current is not None:
+        replaced_hash = current.package_hash
+        lines.append(f"package {current.name} {current.version} ({current.manifest.get('model_route', 'unknown')}, "
+                     f"package {current.package_hash[:12]})")
+    if is_acquired_tool(broker.tool_rpc, name):
+        lines.append(f"the generic acquired tool {name} (unregistered at install)")
+    return replaced_hash, lines
+
+
+def _mediation_refusal(orch) -> str | None:
+    """With task mediation enforced, an unclassified card kind is refused at intake: say
+    so before anything is quarantined, so a refusal leaves no orphan behind."""
+    queue = getattr(getattr(orch, "autonomy", None), "queue", None)
+    mode = str(getattr(queue, "mediation_mode", "off") or "off").lower()
+    if mode == "off":
+        return None
+    if mode == "hold":
+        return "approval_queue_on_hold"
+    classify = getattr(queue, "classify_mediation", None)
+    try:
+        verdict = classify(APPROVAL_KIND) if callable(classify) else None
+    except Exception:  # noqa: BLE001
+        verdict = None
+    return "approval_kind_unclassified" if verdict is None else None
 
 
 def registration(manifest: ExtensionManifest) -> dict:
@@ -303,10 +375,29 @@ def _verifier_class():
 
     class ExtensionVerifier(SandboxVerifier):
         """The acquisition verifier with one system-owned contract: ``register()`` takes
-        nothing and must return exactly the declared surface."""
+        nothing and must return exactly the declared surface.
 
-        @staticmethod
-        def contract_test_source(contract) -> str:
+        Exit status 0 alone does not pass the contract run: it must also print a marker
+        carrying a nonce chosen for this run, which the submitted code never sees, so code
+        that leaves the interpreter early cannot pass a contract that never ran."""
+
+        def __init__(self, *args, **kwargs):
+            import secrets
+
+            super().__init__(*args, **kwargs)
+            self.marker = f"SYSTEM_CONTRACT_OK {secrets.token_hex(16)}"
+
+        async def _run(self, source, contract, name, command, *, mutate=False):
+            from dataclasses import replace as _replace
+
+            result = await super()._run(source, contract, name, command, mutate=mutate)
+            is_contract = bool(command) and str(command[-1]).endswith("/contract_test.py")
+            if (is_contract and not mutate and result.exit_code == 0
+                    and self.marker not in str(result.stdout or "").splitlines()):
+                return _replace(result, exit_code=1)
+            return result
+
+        def contract_test_source(self, contract) -> str:
             payload = json.dumps(asdict(contract), ensure_ascii=False, separators=(",", ":"))
             return (
                 "import importlib.util\n"
@@ -328,7 +419,7 @@ def _verifier_class():
                 "    if (not isinstance(value, (list, tuple)) or len(set(value)) != len(value)\n"
                 "            or sorted(value) != names):\n"
                 "        raise AssertionError('registration differs from the declaration')\n"
-                "print('SYSTEM_CONTRACT_OK')\n"
+                f"print({self.marker!r})\n"
             )
 
     return ExtensionVerifier
@@ -373,7 +464,8 @@ def _write_requests(path: Path, rows: dict) -> None:
         raise
 
 
-def _card(authored: AuthoredExtension, proposal, package, receipt_hash: str, replaces) -> tuple[dict, dict]:
+def _card(authored: AuthoredExtension, proposal, package, receipt_hash: str, replaced_hash: str,
+          removals: list[str]) -> tuple[dict, dict]:
     from .capabilities import consent_screen
     from .consent import declared_digest
 
@@ -389,6 +481,9 @@ def _card(authored: AuthoredExtension, proposal, package, receipt_hash: str, rep
         "test_sha256": authored.test_sha256,
         "declared_digest": declared_digest(manifest),
         "provenance": dict(authored.provenance),
+        # The install refuses if the installed package is no longer the one this card
+        # was computed against (review m2: no silent downgrade by an older card).
+        "replaces_package_hash": replaced_hash,
     }
     screen = consent_screen(manifest, {"consent": "not_granted", "declared_digest": payload["declared_digest"]})
     preview = {
@@ -399,8 +494,9 @@ def _card(authored: AuthoredExtension, proposal, package, receipt_hash: str, rep
         "events": ", ".join(screen["events"]) or "none",
         "source": (f"main.py sha256 {authored.source_sha256} ({len(authored.code.encode('utf-8'))} bytes); "
                    f"test_extension.py sha256 {authored.test_sha256}"),
-        "provenance": ", ".join(f"{k}={v}" for k, v in sorted(authored.provenance.items())),
-        "replaces": replaces or "nothing",
+        "provenance": "owner-asserted, not verified: " + ", ".join(
+            f"{k}={v}" for k, v in sorted(authored.provenance.items())),
+        "replaces": "; ".join(removals) or "nothing",
         "effect": ("signs and stores this exact code after it passed its tests and the declared-surface "
                    "contract in the sealed sandbox. Nothing becomes callable until you also consent "
                    "and activate it."),
@@ -422,6 +518,10 @@ async def submit(acquisition, authored: AuthoredExtension, *, orch, runner=None,
     broker = acquisition.ensure_promotion()
     if broker is None:
         raise SubmissionError("acquisition_unavailable")
+    _require_free_name(authored.manifest, broker.tool_rpc)
+    refusal = _mediation_refusal(orch)
+    if refusal:
+        raise SubmissionError(refusal)
     package, contract = build_package(authored, clock=clock)
     try:
         broker.quarantine.put(package)
@@ -437,16 +537,19 @@ async def submit(acquisition, authored: AuthoredExtension, *, orch, runner=None,
         proposal = broker.propose(package.artifact_id, contract=contract, version=authored.manifest.version)
     except PromotionError as exc:
         raise SubmissionError("proposal_refused", str(exc)) from None
-    current = broker.packages.get(authored.manifest.id)
-    replaces = None
-    if current is not None:
-        replaces = (f"{current.name} {current.version} ({current.manifest.get('model_route', 'unknown')}, "
-                    f"package {current.package_hash[:12]})")
-    payload, preview = _card(authored, proposal, package, outcome.receipt.receipt_hash, replaces)
+    replaced_hash, removals = _removals(broker, authored.manifest.id)
+    replaces = "; ".join(removals) or None
+    payload, preview = _card(authored, proposal, package, outcome.receipt.receipt_hash, replaced_hash, removals)
     path = _requests_path()
     try:
         with locked_store(path):
             rows = _read_requests(path)
+            now = float(clock())
+            _reconcile(rows, orch, broker, now=now, force=len(rows) >= MAX_REQUESTS)
+            # A newer card for the same extension supersedes every older waiting one.
+            for key, row in rows.items():
+                if row.get("status") == "pending" and (row.get("payload") or {}).get("extension") == authored.manifest.id:
+                    _retire(rows, key, broker, "superseded", now)
             if len(rows) >= MAX_REQUESTS:
                 # Keep the newest; a settled row is history, a pending one may still be decided.
                 settled = sorted((key for key, row in rows.items() if row.get("status") != "pending"),
@@ -468,6 +571,48 @@ async def submit(acquisition, authored: AuthoredExtension, *, orch, runner=None,
     return {"pending": queued["pending"], "proposal_id": proposal.proposal_id,
             "extension": authored.manifest.id, "version": authored.manifest.version,
             "package_hash": package.package_hash, "replaces": replaces}
+
+
+def _waiting_task_ids(orch) -> set | None:
+    """Ids of the install cards still waiting for a decision, or None when the queue
+    cannot say (then nothing is expired on its account)."""
+    from agents.core.autonomy import irreversible
+
+    queue = getattr(getattr(orch, "autonomy", None), "queue", None)
+    lister = getattr(queue, "pending_decisions", None)
+    if not callable(lister):
+        return None
+    try:
+        found = lister(kind=APPROVAL_KIND, limit=irreversible.PENDING_MAX)
+    except Exception:  # noqa: BLE001 - cannot tell
+        return None
+    return {getattr(task, "id", None) for task in found if getattr(task, "kind", APPROVAL_KIND) == APPROVAL_KIND}
+
+
+def _retire(rows: dict, key: str, broker, status: str, now: float) -> None:
+    rows[key]["status"] = status
+    rows[key]["settled_at"] = now
+    if broker is not None:
+        with contextlib.suppress(Exception):
+            broker.proposals.discard(key)
+
+
+def _reconcile(rows: dict, orch, broker, *, now: float, force: bool) -> None:
+    """Settle rows whose card is gone (review m4): a waiting row whose card is no longer
+    waiting expires (after a grace, or at once when the store is full) and its proposal is
+    dropped; an install that crashed mid-way is recovered from the package store."""
+    waiting = _waiting_task_ids(orch)
+    for key, row in list(rows.items()):
+        status = row.get("status")
+        if status == "pending" and waiting is not None and row.get("task_id") not in waiting:
+            if force or now - float(row.get("requested_at") or 0) > PENDING_GRACE_S:
+                _retire(rows, key, broker, "expired", now)
+        elif status == "installing" and now - float(row.get("installing_at") or 0) > INSTALLING_STALE_S:
+            payload = row.get("payload") or {}
+            current = broker.packages.get(payload.get("extension", "")) if broker is not None else None
+            done = current is not None and current.package_hash == payload.get("package_hash")
+            row["status"] = "installed" if done else "failed"
+            row["settled_at"] = now
 
 
 def _audit(orch: Any, actor: str, action: str, why: str, metadata: dict) -> None:
@@ -510,12 +655,15 @@ async def apply_approved(task: Any, orch: Any) -> dict:
             row = rows.get(proposal_id) if isinstance(proposal_id, str) else None
             if row is None or row.get("task_id") != getattr(task, "id", None):
                 return {"status": "refused", "reason": "not_requested"}
+            if row.get("status") in {"superseded", "expired"}:
+                return {"status": "refused", "reason": f"card_{row['status']}"}
             if row.get("status") != "pending":
                 return {"status": "refused", "reason": "already_applied"}
             expected = row.get("payload") or {}
             if not expected or any(payload.get(key) != value for key, value in expected.items()):
                 return {"status": "refused", "reason": "payload_changed"}
             row["status"] = "installing"
+            row["installing_at"] = time.time()
             _write_requests(path, rows)
     except StoreLockError:
         return {"status": "refused", "reason": "install_requests_unavailable"}
@@ -530,6 +678,17 @@ async def apply_approved(task: Any, orch: Any) -> dict:
             or proposal.name != expected["extension"] or proposal.status != "pending"):
         _settle(path, proposal_id, "refused")
         return {"status": "refused", "reason": "proposal_changed"}
+    try:
+        _require_free_name(SimpleNamespace(id=expected["extension"]), broker.tool_rpc)
+    except SubmissionError as exc:
+        _settle(path, proposal_id, "refused")
+        return {"status": "refused", "reason": exc.reason}
+    current = broker.packages.get(expected["extension"])
+    if (current.package_hash if current is not None else "") != expected.get("replaces_package_hash", ""):
+        # Another install landed since this card was computed: its "replaces" line is
+        # stale, and accepting it could silently downgrade. Ask again.
+        _settle(path, proposal_id, "refused")
+        return {"status": "refused", "reason": "installed_package_moved"}
     actor = str(getattr(task, "decided_by", "") or "owner")
     try:
         broker.decide(proposal_id, approved=True, actor="owner", permanent=True)
@@ -551,4 +710,4 @@ async def apply_approved(task: Any, orch: Any) -> dict:
 
 __all__ = ["APPROVAL_KIND", "AuthoredExtension", "SubmissionError", "apply_approved", "build_package",
            "canonical_descriptor", "check_source", "from_parts", "read_directory", "read_installed",
-           "registration", "submit"]
+           "registration", "reserved_names", "submit"]

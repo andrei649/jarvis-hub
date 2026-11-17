@@ -19,7 +19,9 @@ parser as a file the owner names (``manifest.parse_manifest``).
 A declaration found here is only a declaration. A pip install does not make an
 extension callable: code runs only as a signed acquired package, so an installed
 distribution reaches execution only as a signed acquired package, after the
-sandbox verification and the ``skill.install`` approval card.
+sandbox verification, the ``skill.install`` kernel gate and the owner's
+``extensions.install`` approval card (``nerva extensions install --installed ID``),
+and then only after consent and activation.
 """
 
 from __future__ import annotations

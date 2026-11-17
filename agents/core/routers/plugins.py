@@ -9,12 +9,13 @@ routers. Behavior is unchanged — no singleton lives here.
 """
 
 import asyncio
+import json
 import logging
 import time
 
 from core.log_safe import log_safe
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from agents.core.app_state import get_orch
 from agents.core.plugins.honesty import degradation_info as _plugin_degradation
@@ -203,6 +204,22 @@ class ExtensionInstallBody(BaseModel):
     source: str = Field(..., max_length=64 * 1024)
     test: str = Field(..., max_length=64 * 1024)
     provenance: dict | None = None
+
+    @field_validator("manifest", "provenance")
+    @classmethod
+    def _bounded(cls, value, info):
+        """The descriptor is capped like a descriptor file (64 KiB) and the owner-asserted
+        provenance at 1 KiB, before anything parses them."""
+        if value is None:
+            return value
+        limit = 64 * 1024 if info.field_name == "manifest" else 1024
+        try:
+            size = len(json.dumps(value, ensure_ascii=False).encode("utf-8"))
+        except (TypeError, ValueError, RecursionError):
+            raise ValueError("unserializable") from None
+        if size > limit:
+            raise ValueError("too large")
+        return value
 
 
 def _extension_sandbox_runner():

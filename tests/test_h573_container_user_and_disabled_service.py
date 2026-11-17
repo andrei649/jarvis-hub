@@ -87,6 +87,7 @@ def test_the_windows_variant_publishes_on_loopback_and_its_bind_needs_a_token(mo
 STUBS = {
     "id": '''case "$*" in
   "-u") echo "$STUB_ID_U" ;;
+  "-g") echo "${STUB_ID_G:-0}" ;;
   "-u nerva") echo "${STUB_NERVA_UID:-1000}" ;;
   "-g nerva") echo "${STUB_NERVA_GID:-1000}" ;;
   *) echo 0 ;;
@@ -96,7 +97,13 @@ esac''',
     "usermod": 'echo "usermod $*" >> "$STUB_LOG"',
     "chown": 'echo "chown $*" >> "$STUB_LOG"',
     "mkdir": 'echo "mkdir $*" >> "$STUB_LOG"',
-    "setpriv": 'echo "setpriv $*" >> "$STUB_LOG"',
+    # Logs its options, then runs the rest as the dropped user would: `id` answers the
+    # post-drop ids (STUB_AFTER_U/G), so the entrypoint's still-root check is exercised.
+    "setpriv": '''opts=""
+while [ "$1" != "--" ]; do opts="$opts $1"; shift; done
+shift
+echo "setpriv$opts" >> "$STUB_LOG"
+STUB_ID_U="${STUB_AFTER_U:-1000}" STUB_ID_G="${STUB_AFTER_G:-1000}" exec "$@"''',
     "true-cmd": 'echo "direct $*" >> "$STUB_LOG"',
 }
 
@@ -128,7 +135,8 @@ def test_root_start_remaps_to_puid_pgid_hands_over_the_data_root_and_drops_privi
         f"chown -hR 1234:2345 {data}",
         "mkdir -p /app/logs",
         "chown -hR 1234:2345 /app/logs",
-        "setpriv --reuid=1234 --regid=2345 --init-groups --no-new-privs -- true-cmd serve",
+        "setpriv --reuid=1234 --regid=2345 --init-groups --inh-caps=-all --bounding-set=-all --no-new-privs",
+        "direct serve",
     ]
 
 
@@ -137,14 +145,14 @@ def test_nerva_uid_beats_puid_and_an_already_owned_root_is_not_walked(tmp_path):
                          PUID="1234", PGID="2345")
     assert result.returncode == 0
     assert not any(call.startswith("chown") for call in calls)
-    assert calls[-1].startswith("setpriv --reuid=1500 --regid=1500 ")
+    assert calls[-2].startswith("setpriv --reuid=1500 --regid=1500 ") and calls[-1] == "direct serve"
 
 
 def test_default_ids_need_no_remap(tmp_path):
     result, calls = _run(tmp_path, stat="1000:1000")
     assert result.returncode == 0
     assert calls == [f"mkdir -p {tmp_path / 'data'}", "mkdir -p /app/logs",
-                     "setpriv --reuid=1000 --regid=1000 --init-groups --no-new-privs -- true-cmd serve"]
+                     "setpriv --reuid=1000 --regid=1000 --init-groups --inh-caps=-all --bounding-set=-all --no-new-privs", "direct serve"]
 
 
 @pytest.mark.parametrize("env", [{"PUID": "0"}, {"PGID": "0"}, {"NERVA_UID": "0", "PUID": "1000"},
@@ -152,6 +160,56 @@ def test_default_ids_need_no_remap(tmp_path):
 def test_root_ids_and_non_numbers_are_refused_before_anything_changes(tmp_path, env):
     result, calls = _run(tmp_path, **env)
     assert result.returncode == 64 and calls == []
+
+
+@pytest.mark.parametrize("env", [
+    {"PUID": "4294967295", "PGID": "4294967295"},   # (uid_t)-1: setpriv would leave root
+    {"NERVA_UID": "4294967295"},
+    {"PUID": "18446744073709551616"},              # past intmax: dash would mis-compare
+    {"PGID": "99999999999999999999"},
+    {"PUID": "2147483648"},
+    {"PUID": "007"},
+])
+def test_out_of_range_ids_are_refused_before_anything_changes(tmp_path, env):
+    # Review repro r4.
+    result, calls = _run(tmp_path, **env)
+    assert result.returncode == 64 and calls == [], (result.returncode, calls, result.stderr)
+
+
+def test_the_largest_allowed_id_is_accepted(tmp_path):
+    result, calls = _run(tmp_path, PUID="2147483647", PGID="2147483647", stat="2147483647:2147483647",
+                         STUB_AFTER_U="2147483647", STUB_AFTER_G="2147483647")
+    assert result.returncode == 0 and calls[-1] == "direct serve"
+
+
+@pytest.mark.parametrize("env", [{"STUB_AFTER_U": "0"}, {"STUB_AFTER_G": "0"}])
+def test_a_process_still_root_after_the_drop_refuses_to_start(tmp_path, env):
+    result, calls = _run(tmp_path, stat="1000:1000", **env)
+    assert result.returncode == 70 and "direct serve" not in calls and "still root" in result.stderr
+
+
+@pytest.mark.parametrize("root", ["/", "//", "/app", "/app/", "data", "/data/../app", "/srv/./x"])
+def test_a_data_root_that_would_hand_over_the_image_is_refused(tmp_path, root):
+    result, calls = _run(tmp_path, JARVIS_HOME=root)
+    assert result.returncode == 64 and calls == []
+
+
+def test_nerva_home_is_the_data_root_it_names(tmp_path):
+    result, calls = _run(tmp_path, stat="1000:1000", NERVA_HOME=str(tmp_path / "nerva-data"))
+    assert result.returncode == 0 and calls[0] == f"mkdir -p {tmp_path / 'nerva-data'}"
+
+
+def test_the_run_log_summary_reads_a_disabled_coordinator_as_down(tmp_path):
+    from agents.core.observability.runtime_log import read_runtime_health as summarize
+
+    log = tmp_path / "runtime.jsonl"
+    now = time.time()
+    log.write_text("\n".join(json.dumps({"supervisor_event": event, "at": now})
+                             for event in ("spawned", "disabled", "stopped")) + "\n")
+    summary = summarize(log, now=now)
+    assert summary["disabled"] is True and summary["stale"] is True
+    log.write_text(log.read_text() + json.dumps({"supervisor_event": "spawned", "at": now}) + "\n")
+    assert "disabled" not in summarize(log, now=now)
 
 
 def test_a_non_root_start_execs_the_command_unchanged(tmp_path):

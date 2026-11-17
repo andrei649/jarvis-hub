@@ -37,6 +37,21 @@ def _version_bound(package, version: str) -> bool:
     return version == "0.1.0"
 
 
+ACQUIRED_CAPABILITY_PREFIX = "tool:acquired."
+
+
+def is_acquired_tool(tool_rpc, name: str) -> bool:
+    """Whether *name* is registered as an acquired package's generic tool, and only that."""
+    reader = getattr(tool_rpc, "registered_capabilities", None)
+    if not callable(reader):
+        return False
+    try:
+        capability = reader().get(name)
+    except Exception:  # noqa: BLE001 - cannot tell: never unregister
+        return False
+    return isinstance(capability, str) and capability.startswith(ACQUIRED_CAPABILITY_PREFIX)
+
+
 class PromotionError(RuntimeError):
     pass
 
@@ -309,6 +324,18 @@ class PromotionStore(_EncryptedRows):
         with self._lock:
             return next((row for row in self._load() if row.proposal_id == proposal_id), None)
 
+    def discard(self, proposal_id: str) -> bool:
+        """Drop a proposal nobody can approve any more (its card was superseded, rejected or
+        expired). Only a pending or rejected row; an approved or installed one is history."""
+        with self._lock:
+            rows = self._load()
+            kept = [row for row in rows
+                    if not (row.proposal_id == proposal_id and row.status in {"pending", "rejected"})]
+            if len(kept) == len(rows):
+                return False
+            self._commit(kept)
+            return True
+
     def decide(self, proposal_id: str, *, approved: bool, actor: str) -> PromotionProposal:
         with self._lock:
             rows = self._load()
@@ -579,9 +606,12 @@ class PromotionBroker:
             self.journal.advance(proposal_id, "installed")
             self.marketplace.index_acquired_package(installed.catalog_metadata())
             self._fail("installed")
-            if record.package.model_route == OWNER_SUBMITTED_ROUTE and self.tool_rpc.allows(installed.name):
+            if (record.package.model_route == OWNER_SUBMITTED_ROUTE
+                    and is_acquired_tool(self.tool_rpc, installed.name)):
                 # H566: an extension that replaces a generated package of the same name
-                # takes that generic tool off the surface; its own tools need consent.
+                # takes that package's generic tool off the surface (its own tools need
+                # consent). Only an acquired tool: a core tool of that name is never
+                # touched, and submission refuses such a name before any card exists.
                 await self.tool_rpc.unregister_tool(installed.name, cancel_inflight=True)
             self._register(installed.name)
             self.journal.advance(proposal_id, "registered")

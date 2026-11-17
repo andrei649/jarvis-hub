@@ -234,6 +234,7 @@ def read_runtime_health(
     cycles = 0
     failures = 0
     respawns = 0
+    disabled = False
     last_cycle: dict | None = None
     cutoff = now - window_s
 
@@ -249,6 +250,11 @@ def read_runtime_health(
             at = entry.get("at")
             if event == "respawned" and isinstance(at, (int, float)) and at >= cutoff:
                 respawns += 1
+            # H573: a switched-off coordinator reads as down until a later spawn.
+            if event == "disabled":
+                disabled = True
+            elif event in {"spawned", "respawned"}:
+                disabled = False
             continue
         if not isinstance(entry.get("cycle"), int):
             continue
@@ -259,9 +265,10 @@ def read_runtime_health(
             if entry.get("ok") is not True:
                 failures += 1
 
+    down = {"disabled": True, "stale": True} if disabled else {}
     if last_cycle is None:
         # Supervisor events only (spawned, never completed a cycle yet).
-        return {"present": True, "cycles_seen": 0, "respawns": respawns}
+        return {"present": True, "cycles_seen": 0, "respawns": respawns, **down}
 
     started_at = last_cycle.get("started_at")
     age_s = round(now - started_at, 1) if isinstance(started_at, (int, float)) else None
@@ -275,4 +282,5 @@ def read_runtime_health(
         "cycles_seen": cycles,
         "failures": failures,
         "respawns": respawns,
+        **down,
     }

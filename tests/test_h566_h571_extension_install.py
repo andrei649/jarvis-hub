@@ -283,9 +283,12 @@ async def test_a_replaced_generic_tool_is_unregistered_and_the_generic_runner_re
     async def stale(_args):
         return {}
 
-    hub.tool_rpc.register_tool("boats", stale)          # a generated package's old tool
+    # A generated package's old generic tool, registered the way PromotionBroker does.
+    hub.tool_rpc.register_tool("boats", stale, capability_id="tool:acquired.boats")
     assert hub.tool_rpc.allows("boats")
     await submission.submit(hub.acquisition, read_directory(author(tmp_path)), orch=hub.orch, runner=hub.runner)
+    # The card names the tool the install takes away.
+    assert "generic acquired tool boats" in hub.tasks[0]["payload"]["preview"]["replaces"]
     assert (await irreversible.execute(_task(hub), orch=hub.orch))["status"] == "installed"
     assert not hub.tool_rpc.allows("boats")
     generic = AcquiredSandboxRunner(packages=hub.packages, profile=hub.broker.profile,
@@ -492,3 +495,188 @@ async def test_the_installed_package_still_needs_consent_then_activates_as_decla
     activation = await runtime.activate(authored.manifest)
     assert activation.as_dict()["callable_tools"] == ["boats.summarize"] and activation.version == "1.2.0"
     assert await runtime.dispatch("boats.summarize", {"text": "a blue boat"}) == {"summary": "a blue boat"}
+
+
+# ── security review fixes (repros r1-r6 made permanent) ──────────────────────
+
+def _named(tmp_path, name):
+    descriptor = {**DESCRIPTOR, "id": name}
+    source = SOURCE.replace("boats.summarize", f"{name}.summarize")
+    test = TEST.replace("boats.summarize", f"{name}.summarize")
+    return read_directory(author(tmp_path, name, descriptor=descriptor, source=source, test=test))
+
+
+@pytest.mark.asyncio
+async def test_r1_an_id_that_is_a_core_tool_is_refused_and_the_core_tool_survives(tmp_path, hub):
+    async def builtin(_args):
+        return {"ok": True}
+
+    hub.tool_rpc.register_tool("web_search", builtin, gated=False)   # a core tool, not acquired
+    with pytest.raises(SubmissionError) as refused:
+        await submission.submit(hub.acquisition, _named(tmp_path, "web_search"), orch=hub.orch, runner=hub.runner)
+    assert refused.value.reason == "extension_id_reserved"
+    assert hub.tool_rpc.allows("web_search") and hub.tasks == [] and hub.runner.runs == []
+
+
+@pytest.mark.asyncio
+async def test_r1_a_core_tool_registered_after_the_card_still_blocks_the_install(tmp_path, hub):
+    await submission.submit(hub.acquisition, _named(tmp_path, "memo"), orch=hub.orch, runner=hub.runner)
+
+    async def builtin(_args):
+        return {}
+
+    hub.tool_rpc.register_tool("memo", builtin)
+    result = await irreversible.execute(_task(hub), orch=hub.orch)
+    assert result == {"status": "refused", "reason": "extension_id_reserved"}
+    assert hub.tool_rpc.allows("memo") and hub.packages.get("memo") is None
+
+
+def test_r1_core_commands_and_bridge_names_are_reserved():
+    from agents.core.tool_search import BRIDGE_TOOL_NAMES
+
+    reserved = submission.reserved_names(None)
+    assert "help" in reserved and set(BRIDGE_TOOL_NAMES) <= reserved
+
+
+@pytest.mark.asyncio
+async def test_r1_install_unregisters_only_an_acquired_tool(hub):
+    from agents.core.acquisition.promotion import is_acquired_tool
+
+    async def handler(_args):
+        return {}
+
+    hub.tool_rpc.register_tool("core_thing", handler)
+    hub.tool_rpc.register_tool("old_package", handler, capability_id="tool:acquired.old_package")
+    assert not is_acquired_tool(hub.tool_rpc, "core_thing")
+    assert is_acquired_tool(hub.tool_rpc, "old_package")
+    assert not is_acquired_tool(SimpleNamespace(), "old_package")
+
+
+EXITS_IN_REGISTER = SOURCE.replace(
+    'def register():\n    return {"tools": ["boats.summarize"], "commands": [], "events": []}',
+    "def register():\n    raise SystemExit(0)",
+)
+
+
+@pytest.mark.asyncio
+async def test_r2_a_contract_run_that_exits_zero_without_the_nonce_fails_verification(tmp_path, hub, monkeypatch):
+    assert "raise SystemExit(0)" in EXITS_IN_REGISTER
+    test = TEST.replace('        self.assertEqual(register()["tools"], ["boats.summarize"])\n', "")
+    authored = read_directory(author(tmp_path, source=EXITS_IN_REGISTER, test=test))
+    # The static rules now refuse it outright ...
+    with pytest.raises(SubmissionError) as static:
+        submission.check_source(authored)
+    assert static.value.detail == "the source may not exit the interpreter"
+    # ... and even past them, the sandbox contract needs this run's nonce on stdout.
+    monkeypatch.setattr(submission, "check_source", lambda _authored: None)
+    with pytest.raises(SubmissionError) as refused:
+        await submission.submit(hub.acquisition, authored, orch=hub.orch, runner=hub.runner)
+    assert refused.value.reason == "verification_failed"
+    assert refused.value.detail == "system-owned contract test failed"
+
+
+@pytest.mark.parametrize("line", ["exit(0)", "quit()", "raise SystemExit", "x = SystemExit"])
+def test_r2_exit_names_are_refused_statically(tmp_path, line):
+    source = SOURCE + f"\n\ndef helper():\n    {line}\n"
+    with pytest.raises(SubmissionError, match="source_rejected"):
+        submission.check_source(read_directory(author(tmp_path, source=source)))
+
+
+@pytest.mark.asyncio
+async def test_r3_an_older_card_cannot_downgrade_a_newer_install(tmp_path, hub):
+    old = read_directory(author(tmp_path / "a"))
+    new = read_directory(author(tmp_path / "b", descriptor={**DESCRIPTOR, "version": "1.3.0"}))
+    await submission.submit(hub.acquisition, old, orch=hub.orch, runner=hub.runner)
+    await submission.submit(hub.acquisition, new, orch=hub.orch, runner=hub.runner)
+    assert hub.tasks[0]["payload"]["preview"]["replaces"] == "nothing"
+    assert (await irreversible.execute(_task(hub, 1), orch=hub.orch))["status"] == "installed"
+    assert hub.packages.get("boats").version == "1.3.0"
+    stale = await irreversible.execute(_task(hub, 0), orch=hub.orch)
+    assert stale == {"status": "refused", "reason": "card_superseded"}
+    assert hub.packages.get("boats").version == "1.3.0"
+    # The superseded proposal was dropped, not left pending.
+    assert hub.broker.proposals.get(hub.tasks[0]["payload"]["proposal_id"]) is None
+
+
+@pytest.mark.asyncio
+async def test_r3_a_card_whose_replaced_package_moved_is_refused(tmp_path, hub, monkeypatch):
+    await submission.submit(hub.acquisition, read_directory(author(tmp_path)), orch=hub.orch, runner=hub.runner)
+    moved = SimpleNamespace(package_hash="9" * 64)
+    monkeypatch.setattr(hub.packages, "get", lambda name: moved)
+    result = await irreversible.execute(_task(hub), orch=hub.orch)
+    assert result == {"status": "refused", "reason": "installed_package_moved"}
+
+
+@pytest.mark.asyncio
+async def test_r5_cards_no_longer_waiting_do_not_lock_out_later_installs(tmp_path, hub, monkeypatch):
+    monkeypatch.setattr(submission, "MAX_REQUESTS", 2)
+    hub.orch.autonomy.queue = SimpleNamespace(pending_decisions=lambda **_k: [])
+    for index, version in enumerate(("1.0.0", "1.1.0")):
+        folder = author(tmp_path / str(index), descriptor={**DESCRIPTOR, "version": version})
+        await submission.submit(hub.acquisition, read_directory(folder), orch=hub.orch, runner=hub.runner)
+    third = read_directory(author(tmp_path / "third", descriptor={**DESCRIPTOR, "version": "1.2.0"}))
+    result = await submission.submit(hub.acquisition, third, orch=hub.orch, runner=hub.runner)
+    assert result["pending"] == 3
+
+
+@pytest.mark.asyncio
+async def test_r5_a_young_waiting_card_is_kept_and_a_crashed_install_is_recovered(tmp_path, hub):
+    clock = [1000.0]
+    await submission.submit(hub.acquisition, read_directory(author(tmp_path / "a")), orch=hub.orch,
+                            runner=hub.runner, clock=lambda: clock[0])
+    path = submission._requests_path()
+    rows = submission._read_requests(path)
+    [(key, row)] = rows.items()
+    hub.orch.autonomy.queue = SimpleNamespace(pending_decisions=lambda **_k: [])
+    submission._reconcile(rows, hub.orch, hub.broker, now=clock[0] + 60, force=False)
+    assert rows[key]["status"] == "pending"                      # inside the grace
+    submission._reconcile(rows, hub.orch, hub.broker, now=clock[0] + submission.PENDING_GRACE_S + 1, force=False)
+    assert rows[key]["status"] == "expired" and hub.broker.proposals.get(key) is None
+    row["status"], row["installing_at"] = "installing", clock[0]
+    submission._reconcile(rows, hub.orch, hub.broker, now=clock[0] + submission.INSTALLING_STALE_S + 1, force=False)
+    assert rows[key]["status"] == "failed"                       # nothing was installed
+
+
+@pytest.mark.asyncio
+async def test_with_mediation_enforced_an_unclassified_card_kind_leaves_no_orphan(tmp_path, hub):
+    hub.orch.autonomy.queue = SimpleNamespace(mediation_mode="enforce", classify_mediation=lambda _kind: None)
+    with pytest.raises(SubmissionError, match="approval_kind_unclassified"):
+        await submission.submit(hub.acquisition, read_directory(author(tmp_path)), orch=hub.orch, runner=hub.runner)
+    assert hub.runner.runs == [] and hub.tasks == []
+
+
+def test_r6_a_descriptor_whose_requirements_moved_is_not_exactly_pinned(tmp_path):
+    pack_path = _pack(tmp_path)
+    descriptor_path = tmp_path / "boats" / "extension.json"
+    descriptor = json.loads(descriptor_path.read_text())
+    descriptor["requires"]["python"] = {"numpy": "1.26.0"}
+    descriptor_path.write_text(json.dumps(descriptor))
+    with pytest.raises(PackError) as refused:
+        load_pack(pack_path)
+    assert refused.value.reason == "pin_mismatch"
+
+
+def test_the_card_says_provenance_is_owner_asserted(tmp_path, hub):
+    authored = read_directory(author(tmp_path))
+    package, _contract = submission.build_package(authored)
+    _payload, preview = submission._card(authored, SimpleNamespace(proposal_id="p"), package, "r" * 64, "", [])
+    assert preview["provenance"].startswith("owner-asserted, not verified")
+
+
+@pytest.mark.asyncio
+async def test_the_install_body_bounds_descriptor_and_provenance(hub, monkeypatch):
+    monkeypatch.setattr(web, "USER_TOKEN", "u")
+    monkeypatch.setattr(web, "ADMIN_TOKEN", "a")
+    monkeypatch.setattr(web, "orch", hub.orch)
+    app = FastAPI()
+    app.include_router(plugins.router)
+    headers = {"X-User-Token": "u", "X-Admin-Token": "a"}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app, client=("198.51.100.2", 1)),
+                                 base_url="http://test") as client:
+        big = await client.post("/api/plugins/extensions/install", headers=headers, json={
+            "manifest": {**DESCRIPTOR, "pad": "x" * 70000}, "source": SOURCE, "test": TEST})
+        assert big.status_code == 422
+        chatty = await client.post("/api/plugins/extensions/install", headers=headers, json={
+            "manifest": DESCRIPTOR, "source": SOURCE, "test": TEST, "provenance": {"kind": "directory", "x": "y" * 2000}})
+        assert chatty.status_code == 422
+    assert hub.tasks == []
