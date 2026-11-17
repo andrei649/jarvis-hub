@@ -49,5 +49,11 @@ agents/*/HEARTBEAT.local.md
 frontend/e2e/artifacts/
 frontend/e2e/.results/
 
+# ANDREI OS / J.A.R.V.I.S. app (apps/jarvis-os): config.json holds API keys and
+# vault/ is a portable copy of a personal Obsidian Second Brain — never commit
+# either. Export bundles (*.zip) are already ignored above.
+apps/jarvis-os/config.json
+apps/jarvis-os/vault/
+
 # graft's local repository settings — not committed.
 /.graft/

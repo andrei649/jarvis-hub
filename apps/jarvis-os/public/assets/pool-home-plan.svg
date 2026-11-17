@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 720" width="820" height="720">
+  <defs>
+    <linearGradient id="grass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#69b34c"/>
+      <stop offset="100%" stop-color="#4d8f35"/>
+    </linearGradient>
+    <linearGradient id="pool" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#63d2ff"/>
+      <stop offset="100%" stop-color="#2da6df"/>
+    </linearGradient>
+    <pattern id="tile" width="18" height="18" patternUnits="userSpaceOnUse">
+      <rect width="18" height="18" fill="#efe4d2"/>
+      <path d="M 18 0 L 0 0 0 18" fill="none" stroke="#dfd0b8" stroke-width="1"/>
+    </pattern>
+    <pattern id="wood" width="24" height="10" patternUnits="userSpaceOnUse">
+      <rect width="24" height="10" fill="#eadbc5"/>
+      <line x1="0" y1="9.5" x2="24" y2="9.5" stroke="#d8c3a5" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <!-- Outer Blueprint Sheet -->
+  <rect width="820" height="720" rx="22" fill="#f8fafc"/>
+  <!-- Lawn Perimeter -->
+  <rect x="46" y="42" width="728" height="636" rx="18" fill="url(#grass)" stroke="#356822" stroke-width="3"/>
+
+  <!-- Pool Terrace Deck -->
+  <rect x="170" y="76" width="490" height="165" fill="url(#tile)" stroke="#8b7d6b" stroke-width="2.5"/>
+
+  <!-- Swimming Pool + Spa -->
+  <path d="M 235 96 H 575 V 150 H 460 V 188 H 235 Z" fill="url(#pool)" stroke="#1d6fa5" stroke-width="4"/>
+  <rect x="192" y="138" width="43" height="44" fill="#4cc9f0" stroke="#1d6fa5" stroke-width="3.5"/>
+  <text x="365" y="136" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#0c4a6e" text-anchor="middle">SWIMMING POOL</text>
+  <text x="365" y="152" font-family="Arial, sans-serif" font-size="10" fill="#0c4a6e" text-anchor="middle">11.5m × 4.8m</text>
+
+  <!-- Main House Footprint -->
+  <path d="M 130 220 H 685 V 632 H 495 V 575 H 345 V 608 H 130 Z" fill="url(#wood)" stroke="#1e293b" stroke-width="7"/>
+
+  <!-- Garage Slab -->
+  <rect x="495" y="445" width="190" height="187" fill="#e2e8f0" stroke="#1e293b" stroke-width="6"/>
+  <line x1="518" y1="632" x2="662" y2="632" stroke="#94a3b8" stroke-width="8" stroke-dasharray="12 4"/>
+
+  <!-- Interior Partition Walls -->
+  <g stroke="#1e293b" stroke-width="5" fill="none">
+    <!-- Master Wing Left -->
+    <line x1="285" y1="220" x2="285" y2="608"/>
+    <line x1="130" y1="365" x2="285" y2="365"/>
+    <line x1="130" y1="468" x2="285" y2="468"/>
+    <line x1="210" y1="365" x2="210" y2="468"/>
+    <!-- Great Room / Dining / Kitchen -->
+    <line x1="455" y1="220" x2="455" y2="310"/>
+    <line x1="455" y1="435" x2="495" y2="435"/>
+    <line x1="430" y1="435" x2="430" y2="575"/>
+    <!-- Right Guest / Bath Wing -->
+    <line x1="595" y1="220" x2="595" y2="445"/>
+    <line x1="595" y1="335" x2="685" y2="335"/>
+  </g>
+
+  <!-- Furniture Schematics -->
+  <!-- Master Bed -->
+  <rect x="148" y="252" width="84" height="74" rx="4" fill="#ffffff" stroke="#475569" stroke-width="2"/>
+  <rect x="152" y="258" width="22" height="28" rx="3" fill="#cbd5e1"/>
+  <rect x="152" y="292" width="22" height="28" rx="3" fill="#cbd5e1"/>
+
+  <!-- Master Tub & Vanity -->
+  <ellipse cx="168" cy="548" rx="22" ry="38" fill="#ffffff" stroke="#475569" stroke-width="2"/>
+  <rect x="236" y="486" width="38" height="78" fill="#f1f5f9" stroke="#475569" stroke-width="2"/>
+
+  <!-- Living Room Sofa & Rug -->
+  <rect x="322" y="296" width="96" height="110" rx="4" fill="#f8fafc" fill-opacity="0.55" stroke="#94a3b8" stroke-width="1.5"/>
+  <path d="M 388 308 H 416 V 396 H 362 V 372 H 388 Z" fill="#93c5fd" stroke="#334155" stroke-width="2"/>
+  <rect x="342" y="334" width="26" height="44" fill="#bfdbfe" stroke="#334155" stroke-width="1.8"/>
+
+  <!-- Dining Table -->
+  <rect x="468" y="322" width="44" height="74" rx="4" fill="#d97706" fill-opacity="0.55" stroke="#475569" stroke-width="2"/>
+  <!-- Kitchen Island -->
+  <rect x="536" y="308" width="30" height="94" rx="3" fill="#ffffff" stroke="#475569" stroke-width="2"/>
+
+  <!-- Labels -->
+  <g font-family="Arial, sans-serif" font-weight="bold" fill="#1e293b" font-size="12" text-anchor="middle">
+    <text x="208" y="242">MASTER SUITE</text>
+    <text x="170" y="420" font-size="10">W.I.C.</text>
+    <text x="248" y="420" font-size="10">DRESS</text>
+    <text x="212" y="592">MASTER BATH</text>
+    <text x="368" y="266">GREAT ROOM</text>
+    <text x="368" y="281" font-size="10" font-weight="normal">6.8m × 7.4m</text>
+    <text x="490" y="296">DINING</text>
+    <text x="550" y="268">KITCHEN</text>
+    <text x="385" y="520">FOYER</text>
+    <text x="590" y="535">2-CAR GARAGE</text>
+    <text x="590" y="551" font-size="10" font-weight="normal">6.2m × 6.0m</text>
+    <text x="640" y="280" font-size="11">BATH 2</text>
+    <text x="640" y="392" font-size="11">UTILITY</text>
+  </g>
+
+  <!-- Corner Palm Trees -->
+  <g fill="#2d6a1e" stroke="#1b4311" stroke-width="1.5">
+    <circle cx="96" cy="96" r="28" fill-opacity="0.85"/>
+    <circle cx="718" cy="96" r="28" fill-opacity="0.85"/>
+    <circle cx="92" cy="400" r="30" fill-opacity="0.85"/>
+    <circle cx="725" cy="495" r="28" fill-opacity="0.85"/>
+    <circle cx="315" cy="632" r="26" fill-opacity="0.85"/>
+  </g>
+
+  <!-- Dimension Callouts -->
+  <text x="410" y="28" font-family="monospace" font-size="13" fill="#334155" text-anchor="middle">POOL HOME PLAN — 21.0 m × 18.0 m</text>
+</svg>
