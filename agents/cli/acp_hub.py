@@ -5,6 +5,9 @@ another ``nerva`` verb already uses, with the same credentials (``JARVIS_ADMIN_T
 
 ==========================  ===============================================
 open/close a session        ``POST``/``DELETE /api/acp/sessions``
+load/resume/fork a session  ``POST /api/acp/sessions`` (``load`` / ``fork``)
+list the editor sessions    ``GET /api/acp/sessions``
+replay a loaded session     ``GET /sessions/{id}/transcript`` (redacted)
 a turn                      ``POST /chat/stream`` (``tool_events`` on)
 the command catalog         ``GET /api/commands``
 the turn's approval cards   ``GET /autonomy/approvals``
@@ -31,7 +34,7 @@ import threading
 import urllib.error
 import urllib.request
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from agents.core.acp.jsonrpc import MAX_MESSAGE_BYTES
 from agents.core.acp.server import AcpServer, BackendRefused
@@ -62,12 +65,27 @@ class HubBackend:
 
     # ── sessions ─────────────────────────────────────────────────────────────
 
-    async def open_session(self, cwd: str) -> str:
-        reply = await self._call("POST", "/api/acp/sessions", {"cwd": cwd})
+    async def open_session(self, cwd: str, *, load: str | None = None, fork: str | None = None) -> str:
+        body: dict[str, Any] = {"cwd": cwd}
+        if load is not None:
+            body["load"] = load
+        if fork is not None:
+            body["fork"] = fork
+        reply = await self._call("POST", "/api/acp/sessions", body)
         session_id = reply.get("session_id") if isinstance(reply, dict) else None
         if not isinstance(session_id, str):
             raise BackendRefused(502, "no session id")
         return session_id
+
+    async def list_sessions(self, cwd: str | None, cursor: str | None) -> dict[str, Any]:
+        query = {k: v for k, v in (("cwd", cwd), ("cursor", cursor)) if v is not None}
+        reply = await self._call("GET", "/api/acp/sessions" + (f"?{urlencode(query)}" if query else ""))
+        return reply if isinstance(reply, dict) else {}
+
+    async def transcript(self, session_id: str) -> list[dict[str, Any]]:
+        reply = await self._call("GET", f"/sessions/{quote(session_id, safe='')}/transcript")
+        turns = reply.get("turns") if isinstance(reply, dict) else None
+        return [t for t in turns if isinstance(t, dict)] if isinstance(turns, list) else []
 
     async def close_session(self, session_id: str) -> None:
         await self._call("DELETE", f"/api/acp/sessions/{quote(session_id, safe='')}")

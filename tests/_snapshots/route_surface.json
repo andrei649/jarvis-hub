@@ -67,6 +67,7 @@
   "GET /agents",
   "GET /api/a2a/inbox",
   "GET /api/a2a/peers",
+  "GET /api/acp/sessions",
   "GET /api/acquisition/events",
   "GET /api/acquisition/ledger/export",
   "GET /api/acquisition/requests",

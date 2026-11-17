@@ -1,12 +1,18 @@
 """G11 — the hub routes behind ``nerva acp`` (an editor's coding agent over ACP).
 
-Four routes, all admin-guarded (the owner's credential, the same one that adds an MCP
+Five routes, all admin-guarded (the owner's credential, the same one that adds an MCP
 server or decides an approval card):
 
 * ``POST /api/acp/sessions`` — open a conversation of its own for an editor folder. The
   folder must be an existing directory inside the owner's file roots; the conversation's
   turns then bind their file tools and project files to it. The HUD's shared conversation
-  is never switched.
+  is never switched. With ``load`` it binds an earlier editor conversation again
+  (``session/load`` and ``session/resume``); with ``fork`` it makes a continuation of one
+  (``session/fork``, the hub's own ``create_continuation``, so the copy stands as its
+  source does). Either may only name a conversation an editor opened for **the same
+  folder**, and ``load`` one no other editor holds open (H542).
+* ``GET /api/acp/sessions`` — the editor conversations, newest first, 50 a page, for one
+  folder or all (``session/list``).
 * ``POST /api/acp/sessions/{id}/mcp`` — register an MCP server the editor handed over,
   for this conversation only (H545). The ACP process calls it only after the owner
   accepted the server in the editor; it goes through the same refusals as any added
@@ -54,9 +60,16 @@ _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}\Z")
 CONNECT_WAIT_SECONDS = 15.0
 
 
+_ANY_SESSION = r"^[A-Za-z0-9_-]{1,128}$"
+
+
 class AcpSessionBody(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     cwd: str = Field(min_length=1, max_length=4096)
+    #: Bind this earlier editor conversation again (session/load, session/resume).
+    load: str | None = Field(default=None, pattern=_ANY_SESSION)
+    #: Continue this editor conversation in a new one (session/fork).
+    fork: str | None = Field(default=None, pattern=_ANY_SESSION)
 
 
 class AcpMcpBody(BaseModel):
@@ -135,14 +148,30 @@ async def _reap(orch) -> None:
 
 @router.post("/api/acp/sessions", dependencies=[Depends(admin_guard)])
 async def acp_open_session(body: AcpSessionBody):
-    """Open a conversation for an editor folder (``session/new``)."""
+    """Open a conversation for an editor folder (``session/new``), bind an earlier one again
+    (``load``: ``session/load`` / ``session/resume``) or continue one in a new conversation
+    (``fork``: ``session/fork``)."""
     orch = get_orch()
     if not orch:
         return JSONResponse({"error": "not initialized"}, status_code=503)
+    if body.load is not None and body.fork is not None:
+        return JSONResponse({"error": "load_or_fork"}, status_code=400)
     await _reap(orch)
     folder, refusal = await asyncio.to_thread(_editor_folder, body.cwd)
     if refusal is not None:
         return JSONResponse({"error": refusal}, status_code=409 if refusal == "cwd_outside_file_roots" else 400)
+    earlier = body.load or body.fork
+    if earlier is not None:
+        entry = await asyncio.to_thread(acp_sessions.known, earlier)
+        if entry is None:
+            return JSONResponse({"error": "session_not_found"}, status_code=404)
+        if entry["cwd"] != str(folder):
+            # An editor conversation stays with the folder it was made for.
+            return JSONResponse({"error": "cwd_mismatch"}, status_code=409)
+    if body.load is not None:
+        return await _load(orch, body.load, folder)
+    if body.fork is not None:
+        return await _fork(orch, body.fork, folder)
     session_id = acp_sessions.new_session_id()
     try:
         # Registered first: a full registry refuses before any conversation is made.
@@ -151,13 +180,98 @@ async def acp_open_session(body: AcpSessionBody):
         return JSONResponse({"error": "too_many_sessions"}, status_code=429)
     try:
         await _open_conversation(orch, session_id)
+        await asyncio.to_thread(acp_sessions.remember, session_id, folder)
     except Exception:
         acp_sessions.pop(session_id)
         logger.warning("editor conversation could not be opened", exc_info=True)
         return JSONResponse({"error": "session_unavailable"}, status_code=503)
     _ensure_reaper(orch)
+    return _opened(session_id, folder)
+
+
+def _opened(session_id: str, folder: Path, **extra):
     return nocache_json({"ok": True, "session_id": session_id, "cwd": str(folder),
-                         "lease_seconds": acp_sessions.LEASE_SECONDS})
+                         "lease_seconds": acp_sessions.LEASE_SECONDS, **extra})
+
+
+async def _load(orch, session_id: str, folder: Path):
+    """Bind an earlier editor conversation to its folder again. Its history is loaded by
+    the next turn (``prepare_session``, with every identity check); one that never had a
+    turn is made again empty, as at ``session/new``."""
+    try:
+        acp_sessions.register(session_id, folder, exclusive=True)
+    except KeyError:
+        return JSONResponse({"error": "session_in_use"}, status_code=409)
+    except OverflowError:
+        return JSONResponse({"error": "too_many_sessions"}, status_code=429)
+    try:
+        conversation = orch.memory.conversation
+        if session_id not in conversation.sessions and await asyncio.to_thread(_never_used, session_id):
+            await _open_conversation(orch, session_id)
+    except Exception:
+        acp_sessions.pop(session_id)
+        logger.warning("editor conversation could not be loaded", exc_info=True)
+        return JSONResponse({"error": "session_unavailable"}, status_code=503)
+    _ensure_reaper(orch)
+    return _opened(session_id, folder, loaded=True)
+
+
+def _never_used(session_id: str) -> bool:
+    """No turn was ever kept for *session_id*: no snapshot, or the empty one ``session/new``
+    saved (a rewound snapshot is never treated as empty: the next turn verifies it)."""
+    from agents.core.memory import persistence
+
+    if not (persistence.memory_dir() / f"{session_id}.json").exists():
+        return True
+    snapshot = persistence.load_memory_snapshot(session_id)
+    return snapshot.get("turns") == [] and snapshot.get("rewound") is not True
+
+
+async def _fork(orch, source: str, folder: Path):
+    """A continuation of an editor conversation, bound to the same folder. The copy is the
+    hub's own continuation (lineage, identity and standing as for ``/sessions/continue``)."""
+    import uuid
+
+    from agents.core.session_continuation import ContinuationRefused, create_continuation
+
+    if acp_sessions.count() >= acp_sessions.MAX_SESSIONS:
+        return JSONResponse({"error": "too_many_sessions"}, status_code=429)
+    try:
+        created = await create_continuation(orch, source, str(uuid.uuid4()))
+    except ContinuationRefused as exc:
+        return JSONResponse({"error": exc.reason}, status_code=409 if exc.status in (404, 422) else exc.status)
+    child = created.get("session_id") if isinstance(created, dict) else None
+    if not isinstance(child, str):
+        return JSONResponse({"error": "session_unavailable"}, status_code=503)
+    try:
+        # The index first: from here on the copy is an editor conversation, refused
+        # whenever no editor holds it, never run unbound.
+        await asyncio.to_thread(acp_sessions.remember, child, folder, parent=source)
+        acp_sessions.register(child, folder)
+    except OverflowError:
+        return JSONResponse({"error": "too_many_sessions"}, status_code=429)
+    except Exception:
+        logger.warning("forked editor conversation could not be recorded", exc_info=True)
+        return JSONResponse({"error": "session_unavailable"}, status_code=503)
+    _ensure_reaper(orch)
+    return _opened(child, folder, forked_from=source)
+
+
+@router.get("/api/acp/sessions", dependencies=[Depends(admin_guard)])
+async def acp_list_sessions(cwd: str | None = None, cursor: str | None = None):
+    """The editor conversations, newest first, a page of 50 (``session/list``)."""
+    folder = None
+    if cwd is not None:
+        folder, refusal = await asyncio.to_thread(_editor_folder, cwd[:4096])
+        if refusal is not None:
+            return JSONResponse({"error": refusal}, status_code=409 if refusal == "cwd_outside_file_roots" else 400)
+    offset = 0
+    if cursor is not None:
+        if not cursor.isdigit() or len(cursor) > 6:
+            return JSONResponse({"error": "invalid_cursor"}, status_code=400)
+        offset = int(cursor)
+    rows, following = await asyncio.to_thread(acp_sessions.listing, folder, offset=offset)
+    return nocache_json({"sessions": rows, "next_cursor": None if following is None else str(following)})
 
 
 @router.post("/api/acp/sessions/{session_id}/lease", dependencies=[Depends(admin_guard)])

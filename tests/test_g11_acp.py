@@ -220,7 +220,8 @@ async def test_initialize_new_session_and_a_streamed_turn(tmp_path):
             await editor.conn.request("session/new", {"cwd": str(tmp_path)})   # before initialize
         init, sid = await _init(editor, tmp_path)
         assert init["protocolVersion"] == 1
-        assert init["agentCapabilities"]["loadSession"] is False
+        assert init["agentCapabilities"]["loadSession"] is True
+        assert init["agentCapabilities"]["sessionCapabilities"] == {"list": {}, "resume": {}, "fork": {}}
         assert init["agentCapabilities"]["mcpCapabilities"] == {"http": False, "sse": False}
         assert backend.opened == [str(tmp_path.resolve())]
         result = await editor.conn.request("session/prompt", {

@@ -545,7 +545,7 @@ _CLIENT_GLOBS = (
 # entries like these had been miscounted as missing UI.
 MACHINE_FACING: dict[str, str] = {
     "/chat/interrupt": "H224: Ctrl+C in `nerva chat -i` stops the caller's own running /chat turn",
-    "/api/acp/sessions":"G11: `nerva acp` opens a conversation for an editor folder (ACP session/new)",
+    "/api/acp/sessions":"G11/H542: `nerva acp` opens, loads, forks (POST) and lists (GET) editor conversations (ACP session/new, load, resume, fork, list)",
     "/api/acp/sessions/{session_id}": "G11: `nerva acp` closes an editor session and its MCP servers",
     "/api/acp/sessions/{session_id}/lease": "G11 review: `nerva acp` renews its sessions' lease while the editor is connected",
     "/api/acp/sessions/{session_id}/mcp": (

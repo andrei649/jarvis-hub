@@ -67,6 +67,7 @@
   "GET /agents": "user",
   "GET /api/a2a/inbox": "admin",
   "GET /api/a2a/peers": "admin",
+  "GET /api/acp/sessions": "admin",
   "GET /api/acquisition/events": "user",
   "GET /api/acquisition/ledger/export": "admin",
   "GET /api/acquisition/requests": "admin",

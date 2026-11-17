@@ -399,10 +399,11 @@ EDITOR_SESSION_CLOSED = "editor_session_closed"
 
 
 def editor_session_closed(sid) -> bool:
-    """G11 — *sid* names an editor conversation (``acp_…``) with no live binding."""
+    """G11 — *sid* names an editor conversation (``acp_…``, or one an editor forked, H542)
+    with no live binding."""
     from .acp import sessions as acp_sessions
 
-    return isinstance(sid, str) and sid.startswith(acp_sessions.PREFIX) and acp_sessions.get(sid) is None
+    return acp_sessions.is_editor_conversation(sid) and acp_sessions.get(sid) is None
 
 
 def _fresh_editor_session(sid) -> bool:

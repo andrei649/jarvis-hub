@@ -1084,6 +1084,8 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter)
     acp.add_argument("--check", action="store_true",
                      help="check the hub, the credential and the protocol setup, then exit")
+    acp.add_argument("--version", action="store_true",
+                     help="print the agent's version and ACP protocol version, then exit")
     acp.add_argument("--permission-timeout", type=float, metavar="SECONDS", default=None,
                      help="seconds the editor has to answer a permission before it is a reject "
                           "(default JARVIS_ACP_PERMISSION_TIMEOUT, else 300)")
@@ -6670,9 +6672,14 @@ def read_token_file(path: str) -> str:
 
 def cmd_acp(ns: argparse.Namespace, ctx: Context) -> int:
     """``nerva acp`` (G11): the ACP agent on stdio. stdout is the protocol channel."""
+    from agents import __version__
+    from agents.core.acp import PROTOCOL_VERSION
     from agents.core.acp.server import DEFAULT_PERMISSION_TIMEOUT
     from agents.core.env_config import env_float
 
+    if getattr(ns, "version", False):
+        ctx.out.write(f"nerva acp {__version__} (Agent Client Protocol {PROTOCOL_VERSION})\n")
+        return EXIT_OK
     timeout = ns.permission_timeout
     if timeout is None:
         timeout = env_float("JARVIS_ACP_PERMISSION_TIMEOUT", DEFAULT_PERMISSION_TIMEOUT)
@@ -6703,7 +6710,7 @@ def cmd_acp(ns: argparse.Namespace, ctx: Context) -> int:
     from .acp_hub import serve_stdio
 
     try:
-        asyncio.run(serve_stdio(client, permission_timeout=timeout))
+        asyncio.run(serve_stdio(client, permission_timeout=timeout, version=__version__))
     except KeyboardInterrupt:
         return EXIT_INTERRUPTED
     return EXIT_OK

@@ -594,7 +594,7 @@ async def _begin_project_context(orch) -> None:
             editor_cwd = acp_sessions.cwd_for(session)
             if editor_cwd is not None:
                 record = {"path": str(editor_cwd)}
-            elif str(session).startswith(acp_sessions.PREFIX):
+            elif acp_sessions.is_editor_conversation(session):
                 # G11 review M3: an editor conversation the hub no longer holds never runs
                 # unbound (prepare_session refuses it first; this is the floor).
                 from .session_continuation import EDITOR_SESSION_CLOSED, ContinuationRefused

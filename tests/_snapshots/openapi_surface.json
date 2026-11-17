@@ -67,6 +67,7 @@
   "GET /agents": "get_agents_agents_get",
   "GET /api/a2a/inbox": "a2a_inbox_api_a2a_inbox_get",
   "GET /api/a2a/peers": "a2a_list_peers_api_a2a_peers_get",
+  "GET /api/acp/sessions": "acp_list_sessions_api_acp_sessions_get",
   "GET /api/acquisition/events": "acquisition_events_api_acquisition_events_get",
   "GET /api/acquisition/ledger/export": "acquisition_export_api_acquisition_ledger_export_get",
   "GET /api/acquisition/requests": "acquisition_requests_api_acquisition_requests_get",

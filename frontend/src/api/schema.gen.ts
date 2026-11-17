@@ -11746,11 +11746,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Acp List Sessions
+         * @description The editor conversations, newest first, a page of 50 (``session/list``).
+         */
+        get: operations["acp_list_sessions_api_acp_sessions_get"];
         put?: never;
         /**
          * Acp Open Session
-         * @description Open a conversation for an editor folder (``session/new``).
+         * @description Open a conversation for an editor folder (``session/new``), bind an earlier one again
+         *     (``load``: ``session/load`` / ``session/resume``) or continue one in a new conversation
+         *     (``fork``: ``session/fork``).
          */
         post: operations["acp_open_session_api_acp_sessions_post"];
         delete?: never;
@@ -17093,6 +17099,10 @@ export interface components {
         AcpSessionBody: {
             /** Cwd */
             cwd: string;
+            /** Load */
+            load?: string | null;
+            /** Fork */
+            fork?: string | null;
         };
         /** AcquisitionCaseBody */
         AcquisitionCaseBody: {
@@ -39182,6 +39192,38 @@ export interface operations {
                 };
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acp_list_sessions_api_acp_sessions_get: {
+        parameters: {
+            query?: {
+                cwd?: string | null;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
