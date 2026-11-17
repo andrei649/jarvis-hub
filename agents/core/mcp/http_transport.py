@@ -281,6 +281,10 @@ def parse_sse_events(text: str, *, max_events: int = MAX_SSE_EVENTS) -> list[Any
 #: H553 — requests a server may send inside one call's response stream before the rest are
 #: refused at once (the stdio path's ``MAX_HOST_REQUESTS_PER_CALL``).
 MAX_SERVER_REQUESTS_PER_CALL = 2
+#: Review m3 — the most one call may wait in total on answers to the server's own requests
+#: (approval cards, a model completion) before it is given up: past it the call times out
+#: and the server's pending request is withdrawn.
+MAX_PAUSED_SECONDS = 600.0
 
 
 def _is_server_request(msg: Any) -> bool:
@@ -293,10 +297,14 @@ class _Deadline:
     """A call's deadline that the time spent answering the server's own requests extends
     (the owner deciding an approval card does not count against the call)."""
 
-    def __init__(self, seconds: float) -> None:
+    def __init__(self, seconds: float, *, max_paused: float | None = None) -> None:
         self._loop = asyncio.get_running_loop()
         self.at = self._loop.time() + float(seconds)
         self._paused_at: float | None = None
+        #: Review m3 — a hard ceiling on the paused time of one call: the transport's lock
+        #: is held while the owner decides, so no other call to this server runs then.
+        self.max_paused = MAX_PAUSED_SECONDS if max_paused is None else float(max_paused)
+        self._paused_total = 0.0
 
     def pause(self) -> None:
         if self._paused_at is None:
@@ -304,8 +312,15 @@ class _Deadline:
 
     def resume(self) -> None:
         if self._paused_at is not None:
-            self.at += max(0.0, self._loop.time() - self._paused_at)
+            spent = max(0.0, self._loop.time() - self._paused_at)
+            self.at += spent
+            self._paused_total += spent
             self._paused_at = None
+
+    def _paused_over(self) -> bool:
+        if self._paused_at is None:
+            return False
+        return self._paused_total + (self._loop.time() - self._paused_at) > self.max_paused
 
     async def run(self, coro):
         task = asyncio.ensure_future(coro)
@@ -313,20 +328,25 @@ class _Deadline:
             while True:
                 if self._paused_at is not None:
                     # Answering the server's request: the owner's (or the model's) time is
-                    # not the call's. The host bounds that wait on its own.
+                    # not the call's — up to MAX_PAUSED_SECONDS in all for one call.
+                    if self._paused_over():
+                        raise TimeoutError
                     done, _pending = await asyncio.wait({task}, timeout=0.25)
                 else:
                     remaining = self.at - self._loop.time()
                     if remaining <= 0:
                         raise TimeoutError
-                    done, _pending = await asyncio.wait({task}, timeout=remaining)
+                    # In short slices, so a pause (or the paused ceiling) is seen promptly.
+                    done, _pending = await asyncio.wait({task}, timeout=min(remaining, 0.25))
                 if done:
                     return task.result()
         finally:
             if not task.done():
                 task.cancel()
+                # Bounded: a stream whose close hangs must not hold the caller past the
+                # deadline it just ran out of; the cancelled task finishes on its own.
                 with contextlib.suppress(asyncio.CancelledError, Exception):
-                    await task
+                    await asyncio.wait({task}, timeout=1.0)
 
 
 def _match_response(messages: Any, req_id: int) -> dict | None:
@@ -539,9 +559,16 @@ class StreamableHttpTransport:
                 out = {"error": {"code": -32603, "message": "internal error"}}
         if deadline is not None:
             deadline.resume()
+        await self.post_answer(message, out)
+
+    async def post_answer(self, message: dict, out: dict) -> None:
+        """POST the JSON-RPC answer *out* to the server's request *message* (also used for
+        an answer the owner gave just before the call was cancelled, review m6)."""
+        method = str(message.get("method") or "")
+        error = out.get("error") if isinstance(out, dict) else None
         reply = {"jsonrpc": "2.0", "id": message.get("id"),
-                 **({"result": out["result"]} if "result" in out else
-                    {"error": out.get("error") or {"code": -32603, "message": "internal error"}})}
+                 **({"result": out["result"]} if isinstance(out, dict) and "result" in out else
+                    {"error": error or {"code": -32603, "message": "internal error"}})}
         payload = json.dumps(reply, separators=(",", ":")).encode("utf-8")
         try:
             async with self._client.stream("POST", self.url, headers=self._request_headers(),

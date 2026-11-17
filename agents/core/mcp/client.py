@@ -488,6 +488,10 @@ def _is_server_request(msg: dict) -> bool:
             and "result" not in msg and "error" not in msg)
 
 
+#: Answers POSTed after a cancelled call (review m6), held so they are not collected early.
+_LATE_ANSWERS: set = set()
+
+
 def _permanent_refusal(reason: str | None) -> bool:
     """A connect refusal no retry can fix: the configuration itself is refused."""
     text = str(reason or "")
@@ -1365,6 +1369,15 @@ class MCPServer:
         try:
             return await self.host.handle(self, method, req.get("params"))
         except asyncio.CancelledError:
+            # Review m6 — as on stdio: the call that was waiting ended; the server is told,
+            # with the owner's answer if it had already been accepted, else a withdrawal.
+            late, self._cancel_reply = self._cancel_reply, None
+            http = self._http
+            if http is not None and hasattr(http, "post_answer"):
+                task = asyncio.get_running_loop().create_task(http.post_answer(
+                    req, late or MCPHost.refusal(method, "the request was withdrawn")))
+                _LATE_ANSWERS.add(task)
+                task.add_done_callback(_LATE_ANSWERS.discard)
             raise
         except Exception:
             logger.warning("MCP %s: answering %s failed", self.name, method[:60], exc_info=True)

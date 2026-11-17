@@ -239,3 +239,63 @@ def test_the_budget_file_is_never_written_through_a_link(tmp_path):
     budget = SamplingBudget(daily_tokens=1000, persist_path=path)
     assert budget.reserve(1) == "budget_exceeded"          # an unreadable file starts spent
     assert target.read_text() == "keep"
+
+
+# ── review m3 / m6: a ceiling on the paused time; an answer that crosses a cancel ──
+
+
+async def test_paused_time_has_a_ceiling_and_the_server_hears_the_late_answer(monkeypatch):
+    """The owner answers (the host records the accepted answer) but the call has waited
+    past the ceiling: the call ends, and the server is still POSTed that answer."""
+    from agents.core.mcp import http_transport as ht
+
+    monkeypatch.setattr(ht, "MAX_PAUSED_SECONDS", 0.5)
+    host, _calls = _host()
+    hub = SamplingHub()
+    mgr, srv = _server(hub, "auto", host)
+    accepted = {"result": {"action": "accept", "content": {"name": "Ada"}}}
+
+    async def slow_owner(server, method, params):
+        server._cancel_reply = accepted          # the owner's answer was taken …
+        await asyncio.sleep(30)                   # … but the host is still busy
+        return accepted
+
+    try:
+        assert await srv.connect()
+        monkeypatch.setattr(host, "handle", slow_owner)
+        started = asyncio.get_running_loop().time()
+        out = await srv.call_tool("ask", {})
+        assert asyncio.get_running_loop().time() - started < 5
+        assert out == {}                           # the call gave up (no result)
+        for _ in range(50):
+            if hub.answers:
+                break
+            await asyncio.sleep(0.05)
+        assert hub.answers and hub.answers[0]["id"] == "srv-0"
+        assert hub.answers[0]["result"] == accepted["result"]
+    finally:
+        await mgr.close_all()
+
+
+async def test_a_withdrawn_request_is_refused_to_the_server(monkeypatch):
+    from agents.core.mcp import http_transport as ht
+
+    monkeypatch.setattr(ht, "MAX_PAUSED_SECONDS", 0.3)
+    host, _calls = _host()
+    hub = SamplingHub()
+    mgr, srv = _server(hub, "auto", host)
+
+    async def never(server, method, params):
+        await asyncio.sleep(30)
+
+    try:
+        assert await srv.connect()
+        monkeypatch.setattr(host, "handle", never)
+        assert await srv.call_tool("ask", {}) == {}
+        for _ in range(50):
+            if hub.answers:
+                break
+            await asyncio.sleep(0.05)
+        assert hub.answers and "error" in hub.answers[0]
+    finally:
+        await mgr.close_all()
