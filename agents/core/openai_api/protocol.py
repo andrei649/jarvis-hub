@@ -352,6 +352,30 @@ def sse_data(payload: dict | str) -> str:
     return f"data: {data}\n\n"
 
 
+#: H560 — the typed frame a chat-completions stream carries a tool event in, when asked.
+TOOL_PROGRESS_EVENT = "nerva.tool.progress"
+_PROGRESS_EVENTS = {"tool_requested": "requested", "tool_started": "started", "tool_heartbeat": "running",
+                    "tool_result": "completed", "tool_failed": "failed"}
+
+
+def tool_progress(row: Any) -> dict | None:
+    """A tool-trail row as a ``nerva.tool.progress`` payload: the tool, the call id and where
+    it stands, nothing else (no arguments, no results). None for a row that is not a tool
+    call's progress."""
+    if not isinstance(row, dict):
+        return None
+    stage = _PROGRESS_EVENTS.get(row.get("event"))
+    tool, call_id = row.get("tool"), row.get("call_id")
+    if stage is None or not isinstance(tool, str) or not tool:
+        return None
+    payload = {"object": "nerva.tool.progress", "tool": tool[:128], "stage": stage}
+    if isinstance(call_id, str) and call_id:
+        payload["call_id"] = call_id[:128]
+    if isinstance(row.get("status"), str):
+        payload["status"] = row["status"][:64]
+    return payload
+
+
 def sse_event(name: str, payload: dict) -> str:
     """A typed frame (Responses): ``event: <type>`` then its JSON."""
     return f"event: {name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"

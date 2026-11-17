@@ -107,15 +107,21 @@ async def _load_session(orch, session_id: str) -> None:
 
 async def run_turn(orch, key: ApiKey, text: str, *, session_id: str, agent_override: str | None,
                    known_session: bool,
-                   on_token: Callable[[str], Awaitable[None]] | None = None) -> TurnOutcome:
+                   on_token: Callable[[str], Awaitable[None]] | None = None,
+                   on_tool: Callable[[dict], None] | None = None) -> TurnOutcome:
     """Run the turn as the key's speaker; raise :class:`TurnBusy`, :class:`NoModel` or
-    :class:`TurnIncomplete` instead of returning a failure as if it were the answer."""
+    :class:`TurnIncomplete` instead of returning a failure as if it were the answer.
+
+    *on_tool* hears this turn's own tool events, cut to the trail's live fields (H560)."""
+    from contextlib import nullcontext
+
     from agents.core.action_origin import (
         INBOUND_ACTION_ORIGIN,
         bind_action_origin,
         reset_action_origin,
     )
     from agents.core.commands import Principal
+    from agents.core.observability.tool_events import turn_listener
     from agents.core.orchestrator import (
         NO_MODEL_REPLY,
         TURN_BUSY_REPLY,
@@ -133,7 +139,8 @@ async def run_turn(orch, key: ApiKey, text: str, *, session_id: str, agent_overr
     sink, approvals_token = open_turn_approvals()
     usage = None
     try:
-        with turn_usage_scope() as collector:
+        listening = turn_listener(on_tool) if on_tool is not None else nullcontext()
+        with turn_usage_scope() as collector, listening:
             async with _lease(orch, session_id) as acquired:
                 if not acquired:
                     raise TurnBusy()

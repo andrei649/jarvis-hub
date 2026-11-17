@@ -2442,6 +2442,7 @@
       "suite": [
         "tests/test_a2a_outbound.py",
         "tests/test_h563_a2a_hardening.py",
+        "tests/test_h560_tool_progress.py",
         "tests/test_client_protocol.py",
         "tests/test_g12_guest_context.py",
         "tests/test_g12_openai_compat.py"

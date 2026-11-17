@@ -24,7 +24,7 @@ ID-urile H001–H697 sunt poziții în inventarul înghețat, validate prin hash
 | [media](#area-media) — Media: images, video, voice, vision | adopt/own | 27 | 7 | 20 | 0 | 0 | 0 | 101 | seed din dovezi |
 | [editor-acp](#area-editor-acp) — Editor agent over ACP | own/adopt | 6 | 0 | 5 | 0 | 1 | 0 | 5 | seed din dovezi |
 | [mcp](#area-mcp) — MCP client and server | own/run | 13 | 3 | 10 | 0 | 0 | 0 | 19 | seed din dovezi |
-| [agent-interop](#area-agent-interop) — OpenAI-compatible API and agent-to-agent (A2A) | own/adopt | 5 | 0 | 4 | 0 | 1 | 0 | 5 | seed din dovezi |
+| [agent-interop](#area-agent-interop) — OpenAI-compatible API and agent-to-agent (A2A) | own/adopt | 5 | 0 | 4 | 0 | 1 | 0 | 6 | seed din dovezi |
 | [extensions](#area-extensions) — Extensions, hooks and deployment packaging | own/adopt | 9 | 1 | 6 | 0 | 2 | 0 | 30 | seed din dovezi |
 | [feature-pages](#area-feature-pages) — Upstream feature pages (cross-cutting) | own/adopt/run | 48 | 7 | 37 | 0 | 4 | 0 | 175 | seed din dovezi |
 | [user-journeys](#area-user-journeys) — User journeys from the rest of the docs (cross-cutting) | own | 33 | 6 | 24 | 0 | 3 | 0 | 68 | seed din dovezi |
@@ -756,11 +756,11 @@ Lane: own/run. Suită: 19 intrări (seed din dovezi); 13/13 rânduri reevaluate 
 
 ## agent-interop — OpenAI-compatible API and agent-to-agent (A2A)
 
-Lane: own/adopt. Suită: 5 intrări (seed din dovezi); 3/4 rânduri reevaluate citează un test din suită.
+Lane: own/adopt. Suită: 6 intrări (seed din dovezi); 3/4 rânduri reevaluate citează un test din suită.
 
 | ID | Capabilitate | Decizie inițială | Stare cod | Bază | Observație / restanță |
 |---|---|---|---|---|---|
-| <a id="h560"></a>H560 | Point any OpenAI-compatible app at Nerva as its backend | copy | Parțial | Reevaluat | - a tool-progress event in the chat-completions stream (Hermes \`hermes.tool.progress\`) - GET /api/model/options (native provider inventory) - a separate loopback-only listener for the API (it shares the hub's bind address) [d1](../agents/core/routers/openai_compat.py) [d2](../agents/core/openai_api/turn.py) [d3](../agents/core/openai_api/protocol.py) |
+| <a id="h560"></a>H560 | Point any OpenAI-compatible app at Nerva as its backend | copy | Parțial | Reevaluat | - GET /api/model/options (native provider inventory through an API key; the owner's inventory is only on the admin routes /api/llm/status and /api/models/info) - a separate loopback-only listener for the API (it shares the hub's bind address) - tool progress is opt-in (stream_options.include_tool_progress), where Hermes always sends it [d1](../agents/core/routers/openai_compat.py) [d2](../agents/core/openai_api/turn.py) [d3](../agents/core/openai_api/protocol.py) |
 | <a id="h561"></a>H561 | Accept work from another agent over the open A2A protocol | update | Parțial | Reevaluat | - The A2A v1.0 JSON-RPC surface (SendMessage, SendStreamingMessage, GetTask, ListTasks, CancelTask, SubscribeToTask, push-config methods) - Task states including INPUT_REQUIRED, streaming SSE, signed push webhooks - Agent Card at the standard /.well-known/agent-card.json path with skills - Executing an approved task in a live session and returning the result to the peer [d1](../agents/core/routers/a2a.py) [d2](../agents/core/a2a.py) |
 | <a id="h562"></a>H562 | Call other agents as tools and fan work out to peers | copy | Parțial | Reevaluat | - the approved reply returned into the turn that asked (today: approval_required, then a2a_history) - an owner policy that lets a trusted peer run without a card per call (kernel ACT for a2a.outbound) - raw-URL calls to an unconfigured agent: deliberately not offered (owner decision if wanted) - a live interop run against a real A2A peer [d1](../agents/core/a2a.py) [d2](../agents/core/a2a_outbound.py) [d3](../agents/core/routers/a2a.py) |
 | <a id="h563"></a>H563 | Harden the A2A channel against a hostile or runaway peer | update | Parțial | Reevaluat | - bind-host safety rule: the A2A routes share the hub's listener and bind address; there is no separate A2A bind with the token-and-host two-switch rule - inbound peer text still never reaches a model (no execution path, see H561), so the framing is proved on the inbox view only - not exercised against a live remote peer [d1](../agents/core/a2a.py) [d2](../agents/core/routers/a2a.py) [d3](../agents/vendor/hermes/plugins/platforms/a2a/security.py) |
