@@ -4,6 +4,26 @@
 
 ### What changed for you — 2026-11-17
 
+**MCP servers: safer to add, steadier to run**
+- A server whose launch command downloads and runs code, writes a login or startup file
+  (SSH keys, cron, shell profiles, systemd, launch agents) or injects a library is refused
+  when you add or install it, when a saved list is reloaded, and again before it starts.
+- A tool whose description or settings hide instructions for the model (or invisible
+  characters) is held back from the model and listed as quarantined in the server list
+  (`GET /api/admin/mcp`); you can release one exact description by its digest in the
+  saved server entry. Very long tool results are
+  saved to a private file and the model reads a preview.
+- Each server can have its own timeouts, keepalive, idle stop and restart period, a private
+  certificate authority or a client certificate (certificate checks are never turned off),
+  and can say it handles parallel calls. An idle server stops and comes back on its next
+  use; a server and the launcher that started it stop together, and servers left running
+  by a crash are cleaned up at the next start.
+- Remote (HTTP) servers can now ask for a completion or for your input, under the same
+  per-server settings, approval cards and daily budget as local ones; the budget is kept
+  across restarts.
+- Other apps writing through Nerva's MCP server are rate limited per client; a refused
+  call writes nothing and is on the audit log. Refused MCP calls tell the model not to retry.
+
 **Configuration from the terminal, with fewer surprises**
 - `nerva config set` no longer replaces a whole group of settings with a single value by
   accident: it asks you to add `--force` when you really mean it.
